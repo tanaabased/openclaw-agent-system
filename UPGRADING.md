@@ -3,6 +3,49 @@
 See the [version compatibility matrix](./README.md#version-compatibility) for supported
 OpenClaw versions.
 
+## GitHub V3 configuration
+
+V3 keeps the existing workflow engine and retained state. It requires
+`github.schema-version: 3` and moves workflow fields directly under `github`.
+Production V2 decoding remains available during profile adoption; removing it is a
+separate change. Do not reset intake, chats, or worktrees to change syntax.
+
+Preview the effective policy from the base manifest and any local overlay:
+
+```sh
+openclaw agent-system migrate-github --json
+```
+
+For standalone Codex, use the installed plugin's `codex-runtime.js` with
+`migrate-github --plugin-data <the trusted binding's plugin-data path>`. This route
+uses the existing binding, reads both manifest sources, and returns the same JSON
+preview without accessing provider credentials or installed OpenClaw state.
+
+The preview does not write files. Its YAML is a **workflow fragment**, not a
+replacement for the whole document: preserve account, token-binding, tool config,
+keys, and unrelated sections. `requires-resolution` identifies feedback grants,
+recipient overrides, or cleanup declarations that cannot be carried over without
+an explicit operator decision. Do not adopt that draft until those decisions are
+resolved. In particular, V3 has no feedback-off/replacement-author switch and always
+assigns the original assignment actor to its PR.
+
+Apply the reviewed workflow fragment to the base and overlay deliberately. Arrays
+replace and mappings merge. Remove obsolete workflow fields from both sources;
+retaining an old overlay can otherwise override the new values. With an explicit
+V3 marker, the whole legacy `github.notifications` block is ignored and produces a
+source-attributed warning; omitted V3 fields never inherit V2 values. Invalid V3
+fails without fallback. Remove ignored blocks once the migration is verified.
+
+Validate offline, then use the owning runtime's authorized Install and Doctor.
+A supported workflow declaration provisions its required machinery even when
+`allowed: []`; adding actors later is a live-policy edit. Confirm fresh versus
+retained baseline behavior and one ordinary assignment/feedback journey separately
+from parser and source-test success. Record readiness for each affected installation
+before retiring V2 compatibility. Keep private profile contents private.
+
+See the [V3 manifest contract](./MANIFEST.md#githubnotifications) for defaults,
+identity forms, derived feedback authors, and rename behavior.
+
 ## Minimum-Version Changes
 
 Upgrade OpenClaw before installing an Agent System release that requires a newer
@@ -66,10 +109,24 @@ agent's automatic cleanup while unrelated issue work remains usable.
 
 Existing deadlines and uncertain cleanup receipts remain intact. Retirement first
 observed while settings are blocked starts its grace only after configuration is
-usable. Older terminal records without verified native completion are reported as
-`retirement-legacy-unverified` and preserved; this upgrade does not sweep or revive
-historically retired resources. Exact native/operator recovery is required for those
-resources, subject to ownership and work preservation.
+usable. Historical terminal records do not authorize cleanup or revive managed work.
+Preserve archived resources and their ownership evidence.
+
+## Notification workflow state
+
+Legacy workflow decoding and repair are removed after the accepted reset rollout in
+[#426](https://github.com/tanaabased/openclaw-agent-system/issues/426). Current work
+keeps its explicit stage and native execution/publication receipts. Retained pre-reset
+history is inert; it is not scanned, repaired, or resumed as active workflow state.
+
+Restore backups into staging. Do not copy pre-reset notification tracking into the
+active state directory: a nonempty store without a reset generation stops with
+`notification-state-reset-required`, and retired schema fields are rejected. The
+original files are preserved. If old tracking must be restored, perform the supported
+notification reset with its compatible reset-capable release before upgrading; do
+not delete journals or invent assignment events to force intake. Ordinary reset
+preserves issue chats, checkouts, branches, commits, pull requests, and assignments.
+Current interrupted-work recovery and reset-generation fencing remain supported.
 
 ## Managed collaboration
 

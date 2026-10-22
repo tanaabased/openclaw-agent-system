@@ -49,9 +49,9 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   Keep native send reconciliation separate from that calculation. A completed PR,
   announcement, and supported native presentation receipts determine completion;
   displaying a card must not require another saved continuation-phase transition.
-- Recover older implementation stages from native continuation attempts or retained
-  implementation handoffs, preserving the issue, assessment, and execution receipts.
-  A plan, default mode, or publication-only request is not evidence of implementation.
+- Retain explicit implementation stages across interrupted current workflows, preserving
+  the issue, assessment, and execution receipts. A plan, default mode, publication-only
+  request, or historical execution payload is not evidence of an implementation stage.
 - Require direct user direction or verified approved feedback when it supplies a missing Plan-to-Work
   transition. Do not require another operator follow-up, implementation handoff, or
   publication grant once work is authorized. A newer conversation turn requires
@@ -71,8 +71,8 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
 - A live Plan-to-Auto change requests a missing decision in the existing chat using
   the retained assessment. Preserve its original receipts; neither requesting nor
   receiving the turn grants implementation without a verified Work decision.
-- Auto results use `decision.mode: plan|work`; interpret older `wait|proceed`
-  receipts without rewriting their contents or digests.
+- Auto results use `decision.mode: plan|work`. Historical `wait|proceed` payloads
+  are not executable workflow state.
 - Preserve actual execution facts: selected native model/effort, consumed stage
   inputs, assessment results, source revisions, cancellations, and submission
   receipts. Live policy does not undo completed work or automatically terminate

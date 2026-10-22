@@ -369,7 +369,7 @@ describe('agent/openclaw-notifications', () => {
       if (json) {
         const result = JSON.parse(events[0]!.text);
         assert.equal(result.status, 'ready');
-        assert.equal(result.warnings[0].fieldPath, '/github/notifications/review-request');
+        assert.equal(result.warnings[0].fieldPath, '/github/review-request');
         assert.equal(result.diagnosticCode, undefined);
       } else {
         assert.equal((events[1]!.text.match(/messages/g) ?? []).length, 1);
@@ -406,28 +406,6 @@ describe('agent/openclaw-notifications', () => {
     });
     assert.equal(result.status, 'completed');
     assert.equal(result.observation.items[0]?.workflow?.conversation, 'issue-chat');
-    delete r.sessionCreation;
-    r.native = {
-      sessionKey: 'issue-chat',
-      sessionId: 'session',
-      runId: 'run',
-      sourceSessionId: 'coordinator',
-      toolCallId: 'tool',
-    };
-    r.effective = { status: 'verified' };
-    r.setupComplete = true;
-    result = await f.service.wait(f.manifest, '/workspace', {
-      selector,
-      target: 'prepared',
-      timeoutMs: 1,
-      refresh: false,
-    });
-    assert.equal(
-      result.status,
-      'completed',
-      'retained verified native bindings must remain observable',
-    );
-
     r.phase = 'assessing';
     result = await f.service.wait(f.manifest, '/workspace', {
       selector,
@@ -677,7 +655,7 @@ describe('agent/openclaw-notifications', () => {
     for (const change of ['disabled', 'inactive', 'stale', 'runtime', 'mode']) {
       const f = fixture();
       const policy = f.manifest.github!.notifications!;
-      assert.ok(policy.schemaVersion === 2);
+      assert.ok(policy.schemaVersion === 3);
       if (change === 'disabled') policy.issueAssignment!.enabled = false;
       if (change === 'inactive') f.state = undefined;
       if (change === 'stale') f.state!.policyDigest = 'old';

@@ -20,6 +20,7 @@ export default async function reconcileCodexLifecycle(
   pluginData: string,
   deps: CodexDispatchDependencies,
   inventory?: unknown,
+  manual?: { id: string; caller: string },
 ) {
   const current = await selectCodexIntake(pluginData, deps);
   let cleanupManifest = current.manifest;
@@ -40,7 +41,8 @@ export default async function reconcileCodexLifecycle(
       (record) =>
         !record.retired &&
         !record.reset &&
-        ((record.lifecycleCheckedAt ?? -Infinity) + 60_000 <= now ||
+        (manual?.id === record.id ||
+          (record.lifecycleCheckedAt ?? -Infinity) + 60_000 <= now ||
           record.retirement?.archiveAttempt ||
           record.retirement?.code === 'retirement-native-inventory-required'),
     )
@@ -53,16 +55,29 @@ export default async function reconcileCodexLifecycle(
     false,
     true,
   );
-  if (caller !== activation.sourceThreadId) throw new Error('dispatch-intake-caller-required');
+  if (!manual && caller !== activation.sourceThreadId)
+    throw new Error('dispatch-intake-caller-required');
   const connection = deps.native
     ? undefined
     : await connectCodexThreads(current.workspace, current.codexHome);
   const native = deps.native ?? codexDispatchNative(connection!.request);
   try {
-    const occurrence = await native.occurrence(caller);
+    if (!caller || (manual && manual.caller !== caller))
+      throw new Error('dispatch-native-caller-required');
+    const occurrence = manual
+      ? { id: (await native.operatorInput(caller)).turnId }
+      : await native.occurrence(caller);
     const admitted = await current.store.read();
     if (!admitted) throw new Error('dispatch-policy-reconciliation-required');
     return await store.exclusive(async (state, save, signal) => {
+      const target = manual && state.records.find((record) => record.id === manual.id);
+      if (
+        manual &&
+        (!target ||
+          target.sourceThreadId !== activation.sourceThreadId ||
+          target.retirement?.operatorRequest?.targetId !== target.id)
+      )
+        throw new Error('dispatch-retire-target-mismatch');
       let prepared: { id: string; request: RetirementArchiveRequest } | undefined;
       let needsInventory = false;
       const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
@@ -73,10 +88,13 @@ export default async function reconcileCodexLifecycle(
         admitted: admitted.records,
         policy: current.policy!,
         client,
-        owner: caller,
+        owner: activation.sourceThreadId,
+        targetId: manual?.id,
         now,
         save,
         fresh: async () => {
+          if (manual && (await native.operatorInput(caller)).turnId !== occurrence.id)
+            throw new Error('dispatch-native-caller-changed');
           const selected = await selectCodexIntake(pluginData, deps);
           cleanupManifest = selected.manifest;
           const live = retainedIntakePolicy(selected.manifest, admitted, 'codex');
@@ -91,7 +109,7 @@ export default async function reconcileCodexLifecycle(
           );
           if (
             selected.store.location.scope !== current.store.location.scope ||
-            verified.sourceThreadId !== caller
+            verified.sourceThreadId !== activation.sourceThreadId
           )
             throw new Error('retirement-workflow-changed');
         },
@@ -116,10 +134,13 @@ export default async function reconcileCodexLifecycle(
             if (
               reader &&
               (await reader.archiveOutcome(
-                caller,
+                record.retirement.archiveAttempt.sourceThreadId ?? record.sourceThreadId,
                 threadId,
                 record.retirement.archiveAttempt,
-                occurrence.id,
+                (record.retirement.archiveAttempt.sourceThreadId ?? record.sourceThreadId) ===
+                  caller
+                  ? occurrence.id
+                  : undefined,
               )) === 'unsubmitted'
             ) {
               delete record.retirement.archiveAttempt;
@@ -128,7 +149,9 @@ export default async function reconcileCodexLifecycle(
           }
           return {
             archived: found.archived === true,
-            idle: Boolean(found.turnEnded && ['idle', 'notLoaded'].includes(found.status)),
+            idle:
+              threadId !== caller &&
+              Boolean(found.turnEnded && ['idle', 'notLoaded'].includes(found.status)),
             activityId: found.turnId,
           };
         },
@@ -154,7 +177,7 @@ export default async function reconcileCodexLifecycle(
         cleanup: async (record, intake, fresh, shared, observed) => {
           if (!record.request && !record.worktree) return { archived: true, worktreeRemoved: true };
           if (prepared) return { archived: false, worktreeRemoved: false };
-          if (state.run?.id === occurrence.id && state.run.actions >= 12)
+          if (!manual && state.run?.id === occurrence.id && state.run.actions >= 12)
             return {
               archived: false,
               worktreeRemoved: false,
@@ -169,6 +192,7 @@ export default async function reconcileCodexLifecycle(
             inventory,
             now,
             turnId: occurrence.id,
+            sourceThreadId: caller,
             native:
               deps.retirementNative ??
               codexRetirementNative(async (method, params) => {
@@ -180,8 +204,11 @@ export default async function reconcileCodexLifecycle(
             save,
           });
           if ('request' in result && result.request) {
-            if (state.run?.id !== occurrence.id) state.run = { ...occurrence, actions: 0 };
-            state.run.actions++;
+            if (!manual) {
+              if (state.run?.id !== occurrence.id)
+                state.run = { ...(await native.occurrence(caller)), actions: 0 };
+              state.run.actions++;
+            }
             prepared = { id: record.id, request: result.request };
             await save();
           }
@@ -194,8 +221,15 @@ export default async function reconcileCodexLifecycle(
       if (needsInventory)
         return {
           status: 'retirement-inventory-required',
+          ...(target ? { id: target.id, retirement: target.retirement } : {}),
           instructions:
-            'Call native list_threads and pass its complete parsed JSON object as threads to dispatch next. Do not archive a chat without a retirement-prepared request.',
+            'Call native list_threads and pass its complete parsed JSON object as threads to the same retire preview/apply request (or dispatch next from intake). Do not archive a chat without a retirement-prepared request.',
+        };
+      if (target)
+        return {
+          status: target.retired ? 'retired' : target.retirement ? 'retirement-pending' : 'active',
+          id: target.id,
+          retirement: target.retirement,
         };
     });
   } finally {

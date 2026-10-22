@@ -66,17 +66,15 @@ describe('agent/codex-feedback', () => {
         agent: { id: 'receiver' },
         github: {
           username: 'receiver',
-          notifications: {
-            'schema-version': 2,
-            runtimes: ['codex'],
-            'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
-            'issue-assignment': {
-              mode: 'plan',
-              allowed: [
-                { login: 'receiver', 'node-id': 'U_receiver' },
-                { login: commenter.login, 'node-id': commenter.nodeId },
-              ],
-            },
+          'schema-version': 3,
+          runtimes: ['codex'],
+          'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+          'issue-assignment': {
+            mode: 'plan',
+            allowed: [
+              { login: 'receiver', 'node-id': 'U_receiver' },
+              { login: commenter.login, 'node-id': commenter.nodeId },
+            ],
           },
         },
       }),
@@ -127,6 +125,7 @@ describe('agent/codex-feedback', () => {
         worktree,
         effective: { status: 'verified', model: 'model', effort: 'high' },
         project: { id: 'project', path: source, commonDir, ref: 'main', commit: 'a'.repeat(40) },
+        reservationVersion: 1,
         request: {
           title: 'issue',
           prompt: 'assessment',
@@ -242,7 +241,7 @@ describe('agent/codex-feedback', () => {
   async function feedbackMode(mode: 'plan' | 'work' | 'auto') {
     const path = join(root, 'workspace', 'agent.yaml');
     const manifest = JSON.parse(await readFile(path, 'utf8'));
-    manifest.github.notifications['issue-assignment'].mode = mode;
+    manifest.github['issue-assignment'].mode = mode;
     await writeFile(path, JSON.stringify(manifest));
   }
   for (const mode of ['plan', 'auto'] as const)
@@ -445,7 +444,9 @@ describe('agent/codex-feedback', () => {
   it('should retain the previous policy check even when feedback discovery is cached', async () => {
     const path = join(root, 'workspace', 'agent.yaml');
     const manifest = JSON.parse(await readFile(path, 'utf8'));
-    manifest.github.notifications['issue-assignment'].feedback = false;
+    const previousActors = manifest.github['issue-assignment'].allowed;
+    manifest.github['issue-assignment'].allowed = [];
+    manifest.github['issue-assignment'].reviewers = [];
     await writeFile(path, JSON.stringify(manifest));
     await call('next');
     const first = deps.now!();
@@ -454,7 +455,7 @@ describe('agent/codex-feedback', () => {
     // the same native occurrence reuses discovery, but must still save the policy check.
     await call('next');
     assert.equal((await store.read()).records[0]!.feedback!.admission?.observedAt, now);
-    manifest.github.notifications['issue-assignment'].feedback = true;
+    manifest.github['issue-assignment'].allowed = previousActors;
     await writeFile(path, JSON.stringify(manifest));
     now += 1000;
     await call('next');
@@ -589,15 +590,15 @@ describe('agent/codex-feedback', () => {
     turn = 'feedback';
     const path = join(root, 'workspace', 'agent.yaml');
     const manifest = JSON.parse(await readFile(path, 'utf8'));
-    manifest.github.notifications['issue-assignment'].enabled = false;
-    manifest.github.notifications['allowed-repository-owners'] = [
+    manifest.github['issue-assignment'].paused = true;
+    manifest.github['allowed-repository-owners'] = [
       { login: 'elsewhere', 'node-id': 'O_elsewhere' },
     ];
     await writeFile(path, JSON.stringify(manifest));
     const paused = await call('context', ref, true);
     assert.equal(paused.status, 'verified', JSON.stringify(paused));
     assert.equal((await store.read()).records[0]!.feedback!.events[0]!.id, ref.eventId);
-    manifest.github.notifications['issue-assignment'].enabled = true;
+    manifest.github['issue-assignment'].paused = false;
     await writeFile(path, JSON.stringify(manifest));
     const context = await call('context', ref, true);
     assert.equal(context.status, 'verified', JSON.stringify(context));
@@ -861,8 +862,7 @@ describe('agent/codex-feedback', () => {
       const path = join(root, 'workspace', 'agent.yaml');
       const manifest = JSON.parse(await readFile(path, 'utf8'));
       manifest.debug = !debug;
-      manifest.github.notifications['issue-assignment'].feedback = {
-        inherit: true,
+      manifest.github['issue-assignment'].feedback = {
         skill: 'custom:latin',
         guidance: 'Base guidance.',
       };
@@ -872,9 +872,7 @@ describe('agent/codex-feedback', () => {
         overlayPath,
         JSON.stringify({
           github: {
-            notifications: {
-              'issue-assignment': { feedback: { guidance: 'Use concise phrasing.' } },
-            },
+            'issue-assignment': { feedback: { guidance: 'Use concise phrasing.' } },
           },
         }),
       );
@@ -935,11 +933,10 @@ describe('agent/codex-feedback', () => {
     await recordReply(ref, 'Private answer.', 'Public answer.');
     const path = join(root, 'workspace', 'agent.yaml');
     const manifest = JSON.parse(await readFile(path, 'utf8'));
-    manifest.github.notifications['issue-assignment'].mode = 'work';
-    manifest.github.notifications['issue-assignment'].implementation = {
+    manifest.github['issue-assignment'].mode = 'work';
+    manifest.github['issue-assignment'].implementation = {
       skill: 'custom:implementation',
     };
-    manifest.github.notifications.cleanup = { enabled: false, 'grace-minutes': 5 };
     await writeFile(path, JSON.stringify(manifest));
     const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
     const activation = deps.activation!;
@@ -1397,12 +1394,10 @@ describe('agent/codex-feedback', () => {
         agent: { id: 'receiver' },
         github: {
           username: 'receiver',
-          notifications: {
-            'schema-version': 2,
-            runtimes: ['codex'],
-            'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
-            'issue-assignment': { allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }] },
-          },
+          'schema-version': 3,
+          runtimes: ['codex'],
+          'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+          'issue-assignment': { allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }] },
         },
       }),
     );

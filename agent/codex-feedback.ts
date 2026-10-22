@@ -1,3 +1,5 @@
+import { githubWorkflowPath } from '../channels/github/workflow-policy.ts';
+import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import codexReply from './codex-reply.ts';
 import feedbackComposition from './feedback-composition.ts';
@@ -233,6 +235,11 @@ export default async function runCodexFeedback(
       const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
         current.workspace,
         signal,
+      );
+      await new GitHubIdentityCache(current.store.location).resolve(
+        current.manifest.github?.notifications,
+        provider.client,
+        'feedback',
       );
       const records = state.records.filter(
         (record) =>
@@ -837,7 +844,10 @@ export default async function runCodexFeedback(
                 debug: current.manifest.debug,
                 manifestPath:
                   current.manifestSources?.[
-                    '/github/notifications/issue-assignment/feedback/guidance'
+                    githubWorkflowPath(
+                      current.manifest.github?.notifications,
+                      'issue-assignment/feedback/guidance',
+                    )
                   ]?.path ?? current.manifestPath,
                 workspace: current.workspace,
                 privateText: event.result.privateText,
@@ -919,7 +929,10 @@ export default async function runCodexFeedback(
                       debug: current.manifest.debug,
                       manifestPath:
                         current.manifestSources?.[
-                          '/github/notifications/issue-assignment/feedback/guidance'
+                          githubWorkflowPath(
+                            current.manifest.github?.notifications,
+                            'issue-assignment/feedback/guidance',
+                          )
                         ]?.path ?? current.manifestPath,
                       workspace: current.workspace,
                       privateText: event.result.privateText,

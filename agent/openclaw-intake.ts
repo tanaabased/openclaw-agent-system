@@ -1,3 +1,4 @@
+import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 import { realpath } from 'node:fs/promises';
 
@@ -53,6 +54,7 @@ export default class OpenClawIntake {
         resetRoot: this.dependencies.resetRoot,
       }),
     );
+    await new GitHubIdentityCache(store.location).hydrate(manifest.github?.notifications);
     return { selected, store, workspace };
   }
   async readiness(manifest: AgentManifest, workspace: string) {
@@ -128,7 +130,6 @@ export default class OpenClawIntake {
       agentId: manifest.agent.id,
       policy: selected.policy,
       policyDigest: selected.digest,
-      legacyPolicyDigest: selected.legacyDigest,
       now: (this.dependencies.now ?? Date.now)(),
       activate: action === 'activate',
       selector,
@@ -150,6 +151,11 @@ export default class OpenClawIntake {
           { manifest, workspaceDir: workspace },
           AbortSignal.any([lockSignal, deadline, budget.signal, ...(signal ? [signal] : [])]),
         );
+        await new GitHubIdentityCache(store.location).resolve(
+          selected.policy,
+          client,
+          'assignment',
+        );
         const pin = selected.policy.issueAssignment?.allowed.find(
           (a) => a.login.toLowerCase() === selected.username.toLowerCase(),
         );
@@ -165,7 +171,7 @@ export default class OpenClawIntake {
   contribution(): AgentSystemLifecycleContribution {
     return {
       id: 'github-intake',
-      isConfigured: (manifest) => manifest.github?.notifications?.schemaVersion === 2,
+      isConfigured: (manifest) => Boolean(manifest.github?.notifications),
       validate: ({ manifest }) => {
         const diagnostics = githubNotificationRuntimeDiagnostics(
           manifest.github?.notifications,

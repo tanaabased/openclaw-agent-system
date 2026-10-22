@@ -16,7 +16,7 @@ export default function liveWorkflowPolicy(
       ? 'implementation-disabled'
       : undefined;
   if (effect !== 'assignment') return;
-  if (policy?.schemaVersion !== 2 || !policy.runtimes.includes(runtime)) return 'workflow-disabled';
+  if (!policy || !policy.runtimes.includes(runtime)) return 'workflow-disabled';
   if (!policy.issueAssignment) return 'issue-workflow-disabled';
   if (
     !policy.allowedRepositoryOwners.some((owner) =>

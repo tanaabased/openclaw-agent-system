@@ -28,13 +28,24 @@ function fixture(): AgentManifest {
 }
 
 describe('assignment intake policy', () => {
+  it('should retain required schedules with an empty admission list and no review-only activation', () => {
+    const manifest = fixture();
+    manifest.github!.notifications!.issueAssignment!.allowed = [];
+    assert.equal(codexIntakeJobs(manifest).length, 1);
+    assert.equal(openclawIntakeJobs(manifest).length, 1);
+    manifest.github!.notifications!.reviewRequest = { allowed: [] };
+    delete manifest.github!.notifications!.issueAssignment;
+    assert.equal(codexIntakeJobs(manifest).length, 0);
+    assert.equal(openclawIntakeJobs(manifest).length, 0);
+  });
+
   it('should retain old opt-out hash provenance without carrying cleanup into live authority', () => {
     const manifest = fixture();
     const active = assignmentIntakePolicy(manifest, 'openclaw')!;
     manifest.cleanupMigration = { declaration: { enabled: false, 'grace-minutes': 17 } };
     const migration = assignmentIntakePolicy(manifest, 'openclaw')!;
     assert.equal(migration.digest, active.digest);
-    assert.notEqual(migration.legacyDigest, active.legacyDigest);
+    assert.deepEqual(migration, active);
     assert.equal(Object.hasOwn(migration.policy, 'cleanup'), false);
     delete manifest.cleanupMigration;
     assert.deepEqual(assignmentIntakePolicy(manifest, 'openclaw'), active);

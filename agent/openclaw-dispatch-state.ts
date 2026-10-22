@@ -14,21 +14,6 @@ import { openclawFeedbackSchema } from './openclaw-feedback-state.ts';
 import { openclawWorkStateSchema } from './openclaw-work-state.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
-// retained only to read existing receipts and prevent duplicate issue sessions.
-const legacyCreationSchema = Type.Object(
-  {
-    task: Type.String({ minLength: 1, maxLength: 128000 }),
-    label: text,
-    cwd: text,
-    model: text,
-    runtime: Type.Literal('subagent'),
-    visible: Type.Literal(true),
-    cleanup: Type.Literal('keep'),
-    group: Type.Optional(text),
-    expectsCompletionMessage: Type.Optional(Type.Literal(false)),
-  },
-  { additionalProperties: false },
-);
 const sessionCreationRequestSchema = Type.Object(
   {
     key: text,
@@ -72,7 +57,7 @@ export const openclawDispatchRecordSchema = Type.Object(
       ),
     ),
     feedback: Type.Optional(openclawFeedbackSchema),
-    request: Type.Optional(Type.Union([legacyCreationSchema, sessionCreationRequestSchema])),
+    request: Type.Optional(sessionCreationRequestSchema),
     claimId: Type.Optional(Type.Integer({ minimum: 1 })),
     claimAccepted: Type.Optional(Type.Boolean()),
     sessionCreation: Type.Optional(
@@ -113,16 +98,6 @@ export const openclawDispatchRecordSchema = Type.Object(
     assessmentCaller: Type.Optional(
       Type.Object({ runId: text, inputEventId: text }, { additionalProperties: false }),
     ),
-    creationCall: Type.Optional(
-      Type.Object(
-        {
-          runId: text,
-          sessionId: text,
-          toolCallId: text,
-        },
-        { additionalProperties: false },
-      ),
-    ),
     blocker: Type.Optional(text),
     failureStage: Type.Optional(
       Type.Union([
@@ -136,52 +111,6 @@ export const openclawDispatchRecordSchema = Type.Object(
         Type.Literal('first-turn'),
         Type.Literal('assessment-turn'),
       ]),
-    ),
-    setupComplete: Type.Optional(Type.Boolean()),
-    setupObservation: Type.Optional(
-      Type.Object(
-        {
-          sessionKey: text,
-          sessionId: text,
-          runId: text,
-          success: Type.Boolean(),
-        },
-        { additionalProperties: false },
-      ),
-    ),
-    continuation: Type.Optional(
-      Type.Object(
-        {
-          message: text,
-          issuedAt: Type.Integer({ minimum: 0 }),
-          sourceRunId: Type.Optional(text),
-          runId: Type.Optional(text),
-          toolCallId: Type.Optional(text),
-        },
-        { additionalProperties: false },
-      ),
-    ),
-    execution: Type.Optional(
-      Type.Object(
-        {
-          runId: text,
-          model: text,
-          effort: text,
-        },
-        { additionalProperties: false },
-      ),
-    ),
-    native: Type.Optional(
-      Type.Object(
-        {
-          sessionKey: text,
-          sessionId: text,
-          runId: text,
-          sourceSessionId: text,
-          toolCallId: text,
-        },
-        { additionalProperties: false },
-      ),
     ),
   },
   { additionalProperties: false },
@@ -229,9 +158,14 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
       runtime: 'openclaw',
       recordSchema: openclawDispatchRecordSchema,
       validRecord: (record) => {
+        if (
+          record.feedback?.events.some((event) => event.work?.result) &&
+          record.progression?.stage !== 'implementation'
+        )
+          return false;
         if (record.claimAccepted && (!record.claimId || !record.sessionCreation?.verified))
           return false;
-        if (record.request && 'key' in record.request) {
+        if (record.request) {
           return Boolean(
             (!record.feedback ||
               record.feedback.events.length === 0 ||
@@ -265,17 +199,12 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
                 }))) &&
             (!record.work ||
               ((record.progression?.stage === 'implementation' ||
-                (record.handoff && record.result?.outcome === 'plan-ready')) &&
+                ((record.work.publication || record.work.delivery) &&
+                  !record.work.implementation)) &&
                 record.work.assessmentDigest === record.stageReceipt?.resultDigest &&
                 validWorkTurns(record))) &&
             record.sessionCreation &&
             record.worktree === record.request.cwd &&
-            !record.native &&
-            !record.creationCall &&
-            !record.setupObservation &&
-            !record.setupComplete &&
-            !record.continuation &&
-            !record.execution &&
             [
               'creating',
               'created',
@@ -325,40 +254,17 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
             (record.phase !== 'created' || record.sessionCreation.verified),
           );
         }
-        return (
-          (!record.feedback || (!record.request && record.feedback.events.length === 0)) &&
+        return Boolean(
+          (!record.feedback || record.feedback.events.length === 0) &&
           !record.work &&
           !record.sessionCreation &&
           !record.firstTurn &&
           !record.assessmentTurn &&
           !record.decisionTurn &&
           !record.assessmentCaller &&
-          record.phase !== 'created' &&
-          (!record.request || record.worktree === record.request.cwd) &&
-          (!record.creationCall || Boolean(record.request)) &&
-          (!record.native ||
-            Boolean(
-              record.request &&
-              record.creationCall &&
-              record.threadId === record.native.sessionKey &&
-              record.creationCall.sessionId === record.native.sourceSessionId &&
-              record.creationCall.toolCallId === record.native.toolCallId,
-            )) &&
-          (!record.setupComplete ||
-            Boolean(
-              record.native &&
-              record.setupObservation?.success &&
-              record.setupObservation.sessionKey === record.native.sessionKey &&
-              record.setupObservation.sessionId === record.native.sessionId &&
-              record.setupObservation.runId === record.native.runId,
-            )) &&
-          (!record.continuation || Boolean(record.setupComplete && record.effective)) &&
-          (!record.execution || Boolean(record.continuation?.runId && record.effective)) &&
-          (!record.effective || Boolean(record.native && record.effective.status === 'verified')) &&
-          (!['assessing', 'complete'].includes(record.phase) ||
-            Boolean(
-              record.native && record.effective && record.setupComplete && record.continuation,
-            ))
+          !record.effective &&
+          !record.result &&
+          !['creating', 'created', 'assessing', 'complete'].includes(record.phase),
         );
       },
     });

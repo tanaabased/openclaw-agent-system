@@ -6,8 +6,8 @@ Verify notification activation compatibility, native channel readiness and a saf
 
 Strict AIMock reuses the issue assessment protocol with a per-receipt release barrier. This job owns its three issues, agent workspaces, native state and SSH registration; it consumes no other job's resources. Scoped refreshes and a 24-hour schedule isolate discovery. Only Tanaabot receives assignments. Failed activation retains diagnostics. Cleanup stops the Gateway before closing its issues or revoking its key.
 
-Tanaabot omits the notification schema version so installation and intake exercise
-the default version `2` through the packed plugin.
+Tanaabot uses V3 object identities so installation and intake preserve the supplied
+name and node-ID pairs through the packed plugin.
 
 ## Setup
 
@@ -88,8 +88,10 @@ touch "$TMPDIR/notification-activation-ready"
 
 ```bash
 # should expose the install-managed account through the native channel status interface
+set -o pipefail
 test -f "$TMPDIR/notification-activation-ready"
-openclaw gateway call channels.status --json | jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .enabled == true and .configured == true and .mode == "readiness" and .statusState == "degraded" and .lifecycle == "ready" and .running == true and (.lastError | contains("review requests")))'
+openclaw gateway call channels.status --json | tee "$TMPDIR/intake-channel-status.json"
+jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .enabled == true and .configured == true and .mode == "readiness" and .statusState == "degraded" and .lifecycle == "ready" and .running == true and (.lastError | contains("review requests")))' "$TMPDIR/intake-channel-status.json"
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false and .accounts["intake-tanaabot"].enabled == true'
 
 # should pause and resume the same scheduler job through native and manifest controls
@@ -99,7 +101,7 @@ native=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId'
 openclaw cron edit "$native" --disable --json | jq -e '.enabled == false'
 openclaw cron edit "$native" --enable --json | jq -e '.enabled == true'
 cp agent.yaml "$TMPDIR/intake-active-agent.yaml"
-sed 's/    issue-assignment:/    issue-assignment:\n      paused: true/' "$TMPDIR/intake-active-agent.yaml" > agent.yaml
+sed 's/  issue-assignment:/  issue-assignment:\n    paused: true/' "$TMPDIR/intake-active-agent.yaml" > agent.yaml
 openclaw agent-system install --yes --json | jq -e 'all(.outcomes[]; .code != "session-dispatch-enrolled")'
 openclaw agent-system automations list --json | jq -e --arg id "$native" 'any(.jobs[]; .id == "github-issue-assignment" and .nativeId == $id and .nativeEnabled == false)'
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["intake-tanaabot"].enabled == true'
@@ -127,6 +129,7 @@ cp "$TMPDIR/notification-issue-1.json" "$TMPDIR/notification-issue.json"
 
 # should start three native assessments in one automation run before any plan completes
 cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
+printf '\ndebug: true\n' >> agent.yaml
 for slot in 1 2 3; do
   number=$(jq -er .number "$TMPDIR/notification-issue-$slot.json")
   openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number "$number" --json | jq -e '.status == "completed"'
@@ -153,6 +156,11 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 jq -es '[.[].records[]] | length == 3 and all(.[]; .assessmentTurn.status == "completed" and .result.outcome == "plan-ready")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
+# should present stage-specific instructions through the shared debug card from the live manifest
+for conversation in $(jq -r '.[].threadId' "$TMPDIR/notification-started.json"); do
+  openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e '[.messages[] | select(.role == "assistant") | (.content | if type == "string" then . else map(.text // "") | join("") end)] | any(.[]; contains("🔬 Debug") and contains("Assessment instructions") and contains("Skill"))'
+done
+
 # should retain complete results and native bindings for all three owners
 cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
 for slot in 1 2 3; do
@@ -164,6 +172,8 @@ openclaw agent-system tool worktree -- list | tee "$TMPDIR/notification-worktree
 
 # should preserve all three native owners on a repeat intake scan
 cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
+sed 's/debug: true/debug: false/' agent.yaml > "$TMPDIR/intake-debug-off.yaml"
+mv "$TMPDIR/intake-debug-off.yaml" agent.yaml
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 jq -es '[.[].records[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-all-after.json"

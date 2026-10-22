@@ -42,14 +42,12 @@ const manifest = {
   models,
   github: {
     username: 'receiver',
-    notifications: {
-      'schema-version': 2,
-      runtimes: ['codex'],
-      'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
-      'issue-assignment': {
-        mode: 'plan',
-        allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
-      },
+    'schema-version': 3,
+    runtimes: ['codex'],
+    'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+    'issue-assignment': {
+      mode: 'plan',
+      allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
     },
   },
 };
@@ -86,12 +84,9 @@ describe('agent/codex-intake', () => {
         ...manifest,
         github: {
           ...manifest.github,
-          notifications: {
-            ...manifest.github.notifications,
-            'interval-minutes': 15,
-            'max-concurrent-items': 8,
-            cleanup: { enabled: true, 'grace-minutes': 30 },
-          },
+          ...manifest.github,
+          'interval-minutes': 15,
+          'max-concurrent-items': 8,
         },
       }),
     );
@@ -126,7 +121,7 @@ describe('agent/codex-intake', () => {
     assert.equal((await selected.store.read())!.baselineAt, baseline);
     assert.ok(connects > before);
   });
-  it('should reactivate despite obsolete full notification queues', async () => {
+  it('should reactivate after a retained provider blocker', async () => {
     const { client } = intakeFixture();
     let now = baseline;
     const deps = {
@@ -137,13 +132,7 @@ describe('agent/codex-intake', () => {
     };
     await runCodexIntake(pluginData, true, deps);
     const { store } = await selectCodexIntake(pluginData, deps);
-    const cards = Array.from({ length: 100 }, (_, i) => ({
-      id: i.toString(16).padStart(64, '0'),
-      message: 'pending card',
-      notify: false,
-    }));
     await store.exclusive(async (state, save) => {
-      state!.notices = cards;
       state!.blocker = {
         code: 'intake-provider-unavailable',
         since: now,
@@ -157,12 +146,10 @@ describe('agent/codex-intake', () => {
     assert.equal('recovered' in result && result.recovered, true);
     const activated = (await store.read())!;
     assert.equal(activated.blocker, undefined);
-    assert.equal(activated.noticePending, undefined);
-    assert.equal(activated.notices, undefined);
     assert.equal((await runCodexIntake(pluginData, false, deps)).changed, false);
   });
 
-  it('should retain real activation failures independently of obsolete notifications', async () => {
+  it('should retain activation failures and provider cooldown', async () => {
     const { client } = intakeFixture();
     const deps = {
       codexHome,
@@ -171,15 +158,6 @@ describe('agent/codex-intake', () => {
       connect: async () => client,
     };
     await runCodexIntake(pluginData, true, deps);
-    const { store } = await selectCodexIntake(pluginData, deps);
-    await store.exclusive(async (state, save) => {
-      state!.notices = Array.from({ length: 100 }, (_, i) => ({
-        id: i.toString(16).padStart(64, '0'),
-        message: 'pending card',
-        notify: false,
-      }));
-      await save(state!);
-    });
     const failure = await runCodexIntake(pluginData, true, {
       ...deps,
       connect: async () => {
@@ -188,11 +166,6 @@ describe('agent/codex-intake', () => {
     });
     assert.equal(failure.status, 'blocked');
     assert.equal('code' in failure && failure.code, 'intake-provider-unavailable');
-    assert.equal((await store.read())!.noticePending, undefined);
-    await store.exclusive(async (state, save) => {
-      state!.notices = [];
-      await save(state!);
-    });
     const cooldown = await runCodexIntake(pluginData, false, {
       ...deps,
       connect: async () => {
@@ -200,11 +173,9 @@ describe('agent/codex-intake', () => {
       },
     });
     assert.equal(cooldown.changed, false);
-    assert.equal((await store.read())!.noticePending, undefined);
-    assert.equal((await store.read())!.notices, undefined);
   });
 
-  it('should retain disabled policy evidence without a notification queue', async () => {
+  it('should retain disabled policy evidence without clearing assignments', async () => {
     const { client } = intakeFixture();
     const deps = {
       codexHome,
@@ -214,14 +185,6 @@ describe('agent/codex-intake', () => {
     };
     await runCodexIntake(pluginData, true, deps);
     const { store } = await selectCodexIntake(pluginData, deps);
-    await store.exclusive(async (state, save) => {
-      state!.notices = Array.from({ length: 100 }, (_, i) => ({
-        id: i.toString(16).padStart(64, '0'),
-        message: 'pending card',
-        notify: false,
-      }));
-      await save(state!);
-    });
     const before = (await store.read())!;
     await writeFile(
       join(workspace, 'agent.yaml'),
@@ -235,9 +198,7 @@ describe('agent/codex-intake', () => {
     });
     assert.equal('code' in denied && denied.code, 'intake-policy-disabled');
     const after = (await store.read())!;
-    assert.equal(after.noticePending, undefined);
     assert.deepEqual(after.records, before.records);
-    assert.deepEqual(after.notices, before.notices);
     assert.equal(after.checkpoint, before.checkpoint);
   });
 
@@ -271,9 +232,6 @@ describe('agent/codex-intake', () => {
     assert.equal(recovered.notice?.severity, 'info');
     assert.equal(recovered.notice?.notify, true);
     assert.equal((await runCodexIntake(pluginData, false, deps)).changed, false);
-    const current = await selectCodexIntake(pluginData, deps);
-    const saved = await current.store.read();
-    assert.equal(saved?.notices, undefined);
   });
 
   it('should validate native account responses through the shared provider boundary', async () => {
@@ -363,7 +321,7 @@ describe('agent/codex-intake', () => {
     await runCodexIntake(pluginData, true, deps);
     const before = await inspectCodexIntake(pluginData, deps);
     const disabled = structuredClone(manifest);
-    Object.assign(disabled.github.notifications['issue-assignment'], { enabled: false });
+    Object.assign(disabled.github['issue-assignment'], { paused: true });
     fixture.events[0]!.createdAt = new Date(baseline + 1000).toISOString();
     const raced = await runCodexIntake(pluginData, false, {
       ...deps,
@@ -530,7 +488,7 @@ describe('agent/codex-intake', () => {
     }
     if (legacy) {
       const selected = await selectCodexIntake(pluginData, deps);
-      assert.notEqual(selected.policy!.digest, selected.policy!.legacyDigest);
+      assert.notEqual(selected.policy!.digest, 'previous-policy');
       const originalPrompt = prepared.request.prompt.replace(
         selected.policy!.digest,
         originalIntakeDigest(selected.manifest),
@@ -540,10 +498,7 @@ describe('agent/codex-intake', () => {
         (await inspectCodexDispatchActivation(pluginData, deps)).sourceThreadId,
         'intake-thread',
       );
-      const oldPrompt = prepared.request.prompt.replace(
-        selected.policy!.digest,
-        selected.policy!.legacyDigest,
-      );
+      const oldPrompt = prepared.request.prompt.replace(selected.policy!.digest, 'previous-policy');
       const file = (await readdir(pluginData)).find(
         (name) => name.startsWith('codex-automations-') && name.endsWith('.json'),
       )!;
@@ -561,11 +516,11 @@ describe('agent/codex-intake', () => {
         ['assessment-summary'],
       );
       await selected.store.exclusive(async (state, save) => {
-        state!.policyDigest = selected.policy!.legacyDigest;
+        state!.policyDigest = 'previous-policy';
         await save(state!);
       });
       assert.equal((await inspectCodexIntake(pluginData, deps)).status, 'ready');
-      assert.equal((await selected.store.read())!.policyDigest, selected.policy!.legacyDigest);
+      assert.equal((await selected.store.read())!.policyDigest, 'previous-policy');
       await runCodexIntake(pluginData, false, {
         ...deps,
         ...deps.intake,
@@ -649,7 +604,7 @@ describe('agent/codex-intake', () => {
     if (disable === 'workflow disable') {
       for (const mode of ['work', 'auto']) {
         const work = structuredClone(manifest);
-        Object.assign(work.github.notifications['issue-assignment'], {
+        Object.assign(work.github['issue-assignment'], {
           mode,
           implementation: { skill: 'company:implement' },
         });
@@ -671,7 +626,7 @@ describe('agent/codex-intake', () => {
       }
     }
     const disabled = structuredClone(manifest);
-    Object.assign(disabled.github.notifications['issue-assignment'], { enabled: false });
+    Object.assign(disabled.github['issue-assignment'], { paused: true });
     await writeFile(
       join(workspace, 'agent.yaml'),
       disable === 'manifest corruption' ? '{broken' : JSON.stringify(disabled),
@@ -756,7 +711,7 @@ describe('agent/codex-intake', () => {
   }
   it('should retain legacy codex schedule consent and upgrade intake without reactivation', async () => {
     const value = structuredClone(manifest);
-    value.github.notifications.runtimes = ['openclaw', 'codex'];
+    value.github.runtimes = ['openclaw', 'codex'];
     await checkReconciliation('workflow disable', value, true);
   });
   for (const disable of ['manifest corruption', 'workflow disable'] as const)

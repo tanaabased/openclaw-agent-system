@@ -1,3 +1,4 @@
+import retireOpenClawTask from './openclaw-dispatch-retirement.ts';
 import pendingPublicResponse from './pending-public-response.ts';
 import openClawReply from './openclaw-reply.ts';
 import type { Static } from 'typebox';
@@ -97,6 +98,16 @@ export default class OpenClawDispatch {
     operator = false,
     authority: DispatchAuthority = {},
   ) {
+    if (input.action === 'retire')
+      return retireOpenClawTask({
+        service: this.context,
+        manifest,
+        workspace,
+        caller,
+        input,
+        operator,
+        authority,
+      });
     if (input.action === 'reply')
       return openClawReply({
         manifest,

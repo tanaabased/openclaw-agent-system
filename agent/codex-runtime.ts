@@ -1,3 +1,4 @@
+import githubV3Migration from '../manifest/github-v3-migration.ts';
 import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
 import runCodexNotificationReset from './codex-notification-reset.ts';
 import runCodexFeedback from './codex-feedback.ts';
@@ -244,6 +245,19 @@ async function readWorkflowCommand(route: string, args: string[]) {
 
 export async function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
   const command = args[0];
+  if (command === 'migrate-github') {
+    const inspection = await inspectCodexWorkspaceBinding(parsePluginData(args.slice(1)));
+    if (
+      inspection.status !== 'bound' ||
+      inspection.preview.status !== 'ready' ||
+      inspection.preview.manifest.status !== 'loaded'
+    )
+      throw new Error('migration-manifest-unavailable');
+    const result = githubV3Migration(inspection.preview.manifest);
+    writeJson(result);
+    if (result.resolutions.length) process.exitCode = 1;
+    return;
+  }
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
   if (command === 'instance') {
@@ -282,7 +296,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'dispatch') {
     if (args[1] === '--help') {
       process.stdout.write(
-        'Usage: dispatch <action> [<operation>] --plugin-data <path>\nRequest data is JSON on stdin with a matching or omitted action: inspect, observe-denials, next, prepare, reconcile, context, present, result, handoff, report, retry-denied, reset, or retire. Handoff previews the planning-to-implementation transition under live policy or native user direction; implementation includes ordinary PR delivery. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. Operator-only retire requires a closed issue and queues the shared retirement lifecycle while preserving evidence and the existing grace deadline. It accepts active or paused intake; configured cleanup proceeds on the next eligible active intake run. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
+        'Usage: dispatch <action> [<operation>] --plugin-data <path>\nRequest data is JSON on stdin with a matching or omitted action: inspect, observe-denials, next, prepare, reconcile, context, present, result, handoff, report, retry-denied, reset, or retire. Handoff previews the planning-to-implementation transition under live policy or native user direction; implementation includes ordinary PR delivery. Native scheduled dispatch requires authorized activation. Operator-only retry-denied requires a paused schedule and verified native rejection. Operator-only reset preserves a completed assessment whose recorded native turn finished, with no later turn, and permits reassessment only after a new assignment event. operator-only retire accepts an exact owned task, including open assigned work, and enters the existing safe retirement lifecycle immediately without eligibility wait or grace. native ownership, running work, preservation and current configuration still apply; incomplete archival or reclamation remains pending. For these operator actions, omit digest to preview, then supply the returned digest to apply. Assessment results never authorize implementation.\n',
       );
       return;
     }

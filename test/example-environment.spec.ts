@@ -25,7 +25,11 @@ describe('example environment resolution', () => {
       ['examples/openclaw-pr/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
       ['examples/openclaw-pr/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
     ] as const) {
-      const parsed = parseAgentManifest(await readFile(path, 'utf8'));
+      const parsed = parseAgentManifest(
+        (await readFile(path, 'utf8'))
+          .replaceAll('__OWNER_NODE_ID__', 'O_owner')
+          .replaceAll('__ACTOR_NODE_ID__', 'U_actor'),
+      );
       assert.equal(parsed.status, 'valid', path);
       assert.ok(parsed.manifest);
       assert.equal(parsed.manifest.environment?.op, undefined);

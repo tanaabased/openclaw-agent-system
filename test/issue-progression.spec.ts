@@ -18,11 +18,11 @@ describe('agent/issue-progression', () => {
       status: 'held',
       reason: 'auto-decision-required',
     });
-    for (const action of ['wait', 'proceed'] as const) {
-      const issue = { ...planning, result: { ...planning.result, decision: { action } } };
+    for (const mode of ['plan', 'work'] as const) {
+      const issue = { ...planning, result: { ...planning.result, decision: { mode } } };
       assert.equal(
         issueProgression(issue, { mode: 'auto', now: 20 }).status,
-        action === 'proceed' ? 'ready' : 'held',
+        mode === 'work' ? 'ready' : 'held',
       );
       assert.equal(issueProgression(issue, { mode: 'plan', now: 20 }).status, 'held');
     }
@@ -57,7 +57,7 @@ describe('agent/issue-progression', () => {
       assert.deepEqual(issueProgression(issue, { mode, now: 99, operator: true }), transition);
   });
 
-  it('should recover legacy execution without promoting waiting or publication-only records', () => {
+  it('should require an explicit stage instead of inferring it from execution receipts', () => {
     for (const execution of [
       { continuation: { attempt: { id: 'request' }, phase: 'prepared' } },
       { continuation: { binding: { turnId: 'native' }, phase: 'running' } },
@@ -65,8 +65,8 @@ describe('agent/issue-progression', () => {
       { work: { implementation: { runId: 'owner', inputEventId: 'event' } } },
     ]) {
       const issue = { ...planning, ...execution };
-      assert.deepEqual(retainedIssueProgression(issue), { stage: 'implementation', via: 'legacy' });
-      assert.equal(issueProgression(issue, { mode: 'plan', now: 99 }).status, 'ready');
+      assert.equal(retainedIssueProgression(issue), undefined);
+      assert.equal(issueProgression(issue, { mode: 'plan', now: 99 }).status, 'held');
     }
     for (const issue of [
       planning,

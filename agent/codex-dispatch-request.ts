@@ -15,7 +15,7 @@ const schemas = {
   report: object({ automationId: Type.String(), currentTimeIso: Type.String() }),
   handoff: object(recovery),
   reset: object(recovery),
-  retire: object(recovery),
+  retire: object({ ...recovery, threads: Type.Optional(Type.Unknown()) }),
   'retry-denied': object({
     ...recovery,
     approvedCallId: Type.Optional(Type.String({ pattern: '\\S' })),

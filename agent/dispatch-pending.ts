@@ -30,7 +30,11 @@ export default function pendingDispatchAssignments<R extends SharedDispatchRecor
         ? [{ intake: item, record: undefined }]
         : [];
     }
-    const retiredAt = previous?.retirement?.at ?? previous?.retired?.at ?? previous?.reset?.at;
+    const retiredAt =
+      previous?.retirement?.operatorRequest?.at ??
+      previous?.retirement?.at ??
+      previous?.retired?.at ??
+      previous?.reset?.at;
     if (previous && retiredAt !== undefined) {
       return item.id !== previous.intakeId && Date.parse(item.assignment.createdAt) > retiredAt
         ? [{ intake: item, record: undefined }]

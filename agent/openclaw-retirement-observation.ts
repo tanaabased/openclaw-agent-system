@@ -26,23 +26,15 @@ export async function observeRetiringSession(
 ) {
   if (!record.request) return undefined;
   const intent = record.request;
-  const expected =
-    'key' in intent
-      ? { key: intent.key, sessionId: record.sessionCreation?.sessionId }
-      : record.native;
   if (
-    !expected?.sessionId ||
-    !('key' in intent
-      ? record.sessionCreation?.attempted && intent.agentId === agentId
-      : record.creationCall &&
-        record.creationCall.sessionId === record.native?.sourceSessionId &&
-        record.creationCall.toolCallId === record.native?.toolCallId) ||
-    (record.threadId &&
-      record.threadId !== ('key' in expected ? expected.key : expected.sessionKey)) ||
+    !record.sessionCreation?.sessionId ||
+    !record.sessionCreation.attempted ||
+    intent.agentId !== agentId ||
+    (record.threadId && record.threadId !== intent.key) ||
     record.worktree !== intent.cwd
   )
     throw new Error('retirement-session-identity-unresolved');
-  const key = 'key' in expected ? expected.key : expected.sessionKey;
+  const key = intent.key;
   const row = retirementObject(
     retirementObject(await request('sessions.describe', { key }), 'sessions-describe').session,
     'sessions-describe-session',
@@ -50,7 +42,7 @@ export async function observeRetiringSession(
   if (
     row.key !== key ||
     row.agentId !== agentId ||
-    row.sessionId !== expected.sessionId ||
+    row.sessionId !== record.sessionCreation.sessionId ||
     (row.spawnedCwd ?? row.workspaceDir) !== record.worktree
   )
     throw new Error('retirement-session-identity-changed');

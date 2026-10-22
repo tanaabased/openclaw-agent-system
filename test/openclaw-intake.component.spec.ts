@@ -92,23 +92,20 @@ describe('openclaw v2 intake slice', () => {
       },
     };
   }
-  it('should inspect and upgrade a legacy intake baseline without activation', async () => {
+  it('should reevaluate a changed policy fingerprint without replacing the intake baseline', async () => {
     const f = fixture();
     f.value.github.notifications.runtimes = ['openclaw', 'codex'];
     await f.service.run(f.value, root, 'activate');
     const { selected, store } = await f.service.select(f.value, root);
-    assert.notEqual(selected!.digest, selected!.legacyDigest);
+    assert.notEqual(selected!.digest, 'previous-policy');
     await store.exclusive(async (state, save) => {
-      state!.policyDigest = selected!.legacyDigest;
+      state!.policyDigest = 'previous-policy';
       await save(state!);
     });
     assert.equal((await f.service.inspect(f.value, root)).status, 'ready');
-    assert.equal((await store.read())!.policyDigest, selected!.legacyDigest);
+    assert.equal((await store.read())!.policyDigest, 'previous-policy');
     f.setNow(baseline + 120000);
-    assert.equal(
-      (await f.service.run(f.value, root, 'scan', selected!.legacyDigest)).status,
-      'ready',
-    );
+    assert.equal((await f.service.run(f.value, root, 'scan', 'previous-policy')).status, 'ready');
     assert.equal((await store.read())!.policyDigest, selected!.digest);
   });
   it('should retain the baseline and reevaluate live policy independently of saved fingerprints', async () => {
@@ -261,7 +258,7 @@ describe('openclaw v2 intake slice', () => {
     const reconciled = await registry.reconcile(context);
     assert.deepEqual(
       new Set(validated.diagnostics.map(({ fieldPath }) => fieldPath)),
-      new Set(['/github/notifications/review-request']),
+      new Set(['/github/review-request']),
     );
     assert.deepEqual(
       reconciled.warnings.map(getCliDiagnosticContext),
@@ -339,7 +336,7 @@ describe('openclaw v2 intake slice', () => {
       [
         {
           code: 'github-notification-runtime-unsupported',
-          fieldPath: '/github/notifications/review-request',
+          fieldPath: '/github/review-request',
           severity: 'warning',
         },
       ],

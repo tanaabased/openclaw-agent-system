@@ -1,3 +1,4 @@
+import { githubWorkflowPath } from '../channels/github/workflow-policy.ts';
 import { realpath } from 'node:fs/promises';
 
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
@@ -175,7 +176,6 @@ export async function handoffDispatch(
       record: {
         ...record,
         feedback: undefined,
-        notice: undefined,
         intakeReportedAt: undefined,
         renameRequested: undefined,
       },
@@ -327,7 +327,10 @@ export async function assessDispatch(
                 debug: current.manifest.debug,
                 manifestPath:
                   current.manifestSources?.[
-                    '/github/notifications/issue-assignment/assessment/guidance'
+                    githubWorkflowPath(
+                      current.manifest.github?.notifications,
+                      'issue-assignment/assessment/guidance',
+                    )
                   ]?.path ?? current.manifestPath,
               },
             ),
@@ -394,8 +397,12 @@ export async function assessDispatch(
     const presentation = assessmentPresentation(result, record, intake, current.workspace, {
       debug: current.manifest.debug,
       manifestPath:
-        current.manifestSources?.['/github/notifications/issue-assignment/assessment/guidance']
-          ?.path ?? current.manifestPath,
+        current.manifestSources?.[
+          githubWorkflowPath(
+            current.manifest.github?.notifications,
+            'issue-assignment/assessment/guidance',
+          )
+        ]?.path ?? current.manifestPath,
     });
     await save();
     return {

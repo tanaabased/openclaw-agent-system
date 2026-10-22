@@ -345,6 +345,7 @@ function createProgram(
 
 describe('cli/command-family-fixtures', () => {
   const leaves = [
+    ['migrate-github'],
     ['validate'],
     ['env'],
     ['doctor'],
@@ -456,6 +457,7 @@ describe('cli/command-family-fixtures', () => {
   });
 
   const humanSignals = [
+    'not-configured',
     'valid',
     'environment',
     'workspace',
@@ -936,6 +938,7 @@ describe('cli/register', () => {
       command?.commands.map((subcommand) => subcommand.name()),
       [
         'backup',
+        'migrate-github',
         'validate',
         'env',
         'instance',

@@ -1,15 +1,11 @@
 import providerErrorMessage from '../utils/provider-error-message.ts';
-import { unverifiedLegacyRetirement } from './assignment-retirement.ts';
+import intakeDebug from './intake-debug.ts';
 import retirementNotice from './retirement-notice.ts';
 import codexFeedbackProblem from './codex-feedback-problem.ts';
 import { denialRecovery } from './codex-dispatch-denial.ts';
 import workflowStatus from './workflow-status.ts';
 import discoveryNotice from './discovery-notice.ts';
-import codexCapacity, {
-  legacyRetiredReservation,
-  codexItemOccupied,
-  codexUnresolvedRetirement,
-} from './codex-capacity.ts';
+import codexCapacity, { codexItemOccupied, codexUnresolvedRetirement } from './codex-capacity.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import { automationHash } from './automation-hash.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
@@ -28,6 +24,7 @@ export default function prepareDispatchReport(input: {
   state: DispatchState;
   intake: IntakeState;
   slots: number;
+  debug?: boolean;
   automationId: string;
   currentTimeIso: string;
 }) {
@@ -39,15 +36,14 @@ export default function prepareDispatchReport(input: {
   const retiring = state.records.filter((record) => record.retirement && !record.retired);
   const retirementProblems = state.records.filter(
     (record) =>
-      unverifiedLegacyRetirement(record) ||
-      (!record.retired &&
-        record.retirement?.code &&
-        (record.retirement.eligibleAt ?? 0) <= Date.parse(input.currentTimeIso) &&
-        ![
-          'retirement-awaiting-reactivation',
-          'retirement-native-inventory-required',
-          'retirement-native-archive-pending',
-        ].includes(record.retirement.code)),
+      !record.retired &&
+      record.retirement?.code &&
+      (record.retirement.eligibleAt ?? 0) <= Date.parse(input.currentTimeIso) &&
+      ![
+        'retirement-awaiting-reactivation',
+        'retirement-native-inventory-required',
+        'retirement-native-archive-pending',
+      ].includes(record.retirement.code),
   );
   const managing = active.filter((record) => record.effective && record.threadId);
   const waitingIssues = new Set(
@@ -117,9 +113,7 @@ export default function prepareDispatchReport(input: {
     })),
     ...retirementProblems.map((record) => ({
       id: record.id,
-      code: unverifiedLegacyRetirement(record)
-        ? 'retirement-legacy-unverified'
-        : record.retirement!.code!,
+      code: record.retirement!.code!,
       operation: 'retirement cleanup',
       diagnostic: record.retirement?.diagnostic,
     })),
@@ -164,7 +158,8 @@ export default function prepareDispatchReport(input: {
     (entry, index) => !entry.code.startsWith('retirement-') || notices[index]!.severity !== 'info',
   );
   const health = failures.length || history.length ? automationHash({ failures, history }) : '';
-  const recovered = !health && Boolean(state.intakeHealth);
+  // older opaque hashes mixed historical diagnostics with failures; they cannot prove recovery.
+  const recovered = !health && state.intakeHealthVersion === 1 && Boolean(state.intakeHealth);
   const severity = notices.some((notice) => notice.severity === 'error')
     ? 'error'
     : notices.some((notice) => notice.severity === 'warning')
@@ -260,7 +255,7 @@ export default function prepareDispatchReport(input: {
   if (notices.length) lines.push('');
   if (historical.length) {
     lines.push(
-      `**Historical reservations:** ${historical.length} unresolved; ${historical.filter(legacyRetiredReservation).length} unknown reservations excluded from active slots under the earlier retirement contract.`,
+      `**Historical reservations:** ${historical.length} unresolved.`,
       'Unknown reservations are not evidence of running agents; verified active work consumes slots. Another creation for the same issue remains fenced until native evidence resolves its reservation.',
       '',
     );
@@ -289,15 +284,26 @@ export default function prepareDispatchReport(input: {
         ? 'Pending issues will start when a slot becomes available.'
         : 'Intake will continue pending assignments on the next check.',
     );
+  const diagnostic = intakeDebug(input.debug, state.records, (record) => {
+    const item = intake.records.find((entry) => entry.id === record.intakeId);
+    return item
+      ? item.repository.owner.login + '/' + item.repository.name + '#' + item.issue.number
+      : 'Issue';
+  });
+  const operational = [githubNotificationQuote(lines.join('\n')), discovery]
+    .filter(Boolean)
+    .join('\n\n');
+  const notify =
+    Boolean(discovery) ||
+    started.length > 0 ||
+    sent.length > 0 ||
+    recovered ||
+    (Boolean(health) && health !== state.intakeHealth);
   return {
     response: codexHeartbeatEnvelope(
       input.automationId,
-      [githubNotificationQuote(lines.join('\n')), discovery].filter(Boolean).join('\n\n'),
-      Boolean(discovery) ||
-        started.length > 0 ||
-        sent.length > 0 ||
-        recovered ||
-        (Boolean(health) && health !== state.intakeHealth),
+      [operational, diagnostic].filter(Boolean).join('\n\n'),
+      notify,
     ),
     health,
     sent: sent.map(({ event }) => event.id),

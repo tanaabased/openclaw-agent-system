@@ -1,3 +1,4 @@
+import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import createGitHubStatusChannel from '../channels/github/channel.ts';
 import createGitHubChannelLifecycle from '../agent/github-channel-lifecycle.ts';
 import notificationAutomationReadiness, {
@@ -330,6 +331,12 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
               'service',
               signal,
             );
+      const selection = await intakeV2.select(manifest, workspaceDir);
+      await new GitHubIdentityCache(selection.store.location).resolve(
+        manifest.github?.notifications,
+        new GitHubWorkEventClient(account),
+        'delivery',
+      );
       return {
         account,
         async git(argv) {
@@ -669,12 +676,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService,
     toolRegistry,
     async (manifest, workspace, binding) => {
-      if (
-        !binding.sessionKey ||
-        !binding.sessionId ||
-        manifest.github?.notifications?.schemaVersion !== 2
-      )
-        return;
+      if (!binding.sessionKey || !binding.sessionId || !manifest.github?.notifications) return;
       const entry = api.runtime.agent.session.getSessionEntry({
         sessionKey: binding.sessionKey,
         readConsistency: 'latest',

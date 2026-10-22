@@ -1,3 +1,4 @@
+import { githubIdentitySet } from './provider/work-item.ts';
 import resolvePullRequestRecipients from './pull-request-recipients.ts';
 import type {
   ExternalGitHubNotifications,
@@ -59,13 +60,14 @@ export function validateGitHubNotificationPolicy(
   github: GitHubManifestConfiguration | undefined,
 ): ManifestDiagnostic[] {
   const policy = github?.notifications;
-  if (policy?.schemaVersion !== 2) return [];
+  if (!policy) return [];
   const diagnostics: ManifestDiagnostic[] = [];
+  const prefix = policy.schemaVersion === 3 ? '/github' : '/github/notifications';
   if (typeof github?.username !== 'string' || !github.username.trim()) {
     diagnostics.push({
       code: 'github-notification-literal-username-required',
       fieldPath: '/github/username',
-      message: 'Version 2 notifications require a literal GitHub username.',
+      message: 'GitHub workflows require a literal GitHub username.',
       severity: 'error',
     });
   }
@@ -77,12 +79,13 @@ export function validateGitHubNotificationPolicy(
   for (const { path, identities } of lists) {
     const nodes = new Set<string>();
     const logins = new Set<string>();
-    identities.forEach(({ login, nodeId }, index) => {
+    identities.forEach(({ login, nodeId, reference }, index) => {
+      if (reference) return;
       const normalizedLogin = login.toLowerCase();
-      if (nodes.has(nodeId) || logins.has(normalizedLogin)) {
+      if (policy.schemaVersion === 2 && (nodes.has(nodeId) || logins.has(normalizedLogin))) {
         diagnostics.push({
           code: 'github-notification-identity-duplicate',
-          fieldPath: `/github/notifications/${path}/${index}`,
+          fieldPath: `${prefix}/${path}/${index}`,
           message: 'Notification identities must have unique logins and node ids within each list.',
           severity: 'error',
         });
@@ -90,6 +93,28 @@ export function validateGitHubNotificationPolicy(
       nodes.add(nodeId);
       logins.add(normalizedLogin);
     });
+  }
+  if (policy.schemaVersion === 3) {
+    const reviewers =
+      policy.issueAssignment?.pullRequest?.recipients?.flatMap((entry) =>
+        'source' in entry ? [] : [entry],
+      ) ?? [];
+    try {
+      githubIdentitySet(
+        [...lists.flatMap(({ identities }) => identities), ...reviewers].filter(
+          (entry) => !entry.reference,
+        ),
+      );
+    } catch {
+      diagnostics.push({
+        code: 'github-identity-conflict',
+        fieldPath: '/github',
+        severity: 'error',
+        message:
+          'Use one immutable node id for each GitHub identity; name aliases do not grant additional authority.',
+      });
+    }
+    return diagnostics;
   }
   for (const [path, workflow] of [
     ['issue-assignment', policy.issueAssignment],
@@ -100,7 +125,7 @@ export function validateGitHubNotificationPolicy(
     } catch {
       diagnostics.push({
         code: 'github-notification-feedback-identity-conflict',
-        fieldPath: `/github/notifications/${path}/feedback`,
+        fieldPath: `${prefix}/${path}/feedback`,
         message:
           'Feedback identity pins conflict. Use one login and immutable node id for each identity.',
         severity: 'error',
@@ -137,7 +162,7 @@ export function githubNotificationRuntimeDiagnostics(
   declaration: GitHubNotificationsDeclaration | undefined,
   runtime: 'openclaw' | 'codex',
 ): GitHubNotificationRuntimeDiagnostic[] {
-  if (declaration?.schemaVersion !== 2 || !declaration.runtimes.includes(runtime)) return [];
+  if (!declaration || !declaration.runtimes.includes(runtime)) return [];
   const diagnostics: GitHubNotificationRuntimeDiagnostic[] = [];
   const review = declaration.reviewRequest;
   if (
@@ -146,8 +171,11 @@ export function githubNotificationRuntimeDiagnostics(
   )
     diagnostics.push({
       code: 'github-notification-runtime-unsupported',
-      fieldPath: '/github/notifications/review-request',
-      message: `${runtime === 'openclaw' ? 'OpenClaw' : 'Codex'} V2 does not support review requests. Issue assignment is independent.`,
+      fieldPath:
+        declaration.schemaVersion === 3
+          ? '/github/review-request'
+          : '/github/notifications/review-request',
+      message: `${runtime === 'openclaw' ? 'OpenClaw' : 'Codex'} does not support review requests. Issue assignment is independent.`,
       remediation:
         'Remove the review-request declaration or wait for its execution adapter; supported issue assignment can continue.',
       status: 'warning',

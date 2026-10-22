@@ -7,14 +7,14 @@ linked PR. Standalone Codex additionally supports declared automatic implementat
 
 ## Configuration
 
-In `agent.yaml`, omit `github.notifications.schema-version` or set it to numeric
-`2` (the default and only supported value). Declare the runtime,
-pinned repository owners, and allowed assignment actors explicitly. For OpenClaw,
-choose the default or an enabled assessment skill with optional inline/file guidance;
-omitted mode defaults to Auto, Plan stops after
-assessment, Work continues an actionable plan, and Auto chooses Plan or Work. See the
-[manifest reference](../../MANIFEST.md#githubnotifications) for a complete example,
-fields, defaults, and runtime limitations.
+In `agent.yaml`, set `github.schema-version: 3` and declare `issue-assignment`
+directly under `github`. Identity lists accept quoted `@name`, node IDs, and pinned
+objects. Declare repository owners explicitly; an empty actor list admits no new
+assignments. Mode defaults to Auto; Plan stops after assessment, Work continues an
+actionable plan, and Auto chooses Plan or Work. See the
+[manifest reference](../../MANIFEST.md#githubnotifications) for fields, defaults,
+and runtime limitations, and the [migration guide](../../UPGRADING.md#github-v3-configuration)
+for existing profiles.
 
 Independent review requests remain unavailable and warn without stopping supported
 assignment intake. Invalid assessment selections block actionably and are never
@@ -27,8 +27,8 @@ only the requested work. The agent keeps the same worktree and returns a quoted
 card linking the issue and PR. If publication is interrupted, continue in that chat
 so it can reconcile the existing attempt without creating another PR.
 
-Once intake is installed, feedback inherits the issue workflow’s approved assigners.
-Use explicit author policy to add or replace that list; see
+Once intake is installed, feedback authors are the union of approved assignment actors
+and configured reviewers. Use `feedback` only for skill/guidance customization; see
 [feedback permissions](../../MANIFEST.md#feedback-permissions). Approved mentions
 in issue comments, PR conversation comments, submitted reviews, and inline
 replies return to the original issue chat. The agent retains its complete private
@@ -59,7 +59,7 @@ openclaw agent-system notifications refresh --json
 
 Install also manages the **GitHub Notifications** readiness channel. It shows when
 an agent needs setup or automation synchronization, and reports recent intake
-health. Disable notifications in the manifest and run Install to deactivate that
+health. Remove the supported workflow declaration from the manifest and run Install to deactivate that
 agent's account; there is no separate channel setup. See [channel readiness and
 compatibility](./ADVANCED.md#v1-retirement) for observation limits.
 

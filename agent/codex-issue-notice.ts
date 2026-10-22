@@ -1,3 +1,4 @@
+import debugCard from '../channels/github/presentation/debug.ts';
 import retirementNotice from './retirement-notice.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
@@ -363,14 +364,17 @@ export default function codexIssueNotice(input: {
     next: copy.next,
     severity: copy.severity,
     notify: input.changed,
-    message: githubNotificationCard({
-      emoji:
-        copy.emoji ??
-        (copy.severity === 'info'
-          ? (input.emoji ?? '💡')
-          : { warning: '⚠️', error: '❌' }[copy.severity]),
-      title: copy.title,
-      facts,
-    }),
+    message:
+      code === 'delivery-linkage-retried'
+        ? debugCard({ debug: true, context: 'Delivery recovery — ' + copy.title, facts })!
+        : githubNotificationCard({
+            emoji:
+              copy.emoji ??
+              (copy.severity === 'info'
+                ? (input.emoji ?? '💡')
+                : { warning: '⚠️', error: '❌' }[copy.severity]),
+            title: copy.title,
+            facts,
+          }),
   };
 }

@@ -2,21 +2,6 @@ import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import { automationHash } from './automation-hash.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
 
-/** historical projection retained for provenance, never for policy authorization. */
-export function legacyNotificationAuthority(
-  policy: GitHubNotificationPolicy,
-  cleanupEnabled = true,
-) {
-  return {
-    schemaVersion: policy.schemaVersion,
-    runtimes: policy.runtimes,
-    cleanup: { enabled: cleanupEnabled },
-    allowedRepositoryOwners: policy.allowedRepositoryOwners,
-    issueAssignment: policy.issueAssignment,
-    reviewRequest: policy.reviewRequest,
-  };
-}
-
 /** canonicalize only schema-owned sets; guidance and ordered data retain their meaning. */
 function ordered<T>(values: readonly T[]): T[] {
   return [...values].sort((a, b) => {

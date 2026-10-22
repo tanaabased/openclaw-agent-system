@@ -1,5 +1,6 @@
 import { realpath } from 'node:fs/promises';
 
+import codexDirectInput from './codex-direct-input.ts';
 import dispatchHistory, { dispatchHistoryPages } from './codex-dispatch-history.ts';
 import intakeDenial from './codex-intake-denial.ts';
 import creationHistory from './codex-dispatch-creation-history.ts';
@@ -156,6 +157,7 @@ export function codexDispatchNative(request: CodexThreadRequest) {
       prepared: { createdAt: number; turnId?: string; prompt?: string },
       currentTurnId: string,
     ) => unsubmittedCreation(request, threadId, prepared, currentTurnId),
+    operatorInput: (threadId: string) => codexDirectInput(request, threadId),
     async occurrence(threadId: string) {
       const result = await request('thread/turns/list', {
         threadId,

@@ -1,3 +1,5 @@
+import GitHubIdentityCache from '../channels/github/identity-cache.ts';
+import { githubWorkflowPath } from '../channels/github/workflow-policy.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
 import { feedbackMode } from './feedback-work.ts';
@@ -261,7 +263,10 @@ export default async function runCodexDelivery(
             debug: current.manifest.debug,
             manifestPath:
               current.manifestSources?.[
-                '/github/notifications/issue-assignment/implementation/guidance'
+                githubWorkflowPath(
+                  current.manifest.github?.notifications,
+                  'issue-assignment/implementation/guidance',
+                )
               ]?.path ?? current.manifestPath,
           },
         );
@@ -374,7 +379,7 @@ export default async function runCodexDelivery(
         else if (record.handoff || found.followUpUserTurn)
           record.progression ??= {
             stage: 'implementation',
-            via: record.handoff ? 'legacy' : 'operator',
+            via: 'operator',
           };
         else throw new WorkflowPolicyHeld('implementation-disabled');
       }
@@ -418,10 +423,16 @@ export default async function runCodexDelivery(
         if (!Number.isSafeInteger(count) || count < 1)
           throw new Error('delivery-committed-work-required');
       }
+      if (!announcementOnly)
+        await new GitHubIdentityCache(current.store.location).resolve(
+          current.manifest.github?.notifications,
+          connected.client,
+          'delivery',
+        );
       const recipients =
         input.eventId && previous?.pullRequest
           ? []
-          : current.manifest.github?.notifications?.schemaVersion === 2
+          : current.manifest.github?.notifications !== undefined
             ? current.manifest.github.notifications.issueAssignment?.pullRequest?.recipients
             : undefined;
       if (!announcementOnly) resolvePullRequestRecipients(recipients, intake.assignment.actor);
@@ -497,7 +508,7 @@ export default async function runCodexDelivery(
         if (!previous?.pullRequest || !previous.reconciled)
           throw new Error('delivery-reconciliation-required');
         const policy = current.manifest.github?.notifications;
-        if (policy?.schemaVersion !== 2) throw new Error('delivery-policy-required');
+        if (!policy) throw new Error('delivery-policy-required');
         const publication: IssueDeliveryInput = {
           item: {
             number: intake.issue.number,

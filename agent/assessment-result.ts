@@ -10,23 +10,10 @@ const currentDecisionSchema = Type.Object(
   { mode: Type.Union([Type.Literal('plan'), Type.Literal('work')]), reasons: decisionReasons },
   { additionalProperties: false },
 );
-export const assessmentDecisionSchema = Type.Union([
-  currentDecisionSchema,
-  Type.Object(
-    {
-      action: Type.Union([Type.Literal('proceed'), Type.Literal('wait')]),
-      reasons: decisionReasons,
-    },
-    { additionalProperties: false },
-  ),
-]);
+export const assessmentDecisionSchema = currentDecisionSchema;
 
-/** interpret old receipts without rewriting their digest-bound source. */
-export function assessmentDecisionMode(
-  decision?: { mode: 'plan' | 'work' } | { action: 'proceed' | 'wait' },
-) {
-  if (!decision) return undefined;
-  return 'mode' in decision ? decision.mode : decision.action === 'proceed' ? 'work' : 'plan';
+export function assessmentDecisionMode(decision?: { mode: 'plan' | 'work' }) {
+  return decision?.mode;
 }
 const evidence = Type.Array(
   Type.Object(

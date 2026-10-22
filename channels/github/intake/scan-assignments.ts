@@ -1,3 +1,4 @@
+import GitHubIdentityCache from '../identity-cache.ts';
 import { GitHubAccountClientError } from '../../../core/github-account-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from '../../../agent/discovery-budget.ts';
 import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
@@ -26,7 +27,6 @@ export interface AssignmentScanInput {
   agentId: string;
   policy: GitHubNotificationPolicy;
   policyDigest: string;
-  legacyPolicyDigest?: string;
   now: number;
   activate?: boolean;
   budget?: DiscoveryBudget;
@@ -88,6 +88,8 @@ export default async function scanAssignments(
     try {
       budget.check();
       const client = await input.connect(AbortSignal.any([signal, budget.signal]));
+      const identities = new GitHubIdentityCache(input.store.location);
+      await identities.resolve(input.policy, client, 'assignment');
       const account: GitHubIdentity = client.identity;
       if (previous && !identityMatches(previous.account, account))
         throw new IntakeError('intake-account-changed');
@@ -175,6 +177,7 @@ export default async function scanAssignments(
       for (const candidate of candidates) {
         if (input.readPolicy) {
           const live = await input.readPolicy();
+          await identities.resolve(live.policy, client, 'assignment');
           input = { ...input, policy: live.policy, policyDigest: live.digest };
         }
         budget.check();

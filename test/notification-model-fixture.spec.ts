@@ -1009,7 +1009,33 @@ for (const scenario of [
             const delivered = await action(input, 'feedback');
             assert.equal(delivered.deliveryOperation, 'publish');
             assert.equal(delivered.digest, digest);
-            append(input, 'feedback-delivery-publish', { status: 'published' });
+            if (initial) {
+              append(input, 'feedback-delivery-publish', {
+                status: 'waiting',
+                code: 'github-delivery-linkage-unverified',
+                nextAction: 'next',
+              });
+              const recovery = await action(input, 'feedback');
+              assert.equal(recovery.deliveryOperation, 'prepare');
+              assert.equal(recovery.id, id);
+              assert.equal(recovery.eventId, eventId);
+              const missingReceipt = structuredClone(input);
+              append(missingReceipt, 'feedback-link-prepare-0', { status: 'prepared', digest });
+              assert.equal(matchFixture([...scenario.fixtures], missingReceipt), null);
+              append(input, 'feedback-link-prepare-0', {
+                status: 'prepared',
+                digest,
+                operation: {
+                  pullRequest: { pullRequestNodeId: 'PR_owned', pullRequestNumber: 456 },
+                },
+              });
+              const retry = await action(input, 'feedback');
+              assert.equal(retry.deliveryOperation, 'publish');
+              assert.equal(retry.digest, digest);
+              assert.equal(retry.id, id);
+              assert.equal(retry.eventId, eventId);
+              append(input, 'feedback-link-publish-0', { status: 'published' });
+            } else append(input, 'feedback-delivery-publish', { status: 'published' });
             if (initial) {
               assert.equal((await action(input, 'feedback')).deliveryOperation, 'compose');
               append(input, 'feedback-delivery-compose', {

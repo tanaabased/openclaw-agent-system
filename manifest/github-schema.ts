@@ -1,3 +1,4 @@
+import decodeGitHubV3, { githubV3Properties } from '../channels/github/v3-config-schema.ts';
 import { Type, type Static } from 'typebox';
 
 import {
@@ -17,16 +18,22 @@ import {
 } from './value-schemas.ts';
 import type { EnvironmentBinding, ResolvableString } from './value-types.ts';
 
-export const externalGitHubSectionSchema = Type.Object(
-  {
-    ...externalGitHubToolSectionProperties,
-    host: Type.Optional(Type.Literal('github.com')),
-    notifications: Type.Optional(externalGitHubNotificationsSchema),
-    username: Type.Optional(externalResolvableStringSchema),
-    token: Type.Optional(externalEnvironmentBindingSchema),
-  },
-  { additionalProperties: false },
-);
+const sharedGitHubProperties = {
+  ...externalGitHubToolSectionProperties,
+  host: Type.Optional(Type.Literal('github.com')),
+  username: Type.Optional(externalResolvableStringSchema),
+  token: Type.Optional(externalEnvironmentBindingSchema),
+};
+export const externalGitHubSectionSchema = Type.Union([
+  Type.Object(
+    { ...sharedGitHubProperties, notifications: Type.Optional(externalGitHubNotificationsSchema) },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    { ...sharedGitHubProperties, ...githubV3Properties },
+    { additionalProperties: false },
+  ),
+]);
 
 type ExternalGitHubSection = Static<typeof externalGitHubSectionSchema>;
 
@@ -42,9 +49,11 @@ export function decodeGitHubSection(value: ExternalGitHubSection): GitHubManifes
   return {
     ...decodeGitHubToolConfiguration(value),
     ...(value.host ? { host: value.host } : {}),
-    ...(value.notifications
-      ? { notifications: decodeGitHubNotifications(value.notifications) }
-      : {}),
+    ...('schema-version' in value
+      ? { notifications: decodeGitHubV3(value) }
+      : value.notifications
+        ? { notifications: decodeGitHubNotifications(value.notifications) }
+        : {}),
     ...(value.token ? { token: value.token } : {}),
     ...(value.username ? { username: decodeResolvableString(value.username) } : {}),
   };

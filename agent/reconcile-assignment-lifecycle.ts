@@ -2,10 +2,7 @@ import {
   cleanupConfigurationDiagnostic,
   type CleanupConfiguration,
 } from './cleanup-configuration.ts';
-import assignmentRetirement, {
-  unverifiedLegacyRetirement,
-  type Retirement,
-} from './assignment-retirement.ts';
+import assignmentRetirement, { type Retirement } from './assignment-retirement.ts';
 import { inspectAdmittedIssue, inspectAssignmentRemoval } from './dispatch-assignment.ts';
 import { issueKey } from './dispatch-pending.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
@@ -35,6 +32,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   policy: NonNullable<ReturnType<typeof assignmentIntakePolicy>>;
   client: GitHubNotificationIntakeClient;
   owner: string;
+  targetId?: string;
   now: number;
   configuration: CleanupConfiguration;
   readConfiguration(): Promise<CleanupConfiguration>;
@@ -56,8 +54,10 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   const latest = new Map(input.admitted.map((item) => [issueKey(item), item]));
   const selected = input.records
     .filter((record) => !record.reset && !record.retired && record.sourceThreadId === input.owner)
+    .filter((record) => !input.targetId || record.id === input.targetId)
     .filter(
       (record) =>
+        input.targetId === record.id ||
         (record.lifecycleCheckedAt ?? -Infinity) + 60_000 <= now ||
         record.retirement?.code === 'retirement-native-inventory-required' ||
         record.retirement?.archiveAttempt,
@@ -164,7 +164,12 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           ).code;
         continue;
       }
-      if (record.retirement && record.nativeInactive === false && native?.idle) {
+      if (
+        record.retirement &&
+        !record.retirement.operatorRequest &&
+        record.nativeInactive === false &&
+        native?.idle
+      ) {
         if (graceMinutes === undefined) record.retirement.deadlinePending = true;
         else record.retirement.eligibleAt = now + graceMinutes * 60_000;
       }
@@ -183,6 +188,8 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         !record.retirement?.archiveAttempt &&
         record.retirement?.reason !== 'chat-archived' &&
         successor &&
+        (!record.retirement?.operatorRequest ||
+          Date.parse(successor.assignment.createdAt) > record.retirement.operatorRequest.at) &&
         successor.id !== (record.retirement?.intakeId ?? record.intakeId)
       ) {
         await inspectAdmittedIssue(successor, client);
@@ -283,7 +290,12 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         if (shared.length > 12) throw new Error('retirement-worktree-shared');
         for (const other of shared) {
           if (other.retired) {
-            if (unverifiedLegacyRetirement(other)) throw new Error('retirement-worktree-shared');
+            if (
+              other.retirement?.worktreeRemovedAt === undefined ||
+              (other.retirement.archivedAt === undefined &&
+                !other.retirement.sessionUnavailableObserved)
+            )
+              throw new Error('retirement-worktree-shared');
             continue;
           }
           const otherIntake = input.admitted.find((item) => item.id === other.intakeId);
@@ -305,7 +317,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
               otherReason !== 'assignment-removed') ||
             (!otherNative.unavailableSession &&
               otherNative.activityId !== other.retirement.activityId) ||
-            (!otherReason && !otherNative.archived) ||
+            (!otherReason && !otherNative.archived && !other.retirement.operatorRequest) ||
             (!otherNative.archived &&
               !otherNative.unavailableSession &&
               otherReason !== 'issue-closed' &&
@@ -322,7 +334,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           (record.retirement?.reason === 'assignment-removed' &&
             (currentReason !== 'assignment-removed' ||
               eventId !== record.assignmentObservation?.event?.nodeId)) ||
-          (!currentReason && !currentNative?.archived) ||
+          (!currentReason && !currentNative?.archived && !record.retirement?.operatorRequest) ||
           (record.request && !currentNative?.idle && !currentNative?.unavailableSession) ||
           currentNative?.unavailableSession !== native?.unavailableSession ||
           currentNative?.activityId !== native?.activityId
