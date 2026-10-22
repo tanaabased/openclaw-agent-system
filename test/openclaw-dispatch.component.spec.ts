@@ -434,7 +434,7 @@ describe('agent/openclaw issue dispatch', () => {
     await assess(routed.id);
     const current = await service.scope(manifest, root);
     const legacyManifestDigest = automationHash({
-      policy: current.policy.legacyDigest,
+      policy: 'previous-policy',
       models: manifest.models,
     });
     assert.notEqual(current.manifestDigest, legacyManifestDigest);
@@ -698,37 +698,11 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 1);
   });
 
-  it('should reconcile external worktree removal after verifying historical session custody', async () => {
+  it('should reconcile external worktree removal after verifying current session custody', async () => {
     await prepare(await next());
     const current = await service.scope(manifest, root);
     await current.journal.exclusive(async (state, save) => {
       const saved = state.records[0]!;
-      const request = saved.request!;
-      assert.ok('key' in request);
-      const creation = saved.sessionCreation!;
-      saved.request = {
-        task: 'retained task',
-        label: request.label,
-        cwd: request.cwd,
-        model: request.model,
-        runtime: 'subagent',
-        visible: true,
-        cleanup: 'keep',
-      };
-      saved.creationCall = {
-        sessionId: creation.sourceSessionId,
-        runId: creation.sourceRunId,
-        toolCallId: creation.sourceToolCallId,
-      };
-      saved.native = {
-        sessionKey: request.key,
-        sessionId: creation.sessionId!,
-        sourceSessionId: creation.sourceSessionId,
-        toolCallId: creation.sourceToolCallId,
-        runId: 'historical-child',
-      };
-      delete saved.sessionCreation;
-      delete saved.feedback;
       saved.phase = 'blocked';
       await save();
     });
@@ -759,10 +733,8 @@ describe('agent/openclaw issue dispatch', () => {
     );
     const after = await record();
     assert.ok(after.retired);
-    assert.deepEqual(after.native, before.native);
-    assert.deepEqual(after.creationCall, before.creationCall);
     assert.deepEqual(after.request, before.request);
-    assert.equal(after.sessionCreation, undefined);
+    assert.deepEqual(after.sessionCreation, before.sessionCreation);
     assert.equal(after.retirement?.worktreeRemovalAttemptedAt, undefined);
     assert.deepEqual(after.retirement?.worktreeRemovalObserved, {
       at: deadline + 60_000,
@@ -774,50 +746,10 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
-  for (const shape of ['current', 'legacy', 'rejected', 'denied'] as const) {
+  for (const shape of ['current', 'denied'] as const) {
     for (const tree of ['existing', 'absent'] as const) {
       it(`should retire ${shape} unavailable sessions with an ${tree} worktree without invented archival`, async () => {
         await prepare(await next());
-        const current = await service.scope(manifest, root);
-        if (shape === 'legacy' || shape === 'rejected') {
-          await current.journal.exclusive(async (state, save) => {
-            const saved = state.records[0]!;
-            const request = saved.request!;
-            assert.ok('key' in request);
-            const creation = saved.sessionCreation!;
-            saved.request = {
-              task: 'retained task',
-              label: request.label,
-              cwd: request.cwd,
-              model: request.model,
-              runtime: 'subagent',
-              visible: true,
-              cleanup: 'keep',
-            };
-            saved.creationCall = {
-              sessionId: creation.sourceSessionId,
-              runId: creation.sourceRunId,
-              toolCallId: creation.sourceToolCallId,
-            };
-            if (shape === 'legacy') {
-              saved.native = {
-                sessionKey: request.key,
-                sessionId: creation.sessionId!,
-                sourceSessionId: creation.sourceSessionId,
-                toolCallId: creation.sourceToolCallId,
-                runId: 'historical-child',
-              };
-            } else {
-              delete saved.threadId;
-              delete saved.effective;
-            }
-            delete saved.sessionCreation;
-            delete saved.firstTurn;
-            delete saved.feedback;
-            saved.phase = 'blocked';
-            await save();
-          });
-        }
         const before = structuredClone(await record());
         session = null;
         if (shape === 'denied')
@@ -857,18 +789,11 @@ describe('agent/openclaw issue dispatch', () => {
         assert.equal(openClawCapacity([after], 1).occupied, 0);
         assert.deepEqual(after.retirement?.sessionUnavailableObserved, {
           at: deadline,
-          session:
-            shape === 'rejected'
-              ? 'identity-unresolved'
-              : shape === 'denied'
-                ? 'access-denied'
-                : 'not-found',
+          session: shape === 'denied' ? 'access-denied' : 'not-found',
         });
         assert.equal(after.retirement?.archivedAt, undefined);
         assert.equal(after.retirement?.archiveAttempt, undefined);
         assert.deepEqual(after.request, before.request);
-        assert.deepEqual(after.native, before.native);
-        assert.deepEqual(after.creationCall, before.creationCall);
         assert.deepEqual(after.sessionCreation, before.sessionCreation);
         assert.equal(after.threadId, before.threadId);
         assert.equal(after.nativeInactive, before.nativeInactive);
@@ -1680,7 +1605,6 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(request[field], undefined);
     assert.equal((await record()).phase, 'created');
     assert.equal((await record()).sessionCreation?.sourceSessionId, coordinator.sessionId);
-    assert.equal((await record()).execution, undefined);
     assert.equal((await service.check(manifest, root)).changed, true);
     assert.equal((await prepare(input)).status, 'reconcile-required');
     const again = await service.run(manifest, root, coordinator, {
@@ -2077,39 +2001,6 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await service.check(manifest, root)).changed, false);
     await service.run(manifest, root, coordinator, { action: 'retry', id: input.id }, true);
     assert.equal((await service.check(manifest, root)).changed, true);
-  });
-
-  it('should retain old spawn receipts without resuming or duplicating them', async () => {
-    const input = await next();
-    await prepare(input);
-    const journal = (await service.scope(manifest, root)).journal;
-    await journal.exclusive(async (state, save) => {
-      const old = state.records[0]!;
-      old.request = {
-        runtime: 'subagent',
-        visible: true,
-        cleanup: 'keep',
-        task: 'setup only',
-        label: '#3: OLD',
-        cwd: old.worktree!,
-        model: 'openai/gpt-6.1-sol',
-      };
-      delete old.feedback;
-      delete old.sessionCreation;
-      delete old.effective;
-      delete old.threadId;
-      old.phase = 'creating';
-      await save();
-    });
-    await acknowledgeReport();
-    assert.equal((await service.check(manifest, root)).changed, false);
-    const result = await service.run(manifest, root, coordinator, {
-      action: 'reconcile',
-      id: input.id,
-    });
-    assert.ok('code' in result && result.code === 'dispatch-legacy-handoff-retained');
-    assert.equal(creates().length, 1);
-    assert.equal((await record()).request && 'task' in (await record()).request!, true);
   });
 
   it('should expose no arbitrary identity credential message or removed actions', () => {
@@ -2748,8 +2639,8 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(creates().length, 1);
     });
 
-  for (const legacy of [false, true])
-    it(`should recover ${legacy ? 'legacy' : 'current'} interrupted operator work without another approval or assessment`, async () => {
+  for (const handoffOnly of [false, true])
+    it(`should recover ${handoffOnly ? 'handoff-only' : 'recorded-turn'} interrupted operator work without another approval or assessment`, async () => {
       const id = await readyWork('plan');
       const who = { ...assessor(id), runId: 'operator-implementation' };
       messages.push({
@@ -2772,7 +2663,7 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(verified.status, 'verified');
       assert.equal((await record()).work?.turn?.origin, 'input');
       assert.equal((await record()).work?.turn?.runId, who.runId);
-      if (legacy) {
+      if (handoffOnly) {
         const scope = await service.scope(manifest, root);
         await scope.journal.exclusive(async (state, save) => {
           delete state.records[0]!.work!.turn;
@@ -2792,7 +2683,7 @@ describe('agent/openclaw issue dispatch', () => {
       });
       service = new OpenClawDispatch(service.dependencies);
       let recovered = await workPass('recover-operator-work');
-      if (legacy) {
+      if (handoffOnly) {
         assert.equal(recovered.status, 'implementation-incomplete', JSON.stringify(recovered));
         assert.ok('nextAction' in recovered && recovered.nextAction === 'next');
         recovered = await workPass('continue-recovered-operator-work');
@@ -2968,7 +2859,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
-  it('should recover legacy failed implementation without a new authorization', async () => {
+  it('should recover failed current implementation without a new authorization', async () => {
     const id = await readyWork('work');
     await workPass('start-work');
     active = false;
@@ -4378,29 +4269,6 @@ describe('agent/openclaw issue dispatch', () => {
       );
     });
 
-  it('should recover an older openclaw policy blocker without replacing work or pr receipts', async () => {
-    const { journal } = await publishedFollowup();
-    await journal.exclusive(async (state, save) => {
-      const current = state.records[0]!;
-      current.blocker = 'dispatch-policy-changed';
-      current.phase = 'blocked';
-      current.work!.implementation = { runId: 'implementation', inputEventId: 'answer' };
-      delete current.progression;
-      await save();
-    });
-    const before = await journal.file.read();
-    service = new OpenClawDispatch(service.dependencies);
-    const restored = await record();
-    assert.equal(restored.blocker, undefined);
-    assert.equal(restored.phase, 'complete');
-    assert.deepEqual(restored.progression, { stage: 'implementation', via: 'legacy' });
-    assert.deepEqual(restored.compatibilityRecovery?.codes, ['dispatch-policy-changed']);
-    assert.deepEqual(restored.work, JSON.parse(before!).records[0].work);
-    await journal.exclusive(async (_state, save) => save());
-    assert.deepEqual((await record()).work, restored.work);
-    assert.equal(creates().length, 1);
-  });
-
   it('should release the presentation lock during native reads and recover the same complete card', async () => {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
@@ -5068,7 +4936,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
-  it('should preserve a legacy publication-only request without promoting implementation', async () => {
+  it('should preserve a publication-only request without promoting implementation', async () => {
     const { id, who } = await operatorFollowup();
     const request = { action: 'handoff' as const, id, permission: 'publication' as const };
     const preview = await service.run(manifest, root, who, request, true);
@@ -5151,7 +5019,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
-  it('should recover an existing implementation stage without replacing the openclaw issue', async () => {
+  it('should preserve an existing implementation stage without replacing the openclaw issue', async () => {
     const { id, who } = await operatorFollowup();
     const request = { action: 'handoff' as const, id, permission: 'implementation' as const };
     const preview = await service.run(manifest, root, who, request, true);
@@ -5159,11 +5027,6 @@ describe('agent/openclaw issue dispatch', () => {
     await service.run(manifest, root, who, { ...request, digest: preview.digest }, true);
     const before = await record();
     assert.equal(before.progression?.via, 'operator');
-    const journal = (await service.scope(manifest, root)).journal;
-    await journal.exclusive(async (state, save) => {
-      delete state.records[0]!.progression;
-      await save();
-    });
     for (const mode of ['work', 'auto', 'plan'] as const) {
       manifest.github!.notifications!.issueAssignment!.mode = mode;
       const context = await service.run(
@@ -5177,7 +5040,7 @@ describe('agent/openclaw issue dispatch', () => {
       assert.ok('issueStage' in context && context.issueStage === 'implementation');
     }
     const after = await record();
-    assert.equal(after.progression?.via, 'legacy');
+    assert.equal(after.progression?.via, 'operator');
     assert.equal(after.threadId, before.threadId);
     assert.equal(after.worktree, before.worktree);
     assert.deepEqual(after.result, before.result);

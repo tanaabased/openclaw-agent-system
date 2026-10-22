@@ -20,14 +20,6 @@ export default function retirementNotice(code: string, diagnostic?: string) {
         diagnostic ??
         'Inspect the installation config.yaml selected by host XDG_CONFIG_HOME or HOME. Restore a readable private file with schema-version: 1 and cleanup.grace-minutes, or deliberately remove it to use the 60-minute default.',
     };
-  if (code === 'retirement-legacy-unverified')
-    return {
-      severity: 'warning' as const,
-      title: 'Historical retirement has no cleanup proof',
-      summary:
-        'An earlier terminal record does not prove that its native resources were reclaimed.',
-      next: 'Inspect the exact retained native chat and worktree. Preserve them until native/operator recovery establishes ownership and preservation; automatic cleanup will not sweep historical records.',
-    };
   if (code === 'retirement-configuration-changed')
     return {
       severity: 'info' as const,

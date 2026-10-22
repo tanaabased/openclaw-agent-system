@@ -9,7 +9,7 @@ describe('agent/openclaw-reset-unresolved', () => {
     entry: {
       id: 'intent',
       worktree: '/managed/issue',
-      request: { cwd: '/managed/issue', runtime: 'subagent' },
+      request: { key: 'issue', agentId: 'owner', cwd: '/managed/issue' },
     } as OpenClawDispatchRecord,
     reset: {
       resources: [
@@ -24,9 +24,10 @@ describe('agent/openclaw-reset-unresolved', () => {
       ],
     } as Pick<NotificationResetRecord, 'resources' | 'warnings'>,
   });
-  it('should release an obsolete creation intent when the native checkout inventory is empty', async () => {
+  it('should release an unresolved current creation intent when the native checkout inventory is empty', async () => {
     const { entry, reset } = fixture();
     const request: DispatchRequest = async (method, params) => {
+      if (method === 'sessions.describe') return { session: null };
       assert.equal(method, 'sessions.list');
       assert.equal(params.workspaceDir, '/managed/issue');
       assert.equal(params.archived, 'all');
@@ -40,6 +41,7 @@ describe('agent/openclaw-reset-unresolved', () => {
     const { entry, reset } = fixture();
     let active = true;
     const request: DispatchRequest = async (method) => {
+      if (method === 'sessions.describe') return { session: null };
       if (method === 'sessions.list') return { sessions: [{ key: 'native', agentId: 'emori' }] };
       assert.equal(method, 'chat.history');
       return { sessionInfo: { hasActiveRun: active }, pendingInputs: { total: 0 } };

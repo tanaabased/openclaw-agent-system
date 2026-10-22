@@ -247,7 +247,7 @@ describe('agent/openclaw-feedback', () => {
         assert.equal(event.work, undefined);
         assert.equal(writes, 0);
       });
-  it('should keep plan feedback in planning and preserve legacy implementation authority', async () => {
+  it('should keep plan feedback in planning and preserve an explicit implementation stage', async () => {
     input.policy.issueAssignment!.mode = 'plan';
     await start();
     assert.equal(record.progression, undefined);
@@ -256,7 +256,7 @@ describe('agent/openclaw-feedback', () => {
       assessmentDigest: 'a'.repeat(64),
       implementation: { runId: 'original', inputEventId: 'original' },
     };
-    // legacy execution, not current defaults, establishes the existing stage.
+    record.progression = { stage: 'implementation', via: 'operator', workOwner: 'issue' };
     const context = await action('implementation-context');
     assert.equal(context.status, 'verified');
     assert.equal((record as OpenClawDispatchRecord).progression?.stage, 'implementation');
@@ -387,7 +387,7 @@ describe('agent/openclaw-feedback', () => {
   });
   async function enableFeedbackWork() {
     record.manifestDigest = 'c'.repeat(64);
-    record.progression = { stage: 'implementation', via: 'legacy' };
+    record.progression = { stage: 'implementation', via: 'operator' };
     record.result = {
       version: 1,
       outcome: 'plan-ready',

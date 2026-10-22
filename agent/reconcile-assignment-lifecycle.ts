@@ -2,10 +2,7 @@ import {
   cleanupConfigurationDiagnostic,
   type CleanupConfiguration,
 } from './cleanup-configuration.ts';
-import assignmentRetirement, {
-  unverifiedLegacyRetirement,
-  type Retirement,
-} from './assignment-retirement.ts';
+import assignmentRetirement, { type Retirement } from './assignment-retirement.ts';
 import { inspectAdmittedIssue, inspectAssignmentRemoval } from './dispatch-assignment.ts';
 import { issueKey } from './dispatch-pending.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
@@ -283,7 +280,12 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         if (shared.length > 12) throw new Error('retirement-worktree-shared');
         for (const other of shared) {
           if (other.retired) {
-            if (unverifiedLegacyRetirement(other)) throw new Error('retirement-worktree-shared');
+            if (
+              other.retirement?.worktreeRemovedAt === undefined ||
+              (other.retirement.archivedAt === undefined &&
+                !other.retirement.sessionUnavailableObserved)
+            )
+              throw new Error('retirement-worktree-shared');
             continue;
           }
           const otherIntake = input.admitted.find((item) => item.id === other.intakeId);

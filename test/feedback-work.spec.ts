@@ -125,7 +125,7 @@ describe('agent/feedback-work', () => {
     assert.equal(feedbackWorkStarted(record), false);
     record.progression.workOwner = 'feedback';
     assert.equal(feedbackWorkStarted(record), true);
-    assert.equal(feedbackWorkStarted({ feedback: record.feedback }), true);
+    assert.equal(feedbackWorkStarted({}), false);
   });
   it('should preserve old feedback records and leave plan decisions without implementation state', async () => {
     const event = eventFixture();
@@ -241,6 +241,7 @@ describe('agent/feedback-work', () => {
     const event = eventFixture();
     event.work = { selection: {} as never };
     record.feedback = { baseline: {}, events: [event] };
+    record.progression = { stage: 'implementation', via: 'work', workOwner: event.id };
     for (const outcome of [undefined, 'done', 'blocked', 'clarification-needed'] as const) {
       event.work.result = outcome
         ? ({

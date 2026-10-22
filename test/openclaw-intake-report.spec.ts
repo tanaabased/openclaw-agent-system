@@ -54,28 +54,6 @@ describe('agent/openclaw-intake-report', () => {
     assert.doesNotMatch(complete.response, /Intake resumed/);
   });
 
-  it('should diagnose historical unverified retirement once without claiming recovery or deleting evidence', () => {
-    const journal = state();
-    const record = {
-      id: 'legacy',
-      retired: { at: 1, by: 'old-owner' },
-      threadId: 'original',
-    } as OpenClawDispatchState['records'][number];
-    journal.records.push(record);
-    const input = {
-      state: journal,
-      slots: 3,
-      observation: { status: 'ready' as const, changed: false },
-    };
-    const before = structuredClone(record);
-    const first = openclawIntakeReport(input);
-    assert.equal(first.changed, true);
-    assert.match(first.response, /retirement-legacy-unverified/);
-    journal.intakeReport = { ...first, runId: 'first' };
-    assert.equal(openclawIntakeReport(input).changed, false);
-    assert.deepEqual(record, before);
-  });
-
   it('should report deferred assignments as item failures and recognize their recovery', () => {
     const journal = state();
     const intake = {

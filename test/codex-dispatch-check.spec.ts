@@ -11,8 +11,12 @@ describe('agent/codex-dispatch-check', () => {
     state.checked = { at: 100, digest: dispatchCheckDigest(state, intake) };
     requireDispatchCheck(state, intake, 100);
     assert.throws(() => requireDispatchCheck(state, intake, 101), /dispatch-check-required/);
-    state.notices = [];
-    state.reports = [];
+    state.intakeReport = {
+      fingerprint: 'report',
+      problems: [],
+      runId: 'run',
+      response: 'reported',
+    };
     requireDispatchCheck(state, intake, 100);
     intake.policyDigest = 'changed';
     assert.throws(() => requireDispatchCheck(state, intake, 100), /dispatch-check-required/);

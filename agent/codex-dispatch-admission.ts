@@ -223,9 +223,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
       record.phase !== 'complete' &&
       (record.phase !== 'blocked' ||
         (record.result?.outcome === 'operator-setup-blocker' &&
-          ['dispatch-assignment-superseded', 'dispatch-assignment-authority-revoked'].includes(
-            record.result.code,
-          ))) &&
+          record.result.code === 'dispatch-assignment-superseded')) &&
       (record.retryAfter ?? 0) <= now,
   )) {
     const intake = admitted.records.find((entry) => entry.id === pending.intakeId);
@@ -282,7 +280,6 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
             delete pending.request;
             delete pending.result;
             delete pending.stageReceipt;
-            delete pending.notice;
             delete pending.retryAfter;
             delete pending.preparationTurnId;
             pending.phase = 'routing';

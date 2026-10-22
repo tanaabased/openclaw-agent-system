@@ -146,7 +146,7 @@ describe('agent/codex-delivery', () => {
         turnId: 'turn',
         request: { threadId: 'child', prompt: 'feedback', model: 'model', thinking: 'high' },
       };
-      record.progression = { stage: 'implementation', via: 'legacy' };
+      record.progression = { stage: 'implementation', via: 'operator' };
       await beginFeedbackWork({
         record,
         event,
@@ -304,6 +304,7 @@ describe('agent/codex-delivery', () => {
         phase: 'assessing',
         createdAt: baseline,
         manifestDigest: current.digest,
+        reservationVersion: 1,
         project: {
           id: 'project',
           path: source,

@@ -131,8 +131,8 @@ export default class OpenClawDispatchAdmission {
       input.action === 'start' ||
       input.action === 'assess'
     ) {
-      if (!record.sessionCreation || !record.request || !('key' in record.request))
-        throw new Error('dispatch-legacy-handoff-retained');
+      if (!record.sessionCreation || !record.request)
+        throw new Error('dispatch-session-creation-required');
       if (
         record.request.agentId !== manifest.agent.id ||
         record.request.key !==

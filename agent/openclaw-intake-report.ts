@@ -1,4 +1,3 @@
-import { unverifiedLegacyRetirement } from './assignment-retirement.ts';
 import retirementNotice from './retirement-notice.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
@@ -35,15 +34,9 @@ export default function openclawIntakeReport(input: {
   );
   const retirementPending = retiring.length;
   const retirementNotices = state.records
-    .filter(
-      (record) =>
-        !record.reset &&
-        (unverifiedLegacyRetirement(record) || (!record.retired && record.retirement?.code)),
-    )
+    .filter((record) => !record.reset && !record.retired && record.retirement?.code)
     .map((record) => {
-      const code = unverifiedLegacyRetirement(record)
-        ? 'retirement-legacy-unverified'
-        : record.retirement!.code!;
+      const code = record.retirement!.code!;
       return {
         record,
         code,

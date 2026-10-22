@@ -128,7 +128,6 @@ export default class OpenClawIntake {
       agentId: manifest.agent.id,
       policy: selected.policy,
       policyDigest: selected.digest,
-      legacyPolicyDigest: selected.legacyDigest,
       now: (this.dependencies.now ?? Date.now)(),
       activate: action === 'activate',
       selector,
