@@ -302,6 +302,21 @@ describe('agent/codex-dispatch', () => {
     assert.equal(await codexInstanceStore(pluginData).inspect(), undefined);
   });
 
+  it('should prepare a first assignment with uncached compact reviewers', async () => {
+    const updated = structuredClone(manifest);
+    Object.assign(updated.github['issue-assignment'], { reviewers: ['@reviewer', 'U_second'] });
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(updated));
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    const records = (await request('inspect')).records as Array<{
+      effective?: unknown;
+      feedback?: { admission?: { enabled: boolean } };
+    }>;
+    assert.ok(records[0]!.effective);
+    assert.equal(records[0]!.feedback?.admission?.enabled, true);
+  });
+
   it('should hold a saved pilot claim without preparing work or changing its receipt', async () => {
     const { store, comments } = await claiming();
     assert.equal((await next()).status, 'claim-waiting');

@@ -507,6 +507,20 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal((await record()).id, routed.id);
     });
 
+  it('should create a first assignment with uncached compact reviewers', async () => {
+    manifest.github!.notifications!.issueAssignment!.feedback = {
+      inherit: true,
+      allowed: [
+        { login: 'reviewer', nodeId: '', reference: '@reviewer' },
+        { login: '', nodeId: 'U_second', reference: 'U_second' },
+      ],
+    };
+    const routed = await next();
+    assert.equal((await prepare(routed)).status, 'session-created');
+    assert.equal(creates().length, 1);
+    assert.equal((await record()).feedback!.admission?.enabled, true);
+  });
+
   it('should retain the previous feedback policy check across coordinator runs', async () => {
     manifest.github!.notifications!.issueAssignment!.feedback = false;
     await next();

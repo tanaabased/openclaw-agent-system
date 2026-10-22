@@ -4,6 +4,8 @@ Assign one disposable issue, retain its assessment in a native chat and managed 
 
 Notification installation compatibility and concurrent admission belong to `openclaw-intake`; restart recovery, reactivation, replay-safe replies, and retirement belong to `openclaw-lifecycle`. Implementation and PR delivery belong to `openclaw-pr`; scheduler drift belongs to `openclaw-automations`.
 
+The compact reviewer reference differs from the assigning actor, so first-task creation must work before that reviewer's identity has been cached. This planning-only scenario does not create a PR or request a review.
+
 Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and receipts remain real. Scoped refreshes admit only this run’s issue, and the 24-hour schedule avoids unrelated recurring scans. Only Tanaabot receives assignments. Failed activation preserves its status and redacted diagnostics; cleanup stops the Gateway before closing fixtures or revoking the disposable key.
 
 The assessment selects an ordinary workspace skill with no Agent System commands or

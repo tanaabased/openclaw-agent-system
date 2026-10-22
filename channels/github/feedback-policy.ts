@@ -5,16 +5,23 @@ import type {
   GitHubNotificationPolicy,
 } from './config-schema.ts';
 
+function configuredFeedbackIdentities(
+  allowed: readonly GitHubIdentityPin[],
+  feedback: GitHubFeedbackPolicy | undefined,
+): GitHubIdentityPin[] {
+  if (feedback === false) return [];
+  return [
+    ...(feedback === undefined || feedback === true || feedback.inherit ? allowed : []),
+    ...(typeof feedback === 'object' ? feedback.allowed : []),
+  ];
+}
+
 /** resolve one workflow's current feedback grants without granting operator access. */
 export function feedbackIdentities(
   allowed: readonly GitHubIdentityPin[],
   feedback: GitHubFeedbackPolicy | undefined,
 ): GitHubIdentityPin[] {
-  if (feedback === false) return [];
-  const identities = [
-    ...(feedback === undefined || feedback === true || feedback.inherit ? allowed : []),
-    ...(typeof feedback === 'object' ? feedback.allowed : []),
-  ];
+  const identities = configuredFeedbackIdentities(allowed, feedback);
   try {
     return githubIdentitySet(identities.map(({ login, nodeId }) => ({ login, nodeId })));
   } catch {
@@ -32,7 +39,7 @@ export function workflowFeedbackAvailable(
   return Boolean(selected);
 }
 
-/** retained admission windows describe eligible sources, not a separate enable switch. */
+/** admission windows follow configured authors; source authorization still requires resolved pins. */
 export function workflowFeedbackAccepting(
   policy: GitHubNotificationPolicy | undefined,
   workflow: 'issue-assignment' | 'review-request',
@@ -42,6 +49,6 @@ export function workflowFeedbackAccepting(
   return Boolean(
     workflowFeedbackAvailable(policy, workflow) &&
     selected &&
-    feedbackIdentities(selected.allowed, selected.feedback).length,
+    configuredFeedbackIdentities(selected.allowed, selected.feedback).length,
   );
 }

@@ -36,6 +36,7 @@ github:
     assessment:
       skill: generic-assessment
     allowed: ['@emoriwan']
+    reviewers: ['@tanaabot']
   review-request:
     paused: false
     allowed: ['@emoriwan']
