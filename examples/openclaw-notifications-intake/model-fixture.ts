@@ -1,11 +1,11 @@
-import { issueExampleScenario } from '../openclaw-issue/model-fixture.ts';
+import { issueExampleScenario } from '../openclaw-notifications-issue/model-fixture.ts';
 import waitForAssessmentRelease from './assessment-barrier.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 
 /** reuse assessment judgment; intake coverage alone controls concurrent response release. */
 export const intakeExampleScenario: OpenClawAIMockScenario = {
   ...issueExampleScenario,
-  id: 'openclaw-intake',
+  id: 'openclaw-notifications-intake',
   fixtures: issueExampleScenario.fixtures.map((fixture) => ({
     ...fixture,
     response: async (request) => {

@@ -1,6 +1,6 @@
 # OpenClaw Automations Example
 
-Verify the installed scheduler's critical paths through `openclaw agent-system automations`: sync without duplication, diagnose native drift without mutating it, reconcile through Install, execute a command under the owning agent, and retain native identity and persistent prompt routing through a Gateway restart. Strict AIMock verifies one completed prompt in the owning agent's context. Runtime tests run this example on Ubuntu without provider credentials or remote SSH.
+Verify the installed scheduler's critical paths through `openclaw agent-system automations`: sync without duplication, diagnose native drift without mutating it, reconcile through Install, execute a command under the owning agent, and retain native identity and persistent prompt routing through a Gateway restart. Strict AIMock verifies one completed prompt in the owning agent's context. OpenClaw runtime tests run this example on Ubuntu without provider credentials or remote SSH.
 
 Command execution writes receipts in the checked-in workspace on the disposable runner. Both jobs recur hourly; explicit `run` requests exercise them immediately, and exact run IDs distinguish admission from completion. Source tests cover option variants, offline failures, one-shot retention, unmanaged jobs, stale authority, containment, timeouts, cancellation cleanup, and thread-selection permutations.
 

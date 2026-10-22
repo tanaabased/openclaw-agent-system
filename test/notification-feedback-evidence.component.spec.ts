@@ -4,9 +4,9 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-describe('examples/openclaw-pr retained feedback evidence', () => {
+describe('examples/openclaw-notifications-pr-delivery retained feedback evidence', () => {
   it('should permit only terminal acknowledgement on the earlier feedback event', async () => {
-    const source = await readFile('examples/openclaw-pr/README.md', 'utf8');
+    const source = await readFile('examples/openclaw-notifications-pr-delivery/README.md', 'utf8');
     const code = [...source.matchAll(/jq -e --slurp '([^']+)'/gu)]
       .map((match) => match[1]!)
       .find((text) => text.includes('initial-feedback-receipts-changed'));
@@ -61,9 +61,9 @@ describe('examples/openclaw-pr retained feedback evidence', () => {
 });
 
 for (const [scenario, itemType] of [
-  ['openclaw-issue', 'issue'],
-  ['openclaw-pr', 'pull-request'],
-  ['openclaw-lifecycle', 'issue'],
+  ['openclaw-notifications-issue', 'issue'],
+  ['openclaw-notifications-pr-delivery', 'pull-request'],
+  ['openclaw-notifications-lifecycle', 'issue'],
 ]) {
   describe(`examples/${scenario} feedback evidence`, () => {
     it('should inspect only its requested run while rejecting real duplicate responses', async () => {
@@ -90,13 +90,16 @@ for (const [scenario, itemType] of [
       try {
         const summaries =
           itemType === 'issue'
-            ? ['summary', ...(scenario === 'openclaw-lifecycle' ? ['refreshed-summary'] : [])]
+            ? [
+                'summary',
+                ...(scenario === 'openclaw-notifications-lifecycle' ? ['refreshed-summary'] : []),
+              ]
             : [];
         await write('feedback', {
           assessmentSummaries: summaries.map((nodeId) => ({ receipt: { nodeId } })),
           feedback: {
             events: [
-              ...(scenario === 'openclaw-pr'
+              ...(scenario === 'openclaw-notifications-pr-delivery'
                 ? [{ itemType: 'issue', turn: { runId: 'earlier' } }]
                 : []),
               {

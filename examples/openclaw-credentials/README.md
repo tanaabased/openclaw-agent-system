@@ -2,7 +2,7 @@
 
 Verify real 1Password Environment and direct vault-secret resolution through stored bootstrap credentials, then Gateway cache reuse, per-agent flush, and credential-mutation invalidation. Strict AIMock drives five local Git tool exchanges; model judgment and live model credentials are unnecessary. The provider environment and service account are the existing disposable CI fixtures.
 
-Runtime tests run this example on Ubuntu with `OP_SERVICE_ACCOUNT_TOKEN`. File credentials live beneath the scenario's temporary configuration directory. Native storage and filesystem protection remain in OS coverage.
+OpenClaw runtime tests run this example on Ubuntu with `OP_SERVICE_ACCOUNT_TOKEN`. File credentials live beneath the scenario's temporary configuration directory. Native storage and filesystem protection remain in OS coverage.
 
 Provider failures include a bounded, redacted `providerMessage`. When the SDK supplies an HTTP status in a structured field or explicitly in its message, diagnostics include `httpStatus` and `httpStatusSource`; otherwise the status remains unknown. These details remain on the existing diagnostic output path, with credentials and declared resource references redacted.
 

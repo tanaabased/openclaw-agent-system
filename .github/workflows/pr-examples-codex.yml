@@ -1,4 +1,4 @@
-name: Runtime tests
+name: Codex runtime tests
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: examples-runtime-${{ github.event.pull_request.number }}
+  group: examples-codex-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 env:
@@ -25,24 +25,6 @@ jobs:
           - codex-install
           - codex-automations
           - codex-notifications
-          - openclaw-agent
-          - openclaw-workspace
-          - openclaw-doctor
-          - openclaw-github
-          - openclaw-google
-          - openclaw-tools
-          - openclaw-worktree
-          - openclaw-intake
-          - openclaw-lifecycle
-          - openclaw-issue
-          - openclaw-pr
-          - openclaw-progression
-          - openclaw-collaboration
-          - openclaw-memory
-          - openclaw-backup
-          - openclaw-credentials
-          - openclaw-automations
-          - openclaw-runtimes
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -88,11 +70,7 @@ jobs:
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
           CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
-          GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
-          GOG_HOME: ${{ runner.temp }}/gog-home
           XDG_CONFIG_HOME: ${{ runner.temp }}/agent-system-config
-          GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
         run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()

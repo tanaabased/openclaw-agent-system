@@ -1,6 +1,6 @@
 # OpenClaw Workspace Example
 
-Verify one declared workspace through validation, installation, repeated installation, and read-only Doctor inspection. The installed agent's name proves host input and ordered dotenv resolution; direct configuration reads prove Codex prerequisite and model routing. No Gateway, model turn, or provider credential is needed. Runtime tests run this example on Ubuntu.
+Verify one declared workspace through validation, installation, repeated installation, and read-only Doctor inspection. The installed agent's name proves host input and ordered dotenv resolution; direct configuration reads prove Codex prerequisite and model routing. No Gateway, model turn, or provider credential is needed. OpenClaw runtime tests run this example on Ubuntu.
 
 Setup writes receipts beside the checked-in manifest on the disposable runner.
 

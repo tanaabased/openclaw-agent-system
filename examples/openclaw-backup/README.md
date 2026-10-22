@@ -2,7 +2,7 @@
 
 Verify the installed backup critical path through public Agent System commands: capture explicitly included private memory despite Git ignore rules, verify the archive, and restore its contents into a fresh staging directory without changing the source workspace. A populated target must be rejected rather than overwritten.
 
-Runtime tests run this example on Ubuntu without a model, Gateway, or provider credentials. The checked-in workspace runs in place; a checksum baseline and separate restore target prove source preservation and recovery. The archive also captures a real agent database with committed WAL content. Retention and adversarial archive variants remain in source tests.
+OpenClaw runtime tests run this example on Ubuntu without a model, Gateway, or provider credentials. The checked-in workspace runs in place; a checksum baseline and separate restore target prove source preservation and recovery. The archive also captures a real agent database with committed WAL content. Retention and adversarial archive variants remain in source tests.
 
 ## Setup
 

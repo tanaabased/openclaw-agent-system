@@ -1,6 +1,6 @@
 # Codex Notifications Example
 
-Verify packaged notification activation boundaries, intake responses, and work preparation in isolated Codex state. Installation and workspace lifecycle checks live in the [Codex install example](../codex-install/README.md); generic automation planning and conversation persistence live in the [Codex automations example](../codex-automations/README.md). Runtime tests run this scenario on Ubuntu without a live model or hosted secrets.
+Verify packaged notification activation boundaries, intake responses, and work preparation in isolated Codex state. Installation and workspace lifecycle checks live in the [Codex install example](../codex-install/README.md); generic automation planning and conversation persistence live in the [Codex automations example](../codex-automations/README.md). OpenClaw runtime tests run this scenario on Ubuntu without a live model or hosted secrets.
 
 These headless checks establish activation and authority boundaries. Successful assignment admission and plan creation need a separate installed end-to-end example; these checks do not establish that flow or desktop rendering.
 

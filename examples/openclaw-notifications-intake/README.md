@@ -1,8 +1,8 @@
-# OpenClaw Issue Intake Example
+# OpenClaw Notification Intake Example
 
 Verify notification activation compatibility, native channel readiness and a safe baseline, then start three ordinary issue assessments before any result completes. Retain all three initial assessments and prove a repeat scan preserves their native chats, worktrees and turns without duplication.
 
-`openclaw-lifecycle` owns recovery, reactivation, replay-safe replies and retirement. Assessment presentation and ordinary feedback belong to `openclaw-issue`; implementation and PR delivery belong to `openclaw-pr`; scheduler drift belongs to `openclaw-automations`.
+`openclaw-notifications-lifecycle` owns recovery, reactivation, replay-safe replies and retirement. Assessment presentation and ordinary feedback belong to `openclaw-notifications-issue`; implementation and PR delivery belong to `openclaw-notifications-pr-delivery`; scheduler drift belongs to `openclaw-automations`.
 
 Strict AIMock reuses the issue assessment protocol with a per-receipt release barrier. This job owns its three issues, agent workspaces, native state and SSH registration; it consumes no other job's resources. Scoped refreshes and a 24-hour schedule isolate discovery. Only Tanaabot receives assignments. Failed activation retains diagnostics. Cleanup stops the Gateway before closing its issues or revoking its key.
 
@@ -15,18 +15,18 @@ name and node-ID pairs through the packed plugin.
 # should prepare the packed plugin and strict notification fixture
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --needs-ssh-key --yolo
 touch "$TMPDIR/notification-assessments-held"
-openclaw-aimock prepare --scenario openclaw-intake
+openclaw-aimock prepare --scenario openclaw-notifications-intake
 openclaw config set skills.workshop.autonomous.mode off
 # keep unrelated nightly memory turns out of the strict notification fixture
 openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
 
 # should select shared installation cleanup grace
 install -d -m 700 "$XDG_CONFIG_HOME/tanaab/agent-system"
-cp "$GITHUB_WORKSPACE/examples/openclaw-intake/config.yaml" "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
+cp "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/config.yaml" "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
 chmod 600 "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
 
 # should prepare the agent with provider-verified identity pins
-mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot/keys" "$HOME/.ssh"
+mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot/keys" "$HOME/.ssh"
 GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id > "$TMPDIR/notification-owner-node"
 GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id' > "$TMPDIR/notification-actor-node"
 owner_node=$(cat "$TMPDIR/notification-owner-node")
@@ -35,10 +35,10 @@ receiver_node=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api user --jq 'select(.login ==
 test -n "$owner_node"
 test -n "$actor_node"
 test -n "$receiver_node"
-sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__RECEIVER_NODE_ID__|$receiver_node|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
-mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot/agent.yaml"
-cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot/keys/id_ed25519"
-cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot/keys/id_ed25519.pub"
+sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__RECEIVER_NODE_ID__|$receiver_node|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
+mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot/agent.yaml"
+cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot/keys/id_ed25519"
+cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot/keys/id_ed25519.pub"
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 
@@ -58,7 +58,7 @@ registration_diagnostics() {
   exit "$registration_status"
 }
 trap registration_diagnostics EXIT
-cd "$GITHUB_WORKSPACE/examples/openclaw-intake/emori"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/emori"
 openclaw agent-system install --json | jq -e 'any(.outcomes[]; .component == "agent" and .status == "created")'
 
 # should install tanaabot and activate native intake with explicit dispatch enrollment
@@ -77,7 +77,7 @@ activation_diagnostics() {
   exit "$activation_status"
 }
 trap activation_diagnostics EXIT
-cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
 openclaw agent-system install --yes --json | tee "$TMPDIR/notification-install.json" | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated") and ([.warnings[] | select(.code == "github-notification-runtime-unsupported")] | length) == 1'
 openclaw agent-system automations list --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == true)'
 openclaw agent-system notifications wait --for baseline-ready --timeout 30 --json | jq -e '.status == "completed"'
@@ -95,7 +95,7 @@ jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaa
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false and .accounts["intake-tanaabot"].enabled == true'
 
 # should pause and resume the same scheduler job through native and manifest controls
-cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
 openclaw agent-system automations list --json > "$TMPDIR/intake-before-pause.json"
 native=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId' "$TMPDIR/intake-before-pause.json")
 openclaw cron edit "$native" --disable --json | jq -e '.enabled == false'
@@ -112,23 +112,23 @@ jq -S '[.jobs[] | {id, nativeId, routing}]' "$TMPDIR/intake-before-pause.json" >
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}]' | diff - "$TMPDIR/intake-identities-before.json"
 
 # should retain an unavailable issue without blocking later assignments
-cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
 openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number 2147483647 --json | jq -e '.status == "completed" and .admitted == 0'
 jq -es '[.[].deferred[]?] | any(.[]; (.candidate | fromjson).number == 2147483647 and .code == "intake-github-permission")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json
 
 # should assign three disposable issues from emori to tanaabot after the safe intake baseline
 test -f "$TMPDIR/notification-activation-ready"
-cd "$GITHUB_WORKSPACE/examples/openclaw-intake/emori"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/emori"
 openclaw agent-system tool gh -- api repos/tanaabased/big-test-bucket | jq '{id,node_id}' > "$TMPDIR/notification-repository.json"
 for slot in 1 2 3; do
-  openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System intake flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$slot" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-intake/issue.md" | tee "$TMPDIR/notification-issue-$slot.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
+  openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System intake flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$slot" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/issue.md" | tee "$TMPDIR/notification-issue-$slot.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
   number=$(jq -er .number "$TMPDIR/notification-issue-$slot.json")
   openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
 done
 cp "$TMPDIR/notification-issue-1.json" "$TMPDIR/notification-issue.json"
 
 # should start three native assessments in one automation run before any plan completes
-cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
 printf '\ndebug: true\n' >> agent.yaml
 for slot in 1 2 3; do
   number=$(jq -er .number "$TMPDIR/notification-issue-$slot.json")
@@ -143,7 +143,7 @@ for conversation in $(jq -r '.[].threadId' "$TMPDIR/notification-started.json");
 done
 
 # should release all held responses together after the three native starts and retain every plan
-cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
 for receipt in $(jq -r '.[].id' "$TMPDIR/notification-started.json"); do
   touch "$TMPDIR/notification-assessment-released-$receipt"
 done
@@ -162,7 +162,7 @@ for conversation in $(jq -r '.[].threadId' "$TMPDIR/notification-started.json");
 done
 
 # should retain complete results and native bindings for all three owners
-cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
 for slot in 1 2 3; do
   issue=$(jq -er .node_id "$TMPDIR/notification-issue-$slot.json")
   repository=$(jq -er .node_id "$TMPDIR/notification-repository.json")
@@ -171,7 +171,7 @@ done
 openclaw agent-system tool worktree -- list | tee "$TMPDIR/notification-worktrees-before.json" | jq -e 'length == 3'
 
 # should preserve all three native owners on a repeat intake scan
-cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
 sed 's/debug: true/debug: false/' agent.yaml > "$TMPDIR/intake-debug-off.yaml"
 mv "$TMPDIR/intake-debug-off.yaml" agent.yaml
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
@@ -199,7 +199,7 @@ touch "$TMPDIR/notification-gateway-stopped"
 
 # should close only the disposable issues created by this run
 test -f "$TMPDIR/notification-gateway-stopped"
-cd "$GITHUB_WORKSPACE/examples/openclaw-intake/emori"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/emori"
 for slot in 1 2 3; do
   if test -s "$TMPDIR/notification-issue-$slot.json"; then
     number=$(jq -er .number "$TMPDIR/notification-issue-$slot.json")
@@ -209,7 +209,7 @@ done
 
 # should remove only this run's ssh authentication key
 test -f "$TMPDIR/notification-gateway-stopped"
-cd "$GITHUB_WORKSPACE/examples/openclaw-intake/tanaabot"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
 key_material=$(awk '{print $2}' keys/id_ed25519.pub)
 key_id=$(openclaw agent-system tool gh -- api --paginate /user/keys --jq ".[] | select((.key | split(\" \")) | index(\"$key_material\")) | .id")
 if test -n "$key_id"; then

@@ -9,7 +9,7 @@ not been installed; this tests passive loading without activating notification w
 The routing turn also requests issue-session dispatch before intake activation and must be rejected before credential access or creation. This scenario does not exercise successful issue-session creation;
 passing it does not establish dispatch recovery or single-execution guarantees.
 
-Runtime tests run this scenario on Ubuntu without a live model or hosted secrets. The passive-loading check changes the checked-in manifest after installation on the disposable runner.
+OpenClaw runtime tests run this scenario on Ubuntu without a live model or hosted secrets. The passive-loading check changes the checked-in manifest after installation on the disposable runner.
 
 ## Setup
 

@@ -14,16 +14,44 @@ describe('example environment resolution', () => {
       ['examples/openclaw-tools/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
       ['examples/openclaw-github/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
       ['examples/openclaw-github/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
-      ['examples/openclaw-intake/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
-      ['examples/openclaw-intake/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
-      ['examples/openclaw-lifecycle/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
-      ['examples/openclaw-lifecycle/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
-      ['examples/openclaw-issue/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
-      ['examples/openclaw-issue/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
-      ['examples/openclaw-progression/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
-      ['examples/openclaw-progression/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
-      ['examples/openclaw-pr/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
-      ['examples/openclaw-pr/tanaabot/agent.yaml', 'GH_TOKEN_TANAABOT', 'tanaabot'],
+      ['examples/openclaw-notifications-intake/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
+      [
+        'examples/openclaw-notifications-intake/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      ['examples/openclaw-notifications-lifecycle/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
+      [
+        'examples/openclaw-notifications-lifecycle/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      ['examples/openclaw-notifications-issue/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
+      [
+        'examples/openclaw-notifications-issue/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      [
+        'examples/openclaw-notifications-progression/emori/agent.yaml',
+        'GH_TOKEN_EMORI',
+        'emoriwan',
+      ],
+      [
+        'examples/openclaw-notifications-progression/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      [
+        'examples/openclaw-notifications-pr-delivery/emori/agent.yaml',
+        'GH_TOKEN_EMORI',
+        'emoriwan',
+      ],
+      [
+        'examples/openclaw-notifications-pr-delivery/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
     ] as const) {
       const parsed = parseAgentManifest(
         (await readFile(path, 'utf8'))

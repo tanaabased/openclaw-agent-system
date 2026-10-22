@@ -6,11 +6,11 @@ import { githubExampleScenario } from '../examples/openclaw-github/model-fixture
 import { osExecutionExampleScenario } from '../examples/os-execution/model-fixture.ts';
 import { runtimeBoundaryScenario } from '../examples/openclaw-runtimes/model-fixture.ts';
 import { memoryExampleScenario } from '../examples/openclaw-memory/model-fixture.ts';
-import { issueExampleScenario } from '../examples/openclaw-issue/model-fixture.ts';
-import { intakeExampleScenario } from '../examples/openclaw-intake/model-fixture.ts';
-import { lifecycleExampleScenario } from '../examples/openclaw-lifecycle/model-fixture.ts';
-import { progressionExampleScenario } from '../examples/openclaw-progression/model-fixture.ts';
-import { prExampleScenario } from '../examples/openclaw-pr/model-fixture.ts';
+import { issueExampleScenario } from '../examples/openclaw-notifications-issue/model-fixture.ts';
+import { intakeExampleScenario } from '../examples/openclaw-notifications-intake/model-fixture.ts';
+import { lifecycleExampleScenario } from '../examples/openclaw-notifications-lifecycle/model-fixture.ts';
+import { progressionExampleScenario } from '../examples/openclaw-notifications-progression/model-fixture.ts';
+import { prExampleScenario } from '../examples/openclaw-notifications-pr-delivery/model-fixture.ts';
 import { worktreeExampleScenario } from '../examples/openclaw-worktree/model-fixture.ts';
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 

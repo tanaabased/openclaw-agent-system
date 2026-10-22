@@ -2,7 +2,7 @@
 
 Verify managed Git and GitHub execution through the public command, the installed package's shims, agent setup, and a native command automation. The operator and setup checks use contextual `git` and `gh` shims; the automation uses strict `agent-system-git` and `agent-system-gh` launchers under trusted agent authority. Each path must retain Tanaabot's identity; setup and automation descendants must not receive the declared GitHub token. The GitHub operation reads account identity and creates no remote fixture. No model is needed.
 
-Runtime tests run this example on Ubuntu with `GH_TOKEN_TANAABOT`. The checked-in workspace owns setup and automation receipts on the disposable runner. Signed commits and native credential-store protections remain in OS coverage.
+OpenClaw runtime tests run this example on Ubuntu with `GH_TOKEN_TANAABOT`. The checked-in workspace owns setup and automation receipts on the disposable runner. Signed commits and native credential-store protections remain in OS coverage.
 
 ## Setup
 

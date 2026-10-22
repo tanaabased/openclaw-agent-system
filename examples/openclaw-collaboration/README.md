@@ -2,7 +2,7 @@
 
 Verify that ordinary Agent System installation enables collaboration between two managed agents while preserving an operator-owned participant grant. A strict AIMock drives a native session exchange and history read; completion requires the actual tool results. Repeat installation and Doctor verify the resulting configuration.
 
-Runtime tests run this example on Ubuntu with the packed plugin and no live model or provider credentials. Configuration permutations remain in source tests and the older unscheduled collaboration example.
+OpenClaw runtime tests run this example on Ubuntu with the packed plugin and no live model or provider credentials. Configuration permutations remain in source tests and the older unscheduled collaboration example.
 
 ## Setup
 

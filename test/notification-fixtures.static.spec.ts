@@ -3,11 +3,11 @@ import { readFile } from 'node:fs/promises';
 import parseAgentManifest from '../manifest/parse.ts';
 
 for (const id of [
-  'openclaw-issue',
-  'openclaw-pr',
-  'openclaw-intake',
-  'openclaw-lifecycle',
-  'openclaw-progression',
+  'openclaw-notifications-issue',
+  'openclaw-notifications-pr-delivery',
+  'openclaw-notifications-intake',
+  'openclaw-notifications-lifecycle',
+  'openclaw-notifications-progression',
 ]) {
   describe(`examples/${id} fixture configuration`, () => {
     it('should accept the prepared fixture and route its supported workflow to the owning runtime', async () => {
@@ -23,7 +23,7 @@ for (const id of [
       assert.equal(policy?.issueAssignment?.mode, 'plan');
       assert.deepEqual(policy?.issueAssignment?.pullRequest?.recipients, [
         { source: 'assignment-actor', roles: ['assignee'] },
-        ...(id === 'openclaw-issue'
+        ...(id === 'openclaw-notifications-issue'
           ? [{ login: 'tanaabot', nodeId: '', reference: '@tanaabot', roles: ['reviewer'] }]
           : []),
       ]);

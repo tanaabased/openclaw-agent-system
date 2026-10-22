@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import waitForAssessmentRelease from '../examples/openclaw-intake/assessment-barrier.ts';
+import waitForAssessmentRelease from '../examples/openclaw-notifications-intake/assessment-barrier.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
@@ -8,11 +8,11 @@ import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { issueExampleScenario } from '../examples/openclaw-issue/model-fixture.ts';
-import { intakeExampleScenario } from '../examples/openclaw-intake/model-fixture.ts';
-import { lifecycleExampleScenario } from '../examples/openclaw-lifecycle/model-fixture.ts';
-import { progressionExampleScenario } from '../examples/openclaw-progression/model-fixture.ts';
-import { prExampleScenario } from '../examples/openclaw-pr/model-fixture.ts';
+import { issueExampleScenario } from '../examples/openclaw-notifications-issue/model-fixture.ts';
+import { intakeExampleScenario } from '../examples/openclaw-notifications-intake/model-fixture.ts';
+import { lifecycleExampleScenario } from '../examples/openclaw-notifications-lifecycle/model-fixture.ts';
+import { progressionExampleScenario } from '../examples/openclaw-notifications-progression/model-fixture.ts';
+import { prExampleScenario } from '../examples/openclaw-notifications-pr-delivery/model-fixture.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
 
@@ -124,7 +124,7 @@ for (const scenario of [
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
-    if (scenario.id === 'openclaw-intake')
+    if (scenario.id === 'openclaw-notifications-intake')
       it('should release only the assessment explicitly unblocked by the native scenario', async () => {
         const directory = '/tmp/notification-barrier-fixture';
         const files = new Set<string>();
@@ -365,7 +365,11 @@ for (const scenario of [
       assert.equal(matchFixture([...scenario.fixtures], missing), null);
     });
 
-    if (!['openclaw-pr', 'openclaw-progression'].includes(scenario.id))
+    if (
+      !['openclaw-notifications-pr-delivery', 'openclaw-notifications-progression'].includes(
+        scenario.id,
+      )
+    )
       it('should consume fresh later evidence after recovery', async () => {
         const later = request(`Refresh retained assessment for managed issue ${id}`);
         assert.equal(matchFixture([...scenario.fixtures], later), null);
@@ -424,12 +428,12 @@ for (const scenario of [
           id,
           project: { path: '/fixture' },
           assessment:
-            scenario.id === 'openclaw-issue'
+            scenario.id === 'openclaw-notifications-issue'
               ? { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } }
               : {},
           resultContract: 'assessment-result/v1',
         });
-        if (scenario.id === 'openclaw-issue') {
+        if (scenario.id === 'openclaw-notifications-issue') {
           const read = await response(input);
           assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
           append(input, 'assessment-skill', 'Generic Assessment');
@@ -460,14 +464,14 @@ for (const scenario of [
         project: { path: '/tmp/managed-worktree' },
         assessment: {
           skill:
-            scenario.id === 'openclaw-issue'
+            scenario.id === 'openclaw-notifications-issue'
               ? { name: 'generic-assessment', path: '/fixture/SKILL.md' }
               : {},
         },
         resultContract: 'assessment-result/v1',
       };
       append(input, 'context', context);
-      if (scenario.id === 'openclaw-issue') {
+      if (scenario.id === 'openclaw-notifications-issue') {
         const read = await response(input);
         assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
         assert.deepEqual(JSON.parse(read.toolCalls![0]!.arguments), { path: '/fixture/SKILL.md' });
@@ -487,11 +491,19 @@ for (const scenario of [
       append(input, 'result', { status: 'recorded', presentation });
       const nextResponse = await response(input);
       assert.equal('content' in nextResponse && nextResponse.content, presentation);
-      if (['openclaw-pr', 'openclaw-progression'].includes(scenario.id)) {
+      if (
+        ['openclaw-notifications-pr-delivery', 'openclaw-notifications-progression'].includes(
+          scenario.id,
+        )
+      ) {
         await publishProgressionSummary(input);
         assert.deepEqual(await response(input), { content: 'Published retained plan.' });
       }
-      if (!['openclaw-pr', 'openclaw-progression'].includes(scenario.id)) {
+      if (
+        !['openclaw-notifications-pr-delivery', 'openclaw-notifications-progression'].includes(
+          scenario.id,
+        )
+      ) {
         assert.deepEqual(await action(input, 'present'), {
           action: 'present',
           id,
@@ -554,7 +566,11 @@ for (const scenario of [
       append(invalid, 'git', { exitCode: 0, stdout: '/tmp/other', truncated: false });
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
     });
-    if (['openclaw-pr', 'openclaw-progression'].includes(scenario.id))
+    if (
+      ['openclaw-notifications-pr-delivery', 'openclaw-notifications-progression'].includes(
+        scenario.id,
+      )
+    )
       it('should finish response-only recovery without repeating assessment or implementation', async () => {
         const input = request(`recover only the pending public assessment summary with id ${id}`);
         await action(input, 'present');
@@ -565,7 +581,7 @@ for (const scenario of [
         await publishProgressionSummary(input);
         assert.deepEqual(await response(input), { content: 'Published retained plan.' });
       });
-    if (scenario.id === 'openclaw-progression') {
+    if (scenario.id === 'openclaw-notifications-progression') {
       for (const direct of [false, true])
         it(`should ask clarification during automatic work and resume an answer with direct handoff ${direct}`, async () => {
           const automatic = request(
@@ -653,7 +669,7 @@ for (const scenario of [
           assert.deepEqual(await response(answer), { content: 'Committed locally.' });
         });
     }
-    if (scenario.id === 'openclaw-pr') {
+    if (scenario.id === 'openclaw-notifications-pr-delivery') {
       it('should wait for native handoff before implementation and use the same delivery for an operator retry', async () => {
         const input = request(
           `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
@@ -841,7 +857,7 @@ for (const scenario of [
         );
       });
     }
-    if (scenario.id === 'openclaw-issue')
+    if (scenario.id === 'openclaw-notifications-issue')
       it('should answer paired github and direct questions using retained responses without work', async () => {
         const privateText = 'The retained plan documents disposable issue cleanup after evidence.';
         const github = request(
@@ -870,7 +886,7 @@ for (const scenario of [
         });
         assert.deepEqual(await response(direct), { content: privateText });
       });
-    if (scenario.id === 'openclaw-issue')
+    if (scenario.id === 'openclaw-notifications-issue')
       it('should adapt ordinary clarification and an answer using retained full output', async () => {
         let previous: Record<string, unknown> = {
           fullAssessment: 'Original findings and uncertainty.',
@@ -919,8 +935,10 @@ for (const scenario of [
           previous = submission.result;
         }
       });
-    if (scenario.id !== 'openclaw-progression')
-      for (const initial of scenario.id === 'openclaw-pr' ? [true, false] : [false])
+    if (scenario.id !== 'openclaw-notifications-progression')
+      for (const initial of scenario.id === 'openclaw-notifications-pr-delivery'
+        ? [true, false]
+        : [false])
         it(`should keep feedback ${initial ? 'initial implementation' : 'continuation'} private retention skill selection candidate and publication as distinct stages`, async () => {
           const eventId = 'e'.repeat(64);
           let input = request(
@@ -934,7 +952,7 @@ for (const scenario of [
             previousFeedbackWork: [],
             source: { body: '@tanaabot explain the plan.' },
           });
-          if (scenario.id === 'openclaw-pr') {
+          if (scenario.id === 'openclaw-notifications-pr-delivery') {
             const last = input.messages.at(-1)!;
             last.content = JSON.stringify({
               status: 'verified',
@@ -1057,13 +1075,13 @@ for (const scenario of [
           }
           const retained = await action(input, 'feedback');
           assert.equal(retained.operation, 'result');
-          if (scenario.id !== 'openclaw-pr')
+          if (scenario.id !== 'openclaw-notifications-pr-delivery')
             assert.match(retained.privateText!, /implementation remains unstarted/);
           append(input, 'feedback-result', {
             status: 'recorded',
             presentation: 'Full private response',
           });
-          if (scenario.id === 'openclaw-pr' && !initial) {
+          if (scenario.id === 'openclaw-notifications-pr-delivery' && !initial) {
             assert.ok('content' in (await response(input)));
             input = request(
               `Resume the retained feedback reply only. Use operation context, id ${id}, eventId ${eventId}.`,
@@ -1090,7 +1108,7 @@ for (const scenario of [
           append(input, 'feedback-skill', { text: 'Selected reply method' });
           const candidate = await action(input, 'feedback');
           assert.equal(candidate.operation, 'candidate');
-          if (scenario.id !== 'openclaw-pr')
+          if (scenario.id !== 'openclaw-notifications-pr-delivery')
             assert.match(candidate.publicText!, /Implementation has not started/);
           append(input, 'feedback-candidate', { status: 'candidate-recorded' });
           assert.equal((await action(input, 'feedback')).digest, undefined);
