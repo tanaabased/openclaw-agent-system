@@ -13,8 +13,7 @@ objects. Declare repository owners explicitly; an empty actor list admits no new
 assignments. Mode defaults to Auto; Plan stops after assessment, Work continues an
 actionable plan, and Auto chooses Plan or Work. See the
 [manifest reference](../../MANIFEST.md#githubnotifications) for fields, defaults,
-and runtime limitations, and the [migration guide](../../UPGRADING.md#github-v3-configuration)
-for existing profiles.
+and runtime limitations.
 
 Independent review requests remain unavailable and warn without stopping supported
 assignment intake. Invalid assessment selections block actionably and are never

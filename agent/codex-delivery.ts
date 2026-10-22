@@ -1,5 +1,4 @@
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
-import { githubWorkflowPath } from '../channels/github/workflow-policy.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
 import { feedbackMode } from './feedback-work.ts';
@@ -262,12 +261,8 @@ export default async function runCodexDelivery(
           {
             debug: current.manifest.debug,
             manifestPath:
-              current.manifestSources?.[
-                githubWorkflowPath(
-                  current.manifest.github?.notifications,
-                  'issue-assignment/implementation/guidance',
-                )
-              ]?.path ?? current.manifestPath,
+              current.manifestSources?.['/github/issue-assignment/implementation/guidance']?.path ??
+              current.manifestPath,
           },
         );
         const presentationNotices = notices(previous.attached);

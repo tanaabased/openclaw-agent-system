@@ -208,9 +208,9 @@ describe('github readiness channel', () => {
     }
     automation = undefined;
     checkpoint = baseline;
-    value.github!.notifications!.issueAssignment!.feedback = true;
+    value.github!.notifications!.issueAssignment!.feedback = { inherit: true, allowed: [] };
     value.github!.notifications!.reviewRequest = {
-      enabled: true,
+      paused: false,
       allowed: [{ login: 'operator', nodeId: 'U_operator' }],
     };
     const degraded = await snapshot();

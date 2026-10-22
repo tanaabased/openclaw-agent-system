@@ -77,20 +77,19 @@ describe('agent/codex-feedback-source', () => {
       }).disposition,
       'rejected',
     );
-    policy.issueAssignment!.feedback = false;
+    policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
     assert.equal(admitCodexFeedback(policy, account, comment('C')).disposition, 'rejected');
   });
-  for (const pause of ['empty-authors', 'legacy'] as const)
+  for (const pause of ['empty-authors'] as const)
     it(`should preserve admission and receipts across ${pause} pause and resume without replaying history`, async () => {
       const startedAt = Date.parse('2026-10-12T00:00:00Z');
       let state: CodexFeedback = { startedAt, baseline: {}, events: [] };
       const policy = intakeFixture().policy;
       const suspend = () => {
-        policy.issueAssignment!.feedback =
-          pause === 'legacy' ? false : { inherit: false, allowed: [] };
+        policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
       };
       const resume = () => {
-        policy.issueAssignment!.enabled = true;
+        policy.issueAssignment!.paused = false;
         delete policy.issueAssignment!.feedback;
       };
       suspend();
@@ -186,7 +185,7 @@ describe('agent/codex-feedback-source', () => {
 
   it('should preserve legacy feedback state when no previous policy timestamp was saved', () => {
     const policy = intakeFixture().policy;
-    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     for (const scannedTime of [undefined, 2000]) {
       const state: CodexFeedback = {
         admission: { enabled: false },
@@ -205,7 +204,7 @@ describe('agent/codex-feedback-source', () => {
   it('should baseline once, queue exact edits once and suppress confirmed own replies', async () => {
     const state: CodexFeedback = { baseline: {}, events: [] };
     const policy = intakeFixture().policy;
-    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     const comments = [comment('old')];
     let truncated = false;
     const input = {
@@ -252,7 +251,7 @@ describe('agent/codex-feedback-source', () => {
   it('should suppress both publication receipts after reading comments and retain same-account human feedback', async () => {
     const state: CodexFeedback = { baseline: { I: {} }, events: [] };
     const policy = intakeFixture().policy;
-    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     const comments = [
       comment('announcement'),
       comment('summary'),
@@ -292,7 +291,7 @@ describe('agent/codex-feedback-source', () => {
   });
   it('should admit a new source on a resource discovered after monitoring began', async () => {
     const policy = intakeFixture().policy;
-    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     const state: CodexFeedback = {
       startedAt: Date.parse('2026-10-12T00:00:00Z'),
       baseline: {},
@@ -318,7 +317,7 @@ describe('agent/codex-feedback-source', () => {
   });
   it('should preserve grouped review context and admit a later inline reply separately', async () => {
     const policy = intakeFixture().policy;
-    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     const state: CodexFeedback = { baseline: { PR: {} }, events: [] };
     const review = reviewFixture({ author: account, body: '@receiver explain the finding' });
     const finding = reviewCommentFixture({ author: account });
@@ -361,7 +360,7 @@ describe('agent/codex-feedback-source', () => {
 
   it('should admit a same-timestamp inline reply from its own empty review exactly once', async () => {
     const policy = intakeFixture().policy;
-    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     const state: CodexFeedback = { baseline: { PR: {} }, events: [] };
     const review = reviewFixture({ author: account, body: '' });
     const reply = reviewCommentFixture({
@@ -404,7 +403,7 @@ describe('agent/codex-feedback-source', () => {
     let clock = 0;
     const calls: number[] = [];
     const policy = intakeFixture().policy;
-    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     let interrupt = true;
     const client = {
       identity: account,
@@ -548,7 +547,7 @@ describe('agent/codex-feedback-source', () => {
 
   it('should detect an edited historical review without expanding unchanged review members', async () => {
     const policy = intakeFixture().policy;
-    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     const state: CodexFeedback = {
       startedAt: Date.parse('2026-10-12T00:00:00Z'),
       baseline: {},
@@ -593,7 +592,7 @@ describe('agent/codex-feedback-source', () => {
   it('should baseline disabled review edits and admit a subsequent review edit in the enabled window', async () => {
     const startedAt = Date.parse('2026-10-12T00:00:00Z');
     const policy = intakeFixture().policy;
-    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     const state: CodexFeedback = { startedAt, baseline: {}, events: [] };
     const review = reviewFixture({ author: account, body: '@receiver old question' });
     const reviews = reviewClientFixture(review, []);
@@ -617,12 +616,12 @@ describe('agent/codex-feedback-source', () => {
         discovery: { budget: new DiscoveryBudget(), save: async () => {} },
       });
     await run();
-    policy.issueAssignment!.feedback = false;
+    policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
     review.body = '@receiver changed while disabled';
     now += 1000;
     await run();
     assert.equal(state.events.length, 0);
-    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     now += 1000;
     await run();
     assert.equal(state.events.length, 0);
@@ -635,7 +634,7 @@ describe('agent/codex-feedback-source', () => {
 
   it('should restart a shifted page boundary without treating unseen comments as deleted', async () => {
     const policy = intakeFixture().policy;
-    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     const state: CodexFeedback = { startedAt: 1, baseline: {}, events: [] };
     let clock = 0;
     let shifted = false;

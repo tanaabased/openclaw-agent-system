@@ -33,7 +33,7 @@ export interface OpenClawIntakeDependencies {
   readinessFailure?(error: unknown): void;
 }
 
-/** V2 admission only. No sessions, assessment results, V1 files or publication. */
+/** Workflow admission only. No sessions, assessment results, V1 files or publication. */
 export default class OpenClawIntake {
   constructor(readonly dependencies: OpenClawIntakeDependencies) {}
   async select(

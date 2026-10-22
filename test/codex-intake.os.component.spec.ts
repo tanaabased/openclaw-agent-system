@@ -732,13 +732,13 @@ describe('agent/codex-intake', () => {
     });
     const job = codexIntakeJobs(value)[0]!;
     const originalDigest = codexIntakePolicy(value)!.digest;
-    policy.reviewRequest = { enabled: false, allowed: [{ login: 'other', nodeId: 'U_other' }] };
+    policy.reviewRequest = { paused: true, allowed: [{ login: 'other', nodeId: 'U_other' }] };
     assert.equal(codexIntakePolicy(value)!.digest, originalDigest);
     assert.deepEqual(codexIntakeJobs(value), [job]);
-    policy.issueAssignment!.enabled = false;
+    policy.issueAssignment!.paused = true;
     assert.equal(codexIntakeJobs(value)[0]!.enabled, false);
     assert.equal(codexIntakePolicy(value)!.digest, originalDigest);
-    policy.issueAssignment!.enabled = true;
+    policy.issueAssignment!.paused = false;
     assert.equal(codexIntakeJobs(value).length, 1);
     assert.throws(() => codexIntakeJobs({ ...value, automations: [job] }), {
       code: 'intake-automation-id-reserved',
@@ -770,7 +770,7 @@ describe('agent/codex-intake', () => {
     };
     const before = codexIntakeJobs(manifest, runtime);
     policy.issueAssignment!.mode = 'work';
-    policy.issueAssignment!.feedback = true;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     policy.issueAssignment!.allowed = [];
     assert.deepEqual(codexIntakeJobs(manifest, runtime), before);
     policy.intervalMinutes += 5;

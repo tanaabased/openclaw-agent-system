@@ -152,8 +152,7 @@ automation ownership, shared use, and preserved work. The desktop owns worktree
 snapshotting and reclamation; intake marks work retired only after observing both
 archival and removal. If desktop settings retain the checkout, cleanup stays pending
 without blocking other intake. Unresolved cleanup remains pending, never complete.
-Legacy cleanup declarations hold reclamation until [explicit migration](../../UPGRADING.md#shared-cleanup-policy);
-historical retirement without native cleanup evidence is reported and preserved,
+Historical retirement without native cleanup evidence is reported and preserved,
 not swept automatically.
 Run Install after an upgrade when Doctor reports changed automation machinery.
 Policy-only edits apply live.
@@ -408,11 +407,11 @@ Supported targets:
 | Target           | Selector required | Meaning                                       |
 | ---------------- | ----------------- | --------------------------------------------- |
 | `baseline-ready` | no                | The first safe provider observation completed |
-| `plan-ready`     | yes               | Native V2 retained assessment is plan-ready   |
+| `plan-ready`     | yes               | Native retained assessment is plan-ready      |
 | `prepared`       | yes               | Lifecycle-owned intake resources are ready    |
 | `worktree-ready` | yes               | The selected issue worktree is ready          |
 
-V2 waits use the same native observation as `status`. `prepared` requires a
+Waits use the same native observation as `status`. `prepared` requires a
 verified conversation binding and worktree; `plan-ready` requires the retained
 assessment result. The wait command does not expose rejected assignments or lifecycle
 retirement as targets. `assignment-rejected` and `retired` return
@@ -509,7 +508,7 @@ Retirement does not imply feature parity.
 The channel id `agent-system-github` remains registered as a read-only readiness
 surface. Existing accounts and bindings remain valid; the deprecated plugin
 `githubNotifications` limits are accepted but unused. Legacy configuration never
-activates V2 intake. Install adopts an old account only when its matching
+activates workflow intake. Install adopts an old account only when its matching
 Agent System-managed binding establishes ownership; conflicting accounts require
 operator resolution. Historical receipts and grants remain untouched.
 
@@ -526,8 +525,8 @@ inspection is unavailable it reports unknown. Missing optional capabilities repo
 degraded status while ready intake keeps running. Healthy status describes these observations,
 not a fresh credential probe or a guarantee that the next dispatch will succeed.
 
-Declare V2 authority explicitly and run Install to reconcile its owning schedule.
-Old checkpoints and conversations do not establish V2 activation or completion.
+Declare V3 workflow authority explicitly and run Install to reconcile its owning schedule.
+Old checkpoints and conversations do not establish workflow activation or completion.
 Keep the prior package and configuration backup if an old conversation still needs
 its V1 runtime; this package does not resume V1 work.
 

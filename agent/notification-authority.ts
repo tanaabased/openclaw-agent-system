@@ -1,6 +1,6 @@
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
 import { automationHash } from './automation-hash.ts';
-import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
+import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 
 /** canonicalize only schema-owned sets; guidance and ordered data retain their meaning. */
 function ordered<T>(values: readonly T[]): T[] {
@@ -24,7 +24,6 @@ export function notificationAuthority(policy: GitHubNotificationPolicy) {
   for (const workflow of [value.issueAssignment, value.reviewRequest]) {
     if (!workflow) continue;
     delete workflow.paused;
-    delete workflow.enabled;
     workflow.allowed = ordered(workflow.allowed);
     if (workflow.feedback && typeof workflow.feedback === 'object')
       workflow.feedback.allowed = ordered(workflow.feedback.allowed);

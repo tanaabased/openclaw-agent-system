@@ -42,7 +42,6 @@ grep -F 'code=manifest-unknown-key' "$TMPDIR/retired-notifications.stderr"
 
 # should load a v3 agent without activating notification work
 cat "$GITHUB_WORKSPACE/examples/openclaw-agent/v3-notifications.yaml" >> "$GITHUB_WORKSPACE/examples/openclaw-agent/data/agent.yaml"
-openclaw agent-system migrate-github --agent data --json | jq -e '.status == "already-v3" and .resolutions == []'
 openclaw agent \
   --agent data \
   --session-key agent:data:agent-system-github:data:direct:github:issue:r_example:1 \

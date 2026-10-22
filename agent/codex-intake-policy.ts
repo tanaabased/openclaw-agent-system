@@ -1,6 +1,5 @@
 import { assessmentSummaryConsent } from './assessment-summary-state.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
-import workflowPaused from '../channels/github/workflow-paused.ts';
 import codexDispatchHandoff, { codexNativeHandoff } from './codex-dispatch-handoff.ts';
 import { codexQuietHeartbeatInstructions } from './codex-heartbeat.ts';
 import { projectRoutingProfile } from './model-routing.ts';
@@ -33,7 +32,7 @@ export function codexIntakeJobs(
     {
       id: intakeAutomationId,
       displayName: '📥 ISSUE ASSIGNMENTS',
-      enabled: !workflowPaused(selected.policy.issueAssignment!),
+      enabled: !selected.policy.issueAssignment!.paused,
       runtimes: ['codex'],
       schedule: {
         kind: 'every',

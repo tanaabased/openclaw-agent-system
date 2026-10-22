@@ -1,4 +1,4 @@
-import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
+import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import { parseAssessmentResult } from './assessment-result.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
 import { automationHash } from './automation-hash.ts';

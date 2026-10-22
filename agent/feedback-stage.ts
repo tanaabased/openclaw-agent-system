@@ -1,6 +1,6 @@
 import { selectWorkflowStage } from './workflow-stage.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
-import type { GitHubNotificationPolicy } from '../channels/github/config-schema.ts';
+import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 
 /** the conversation owner selects composition independently of feedback admission. */
 export default function selectFeedbackStage(input: {

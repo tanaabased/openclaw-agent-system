@@ -39,15 +39,9 @@ function setup() {
   let activityId = 'turn-1';
   let failure = false;
   let beforeRecheck = () => {};
-  const settings: {
-    value:
-      | InstallationConfig
-      | {
-          status: 'blocked';
-          code: 'retirement-cleanup-migration-required';
-          legacy: { declaration: { enabled: boolean } };
-        };
-  } = { value: parseInstallationConfig(undefined, '/installation/config.yaml') };
+  const settings: { value: InstallationConfig } = {
+    value: parseInstallationConfig(undefined, '/installation/config.yaml'),
+  };
   const records = [record];
   const admissions = [admitted];
   const run = (targetId?: string) =>
@@ -195,12 +189,12 @@ describe('assignment retirement', () => {
     });
     h.settings.value = {
       status: 'blocked',
-      code: 'retirement-cleanup-migration-required',
-      legacy: { declaration: { enabled: false } },
+      code: 'retirement-configuration-invalid',
+      path: '/installation/config.yaml',
     };
     await h.run(h.record.id);
     assert.equal(h.cleanups(), 0);
-    assert.equal(h.record.retirement?.code, 'retirement-cleanup-migration-required');
+    assert.equal(h.record.retirement?.code, 'retirement-configuration-invalid');
     h.settings.value = parseInstallationConfig(undefined, '/installation/config.yaml');
     await h.run(h.record.id);
     assert.ok(h.record.retired);
@@ -291,8 +285,8 @@ describe('assignment retirement', () => {
         });
       h.settings.value = {
         status: 'blocked',
-        code: 'retirement-cleanup-migration-required',
-        legacy: { declaration: { enabled: false } },
+        code: 'retirement-configuration-invalid',
+        path: '/installation/config.yaml',
       };
       await h.run();
       h.advance(120);
@@ -481,27 +475,27 @@ describe('assignment retirement', () => {
     await h.run();
     assert.equal(h.cleanups(), 1);
   });
-  it('should hold legacy cleanup declarations without falsely reporting retirement', async () => {
+  it('should hold invalid cleanup settings without falsely reporting retirement', async () => {
     const h = setup();
     h.settings.value = {
       status: 'blocked',
-      code: 'retirement-cleanup-migration-required',
-      legacy: { declaration: { enabled: false } },
+      code: 'retirement-configuration-invalid',
+      path: '/installation/config.yaml',
     };
     h.fixture.item.state = 'closed';
     await h.run();
     h.advance(30);
     await h.run();
     assert.equal(h.record.retired, undefined);
-    assert.equal(h.record.retirement?.code, 'retirement-cleanup-migration-required');
+    assert.equal(h.record.retirement?.code, 'retirement-configuration-invalid');
     assert.equal(h.cleanups(), 0);
   });
-  it('should begin a full shared grace only after migration is resolved', async () => {
+  it('should begin a full shared grace only after invalid configuration is repaired', async () => {
     const h = setup();
     h.settings.value = {
       status: 'blocked',
-      code: 'retirement-cleanup-migration-required',
-      legacy: { declaration: { enabled: false } },
+      code: 'retirement-configuration-invalid',
+      path: '/installation/config.yaml',
     };
     h.fixture.item.state = 'closed';
     await h.run();
@@ -669,7 +663,7 @@ describe('assignment retirement', () => {
     'unknown',
     'grace',
     'reactivated',
-    'migration',
+    'pending-deadline',
     'legacy',
   ] as const) {
     it(`should keep a shared checkout when a pending peer is ${condition}`, async () => {
@@ -679,7 +673,7 @@ describe('assignment retirement', () => {
       await h.run();
       const other = { ...structuredClone(h.record), id: 'second' };
       if (condition === 'grace') other.retirement!.eligibleAt += 60_000;
-      if (condition === 'migration') other.retirement!.deadlinePending = true;
+      if (condition === 'pending-deadline') other.retirement!.deadlinePending = true;
       if (condition === 'legacy') other.retired = { at: baseline, by: 'old-owner' };
       h.records.push(other);
       let cleanups = 0;
@@ -719,12 +713,12 @@ describe('assignment retirement', () => {
       );
     });
   }
-  it('should retain observation of busy work while cleanup migration is unresolved', async () => {
+  it('should retain observation of busy work while cleanup configuration is invalid', async () => {
     const h = setup();
     h.settings.value = {
       status: 'blocked',
-      code: 'retirement-cleanup-migration-required',
-      legacy: { declaration: { enabled: false } },
+      code: 'retirement-configuration-invalid',
+      path: '/installation/config.yaml',
     };
     removeFixtureAssignment(h.fixture);
     h.setBusy(true);
@@ -734,7 +728,7 @@ describe('assignment retirement', () => {
     h.advance(1);
     await h.run();
     assert.equal(h.record.retired, undefined);
-    assert.equal(h.record.retirement?.code, 'retirement-cleanup-migration-required');
+    assert.equal(h.record.retirement?.code, 'retirement-configuration-invalid');
     assert.equal(h.record.nativeInactive, true);
     assert.equal(h.cleanups(), 0);
   });

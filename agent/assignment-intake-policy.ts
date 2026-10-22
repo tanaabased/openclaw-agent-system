@@ -3,7 +3,7 @@ import { automationHash } from './automation-hash.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
-/** V2 admission policy is shared; neither runtime may select the V1 monitor state. */
+/** Workflow admission policy is shared; neither runtime may select the V1 monitor state. */
 export default function assignmentIntakePolicy(
   manifest: AgentManifest,
   runtime: 'codex' | 'openclaw',

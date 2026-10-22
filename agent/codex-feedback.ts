@@ -1,4 +1,3 @@
-import { githubWorkflowPath } from '../channels/github/workflow-policy.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import codexReply from './codex-reply.ts';
@@ -843,12 +842,8 @@ export default async function runCodexFeedback(
                 selection: event.composition,
                 debug: current.manifest.debug,
                 manifestPath:
-                  current.manifestSources?.[
-                    githubWorkflowPath(
-                      current.manifest.github?.notifications,
-                      'issue-assignment/feedback/guidance',
-                    )
-                  ]?.path ?? current.manifestPath,
+                  current.manifestSources?.['/github/issue-assignment/feedback/guidance']?.path ??
+                  current.manifestPath,
                 workspace: current.workspace,
                 privateText: event.result.privateText,
                 publicReply: { author: provider.comments.identity.login, text: body },
@@ -928,12 +923,8 @@ export default async function runCodexFeedback(
                       selection: event.composition,
                       debug: current.manifest.debug,
                       manifestPath:
-                        current.manifestSources?.[
-                          githubWorkflowPath(
-                            current.manifest.github?.notifications,
-                            'issue-assignment/feedback/guidance',
-                          )
-                        ]?.path ?? current.manifestPath,
+                        current.manifestSources?.['/github/issue-assignment/feedback/guidance']
+                          ?.path ?? current.manifestPath,
                       workspace: current.workspace,
                       privateText: event.result.privateText,
                       publication: { withheld: code },

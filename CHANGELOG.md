@@ -2,6 +2,8 @@
 
 ### Compatibility
 
+- Removed V2 GitHub configuration, compatibility aliases, and migration commands. [#428](https://github.com/tanaabased/openclaw-agent-system/issues/428)
+
 - Raised the minimum OpenClaw version and shared `@openclaw/codex` prerequisite to `2026.9.8`. [#218](https://github.com/tanaabased/openclaw-agent-system/issues/218)
 - Removed V1 GitHub notification configuration, polling, and workflow tools; retained historical state without automatic migration. [#323](https://github.com/tanaabased/openclaw-agent-system/issues/323)
 - Updated supported Node.js versions to `>=24.16.0 <25 || >=26.1.0`. [#214](https://github.com/tanaabased/openclaw-agent-system/issues/214)
@@ -25,6 +27,8 @@
 - Supported stable GoG versions `>=0.42.0 <1.0.0` while retaining the reviewed command and flag surface. [#197](https://github.com/tanaabased/openclaw-agent-system/issues/197)
 
 ### Bug Fixes
+
+- Fixed OpenClaw PR delivery with uncached V3 reviewers. [#428](https://github.com/tanaabased/openclaw-agent-system/issues/428)
 
 - Fixed Codex session hooks failing when the plugin path contains spaces.
 - Fixed compromised private-state locks crashing the Gateway. [#234](https://github.com/tanaabased/openclaw-agent-system/pull/234)

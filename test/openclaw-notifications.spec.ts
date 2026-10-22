@@ -146,7 +146,7 @@ function record(): OpenClawDispatchRecord {
 describe('agent/openclaw-notifications', () => {
   it('should report the same disabled policy across status refresh and wait without starting work', async () => {
     const f = fixture();
-    f.manifest.github!.notifications!.issueAssignment!.enabled = false;
+    f.manifest.github!.notifications!.issueAssignment!.paused = true;
     f.readiness = 'intake-automation-paused';
     const status = await f.service.inspect(f.manifest, '/workspace');
     const refresh = await f.service.refresh(f.manifest, '/workspace', {
@@ -257,9 +257,9 @@ describe('agent/openclaw-notifications', () => {
 
   it('should expose capability warnings without failing supported refreshes and waits', async () => {
     const f = fixture();
-    f.manifest.github!.notifications!.issueAssignment!.feedback = true;
+    f.manifest.github!.notifications!.issueAssignment!.feedback = { inherit: true, allowed: [] };
     f.manifest.github!.notifications!.reviewRequest = {
-      enabled: true,
+      paused: false,
       allowed: [{ login: 'operator', nodeId: 'U_operator' }],
     };
     f.state!.policyDigest = assignmentIntakePolicy(f.manifest, 'openclaw')!.digest;
@@ -329,7 +329,7 @@ describe('agent/openclaw-notifications', () => {
   it('should print capability warnings after status output and preserve structured degraded results', async () => {
     const f = fixture();
     f.manifest.github!.notifications!.reviewRequest = {
-      enabled: true,
+      paused: false,
       allowed: [{ login: 'operator', nodeId: 'U_operator' }],
     };
     f.state!.policyDigest = assignmentIntakePolicy(f.manifest, 'openclaw')!.digest;
@@ -656,7 +656,7 @@ describe('agent/openclaw-notifications', () => {
       const f = fixture();
       const policy = f.manifest.github!.notifications!;
       assert.ok(policy.schemaVersion === 3);
-      if (change === 'disabled') policy.issueAssignment!.enabled = false;
+      if (change === 'disabled') policy.issueAssignment!.paused = true;
       if (change === 'inactive') f.state = undefined;
       if (change === 'stale') f.state!.policyDigest = 'old';
       if (change === 'runtime') policy.runtimes = ['codex'];

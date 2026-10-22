@@ -279,6 +279,8 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 30
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for plan-ready --timeout 600 --json | jq -e '.status == "completed"'
 jq -es --slurpfile old "$TMPDIR/notification-retired.json" '[.[].records[] | select(.issueKey == $old[0].issueKey)] | if length == 2 then map(select(.retired == null))[0] else error("exactly two attempts required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-fresh.json"
 jq -e --slurpfile old "$TMPDIR/notification-retired.json" '.id != $old[0].id and .worktreeAttemptId == .id and .threadId != $old[0].threadId and .sessionCreation.verified == true and .result.outcome == "plan-ready"' "$TMPDIR/notification-fresh.json"
+conversation=$(jq -er .threadId "$TMPDIR/notification-fresh.json")
+openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e --slurpfile old "$TMPDIR/notification-retired.json" '.session.displayName == $old[0].request.label and .session.label == null'
 worktree=$(jq -er .worktree "$TMPDIR/notification-fresh.json")
 test "$(git -C "$worktree" branch --show-current)" != "$(cat "$TMPDIR/notification-retired-branch")"
 test "$(git --git-dir="$(cat "$TMPDIR/notification-git-dir")" rev-parse "$(cat "$TMPDIR/notification-retired-branch")")" = "$(cat "$TMPDIR/notification-retired-tip")"

@@ -1,4 +1,4 @@
-import type { GitHubIdentityPin, GitHubPullRequestRecipient } from './config-schema.ts';
+import type { GitHubIdentityPin, GitHubPullRequestRecipient } from './workflow-policy.ts';
 import { githubIdentitySet } from './provider/work-item.ts';
 
 export default function resolvePullRequestRecipients(
