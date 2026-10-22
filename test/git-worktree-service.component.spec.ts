@@ -9,6 +9,7 @@ import acquirePrivateStateFileLock, {
 import GitWorktreeService, { type GitWorktreeGitRunner } from '../tools/git/worktree-service.ts';
 import {
   gitHubIssueBranchName,
+  gitHubIssueBranchSuffix,
   gitWorktreeDirectoryName,
   gitWorktreeRepositoryDirectoryName,
 } from '../tools/git/worktree-names.ts';
@@ -498,6 +499,90 @@ describe('tools/git/worktree-service', () => {
         'unsafe',
       );
       assert.equal(git.worktrees.size, 1);
+    } finally {
+      await rm(workspaceDir, { force: true, recursive: true });
+    }
+  });
+
+  it('should preserve retired branches and retry a fresh attempt from the configured base', async () => {
+    const { context, createService, git, service, workspaceDir } = await fixture();
+    try {
+      const base = {
+        baseRef: 'origin/main',
+        cloneUrl: 'https://example.com/owner/repository.git',
+        repositoryId: 'github-7',
+        workId: 'issue-3',
+      };
+      const branchFor = (attemptId?: string) => ({
+        number: 42,
+        title: 'Fix bad thing',
+        suffix: gitHubIssueBranchSuffix(
+          'data',
+          workspaceDir,
+          base.repositoryId,
+          base.workId,
+          attemptId,
+        ),
+        ...(attemptId ? { attemptId } : {}),
+      });
+      const old = await service.prepare(context, { ...base, issueBranch: branchFor() });
+      const attempt = branchFor('b'.repeat(64));
+      await assert.rejects(service.prepare(context, { ...base, issueBranch: attempt }), {
+        code: 'git-worktree-owner-mismatch',
+      });
+      await service.cleanup(context, base.repositoryId, base.workId, old.branch);
+      assert.ok(git.branches.has(old.branch));
+      const fresh = await service.prepare(context, { ...base, issueBranch: attempt });
+      assert.notEqual(fresh.branch, old.branch);
+      assert.equal(fresh.path, old.path);
+      assert.ok(git.branches.has(old.branch));
+      assert.deepEqual(
+        git.calls.filter(({ argv }) => argv[0] === 'worktree' && argv[1] === 'add').at(-1)?.argv,
+        ['worktree', 'add', '-b', fresh.branch, fresh.path, 'origin/main'],
+      );
+      const retry = await createService().prepare(context, {
+        ...base,
+        issueBranch: { ...attempt, title: 'Changed title after interruption' },
+      });
+      assert.equal(retry.status, 'existing');
+      assert.equal(retry.branch, fresh.branch);
+      assert.equal(git.branches.size, 2);
+      assert.equal(
+        (await service.cleanup(context, base.repositoryId, base.workId, old.branch)).status,
+        'unsafe',
+      );
+      assert.equal(git.worktrees.size, 1);
+      assert.equal(
+        git.calls.some(({ argv }) => ['reset', 'branch', 'update-ref'].includes(argv[0]!)),
+        false,
+      );
+    } finally {
+      await rm(workspaceDir, { force: true, recursive: true });
+    }
+  });
+
+  it('should not adopt a legacy checkout into a fresh attempt', async () => {
+    const { context, service, workspaceDir } = await fixture();
+    try {
+      const input = {
+        baseRef: 'origin/main',
+        cloneUrl: 'https://example.com/repo.git',
+        repositoryId: 'github-7',
+        workId: 'issue-3',
+      };
+      await service.prepare(context, input);
+      await assert.rejects(
+        service.prepare(context, {
+          ...input,
+          issueBranch: {
+            number: 42,
+            title: 'Fresh',
+            suffix: 'a'.repeat(16),
+            attemptId: 'b'.repeat(64),
+          },
+        }),
+        { code: 'git-worktree-owner-mismatch' },
+      );
     } finally {
       await rm(workspaceDir, { force: true, recursive: true });
     }

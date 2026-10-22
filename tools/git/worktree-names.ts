@@ -27,11 +27,14 @@ export function gitHubIssueBranchSuffix(
   workspaceDir: string,
   repositoryId: string,
   workId: string,
+  attemptId?: string,
 ): string {
   return createHash('sha256')
-    .update([agentId, workspaceDir, repositoryId, workId].join('\0'))
+    .update(
+      [agentId, workspaceDir, repositoryId, workId, ...(attemptId ? [attemptId] : [])].join('\0'),
+    )
     .digest('hex')
-    .slice(0, 5);
+    .slice(0, attemptId ? 16 : 5);
 }
 
 export function gitHubIssueBranchName(number: number, title: string, suffix: string): string {

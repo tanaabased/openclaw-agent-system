@@ -596,6 +596,7 @@ describe('agent/notification reset runtime adapters', () => {
     await journal.exclusive(async (state, save) => {
       state.records.push({
         id: 'd'.repeat(64),
+        ...(missing ? { worktreeAttemptId: 'd'.repeat(64) } : {}),
         intakeId,
         issueKey: 'e'.repeat(64),
         sourceThreadId: 'coordinator',
@@ -632,6 +633,7 @@ describe('agent/notification reset runtime adapters', () => {
       state.records.push({
         ...original,
         id: 'f'.repeat(64),
+        worktreeAttemptId: undefined,
         issueKey: 'a'.repeat(64),
         phase: 'creating',
         threadId: undefined,
@@ -715,14 +717,18 @@ describe('agent/notification reset runtime adapters', () => {
           }),
       },
       worktrees: {
-        inspectGitHub: async () => ({
-          repositoryId: 'github-10',
-          workId: 'issue-20',
-          path: worktree,
-          branch: 'owned',
-          status: 'existing',
-        }),
+        inspectGitHub: async (input) => {
+          if (input.attemptId !== undefined) assert.equal(input.attemptId, 'd'.repeat(64));
+          return {
+            repositoryId: 'github-10',
+            workId: 'issue-20',
+            path: worktree,
+            branch: 'owned',
+            status: 'existing' as const,
+          };
+        },
         cleanupGitHub: async (input) => {
+          assert.equal(input.attemptId, missing ? 'd'.repeat(64) : undefined);
           assert.equal(input.purge, true);
           assert.deepEqual(input.worktree, { path: worktree, branch: 'owned' });
           removals++;

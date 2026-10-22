@@ -201,6 +201,7 @@ export default class OpenClawNotificationReset {
             throw new Error('notification-reset-repository-changed');
           const observed = await deps.worktrees.inspectGitHub({
             agentId: manifest.agent.id,
+            attemptId: entry.worktreeAttemptId,
             cloneUrl: repository.cloneUrl,
             defaultBranch: repository.defaultBranch,
             repositoryDatabaseId: repository.databaseId,
@@ -417,6 +418,7 @@ export default class OpenClawNotificationReset {
           throw new Error('notification-reset-repository-changed');
         const input = {
           agentId: manifest.agent.id,
+          attemptId: entry.worktreeAttemptId,
           cloneUrl: repository.cloneUrl,
           defaultBranch: repository.defaultBranch,
           itemDatabaseId: item.issue.databaseId,

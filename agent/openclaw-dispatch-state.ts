@@ -30,6 +30,7 @@ const sessionCreationRequestSchema = Type.Object(
 export const openclawDispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
+    worktreeAttemptId: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
     work: Type.Optional(openclawWorkStateSchema),
     turnEvidence: Type.Optional(
       Type.Object(
@@ -158,6 +159,7 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
       runtime: 'openclaw',
       recordSchema: openclawDispatchRecordSchema,
       validRecord: (record) => {
+        if (record.worktreeAttemptId && record.worktreeAttemptId !== record.id) return false;
         if (
           record.feedback?.events.some((event) => event.work?.result) &&
           record.progression?.stage !== 'implementation'
