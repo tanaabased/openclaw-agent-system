@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { SetupCommandError, type SetupCommandResult } from '../agent/setup-runner.ts';
 import SetupLifecycleService from '../agent/setup-lifecycle.ts';
 import type SetupCommandService from '../agent/setup-command-service.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
@@ -15,7 +16,7 @@ function context(value: unknown, runtime: AgentSetupRuntime = 'openclaw') {
   };
 }
 
-function fixture(results: Array<number | null | Error | 'timeout'>) {
+function fixture(results: Array<number | null | Error | 'timeout' | SetupCommandResult>) {
   const calls: Array<{ command: unknown; target: unknown }> = [];
   const commands: Pick<SetupCommandService, 'run'> = {
     async run(command, target) {
@@ -23,6 +24,7 @@ function fixture(results: Array<number | null | Error | 'timeout'>) {
       assert.ok(results.length, 'unexpected command');
       const result = results.shift();
       if (result instanceof Error) throw result;
+      if (typeof result === 'object' && result !== null) return result;
       return {
         exitCode: result === 'timeout' ? 0 : (result ?? null),
         timedOut: result === 'timeout',
@@ -199,6 +201,148 @@ describe('agent/setup-lifecycle', () => {
     assert.deepEqual(
       calls.map(({ target }) => (target as { mode: string }).mode),
       ['check', 'check', 'apply', 'check', 'apply'],
+    );
+  });
+
+  for (const { result, reason } of [
+    { result: 23, reason: /exit code 23/u },
+    { result: 'timeout', reason: /timed out/u },
+    {
+      result: {
+        exitCode: null,
+        timedOut: false,
+        truncated: false,
+        termination: 'signal',
+        signal: 'SIGTERM',
+      },
+      reason: /signal SIGTERM/u,
+    },
+    {
+      result: new SetupCommandError('setup-executable-unavailable'),
+      reason: /execution failed.*setup-executable-unavailable/u,
+    },
+    { result: new Error('private thrown text'), reason: /execution failed.*unknown/u },
+    { result: new SetupCommandError('private-code'), reason: /execution failed.*unknown/u },
+    { result: null, reason: /termination unknown/u },
+    { result: Number.NaN, reason: /termination unknown/u },
+    {
+      result: new SetupCommandError('setup-tool-unavailable'),
+      reason: /execution failed.*setup-tool-unavailable/u,
+    },
+    {
+      result: {
+        exitCode: null,
+        timedOut: false,
+        truncated: false,
+        termination: 'signal',
+        signal: 'private-signal',
+      },
+      reason: /signal unknown/u,
+    },
+  ] satisfies Array<{
+    result: number | null | Error | 'timeout' | SetupCommandResult;
+    reason: RegExp;
+  }>) {
+    it(`should report safe apply termination matching ${reason.source.toLowerCase()}`, async () => {
+      const { service, calls } = fixture([0, result]);
+      const input = context({
+        steps: [
+          { id: 'done', apply: 'private first' },
+          { id: 'broken', apply: 'private command' },
+          { id: 'later', apply: 'private later' },
+        ],
+      });
+      await assert.rejects(service.reconcile(input), (error: unknown) => {
+        assert.ok(error instanceof AgentSystemLifecycleError);
+        assert.equal(error.code, 'setup-apply-failed');
+        assert.equal(error.stepId, 'broken');
+        assert.match(error.message, /broken.*setup-agent.*apply/u);
+        assert.match(error.message, reason);
+        assert.doesNotMatch(JSON.stringify(error), /private/u);
+        assert.equal(error.progress?.outcomes[0]?.stepId, 'done');
+        assert.equal(error.progress?.unattempted[0]?.stepId, 'later');
+        return true;
+      });
+      assert.equal(calls.length, 2);
+    });
+  }
+
+  it('should retain check phase and termination in doctor and post-apply failures', async () => {
+    const input = context({
+      steps: [{ id: 'probe', check: 'private check', apply: 'private apply' }],
+    });
+    const findings = await fixture([9]).service.inspect(input);
+    assert.match(findings[0]!.message, /probe.*setup-agent.*check.*exit code 9/u);
+    await assert.rejects(fixture([1, 0, 'timeout']).service.reconcile(input), (error: unknown) => {
+      assert.ok(error instanceof AgentSystemLifecycleError);
+      assert.equal(error.code, 'setup-check-blocked');
+      assert.match(error.message, /check after apply.*timed out/u);
+      return true;
+    });
+    await assert.rejects(fixture([1, 0, 1]).service.reconcile(input), (error: unknown) => {
+      assert.ok(error instanceof AgentSystemLifecycleError);
+      assert.equal(error.code, 'setup-not-converged');
+      assert.match(error.message, /check after apply.*exit code 1/u);
+      return true;
+    });
+  });
+
+  it('should prioritize timeout over its kill signal and never accept signal exit codes as success', async () => {
+    for (const result of [
+      { exitCode: 0, timedOut: true, truncated: false, termination: 'timeout', signal: 'SIGKILL' },
+      {
+        exitCode: 0,
+        timedOut: false,
+        truncated: false,
+        termination: 'no-output-timeout',
+        signal: 'SIGTERM',
+      },
+      { exitCode: 0, timedOut: false, truncated: false, termination: 'signal', signal: 'SIGTERM' },
+    ] satisfies SetupCommandResult[]) {
+      await assert.rejects(
+        fixture([result]).service.reconcile(context('private apply')),
+        (error: unknown) => {
+          assert.ok(error instanceof AgentSystemLifecycleError);
+          assert.equal(error.code, 'setup-apply-failed');
+          if (result.termination.endsWith('timeout')) {
+            assert.match(error.message, /timed out/u);
+            assert.doesNotMatch(error.message, /SIG/u);
+          } else assert.match(error.message, /signal SIGTERM/u);
+          return true;
+        },
+      );
+    }
+  });
+
+  it('should propagate cancellation and stale authority instead of reporting execution failure', async () => {
+    const controller = new AbortController();
+    const cancelled = new Error('cancelled');
+    const stale = new Error('stale authority');
+    const service = new SetupLifecycleService({
+      async run() {
+        controller.abort(cancelled);
+        throw new Error('private execution');
+      },
+    });
+    await assert.rejects(
+      service.reconcile({ ...context('apply'), signal: controller.signal }),
+      (error) => error === cancelled,
+    );
+    let current = true;
+    const changed = new SetupLifecycleService({
+      async run() {
+        current = false;
+        throw new Error('private execution');
+      },
+    });
+    await assert.rejects(
+      changed.reconcile({
+        ...context('apply'),
+        assertCurrent: async () => {
+          if (!current) throw stale;
+        },
+      }),
+      (error) => error === stale,
     );
   });
 

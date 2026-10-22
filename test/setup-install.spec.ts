@@ -151,6 +151,7 @@ describe('setup installation lifecycle', () => {
       component: 'setup',
       code: 'setup-apply-failed',
       stepId: 'host-tools',
+      message: /host-tools.*setup-host.*apply.*exit code 2/u,
     });
     assert.deepEqual(calls, ['pre-agent:host-tools:apply']);
   });
@@ -404,6 +405,8 @@ describe('setup installation lifecycle', () => {
     state.failedSetup = 'configure';
     await assert.rejects(install.install(context), (error: unknown) => {
       assert.ok(error instanceof Error && 'progress' in error);
+      assert.match(error.message, /configure.*setup-agent.*apply.*exit code 2/u);
+      assert.doesNotMatch(JSON.stringify(error), /configure apply|private/u);
       const failure = error as {
         progress: {
           outcomes: Array<{ component: string; stepId?: string }>;
