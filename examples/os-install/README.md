@@ -2,6 +2,8 @@
 
 Verify installation, repeat convergence, read-only Doctor inspection, and native credential enrollment on macOS and Ubuntu. Portable help, presentation, and tool-grant variants belong to the Ubuntu Doctor example. The enrollment fixture uses a strict local GitHub CLI substitute with synthetic identity responses, a paused issue-assignment workflow, and no allowed actors. Gateway device enrollment, Keychain or Secret Service storage, consent, and restart remain real; no hosted secret, GitHub request, or model call is needed.
 
+Enrollment commands preserve the prepared PATH so OpenClaw's CLI bootstrap does not put the system GitHub CLI ahead of the fixture.
+
 ## Setup
 
 ```bash
@@ -61,36 +63,36 @@ test "$(grep -Fc 'code=github-notification-runtime-unsupported' "$TMPDIR/review-
 ```bash
 # should refuse unattended enrollment for a declared issue workflow before making changes
 cp "$GITHUB_WORKSPACE/examples/os-install/enrollment/agent.yaml" "$GITHUB_WORKSPACE/examples/os-install/data/agent.yaml"
-export PATH="$GITHUB_WORKSPACE/examples/os-install/provider:$PATH"
+export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-install/provider:$PATH"
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
 if output=$(openclaw agent-system install --non-interactive --json); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.code == "session-dispatch-approval-required"'
 
 # should report missing enrollment without issuing credentials
-export PATH="$GITHUB_WORKSPACE/examples/os-install/provider:$PATH"
+export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-install/provider:$PATH"
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
 if output=$(openclaw agent-system doctor --json); then exit 1; fi
 printf '%s\n' "$output" | jq -e 'any(.findings[]; .code == "session-dispatch-credential-missing")'
 
 # should start the gateway for owner-consented device enrollment
-export PATH="$GITHUB_WORKSPACE/examples/os-install/provider:$PATH"
+export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-install/provider:$PATH"
 openclaw-gateway start
 
 # should enroll a paused issue workflow with no allowed actors
 set -o pipefail
-export PATH="$GITHUB_WORKSPACE/examples/os-install/provider:$PATH"
+export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-install/provider:$PATH"
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
 openclaw agent-system install --yes --json | tee "$TMPDIR/enrollment-install.json"
 jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated")' "$TMPDIR/enrollment-install.json"
 openclaw agent-system automations list --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == false)'
 
 # should reuse enrollment without another explicit consent or bootstrap
-export PATH="$GITHUB_WORKSPACE/examples/os-install/provider:$PATH"
+export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-install/provider:$PATH"
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
 openclaw agent-system install --non-interactive --json | jq -e 'any(.outcomes[]; .code == "session-dispatch-unchanged")'
 
 # should retain device-only connectivity across a gateway restart
-export PATH="$GITHUB_WORKSPACE/examples/os-install/provider:$PATH"
+export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-install/provider:$PATH"
 openclaw-gateway stop
 openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/os-install/data"
