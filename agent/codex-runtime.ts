@@ -1,3 +1,4 @@
+import githubV3Migration from '../manifest/github-v3-migration.ts';
 import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
 import runCodexNotificationReset from './codex-notification-reset.ts';
 import runCodexFeedback from './codex-feedback.ts';
@@ -244,6 +245,19 @@ async function readWorkflowCommand(route: string, args: string[]) {
 
 export async function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
   const command = args[0];
+  if (command === 'migrate-github') {
+    const inspection = await inspectCodexWorkspaceBinding(parsePluginData(args.slice(1)));
+    if (
+      inspection.status !== 'bound' ||
+      inspection.preview.status !== 'ready' ||
+      inspection.preview.manifest.status !== 'loaded'
+    )
+      throw new Error('migration-manifest-unavailable');
+    const result = githubV3Migration(inspection.preview.manifest);
+    writeJson(result);
+    if (result.resolutions.length) process.exitCode = 1;
+    return;
+  }
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
   if (command === 'instance') {

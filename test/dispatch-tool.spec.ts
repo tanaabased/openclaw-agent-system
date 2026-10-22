@@ -64,7 +64,7 @@ describe('tools/dispatch/tool', () => {
     };
     const manifest = {
       agent: { id: caller.agentId },
-      github: { notifications: { schemaVersion: 2 as number | undefined } },
+      github: { notifications: { schemaVersion: 3 as number | undefined } },
     };
     const api = {
       source: '/plugin/index.ts',

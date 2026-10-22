@@ -3,7 +3,6 @@ import { Type, type Static } from 'typebox';
 import {
   assessmentConfigurationSchema,
   decodeAssessmentConfiguration,
-  type AssessmentConfiguration,
 } from '../../manifest/assessment-schema.ts';
 
 const externalGitHubIdentitySchema = Type.Object(
@@ -132,50 +131,17 @@ export const externalGitHubNotificationsSchema = externalGitHubNotificationPolic
 
 export type ExternalGitHubNotifications = Static<typeof externalGitHubNotificationsSchema>;
 
-export interface GitHubIdentityPin {
-  login: string;
-  nodeId: string;
-}
+export type {
+  GitHubIdentityPin,
+  GitHubRecipientRole,
+  GitHubPullRequestRecipient,
+  GitHubApprovedActor,
+  GitHubFeedbackPolicy,
+  GitHubNotificationPolicy,
+  GitHubNotificationsDeclaration,
+} from './workflow-policy.ts';
 
-export type GitHubRecipientRole = 'assignee' | 'reviewer';
-export type GitHubPullRequestRecipient = (GitHubIdentityPin | { source: 'assignment-actor' }) & {
-  roles: GitHubRecipientRole[];
-};
-
-export interface GitHubApprovedActor extends GitHubIdentityPin {
-  operatorOwner?: boolean;
-}
-
-export type GitHubFeedbackPolicy =
-  // booleans remain compatibility input until the existing workspaces adopt explicit author policy.
-  boolean | ({ inherit: boolean; allowed: GitHubIdentityPin[] } & AssessmentConfiguration);
-
-export interface GitHubNotificationPolicy {
-  schemaVersion: 2;
-  runtimes: Array<'openclaw' | 'codex'>;
-  intervalMinutes: number;
-  maxConcurrentItems: number;
-  allowedRepositoryOwners: GitHubIdentityPin[];
-  issueAssignment?: {
-    paused?: boolean;
-    enabled?: boolean;
-    allowed: GitHubApprovedActor[];
-    mode: 'plan' | 'work' | 'auto';
-    assessment?: AssessmentConfiguration;
-    implementation?: AssessmentConfiguration;
-    pullRequest?: { recipients?: GitHubPullRequestRecipient[] };
-    feedback?: GitHubFeedbackPolicy;
-  };
-  reviewRequest?: {
-    paused?: boolean;
-    allowed: GitHubApprovedActor[];
-    enabled?: boolean;
-    review?: AssessmentConfiguration;
-    feedback?: GitHubFeedbackPolicy;
-  };
-}
-
-export type GitHubNotificationsDeclaration = GitHubNotificationPolicy;
+import type { GitHubIdentityPin, GitHubNotificationsDeclaration } from './workflow-policy.ts';
 
 /** Decode the channel-owned github.notifications manifest fragment. */
 export function decodeGitHubNotifications(

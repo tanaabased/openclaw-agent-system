@@ -3,12 +3,11 @@ import type { AgentManifest } from '../manifest/types.ts';
 /** one catalog owns the consumers shown in consent, lifecycle, and tool access. */
 export default function sessionDispatchRequirements(manifest: AgentManifest) {
   const policy = manifest.github?.notifications;
-  if (policy?.schemaVersion !== 2 || !policy.runtimes.includes('openclaw')) return [];
+  if (!policy || !policy.runtimes.includes('openclaw')) return [];
   return [
     { id: 'github-issue-assignment', name: 'issue assignments', policy: policy.issueAssignment },
-    { id: 'github-review-request', name: 'pull request reviews', policy: policy.reviewRequest },
   ]
-    .filter(({ policy: trigger }) => !!trigger?.allowed.length)
+    .filter(({ policy: trigger }) => Boolean(trigger))
     .map(({ id, name }) => ({ id, name }));
 }
 

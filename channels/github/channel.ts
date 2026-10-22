@@ -120,7 +120,7 @@ export default function createGitHubStatusChannel(
       ).filter(({ status }) => status === 'warning');
       if (!intake.checkpoint && !warnings.length) return result('awaiting-first-scan');
       const policy = loaded.manifest.github!.notifications!;
-      const interval = policy.schemaVersion === 2 ? policy.intervalMinutes : 5;
+      const interval = policy.intervalMinutes;
       if (
         intake.checkpoint &&
         (dependencies.now?.() ?? Date.now()) - intake.checkpoint > interval * 60_000 * 3

@@ -12,32 +12,26 @@ models:
   high: { model: openai/gpt-6-astra, effort: high }
 github:
   username: example-agent
-  notifications:
-    schema-version: 2
-    allowed-repository-owners:
-      - login: example-owner
-        node-id: O_example
-    issue-assignment:
-      allowed:
-        - login: example-operator
-          node-id: U_operator
-          operator-owner: true
-      mode: auto
-      pull-request:
-        recipients:
-          - source: assignment-actor
-            roles: [assignee]
-          - login: example-reviewer
-            node-id: U_reviewer
-            roles: [reviewer]
-      assessment:
-        skill: $agent-system:agent-system-issue-assessment
-        guidance:
-          file: assessment-guidance.md
-    review-request:
-      enabled: true
-      allowed:
-        - login: example-operator
-          node-id: U_operator
+  schema-version: 3
+  allowed-repository-owners:
+    - login: example-owner
+      node-id: O_example
+  issue-assignment:
+    allowed:
+      - login: example-operator
+        node-id: U_operator
+    mode: auto
+    reviewers:
+      - name: example-reviewer
+        node-id: U_reviewer
+    assessment:
+      skill: $agent-system:agent-system-issue-assessment
+      guidance:
+        file: assessment-guidance.md
+  review-request:
+    paused: false
+    allowed:
+      - login: example-operator
+        node-id: U_operator
 setup-agent:
   apply: touch .setup-applied

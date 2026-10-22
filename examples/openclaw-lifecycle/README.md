@@ -137,7 +137,7 @@ cp "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/issue.md" "$TMPDIR/notificatio
 printf '\nModel-only verification fact: notification-hidden-later-fact.\n' >> "$TMPDIR/notification-later-issue.md"
 openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -F "body=@$TMPDIR/notification-later-issue.md" | jq -e '.state == "open"'
 openclaw-gateway stop --timeout 340
-node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path=process.env.GITHUB_WORKSPACE+"/examples/openclaw-lifecycle/tanaabot/agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github.notifications["issue-assignment"].allowed.reverse(); writeFileSync(path,stringify(value));'
+node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path=process.env.GITHUB_WORKSPACE+"/examples/openclaw-lifecycle/tanaabot/agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github["issue-assignment"].allowed.reverse(); writeFileSync(path,stringify(value));'
 openclaw-gateway start
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-dispatch-before.json")
@@ -164,22 +164,21 @@ jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].reco
 # should hold and resume feedback authors without reinstalling the parent automation
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
 node --input-type=module <<'NODE'
-import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
-const text = readFileSync('agent.yaml', 'utf8');
-assert.ok(!text.includes('feedback:'));
-writeFileSync('agent.yaml', text.replace('    issue-assignment:', '    issue-assignment:\n      feedback: {inherit: false, allowed: []}'));
+import { parse, stringify } from 'yaml';
+const original = readFileSync('agent.yaml', 'utf8');
+writeFileSync(process.env.TMPDIR + '/lifecycle-feedback-policy.yaml', original);
+const manifest = parse(original);
+manifest.github['issue-assignment'].allowed = [];
+writeFileSync('agent.yaml', stringify(manifest));
 NODE
 openclaw agent-system notifications wait --for baseline-ready --timeout 30 --json | jq -e '.status == "completed"'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 jq -es --arg conversation "$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")" '[.[].records[] | select(.threadId == $conversation)] | length == 1 and .[0].feedback.admission.enabled == false and .[0].feedback.admission.observedAt > 0' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 node --input-type=module <<'NODE'
-import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
-const text = readFileSync('agent.yaml', 'utf8');
-assert.ok(text.includes('feedback: {inherit: false, allowed: []}'));
-writeFileSync('agent.yaml', text.replace('      feedback: {inherit: false, allowed: []}\n', ''));
+writeFileSync('agent.yaml', readFileSync(process.env.TMPDIR + '/lifecycle-feedback-policy.yaml'));
 NODE
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
@@ -187,7 +186,7 @@ jq -es --arg conversation "$(jq -er .threadId "$TMPDIR/notification-dispatch-bef
 
 # should preserve admitted work when the live actor list does not authorize its removal
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
-node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); writeFileSync(process.env.TMPDIR+"/notification-policy-before.yaml",readFileSync(path)); value.github.notifications["issue-assignment"].allowed=value.github.notifications["issue-assignment"].allowed.filter(actor=>actor.login!=="emoriwan"); writeFileSync(path,stringify(value));'
+node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); writeFileSync(process.env.TMPDIR+"/notification-policy-before.yaml",readFileSync(path)); value.github["issue-assignment"].allowed=value.github["issue-assignment"].allowed.filter(actor=>(actor.login??actor.name)!=="emoriwan"); writeFileSync(path,stringify(value));'
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api --method DELETE "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'all(.assignees[]; .login != "tanaabot")'
@@ -242,23 +241,10 @@ jq -es --arg id "$(jq -er .id "$TMPDIR/notification-feedback.json")" '[.[].recor
 jq -e --slurp '.[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[0].stageReceipt == .[1].stageReceipt' "$TMPDIR/notification-feedback.json" "$TMPDIR/notification-replayed.json"
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
 
-# should hold legacy opt-outs without archiving the closed fixture
+# should retire externally cleaned work using installation-owned cleanup policy
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
-sed 's/    interval-minutes: 1440/    interval-minutes: 1440\n    cleanup: {enabled: false}/' "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot/agent.yaml" > "$TMPDIR/legacy-cleanup.yaml"
-mv "$TMPDIR/legacy-cleanup.yaml" "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot/agent.yaml"
-cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
-sleep 61
-run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
-conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
-jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | length == 1 and (.[0] | .retirement.code == "retirement-cleanup-migration-required" and .retired == null and .retirement.archivedAt == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
-openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.archived != true and .session.archivedAt == null'
-
-# should resolve migration explicitly before retiring externally cleaned work
-sed '/    cleanup: {enabled: false}/d' "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot/agent.yaml" > "$TMPDIR/migrated-cleanup.yaml"
-mv "$TMPDIR/migrated-cleanup.yaml" "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot/agent.yaml"
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle/tanaabot"
 worktree=$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")
 repository_id=$(openclaw agent-system tool worktree -- list | jq -er --arg path "$worktree" '.[] | select(.path == $path) | .repositoryId')

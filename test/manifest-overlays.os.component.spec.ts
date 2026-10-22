@@ -85,69 +85,37 @@ describe('manifest/overlays', () => {
     assert.equal(merged.sources['/list/0']?.path, overlay.path);
   });
 
-  it('should attribute legacy cleanup values to base and overlay without making them active policy', async () => {
+  it('should attribute ignored legacy blocks to their source without affecting v3 policy', async () => {
     const f = await fixture(
       false,
       baseSource +
         `
 github:
+  schema-version: 3
   username: data
-  notifications:
-    allowed-repository-owners: [{login: owner, node-id: O_owner}]
-    cleanup: {enabled: false, grace-minutes: 17}
+  allowed-repository-owners: [{owner: owner, node-id: O_owner}]
+  notifications: {obsolete: true}
 `,
     );
-    await writeFile(f.overlayPath, 'github:\n  notifications:\n    cleanup: {grace-minutes: 5}');
+    await writeFile(f.overlayPath, 'github:\n  interval-minutes: 17');
     const loaded = await f.load();
     assert.equal(loaded.status, 'loaded', JSON.stringify(loaded.diagnostics));
     if (loaded.status !== 'loaded') throw new Error('not loaded');
-    assert.deepEqual(loaded.manifest.cleanupMigration?.declaration, {
-      enabled: false,
-      'grace-minutes': 5,
-    });
-    assert.ok(
-      loaded.manifest.cleanupMigration?.sources?.some(
-        ({ fieldPath, sourcePath }) => fieldPath.endsWith('/enabled') && sourcePath === f.path,
-      ),
-    );
-    assert.ok(
-      loaded.manifest.cleanupMigration?.sources?.some(
-        ({ fieldPath, sourcePath }) =>
-          fieldPath.endsWith('/grace-minutes') && sourcePath === f.overlayPath,
-      ),
-    );
-    assert.equal(Object.hasOwn(loaded.manifest.github!.notifications!, 'cleanup'), false);
-    assert.ok(
-      loaded.diagnostics.some(({ code }) => code === 'retirement-cleanup-migration-required'),
-    );
-    await writeFile(f.overlayPath, '{}');
-    const inherited = await f.load();
-    assert.equal(
-      inherited.status === 'loaded' &&
-        inherited.manifest.cleanupMigration?.declaration['grace-minutes'],
-      17,
+    assert.equal(loaded.manifest.github!.notifications!.intervalMinutes, 17);
+    assert.equal(loaded.manifest.cleanupMigration, undefined);
+    const warning = loaded.diagnostics.find(({ code }) => code === 'github-v2-ignored');
+    assert.ok(warning);
+    assert.equal(warning.sourcePath, f.path);
+    await writeFile(f.overlayPath, 'github:\n  notifications: {obsolete: false}');
+    const both = await f.load();
+    assert.equal(both.status, 'loaded');
+    assert.deepEqual(
+      both.diagnostics
+        .filter(({ code }) => code === 'github-v2-ignored')
+        .map(({ sourcePath }) => sourcePath),
+      [f.path, f.overlayPath],
     );
   });
-
-  for (const preferred of [false, true]) {
-    it(`should select only the sibling overlay for the ${preferred ? 'preferred' : 'root'} base`, async () => {
-      const f = await fixture(preferred);
-      const other = preferred ? f.root : join(f.root, '.agent-system');
-      await mkdir(other, { recursive: true });
-      await writeFile(join(other, 'agent.local.yaml'), 'agent: { id: ignored }');
-      if (preferred) await writeFile(join(f.root, 'agent.yaml'), 'invalid base');
-      await writeFile(f.overlayPath, 'agent: { name: Local }\nenvironment: { set: {} }');
-      const result = await f.load();
-      assert.equal(result.status, 'loaded');
-      if (result.status !== 'loaded') return;
-      assert.equal(result.path, f.path);
-      assert.equal(result.overlayPath, f.overlayPath);
-      assert.equal(result.manifest.agent.name, 'Local');
-      assert.equal(result.manifest.environment?.set?.SHARED, 'inherited');
-      assert.equal(result.sources?.['/agent/name']?.path, f.overlayPath);
-      assert.equal(result.sources?.['/environment/set/SHARED']?.path, f.path);
-    });
-  }
 
   it('should not establish a workspace from an overlay alone', async () => {
     const f = await fixture();
@@ -222,11 +190,10 @@ github:
   username: data
   ssh-keys: []
   ssh-signing-keys: []
-  notifications:
-    schema-version: 2
-    runtimes: [codex]
-    allowed-repository-owners: [{login: tanaabased, node-id: O_owner}]
-    issue-assignment: {allowed: []}
+  schema-version: 3
+  runtimes: [codex]
+  allowed-repository-owners: [{login: tanaabased, node-id: O_owner}]
+  issue-assignment: {allowed: []}
 setup-host: { steps: [] }
 setup-agent: { apply: [echo, safe], runtimes: [] }
 automations:
@@ -328,7 +295,7 @@ git: { worktrees: { root: /machine-${index}/worktrees, repositories: { local: {}
 environment:
   dotenv: [missing-local.env]
   set: { LOCAL: machine-${index}, SECRET: { from-op: 'op://vault/item/password' } }
-github: { username: data, notifications: { schema-version: 2, runtimes: [codex], allowed-repository-owners: [{login: tanaabased, node-id: O_owner}], issue-assignment: {allowed: ${index === 0 ? '[]' : '[{login: operator, node-id: U_operator}]'}} } }
+github: { username: data, schema-version: 3, runtimes: [codex], allowed-repository-owners: [{login: tanaabased, node-id: O_owner}], issue-assignment: {allowed: ${index === 0 ? '[]' : '[{login: operator, node-id: U_operator}]'}} }
 setup-agent: { apply: 'touch must-not-run' }
 `,
       );

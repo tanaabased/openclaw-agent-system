@@ -94,12 +94,13 @@ touch "$TMPDIR/notification-activation-ready"
 ## Testing
 
 ```bash
-# should assign one disposable issue from emori to tanaabot after the safe intake baseline
+# should create an issue as emori and assign it as tanaabot after the safe intake baseline
 test -f "$TMPDIR/notification-activation-ready"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr/emori"
 openclaw agent-system tool gh -- api repos/tanaabased/big-test-bucket | jq '{id,node_id}' > "$TMPDIR/notification-repository.json"
 openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System pr flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-pr/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr/tanaabot"
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
 
 # should retain a plan through the installed owning coordinator

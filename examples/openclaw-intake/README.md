@@ -6,8 +6,8 @@ Verify notification activation compatibility, native channel readiness and a saf
 
 Strict AIMock reuses the issue assessment protocol with a per-receipt release barrier. This job owns its three issues, agent workspaces, native state and SSH registration; it consumes no other job's resources. Scoped refreshes and a 24-hour schedule isolate discovery. Only Tanaabot receives assignments. Failed activation retains diagnostics. Cleanup stops the Gateway before closing its issues or revoking its key.
 
-Tanaabot omits the notification schema version so installation and intake exercise
-the default version `2` through the packed plugin.
+Tanaabot uses V3 object identities so installation and intake preserve the supplied
+name and node-ID pairs through the packed plugin.
 
 ## Setup
 
@@ -88,8 +88,10 @@ touch "$TMPDIR/notification-activation-ready"
 
 ```bash
 # should expose the install-managed account through the native channel status interface
+set -o pipefail
 test -f "$TMPDIR/notification-activation-ready"
-openclaw gateway call channels.status --json | jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .enabled == true and .configured == true and .mode == "readiness" and .statusState == "degraded" and .lifecycle == "ready" and .running == true and (.lastError | contains("review requests")))'
+openclaw gateway call channels.status --json | tee "$TMPDIR/intake-channel-status.json"
+jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .enabled == true and .configured == true and .mode == "readiness" and .statusState == "degraded" and .lifecycle == "ready" and .running == true and (.lastError | contains("review requests")))' "$TMPDIR/intake-channel-status.json"
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false and .accounts["intake-tanaabot"].enabled == true'
 
 # should pause and resume the same scheduler job through native and manifest controls
@@ -99,7 +101,7 @@ native=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId'
 openclaw cron edit "$native" --disable --json | jq -e '.enabled == false'
 openclaw cron edit "$native" --enable --json | jq -e '.enabled == true'
 cp agent.yaml "$TMPDIR/intake-active-agent.yaml"
-sed 's/    issue-assignment:/    issue-assignment:\n      paused: true/' "$TMPDIR/intake-active-agent.yaml" > agent.yaml
+sed 's/  issue-assignment:/  issue-assignment:\n    paused: true/' "$TMPDIR/intake-active-agent.yaml" > agent.yaml
 openclaw agent-system install --yes --json | jq -e 'all(.outcomes[]; .code != "session-dispatch-enrolled")'
 openclaw agent-system automations list --json | jq -e --arg id "$native" 'any(.jobs[]; .id == "github-issue-assignment" and .nativeId == $id and .nativeEnabled == false)'
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["intake-tanaabot"].enabled == true'

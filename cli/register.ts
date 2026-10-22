@@ -1,3 +1,4 @@
+import migrateGitHub from './migrate-github.ts';
 import type OpenClawNotifications from '../agent/openclaw-notifications.ts';
 import type { Readable } from 'node:stream';
 import type { Option } from 'commander';
@@ -389,6 +390,25 @@ export default function registerAgentSystemCli(
         setExitCode,
         styles: options.styles,
         json: selected.json === true,
+      });
+    });
+  const migrate = agentSystem
+    .command('migrate-github')
+    .description(
+      'preview a v3 workflow draft and required operator decisions without changing files.',
+    )
+    .option('--agent <id>', 'select a configured openclaw agent workspace.')
+    .option('--json', 'write structured json output.')
+    .action(async () => {
+      const selected = migrate.opts();
+      await migrateGitHub({
+        ...(typeof selected.agent === 'string' ? { agentId: selected.agent } : {}),
+        json: selected.json === true,
+        manifestService: options.manifestService,
+        output,
+        setExitCode,
+        styles: options.styles,
+        workspaceDir: cwd(),
       });
     });
   const validate = agentSystem

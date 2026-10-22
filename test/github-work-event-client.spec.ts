@@ -27,6 +27,40 @@ function response(body: unknown, link?: string): AgentSystemCliResult {
 }
 
 describe('channels/github/provider/work-event-client', () => {
+  it('should resolve names and opaque node ids through bounded provider facts', async () => {
+    const calls: string[][] = [];
+    let missing = false;
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'receiver', nodeId: 'U_receiver' },
+      async execute(argv, stdin) {
+        calls.push(argv);
+        if (argv.includes('graphql')) {
+          assert.equal(JSON.parse(stdin!).variables.id, 'O_owner');
+          return response({
+            data: {
+              node: missing ? null : { id: 'O_owner', login: 'owner', __typename: 'Organization' },
+            },
+          });
+        }
+        assert.ok(argv.includes('/users/actor'));
+        return response({ login: 'actor', nodeId: 'U_actor', type: 'User' });
+      },
+    });
+    assert.deepEqual(await client.resolveIdentity('@actor'), {
+      login: 'actor',
+      nodeId: 'U_actor',
+      type: 'User',
+    });
+    assert.deepEqual(await client.resolveIdentity('O_owner'), {
+      login: 'owner',
+      nodeId: 'O_owner',
+      type: 'Organization',
+    });
+    missing = true;
+    await assert.rejects(client.resolveIdentity('O_owner'), /github-identity-unresolved/);
+    assert.equal(calls.length, 3);
+  });
+
   it('should preserve secondary throttling instead of reporting a permission denial', async () => {
     const client = new GitHubWorkEventClient({
       identity: { login: 'tanaabot', nodeId: 'U_agent' },
