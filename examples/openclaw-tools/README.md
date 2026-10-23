@@ -35,7 +35,8 @@ openclaw agent-system install --yes --json | jq -e '.outcomes | any(.stepId == "
 # should retain managed identities through the public command route
 cd "$GITHUB_WORKSPACE/examples/openclaw-tools"
 openclaw agent-system tool git -- var GIT_AUTHOR_IDENT | grep -F 'Tools Tanaabot <tanaabot@tanaab.dev>'
-openclaw agent-system tool gh -- api user --jq .login | grep -Fx tanaabot
+AGENT_SYSTEM_GITHUB_PROFILE_DIR="$TMPDIR/github-profile-contract" openclaw agent-system tool gh -- api user --jq .login | grep -Fx tanaabot
+jq -se 'all(.[]; .complete == true) and any(.[].requests[]; .route == "/user")' "$TMPDIR/github-profile-contract/"*.json
 
 # should forward stdin while keeping debug logs out of machine output
 cd "$GITHUB_WORKSPACE/examples/openclaw-tools"

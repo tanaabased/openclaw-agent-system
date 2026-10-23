@@ -303,6 +303,11 @@ export default class GitHubAccountClient {
             cwd: context.workspaceDir,
             environment,
             executable: 'gh',
+            githubProfileContext: {
+              agentId: context.manifest.agent.id,
+              account: username.value,
+              source: 'account',
+            },
             excludedExecutableDirectories,
             maxOutputBytes: limits.maxOutputBytes,
             ...(requestSignal ? { signal: requestSignal } : {}),
@@ -354,6 +359,11 @@ export default class GitHubAccountClient {
             cwd: context.workspaceDir,
             environment: profileEnvironment(configDirectory),
             executable: 'gh',
+            githubProfileContext: {
+              agentId: context.manifest.agent.id,
+              account: username.value,
+              source: 'profile-verification',
+            },
             excludedExecutableDirectories,
             maxOutputBytes: defaultMaximumOutputBytes,
             ...(signal ? { signal } : {}),
