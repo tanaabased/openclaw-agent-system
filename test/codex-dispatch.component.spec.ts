@@ -74,6 +74,7 @@ describe('agent/codex-dispatch', () => {
   let native: DispatchNativeThread | undefined;
   let projects: unknown[];
   let gitCalls: string[][];
+  const branches = new Map<string, string>();
   const commit = '1'.repeat(40);
   const request = async (
     action: string,
@@ -204,6 +205,11 @@ describe('agent/codex-dispatch', () => {
         }),
       git: async (_cwd, argv) => {
         gitCalls.push(argv);
+        if (argv[0] === 'branch') return branches.get(_cwd) ?? '';
+        if (argv[0] === 'switch') {
+          branches.set(_cwd, argv[3]!);
+          return '';
+        }
         if (argv.length === 1 && argv[0] === 'remote') return 'origin';
         if (argv[0] === 'remote') return 'git@github.com:owner/repo.git';
         if (argv.includes('--git-common-dir')) return commonDir;
@@ -762,6 +768,13 @@ describe('agent/codex-dispatch', () => {
     const before = (await request('inspect')).records as Record<string, unknown>[];
     native!.turnId = 'authorized-follow-up';
     native!.followUpUserTurn = true;
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.worktreeBranch = 'receiver-owned-attempt';
+      branches.set(worktree, 'receiver-owned-attempt');
+      await save();
+    });
     const ordinaryGit = deps.git!;
     deps.git = async (cwd, argv) =>
       argv.includes('HEAD')
@@ -961,6 +974,8 @@ describe('agent/codex-dispatch', () => {
     await store.exclusive(async (state, save) => {
       const historical = structuredClone(state.records[0]!);
       historical.id = 'f'.repeat(64);
+      delete historical.worktreeAttemptId;
+      delete historical.worktreeBranch;
       historical.intakeId = 'e'.repeat(64);
       historical.retired = { at: now, by: 'old-owner' };
       historical.phase = 'blocked';
@@ -1718,6 +1733,8 @@ describe('agent/codex-dispatch', () => {
         ...structuredClone(state.records[0]!),
         id: 'f'.repeat(64),
         issueKey: 'e'.repeat(64),
+        worktreeAttemptId: undefined,
+        worktreeBranch: undefined,
         threadId: 'operator',
         worktree,
       });
@@ -3554,6 +3571,9 @@ describe('agent/codex-dispatch', () => {
       assert.equal(started.continuation!.attempt!.origin, 'assessment');
       assert.equal(started.continuation!.binding!.turnId, turnId);
       assert.equal(started.progression!.via, mode);
+      assert.equal(started.worktreeAttemptId, started.id);
+      assert.equal('branch' in verified && verified.branch, started.worktreeBranch);
+      assert.ok(started.worktreeBranch);
       assert.equal((await work.run('context', {}, true)).status, 'verified');
       assert.deepEqual(
         (await store.read()).records[0]!.continuation!.attempt,
@@ -4144,6 +4164,8 @@ describe('agent/codex-dispatch', () => {
     await store.exclusive(async (state, save) => {
       const pending = structuredClone(state.records[0]!);
       pending.id = pending.intakeId = pending.issueKey = pendingId;
+      delete pending.worktreeAttemptId;
+      delete pending.worktreeBranch;
       pending.threadId = 'pending-decision-chat';
       pending.result = { ...pending.result!, decision: undefined };
       delete pending.continuation;
@@ -4518,6 +4540,9 @@ describe('agent/codex-dispatch', () => {
         assert.equal(codexItemOccupied(saved), codexItemOccupied(original));
       assert.equal(saved.threadId, original.threadId);
       assert.equal(saved.worktree, original.worktree);
+      assert.equal(saved.worktreeAttemptId, original.id);
+      assert.equal(saved.worktreeBranch, original.worktreeBranch);
+      assert.ok(saved.worktreeBranch);
       assert.deepEqual(saved.progression, original.progression);
       assert.equal(saved.retired, undefined);
       assert.equal(
@@ -4557,6 +4582,8 @@ describe('agent/codex-dispatch', () => {
         ...structuredClone(original),
         id: 'd'.repeat(64),
         issueKey: 'e'.repeat(64),
+        worktreeAttemptId: undefined,
+        worktreeBranch: undefined,
         worktree: '/missing-skill',
       });
       await save();
@@ -4974,6 +5001,8 @@ describe('agent/codex-dispatch', () => {
         ...structuredClone(state.records[0]!),
         id: 'f'.repeat(64),
         issueKey: 'e'.repeat(64),
+        worktreeAttemptId: undefined,
+        worktreeBranch: undefined,
         threadId: 'operator',
       });
       await save();

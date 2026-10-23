@@ -19,6 +19,22 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     };
   }
   const reasons: Record<string, [string, string]> = {
+    'dispatch-branch-owner-mismatch': [
+      'The current branch does not belong to this assignment attempt.',
+      'Preserve all work. Inspect the retained attempt branch and switch back to that branch only after preserving any local changes; do not adopt an older issue branch or reset the checkout.',
+    ],
+    'dispatch-branch-ownership-required': [
+      'This attempt has no verified branch ownership.',
+      'Preserve the checkout and reconcile its implementation handoff. Older progressed work without a retained delivery binding requires operator recovery; issue comments and matching branch names cannot establish ownership.',
+    ],
+    'dispatch-branch-base-changed': [
+      'The unbound checkout has changed from this attempt’s pinned base.',
+      'Preserve its commits and local changes for operator recovery. Do not reset or automatically adopt them into a fresh assignment.',
+    ],
+    'dispatch-branch-exists': [
+      'The intended attempt branch already exists outside the current checkout.',
+      'Preserve the branch and reconcile the original preparation and native checkout before retrying. Do not delete it or allocate another branch to bypass uncertain ownership.',
+    ],
     'git-worktree-branch-exists': [
       'This attempt already has a branch, but its owned checkout is absent.',
       'Preserve the branch and reconcile the retained preparation before retrying. Do not reset it or create another attempt to bypass an uncertain Git effect.',

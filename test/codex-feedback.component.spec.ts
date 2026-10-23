@@ -124,6 +124,8 @@ describe('agent/codex-feedback', () => {
         manifestDigest: current.digest,
         threadId: 'child',
         worktree,
+        worktreeAttemptId: id,
+        worktreeBranch: 'branch',
         effective: { status: 'verified', model: 'model', effort: 'high' },
         project: { id: 'project', path: source, commonDir, ref: 'main', commit: 'a'.repeat(40) },
         reservationVersion: 1,
@@ -206,7 +208,11 @@ describe('agent/codex-feedback', () => {
             ? { status: 'uncertain' }
             : { status: 'verified', turnId: receiptTurn ?? turn, ended },
       git: async (_cwd, args) =>
-        args[0] === 'remote' ? 'https://github.com/owner/repo.git' : commonDir,
+        args[0] === 'remote'
+          ? 'https://github.com/owner/repo.git'
+          : args[0] === 'branch'
+            ? 'branch'
+            : commonDir,
       feedbackConnect: async () =>
         ({
           client: {
@@ -1325,6 +1331,8 @@ describe('agent/codex-feedback', () => {
           for (const digit of ['1', '2', '3']) {
             const other = structuredClone(state.records[0]!);
             other.id = digit.repeat(64);
+            delete other.worktreeAttemptId;
+            delete other.worktreeBranch;
             other.issueKey = digit.repeat(64);
             other.phase = 'assessing';
             delete other.effective;
@@ -1384,6 +1392,8 @@ describe('agent/codex-feedback', () => {
       for (const digit of ['1', '2', '3']) {
         const other = structuredClone(state.records[0]!);
         other.id = digit.repeat(64);
+        delete other.worktreeAttemptId;
+        delete other.worktreeBranch;
         other.issueKey = digit.repeat(64);
         other.phase = 'assessing';
         delete other.effective;

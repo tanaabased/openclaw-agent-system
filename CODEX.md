@@ -406,12 +406,19 @@ execution or visible card delivery.
 
 Once an issue enters implementation, its ordinary PR delivery needs no separate
 publication grant. Honor explicit restrictions in the conversation. The trusted `deliveryRuntime` accepts JSON actions with the retained
-dispatch `id`: `prepare` previews the current branch, head, identity, and recipient
+dispatch `id`: `prepare` previews the attempt-owned branch, head, identity, and recipient
 policy; `publish` requires that preview's `digest` and the same optional `title`
 and `body`. Preparation grants no publication authority. Codex uses native host
 Git and GitHub authorization, preserves authored commits and PR metadata, and
 adds the original issue's closing reference. The PR must be open, authored by the
 active account, and target the same repository's default branch.
+
+Before implementation, Codex prepares and records a branch from the attempt’s pinned
+base. Retries retain that branch and PR; a new assignment after completed retirement
+gets a distinct branch while earlier branches and PRs remain preserved. Delivery
+rejects a different current branch. Older attempts may retain their own saved delivery
+binding; unbound work with local changes or extra commits requires operator recovery
+and is never reset or silently adopted.
 
 Publication retains the PR before recipient reconciliation. If a later step
 fails, prepare and resume that operation. An uncertain creation is reconciled

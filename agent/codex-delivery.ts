@@ -1,3 +1,4 @@
+import { verifyCodexWorkBranch } from './codex-work-branch.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
@@ -400,7 +401,7 @@ export default async function runCodexDelivery(
       let head = previous?.binding.head ?? '';
       if (!announcementOnly) {
         await verifyDispatchWorktree(record.project, found.cwd, repository, git, 'handoff');
-        branch = (await git(found.cwd, ['branch', '--show-current'], signal)).trim();
+        branch = await verifyCodexWorkBranch(record, intake, git, signal);
         if (!branch || branch === checked.repo.defaultBranch)
           throw new Error('delivery-branch-required');
         await git(found.cwd, ['check-ref-format', `refs/heads/${branch}`], signal);

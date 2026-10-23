@@ -2,6 +2,7 @@ import { realpath } from 'node:fs/promises';
 
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import assessmentHandoff from './assessment-handoff.ts';
+import prepareCodexWorkBranch from './codex-work-branch.ts';
 import assessmentSubmission from './assessment-submission.ts';
 import {
   assessmentDecisionMode,
@@ -140,14 +141,24 @@ export async function handoffDispatch(
       'handoff',
     );
     const retainedAssessment = record.result ? { previousResult: record.result } : {};
-    if (record.handoff)
+    if (record.handoff) {
+      const branch = await prepareCodexWorkBranch({
+        record,
+        intake,
+        agentId: current.manifest.agent.id,
+        workspace: current.workspace,
+        save,
+        git: deps.git,
+      });
       return {
         status: 'handed-off' as const,
         changed: false,
         id: record.id,
         threadId: record.threadId,
+        branch,
         ...retainedAssessment,
       };
+    }
     if (record.continuation?.phase === 'cancelled') throw new Error('implementation-cancelled');
     if (
       record.continuation?.phase === 'blocked' &&
@@ -187,6 +198,7 @@ export async function handoffDispatch(
         id: record.id,
         digest,
         threadId: record.threadId,
+        branch: record.worktreeBranch,
         ...retainedAssessment,
         instruction:
           'Apply this handoff when the live workflow or explicit user request permits implementation. It records the transition and preserves the assessment and checkout. Implementation includes ordinary PR delivery; honor explicit restrictions and native denials.',
@@ -195,9 +207,17 @@ export async function handoffDispatch(
     if (transition.status === 'ready')
       record.progression = { ...transition.progression, workOwner: 'issue' };
     record.handoff = { at: (deps.now ?? Date.now)(), by: caller, turnId: native.turnId };
+    const branch = await prepareCodexWorkBranch({
+      record,
+      intake,
+      agentId: current.manifest.agent.id,
+      workspace: current.workspace,
+      save,
+      git: deps.git,
+    });
     const response = notice(record, intake);
     await save();
-    return { ...response, ...retainedAssessment };
+    return { ...response, branch, ...retainedAssessment };
   }, true);
 }
 export async function assessDispatch(

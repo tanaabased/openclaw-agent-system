@@ -135,6 +135,8 @@ export const dispatchRecordSchema = Type.Object(
     issueMode: Type.Optional(
       Type.Union([Type.Literal('plan'), Type.Literal('work'), Type.Literal('auto')]),
     ),
+    worktreeAttemptId: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
+    worktreeBranch: Type.Optional(text),
     project: Type.Optional(dispatchProjectSchema),
     repositoryPreparation: Type.Optional(
       Type.Object(
@@ -205,7 +207,9 @@ export default class CodexDispatchStore extends DispatchStore<DispatchRecord> {
           record.continuation?.result
         ) ||
           record.progression?.stage === 'implementation') &&
-        (!record.claimAccepted || Boolean(record.claimId && record.effective && record.threadId)),
+        (!record.claimAccepted || Boolean(record.claimId && record.effective && record.threadId)) &&
+        (!record.worktreeAttemptId || record.worktreeAttemptId === record.id) &&
+        (!record.worktreeBranch || record.worktreeAttemptId === record.id),
     });
   }
 }

@@ -591,6 +591,7 @@ export async function prepareDispatch(
     delete record.retry;
     delete record.retryAfter;
     record.reservationVersion = 1;
+    record.worktreeAttemptId ??= record.id;
     delete record.capacityObservation;
     delete record.nativeInactive;
     record.request = {

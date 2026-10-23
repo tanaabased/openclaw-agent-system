@@ -297,6 +297,8 @@ describe('agent/codex-delivery', () => {
     await store.exclusive(async (state, save) => {
       state.records.push({
         id,
+        worktreeAttemptId: id,
+        worktreeBranch: 'pirog-work',
         intakeId: intake.id,
         issueKey: intake.id,
         sourceThreadId: 'intake',
@@ -545,6 +547,55 @@ describe('agent/codex-delivery', () => {
       assert.ok(assigned && requested);
       assert.equal(creates, 1);
     });
+
+  it('should refuse a retired branch before pushing or creating a pr', async () => {
+    const git = deps.git!;
+    deps.git = async (cwd, argv, signal) =>
+      argv[0] === 'branch' ? 'pirog-retired-same-issue' : git(cwd, argv, signal);
+    await assert.rejects(publish(), /dispatch-branch-owner-mismatch/);
+    assert.equal(creates, 0);
+    assert.equal(gitCalls.filter((argv) => argv.includes('push')).length, 0);
+    assert.equal((await store.read()).records[0]!.delivery, undefined);
+  });
+
+  it('should refuse unbound legacy work instead of adopting the current branch', async () => {
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.worktreeAttemptId;
+      delete state.records[0]!.worktreeBranch;
+      await save();
+    });
+    await assert.rejects(publish(), /dispatch-branch-ownership-required/);
+    assert.equal(creates, 0);
+    assert.equal(remote, '');
+  });
+
+  it('should keep a legacy attempt on its own retained pr binding', async () => {
+    await publish();
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.worktreeAttemptId;
+      delete state.records[0]!.worktreeBranch;
+      await save();
+    });
+    head = 'b'.repeat(40);
+    await publish();
+    assert.equal(creates, 1);
+    assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
+  });
+
+  it('should reject legacy delivery evidence belonging to another issue', async () => {
+    await publish();
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      delete record.worktreeAttemptId;
+      delete record.worktreeBranch;
+      record.delivery!.binding.issueId = 'I_other';
+      await save();
+    });
+    head = 'b'.repeat(40);
+    await assert.rejects(publish(), /dispatch-branch-ownership-required/);
+    assert.equal(creates, 1);
+    assert.equal(remote, firstHead);
+  });
 
   it('should display the retained pr and reconcile only attachment after head and authority change', async () => {
     await publish();

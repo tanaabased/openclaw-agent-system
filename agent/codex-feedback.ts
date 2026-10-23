@@ -1,4 +1,5 @@
 import implementationContext from './implementation-context.ts';
+import prepareCodexWorkBranch from './codex-work-branch.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import codexReply from './codex-reply.ts';
@@ -510,7 +511,17 @@ export default async function runCodexFeedback(
               resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
             });
             await save();
+            const branch = await prepareCodexWorkBranch({
+              record,
+              intake: admitted,
+              agentId: current.manifest.agent.id,
+              workspace: current.workspace,
+              save,
+              git: deps.git,
+              signal,
+            });
             return {
+              branch,
               ...implementationContext({
                 runtime: 'codex',
                 id: record.id,
@@ -534,7 +545,7 @@ export default async function runCodexFeedback(
               worktree: record.worktree,
               resultSchema: implementationResultSchema,
               instructions:
-                'Use the selected implementation skill with this source and retained plan. Reconcile partial work; test and commit appropriate changes. Submit feedback implementation-result with implementationResult. For done use deliveryRuntime prepare/publish with id and eventId, retaining the existing PR and announcement. Then retain feedback result and compose its public reply. Do not repeat finished work.',
+                'Use the selected implementation skill with this source and retained plan. Keep the returned attempt-owned branch. Reconcile partial work; test and commit appropriate changes. Submit feedback implementation-result with implementationResult. For done use deliveryRuntime prepare/publish with id and eventId, retaining the existing PR and announcement. Then retain feedback result and compose its public reply. Do not repeat finished work.',
             };
           }
           if (input.action === 'implementation-result') {
