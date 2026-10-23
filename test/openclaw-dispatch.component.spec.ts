@@ -5614,6 +5614,33 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(after.feedback?.events[0]?.sourceId, comments[0]!.nodeId);
     assert.equal(creates().length, 1);
   });
+  it('should reuse one issue observation per feedback authorization and refresh on the next call', async () => {
+    const { id } = await feedbackOwner();
+    consumeSend = true;
+    await service.check(manifest, root);
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const event = (await record()).feedback!.events[0]!;
+    const who = assessor(id, event.turn!.runId);
+    const input = {
+      action: 'feedback' as const,
+      operation: 'context' as const,
+      id,
+      eventId: event.id,
+    };
+    const read = fixture.client.getItem;
+    let reads = 0;
+    fixture.client.getItem = async (...args) => {
+      reads++;
+      return structuredClone(await read(...args));
+    };
+    assert.equal((await service.run(manifest, root, who, input)).status, 'verified');
+    assert.equal(reads, 1);
+    fixture.item.state = 'closed';
+    const result = await service.run(manifest, root, who, input);
+    assert.equal('code' in result && result.code, 'dispatch-issue-closed');
+    assert.equal(reads, 2);
+    assert.equal(creates().length, 1);
+  });
   it('should reconcile an uncertain delivery announcement before discovering same-account feedback', async () => {
     const { comments } = await feedbackOwner();
     const announcement = attemptedAnnouncement(fixture.client.identity.nodeId);

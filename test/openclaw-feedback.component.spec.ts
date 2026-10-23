@@ -795,6 +795,29 @@ describe('agent/openclaw-feedback', () => {
     assert.equal((await action('reconcile')).status, 'uncertain');
     assert.equal(writes, 1);
   });
+  for (const changed of ['issue', 'source'])
+    it(`should refresh ${changed} authorization before publishing without repeating the issue read`, async () => {
+      await start();
+      const digest = await compose();
+      const issue = intakeFixture().item;
+      let checks = 0;
+      input.reauthorize = async () => {
+        if (++checks === 2) {
+          if (changed === 'issue') issue.state = 'closed';
+          else source.body = '@receiver changed request';
+        }
+        return structuredClone(issue);
+      };
+      provider.getItem = async () => {
+        throw new Error('duplicate issue read');
+      };
+      await assert.rejects(
+        action('publish', { digest }),
+        changed === 'issue' ? /feedback-source-owner-changed/ : /feedback-source-changed/,
+      );
+      assert.equal(checks, 2);
+      assert.equal(writes, 0);
+    });
   it('should reject feedback results from another native run', async () => {
     await start();
     input.caller.runId = 'foreign';
@@ -898,21 +921,25 @@ describe('agent/openclaw-feedback', () => {
     const parent = reviewCommentFixture({ databaseId: 70, nodeId: 'parent', reviewId: 60 });
     Object.assign(provider, { reviews: reviewClientFixture(review, [reply, parent]) });
     provider.reviews!.getReviewComments = async () => [reply];
-    provider.getItem = async () => ({
-      ...intakeFixture().item,
-      itemType: 'pull-request',
-      nodeId: 'PR',
-      number: 4,
-      pullRequest: {
-        baseRef: 'main',
-        baseRepositoryDatabaseId: 10,
-        baseRepositoryNodeId: 'R_repo',
-        draft: false,
-        headRef: 'task',
-        headSha: 'a'.repeat(40),
-        merged: false,
-      },
-    });
+    input.reauthorize = async () => intakeFixture().item;
+    provider.getItem = async (_owner, _name, number) => {
+      assert.equal(number, 4);
+      return {
+        ...intakeFixture().item,
+        itemType: 'pull-request',
+        nodeId: 'PR',
+        number: 4,
+        pullRequest: {
+          baseRef: 'main',
+          baseRepositoryDatabaseId: 10,
+          baseRepositoryNodeId: 'R_repo',
+          draft: false,
+          headRef: 'task',
+          headSha: 'a'.repeat(40),
+          merged: false,
+        },
+      };
+    };
     record.work = {
       assessmentDigest: 'd'.repeat(64),
       delivery: {

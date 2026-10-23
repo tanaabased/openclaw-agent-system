@@ -238,7 +238,7 @@ export default class OpenClawDispatchIssue {
         await this.context.validateLocal(manifest, workspace, record, false, true);
       };
       await assertCurrent();
-      const { intake, client } = await this.context.validate(
+      const { intake, client, item } = await this.context.validate(
         manifest,
         workspace,
         record,
@@ -247,6 +247,8 @@ export default class OpenClawDispatchIssue {
         undefined,
         authority.signal,
       );
+      // Consume the entry validation once; later effect boundaries read again.
+      let initialIssue: typeof item | undefined = item;
       const provider = await this.context.dependencies.feedbackConnect?.(
         { manifest, workspaceDir: workspace },
         authority.signal ?? AbortSignal.timeout(60000),
@@ -296,15 +298,22 @@ export default class OpenClawDispatchIssue {
               return live.manifest.github!.notifications!;
             },
             reauthorize: async () => {
-              await this.context.validate(
-                manifest,
-                workspace,
-                record,
-                false,
-                true,
-                client,
-                authority.signal,
-              );
+              if (initialIssue) {
+                const observed = initialIssue;
+                initialIssue = undefined;
+                return observed;
+              }
+              return (
+                await this.context.validate(
+                  manifest,
+                  workspace,
+                  record,
+                  false,
+                  true,
+                  client,
+                  authority.signal,
+                )
+              ).item;
             },
             save,
           };
