@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: Capture GitHub request metadata (select the audit examples before launching)
+        description: Capture GitHub request metadata
         type: boolean
         default: false
 
@@ -26,12 +26,25 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
-      # Temporary #381 request audit; restore all 17 examples before merge.
-      max-parallel: 2
       matrix:
         example:
+          - openclaw-notifications-intake
+          - openclaw-notifications-assessment-recovery
+          - openclaw-notifications-feedback-policy
+          - openclaw-notifications-assignment-policy
+          - openclaw-notifications-reactivation
+          - openclaw-notifications-retirement
+          - openclaw-notifications-reset
           - openclaw-notifications-issue-journey
+          - openclaw-notifications-conversation
           - openclaw-notifications-pr-journey
+          - openclaw-notifications-pr-recipients
+          - openclaw-notifications-pr-update
+          - openclaw-notifications-pr-presentation
+          - openclaw-notifications-pr-collaboration
+          - openclaw-notifications-pr-discovery
+          - openclaw-notifications-pr-reply-recovery
+          - openclaw-notifications-progression
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
