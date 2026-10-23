@@ -11,7 +11,7 @@ Unassign an assessed issue, post approved feedback, and resume the original nati
 ## What Does Not Belong Here
 
 - Unapproved assignment removal or ordinary reassignment: [assignment policy](../openclaw-notifications-assignment-policy/README.md).
-- Feedback-author list changes: [feedback policy](../openclaw-notifications-feedback-policy/README.md). Ordinary assigned-issue feedback: [issue planning](../openclaw-notifications-issue/README.md).
+- Feedback-author list changes: [feedback policy](../openclaw-notifications-feedback-policy/README.md). Ordinary assigned-issue feedback: [issue planning](../openclaw-notifications-issue-journey/README.md).
 - Restart, retirement, and reset recovery.
 
 ## Notes

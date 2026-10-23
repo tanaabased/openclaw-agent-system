@@ -26,6 +26,8 @@ jobs:
           - openclaw-workspace
           - openclaw-doctor
           - openclaw-github
+          - openclaw-issue-assessment
+          - openclaw-github-reply
           - openclaw-google
           - openclaw-tools
           - openclaw-worktree

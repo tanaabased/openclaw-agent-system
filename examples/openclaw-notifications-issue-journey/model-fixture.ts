@@ -599,7 +599,7 @@ const final: Fixture = {
 };
 
 export const issueExampleScenario: OpenClawAIMockScenario = {
-  id: 'openclaw-notifications-issue',
+  id: 'openclaw-notifications-issue-journey',
   model: { match: /^(?:aimock\/)?gpt-5\.5$/u, reference: 'aimock/gpt-5.5' },
   systemPromptSignals: [identity],
   finalResponses: [],

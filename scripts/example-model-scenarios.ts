@@ -6,7 +6,10 @@ import { githubExampleScenario } from '../examples/openclaw-github/model-fixture
 import { osExecutionExampleScenario } from '../examples/os-execution/model-fixture.ts';
 import { runtimeBoundaryScenario } from '../examples/openclaw-runtimes/model-fixture.ts';
 import { memoryExampleScenario } from '../examples/openclaw-memory/model-fixture.ts';
-import { issueExampleScenario } from '../examples/openclaw-notifications-issue/model-fixture.ts';
+import { issueExampleScenario } from '../examples/openclaw-notifications-issue-journey/model-fixture.ts';
+import { githubReplyExampleScenario } from '../examples/openclaw-github-reply/model-fixture.ts';
+import { issueAssessmentExampleScenario } from '../examples/openclaw-issue-assessment/model-fixture.ts';
+import { conversationExampleScenario } from '../examples/openclaw-notifications-conversation/model-fixture.ts';
 import { intakeExampleScenario } from '../examples/openclaw-notifications-intake/model-fixture.ts';
 import { assessmentRecoveryExampleScenario } from '../examples/openclaw-notifications-assessment-recovery/model-fixture.ts';
 import { feedbackPolicyExampleScenario } from '../examples/openclaw-notifications-feedback-policy/model-fixture.ts';
@@ -32,6 +35,9 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [prExampleScenario.id, prExampleScenario],
   [progressionExampleScenario.id, progressionExampleScenario],
   [issueExampleScenario.id, issueExampleScenario],
+  [githubReplyExampleScenario.id, githubReplyExampleScenario],
+  [issueAssessmentExampleScenario.id, issueAssessmentExampleScenario],
+  [conversationExampleScenario.id, conversationExampleScenario],
   [intakeExampleScenario.id, intakeExampleScenario],
   [assessmentRecoveryExampleScenario.id, assessmentRecoveryExampleScenario],
   [feedbackPolicyExampleScenario.id, feedbackPolicyExampleScenario],

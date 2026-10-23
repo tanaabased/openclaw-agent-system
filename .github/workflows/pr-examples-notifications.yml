@@ -29,7 +29,8 @@ jobs:
           - openclaw-notifications-reactivation
           - openclaw-notifications-retirement
           - openclaw-notifications-reset
-          - openclaw-notifications-issue
+          - openclaw-notifications-issue-journey
+          - openclaw-notifications-conversation
           - openclaw-notifications-pr-delivery
           - openclaw-notifications-progression
     steps:

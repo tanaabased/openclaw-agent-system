@@ -10,7 +10,7 @@ Activate notification intake, start three independent issue assessments before a
 
 ## What Does Not Belong Here
 
-- Assessment presentation and ordinary issue feedback: [issue planning](../openclaw-notifications-issue/README.md). Implementation and PR feedback: [PR delivery](../openclaw-notifications-pr-delivery/README.md).
+- Assessment presentation and ordinary issue feedback: [issue planning](../openclaw-notifications-issue-journey/README.md). Implementation and PR feedback: [PR delivery](../openclaw-notifications-pr-delivery/README.md).
 - Restart recovery: [assessment recovery](../openclaw-notifications-assessment-recovery/README.md). Unassigned-issue feedback: [reactivation](../openclaw-notifications-reactivation/README.md). Coordinator/tracking reset: [reset](../openclaw-notifications-reset/README.md). Resource reconciliation: [retirement](../openclaw-notifications-retirement/README.md).
 - Scheduler-control variants, unavailable-assignment recovery, and detailed debug-card presentation.
 

@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises';
 import parseAgentManifest from '../manifest/parse.ts';
 
 for (const id of [
-  'openclaw-notifications-issue',
+  'openclaw-notifications-issue-journey',
+  'openclaw-notifications-conversation',
   'openclaw-notifications-pr-delivery',
   'openclaw-notifications-intake',
   'openclaw-notifications-assessment-recovery',
@@ -28,7 +29,10 @@ for (const id of [
       assert.equal(policy?.issueAssignment?.mode, 'plan');
       assert.deepEqual(policy?.issueAssignment?.pullRequest?.recipients, [
         { source: 'assignment-actor', roles: ['assignee'] },
-        ...(id === 'openclaw-notifications-issue'
+        ...([
+          'openclaw-notifications-issue-journey',
+          'openclaw-notifications-conversation',
+        ].includes(id)
           ? [{ login: 'tanaabot', nodeId: '', reference: '@tanaabot', roles: ['reviewer'] }]
           : []),
       ]);

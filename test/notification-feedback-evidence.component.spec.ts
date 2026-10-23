@@ -61,7 +61,7 @@ describe('examples/openclaw-notifications-pr-delivery retained feedback evidence
 });
 
 for (const [scenario, itemType] of [
-  ['openclaw-notifications-issue', 'issue'],
+  ['openclaw-notifications-issue-journey', 'issue'],
   ['openclaw-notifications-pr-delivery', 'pull-request'],
   ['openclaw-notifications-reactivation', 'issue'],
 ]) {

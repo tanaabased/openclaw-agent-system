@@ -12,7 +12,7 @@ Restart an admitted issue's Gateway, refresh the assessment with current issue f
 
 - Author-policy changes: [feedback policy](../openclaw-notifications-feedback-policy/README.md). Assignment removal and reactivation: [assignment policy](../openclaw-notifications-assignment-policy/README.md) and [reactivation](../openclaw-notifications-reactivation/README.md).
 - Retirement and reset: [retirement](../openclaw-notifications-retirement/README.md) and [reset](../openclaw-notifications-reset/README.md).
-- Ordinary planning and PR delivery: [issue planning](../openclaw-notifications-issue/README.md) and [PR delivery](../openclaw-notifications-pr-delivery/README.md).
+- Ordinary planning and PR delivery: [issue planning](../openclaw-notifications-issue-journey/README.md) and [PR delivery](../openclaw-notifications-pr-delivery/README.md).
 
 ## Notes
 

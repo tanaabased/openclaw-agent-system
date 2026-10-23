@@ -1,6 +1,6 @@
 # OpenClaw Notification Feedback Policy Example
 
-Admit one issue, remove its live approved-author list, observe feedback admission disabled, and restore the list to resume admission with the retained cutoff and owner without reinstalling the coordinator.
+Admit one issue, remove its live approved-author list, observe feedback admission disabled, exclude a comment posted by a removed author, and restore the list to resume admission with the retained cutoff and owner without reinstalling the coordinator.
 
 ## What Belongs Here
 
@@ -11,13 +11,13 @@ Admit one issue, remove its live approved-author list, observe feedback admissio
 ## What Does Not Belong Here
 
 - Assignment-removal authority: [assignment policy](../openclaw-notifications-assignment-policy/README.md). Approved-comment reactivation: [reactivation](../openclaw-notifications-reactivation/README.md).
-- Ordinary replies, direct-input comparison, and comments actually posted during exclusion; those remain in [issue planning](../openclaw-notifications-issue/README.md) for its later extraction pass.
+- Ordinary replies: [issue journey](../openclaw-notifications-issue-journey/README.md). Repeated questions and direct-input comparison: [conversation continuity](../openclaw-notifications-conversation/README.md).
 - Gateway restart, retirement, or reset journeys.
 
 ## Notes
 
 - Strict AIMock reuses the issue assessment protocol; the installed Gateway, GitHub assignment, and native coordinator remain real.
-- This case observes admission state without posting a feedback comment. Excluded-source and cutoff permutations have separate source coverage; this scenario does not claim to exercise every such outcome.
+- A comment posted while all approved authors are removed must not become an admitted event. Other excluded-source and cutoff permutations retain their source coverage.
 - CI owns one disposable issue and its agent/SSH fixtures. Only Tanaabot is assigned. Refreshes target this issue; a 24-hour schedule excludes unrelated discovery, and cleanup stops the Gateway before external changes.
 
 ## Setup
@@ -144,6 +144,36 @@ NODE
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 jq -es --arg conversation "$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")" '[.[].records[] | select(.threadId == $conversation)] | length == 1 and .[0].feedback.admission.enabled == true and .[0].feedback.admission.after > 0 and .[0].feedback.admission.after < .[0].feedback.admission.observedAt and (.[0].feedback.events | length) == 0' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+
+# should exclude feedback while all approved authors are removed
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-feedback-policy/tanaabot"
+node --input-type=module <<'NODE'
+import { readFileSync, writeFileSync } from 'node:fs';
+import { parse, stringify } from 'yaml';
+const manifest = parse(readFileSync('agent.yaml', 'utf8'));
+manifest.github['issue-assignment'].allowed = [];
+manifest.github['issue-assignment'].reviewers = [];
+writeFileSync('agent.yaml', stringify(manifest));
+NODE
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-feedback-policy/emori"
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot this author is excluded by the current actor policy.' > "$TMPDIR/notification-excluded-source.json"
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-feedback-policy/tanaabot"
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+jq -es --arg conversation "$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")" --arg source "$(jq -er .node_id "$TMPDIR/notification-excluded-source.json")" '[.[].records[] | select(.threadId == $conversation)] | length == 1 and .[0].feedback.admission.enabled == false and all(.[0].feedback.events[]; .sourceId != $source)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+node --input-type=module <<'NODE'
+import { readFileSync, writeFileSync } from 'node:fs';
+import { parse, stringify } from 'yaml';
+const manifest = parse(readFileSync('agent.yaml', 'utf8'));
+manifest.github['issue-assignment'].allowed = ['@emoriwan'];
+manifest.github['issue-assignment'].reviewers = ['@tanaabot'];
+writeFileSync('agent.yaml', stringify(manifest));
+NODE
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+jq -es --arg conversation "$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")" --arg source "$(jq -er .node_id "$TMPDIR/notification-excluded-source.json")" '[.[].records[] | select(.threadId == $conversation)] | length == 1 and .[0].feedback.admission.enabled == true and (.[0].feedback.events | length) == 0 and all(.[0].feedback.events[]; .sourceId != $source)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+
 ```
 
 ## Cleanup

@@ -10,7 +10,7 @@ Assign one issue, retain its plan, implement an approved GitHub request, and del
 
 ## What Does Not Belong Here
 
-- Planning-only feedback: [issue planning](../openclaw-notifications-issue/README.md). Mode transitions and implementation clarification: [progression](../openclaw-notifications-progression/README.md).
+- Planning-only feedback: [issue planning](../openclaw-notifications-issue-journey/README.md). Mode transitions and implementation clarification: [progression](../openclaw-notifications-progression/README.md).
 - Reviewer customization, extra operator update journeys, dirty-worktree presentation recovery, collaborator-commit reconciliation, delayed discovery, and interrupted publication.
 - Inline review-thread processing or replacement-coordinator recovery; neither is established by this scenario.
 

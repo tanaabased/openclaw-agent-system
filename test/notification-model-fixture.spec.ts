@@ -8,7 +8,7 @@ import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { issueExampleScenario } from '../examples/openclaw-notifications-issue/model-fixture.ts';
+import { issueExampleScenario } from '../examples/openclaw-notifications-issue-journey/model-fixture.ts';
 import { intakeExampleScenario } from '../examples/openclaw-notifications-intake/model-fixture.ts';
 import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
 import { progressionExampleScenario } from '../examples/openclaw-notifications-progression/model-fixture.ts';
@@ -428,12 +428,12 @@ for (const scenario of [
           id,
           project: { path: '/fixture' },
           assessment:
-            scenario.id === 'openclaw-notifications-issue'
+            scenario.id === 'openclaw-notifications-issue-journey'
               ? { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } }
               : {},
           resultContract: 'assessment-result/v1',
         });
-        if (scenario.id === 'openclaw-notifications-issue') {
+        if (scenario.id === 'openclaw-notifications-issue-journey') {
           const read = await response(input);
           assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
           append(input, 'assessment-skill', 'Generic Assessment');
@@ -464,14 +464,14 @@ for (const scenario of [
         project: { path: '/tmp/managed-worktree' },
         assessment: {
           skill:
-            scenario.id === 'openclaw-notifications-issue'
+            scenario.id === 'openclaw-notifications-issue-journey'
               ? { name: 'generic-assessment', path: '/fixture/SKILL.md' }
               : {},
         },
         resultContract: 'assessment-result/v1',
       };
       append(input, 'context', context);
-      if (scenario.id === 'openclaw-notifications-issue') {
+      if (scenario.id === 'openclaw-notifications-issue-journey') {
         const read = await response(input);
         assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
         assert.deepEqual(JSON.parse(read.toolCalls![0]!.arguments), { path: '/fixture/SKILL.md' });
@@ -857,7 +857,7 @@ for (const scenario of [
         );
       });
     }
-    if (scenario.id === 'openclaw-notifications-issue')
+    if (scenario.id === 'openclaw-notifications-issue-journey')
       it('should answer paired github and direct questions using retained responses without work', async () => {
         const privateText = 'The retained plan documents disposable issue cleanup after evidence.';
         const github = request(
@@ -886,7 +886,7 @@ for (const scenario of [
         });
         assert.deepEqual(await response(direct), { content: privateText });
       });
-    if (scenario.id === 'openclaw-notifications-issue')
+    if (scenario.id === 'openclaw-notifications-issue-journey')
       it('should adapt ordinary clarification and an answer using retained full output', async () => {
         let previous: Record<string, unknown> = {
           fullAssessment: 'Original findings and uncertainty.',

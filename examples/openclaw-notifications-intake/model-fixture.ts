@@ -1,4 +1,4 @@
-import { issueExampleScenario } from '../openclaw-notifications-issue/model-fixture.ts';
+import { issueExampleScenario } from '../openclaw-notifications-issue-journey/model-fixture.ts';
 import waitForAssessmentRelease from './assessment-barrier.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 
