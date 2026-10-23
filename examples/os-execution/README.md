@@ -10,7 +10,7 @@ Run real shell and PTY commands on macOS and Linux, preserving manifest PATH, ar
 
 ## What Does Not Belong Here
 
-- Runtime-specific hosted Codex execution: [runtimes](../openclaw-runtimes/README.md). Interactive approval journeys also remain there pending separation.
+- Runtime-specific hosted Codex execution: [runtimes](../openclaw-runtimes/README.md). Interactive approvals belong to [lifecycle approvals](../openclaw-lifecycle-approvals/README.md).
 - Provider transport, model interpretation, scheduler behavior, and exhaustive command-form permutations.
 
 ## Notes

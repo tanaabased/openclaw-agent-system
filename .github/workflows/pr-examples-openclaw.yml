@@ -16,7 +16,6 @@ env:
 
 jobs:
   examples:
-    if: ${{ github.head_ref != 'pirog-381-example-workflows' }}
     name: ${{ matrix.example }} (ubuntu-24.04)
     runs-on: ubuntu-24.04
     strategy:
@@ -32,13 +31,19 @@ jobs:
           - openclaw-github-reply
           - openclaw-google
           - openclaw-tools
+          - openclaw-tool-descendants
           - openclaw-worktree
+          - openclaw-worktree-session
           - openclaw-collaboration
           - openclaw-memory
+          - openclaw-memory-embeddings
           - openclaw-backup
+          - openclaw-backup-cleanup
           - openclaw-credentials
           - openclaw-automations
+          - openclaw-automation-recovery
           - openclaw-runtimes
+          - openclaw-lifecycle-approvals
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

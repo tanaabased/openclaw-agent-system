@@ -323,7 +323,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should continue the worktree fixture with retained first-turn tool history', async () => {
-    const scenario = withToolSearch(resolveScenario('openclaw-worktree'));
+    const scenario = withToolSearch(resolveScenario('openclaw-worktree-session'));
     const input = request('Execute the worktree first probe.');
     input.messages.unshift({ role: 'system', content: 'canonical-worktree-tanaabot' });
     input.tools!.push({ type: 'function', function: { name: 'exec' } });
@@ -456,7 +456,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should admit only an authored denial result without accepting another tool failure', async () => {
-    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    const scenario = withToolSearch(resolveScenario('openclaw-lifecycle-approvals'));
     const input = request('Call agent_system_install exactly once');
     append(
       input,
@@ -492,7 +492,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should project an authored pre-execution denial without requiring an execution envelope', async () => {
-    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    const scenario = withToolSearch(resolveScenario('openclaw-lifecycle-approvals'));
     for (const prefix of ['', 'Error: ']) {
       const input = request('Call agent_system_install exactly once');
       append(
@@ -552,7 +552,7 @@ describe('scripts/aimock-tool-search', () => {
       error:
         'Denied by user. The tool call did not run.\nThis denial is final: the approval request is closed. Do not mention /approve or any other approval command to the user.\nDo not run the tool call again or ask the user to approve it again.\nIf the user still wants the action, explain that a new tool call will trigger a fresh approval request.',
     };
-    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    const scenario = withToolSearch(resolveScenario('openclaw-lifecycle-approvals'));
     const input = request('Call agent_system_install exactly once');
     append(
       input,

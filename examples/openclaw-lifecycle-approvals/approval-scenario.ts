@@ -8,7 +8,7 @@ import { getRuntimeConfig } from 'openclaw/plugin-sdk/runtime-config-snapshot';
 import { GatewayClient } from 'openclaw/plugin-sdk/gateway-runtime';
 import type { PluginApprovalRequest } from 'openclaw/plugin-sdk/approval-runtime';
 
-import { assertLifecycleChatPending } from './lifecycle-approval-events.ts';
+import { assertLifecycleChatPending } from '../../scripts/lifecycle-approval-events.ts';
 
 // this exercises an installed gateway and must never run against a developer profile.
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions-only acceptance scenario');

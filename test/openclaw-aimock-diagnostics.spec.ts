@@ -53,7 +53,7 @@ describe('scripts/aimock-diagnostics', () => {
   });
 
   it('should report evidence projection errors with the offending owned result', () => {
-    const scenario = resolveScenario('openclaw-runtimes');
+    const scenario = resolveScenario('openclaw-lifecycle-approvals');
     const result = diagnostics(scenario, [
       {
         method: 'POST',

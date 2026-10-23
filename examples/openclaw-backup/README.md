@@ -10,14 +10,13 @@ Create and verify an archive containing explicitly included private memory and a
 
 ## What Does Not Belong Here
 
-- Incomplete-artifact cleanup preview/apply/repeat behavior; that needs its own bounded cleanup contract.
+- Incomplete-artifact cleanup preview/apply/repeat: [backup cleanup](../openclaw-backup-cleanup/README.md).
 - Retention policy, adversarial archive permutations, or general live-agent recovery; exhaustive variants remain in source tests.
 
 ## Notes
 
 - Direct Ubuntu commands need no Gateway, model, or provider credential. The checked-in workspace runs in place with an independent checksum baseline and separate restore target.
 - The database fixture keeps real committed WAL content present during capture; restoration verifies the recovered database, not just archive membership.
-- Pending relocation: cleanup fixtures distinguish incomplete artifacts from complete/uncertain and differently owned attempts, then apply cleanup twice and reverify the published backup.
 
 ## Setup
 
@@ -53,19 +52,6 @@ git check-ignore "$archive"
 kill "$fixture_pid"
 wait "$fixture_pid" || true
 trap - EXIT
-
-# should preview incomplete artifacts while preserving complete and differently owned attempts
-cd "$GITHUB_WORKSPACE/examples/openclaw-backup/data"
-archive=$(jq -er .archive "$TMPDIR/backup-created.json")
-node "$GITHUB_WORKSPACE/examples/openclaw-backup/cleanup-fixture.mjs" "$archive"
-openclaw agent-system backup cleanup --agent backup-tanaabot --json | jq -e '.status == "preview" and (.deleted | length) == 0 and (.wouldDelete | length) == 2 and any(.preserved[]; .reason == "complete-or-uncertain-archive") and any(.preserved[]; .reason == "ownership-mismatch")'
-
-# should apply bounded cleanup once and leave the published backup verified
-cd "$GITHUB_WORKSPACE/examples/openclaw-backup/data"
-openclaw agent-system backup cleanup --agent backup-tanaabot --apply --json | jq -e '.status == "applied" and (.deleted | length) == 2 and (.wouldDelete | length) == 0'
-openclaw agent-system backup cleanup --agent backup-tanaabot --apply --json | jq -e '.status == "applied" and (.deleted | length) == 0'
-archive=$(jq -er .archive "$TMPDIR/backup-created.json")
-openclaw agent-system backup verify "$archive" --json | jq -e '.status == "verified" and .agentId == "backup-tanaabot"'
 
 # should restore memory safe links and executable modes into empty staging while preserving the source
 cd "$GITHUB_WORKSPACE/examples/openclaw-backup/data"

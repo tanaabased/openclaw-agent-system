@@ -16,7 +16,6 @@ env:
 
 jobs:
   examples:
-    if: ${{ github.head_ref != 'pirog-381-example-workflows' }}
     name: ${{ matrix.example }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -27,6 +26,7 @@ jobs:
           - ubuntu-24.04
         example:
           - os-install
+          - os-dispatch-enrollment
           - os-execution
           - os-credentials
     steps:

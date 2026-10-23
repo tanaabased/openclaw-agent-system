@@ -1,11 +1,13 @@
 import { openClawCollaborationScenario } from '../examples/openclaw-collaboration/model-fixture.ts';
+import { automationRecoveryScenario } from '../examples/openclaw-automation-recovery/model-fixture.ts';
+import { lifecycleApprovalScenario } from '../examples/openclaw-lifecycle-approvals/model-fixture.ts';
 import { automationExampleScenario } from '../examples/openclaw-automations/model-fixture.ts';
 import { agentExampleScenario } from '../examples/openclaw-agent/model-fixture.ts';
 import { credentialExampleScenario as openClawCredentialScenario } from '../examples/openclaw-credentials/model-fixture.ts';
 import { githubExampleScenario } from '../examples/openclaw-github/model-fixture.ts';
 import { osExecutionExampleScenario } from '../examples/os-execution/model-fixture.ts';
 import { runtimeBoundaryScenario } from '../examples/openclaw-runtimes/model-fixture.ts';
-import { memoryExampleScenario } from '../examples/openclaw-memory/model-fixture.ts';
+import { memoryExampleScenario } from '../examples/openclaw-memory-embeddings/model-fixture.ts';
 import { issueExampleScenario } from '../examples/openclaw-notifications-issue-journey/model-fixture.ts';
 import { githubReplyExampleScenario } from '../examples/openclaw-github-reply/model-fixture.ts';
 import { issueAssessmentExampleScenario } from '../examples/openclaw-issue-assessment/model-fixture.ts';
@@ -26,17 +28,19 @@ import { prPresentationExampleScenario } from '../examples/openclaw-notification
 import { prCollaborationExampleScenario } from '../examples/openclaw-notifications-pr-collaboration/model-fixture.ts';
 import { prDiscoveryExampleScenario } from '../examples/openclaw-notifications-pr-discovery/model-fixture.ts';
 import { prReplyRecoveryExampleScenario } from '../examples/openclaw-notifications-pr-reply-recovery/model-fixture.ts';
-import { worktreeExampleScenario } from '../examples/openclaw-worktree/model-fixture.ts';
+import { worktreeExampleScenario } from '../examples/openclaw-worktree-session/model-fixture.ts';
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 
 const scenarios = new Map<string, OpenClawAIMockScenario>([
   [agentExampleScenario.id, agentExampleScenario],
   [openClawCollaborationScenario.id, openClawCollaborationScenario],
   [automationExampleScenario.id, automationExampleScenario],
+  [automationRecoveryScenario.id, automationRecoveryScenario],
   [openClawCredentialScenario.id, openClawCredentialScenario],
   [githubExampleScenario.id, githubExampleScenario],
   [osExecutionExampleScenario.id, osExecutionExampleScenario],
   [runtimeBoundaryScenario.id, runtimeBoundaryScenario],
+  [lifecycleApprovalScenario.id, lifecycleApprovalScenario],
   [memoryExampleScenario.id, memoryExampleScenario],
   [worktreeExampleScenario.id, worktreeExampleScenario],
   [prExampleScenario.id, prExampleScenario],

@@ -16,7 +16,6 @@ env:
 
 jobs:
   examples:
-    if: ${{ github.head_ref != 'pirog-381-example-workflows' }}
     name: ${{ matrix.example }} (ubuntu-24.04)
     runs-on: ubuntu-24.04
     strategy:

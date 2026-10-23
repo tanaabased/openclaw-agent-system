@@ -64,7 +64,7 @@ const fixtures: Fixture[] = phases.flatMap((phase) => {
 });
 
 export const worktreeExampleScenario: OpenClawAIMockScenario = {
-  id: 'openclaw-worktree',
+  id: 'openclaw-worktree-session',
   model: { match: /^(?:aimock\/)?gpt-5\.5$/u, reference: 'aimock/gpt-5.5' },
   fixtures,
   finalResponses: phases.map((phase) => `worktree-${phase}-ready`),

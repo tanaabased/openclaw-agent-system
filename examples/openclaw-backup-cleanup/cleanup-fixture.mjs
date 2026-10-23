@@ -27,7 +27,7 @@ for (const kind of ['incomplete', 'complete', 'foreign']) {
     `${JSON.stringify({
       version: 1,
       id,
-      agentId: kind === 'foreign' ? 'other-agent' : 'backup-tanaabot',
+      agentId: kind === 'foreign' ? 'other-agent' : 'backup-cleanup-tanaabot',
       workspaceDir,
       output,
       pid: process.pid,

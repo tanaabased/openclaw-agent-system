@@ -11,7 +11,7 @@ Resolve real 1Password Environment and direct vault secrets into installed consu
 ## What Does Not Belong Here
 
 - Native file permissions, symlink containment, and generic signing protections: [OS credentials](../os-credentials/README.md).
-- Google account reconciliation: [Google](../openclaw-google/README.md). Embedding credential handoff currently lives in [memory](../openclaw-memory/README.md).
+- Google account reconciliation: [Google](../openclaw-google/README.md). Embedding credential handoff belongs to [embeddings](../openclaw-memory-embeddings/README.md).
 - A provider-error permutation matrix or live model judgment.
 
 ## Notes

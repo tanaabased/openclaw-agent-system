@@ -11,7 +11,7 @@ Install collaboration for two managed agents while preserving an operator-owned 
 ## What Does Not Belong Here
 
 - Exhaustive collaboration permission/visibility permutations or unrelated session management.
-- Notification dispatch ownership: [intake](../openclaw-notifications-intake/README.md). Native execution: [runtimes](../openclaw-runtimes/README.md). Interactive approval journeys also remain there pending separation.
+- Notification dispatch ownership: [intake](../openclaw-notifications-intake/README.md). Native execution: [runtimes](../openclaw-runtimes/README.md). Interactive approvals belong to [lifecycle approvals](../openclaw-lifecycle-approvals/README.md).
 
 ## Notes
 

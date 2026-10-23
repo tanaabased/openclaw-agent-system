@@ -1,7 +1,7 @@
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 
 export const memoryExampleScenario: OpenClawAIMockScenario = {
-  id: 'openclaw-memory',
+  id: 'openclaw-memory-embeddings',
   model: { match: /^text-embedding-3-small$/u, reference: 'text-embedding-3-small' },
   embeddingAuthorization: 'Bearer synthetic-memory-credential',
   fixtures: [
