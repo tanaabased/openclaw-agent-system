@@ -1138,6 +1138,45 @@ for (const scenario of [
       });
     }
     if (scenario.id === 'openclaw-notifications-issue-journey')
+      it('should drive typed status composition once and keep no-op independent of composer and publication', async () => {
+        const input = request(
+          `Operator status update target: ${source}\nDecision: use shared replies.`,
+        );
+        const context = await action(input, 'reply');
+        assert.equal(context.operation, 'context');
+        assert.equal(context.purpose, 'status-update');
+        append(input, 'update-context', { status: 'status-update-context', observation: digest });
+        const compose = await action(input, 'reply');
+        assert.equal(compose.operation, 'compose');
+        assert.equal(compose.update?.observation, digest);
+        assert.equal(compose.update?.facts.length, 1);
+        append(input, 'update-compose', {
+          status: 'composition-ready',
+          id,
+          digest,
+          source: { kind: 'status-update' },
+          selection: { skill: { path: '/fixture/SKILL.md' } },
+        });
+        const read = await response(input);
+        assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
+        append(input, 'update-skill', 'Selected composer body.');
+        assert.equal((await action(input, 'reply')).operation, 'candidate');
+        append(input, 'update-candidate', {
+          status: 'candidate-recorded',
+          presentation: 'Private answer and unlinked draft.',
+        });
+        assert.deepEqual(await response(input), { content: 'Private answer and unlinked draft.' });
+        const current = request(`Check current status target: ${source}`);
+        assert.equal((await action(current, 'reply')).operation, 'context');
+        append(current, 'update-context', { status: 'status-update-context', observation: digest });
+        assert.deepEqual((await action(current, 'reply')).update?.facts, []);
+        append(current, 'update-compose', {
+          status: 'already-current',
+          presentation: 'Already current.',
+        });
+        assert.deepEqual(await response(current), { content: 'Already current.' });
+      });
+    if (scenario.id === 'openclaw-notifications-issue-journey')
       it('should answer paired github and direct questions using retained responses without work', async () => {
         const privateText = 'The retained plan documents disposable issue cleanup after evidence.';
         const github = request(

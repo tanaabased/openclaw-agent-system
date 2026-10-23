@@ -5228,6 +5228,85 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
+  it('should reuse the managed issue for later status composition without changing its stage or receipts', async () => {
+    const { who } = await operatorFollowup();
+    messages.at(-1)!.content = 'Draft a public status update; do not implement.';
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.assessmentRevision ??= 1;
+      record.assessmentSummaries = [
+        {
+          revision: record.assessmentRevision,
+          resultDigest: automationHash(record.result),
+          binding: record.stageReceipt!.binding,
+          turnId: record.resultTurnId!,
+          authorityDigest: 'a'.repeat(64),
+          selection: record.assessment!,
+          publicText: 'Delivered assessment.',
+          receipt: { nodeId: 'SUMMARY', databaseId: 7 },
+        },
+      ];
+      await save();
+    });
+    const before = await record();
+    const read = await service.run(
+      manifest,
+      root,
+      who,
+      {
+        action: 'reply',
+        operation: 'context',
+        purpose: 'status-update',
+        target: 'https://github.com/owner/repo/issues/3',
+      },
+      true,
+    );
+    assert.ok('observation' in read && typeof read.observation === 'string');
+    assert.ok('entry' in read && read.entry === 'managed');
+    const composed = await service.run(
+      manifest,
+      root,
+      who,
+      {
+        action: 'reply',
+        operation: 'compose',
+        purpose: 'status-update',
+        target: 'https://github.com/owner/repo/issues/3',
+        privateText: 'New verified progress.',
+        update: {
+          observation: read.observation,
+          facts: [
+            {
+              key: 'decision',
+              reference: 'operator',
+              revision: '1',
+              text: 'Use the smaller approach.',
+            },
+          ],
+        },
+      },
+      true,
+    );
+    assert.equal(composed.status, 'composition-ready');
+    assert.deepEqual(await record(), before);
+    await assert.rejects(
+      service.run(
+        manifest,
+        root,
+        { ...who, sessionId: 'foreign-incarnation' },
+        {
+          action: 'reply',
+          operation: 'context',
+          purpose: 'status-update',
+          target: 'https://github.com/owner/repo/issues/3',
+        },
+        true,
+      ),
+    );
+    assert.deepEqual(await record(), before);
+  });
+
   it('should route direct implementation through the original managed owner and preserve local scope', async () => {
     const { id, who } = await operatorFollowup();
     const before = await record();

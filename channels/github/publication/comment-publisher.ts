@@ -31,6 +31,7 @@ export type GitHubNotificationCommentPublicationInput = {
         | 'assignment-response'
         | 'initial-acknowledgment'
         | 'manual-response'
+        | 'status-update'
         | 'pull-request-handoff';
       publicationId: string;
     }
@@ -64,6 +65,7 @@ export interface GitHubNotificationCommentPublisherDependencies {
             | 'assignment-response'
             | 'initial-acknowledgment'
             | 'manual-response'
+            | 'status-update'
             | 'pull-request-handoff';
           item: PublicationItem;
           publicationId: string;
