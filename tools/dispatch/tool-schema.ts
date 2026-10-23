@@ -8,11 +8,12 @@ import { assessmentSchema } from '../../agent/model-routing.ts';
 import { feedbackResultSchema } from '../../agent/feedback-state.ts';
 import { implementationResultSchema } from '../../agent/implementation-result.ts';
 import { replyRequestSchema } from './reply-schema.ts';
+import discriminatedSchema from '../../utils/discriminated-schema.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const object = <P extends TProperties>(properties: P) =>
   Type.Object(properties, { additionalProperties: false });
-export const dispatchParameters = Type.Union([
+const dispatchRequestVariants = Type.Union([
   replyRequestSchema,
   directAssessmentRequestSchema,
   directImplementationRequestSchema,
@@ -127,3 +128,4 @@ export const dispatchParameters = Type.Union([
   }),
   object({ action: Type.Literal('retry'), id }),
 ]);
+export const dispatchParameters = discriminatedSchema('action', dispatchRequestVariants);

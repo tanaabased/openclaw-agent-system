@@ -58,6 +58,93 @@ async function reply(scenario: ReturnType<typeof withToolSearch>, request: ChatC
 }
 
 describe('scripts/aimock-tool-search', () => {
+  it('should report only the selected action and result outcome at the native validation boundary', async () => {
+    const hostRequire = createRequire(
+      createRequire(import.meta.url).resolve('openclaw/plugin-sdk/plugin-entry'),
+    );
+    const { validateToolArguments } = await import(hostRequire.resolve('@openclaw/ai/validation'));
+    const { normalizeToolParameterSchema } = await import(
+      hostRequire.resolve('@openclaw/ai/internal/tool-schema')
+    );
+    const id = 'a'.repeat(64);
+    const common = {
+      version: 1,
+      summary: 'A bounded result.',
+      evidence: [],
+      progress: { completed: [], remaining: [] },
+      fullAssessment: 'Complete retained source.',
+    };
+    for (const parameters of [
+      dispatchParameters,
+      normalizeToolParameterSchema(dispatchParameters, {
+        modelProvider: 'aimock',
+        modelId: 'gpt-5.5',
+      }),
+    ]) {
+      const tool = { name: 'agent_system_dispatch', parameters };
+      for (const envelope of [
+        { action: 'result', id },
+        {
+          action: 'assessment',
+          operation: 'result',
+          id,
+          target: 'https://github.com/o/r/issues/3',
+        },
+      ]) {
+        for (const [result, missing, irrelevant] of [
+          [
+            { ...common, outcome: 'plan-ready', assessment: 'Observed.' },
+            'plan',
+            /questions|remediation/u,
+          ],
+          [
+            { ...common, outcome: 'clarification-needed', assessment: 'Unknown.' },
+            'questions',
+            /result\.plan|remediation/u,
+          ],
+          [
+            { ...common, outcome: 'operator-setup-blocker', code: 'setup-missing' },
+            'remediation',
+            /questions|result\.plan/u,
+          ],
+        ] as const) {
+          assert.throws(
+            () =>
+              validateToolArguments(tool, { name: tool.name, arguments: { ...envelope, result } }),
+            (error: unknown) => {
+              assert.ok(error instanceof Error);
+              const diagnostic = error.message.split('Received arguments:')[0]!;
+              assert.ok(diagnostic.includes(`result.${missing}`), diagnostic);
+              assert.doesNotMatch(diagnostic, irrelevant);
+              return true;
+            },
+          );
+        }
+      }
+      for (const envelope of [
+        { action: 'implementation', operation: 'result', id },
+        { action: 'implementation-result', id },
+        { action: 'feedback', operation: 'implementation-result', id, eventId: id },
+      ]) {
+        const field = envelope.action === 'implementation' ? 'result' : 'implementationResult';
+        assert.throws(
+          () =>
+            validateToolArguments(tool, {
+              name: tool.name,
+              arguments: { ...envelope, [field]: { outcome: 'done', summary: 'Done.' } },
+            }),
+          (error: unknown) => {
+            assert.ok(error instanceof Error);
+            const diagnostic = error.message.split('Received arguments:')[0]!;
+            assert.ok(diagnostic.includes(`${field}.fullResult`), diagnostic);
+            assert.doesNotMatch(diagnostic, /questions|remediation/u);
+            return true;
+          },
+        );
+      }
+    }
+  });
+
   it('should retain truncated history while validating only the current tool exchange', () => {
     const input = request('Previous turn');
     const search = {

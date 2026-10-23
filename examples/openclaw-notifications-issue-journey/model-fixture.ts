@@ -216,22 +216,33 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     const selected = context.assessment as { skill: { path: string } };
     if (openClawAIMockToolResultText(messages, prefix + 'direct-assessment-skill') === undefined)
       return call('direct-assessment-skill', 'read', { path: selected.skill.path });
+    const payload = {
+      version: 1,
+      outcome: 'plan-ready',
+      summary: 'Assess cleanup documentation only.',
+      assessment: fullAssessment,
+      fullAssessment,
+      plan: fullAssessment,
+      reviewSummary,
+      evidence: [],
+      progress: { completed: ['Read the selected assessment method.'], remaining: [] },
+    };
+    const rejection = openClawAIMockToolResultText(messages, prefix + 'direct-assessment-invalid');
+    if (rejection === undefined) {
+      const malformed = assessmentRequest(context, payload);
+      const incomplete: Partial<typeof payload> = { ...payload };
+      delete incomplete.plan;
+      return call('direct-assessment-invalid', 'agent_system_dispatch', {
+        ...malformed,
+        result: incomplete,
+      });
+    }
+    const diagnostic = rejection.split('Received arguments:')[0]!;
+    assert.match(diagnostic, /Validation failed for tool/u);
+    assert.match(diagnostic, /result\.plan/u);
+    assert.doesNotMatch(diagnostic, /result\.questions|result\.remediation/u);
     const saved = result('direct-assessment-result');
-    if (!saved)
-      return dispatch(
-        'direct-assessment-result',
-        assessmentRequest(context, {
-          version: 1,
-          outcome: 'plan-ready',
-          summary: 'Assess cleanup documentation only.',
-          assessment: fullAssessment,
-          fullAssessment,
-          plan: fullAssessment,
-          reviewSummary,
-          evidence: [],
-          progress: { completed: ['Read the selected assessment method.'], remaining: [] },
-        }),
-      );
+    if (!saved) return dispatch('direct-assessment-result', assessmentRequest(context, payload));
     assert.equal(saved.status, 'recorded');
     assert.equal((saved.handoff as { next: string }).next, 'assessment-only');
     return { content: String(saved.presentation) };
@@ -622,6 +633,7 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
     { id: prefix + 'scan', name: 'agent_system_intake' },
     { id: prefix + 'assessment-skill', name: 'read' },
     { id: prefix + 'direct-assessment-skill', name: 'read' },
+    { id: prefix + 'direct-assessment-invalid', name: 'agent_system_dispatch' },
     { id: prefix + 'feedback-skill', name: 'read' },
     { id: prefix + 'summary-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>

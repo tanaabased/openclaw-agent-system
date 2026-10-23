@@ -1,11 +1,12 @@
 import { Type, type Static } from 'typebox';
 import { githubNotificationQuote } from '../channels/github/presentation/card.ts';
+import discriminatedSchema from '../utils/discriminated-schema.ts';
 
 const common = {
   summary: Type.String({ minLength: 1, maxLength: 32000, pattern: '\\S' }),
   fullResult: Type.String({ minLength: 1, maxLength: 64000, pattern: '\\S' }),
 };
-export const implementationResultSchema = Type.Union([
+const implementationResultVariants = Type.Union([
   Type.Object(
     { ...common, outcome: Type.Union([Type.Literal('done'), Type.Literal('blocked')]) },
     { additionalProperties: false },
@@ -22,6 +23,10 @@ export const implementationResultSchema = Type.Union([
     { additionalProperties: false },
   ),
 ]);
+export const implementationResultSchema = discriminatedSchema(
+  'outcome',
+  implementationResultVariants,
+);
 
 export type ImplementationResult = Static<typeof implementationResultSchema>;
 

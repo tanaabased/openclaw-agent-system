@@ -18,6 +18,7 @@ Assess an explicitly selected unassigned issue in an existing checkout through t
 - Strict AIMock reuses the issue protocol for model text and tool selection. Provider reads, native chat execution, and retained results remain real; this does not prove genuine model judgment.
 - Install enrolls the native Gateway device credential with both notification schedules paused. Only one unassigned disposable issue is created; no production agent receives an assignment or review request.
 - Both workflow schedules are paused and the default assessment wrapper is configured before installation. The explicit operation remains assessment-only under Work mode.
+- The fixture omits `plan` once, requires a native `result.plan` diagnostic without unrelated outcome requirements, then corrects that shape on the same entry with the complete source unchanged. This proves bounded protocol recovery, not genuine model adaptation.
 
 ## Setup
 

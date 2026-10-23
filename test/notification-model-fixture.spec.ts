@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import { createRequire } from 'node:module';
 import waitForAssessmentRelease from '../examples/openclaw-notifications-intake/assessment-barrier.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
@@ -142,6 +143,61 @@ for (const scenario of [
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
+    if (scenario.id === 'openclaw-notifications-issue-journey')
+      it('should correct one rejected direct assessment shape without repeating investigation or changing source', async () => {
+        const input = request(`Direct issue assessment target: ${source} checkout: /tmp/owned`);
+        assert.equal((await action(input, 'assessment')).operation, 'context');
+        append(input, 'direct-assessment-context', {
+          status: 'verified',
+          runtime: 'openclaw',
+          entry: 'direct',
+          id,
+          target: source,
+          resultSchema: assessmentResultContextSchema,
+          resultSubmission: assessmentSubmission({ entry: 'direct', id, target: source }),
+          assessment: { skill: { path: '/fixture/SKILL.md' } },
+        });
+        const read = await response(input);
+        assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
+        append(input, 'direct-assessment-skill', 'Complete selected method.');
+        const rejected = await response(input);
+        assert.ok('toolCalls' in rejected && rejected.toolCalls?.[0]);
+        const malformed = JSON.parse(rejected.toolCalls[0].arguments);
+        assert.equal(malformed.result.plan, undefined);
+        const hostRequire = createRequire(
+          createRequire(import.meta.url).resolve('openclaw/plugin-sdk/plugin-entry'),
+        );
+        const { validateToolArguments } = await import(
+          hostRequire.resolve('@openclaw/ai/validation')
+        );
+        let diagnostic = '';
+        assert.throws(
+          () =>
+            validateToolArguments(
+              { name: 'agent_system_dispatch', parameters: dispatchParameters },
+              { name: 'agent_system_dispatch', arguments: malformed },
+            ),
+          (error: unknown) => {
+            assert.ok(error instanceof Error);
+            diagnostic = error.message;
+            return true;
+          },
+        );
+        append(input, 'direct-assessment-invalid', diagnostic);
+        const corrected = await action(input, 'assessment');
+        assert.equal(corrected.operation, 'result');
+        assert.deepEqual(corrected, {
+          ...malformed,
+          result: { ...malformed.result, plan: malformed.result.fullAssessment },
+        });
+        append(input, 'direct-assessment-result', {
+          status: 'recorded',
+          presentation: 'Retained complete assessment.',
+          handoff: { next: 'assessment-only' },
+        });
+        assert.deepEqual(await response(input), { content: 'Retained complete assessment.' });
+      });
+
     if (scenario.id === 'openclaw-notifications-issue-journey')
       it('should preserve a failed recovery candidate without retrying or claiming publication', async () => {
         const input = request(`recover only the pending public assessment summary with id ${id}`);
