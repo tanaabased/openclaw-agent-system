@@ -86,14 +86,78 @@ const assessmentResultVariants = Type.Union([
   ),
 ]);
 export const assessmentResultSchema = discriminatedSchema('outcome', assessmentResultVariants);
-// the model-facing contract shares repeated fields instead of expanding them per outcome.
+// share repeated field schemas without changing the model-facing validation contract.
+const contextText = { $ref: '#/$defs/text' };
+const contextFields: Record<string, unknown> = {
+  ...Object.fromEntries(
+    [
+      'summary',
+      'assessment',
+      'fullAssessment',
+      'reviewSummary',
+      'planSummary',
+      'plan',
+      'remediation',
+    ].map((key) => [key, contextText]),
+  ),
+  evidence: { $ref: '#/$defs/evidence' },
+  progress: { $ref: '#/$defs/progress' },
+  decision: { $ref: '#/$defs/decision' },
+  questions: { type: 'array', items: contextText, minItems: 1, maxItems: 10 },
+};
+const contextRequired: string[] = assessmentResultVariants.anyOf[0].required.filter((key) =>
+  assessmentResultVariants.anyOf.every((variant) =>
+    variant.required.some((required) => required === key),
+  ),
+);
 export const assessmentResultContextSchema = {
-  $defs: { ...common, decision: Type.Optional(currentDecisionSchema) },
+  $defs: {
+    text,
+    evidence: {
+      ...evidence,
+      items: {
+        ...evidence.items,
+        properties: { ...evidence.items.properties, detail: contextText },
+      },
+    },
+    progress: {
+      ...progress,
+      properties: Object.fromEntries(
+        Object.entries(progress.properties).map(([key, schema]) => [
+          key,
+          { ...schema, items: contextText },
+        ]),
+      ),
+    },
+    decision: currentDecisionSchema,
+  },
+  type: 'object',
+  additionalProperties: false,
+  required: contextRequired,
+  properties: {
+    ...Object.fromEntries(
+      assessmentResultVariants.anyOf.flatMap((variant) =>
+        Object.entries(variant.properties).map(([key, schema]) => [
+          key,
+          contextFields[key] ?? schema,
+        ]),
+      ),
+    ),
+    outcome: Type.String(),
+  },
   anyOf: assessmentResultVariants.anyOf.map((variant) => ({
-    ...variant,
+    required: variant.required.filter((key) => !contextRequired.includes(key)),
     properties: {
-      ...variant.properties,
-      ...Object.fromEntries(Object.keys(common).map((key) => [key, { $ref: `#/$defs/${key}` }])),
+      outcome: variant.properties.outcome,
+      ...Object.fromEntries(
+        [
+          ...new Set(
+            assessmentResultVariants.anyOf.flatMap((entry) => Object.keys(entry.properties)),
+          ),
+        ]
+          .filter((key) => !(key in variant.properties))
+          .map((key) => [key, false]),
+      ),
     },
   })),
 };

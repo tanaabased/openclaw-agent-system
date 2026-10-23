@@ -10,6 +10,8 @@ import openClawAIMockEvidence from '../scripts/aimock-evidence.ts';
 import resolveScenario from '../scripts/example-model-scenarios.ts';
 import withToolSearch, { normalizeToolSearchRequest } from '../scripts/aimock-tool-search.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
+import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
+import assessmentSubmission from '../agent/assessment-submission.ts';
 
 function request(prompt = githubExampleTanaabotPrompt): ChatCompletionRequest {
   return {
@@ -143,6 +145,132 @@ describe('scripts/aimock-tool-search', () => {
         );
       }
     }
+  });
+
+  it('should accept only a declared validation rejection for the exact discovered call', () => {
+    const input = request();
+    append(
+      input,
+      {
+        toolCalls: [
+          { id: 'call_aimock_discover_validation', name: 'tool_search', arguments: '{}' },
+        ],
+      },
+      searchResult(['agent_system_dispatch']),
+    );
+    const call = { id: 'call_invalid', name: 'agent_system_dispatch' };
+    const error =
+      'Invalid arguments for tool "openclaw:agent_system_dispatch": result.plan: must have required property \'plan\';';
+    append(
+      input,
+      {
+        toolCalls: [
+          {
+            id: call.id,
+            name: 'tool_call',
+            arguments: JSON.stringify({
+              id: 'openclaw:agent_system_dispatch',
+              args: { action: 'assessment' },
+            }),
+          },
+        ],
+      },
+      { status: 'error', tool: 'tool_call', error },
+    );
+    assert.throws(() => normalizeToolSearchRequest(input), /requested tool/u);
+    assert.equal(normalizeToolSearchRequest(input, [], [call]).messages.at(-1)!.content, error);
+    for (const allowed of [
+      { ...call, id: 'other' },
+      { ...call, name: 'read' },
+    ]) {
+      assert.throws(() => normalizeToolSearchRequest(input, [], [allowed]), /requested tool/u);
+    }
+    for (const message of [
+      error.replace('openclaw:agent_system_dispatch', 'openclaw:read'),
+      'Permission denied',
+      'Connection failed',
+    ]) {
+      const wrong = structuredClone(input);
+      wrong.messages.at(-1)!.content = JSON.stringify({
+        status: 'error',
+        tool: 'tool_call',
+        error: message,
+      });
+      assert.throws(() => normalizeToolSearchRequest(wrong, [], [call]), /requested tool/u);
+    }
+  });
+
+  it('should correct one native wrapped rejection on the same direct assessment entry', async () => {
+    const scenario = withToolSearch(resolveScenario('openclaw-issue-assessment'));
+    const target = 'https://github.com/owner/repo/issues/3';
+    const id = 'a'.repeat(64);
+    const input = request(`Direct issue assessment target: ${target} checkout: /tmp/owned`);
+    input.messages.unshift({ role: 'system', content: 'Name: Notification Tanaabot' });
+    append(
+      input,
+      (await reply(scenario, input)).response,
+      searchResult(['agent_system_dispatch', 'read']),
+    );
+    const context = (await reply(scenario, input)).response;
+    append(input, context, {
+      tool: { id: 'openclaw:agent_system_dispatch', name: 'agent_system_dispatch' },
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'verified',
+              entry: 'direct',
+              runtime: 'openclaw',
+              id,
+              target,
+              resultSchema: assessmentResultContextSchema,
+              resultSubmission: assessmentSubmission({ entry: 'direct', id, target }),
+              assessment: { skill: { path: '/fixture/SKILL.md' } },
+            }),
+          },
+        ],
+      },
+    });
+    append(input, (await reply(scenario, input)).response, {
+      tool: { id: 'openclaw:read', name: 'read' },
+      result: { content: [{ type: 'text', text: 'Complete selected assessment method.' }] },
+    });
+    const invalid = (await reply(scenario, input)).response;
+    assert.ok('toolCalls' in invalid && invalid.toolCalls?.[0]);
+    const original = JSON.parse(invalid.toolCalls[0].arguments).args;
+    assert.equal(original.result.plan, undefined);
+    append(input, invalid, {
+      status: 'error',
+      tool: 'tool_call',
+      error:
+        'Invalid arguments for tool "openclaw:agent_system_dispatch": result.plan: must have required property \'plan\'; result: must match "else" schema.',
+    });
+    const corrected = (await reply(scenario, input)).response;
+    assert.ok('toolCalls' in corrected && corrected.toolCalls?.[0]);
+    const correction = JSON.parse(corrected.toolCalls[0].arguments).args;
+    assert.deepEqual(correction, {
+      ...original,
+      result: { ...original.result, plan: original.result.fullAssessment },
+    });
+    append(input, corrected, {
+      tool: { id: 'openclaw:agent_system_dispatch', name: 'agent_system_dispatch' },
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'recorded',
+              presentation: 'Retained full assessment.',
+              handoff: { next: 'assessment-only' },
+            }),
+          },
+        ],
+      },
+    });
+    assert.deepEqual((await reply(scenario, input)).response, {
+      content: 'Retained full assessment.',
+    });
   });
 
   it('should retain truncated history while validating only the current tool exchange', () => {

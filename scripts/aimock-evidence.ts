@@ -143,6 +143,7 @@ export default function openClawAIMockEvidence(
       body: normalizeToolSearchRequest(
         entry.body as ChatCompletionRequest,
         scenario.expectedDeniedToolCalls,
+        scenario.expectedInvalidToolCalls,
       ),
     }));
   const toolNames = [...new Set(scenario.toolCalls.map(({ name }) => name))].sort();

@@ -67,6 +67,7 @@ function catalog(
 export function normalizeToolSearchRequest(
   request: ChatCompletionRequest,
   expectedDeniedToolCalls: readonly OpenClawAIMockToolCall[] = [],
+  expectedInvalidToolCalls: readonly OpenClawAIMockToolCall[] = [],
 ): ChatCompletionRequest {
   if (!controls(request)) return request;
   const messages = currentMessages(request);
@@ -104,6 +105,18 @@ export function normalizeToolSearchRequest(
       envelope.tool === 'tool_call' &&
       typeof envelope.error === 'string' &&
       preExecutionDenial.test(envelope.error)
+    ) {
+      return { name, arguments: JSON.stringify(args.args ?? {}), content: envelope.error };
+    }
+    // the host rejects invalid arguments before producing an executed-tool envelope.
+    if (
+      expectedInvalidToolCalls.some(
+        (call) => call.name === name && matchesOpenClawAIMockToolCallId(callId, call.id),
+      ) &&
+      envelope.status === 'error' &&
+      envelope.tool === 'tool_call' &&
+      typeof envelope.error === 'string' &&
+      envelope.error.startsWith(`Invalid arguments for tool "${args.id}": `)
     ) {
       return { name, arguments: JSON.stringify(args.args ?? {}), content: envelope.error };
     }
@@ -233,7 +246,11 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
           (!needsDiscovery(request) || !!discoveryResult(request)) &&
           matchFixture(
             [fixture],
-            normalizeToolSearchRequest(request, scenario.expectedDeniedToolCalls),
+            normalizeToolSearchRequest(
+              request,
+              scenario.expectedDeniedToolCalls,
+              scenario.expectedInvalidToolCalls,
+            ),
           ) !== null,
       },
       response:
@@ -244,7 +261,11 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
                 request,
                 typeof response === 'function'
                   ? await response(
-                      normalizeToolSearchRequest(request, scenario.expectedDeniedToolCalls),
+                      normalizeToolSearchRequest(
+                        request,
+                        scenario.expectedDeniedToolCalls,
+                        scenario.expectedInvalidToolCalls,
+                      ),
                     )
                   : response,
               ),

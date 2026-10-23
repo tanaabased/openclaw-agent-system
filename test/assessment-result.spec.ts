@@ -4,6 +4,7 @@ import { Value } from 'typebox/value';
 
 import {
   assessmentResultContextSchema,
+  assessmentResultSchema,
   assessmentDecisionMode,
   parseAssessmentResult,
 } from '../agent/assessment-result.ts';
@@ -95,6 +96,15 @@ describe('agent/assessment-result', () => {
       assert.equal(Value.Check(contract, input), true);
       assert.equal(Value.Check(contract, { ...input, version: 2 }), false);
       assert.equal(Value.Check(contract, { ...input, implement: true }), false);
+      for (const key of Object.keys(input)) {
+        const missing = { ...input } as Record<string, unknown>;
+        delete missing[key];
+        assert.equal(Value.Check(contract, missing), Value.Check(assessmentResultSchema, missing));
+      }
+      for (const extra of [{ questions: ['Why?'] }, { plan: 'Do it.' }, { code: 'setup' }]) {
+        const mixed = { ...input, ...extra };
+        assert.equal(Value.Check(contract, mixed), Value.Check(assessmentResultSchema, mixed));
+      }
     }
   });
   it('should reject prose-only state, empty outcomes, authority fields, and excessive output', () => {
@@ -132,8 +142,10 @@ describe('agent/assessment-result', () => {
         plan: 'Do it.',
         fullAssessment,
       })),
-    ])
+    ]) {
       assert.throws(() => parseAssessmentResult(invalid), /assessment-result-invalid/);
+      assert.equal(Value.Check(assessmentResultContextSchema, invalid), false);
+    }
   });
 
   it('should preserve the complete source in the same contract for every outcome', () => {

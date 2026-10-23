@@ -238,7 +238,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       });
     }
     const diagnostic = rejection.split('Received arguments:')[0]!;
-    assert.match(diagnostic, /Validation failed for tool/u);
     assert.match(diagnostic, /result\.plan/u);
     assert.doesNotMatch(diagnostic, /result\.questions|result\.remediation/u);
     const saved = result('direct-assessment-result');
@@ -628,6 +627,9 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
   model: { match: /^(?:aimock\/)?gpt-5\.5$/u, reference: 'aimock/gpt-5.5' },
   systemPromptSignals: [identity],
   finalResponses: [],
+  expectedInvalidToolCalls: [
+    { id: prefix + 'direct-assessment-invalid', name: 'agent_system_dispatch' },
+  ],
   dynamicFinalResponseFixtures: [final],
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },

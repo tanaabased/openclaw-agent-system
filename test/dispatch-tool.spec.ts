@@ -13,6 +13,9 @@ import {
 } from '../core/private-state-file-lock.ts';
 import GitCommandError from '../tools/git/command-error.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
+import { assessmentInstructions } from '../agent/assessment-instructions.ts';
+import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
+import assessmentSubmission from '../agent/assessment-submission.ts';
 
 interface HookContext {
   requester?: { senderIsOwner?: boolean };
@@ -121,6 +124,47 @@ describe('tools/dispatch/tool', () => {
       manifest,
     };
   }
+
+  it('should preserve the complete refreshed assessment within the wrapped tool budget', async () => {
+    const f = fixture();
+    const source = 'Complete investigation and retained plan. '.repeat(60);
+    const context = {
+      status: 'verified' as const,
+      runtime: 'openclaw' as const,
+      entry: 'managed' as const,
+      id: 'a'.repeat(64),
+      resultContract: 'assessment-result/v1',
+      resultSchema: assessmentResultContextSchema,
+      resultSubmission: assessmentSubmission({ entry: 'managed', id: 'a'.repeat(64) }),
+      previousResult: { fullAssessment: source, plan: source },
+      previousPresentation: 'Retained plan ready for review.',
+      instructions: assessmentInstructions,
+    };
+    f.adapter.service.run = async () => context;
+    const call = { ...event, params: { action: 'context', id: context.id } };
+    await f.hook(call, coordinator);
+    const result = await f.build().execute(call.toolCallId, call.params);
+    const transported = JSON.stringify(
+      {
+        tool: {
+          id: 'openclaw:agent-system:agent_system_dispatch',
+          name: 'agent_system_dispatch',
+          source: 'openclaw',
+        },
+        result,
+      },
+      null,
+      2,
+    );
+    assert.ok(
+      transported.length < 32000,
+      `wrapped context exceeds model budget: ${transported.length}`,
+    );
+    const text = result.content.find((part) => part.type === 'text');
+    assert.ok(text && 'text' in text);
+    assert.deepEqual(JSON.parse(String(text.text)), context);
+    assert.deepEqual(result.details, context);
+  });
 
   it('should register a dynamic dispatch factory without a gateway adoption name', () => {
     const f = fixture();

@@ -35,7 +35,11 @@ function requestChecks(scenario: OpenClawAIMockScenario, entry: JournalEntry) {
       .join('\n');
   const normalized = (() => {
     try {
-      return normalizeToolSearchRequest(request, scenario.expectedDeniedToolCalls);
+      return normalizeToolSearchRequest(
+        request,
+        scenario.expectedDeniedToolCalls,
+        scenario.expectedInvalidToolCalls,
+      );
     } catch {
       return undefined;
     }
