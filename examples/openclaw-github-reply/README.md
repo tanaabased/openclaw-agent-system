@@ -116,12 +116,11 @@ if test -s "$TMPDIR/notification-manual-issue.json"; then
   openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
 fi
 
-# should report strict mock failures while stopping the isolated gateway and provider
+# should report strict mock failures and stop the provider
 set -o pipefail
 cleanup_status=0
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics || cleanup_status=$?
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0' || cleanup_status=$?
-openclaw-gateway stop --timeout 340 || cleanup_status=$?
 openclaw-aimock stop || cleanup_status=$?
 test "$cleanup_status" -eq 0
 ```

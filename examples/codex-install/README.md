@@ -16,8 +16,8 @@ Install the prepared plugin in isolated Codex state, discover its skills through
 ## Notes
 
 - Direct checks need no model or provider credentials. Workspaces run in place; independent snapshots verify that shared manifests stay unchanged. Run only in GitHub Actions.
-- Session context includes model-routing projection as a binding smoke check; detailed routing resolution is a separate contract.
-- Pending relocation: delivery action mismatch and direct-assessment caller guards, quiet/debug setup diagnostics, missing-identity inspection and rename/rotation, inherited-pipe timeout, routing variants, local-settings refresh, and inactive/replacement binding checks remain below.
+- Session context includes the model-routing projection; one packaged resolution accepts an issue object. Source tests cover routing input, fallback, and override permutations.
+- Pending relocation: direct-assessment caller guards, quiet/debug setup diagnostics, missing-identity inspection and rename/rotation, inherited-pipe timeout, local-settings refresh, and inactive/replacement binding checks remain below.
 
 ## Setup
 
@@ -71,16 +71,6 @@ node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_W
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and .preview.manifest.agentId == "codex-example"'
 node "$runtime" binding inspect --plugin-data "$plugin_data" \
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and .preview.manifest.agentId == "codex-example"'
-
-# should expose the workflow operation and reject hidden publication substitution
-root="$TMPDIR/agent-system-codex-install"
-plugin_root=$(jq -r .cachePath "$root/cache.json")
-runtime="$plugin_root/dist/codex/codex-runtime.js"
-if output=$(node "$runtime" delivery prepare --plugin-data "$root/plugin-data" 2>&1 <<'JSON'
-{"action":"publish","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
-JSON
-); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.message == "workflow-command-action-mismatch"'
 
 # should keep standalone setup diagnostics quiet without runner debug
 root="$TMPDIR/agent-system-codex-install"
@@ -182,21 +172,6 @@ printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
   | jq -e '.feedbackRuntime.argvPrefix[-1] == "feedback"'
 printf '%s\n' "$context" | grep -F 'For new routed work, use'
 printf '%s\n' "$context" | grep -F 'Reproduce the complete returned presentation Markdown in the final reply'
-
-# should resolve bounded routing through the installed cache and preserve unresolved reasoning
-root="$TMPDIR/agent-system-codex-install"
-plugin_root=$(jq -r .cachePath "$root/cache.json")
-runtime="$plugin_root/dist/codex/codex-runtime.js"
-plugin_data="$root/plugin-data"
-inspection=$(printf '%s\n' '{"action":"inspect"}' | node "$runtime" model-routing --plugin-data "$plugin_data")
-printf '%s\n' "$inspection" | jq -e '.status == "available" and (.reportGuidance | contains("Model routing"))'
-digest=$(printf '%s\n' "$inspection" | jq -r .manifestDigest)
-jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:"An unspecified task.",assessment:{complexity:"unset",reason:"No defensible tier."}}' \
-  | node "$runtime" model-routing --plugin-data "$plugin_data" \
-  | jq -e '.status == "unresolved" and .profile == null and .selection == null and .reason == "No defensible tier."'
-jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:"An unspecified task.",assessment:{complexity:"unset",reason:"No defensible tier."},fallback:"default",overrides:{effort:"low"}}' \
-  | node "$runtime" model-routing --plugin-data "$plugin_data" \
-  | jq -e '.status == "unresolved" and .profile == "default" and .candidate.thinking == "low" and .execution == "unverified"'
 
 # should accept issue objects as bounded routing context through the installed cache
 root="$TMPDIR/agent-system-codex-install"

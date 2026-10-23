@@ -18,7 +18,6 @@ Synchronize one command and one prompt automation without duplication, execute e
 
 - Both jobs recur hourly; explicit run requests exercise them immediately. Command receipts are written beside the checked-in manifest on the disposable runner.
 - Strict AIMock supplies one prompt completion; scheduling, the Gateway, and command execution remain real. No hosted provider credential or remote SSH is needed.
-- Pending tightening: category/name presentation checks remain below; their source-owner coverage will be assessed in the duplication pass.
 - Source tests cover option/offline variants, one-shot retention, unmanaged jobs, stale authority, containment, timeout/cancellation cleanup, and thread-selection permutations.
 
 ## Setup
@@ -46,11 +45,6 @@ openclaw agent-system automations list --json | tee "$TMPDIR/automation-before.j
 jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-before.json" > "$TMPDIR/automation-identities.json"
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
-
-# should present each job under a stable category with unquoted names on install and doctor
-cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
-NO_COLOR=1 openclaw agent-system install --yes | grep -E '^automation[[:space:]]+unchanged[[:space:]]' | grep -F 'name:'
-NO_COLOR=1 openclaw agent-system doctor | grep -E '^automation[[:space:]]+healthy[[:space:]]' | grep -F 'name:'
 
 # should complete one command under the owning managed git identity
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"

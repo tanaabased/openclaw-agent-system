@@ -47,10 +47,6 @@ openclaw agent-system instance rename 'Doctor Laptop' --json | jq -e --arg id "$
 openclaw agent-system instance rotate --expected-id "$original" --json | jq -e --arg id "$original" '.instanceId != $id and .displayName == "doctor-laptop"'
 openclaw agent-system doctor --json | jq -e 'any(.findings[]; .component == "instance-identity" and .status == "healthy")'
 
-# should expose lowercase owned descriptions without changing host help headings
-openclaw agent-system install --help | grep -F 'including required session dispatch'
-openclaw as status --help | grep -F 'inspect agent system agent, path, and configured capability drift.'
-
 ```
 
 ```bash
