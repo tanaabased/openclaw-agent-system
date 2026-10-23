@@ -1362,10 +1362,12 @@ describe('agent/codex-dispatch', () => {
     const context = await request('context', { id: prepared.id }, child);
     assert.equal(context.currentTurnId, 'first-turn');
     assert.equal(context.previousResultTurnId, undefined);
-    assert.match(String(context.instructions), /ordinary assessment skill/);
-    assert.match(String(context.instructions), /fullAssessment/);
-    assert.match(String(context.instructions), /consistency check in this turn/);
-    assert.match(String(context.instructions), /without another adaptation or submission/);
+    assert.equal(context.entry, 'managed');
+    assert.deepEqual(context.resultSubmission, {
+      request: { action: 'result', id: prepared.id },
+      resultField: 'result',
+      refreshRequest: { action: 'context', id: prepared.id },
+    });
     const original =
       'Keep records until the retention decision is answered.\n\nPartial plan: inspect the store, then remove eligible records only after approval.\n\nWhich retention period applies?\n\nThe failure cause is unverified.';
     const question = {
@@ -5318,6 +5320,57 @@ describe('agent/codex-dispatch', () => {
     );
     assert.equal((await work.run('next')).status, 'prepared');
   });
+
+  for (const mode of ['plan', 'auto'] as const) {
+    it(`should enter managed ${mode} through exact direct operator input without a new send or assessment`, async () => {
+      const assessment = {
+        ...result,
+        ...(mode === 'auto'
+          ? { decision: { mode: 'plan', reasons: ['Wait for direction.'] } }
+          : {}),
+      };
+      const work = await workIssue(assessment, 'Follow the plan.', 'company:implement', mode);
+      native!.turnId = 'operator-implementation';
+      native!.turnStatus = 'inProgress';
+      native!.status = 'active';
+      work.continuation.directOperator = true;
+      work.continuation.directScope = 'local';
+      work.continuation.native!.operatorInput = async () => ({
+        turnId: native!.turnId!,
+        inputId: 'explicit-input',
+      });
+      work.continuation.continuationNative = async (_source, attempt) => ({
+        status: 'verified',
+        turnId: attempt.turnId!,
+        ended: false,
+      });
+      const context = await work.run('context', {}, true);
+      assert.equal(context.status, 'verified', JSON.stringify(context));
+      assert.ok('publicationAuthorized' in context);
+      assert.equal(context.publicationAuthorized, false);
+      const current = await selectCodexIntake(pluginData, deps);
+      const record = (
+        await new CodexDispatchStore(
+          current.store.location.root,
+          current.store.location.scope,
+        ).read()
+      ).records[0]!;
+      assert.equal(record.progression?.via, 'operator');
+      assert.equal(record.continuation?.attempt?.origin, 'input');
+      assert.equal(record.continuation?.attempt?.inputId, 'explicit-input');
+      assert.deepEqual(record.result, assessment);
+      const saved = await work.run(
+        'result',
+        { result: { outcome: 'done', summary: 'Done.', fullResult: 'Local work complete.' } },
+        true,
+      );
+      assert.deepEqual('handoff' in saved && saved.handoff, { next: 'complete' });
+      await assert.rejects(
+        work.run('delivery', { delivery: { action: 'prepare' } }, true),
+        /implementation-publication-not-authorized/,
+      );
+    });
+  }
 
   it('should use a live implementation skill from a changed catalog location', async () => {
     const work = await workIssue();

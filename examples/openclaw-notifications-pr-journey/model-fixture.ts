@@ -666,26 +666,13 @@ function respond(
       ? 'Document closing disposable test issues and verifying the retained delivery after follow-up commits.'
       : 'Document closing disposable test issues after their evidence is captured.';
     if (!retry) {
-      if (!automaticId) {
-        const preview = result('handoff-preview');
-        if (!preview)
-          return dispatch('handoff-preview', {
-            action: 'handoff',
-            id: operatorId,
-          });
-        if (preview.status !== 'handoff-available' || typeof preview.digest !== 'string') return;
-        const handed = result('handoff');
-        if (!handed)
-          return dispatch('handoff', {
-            action: 'handoff',
-            id: operatorId,
-            digest: preview.digest,
-          });
-        if (handed.status !== 'handed-off') return;
-      }
       const context = result('work-context');
       if (!context)
-        return dispatch('work-context', { action: 'implementation-context', id: operatorId });
+        return dispatch('work-context', {
+          ...(automaticId
+            ? { action: 'implementation-context', id: operatorId }
+            : { action: 'implementation', operation: 'context', id: operatorId }),
+        });
       const path = (context.project as { path?: string } | undefined)?.path;
       if (
         context.status !== 'verified' ||

@@ -39,6 +39,8 @@ Load notification declarations through the packaged Codex runtime, plan an intak
 - **Explicit retirement:** preview/apply retirement of a second open assigned task, skip grace, and redeem only the prepared native archive request. Own-active-turn requests stay pending. Reconciliation after native cleanup must retain history with one archive and no duplicate admission. Lookup/host errors keep their actual diagnostic; uncertain writes or denials never trigger blind retries.
 - **Direct reply:** a fresh task selects the configured reply skill/guidance for a disposable source and retains an unpublished draft without intake activation. Later explicit publication verifies the exact destination, author, and permalink. Managed sources reuse their owner, inputs, results, and receipts; invalid managed context cannot become manual authority.
 
+- **Direct implementation:** invoke the configured body once with a supplied or retained plan, issue and existing checkout, including an explicitly configured default wrapper. Verify local-only scope cannot publish, explicit PR scope uses retained delivery, and interrupted/completed results resume without duplicate work. Managed entry must preserve its owner, stage, source receipts and partial work; invalid ownership never falls back to manual entry. Native instruction-following and desktop display remain unverified by headless checks.
+
 ## Setup
 
 ```bash

@@ -16,7 +16,7 @@ Restart an admitted issue's Gateway, refresh the assessment with current issue f
 
 ## Notes
 
-- Strict AIMock reuses the existing issue assessment protocol. GitHub, the Gateway, managed Git, native ownership, and summary receipts remain real; model judgment is not under test.
+- Strict AIMock reuses the issue assessment protocol, including its returned schema and revision-specific submission request. GitHub, the Gateway, managed Git, native ownership, and summary receipts remain real; model judgment is not under test.
 - The first restart changes equivalent actor ordering and refreshes hidden issue facts. The second restart recovers the deliberately uncomposed summary; these are distinct retained-revision assertions.
 - CI owns one disposable issue, two agent workspaces, and its SSH registration. Only Tanaabot is assigned; scoped refreshes and a 24-hour schedule isolate discovery. Cleanup stops the Gateway before external fixture changes.
 

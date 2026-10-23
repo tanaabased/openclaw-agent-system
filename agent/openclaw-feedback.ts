@@ -1,3 +1,4 @@
+import implementationContext from './implementation-context.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import feedbackComposition from './feedback-composition.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
@@ -457,7 +458,15 @@ export default async function openClawFeedback(input: {
     });
     await save();
     return {
-      status: 'verified',
+      ...implementationContext({
+        runtime: 'openclaw',
+        id: record.id,
+        path: record.worktree!,
+        assessment: record.result,
+        plan: event.work?.decision?.plan,
+        implementation,
+        previousResult: event.work?.result,
+      }),
       assignmentObservation: record.assignmentObservation,
       assignmentWarning:
         record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),

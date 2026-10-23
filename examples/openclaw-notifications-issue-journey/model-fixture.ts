@@ -7,6 +7,9 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
+import { type TSchema } from 'typebox';
+import { Value } from 'typebox/value';
+
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
@@ -47,6 +50,22 @@ const dispatchStages = [
   'manual-publish',
   'manual-reconcile',
 ];
+
+function assessmentRequest(context: Record<string, unknown>, payload: object) {
+  assert.ok(Value.Check(context.resultSchema as TSchema, payload));
+  const submission = context.resultSubmission as {
+    request: Record<string, unknown>;
+    resultField: string;
+  };
+  assert.equal(submission.resultField, 'result');
+  assert.deepEqual(submission.request, {
+    action: context.entry === 'direct' ? 'assessment' : 'result',
+    ...(context.entry === 'direct' ? { operation: 'result', target: context.target } : {}),
+    id: context.id,
+    ...(context.previousResultDigest ? { previousResultDigest: context.previousResultDigest } : {}),
+  });
+  return { ...submission.request, [submission.resultField]: payload };
+}
 
 function currentTurn(request: ChatCompletionRequest) {
   return request.messages.slice(
@@ -197,25 +216,32 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     const selected = context.assessment as { skill: { path: string } };
     if (openClawAIMockToolResultText(messages, prefix + 'direct-assessment-skill') === undefined)
       return call('direct-assessment-skill', 'read', { path: selected.skill.path });
-    const saved = result('direct-assessment-result');
-    if (!saved)
-      return dispatch('direct-assessment-result', {
-        action: 'assessment',
-        operation: 'result',
-        id: context.id,
-        target: assessmentTarget[1],
-        result: {
-          version: 1,
-          outcome: 'plan-ready',
-          summary: 'Assess cleanup documentation only.',
-          assessment: fullAssessment,
-          fullAssessment,
-          plan: fullAssessment,
-          reviewSummary,
-          evidence: [],
-          progress: { completed: ['Read the selected assessment method.'], remaining: [] },
-        },
+    const payload = {
+      version: 1,
+      outcome: 'plan-ready',
+      summary: 'Assess cleanup documentation only.',
+      assessment: fullAssessment,
+      fullAssessment,
+      plan: fullAssessment,
+      reviewSummary,
+      evidence: [],
+      progress: { completed: ['Read the selected assessment method.'], remaining: [] },
+    };
+    const rejection = openClawAIMockToolResultText(messages, prefix + 'direct-assessment-invalid');
+    if (rejection === undefined) {
+      const malformed = assessmentRequest(context, payload);
+      const incomplete: Partial<typeof payload> = { ...payload };
+      delete incomplete.plan;
+      return call('direct-assessment-invalid', 'agent_system_dispatch', {
+        ...malformed,
+        result: incomplete,
       });
+    }
+    const diagnostic = rejection.split('Received arguments:')[0]!;
+    assert.match(diagnostic, /result\.plan/u);
+    assert.doesNotMatch(diagnostic, /result\.questions|result\.remediation/u);
+    const saved = result('direct-assessment-result');
+    if (!saved) return dispatch('direct-assessment-result', assessmentRequest(context, payload));
     assert.equal(saved.status, 'recorded');
     assert.equal((saved.handoff as { next: string }).next, 'assessment-only');
     return { content: String(saved.presentation) };
@@ -407,17 +433,15 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       return;
     const saved = result('refresh-result');
     if (!saved)
-      return dispatch('refresh-result', {
-        action: 'result',
-        id: refreshId,
-        previousResultDigest: fresh.previousResultDigest,
-        result: {
+      return dispatch(
+        'refresh-result',
+        assessmentRequest(fresh, {
           ...(fresh.previousResult as Record<string, unknown>),
           fullAssessment:
             String((fresh.previousResult as Record<string, unknown>).fullAssessment) +
             '\n\nFresh issue context verified after restart.',
-        },
-      });
+        }),
+      );
     if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
     if (prompt.includes('leave summary pending')) return { content: saved.presentation };
     return summary(refreshId, saved, fresh.previousResult as Record<string, unknown>);
@@ -530,11 +554,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     return;
   const saved = result('result');
   if (!saved)
-    return dispatch('result', {
-      action: 'result',
-      id,
-      ...(revision ? { previousResultDigest: context.previousResultDigest } : {}),
-      result: {
+    return dispatch(
+      'result',
+      assessmentRequest(context, {
         version: 1,
         outcome: revision?.[1] === 'Clarify' ? 'clarification-needed' : 'plan-ready',
         summary: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
@@ -562,8 +584,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           completed: ['Verified the managed worktree.'],
           remaining: ['Implement after approval.'],
         },
-      },
-    });
+      }),
+    );
   if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
   if (revision) return { content: saved.presentation };
   return summary(id, saved, { fullAssessment, reviewSummary });
@@ -605,11 +627,15 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
   model: { match: /^(?:aimock\/)?gpt-5\.5$/u, reference: 'aimock/gpt-5.5' },
   systemPromptSignals: [identity],
   finalResponses: [],
+  expectedInvalidToolCalls: [
+    { id: prefix + 'direct-assessment-invalid', name: 'agent_system_dispatch' },
+  ],
   dynamicFinalResponseFixtures: [final],
   toolCalls: [
     { id: prefix + 'scan', name: 'agent_system_intake' },
     { id: prefix + 'assessment-skill', name: 'read' },
     { id: prefix + 'direct-assessment-skill', name: 'read' },
+    { id: prefix + 'direct-assessment-invalid', name: 'agent_system_dispatch' },
     { id: prefix + 'feedback-skill', name: 'read' },
     { id: prefix + 'summary-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>

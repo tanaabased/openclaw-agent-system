@@ -2,6 +2,7 @@ import { realpath } from 'node:fs/promises';
 
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import assessmentHandoff from './assessment-handoff.ts';
+import assessmentSubmission from './assessment-submission.ts';
 import {
   assessmentDecisionMode,
   assessmentResultContextSchema,
@@ -296,6 +297,7 @@ export async function assessDispatch(
     return {
       status: 'verified' as const,
       assignmentObservation: record.assignmentObservation,
+      entry: 'managed',
       assignmentWarning:
         record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
       id: record.id,
@@ -333,6 +335,11 @@ export async function assessDispatch(
         : {}),
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
+      resultSubmission: assessmentSubmission({
+        entry: 'managed',
+        id: record.id,
+        previousResultDigest: record.result ? automationHash(record.result) : undefined,
+      }),
       mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
       instructions:
         'Read feedbackWork for retained plan revisions and responses before interpreting the current input. Historical responses supply context, not fresh authorization. ' +

@@ -10,7 +10,11 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import { issueKey } from '../agent/dispatch-pending.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
-import { assessmentResultSchema, type AssessmentResult } from '../agent/assessment-result.ts';
+import {
+  assessmentResultContextSchema,
+  assessmentResultSchema,
+  type AssessmentResult,
+} from '../agent/assessment-result.ts';
 import type { AssessmentSelection } from '../agent/assessment-selection.ts';
 import AgentSystemToolError from '../api/error.ts';
 import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
@@ -3715,7 +3719,20 @@ describe('agent/openclaw issue dispatch', () => {
     const verified = await context(input.id);
     assert.ok('runtime' in verified && verified.runtime === 'openclaw');
     assert.ok('evidence' in verified && 'resultContract' in verified && 'assessment' in verified);
-    const recorded = await submit(input.id);
+    assert.deepEqual(
+      'resultSchema' in verified && verified.resultSchema,
+      assessmentResultContextSchema,
+    );
+    assert.ok('resultSubmission' in verified && 'entry' in verified);
+    assert.equal(verified.entry, 'managed');
+    assert.deepEqual(verified.resultSubmission.request, { action: 'result', id: input.id });
+    assert.deepEqual(verified.resultSubmission.refreshRequest, { action: 'context', id: input.id });
+    const candidate = {
+      ...verified.resultSubmission.request,
+      [verified.resultSubmission.resultField]: plan,
+    };
+    assert.ok(Value.Check(dispatchParameters, candidate));
+    const recorded = await service.run(manifest, root, assessor(input.id), candidate);
     assert.ok('presentation' in recorded && recorded.presentation?.includes(plan.fullAssessment!));
     assert.equal(recorded.status, 'recorded');
     const saved = await record();
@@ -3725,6 +3742,14 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(saved.resultTurnId, `${input.id}:assessment`);
     assert.equal(saved.stageReceipt?.binding.threadId, assessor(input.id).sessionKey);
     assert.equal(saved.stageReceipt?.binding.worktree, join(root, 'worktree'));
+    const readback = await context(input.id);
+    assert.ok('previousResultTurnId' in readback && 'currentTurnId' in readback);
+    assert.equal(readback.previousResultTurnId, readback.currentTurnId);
+    assert.equal(
+      'previousPresentation' in readback && readback.previousPresentation,
+      recorded.presentation,
+    );
+    assert.equal((await record()).assessmentHistory?.length, 1);
     assessmentReply(input.id);
     service = new OpenClawDispatch(service.dependencies);
     assert.equal((await assess(input.id)).status, 'assessment-completed');
@@ -4018,7 +4043,9 @@ describe('agent/openclaw issue dispatch', () => {
     const fresh = await context(input.id, who);
     assert.ok(
       'previousResult' in fresh &&
-        fresh.previousResult?.fullAssessment === clarification.fullAssessment,
+        fresh.previousResult &&
+        'fullAssessment' in fresh.previousResult &&
+        fresh.previousResult.fullAssessment === clarification.fullAssessment,
     );
     assert.equal('previousPresentation' in fresh, false);
     await assert.rejects(submit(input.id, plan, undefined, who), /assessment-result-conflict/);
@@ -5201,6 +5228,68 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
+  it('should route direct implementation through the original managed owner and preserve local scope', async () => {
+    const { id, who } = await operatorFollowup();
+    const before = await record();
+    await assert.rejects(
+      service.run(
+        manifest,
+        root,
+        who,
+        { action: 'implementation', operation: 'present', id },
+        true,
+      ),
+      /implementation-result-missing/,
+    );
+    assert.deepEqual(await record(), before);
+    const context = await service.run(
+      manifest,
+      root,
+      who,
+      { action: 'implementation', operation: 'context', id, scope: 'local' },
+      true,
+    );
+    assert.equal(context.status, 'verified');
+    assert.ok('publicationAuthorized' in context);
+    assert.equal(context.publicationAuthorized, false);
+    const after = await record();
+    assert.equal(after.progression?.via, 'operator');
+    assert.deepEqual(after.result, before.result);
+    assert.deepEqual(after.stageReceipt, before.stageReceipt);
+    assert.equal(after.threadId, before.threadId);
+    const saved = await service.run(
+      manifest,
+      root,
+      who,
+      {
+        action: 'implementation',
+        operation: 'result',
+        id,
+        result: { outcome: 'done', summary: 'Done.', fullResult: 'Local work complete.' },
+      },
+      true,
+    );
+    assert.deepEqual('handoff' in saved && saved.handoff, { next: 'complete' });
+    const readback = await service.run(
+      manifest,
+      root,
+      who,
+      { action: 'implementation', operation: 'present', id },
+      true,
+    );
+    assert.equal(readback.status, 'presented');
+    assert.equal('handoff' in readback, false);
+
+    const blocked = await service.run(
+      manifest,
+      root,
+      who,
+      { action: 'delivery', operation: 'prepare', id },
+      true,
+    );
+    assert.equal('code' in blocked && blocked.code, 'implementation-publication-not-authorized');
+  });
+
   it('should retain one implementation transition without replacing the assessment', async () => {
     const { id, who } = await operatorFollowup();
     const request = {
@@ -5347,7 +5436,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.deepEqual(after.result, before.result);
   });
 
-  it('should enter work from explicit approved plan feedback without an extra decision', async () => {
+  it('should reuse the exact approved feedback owner through direct implementation without an extra decision', async () => {
     const { id, comments } = await feedbackOwner(false);
     comments[0]!.body = '@receiver Please implement the agreed plan.';
     consumeSend = true;
@@ -5368,7 +5457,13 @@ describe('agent/openclaw issue dispatch', () => {
       service.run(manifest, root, { ...who, runId: 'unbound-native-owner' }, request, true),
       /feedback-owner-caller-required/,
     );
-    const result = await service.run(manifest, root, who, request, true);
+    const result = await service.run(
+      manifest,
+      root,
+      who,
+      { action: 'implementation', operation: 'context', id },
+      false,
+    );
     assert.equal(result.status, 'verified');
     const after = await record();
     assert.equal(after.progression?.stage, 'implementation');

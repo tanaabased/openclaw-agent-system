@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import { createRequire } from 'node:module';
 import waitForAssessmentRelease from '../examples/openclaw-notifications-intake/assessment-barrier.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
@@ -8,6 +9,8 @@ import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
+import assessmentSubmission from '../agent/assessment-submission.ts';
 import { issueExampleScenario } from '../examples/openclaw-notifications-issue-journey/model-fixture.ts';
 import { intakeExampleScenario } from '../examples/openclaw-notifications-intake/model-fixture.ts';
 import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
@@ -39,6 +42,14 @@ for (const scenario of [
   const digest = 'd'.repeat(64);
 
   const source = 'https://github.com/tanaabased/big-test-bucket/issues/123';
+
+  function assessmentContract(previousResultDigest?: string) {
+    return {
+      entry: 'managed',
+      resultSchema: assessmentResultContextSchema,
+      resultSubmission: assessmentSubmission({ entry: 'managed', id, previousResultDigest }),
+    };
+  }
 
   function request(prompt: string): ChatCompletionRequest {
     return {
@@ -132,6 +143,61 @@ for (const scenario of [
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
+    if (scenario.id === 'openclaw-notifications-issue-journey')
+      it('should correct one rejected direct assessment shape without repeating investigation or changing source', async () => {
+        const input = request(`Direct issue assessment target: ${source} checkout: /tmp/owned`);
+        assert.equal((await action(input, 'assessment')).operation, 'context');
+        append(input, 'direct-assessment-context', {
+          status: 'verified',
+          runtime: 'openclaw',
+          entry: 'direct',
+          id,
+          target: source,
+          resultSchema: assessmentResultContextSchema,
+          resultSubmission: assessmentSubmission({ entry: 'direct', id, target: source }),
+          assessment: { skill: { path: '/fixture/SKILL.md' } },
+        });
+        const read = await response(input);
+        assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
+        append(input, 'direct-assessment-skill', 'Complete selected method.');
+        const rejected = await response(input);
+        assert.ok('toolCalls' in rejected && rejected.toolCalls?.[0]);
+        const malformed = JSON.parse(rejected.toolCalls[0].arguments);
+        assert.equal(malformed.result.plan, undefined);
+        const hostRequire = createRequire(
+          createRequire(import.meta.url).resolve('openclaw/plugin-sdk/plugin-entry'),
+        );
+        const { validateToolArguments } = await import(
+          hostRequire.resolve('@openclaw/ai/validation')
+        );
+        let diagnostic = '';
+        assert.throws(
+          () =>
+            validateToolArguments(
+              { name: 'agent_system_dispatch', parameters: dispatchParameters },
+              { name: 'agent_system_dispatch', arguments: malformed },
+            ),
+          (error: unknown) => {
+            assert.ok(error instanceof Error);
+            diagnostic = error.message;
+            return true;
+          },
+        );
+        append(input, 'direct-assessment-invalid', diagnostic);
+        const corrected = await action(input, 'assessment');
+        assert.equal(corrected.operation, 'result');
+        assert.deepEqual(corrected, {
+          ...malformed,
+          result: { ...malformed.result, plan: malformed.result.fullAssessment },
+        });
+        append(input, 'direct-assessment-result', {
+          status: 'recorded',
+          presentation: 'Retained complete assessment.',
+          handoff: { next: 'assessment-only' },
+        });
+        assert.deepEqual(await response(input), { content: 'Retained complete assessment.' });
+      });
+
     if (scenario.id === 'openclaw-notifications-issue-journey')
       it('should preserve a failed recovery candidate without retrying or claiming publication', async () => {
         const input = request(`recover only the pending public assessment summary with id ${id}`);
@@ -433,6 +499,8 @@ for (const scenario of [
         assert.equal((await action(later, 'context')).id, id);
         append(later, 'refresh-context', {
           status: 'verified',
+          id,
+          ...assessmentContract(digest),
           previousResultDigest: digest,
           previousResult: {
             version: 1,
@@ -512,6 +580,7 @@ for (const scenario of [
       const context = {
         status: 'verified',
         runtime: 'openclaw',
+        ...assessmentContract(),
         id,
         project: { path: '/tmp/managed-worktree' },
         assessment: {
@@ -821,12 +890,7 @@ for (const scenario of [
               ? `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`
               : `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
           );
-          if (mode === 'operator') {
-            await action(input, 'handoff');
-            append(input, 'handoff-preview', { status: 'handoff-available', digest });
-            assert.equal((await action(input, 'handoff')).digest, digest);
-            append(input, 'handoff', { status: 'handed-off' });
-          } else {
+          if (mode !== 'operator') {
             await action(input, 'context');
             append(input, 'context', {
               status: 'verified',
@@ -863,7 +927,9 @@ for (const scenario of [
             });
             await publishProgressionSummary(input);
           }
-          await action(input, 'implementation-context');
+          if (mode === 'operator')
+            assert.equal((await action(input, 'implementation')).operation, 'context');
+          else await action(input, 'implementation-context');
           append(input, 'work-context', {
             status: 'verified',
             runtime: 'openclaw',
@@ -1051,11 +1117,11 @@ for (const scenario of [
         assert.equal((await action(input, 'delivery')).operation, 'present');
       });
 
-      it('should stop when native authority rejects the operator handoff', async () => {
+      it('should stop when native authority rejects direct implementation context', async () => {
         const input = request(
           `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
         );
-        append(input, 'handoff-preview', { status: 'blocked', code: 'dispatch-operator-required' });
+        append(input, 'work-context', { status: 'blocked', code: 'dispatch-operator-required' });
         assert.equal(matchFixture([...scenario.fixtures], input), null);
       });
     } else {
@@ -1118,6 +1184,7 @@ for (const scenario of [
           append(input, 'context', {
             status: 'verified',
             runtime: 'openclaw',
+            ...assessmentContract(digest),
             id,
             project: { path: '/tmp/managed-worktree' },
             assessment: { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } },

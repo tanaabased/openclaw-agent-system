@@ -17,6 +17,7 @@ Assign one issue, retain its assessment in one native chat and managed worktree,
 
 ## Notes
 
+- The fixture submits through the returned entry-specific request and validates its candidate against the returned schema; it does not infer a contract or prove model adaptation.
 - Strict AIMock supplies judgment and text; GitHub, scheduling, dispatch, managed Git, and receipts remain real. The selected ordinary workspace assessment skill proves installed selection and retention, not genuine model adaptation.
 - The fixture's compact reviewer differs from the assigning actor and is initially uncached. This example creates no PR and requests no review.
 - The default private response shows the user journey and documentation/test impact; full engineering assessment and evidence remain retained for explicit readback.

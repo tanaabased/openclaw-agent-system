@@ -19,6 +19,46 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
     sourceThreadId: string,
     attempt: NonNullable<CodexContinuationState['attempt']>,
   ) => {
+    if (attempt.origin === 'input') {
+      if (
+        !attempt.inputId ||
+        attempt.sourceThreadId !== attempt.request.threadId ||
+        attempt.turnId !== attempt.sourceTurnId
+      )
+        throw new Error('continuation-input-origin-invalid');
+      const entries = await dispatchHistoryPages(request, 'thread/items/list', {
+        threadId: attempt.request.threadId,
+        turnId: attempt.sourceTurnId,
+        sortDirection: 'asc',
+      });
+      if (
+        entries.some((entry) => entry.turnId !== attempt.sourceTurnId || !nativeObject(entry.item))
+      )
+        throw new Error('continuation-input-unverified');
+      const items = entries.map((entry) => entry.item).filter(nativeObject);
+      if (codexTurnApprovalDenied(items))
+        return {
+          status: 'blocked' as const,
+          code: 'continuation-native-approval-denied',
+          turnId: attempt.turnId!,
+          ended: false,
+        };
+      const user = items.findLastIndex((item) => item.type === 'userMessage');
+      if (
+        user < 0 ||
+        items[user]!.id !== attempt.inputId ||
+        items
+          .slice(user + 1)
+          .some(
+            (item) =>
+              item.type === 'functionCallOutput' &&
+              item.namespace === 'codex_app' &&
+              ['create_thread', 'send_message_to_thread'].includes(String(item.name)),
+          )
+      )
+        throw new Error('continuation-input-unverified');
+      return { status: 'verified' as const, turnId: attempt.turnId!, ended: false };
+    }
     if (attempt.origin === 'assessment') {
       if (
         attempt.sourceThreadId !== attempt.request.threadId ||

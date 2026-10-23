@@ -38,6 +38,8 @@ export const requestSchema = Type.Object(
   { additionalProperties: false },
 );
 export interface CodexContinuationDependencies extends CodexDispatchDependencies {
+  directOperator?: boolean;
+  directScope?: 'local' | 'pull-request';
   continuationNative?: ReturnType<typeof codexContinuationNative>;
   observeTurn?: ReturnType<typeof codexLiveTurn>;
   deliver?: typeof runCodexDelivery;
@@ -56,6 +58,8 @@ export interface CodexWorkContext {
   continuationNative: ReturnType<typeof codexContinuationNative>;
   observeTurn?: ReturnType<typeof codexLiveTurn>;
   git: typeof dispatchGit;
+  preparedSelections?: Set<string>;
+  operatorInput?: { turnId: string; inputId: string };
   occurrence: Awaited<ReturnType<ReturnType<typeof codexDispatchNative>['occurrence']>> | undefined;
   admissions: Awaited<ReturnType<CodexDispatchSelection['store']['read']>>;
   save: () => Promise<void>;

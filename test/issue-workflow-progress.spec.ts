@@ -68,6 +68,16 @@ describe('agent/issue-workflow-progress', () => {
       issue.retirement = {};
       assert.equal(issueWorkflowProgress(issue).action, 'stopped');
     });
+    it(`should finish ${runtime} local-only work without scheduling publication`, () => {
+      const issue = record('done');
+      if (runtime === 'codex') issue.continuation!.scope = 'local';
+      else issue.work!.scope = 'local';
+      assert.deepEqual(issueWorkflowProgress(issue), { action: 'complete', status: 'complete' });
+      assert.equal(workflowStatus(issue), 'complete');
+      if (runtime === 'codex') issue.continuation!.scope = 'pull-request';
+      else issue.work!.scope = 'pull-request';
+      assert.equal(issueWorkflowProgress(issue).action, 'delivery');
+    });
     it(`should keep ${runtime} native denials authoritative even after implementation`, () => {
       const issue = record('done');
       if (runtime === 'codex') {

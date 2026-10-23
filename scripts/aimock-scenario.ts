@@ -9,6 +9,7 @@ export interface OpenClawAIMockToolCall {
 export interface OpenClawAIMockScenario {
   embeddingAuthorization?: string;
   expectedDeniedToolCalls?: readonly OpenClawAIMockToolCall[];
+  expectedInvalidToolCalls?: readonly OpenClawAIMockToolCall[];
   skipToolSearch?: (request: ChatCompletionRequest) => boolean;
   toolSearchDiscoveryFixture?: Fixture;
   dynamicFinalResponseFixtures?: readonly Fixture[];

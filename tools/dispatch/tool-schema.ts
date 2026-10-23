@@ -1,3 +1,4 @@
+import { directImplementationRequestSchema } from './implementation-schema.ts';
 import { directAssessmentRequestSchema } from './assessment-schema.ts';
 import { feedbackDecisionSchema } from '../../agent/feedback-work.ts';
 import { Type, type TProperties } from 'typebox';
@@ -7,13 +8,15 @@ import { assessmentSchema } from '../../agent/model-routing.ts';
 import { feedbackResultSchema } from '../../agent/feedback-state.ts';
 import { implementationResultSchema } from '../../agent/implementation-result.ts';
 import { replyRequestSchema } from './reply-schema.ts';
+import discriminatedSchema from '../../utils/discriminated-schema.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const object = <P extends TProperties>(properties: P) =>
   Type.Object(properties, { additionalProperties: false });
-export const dispatchParameters = Type.Union([
+const dispatchRequestVariants = Type.Union([
   replyRequestSchema,
   directAssessmentRequestSchema,
+  directImplementationRequestSchema,
   object({ action: Type.Literal('retire'), id: Type.Optional(id), digest: Type.Optional(id) }),
   object({
     action: Type.Literal('check'),
@@ -54,7 +57,11 @@ export const dispatchParameters = Type.Union([
     ),
     digest: Type.Optional(id),
   }),
-  object({ action: Type.Literal('implementation-context'), id }),
+  object({
+    action: Type.Literal('implementation-context'),
+    id,
+    scope: Type.Optional(Type.Union([Type.Literal('local'), Type.Literal('pull-request')])),
+  }),
   object({
     action: Type.Literal('implementation-result'),
     id,
@@ -121,3 +128,4 @@ export const dispatchParameters = Type.Union([
   }),
   object({ action: Type.Literal('retry'), id }),
 ]);
+export const dispatchParameters = discriminatedSchema('action', dispatchRequestVariants);

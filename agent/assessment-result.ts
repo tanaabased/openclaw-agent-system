@@ -1,6 +1,8 @@
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import discriminatedSchema from '../utils/discriminated-schema.ts';
+
 const text = Type.String({ minLength: 1, maxLength: 32000, pattern: '\\S' });
 const decisionReasons = Type.Array(Type.String({ minLength: 1, maxLength: 1000, pattern: '\\S' }), {
   minItems: 1,
@@ -52,7 +54,7 @@ const common = {
 };
 
 /** shared issue assessment contract owned by #249; lifecycle identity stays runtime-owned. */
-export const assessmentResultSchema = Type.Union([
+const assessmentResultVariants = Type.Union([
   Type.Object(
     {
       ...common,
@@ -83,10 +85,11 @@ export const assessmentResultSchema = Type.Union([
     { additionalProperties: false },
   ),
 ]);
+export const assessmentResultSchema = discriminatedSchema('outcome', assessmentResultVariants);
 // the model-facing contract shares repeated fields instead of expanding them per outcome.
 export const assessmentResultContextSchema = {
   $defs: { ...common, decision: Type.Optional(currentDecisionSchema) },
-  anyOf: assessmentResultSchema.anyOf.map((variant) => ({
+  anyOf: assessmentResultVariants.anyOf.map((variant) => ({
     ...variant,
     properties: {
       ...variant.properties,

@@ -16,7 +16,7 @@ export const issueProgressionSchema = Type.Object(
 export type IssueProgression = Static<typeof issueProgressionSchema>;
 interface Issue {
   progression?: IssueProgression;
-  createdAt: number;
+  createdAt?: number;
   retired?: unknown;
   retirement?: unknown;
   reset?: unknown;
@@ -43,7 +43,12 @@ export function retainedIssueProgression(issue: Issue): IssueProgression | undef
 /** mode governs entry once; lifecycle stops remain independent of the retained stage. */
 export default function issueProgression(
   issue: Issue,
-  input: { mode: 'plan' | 'work' | 'auto'; now: number; operator?: boolean },
+  input: {
+    mode: 'plan' | 'work' | 'auto';
+    now: number;
+    operator?: boolean;
+    actionablePlan?: string;
+  },
 ):
   | { status: 'ready'; progression: IssueProgression }
   | { status: 'held'; reason: string }
@@ -54,14 +59,14 @@ export default function issueProgression(
     return { status: 'stopped', reason: 'implementation-cancelled' };
   const retained = retainedIssueProgression(issue);
   if (retained) return { status: 'ready', progression: retained };
-  if (issue.result?.outcome !== 'plan-ready')
+  if (issue.result?.outcome !== 'plan-ready' && !(input.operator && input.actionablePlan?.trim()))
     return { status: 'held', reason: 'assessment-not-actionable' };
   if (!input.operator) {
     if (input.mode === 'plan') return { status: 'held', reason: 'implementation-disabled' };
-    if (input.mode === 'auto' && assessmentDecisionMode(issue.result.decision) !== 'work')
+    if (input.mode === 'auto' && assessmentDecisionMode(issue.result?.decision) !== 'work')
       return {
         status: 'held',
-        reason: issue.result.decision ? 'auto-wait' : 'auto-decision-required',
+        reason: issue.result?.decision ? 'auto-wait' : 'auto-decision-required',
       };
   }
   return {

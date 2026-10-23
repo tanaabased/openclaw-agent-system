@@ -7,6 +7,8 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import assignmentCard from '../channels/github/presentation/assignment-card.ts';
 import { assessmentInstructions } from './assessment-instructions.ts';
+import { assessmentResultContextSchema } from './assessment-result.ts';
+import assessmentSubmission from './assessment-submission.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 import openClawSkill from './openclaw-skill.ts';
 import { automationHash } from './automation-hash.ts';
@@ -180,6 +182,7 @@ export async function issueAssessmentAction(input: {
     return {
       status: 'verified',
       runtime: 'openclaw',
+      entry: 'managed',
       id: record.id,
       project: { path: record.worktree },
       routing: JSON.parse(record.routing!),
@@ -217,14 +220,20 @@ export async function issueAssessmentAction(input: {
         : {}),
       mode: input.policy?.issueAssignment?.mode ?? 'auto',
       resultContract: 'assessment-result/v1',
+      resultSchema: assessmentResultContextSchema,
+      resultSubmission: assessmentSubmission({
+        entry: 'managed',
+        id: record.id,
+        previousResultDigest: record.result ? automationHash(record.result) : undefined,
+      }),
       instructions:
-        'Read feedbackWork for retained revisions and responses; history grants no fresh authority. ' +
+        'Read feedbackWork; retained history grants no authority. ' +
         (input.policy?.issueAssignment?.mode === 'auto'
-          ? 'Trusted mode: auto. Include decision.mode plan or work with bounded reasons based on the assessment and plan; work requires plan-ready. '
+          ? 'Auto requires result.decision with mode plan|work and reasons; work requires plan-ready. '
           : '') +
         assessmentInstructions +
         '\n\n' +
-        'Use only agent_system_dispatch for context/result; its action result input declares the assessment-result/v1 schema. Include previousResultDigest for revisions. Use action present to redisplay an older assessment. Never use Codex dispatchRuntime.',
+        'Use agent_system_dispatch only. entry managed never uses action assessment or direct bootstrap. Use action present for older assessments. Never use Codex dispatchRuntime.',
     };
   }
   if (
