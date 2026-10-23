@@ -4,47 +4,58 @@ import { defaultMaximumCommentCharacters } from './comment-limit.ts';
 
 export const maximumPublicationBodyLength = 1_200;
 
+/** retain only an owned field label, never the rejected provider value. */
+class GitHubResponseError extends Error {
+  readonly code: string;
+
+  constructor(label: string) {
+    const field = /^[a-z][a-z -]{0,95}$/u.test(label) ? label : 'response';
+    super(`GitHub returned invalid ${field}.`);
+    this.code = `github-response-invalid-${field.replaceAll(' ', '-')}`;
+  }
+}
+
 export function githubResponseRecord(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`GitHub returned invalid ${label} data.`);
+    throw new GitHubResponseError(`${label} data`);
   }
   return value as Record<string, unknown>;
 }
 
 export function githubResponseString(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !value) throw new Error(`GitHub returned invalid ${label}.`);
+  if (typeof value !== 'string' || !value) throw new GitHubResponseError(label);
   return value;
 }
 
 export function githubResponseInteger(value: unknown, label: string): number {
   if (!Number.isSafeInteger(value) || Number(value) < 0) {
-    throw new Error(`GitHub returned invalid ${label}.`);
+    throw new GitHubResponseError(label);
   }
   return Number(value);
 }
 
 export function githubResponsePositiveInteger(value: unknown, label: string): number {
   const parsed = githubResponseInteger(value, label);
-  if (parsed < 1) throw new Error(`GitHub returned invalid ${label}.`);
+  if (parsed < 1) throw new GitHubResponseError(label);
   return parsed;
 }
 
 export function githubResponseBoolean(value: unknown, label: string): boolean {
-  if (typeof value !== 'boolean') throw new Error(`GitHub returned invalid ${label}.`);
+  if (typeof value !== 'boolean') throw new GitHubResponseError(label);
   return value;
 }
 
 export function githubResponseNodeId(value: unknown, label: string): string {
   const parsed = githubResponseString(value, label);
   if (parsed.length > 255 || parsed.includes('\0') || /\s/u.test(parsed)) {
-    throw new Error(`GitHub returned invalid ${label}.`);
+    throw new GitHubResponseError(label);
   }
   return parsed;
 }
 
 export function githubResponseTimestamp(value: unknown, label: string): string {
   const parsed = githubResponseString(value, label);
-  if (Number.isNaN(Date.parse(parsed))) throw new Error(`GitHub returned invalid ${label}.`);
+  if (Number.isNaN(Date.parse(parsed))) throw new GitHubResponseError(label);
   return parsed;
 }
 
@@ -62,7 +73,7 @@ export function githubResponseBoundedProse(
 ): { text: string; truncated: boolean } {
   if (value === null) return { text: '', truncated: false };
   if (typeof value !== 'string' || value.includes('\0')) {
-    throw new Error(`GitHub returned invalid ${label}.`);
+    throw new GitHubResponseError(label);
   }
   return {
     text: value.slice(0, maximumLength),
@@ -77,7 +88,7 @@ function githubResponseBoundedCharacters(
 ): { text: string; truncated: boolean } {
   if (value === null) return { text: '', truncated: false };
   if (typeof value !== 'string' || value.includes('\0')) {
-    throw new Error(`GitHub returned invalid ${label}.`);
+    throw new GitHubResponseError(label);
   }
   const characters = [...value];
   return {
@@ -90,13 +101,15 @@ export function githubResponseIdentity(value: unknown, label: string): GitHubIde
   const item = githubResponseRecord(value, label);
   const login = githubResponseString(item.login, `${label} login`);
   const identityNodeId = githubResponseNodeId(item.nodeId, `${label} node id`);
-  if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u.test(login)) {
-    throw new Error(`GitHub returned invalid ${label} login.`);
+  const type = githubResponseString(item.type, `${label} type`);
+  const stem = type === 'Bot' ? login.replace(/\[bot\]$/u, '') : login;
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u.test(stem)) {
+    throw new GitHubResponseError(`${label} login`);
   }
   return {
     login,
     nodeId: identityNodeId,
-    type: githubResponseString(item.type, `${label} type`),
+    type,
   };
 }
 
@@ -110,7 +123,7 @@ export function githubResponseOptionalIdentity(
 export function githubResponseGitRef(value: unknown, label: string): string {
   const parsed = githubResponseString(value, label);
   if (parsed.length > 255 || githubResponseHasControlCharacter(parsed)) {
-    throw new Error(`GitHub returned invalid ${label}.`);
+    throw new GitHubResponseError(label);
   }
   return parsed;
 }
@@ -118,7 +131,7 @@ export function githubResponseGitRef(value: unknown, label: string): string {
 export function githubResponseGitSha(value: unknown, label: string): string {
   const parsed = githubResponseString(value, label).toLowerCase();
   if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(parsed)) {
-    throw new Error(`GitHub returned invalid ${label}.`);
+    throw new GitHubResponseError(label);
   }
   return parsed;
 }

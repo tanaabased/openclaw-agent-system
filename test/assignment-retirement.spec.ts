@@ -1,3 +1,6 @@
+import commentProviderFixture from './github-comment-provider-fixture.ts';
+import reactivateAssignmentFeedback from '../agent/assignment-feedback-reactivation.ts';
+import type { FeedbackSourceState } from '../agent/feedback-state.ts';
 import { parseInstallationConfig, type InstallationConfig } from '../core/installation-config.ts';
 import assert from 'node:assert/strict';
 import assignmentRetirement from '../agent/assignment-retirement.ts';
@@ -44,8 +47,12 @@ function setup() {
   };
   const records = [record];
   const admissions = [admitted];
-  const run = (targetId?: string) =>
+  const run = (
+    targetId?: string,
+    reactivate?: (record: SharedDispatchRecord, intake: IntakeRecord) => Promise<boolean>,
+  ) =>
     reconcile({
+      reactivate,
       configuration: settings.value,
       readConfiguration: async () => settings.value,
       records,
@@ -103,6 +110,99 @@ function setup() {
 }
 
 describe('assignment retirement', () => {
+  for (const scenario of ['bot', 'malformed', 'human', 'busy'] as const) {
+    it(`should preserve retirement safeguards with ${scenario} feedback on the linked pull request`, async () => {
+      const h = setup();
+      h.record.retirement = assignmentRetirement({
+        reason: 'operator-requested',
+        intakeId: h.admitted.id,
+        now: baseline,
+        operatorRequest: {
+          caller: 'operator',
+          turnId: 'turn',
+          targetId: h.record.id,
+          at: baseline,
+        },
+      });
+      h.fixture.policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
+      if (scenario === 'busy') h.setBusy(true);
+      const getItem = h.fixture.client.getItem;
+      h.fixture.client.getItem = async (owner, name, number) =>
+        number === 45
+          ? {
+              ...h.fixture.item,
+              itemType: 'pull-request',
+              number,
+              nodeId: 'PR_delivery',
+              pullRequest: {
+                baseRef: 'main',
+                baseRepositoryDatabaseId: 10,
+                baseRepositoryNodeId: 'R_repo',
+                draft: false,
+                headRef: 'branch',
+                headSha: 'a'.repeat(40),
+                merged: false,
+              },
+            }
+          : getItem(owner, name, number);
+      const raw = {
+        nodeId: 'IC_bot',
+        databaseId: 41,
+        author: {
+          login: scenario === 'malformed' ? 'bad/private-login' : 'netlify[bot]',
+          nodeId: 'BOT_netlify',
+          type: 'Bot',
+        },
+        body: '@receiver explain this',
+        bodyLength: 22,
+        createdAt: new Date(baseline + 68000).toISOString(),
+        updatedAt: new Date(baseline + 68000).toISOString(),
+      };
+      const comments = commentProviderFixture((number) =>
+        number === 45
+          ? [
+              raw,
+              ...(scenario === 'human'
+                ? [{ ...raw, nodeId: 'IC_human', databaseId: 42, author: account }]
+                : []),
+            ]
+          : [],
+      );
+      const reactivate = (record: SharedDispatchRecord, intake: IntakeRecord) =>
+        reactivateAssignmentFeedback({
+          record,
+          intake,
+          policy: { policy: h.fixture.policy, username: 'receiver', digest: 'digest' },
+          client: h.fixture.client,
+          comments: async () => comments,
+          pullRequest: { number: 45, nodeId: 'PR_delivery' },
+          now: baseline + 70000,
+          save: async () => {},
+        });
+      await h.run(h.record.id, reactivate);
+      assert.equal(h.cleanups(), scenario === 'bot' ? 1 : 0);
+      assert.equal(Boolean(h.record.retired), scenario === 'bot');
+      const feedback = (h.record as SharedDispatchRecord & { feedback?: FeedbackSourceState })
+        .feedback;
+      assert.deepEqual(
+        feedback?.events.map((event) => event.sourceId),
+        scenario === 'human' ? ['IC_human'] : [],
+      );
+      assert.equal(Boolean(h.record.feedbackReactivation), scenario === 'human');
+      if (scenario === 'human') assert.equal(h.record.retirement, undefined);
+      else
+        assert.equal(
+          h.record.retirement?.code,
+          scenario === 'malformed'
+            ? 'github-response-invalid-issue-comment-author-login'
+            : scenario === 'busy'
+              ? 'retirement-native-work-unresolved'
+              : undefined,
+        );
+      assert.equal(JSON.stringify(h.record.retirement ?? {}).includes('bad/private-login'), false);
+    });
+  }
+
   it('should retire one open assigned task immediately without changing scheduled peers', async () => {
     const h = setup();
     h.record.retirement = assignmentRetirement({

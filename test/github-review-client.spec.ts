@@ -97,6 +97,21 @@ function fixture() {
 }
 
 describe('channels/github/provider/review-client', () => {
+  it('should normalize bot authors on reviews and inline review comments', async () => {
+    const h = fixture();
+    const author = { login: 'netlify[bot]', nodeId: 'BOT_netlify', type: 'Bot' };
+    h.set([{ ...rawReview(), user: author }]);
+    assert.deepEqual(
+      (await h.client.listReviews('tanaabased', 'example', 45, 1)).values[0]?.author,
+      author,
+    );
+    h.set([{ ...rawComment(), user: author }]);
+    assert.deepEqual(
+      (await h.client.listComments('tanaabased', 'example', 45, 1)).values[0]?.author,
+      author,
+    );
+  });
+
   it('should use fixed review endpoints and preserve the next page for durable discovery', async () => {
     const h = fixture();
     h.set([rawReview()], true);

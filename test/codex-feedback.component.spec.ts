@@ -1,3 +1,4 @@
+import commentProviderFixture from './github-comment-provider-fixture.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
@@ -490,6 +491,63 @@ describe('agent/codex-feedback', () => {
       [['e'.repeat(64), undefined]],
     );
   });
+  for (const malformed of [false, true]) {
+    it(`should ${malformed ? 'retain a safe parsing cause and continue another record' : 'discover approved feedback after a bot comment'}`, async () => {
+      const state = await store.read();
+      const first = state.records[0]!;
+      const peer = { ...structuredClone(first), id: 'e'.repeat(64) };
+      state.records.push(peer);
+      const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+      const provider = await deps.feedbackConnect!(current.workspace, new AbortController().signal);
+      const raw = {
+        nodeId: 'IC_human',
+        databaseId: 42,
+        author: commenter,
+        body: '@receiver explain this',
+        bodyLength: 22,
+        createdAt: new Date(baseline + 68000).toISOString(),
+        updatedAt: new Date(baseline + 68000).toISOString(),
+      };
+      const bot = {
+        ...raw,
+        nodeId: 'IC_bot',
+        databaseId: 41,
+        author: {
+          login: malformed ? 'bad/private-login' : 'netlify[bot]',
+          nodeId: 'BOT_netlify',
+          type: 'Bot',
+        },
+      };
+      let reads = 0;
+      provider.comments = commentProviderFixture(() => (++reads === 1 ? [bot, raw] : [raw]));
+      for (const record of state.records)
+        record.feedback = { startedAt: baseline, baseline: {}, events: [] };
+      const scans = await scanCodexFeedback({
+        state,
+        current,
+        provider,
+        occurrence: 'bot-regression',
+        sourceThreadId: 'intake',
+        now: baseline + 70000,
+      });
+      assert.equal(scans.length, 2);
+      assert.equal(
+        scans[0]!.feedback.code,
+        malformed ? 'github-response-invalid-issue-comment-author-login' : undefined,
+      );
+      assert.deepEqual(
+        scans[0]!.feedback.events.map((event) => event.sourceId),
+        malformed ? [] : ['IC_human'],
+      );
+      assert.equal(scans[1]!.feedback.code, undefined);
+      assert.deepEqual(
+        scans[1]!.feedback.events.map((event) => event.sourceId),
+        ['IC_human'],
+      );
+      assert.equal(JSON.stringify(scans).includes('bad/private-login'), false);
+    });
+  }
+
   async function prepare(author = commenter, body = '@receiver explain this') {
     await call('next');
     comments.push({
