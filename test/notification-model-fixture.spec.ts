@@ -129,6 +129,50 @@ for (const scenario of [
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
+    if (scenario.id === 'openclaw-notifications-issue-journey')
+      it('should preserve a failed recovery candidate without retrying or claiming publication', async () => {
+        const input = request(`recover only the pending public assessment summary with id ${id}`);
+        append(input, 'recovery-present', {
+          status: 'presented',
+          presentation: 'Retained assessment.',
+        });
+        append(input, 'detail-readback', {
+          status: 'presented',
+          presentation: 'Managed Git confirmed this worktree. Verified the managed worktree.',
+        });
+        append(input, 'summary-compose', {
+          status: 'composition-ready',
+          digest,
+          selection: { skill: { path: '/tmp/SUMMARY.md' } },
+        });
+        append(input, 'summary-skill', { text: 'Selected reply guidance' });
+        assert.equal((await action(input, 'summary')).operation, 'candidate');
+        append(input, 'summary-candidate', {
+          status: 'waiting',
+          code: 'dispatch-operation-failed',
+        });
+        assert.deepEqual(await response(input), {
+          content: 'Assessment summary candidate was not recorded: dispatch-operation-failed.',
+        });
+      });
+    if (scenario.id === 'openclaw-notifications-pr-journey')
+      it('should report a retained provider obstacle without retrying it or losing the diagnostic to strict matching', async () => {
+        const input = request(intakePrompt);
+        append(input, 'scan', { status: 'ready' });
+        append(input, 'next-0', {
+          status: 'waiting',
+          code: 'github-account-identity-failed',
+          nextAction: 'next',
+        });
+        assert.equal((await action(input, 'next')).action, 'next');
+        append(input, 'next-1', { status: 'waiting', code: 'github-account-identity-failed' });
+        assert.equal((await action(input, 'report')).action, 'report');
+        append(input, 'report', {
+          status: 'reported',
+          response: 'The account identity read failed.',
+        });
+        assert.deepEqual(await response(input), { content: 'The account identity read failed.' });
+      });
     if (scenario.id === 'openclaw-notifications-intake')
       it('should release only the assessment explicitly unblocked by the native scenario', async () => {
         const directory = '/tmp/notification-barrier-fixture';

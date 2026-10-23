@@ -136,7 +136,7 @@ openclaw-gateway stop --timeout 340
 openclaw-gateway start
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
-recovery_run=$(jq -ers '[.[].records[].summaryRecovery.turn.runId] | if length == 1 then .[0] else error("one summary recovery required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
+recovery_run=$(jq -ers --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.id == $before[0].id) | .summaryRecovery.turn.runId] | if length == 1 and (.[0] | type) == "string" then .[0] else error("one summary recovery required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$recovery_run" 300000
 jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].records[] | select(.id == $before[0].id)] | if length == 1 then .[0] else error("one retained owner required") end | .result == $before[0].result and .assessmentRevision == $before[0].assessmentRevision and .resultTurnId == $before[0].resultTurnId and .threadId == $before[0].threadId and .worktree == $before[0].worktree and (.assessmentRevision as $revision | any(.assessmentSummaries[]; .revision == $revision and .receipt.databaseId > 0))' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 ```

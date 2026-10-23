@@ -102,4 +102,33 @@ describe('core/github-request-profile', () => {
       { account: 'bot', resource: 'core', samples: 2, minimum: 4997, maximum: 4999 },
     ]);
   });
+
+  it('should retain failed command metadata even when no http transaction was observed', () => {
+    const summary = summarizeGitHubProfiles([
+      { version: 1, complete: true, exitCode: 1, operation: 'account-identity', requests: [] },
+      { version: 1, complete: true, exitCode: 0, requests: [{ route: '/user' }] },
+      {
+        version: 1,
+        complete: false,
+        exitCode: null,
+        operation: 'repository',
+        response: { status: 503 },
+        requests: [{ route: '/repos/:owner/:repo' }],
+      },
+    ]);
+    assert.equal(summary.commands, 3);
+    assert.equal(summary.requests, 2);
+    assert.deepEqual(
+      summary.failures.map(({ operation, exitCode, httpStatus, requests }) => ({
+        operation,
+        exitCode,
+        httpStatus,
+        requests,
+      })),
+      [
+        { operation: 'account-identity', exitCode: 1, httpStatus: undefined, requests: 0 },
+        { operation: 'repository', exitCode: null, httpStatus: 503, requests: 1 },
+      ],
+    );
+  });
 });

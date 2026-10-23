@@ -155,6 +155,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         publicText:
           'Today disposable test issues can hang around after a run. The plan is to explain when to close them, so you can keep the results you need without leaving a cluttered issue list. This is proposed documentation work; implementation has not started.',
       });
+    if (candidate.status === 'waiting' && typeof candidate.code === 'string')
+      return { content: `Assessment summary candidate was not recorded: ${candidate.code}.` };
     if (candidate.status !== 'candidate-recorded') return;
     const preview = result('summary-preview');
     if (!preview) return dispatch('summary-preview', { ...args, operation: 'publish' });

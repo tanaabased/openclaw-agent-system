@@ -200,6 +200,8 @@ function respond(
       if (scan.status !== 'ready') return;
     }
     const terminal = (value: Record<string, unknown>) => {
+      if (value.status === 'waiting' && typeof value.code === 'string' && !value.nextAction)
+        return report();
       if (
         ['idle', 'at-capacity', 'pass-completed', 'blocked', 'uncertain'].includes(
           String(value.status),

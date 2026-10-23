@@ -10,6 +10,7 @@ interface Profile {
   account?: string;
   source?: string;
   operation?: string;
+  exitCode?: number | null;
   response?: GitHubRateLimit & { status: number };
   complete: boolean;
   requests: Array<{ route: string; durationMs?: number }>;
@@ -33,6 +34,9 @@ export function summarizeGitHubProfiles(profiles: Profile[]) {
     string,
     { account: string; resource: string; samples: number; minimum: number; maximum: number }
   >();
+  const failures = profiles.filter(
+    (profile) => profile.exitCode !== undefined && profile.exitCode !== 0,
+  );
   for (const profile of profiles) {
     if (profile.version !== 1 || !Array.isArray(profile.requests))
       throw new Error('unsupported github profile');
@@ -79,6 +83,17 @@ export function summarizeGitHubProfiles(profiles: Profile[]) {
     requests: [...groups.values()].reduce((sum, g) => sum + g.requests, 0),
     groups: [...groups.values()].sort((a, b) => b.requests - a.requests),
     quotas: [...quotas.values()],
+    failures: failures.map(
+      ({ agentId, account, source, operation, exitCode, response, requests }) => ({
+        agent: agentId ?? 'unattributed',
+        account: account ?? 'unattributed',
+        source: source ?? 'unattributed',
+        operation: operation ?? 'unattributed',
+        exitCode,
+        httpStatus: response?.status,
+        requests: requests.length,
+      }),
+    ),
   };
 }
 
@@ -112,6 +127,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     for (const quota of summary.quotas)
       process.stdout.write(
         `| ${quota.account} | ${quota.resource} | ${quota.samples} | ${quota.minimum} | ${quota.maximum} |\n`,
+      );
+  }
+  if (summary.failures.length) {
+    process.stdout.write(
+      '\nNonzero or unavailable command exits (not necessarily provider denials):\n\n| Agent | Account label | Source | Operation | Exit code | HTTP status | Requests |\n|---|---|---|---|---:|---:|---:|\n',
+    );
+    for (const failure of summary.failures)
+      process.stdout.write(
+        `| ${failure.agent} | ${failure.account} | ${failure.source} | ${failure.operation} | ${failure.exitCode ?? 'unavailable'} | ${failure.httpStatus ?? 'unobserved'} | ${failure.requests} |\n`,
       );
   }
   process.stdout.write(
