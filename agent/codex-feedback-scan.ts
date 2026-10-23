@@ -37,6 +37,7 @@ export async function scanCodexFeedback(input: {
     policy,
     provider.client,
     'feedback',
+    true,
   );
   const intake = await current.store.read();
   if (!intake) throw new Error('feedback-intake-missing');

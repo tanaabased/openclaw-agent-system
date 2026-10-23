@@ -187,6 +187,10 @@ export default class GitHubAccountClient {
   readonly #dependencies: GitHubAccountClientDependencies;
   readonly #runCli: AgentSystemCliRunner;
   readonly #cooldown = new GitHubRequestCooldown();
+  readonly #identities = new Map<
+    string,
+    { credentialFingerprint: string; identity?: GitHubAccountIdentity }
+  >();
 
   constructor(dependencies: GitHubAccountClientDependencies) {
     this.#dependencies = dependencies;
@@ -234,6 +238,18 @@ export default class GitHubAccountClient {
     const normalizedToken = token.trim();
     if (!normalizedToken || normalizedToken.length > 2048 || /\s/u.test(normalizedToken)) {
       throw connectionError('The GitHub credential must contain one non-empty line.');
+    }
+    const credentialFingerprint = createHash('sha256').update(normalizedToken).digest('hex');
+    const binding = JSON.stringify([
+      resolve(context.workspaceDir),
+      context.manifest.agent.id,
+      (configuration.host ?? 'github.com').toLowerCase(),
+      username.value.trim().toLowerCase(),
+    ]);
+    let verification = this.#identities.get(binding);
+    if (verification?.credentialFingerprint !== credentialFingerprint) {
+      verification = { credentialFingerprint };
+      this.#identities.set(binding, verification);
     }
 
     const resolveOptionalValue = (
@@ -319,8 +335,10 @@ export default class GitHubAccountClient {
           normalizedToken,
         );
         this.#cooldown.observe(account, result);
-        if (githubCredentialRejected(result))
+        if (githubCredentialRejected(result)) {
+          if (this.#identities.get(binding) === verification) this.#identities.delete(binding);
           this.#dependencies.environmentService.invalidateCredentials?.(context.manifest.agent.id);
+        }
         return result;
       } catch (error) {
         throw new GitHubAccountClientError(
@@ -332,15 +350,18 @@ export default class GitHubAccountClient {
       }
     };
 
-    const identity = parseIdentity(
-      await execute(
-        ['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}'],
-        undefined,
-        {
-          profileOperation: 'account-identity',
-        },
-      ),
-    );
+    // The token's owner is stable. Actual operations still enforce current provider permissions.
+    const identity = verification.identity
+      ? { ...verification.identity }
+      : parseIdentity(
+          await execute(
+            ['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}'],
+            undefined,
+            {
+              profileOperation: 'account-identity',
+            },
+          ),
+        );
     if (identity.login.toLowerCase() !== username.value.trim().toLowerCase()) {
       this.#dependencies.environmentService.invalidateCredentials?.(context.manifest.agent.id);
       throw new GitHubAccountClientError(
@@ -348,6 +369,7 @@ export default class GitHubAccountClient {
         `GitHub returned ${identity.login}, not the configured username ${username.value}.`,
       );
     }
+    if (this.#identities.get(binding) === verification) verification.identity = { ...identity };
 
     const profileEnvironment = (configDirectory: string): NodeJS.ProcessEnv => ({
       ...environment,
@@ -433,10 +455,10 @@ export default class GitHubAccountClient {
       : undefined;
 
     return {
-      credentialFingerprint: createHash('sha256').update(normalizedToken).digest('hex'),
+      credentialFingerprint,
       execute,
       ...(gitAuthor === undefined ? {} : { gitAuthor }),
-      identity,
+      identity: { ...identity },
       ...(materializeCredential === undefined ? {} : { materializeCredential }),
       verifyConfiguredIdentity,
     };

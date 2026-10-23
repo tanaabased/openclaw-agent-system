@@ -54,7 +54,7 @@ function key(pin: GitHubIdentityPin) {
 
 /** Non-secret pins belong to a runtime's existing workspace/host intake scope. */
 export default class GitHubIdentityCache {
-  // connected clients are operation-owned; a later connection must refresh provider facts.
+  // Scans refresh names once; individual task operations reuse the verified immutable pins.
   static readonly #refreshed = new WeakMap<object, Map<string, GitHubIdentity>>();
   readonly file: PrivateStateFile;
   readonly path: string;
@@ -90,11 +90,12 @@ export default class GitHubIdentityCache {
     }
   }
 
-  /** An authorized connected consumer refreshes identities before an authority-bearing operation. */
+  /** Resolve new pins; discovery scans also refresh retained names by their immutable ids. */
   async resolve(
     policy: GitHubNotificationPolicy | undefined,
     client: Pick<GitHubNotificationIntakeClient, 'resolveIdentity'>,
     purpose: Purpose = 'all',
+    refresh = false,
   ) {
     if (!policy) return;
     const selected = pins(policy, purpose);
@@ -116,9 +117,14 @@ export default class GitHubIdentityCache {
       const reference = key(pin);
       const cacheKey = `${this.path}\0${reference}`;
       let identity = refreshed.get(cacheKey);
+      let resolved = false;
       if (!identity) {
         const retained = (await this.read()).entries[reference];
-        identity = await client.resolveIdentity(retained?.nodeId ?? pin.reference ?? pin.nodeId);
+        identity = !refresh ? retained : undefined;
+        if (!identity) {
+          identity = await client.resolveIdentity(retained?.nodeId ?? pin.reference ?? pin.nodeId);
+          resolved = true;
+        }
         if (!Value.Check(identitySchema, identity) || (user && identity.type !== 'User'))
           throw new Error('github-identity-type-invalid');
         if (retained && identity.nodeId !== retained.nodeId)
@@ -133,7 +139,7 @@ export default class GitHubIdentityCache {
       )
         throw new Error('github-identity-conflict');
       await this.retain(reference, identity);
-      refreshed.set(cacheKey, identity);
+      if (resolved) refreshed.set(cacheKey, identity);
       Object.assign(pin, { login: identity.login, nodeId: identity.nodeId });
     }
   }

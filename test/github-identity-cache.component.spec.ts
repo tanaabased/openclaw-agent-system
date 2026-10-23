@@ -57,20 +57,25 @@ describe('channels/github/identity-cache', () => {
     await new GitHubIdentityCache({ root, scope: 'test' }).resolve(policy(), { resolveIdentity });
     const requests: string[] = [];
     const fresh = policy();
-    await new GitHubIdentityCache({ root, scope: 'test' }).resolve(fresh, {
-      resolveIdentity: async (reference) => {
-        requests.push(reference);
-        if (reference === 'U_actor') return { ...actor, login: 'renamed' };
-        if (reference === '@actor') return { ...actor, nodeId: 'U_replacement' };
-        return resolveIdentity(reference);
+    await new GitHubIdentityCache({ root, scope: 'test' }).resolve(
+      fresh,
+      {
+        resolveIdentity: async (reference) => {
+          requests.push(reference);
+          if (reference === 'U_actor') return { ...actor, login: 'renamed' };
+          if (reference === '@actor') return { ...actor, nodeId: 'U_replacement' };
+          return resolveIdentity(reference);
+        },
       },
-    });
+      'all',
+      true,
+    );
     assert.equal(requests.includes('@actor'), false);
     assert.equal(fresh.issueAssignment!.allowed[0]!.nodeId, 'U_actor');
     assert.equal(fresh.issueAssignment!.allowed[0]!.login, 'renamed');
   });
 
-  it('should reuse identity reads within one connection and refresh them for a new operation', async () => {
+  it('should reuse persisted pins across connections and refresh names only for discovery', async () => {
     const requests: string[] = [];
     const client = {
       resolveIdentity: async (reference: string) => {
@@ -83,6 +88,11 @@ describe('channels/github/identity-cache', () => {
     const first = requests.length;
     await new GitHubIdentityCache(location).resolve(policy(), client);
     assert.equal(requests.length, first);
+    await new GitHubIdentityCache(location).resolve(policy(), {
+      resolveIdentity: async () => {
+        throw new Error('task operations must reuse verified pins');
+      },
+    });
     const changed = decode({
       'schema-version': 3,
       'allowed-repository-owners': ['@owner'],
@@ -93,18 +103,48 @@ describe('channels/github/identity-cache', () => {
       /github-identity-type-invalid/,
     );
     const next = policy();
-    await new GitHubIdentityCache(location).resolve(next, {
-      resolveIdentity: async (reference) => {
-        requests.push(reference);
-        const identity = await resolveIdentity(reference);
-        return identity.nodeId === actor.nodeId ? { ...identity, login: 'renamed' } : identity;
+    await new GitHubIdentityCache(location).resolve(
+      next,
+      {
+        resolveIdentity: async (reference) => {
+          requests.push(reference);
+          const identity = await resolveIdentity(reference);
+          return identity.nodeId === actor.nodeId ? { ...identity, login: 'renamed' } : identity;
+        },
       },
-    });
+      'all',
+      true,
+    );
     assert.ok(requests.length > first);
     assert.equal(next.issueAssignment!.allowed[0]!.login, 'renamed');
     const beforeOther = requests.length;
     await new GitHubIdentityCache({ root, scope: 'other-workspace' }).resolve(policy(), client);
     assert.equal(requests.length, beforeOther + first);
+  });
+
+  it('should resolve newly configured identities without reviving removed policy entries', async () => {
+    const cache = new GitHubIdentityCache({ root, scope: 'policy' });
+    await cache.resolve(policy(), { resolveIdentity }, 'assignment');
+    const changed = decode({
+      'schema-version': 3,
+      'allowed-repository-owners': ['@owner'],
+      'issue-assignment': { allowed: ['@reviewer'] },
+    });
+    const requests: string[] = [];
+    await cache.resolve(changed, {
+      resolveIdentity: async (reference) => {
+        requests.push(reference);
+        return resolveIdentity(reference);
+      },
+    });
+    assert.deepEqual(requests, ['@reviewer']);
+    assert.deepEqual(changed.issueAssignment!.allowed, [
+      {
+        reference: '@reviewer',
+        login: reviewer.login,
+        nodeId: reviewer.nodeId,
+      },
+    ]);
   });
 
   it('should reject mismatched pins, inappropriate types and unresolved compact inputs', async () => {

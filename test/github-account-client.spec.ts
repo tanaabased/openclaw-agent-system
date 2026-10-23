@@ -37,6 +37,87 @@ function loadedEnvironment() {
 }
 
 describe('core/github-account-client', () => {
+  it('should reuse account proof while still loading current configuration and executing real operations', async () => {
+    const requests: string[][] = [];
+    let loads = 0;
+    let denied = false;
+    const client = new GitHubAccountClient({
+      baseEnvironment: {},
+      configStore: { configDirectory: () => '/private/gh' },
+      environmentService: {
+        loadForWorkspace: async () => {
+          loads++;
+          return loadedEnvironment();
+        },
+      },
+      runCli: async ({ argv }) => {
+        requests.push(argv);
+        return {
+          exitCode: denied ? 1 : 0,
+          stderr: denied ? 'gh: Resource not accessible (HTTP 403)' : '',
+          stdout: denied ? '' : '{"login":"tanaabot","nodeId":"U_agent"}',
+          timedOut: false,
+          truncated: false,
+        };
+      },
+    });
+    const first = await client.connect({ manifest, workspaceDir });
+    first.identity.nodeId = 'caller-mutated';
+    const changed = structuredClone(manifest);
+    changed.git = { name: 'new author' };
+    const second = await client.connect({ manifest: changed, workspaceDir });
+    assert.equal(second.identity.nodeId, 'U_agent');
+    assert.equal(second.gitAuthor?.name, 'new author');
+    assert.equal(requests.length, 1);
+    denied = true;
+    assert.equal((await second.execute(['api', '--method', 'POST', '/fixture'])).exitCode, 1);
+    await client.connect({ manifest, workspaceDir });
+    assert.equal(requests.length, 2);
+    assert.equal(loads, 3);
+  });
+
+  it('should reverify changed credentials, accounts, agents, workspaces and service instances', async () => {
+    for (const change of ['token', 'username', 'agent', 'workspace', 'service']) {
+      let token = 'private-token';
+      let username = 'tanaabot';
+      let executions = 0;
+      const dependencies = {
+        baseEnvironment: {},
+        configStore: { configDirectory: () => '/private/gh' },
+        environmentService: {
+          loadForWorkspace: async () => {
+            const loaded = loadedEnvironment();
+            loaded.environment.values.GH_TOKEN_TANAABOT = token;
+            loaded.environment.values.GITHUB_USERNAME = username;
+            return loaded;
+          },
+        },
+        runCli: async () => {
+          executions++;
+          return {
+            exitCode: 0,
+            stderr: '',
+            stdout: JSON.stringify({ login: username, nodeId: 'U_agent' }),
+            timedOut: false,
+            truncated: false,
+          };
+        },
+      };
+      let client = new GitHubAccountClient(dependencies);
+      await client.connect({ manifest, workspaceDir });
+      const next = structuredClone(manifest);
+      if (change === 'token') token = 'rotated-token';
+      if (change === 'username') username = 'another-account';
+      if (change === 'agent') next.agent.id = 'another-agent';
+      if (change === 'service') client = new GitHubAccountClient(dependencies);
+      await client.connect({
+        manifest: next,
+        workspaceDir: change === 'workspace' ? '/other' : workspaceDir,
+      });
+      assert.equal(executions, 2, change);
+    }
+  });
+
   it('should fail identity checks without eviction or replay when credentials were not rejected', async () => {
     for (const failure of [
       { exitCode: 1, stderr: '', stdout: '', timedOut: true, truncated: false },
@@ -63,9 +144,43 @@ describe('core/github-account-client', () => {
         },
       });
       await assert.rejects(client.connect({ manifest, workspaceDir }));
+      await assert.rejects(client.connect({ manifest, workspaceDir }));
       assert.deepEqual(invalidated, []);
-      assert.equal(executions, 1);
+      assert.equal(executions, 2);
     }
+  });
+
+  it('should preserve a rotated credential proof when an older connection is rejected', async () => {
+    let token = 'private-token';
+    let probes = 0;
+    const client = new GitHubAccountClient({
+      baseEnvironment: {},
+      configStore: { configDirectory: () => '/private/gh' },
+      environmentService: {
+        loadForWorkspace: async () => {
+          const loaded = loadedEnvironment();
+          loaded.environment.values.GH_TOKEN_TANAABOT = token;
+          return loaded;
+        },
+      },
+      runCli: async ({ argv }) => {
+        const identity = argv[1] === 'user';
+        if (identity) probes++;
+        return {
+          exitCode: identity ? 0 : 1,
+          stdout: identity ? '{"login":"tanaabot","nodeId":"U_agent"}' : '',
+          stderr: identity ? '' : 'gh: Bad credentials (HTTP 401)',
+          timedOut: false,
+          truncated: false,
+        };
+      },
+    });
+    const old = await client.connect({ manifest, workspaceDir });
+    token = 'rotated-token';
+    await client.connect({ manifest, workspaceDir });
+    await old.execute(['api', '--method', 'POST', '/fixture']);
+    await client.connect({ manifest, workspaceDir });
+    assert.equal(probes, 2);
   });
 
   it('should retain identity quota headers and avoid another connection probe during cooldown', async () => {
@@ -275,19 +390,29 @@ describe('core/github-account-client', () => {
               timedOut: false,
               truncated: false,
             }
-          : {
-              exitCode: 1,
-              stdout: '',
-              stderr: 'gh: Bad credentials (HTTP 401)',
-              timedOut: false,
-              truncated: false,
-            };
+          : executions === 2
+            ? {
+                exitCode: 1,
+                stdout: '',
+                stderr: 'gh: Bad credentials (HTTP 401)',
+                timedOut: false,
+                truncated: false,
+              }
+            : {
+                exitCode: 0,
+                stdout: '{"login":"tanaabot","nodeId":"U_agent"}',
+                stderr: '',
+                timedOut: false,
+                truncated: false,
+              };
       },
     });
     const connected = await client.connect({ manifest, workspaceDir });
     assert.equal((await connected.execute(['api', '--method', 'POST', '/fixture'])).exitCode, 1);
     assert.deepEqual(invalidated, ['tanaabot']);
     assert.equal(executions, 2);
+    await client.connect({ manifest, workspaceDir });
+    assert.equal(executions, 3);
   });
 
   it('should reject a github account that does not match the declaration', async () => {
