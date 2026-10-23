@@ -981,7 +981,6 @@ for (const scenario of [
               previousFeedbackWork: initial
                 ? []
                 : [{ eventId: 'd'.repeat(64), result: { outcome: 'done' } }],
-              ...(initial ? {} : { previousImplementation: { outcome: 'done' } }),
             });
             const entry = await runAction(input, 'feedback');
             assert.equal(entry.operation, 'implementation-context');
@@ -995,7 +994,6 @@ for (const scenario of [
               previousFeedbackWork: initial
                 ? []
                 : [{ eventId: 'd'.repeat(64), result: { outcome: 'done' } }],
-              ...(initial ? {} : { previousImplementation: { outcome: 'done' } }),
             });
             const selected = await runResponse(input);
             assert.ok('toolCalls' in selected);

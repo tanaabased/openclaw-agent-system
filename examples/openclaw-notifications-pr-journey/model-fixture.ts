@@ -307,8 +307,10 @@ function respond(
         assert.deepEqual(context.previousFeedbackWork, []);
       } else {
         assert.equal(context.mode, 'work');
-        assert.equal((context.previousImplementation as { outcome?: string }).outcome, 'done');
-        assert.equal((context.previousFeedbackWork as unknown[]).length, 1);
+        assert.equal(context.previousImplementation, undefined);
+        const previous = context.previousFeedbackWork as Array<{ result?: { outcome?: string } }>;
+        assert.equal(previous.length, 1);
+        assert.equal(previous[0]?.result?.outcome, 'done');
       }
       const work = result('feedback-work-context');
       if (!work)
