@@ -102,9 +102,13 @@ openclaw agent-system tool worktree -- list | jq -e --arg path "$(jq -er .worktr
 
 # should retain an auto plan decision without starting implementation
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-auto-plan/tanaabot"
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+# reconcile the completed assessment before the live mode edit creates a new decision candidate
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+jq -es --arg id "$(jq -er .id "$TMPDIR/notification-dispatch-before.json")" '[.[].records[] | select(.id == $id)] | length == 1 and .[0].assessmentTurn.status == "completed"' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 sed 's/mode: plan/mode: auto/' agent.yaml > "$TMPDIR/notification-auto.yaml"
 mv "$TMPDIR/notification-auto.yaml" agent.yaml
-number=$(jq -er .number "$TMPDIR/notification-issue.json")
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
 receipt=$(jq -er .id "$TMPDIR/notification-dispatch-before.json")
