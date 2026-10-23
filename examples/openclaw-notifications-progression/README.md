@@ -10,6 +10,7 @@ Move an already assessed issue from Plan to Auto, retain the verified Work decis
 
 ## What Does Not Belong Here
 
+- Auto Plan hold and later operator continuation: [Auto Plan](../openclaw-notifications-auto-plan/README.md).
 - Initial concurrent intake: [intake](../openclaw-notifications-intake/README.md). Ordinary planning questions: [issue planning](../openclaw-notifications-issue-journey/README.md).
 - PR publication and PR feedback: [PR delivery](../openclaw-notifications-pr-journey/README.md). Restart recovery, reactivation, reset, and retirement belong to [assessment recovery](../openclaw-notifications-assessment-recovery/README.md), [reactivation](../openclaw-notifications-reactivation/README.md), [reset](../openclaw-notifications-reset/README.md), and [retirement](../openclaw-notifications-retirement/README.md).
 - Interrupted-decision recovery: [decision recovery](../openclaw-notifications-decision-recovery/README.md). Exhaustive mode/customization combinations remain outside this journey.

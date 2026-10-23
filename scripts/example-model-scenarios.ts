@@ -29,6 +29,10 @@ import { prCollaborationExampleScenario } from '../examples/openclaw-notificatio
 import { prDiscoveryExampleScenario } from '../examples/openclaw-notifications-pr-discovery/model-fixture.ts';
 import { prReplyRecoveryExampleScenario } from '../examples/openclaw-notifications-pr-reply-recovery/model-fixture.ts';
 import { worktreeExampleScenario } from '../examples/openclaw-worktree-session/model-fixture.ts';
+import { automaticDeliveryScenario as workScenario } from '../examples/openclaw-notifications-work/model-fixture.ts';
+import { automaticDeliveryScenario as customWorkScenario } from '../examples/openclaw-notifications-work-custom/model-fixture.ts';
+import { automaticDeliveryScenario as autoWorkScenario } from '../examples/openclaw-notifications-auto-work/model-fixture.ts';
+import { autoPlanScenario } from '../examples/openclaw-notifications-auto-plan/model-fixture.ts';
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 
 const scenarios = new Map<string, OpenClawAIMockScenario>([
@@ -52,6 +56,10 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [prReplyRecoveryExampleScenario.id, prReplyRecoveryExampleScenario],
   [progressionExampleScenario.id, progressionExampleScenario],
   [decisionRecoveryExampleScenario.id, decisionRecoveryExampleScenario],
+  [workScenario.id, workScenario],
+  [customWorkScenario.id, customWorkScenario],
+  [autoWorkScenario.id, autoWorkScenario],
+  [autoPlanScenario.id, autoPlanScenario],
   [issueExampleScenario.id, issueExampleScenario],
   [githubReplyExampleScenario.id, githubReplyExampleScenario],
   [issueAssessmentExampleScenario.id, issueAssessmentExampleScenario],

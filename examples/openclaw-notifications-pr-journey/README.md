@@ -10,6 +10,7 @@ Assign one issue, retain its plan, implement approved GitHub direction, and deli
 
 ## What Does Not Belong Here
 
+- Initial-turn delivery without feedback: [default Work](../openclaw-notifications-work/README.md), [custom Work](../openclaw-notifications-work-custom/README.md), and [Auto Work](../openclaw-notifications-auto-work/README.md).
 - Recipient preview and operator updates: [PR recipient preview](../openclaw-notifications-pr-recipients/README.md) and [PR operator update](../openclaw-notifications-pr-update/README.md).
 - Saved plan/card readback after dirty edits: [PR presentation readback](../openclaw-notifications-pr-presentation/README.md).
 - Other feedback conditions: [PR collaborator reconciliation](../openclaw-notifications-pr-collaboration/README.md), [PR discovery recovery](../openclaw-notifications-pr-discovery/README.md), [PR reply recovery](../openclaw-notifications-pr-reply-recovery/README.md).

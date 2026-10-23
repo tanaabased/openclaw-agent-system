@@ -1,9 +1,9 @@
 # GitHub Notifications
 
 Agent System turns approved GitHub issue assignments into runtime-owned work.
-Native OpenClaw supports issue planning and explicitly requested implementation and
-PR delivery in the same issue chat, plus authorized feedback on the issue and its
-linked PR. Standalone Codex additionally supports declared automatic implementation.
+OpenClaw and standalone Codex support Plan, Work, and Auto issue workflows,
+including implementation and linked PR delivery. OpenClaw keeps that work and
+authorized feedback on the issue and its linked PR in the same issue chat.
 
 ## Configuration
 
@@ -20,7 +20,7 @@ assignment intake. Invalid assessment selections block actionably and are never
 silently replaced. Correct them and refresh context in the same issue chat; no
 Install or replacement conversation is needed.
 
-After reading a retained plan, ask the agent in that issue chat to implement it and
+When Plan or an Auto Plan decision holds implementation, ask the agent in that issue chat to implement it and
 open a PR, together or separately. The authenticated operator request authorizes
 only the requested work. The agent keeps the same worktree and returns a quoted
 card linking the issue and PR. If publication is interrupted, continue in that chat

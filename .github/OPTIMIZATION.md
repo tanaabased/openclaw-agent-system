@@ -77,7 +77,11 @@ Notification scheduler pause/resume belongs to `openclaw-notifications-schedulin
 unavailable candidates belong to assignment policy, and the refreshed assessment
 owns stage-specific debug presentation. Keep ordinary progression and clarification
 in `openclaw-notifications-progression`, with interrupted Auto-decision recovery in
-`openclaw-notifications-decision-recovery`. Preserve independent cleanup and the
+`openclaw-notifications-decision-recovery`. Keep initial-turn Work delivery in
+`openclaw-notifications-work`, ordinary skills with retained custom guidance in
+`openclaw-notifications-work-custom`, and structured Auto Work delivery in
+`openclaw-notifications-auto-work`. Keep Auto Plan hold and authenticated operator
+continuation in `openclaw-notifications-auto-plan`. Preserve independent cleanup and the
 original assessment, native owner, execution settings, and one-time handoff evidence.
 
 Keep all ordinary PR checks enabled for the full-suite validation. Start notification measurements

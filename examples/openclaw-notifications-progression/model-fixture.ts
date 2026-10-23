@@ -65,6 +65,7 @@ function call(stage: string, name: string, args: unknown): FixtureResponse {
 function respond(
   request: ChatCompletionRequest,
   interruptDecision: boolean,
+  autoDecision: 'plan' | 'work',
 ): FixtureResponse | undefined {
   const messages = currentTurn(request);
   const prompt = messages
@@ -255,16 +256,25 @@ function respond(
         result: {
           ...(fresh.previousResult as Record<string, unknown>),
           decision: {
-            mode: 'work',
-            reasons: ['The retained documentation plan is bounded and actionable.'],
+            mode: autoDecision,
+            reasons: [
+              autoDecision === 'plan'
+                ? 'Cleanup timing needs operator confirmation before implementation.'
+                : 'The retained documentation plan is bounded and actionable.',
+            ],
           },
         },
       });
     if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
+    if (autoDecision === 'plan') {
+      assert.equal((saved.handoff as { next?: string } | undefined)?.next, 'planning');
+      return summary(decisionId, saved.presentation);
+    }
     if ((saved.handoff as { next?: string } | undefined)?.next !== 'implementation') return;
   }
   const automaticId =
     decisionId ??
+    /Continue plan for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1] ??
     /Call agent_system_dispatch action implementation-context with id ([a-f0-9]{64})/u.exec(
       prompt,
     )?.[1];
@@ -415,9 +425,13 @@ function respond(
   return summary(id, saved.presentation);
 }
 
-function response(request: ChatCompletionRequest, interruptDecision: boolean) {
+function response(
+  request: ChatCompletionRequest,
+  interruptDecision: boolean,
+  autoDecision: 'plan' | 'work',
+) {
   try {
-    return respond(request, interruptDecision);
+    return respond(request, interruptDecision, autoDecision);
   } catch (error) {
     if (
       error instanceof Error &&
@@ -433,8 +447,10 @@ function response(request: ChatCompletionRequest, interruptDecision: boolean) {
 export function createProgressionScenario(
   id: string,
   interruptDecision = false,
+  autoDecision: 'plan' | 'work' = 'work',
 ): OpenClawAIMockScenario {
-  const respond = (request: ChatCompletionRequest) => response(request, interruptDecision);
+  const respond = (request: ChatCompletionRequest) =>
+    response(request, interruptDecision, autoDecision);
   const final: Fixture = {
     match: {
       model: /^(?:aimock\/)?gpt-5\.5$/u,

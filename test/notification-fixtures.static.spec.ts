@@ -7,6 +7,10 @@ for (const id of [
   'openclaw-notifications-issue-journey',
   'openclaw-notifications-conversation',
   'openclaw-notifications-pr-journey',
+  'openclaw-notifications-work',
+  'openclaw-notifications-work-custom',
+  'openclaw-notifications-auto-work',
+  'openclaw-notifications-auto-plan',
   'openclaw-notifications-pr-recipients',
   'openclaw-notifications-pr-update',
   'openclaw-notifications-pr-presentation',
@@ -39,7 +43,14 @@ for (const id of [
       const policy = parsed.manifest.github?.notifications;
       assert.equal(policy?.schemaVersion, 3);
       assert.deepEqual(policy?.runtimes, ['openclaw']);
-      assert.equal(policy?.issueAssignment?.mode, 'plan');
+      assert.equal(
+        policy?.issueAssignment?.mode,
+        id === 'openclaw-notifications-auto-work'
+          ? 'auto'
+          : ['openclaw-notifications-work', 'openclaw-notifications-work-custom'].includes(id)
+            ? 'work'
+            : 'plan',
+      );
       assert.deepEqual(policy?.issueAssignment?.pullRequest?.recipients, [
         { source: 'assignment-actor', roles: ['assignee'] },
         ...([
