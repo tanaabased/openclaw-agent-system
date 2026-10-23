@@ -97,6 +97,7 @@ jobs:
         if: failure()
         shell: bash
         run: |
+          jq -s '[.. | objects | select(.providerDiagnostic? != null) | {code, providerDiagnostic, retry, retryAfter}]' "$RUNNER_TEMP/agent-system-config/tanaab/agent-system/agent-system-dispatch-v2/"*.json || true
           if [[ -d "${OPENCLAW_WORKSPACE:-}" ]]; then
             openclaw-diagnostics
           else
