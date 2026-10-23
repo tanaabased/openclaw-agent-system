@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 
 import type { AgentSystemCliRunRequest } from '../api/types.ts';
 import GitHubAccountClient, { GitHubAccountClientError } from '../core/github-account-client.ts';
+import retryGitHubRead from '../core/github-read-retry.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
 const manifest: AgentManifest = {
@@ -37,6 +38,37 @@ function loadedEnvironment() {
 }
 
 describe('core/github-account-client', () => {
+  it('should recover a transient identity read without replaying an account mutation', async () => {
+    let identities = 0;
+    let writes = 0;
+    const client = new GitHubAccountClient({
+      baseEnvironment: {},
+      configStore: { configDirectory: () => '/private/gh' },
+      environmentService: { loadForWorkspace: async () => loadedEnvironment() },
+      retryRead: (read, options) =>
+        retryGitHubRead(read, { ...options, sleep: async () => undefined }),
+      runCli: async ({ argv }) => {
+        if (argv.includes('POST')) writes++;
+        else identities++;
+        const success = identities > 1 && writes === 0;
+        return {
+          exitCode: success ? 0 : 1,
+          stdout: success
+            ? '{"login":"tanaabot","nodeId":"U_agent"}'
+            : 'HTTP/2 502 Bad Gateway\n\n{}',
+          stderr: '',
+          timedOut: false,
+          truncated: false,
+        };
+      },
+    });
+    const account = await client.connect({ manifest, workspaceDir });
+    assert.equal(account.identity.login, 'tanaabot');
+    assert.equal(identities, 2);
+    assert.equal((await account.execute(['api', '--method', 'POST', '/fixture'])).exitCode, 1);
+    assert.equal(writes, 1);
+  });
+
   it('should reuse account proof while still loading current configuration and executing real operations', async () => {
     const requests: string[][] = [];
     let loads = 0;

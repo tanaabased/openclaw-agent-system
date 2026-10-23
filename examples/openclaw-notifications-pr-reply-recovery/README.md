@@ -84,7 +84,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-reply-recovery/emori"
 openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System pr flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-reply-recovery/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-reply-recovery/tanaabot"
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
+node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" assign --number "$number" | jq -e 'any(.assignees[]; .login == "tanaabot")'
 
 # should retain a plan through the installed owning coordinator
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-reply-recovery/tanaabot"
@@ -113,7 +113,7 @@ feedback_diagnostics() {
 trap feedback_diagnostics EXIT
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-reply-recovery/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot Please implement the agreed plan and publish its pull request.' > "$TMPDIR/notification-initial-source.json"
+node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" comment --number "$number" --body '@tanaabot Please implement the agreed plan and publish its pull request.' > "$TMPDIR/notification-initial-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-reply-recovery/tanaabot"
 feedback_checkpoint
 feedback_run=
@@ -134,6 +134,8 @@ jq -e --slurp '.[1].progression.workOwner == .[1].feedback.events[0].id and .[0]
 
 ## Testing
 
+Fixture assignments and comments use the native GitHub tool; lost responses are reconciled without repeating the write. Safe reads use bounded retries.
+
 ```bash
 # should resume only an interrupted reply after its repair was pushed
 set -o pipefail
@@ -148,7 +150,7 @@ trap feedback_diagnostics EXIT
 worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-reply-recovery/emori"
 number=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot add a note that feedback changes stay on the original PR, check it, and push the change.' > "$TMPDIR/notification-feedback-source.json"
+node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" comment --number "$number" --body '@tanaabot add a note that feedback changes stay on the original PR, check it, and push the change.' > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-reply-recovery/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
@@ -217,7 +219,7 @@ if test -s "$TMPDIR/notification-dispatch-before.json"; then
   receipt=$(jq -er .id "$TMPDIR/notification-dispatch-before.json")
   branch=$(jq -sr --arg id "$receipt" '[.[].records[] | select(.id == $id)] | .[0].work.delivery.binding.branch // empty' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
   if test -n "$branch"; then
-    openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state open --json number | jq -r 'if length <= 1 then .[].number else error("ambiguous fixture PR") end' > "$TMPDIR/notification-cleanup-pr"
+    node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" pulls --branch "$branch" | jq -r 'if length <= 1 then .[].number else error("ambiguous fixture PR") end' > "$TMPDIR/notification-cleanup-pr"
     if test -s "$TMPDIR/notification-cleanup-pr"; then
       openclaw agent-system tool gh -- pr close "$(cat "$TMPDIR/notification-cleanup-pr")" --repo tanaabased/big-test-bucket
     fi

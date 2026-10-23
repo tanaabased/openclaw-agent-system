@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
+import retryGitHubRead from '../core/github-read-retry.ts';
 
 function response(value: unknown, status = 200, headers = 'etag: "v1"') {
   return {
@@ -28,12 +29,42 @@ function fixture() {
     set: (value: typeof reply) => {
       reply = value;
     },
-    api: new GitHubWorkEventApiClient(account),
+    api: new GitHubWorkEventApiClient(account, (read, options) =>
+      retryGitHubRead(read, { ...options, sleep: async () => undefined }),
+    ),
   };
 }
 const conditional = (argv: string[]) => argv.find((value) => value.startsWith('If-None-Match:'));
 
 describe('github conditional reads', () => {
+  it('should revalidate cached data after a transient read but never replay a mutation', async () => {
+    const calls: string[][] = [];
+    const replies = [
+      response({ revision: 1 }),
+      response({}, 502),
+      response(null, 304),
+      response({}, 502),
+    ];
+    const api = new GitHubWorkEventApiClient(
+      {
+        identity: { login: 'bot', nodeId: 'U_bot' },
+        async execute(argv) {
+          calls.push(argv);
+          return replies.shift()!;
+        },
+      },
+      (read, options) => retryGitHubRead(read, { ...options, sleep: async () => undefined }),
+    );
+    await api.request(['repos/o/r/issues/1'], 'issue');
+    assert.deepEqual((await api.request(['repos/o/r/issues/1'], 'issue')).value, { revision: 1 });
+    assert.equal(conditional(calls[1]!), 'If-None-Match: "v1"');
+    assert.equal(conditional(calls[2]!), 'If-None-Match: "v1"');
+    await assert.rejects(
+      api.request(['--method', 'POST', 'repos/o/r/issues/1/comments'], 'comment'),
+    );
+    assert.equal(calls.length, 4);
+  });
+
   it('should revalidate across clients and preserve data pagination and fresh quota counters', async () => {
     const f = fixture();
     f.set(

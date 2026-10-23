@@ -1,4 +1,5 @@
 import GitHubRequestCooldown from './github-request-cooldown.ts';
+import retryGitHubRead from './github-read-retry.ts';
 import { parseGitHubApiResponse } from '../channels/github/provider/api-response.ts';
 import {
   withProviderDiagnostic,
@@ -41,6 +42,7 @@ export interface GitHubAccountClientDependencies {
     Partial<Pick<AgentEnvironmentService, 'invalidateCredentials'>>;
   excludedExecutableDirectories?: readonly string[];
   runCli: AgentSystemCliRunner;
+  retryRead?: typeof retryGitHubRead;
 }
 
 export interface GitHubAccountExecutionOptions {
@@ -188,6 +190,7 @@ function normalizedExecutionOptions(options: GitHubAccountExecutionOptions | und
 export default class GitHubAccountClient {
   readonly #dependencies: GitHubAccountClientDependencies;
   readonly #runCli: AgentSystemCliRunner;
+  readonly #retryRead: typeof retryGitHubRead;
   readonly #cooldown = new GitHubRequestCooldown();
   readonly #identities = new Map<
     string,
@@ -197,6 +200,7 @@ export default class GitHubAccountClient {
   constructor(dependencies: GitHubAccountClientDependencies) {
     this.#dependencies = dependencies;
     this.#runCli = dependencies.runCli;
+    this.#retryRead = dependencies.retryRead ?? retryGitHubRead;
   }
 
   async connect(
@@ -356,12 +360,17 @@ export default class GitHubAccountClient {
     const identity = verification.identity
       ? { ...verification.identity }
       : parseIdentity(
-          await execute(
-            ['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}'],
-            undefined,
-            {
-              profileOperation: 'account-identity',
-            },
+          await this.#retryRead(
+            (timeoutMs) =>
+              execute(
+                ['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}'],
+                undefined,
+                {
+                  profileOperation: 'account-identity',
+                  timeoutMs,
+                },
+              ),
+            { signal },
           ),
         );
     if (identity.login.toLowerCase() !== username.value.trim().toLowerCase()) {
@@ -383,6 +392,7 @@ export default class GitHubAccountClient {
       argv: string[],
       configDirectory: string,
       stdin?: string,
+      timeoutMs = defaultTimeoutMs,
     ): Promise<AgentSystemCliResult> => {
       try {
         return redact(
@@ -400,7 +410,7 @@ export default class GitHubAccountClient {
             maxOutputBytes: defaultMaximumOutputBytes,
             ...(signal ? { signal } : {}),
             ...(stdin === undefined ? {} : { stdin }),
-            timeoutMs: defaultTimeoutMs,
+            timeoutMs,
           }),
           normalizedToken,
         );
@@ -417,9 +427,15 @@ export default class GitHubAccountClient {
       let profileIdentity;
       try {
         profileIdentity = parseIdentity(
-          await runProfileCli(
-            ['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}'],
-            configDirectory,
+          await this.#retryRead(
+            (timeoutMs) =>
+              runProfileCli(
+                ['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}'],
+                configDirectory,
+                undefined,
+                timeoutMs,
+              ),
+            { signal },
           ),
         );
       } catch (error) {

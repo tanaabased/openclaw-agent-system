@@ -10,6 +10,7 @@ import {
 } from '../../../core/github-account-client.ts';
 import { parseGitHubApiResponse, type GitHubRateLimit } from './api-response.ts';
 import type { GitHubIdentity } from './work-item.ts';
+import retryGitHubRead from '../../../core/github-read-retry.ts';
 
 export interface GitHubApiPage<T> {
   etag?: string;
@@ -61,7 +62,10 @@ export default class GitHubWorkEventApiClient {
   readonly #client: ApiAccount;
   #rateLimit: GitHubRateLimit = {};
 
-  constructor(client: ApiAccount) {
+  constructor(
+    client: ApiAccount,
+    private readonly retryRead = retryGitHubRead,
+  ) {
     this.#client = client;
   }
 
@@ -113,19 +117,27 @@ export default class GitHubWorkEventApiClient {
     const cached = conditional ? observations.get(key) : undefined;
     if (invalidates) observations.clear();
     try {
-      return await this.#request(argv, label, stdin, options, cached, (page) => {
-        observations.delete(key);
-        if (!conditional || !page.etag) return;
-        const bytes = Buffer.byteLength(JSON.stringify(page)) + Buffer.byteLength(key);
-        if (bytes > 8 * 1024 * 1024) return;
-        observations.set(key, { etag: page.etag, page: structuredClone(page), bytes });
-        let total = [...observations.values()].reduce((sum, value) => sum + value.bytes, 0);
-        while (observations.size > 128 || total > 8 * 1024 * 1024) {
-          const oldest = observations.keys().next().value!;
-          total -= observations.get(oldest)!.bytes;
-          observations.delete(oldest);
-        }
-      });
+      return await this.#request(
+        argv,
+        label,
+        stdin,
+        options,
+        method === 'GET' && !graphql,
+        cached,
+        (page) => {
+          observations.delete(key);
+          if (!conditional || !page.etag) return;
+          const bytes = Buffer.byteLength(JSON.stringify(page)) + Buffer.byteLength(key);
+          if (bytes > 8 * 1024 * 1024) return;
+          observations.set(key, { etag: page.etag, page: structuredClone(page), bytes });
+          let total = [...observations.values()].reduce((sum, value) => sum + value.bytes, 0);
+          while (observations.size > 128 || total > 8 * 1024 * 1024) {
+            const oldest = observations.keys().next().value!;
+            total -= observations.get(oldest)!.bytes;
+            observations.delete(oldest);
+          }
+        },
+      );
     } catch (error) {
       observations.delete(key);
       throw error;
@@ -139,26 +151,31 @@ export default class GitHubWorkEventApiClient {
     label: string,
     stdin: string | undefined,
     options: GitHubAccountExecutionOptions | undefined,
+    read: boolean,
     cached: { etag: string; page: GitHubApiPage<unknown> } | undefined,
     retain: (page: GitHubApiPage<unknown>) => void,
   ): Promise<GitHubApiPage<unknown>> {
     let result;
     try {
-      result = await this.#client.execute(
-        [
-          'api',
-          '--include',
-          ...(cached ? ['--header', `If-None-Match: ${cached.etag}`] : []),
-          ...argv,
-        ],
-        stdin,
-        {
-          profileOperation: label.replaceAll(' ', '-'),
-          maxOutputBytes: 512 * 1024,
-          timeoutMs: 30_000,
-          ...options,
-        },
-      );
+      const execute = (timeoutMs: number) =>
+        this.#client.execute(
+          [
+            'api',
+            '--include',
+            ...(cached ? ['--header', `If-None-Match: ${cached.etag}`] : []),
+            ...argv,
+          ],
+          stdin,
+          {
+            profileOperation: label.replaceAll(' ', '-'),
+            maxOutputBytes: 512 * 1024,
+            ...options,
+            timeoutMs,
+          },
+        );
+      result = read
+        ? await this.retryRead(execute, options)
+        : await execute(options?.timeoutMs ?? 30_000);
     } catch (error) {
       throw new GitHubWorkEventClientError(
         'github-notification-request-failed',

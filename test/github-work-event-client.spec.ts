@@ -9,6 +9,7 @@ import {
   githubNotificationPublicationTarget,
 } from '../channels/github/publication/publication-contract.ts';
 import { githubCommentPageSize } from '../channels/github/provider/issue-comment-client.ts';
+import retryGitHubRead from '../core/github-read-retry.ts';
 
 function response(body: unknown, link?: string): AgentSystemCliResult {
   return {
@@ -84,24 +85,30 @@ describe('channels/github/provider/work-event-client', () => {
     for (const status of [401, 403, 404, 503]) {
       let failing = false;
       const conditionals: boolean[] = [];
-      const client = new GitHubWorkEventClient({
-        identity: { login: 'receiver', nodeId: 'U_receiver' },
-        async execute(argv) {
-          conditionals.push(argv.some((value) => value.startsWith('If-None-Match:')));
-          return failing
-            ? { ...response({}), exitCode: 1, stdout: 'HTTP/2 ' + status + ' Error\n\n{}' }
-            : {
-                ...response(repository),
-                stdout: 'HTTP/2 200 OK\netag: "repo"\n\n' + JSON.stringify(repository),
-              };
+      const client = new GitHubWorkEventClient(
+        {
+          identity: { login: 'receiver', nodeId: 'U_receiver' },
+          async execute(argv) {
+            conditionals.push(argv.some((value) => value.startsWith('If-None-Match:')));
+            return failing
+              ? { ...response({}), exitCode: 1, stdout: 'HTTP/2 ' + status + ' Error\n\n{}' }
+              : {
+                  ...response(repository),
+                  stdout: 'HTTP/2 200 OK\netag: "repo"\n\n' + JSON.stringify(repository),
+                };
+          },
         },
-      });
+        undefined,
+        (read, options) => retryGitHubRead(read, { ...options, sleep: async () => undefined }),
+      );
       await client.getRepository('owner', 'repo');
       failing = true;
       await assert.rejects(client.getRepository('owner', 'repo'), GitHubWorkEventClientError);
       failing = false;
       await client.getRepository('owner', 'repo');
-      assert.deepEqual(conditionals, [false, true, false]);
+      assert.equal(conditionals[0], false);
+      assert.ok(conditionals.slice(1, -1).every(Boolean));
+      assert.equal(conditionals.at(-1), false);
     }
   });
 

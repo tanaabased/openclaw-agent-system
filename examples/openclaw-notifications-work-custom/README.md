@@ -78,13 +78,15 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 
 ## Testing
 
+Fixture assignments use the native GitHub tool; lost responses are reconciled without repeating the write. Safe reads use bounded retries.
+
 ```bash
 # should create an issue as emori and assign it as tanaabot after the safe intake baseline
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/emori"
 openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System work-custom flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot"
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
+node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" assign --number "$number" | jq -e 'any(.assignees[]; .login == "tanaabot")'
 
 # should deliver the assigned issue in its initial native assessment turn
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot"
@@ -132,7 +134,7 @@ if test -s "$TMPDIR/notification-issue.json" && test -d "$XDG_CONFIG_HOME/tanaab
   issue=$(jq -er .node_id "$TMPDIR/notification-issue.json")
   branch=$(jq -sr --arg issue "$issue" '[.[].records[] | select(.stageReceipt.binding.subjectId == $issue)] | .[0].work.delivery.binding.branch // empty' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
   if test -n "$branch"; then
-    openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state open --json number | jq -r 'if length <= 1 then .[].number else error("ambiguous fixture PR") end' > "$TMPDIR/notification-cleanup-pr"
+    node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" pulls --branch "$branch" | jq -r 'if length <= 1 then .[].number else error("ambiguous fixture PR") end' > "$TMPDIR/notification-cleanup-pr"
     if test -s "$TMPDIR/notification-cleanup-pr"; then
       openclaw agent-system tool gh -- pr close "$(cat "$TMPDIR/notification-cleanup-pr")" --repo tanaabased/big-test-bucket
     fi

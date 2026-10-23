@@ -83,7 +83,7 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/emori"
 openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System notification flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
+node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" assign --number "$number" | jq -e 'any(.assignees[]; .login == "tanaabot")'
 
 # should complete the initial assessment in its native owner
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/tanaabot"
@@ -104,6 +104,8 @@ jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == 
 
 ## Testing
 
+Fixture assignments and comments use the native GitHub tool; lost responses are reconciled without repeating the write. Safe reads use bounded retries.
+
 ```bash
 # should keep the existing issue usable after cosmetic native chat edits
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
@@ -113,7 +115,7 @@ openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversat
 # should answer approved feedback in the assigned issue chat
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot explain the retained plan.' > "$TMPDIR/notification-feedback-source.json"
+node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" comment --number "$number" --body '@tanaabot explain the retained plan.' > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
@@ -127,7 +129,7 @@ jq -e --slurp '.[1].retirement == null and .[0].id == .[1].id and .[0].threadId 
 # should answer another github question with the earlier private explanation in context
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot explain the retained plan again using the earlier explanation.' > "$TMPDIR/notification-followup-source.json"
+node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" comment --number "$number" --body '@tanaabot explain the retained plan again using the earlier explanation.' > "$TMPDIR/notification-followup-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
