@@ -491,10 +491,10 @@ describe('agent/openclaw-feedback', () => {
                 state: 'open',
                 number: 7,
               };
-            else throw new Error('unexpected request');
+            else throw new Error('unexpected request: ' + JSON.stringify(argv));
             return {
               exitCode: 0,
-              stdout: JSON.stringify(data),
+              stdout: (argv.includes('--include') ? 'HTTP/2 200\n\n' : '') + JSON.stringify(data),
               stderr: '',
               timedOut: false,
               truncated: false,

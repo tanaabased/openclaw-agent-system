@@ -45,16 +45,16 @@ openclaw-gateway start
 
 ```bash
 # should deny native openclaw installation before any setup effects
-node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/approval-scenario.ts" runtime-openclaw
+node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/approval-scenario.mts" runtime-openclaw
 
 # should allow exactly one installation through the hosted codex approval route
-node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/approval-scenario.ts" runtime-codex
+node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/approval-scenario.mts" runtime-codex
 
 # should approve native openclaw doctor checks without applying setup
-node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/approval-scenario.ts" runtime-openclaw doctor
+node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/approval-scenario.mts" runtime-openclaw doctor
 
 # should resolve and approve the hosted codex doctor tool without applying setup
-node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/approval-scenario.ts" runtime-codex doctor
+node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/approval-scenario.mts" runtime-codex doctor
 
 # should complete all lifecycle approval turns through strict aimock
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics
