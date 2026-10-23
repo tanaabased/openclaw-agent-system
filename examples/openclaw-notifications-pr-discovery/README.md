@@ -45,7 +45,18 @@ cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 
 # should start the isolated gateway with a controlled forwarding github provider
 mkdir -p "$TMPDIR/pr-provider"
-node --input-type=module -e 'import assert from "node:assert/strict"; import {writeFileSync} from "node:fs"; assert.equal(process.env.GITHUB_ACTIONS,"true"); writeFileSync(process.env.TMPDIR+"/pr-provider/control.json",JSON.stringify({ci:true,executable:process.argv[1],paused:false}));' "$(command -v gh)"
+node --import tsx --input-type=module <<'NODE'
+import assert from 'node:assert/strict';
+import {writeFileSync} from 'node:fs';
+import {join} from 'node:path';
+const {resolveToolExecutable} = await import(process.env.GITHUB_WORKSPACE + '/api/cli-runner.ts');
+assert.equal(process.env.GITHUB_ACTIONS, 'true');
+// forward to native gh; the ci profiler shim cannot run in the agent's restricted environment
+const excluded = process.env.AGENT_SYSTEM_GITHUB_PROFILE_DIR
+  ? [join(process.env.AGENT_SYSTEM_GITHUB_PROFILE_DIR, 'bin')] : [];
+const executable = await resolveToolExecutable('gh', process.env.PATH ?? '', excluded);
+writeFileSync(process.env.TMPDIR + '/pr-provider/control.json', JSON.stringify({ci: true, executable, paused: false}));
+NODE
 cp "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-discovery/provider-fixture.mjs" "$TMPDIR/pr-provider/gh"
 chmod 755 "$TMPDIR/pr-provider/gh"
 # preserve the fixture ahead of system gh when openclaw bootstraps its cli path

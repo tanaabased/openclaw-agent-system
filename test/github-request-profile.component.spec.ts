@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import createToolCliRunner from '../api/cli-runner.ts';
+import createToolCliRunner, { resolveToolExecutable } from '../api/cli-runner.ts';
 
 type HostRunner = Parameters<typeof createToolCliRunner>[0];
 const success: Awaited<ReturnType<HostRunner>> = {
@@ -79,6 +79,29 @@ describe('api/cli-runner github profiling', () => {
       return success;
     }, directory);
     await run({ ...request(), executable: 'gh', environment: { PATH: `${shim}:${root}` } });
+  });
+
+  it('should select native gh for a forwarder running without the ci environment', async () => {
+    const directory = join(root, 'profile');
+    const shim = join(directory, 'bin');
+    await mkdir(shim, { recursive: true });
+    await writeFile(executable, '#!/bin/sh\nprintf "native github\\n"\n', { mode: 0o700 });
+    await writeFile(
+      join(shim, 'gh'),
+      `#!/bin/sh\nexec "${process.execPath}" --import tsx scripts/github-profile-command.ts "${executable}" "$@"\n`,
+      { mode: 0o700 },
+    );
+    const environment = { PATH: `${shim}:${root}:/usr/bin:/bin` };
+    const invoke = (command: string) =>
+      new Promise<{ code: number | string; stdout: string }>((resolve, reject) => {
+        execFile(command, ['api', 'user'], { env: environment, timeout: 5000 }, (error, stdout) => {
+          if (error && typeof error.code !== 'number') reject(error);
+          else resolve({ code: error?.code ?? 0, stdout });
+        });
+      });
+    assert.equal((await invoke(join(shim, 'gh'))).code, 1);
+    const native = await resolveToolExecutable('gh', environment.PATH, [shim]);
+    assert.deepEqual(await invoke(native), { code: 0, stdout: 'native github\n' });
   });
 
   it('should leave other executables untouched when profiling is enabled', async () => {
