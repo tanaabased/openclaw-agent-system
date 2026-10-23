@@ -8,6 +8,7 @@ import { notificationAuthorityDigest } from './notification-authority.ts';
 import workflowStatus from './workflow-status.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
 import publishIssueDelivery from './publish-issue-delivery.ts';
+import codexIssueBranch from './codex-issue-branch.ts';
 import workflowFailure from './workflow-failure.ts';
 import deliveryAnnouncement, {
   announcementPresentation,
@@ -403,6 +404,16 @@ export default async function runCodexDelivery(
         branch = (await git(found.cwd, ['branch', '--show-current'], signal)).trim();
         if (!branch || branch === checked.repo.defaultBranch)
           throw new Error('delivery-branch-required');
+        await codexIssueBranch({
+          record,
+          records: state.records,
+          intake,
+          workspace: current.workspace,
+          agentId: current.manifest.agent.id,
+          git,
+          signal,
+          save,
+        });
         await git(found.cwd, ['check-ref-format', `refs/heads/${branch}`], signal);
         if (await git(found.cwd, ['status', '--porcelain=v1'], signal))
           throw new Error('delivery-uncommitted-work');

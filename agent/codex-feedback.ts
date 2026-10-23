@@ -41,6 +41,7 @@ import feedbackResponse, {
 } from '../channels/github/presentation/feedback-response.ts';
 import { feedbackResultSchema } from './codex-feedback-state.ts';
 import codexHostAccess from './codex-host-access.ts';
+import codexIssueBranch from './codex-issue-branch.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import pendingDispatchAssignments from './dispatch-pending.ts';
@@ -510,6 +511,17 @@ export default async function runCodexFeedback(
               resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
             });
             await save();
+            await codexIssueBranch({
+              record,
+              records: state.records,
+              intake: admitted,
+              workspace: current.workspace,
+              agentId: current.manifest.agent.id,
+              git: deps.git,
+              signal,
+              save,
+              prepare: true,
+            });
             return {
               ...implementationContext({
                 runtime: 'codex',
@@ -524,6 +536,7 @@ export default async function runCodexFeedback(
               assignmentWarning:
                 record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
               issueStage: 'implementation',
+              issueBranch: record.issueBranch?.name,
               implementation,
               source,
               discussion: await provider.client.getItemContext(owner, name, event.number),
@@ -534,7 +547,7 @@ export default async function runCodexFeedback(
               worktree: record.worktree,
               resultSchema: implementationResultSchema,
               instructions:
-                'Use the selected implementation skill with this source and retained plan. Reconcile partial work; test and commit appropriate changes. Submit feedback implementation-result with implementationResult. For done use deliveryRuntime prepare/publish with id and eventId, retaining the existing PR and announcement. Then retain feedback result and compose its public reply. Do not repeat finished work.',
+                'Use the selected implementation skill with this source and retained plan. Continue on issueBranch, already selected for this assignment attempt. Reconcile partial work; test and commit appropriate changes. Submit feedback implementation-result with implementationResult. For done use deliveryRuntime prepare/publish with id and eventId, retaining the existing PR and announcement. Then retain feedback result and compose its public reply. Do not repeat finished work.',
             };
           }
           if (input.action === 'implementation-result') {

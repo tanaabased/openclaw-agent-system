@@ -147,6 +147,7 @@ describe('agent/codex-dispatch', () => {
       },
     ];
     gitCalls = [];
+    const branches = new Map<string, string>();
     deps = {
       readInstallationConfig: async () =>
         parseInstallationConfig(undefined, '/installation/config.yaml'),
@@ -204,6 +205,11 @@ describe('agent/codex-dispatch', () => {
         }),
       git: async (_cwd, argv) => {
         gitCalls.push(argv);
+        if (argv[0] === 'branch') return branches.get(_cwd) ?? '';
+        if (argv[0] === 'switch') {
+          branches.set(_cwd, argv[1] === '-c' ? argv[2]! : argv[1]!);
+          return '';
+        }
         if (argv.length === 1 && argv[0] === 'remote') return 'origin';
         if (argv[0] === 'remote') return 'git@github.com:owner/repo.git';
         if (argv.includes('--git-common-dir')) return commonDir;
@@ -762,13 +768,25 @@ describe('agent/codex-dispatch', () => {
     const before = (await request('inspect')).records as Record<string, unknown>[];
     native!.turnId = 'authorized-follow-up';
     native!.followUpUserTurn = true;
+    const current = await selectCodexIntake(pluginData, deps);
+    const branchStore = new CodexDispatchStore(
+      current.store.location.root,
+      current.store.location.scope,
+    );
+    await branchStore.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.issueBranch = { attemptId: record.id, name: 'existing-work', phase: 'ready' };
+      await save();
+    });
     const ordinaryGit = deps.git!;
     deps.git = async (cwd, argv) =>
-      argv.includes('HEAD')
-        ? '2'.repeat(40)
-        : argv[0] === 'status'
-          ? ' M implementation.ts'
-          : ordinaryGit(cwd, argv);
+      argv[0] === 'branch'
+        ? 'existing-work'
+        : argv.includes('HEAD')
+          ? '2'.repeat(40)
+          : argv[0] === 'status'
+            ? ' M implementation.ts'
+            : ordinaryGit(cwd, argv);
     const operator = {
       threadId: 'operator',
       activation: async () => {
@@ -3672,7 +3690,11 @@ describe('agent/codex-dispatch', () => {
     const work = await workIssue();
     native!.status = 'active';
     native!.turnStatus = 'inProgress';
-    await work.run('context', {}, true);
+    const initial = await work.run('context', {}, true);
+    assert.ok('issueBranch' in initial && typeof initial.issueBranch === 'string');
+    const repeated = await work.run('context', {}, true);
+    assert.ok('issueBranch' in repeated);
+    assert.equal(repeated.issueBranch, initial.issueBranch);
     native!.status = 'idle';
     native!.turnStatus = 'interrupted';
     const resumed = await work.run('next');
@@ -3684,6 +3706,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(retained.continuation!.retries![0]!.attempt.origin, 'assessment');
     assert.deepEqual(retained.result, result);
     assert.equal(retained.progression!.stage, 'implementation');
+    assert.equal(retained.issueBranch?.name, initial.issueBranch);
   });
 
   it('should include a github plan revision in direct planning context without entering work', async () => {
