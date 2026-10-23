@@ -449,7 +449,12 @@ and original receipts; invalid managed ownership never falls back to manual work
 An authenticated operator can continue a retained Plan-mode assessment in its
 owning issue chat. An actionable Plan-mode issue needs human direction to enter implementation;
 once there, ordinary PR delivery needs no separate publication grant. The agent retains the
-complete plan and uses the existing chat, managed worktree, and model selection.
+complete plan and uses the existing chat and managed worktree. In OpenClaw, an
+operator may change the model or thinking level through native controls without
+recreating the task. Original routing stays recorded separately from current
+session settings; continuation respects the operator's choice. This does not
+authorize the agent to change settings, and initial creation still verifies the
+requested configuration.
 
 Work policy or an Auto Work decision lets the next intake pass continue an
 actionable plan in the same issue chat, using shared capacity and its saved native

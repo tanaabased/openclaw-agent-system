@@ -395,14 +395,7 @@ export default class OpenClawDispatchCoordinator {
           );
           record.sessionCreation.sessionId = sessionId;
           record.sessionCreation.verified = true;
-          if ('key' in record.request) {
-            record.threadId = record.request.key;
-            record.effective = {
-              status: 'verified' as const,
-              model: record.request.model,
-              effort: record.request.thinkingLevel,
-            };
-          }
+          if ('key' in record.request) record.threadId = record.request.key;
         } catch (recoveryError) {
           record.blocker = openClawDispatchFailureCode(recoveryError);
         }

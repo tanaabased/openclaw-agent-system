@@ -2154,8 +2154,6 @@ describe('agent/openclaw issue dispatch', () => {
       [{ key: 'agent:receiver:other' }, 'key'],
       [{ sessionId: 'replacement' }, 'sessionId'],
       [{ agentId: 'other' }, 'agentId'],
-      [{ model: 'other/model' }, 'model'],
-      [{ thinkingLevel: 'low' }, 'thinkingLevel'],
       [{ spawnedCwd: '/' }, 'cwd'],
       [{ parentSessionKey: 'agent:other:main' }, 'parentSessionKey'],
       [{ parentSessionKey: 'agent:receiver:unrelated' }, 'parentSessionKey'],
@@ -2196,6 +2194,34 @@ describe('agent/openclaw issue dispatch', () => {
     assert.notEqual('code' in result ? result.code : undefined, 'dispatch-session-mismatch');
     assert.equal(creates().length, 1);
   });
+
+  for (const [change, field] of [
+    [{ model: 'other/model' }, 'model'],
+    [{ thinkingLevel: 'low' }, 'thinkingLevel'],
+  ] as const)
+    it(`should still verify requested ${field.toLowerCase()} during uncertain creation recovery`, async () => {
+      const input = await next();
+      lost = true;
+      await prepare(input);
+      const original = { ...session! };
+      assert.equal((await record()).sessionCreation?.verified, undefined);
+      Object.assign(session!, change);
+      lost = false;
+      const result = await service.run(manifest, root, coordinator, {
+        action: 'reconcile',
+        id: input.id,
+      });
+      assert.ok('code' in result && result.code === 'dispatch-session-mismatch');
+      assert.ok('mismatchedField' in result && result.mismatchedField === field);
+      assert.equal((await record()).sessionCreation?.verified, undefined);
+      session = original;
+      assert.equal(
+        (await service.run(manifest, root, coordinator, { action: 'reconcile', id: input.id }))
+          .status,
+        'session-created',
+      );
+      assert.equal(creates().length, 1);
+    });
 
   it('should accept an unlinked session and only the configured same-agent main parent', async () => {
     const input = await next();
@@ -2706,7 +2732,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 0);
   });
 
-  it('should reject mismatched terminal evidence without claiming completion', async () => {
+  it('should reject terminal identity drift and retain a different observed execution model', async () => {
     const input = await next();
     await prepare(input);
     await start(input.id);
@@ -2730,8 +2756,8 @@ describe('agent/openclaw issue dispatch', () => {
       },
     };
     const rerouted = await start(input.id);
-    assert.ok('code' in rerouted && rerouted.code === 'dispatch-turn-model-mismatch');
-    assert.equal((await record()).firstTurn?.status, 'consumed');
+    assert.equal(rerouted.status, 'working-turn-completed');
+    assert.equal((await record()).firstTurn?.executionModel, 'openai/other-model');
     assert.equal(sends().length, 1);
   });
 
@@ -2821,6 +2847,86 @@ describe('agent/openclaw issue dispatch', () => {
   }
   const workPass = (runId: string) =>
     service.run(manifest, root, { ...coordinator, runId }, { action: 'next' });
+
+  it('should retain recorded assessment receipts after later tuning and unavailable settings readback', async () => {
+    const id = await readyWork('work');
+    const original = await record();
+    Object.assign(session!, { model: 'openai/operator-model', thinkingLevel: 'low' });
+    assert.equal((await workPass('later-tuning')).status, 'implementation-pending');
+    const saved = await record();
+    assert.deepEqual(saved.effective, {
+      status: 'verified',
+      model: 'openai/operator-model',
+      effort: 'low',
+    });
+    assert.deepEqual(saved.stageReceipt, original.stageReceipt);
+    assert.deepEqual(saved.result, original.result);
+    assert.equal(saved.routing, original.routing);
+    assert.deepEqual(saved.request, original.request);
+    delete session!.model;
+    delete session!.thinkingLevel;
+    const verified = await service.run(manifest, root, assessor(id), {
+      action: 'implementation-context',
+      id,
+    });
+    assert.equal(verified.status, 'verified');
+    assert.ok('effective' in verified);
+    assert.deepEqual(verified.effective, { status: 'unverified' });
+    assert.deepEqual((await record()).effective, { status: 'unverified' });
+    assert.deepEqual((await record()).stageReceipt, original.stageReceipt);
+    assert.equal(creates().length, 1);
+  });
+
+  for (const change of [{ model: 'openai/operator-model' }, { thinkingLevel: 'low' }])
+    it(`should continue assessment and work after operator ${'model' in change ? 'model' : 'thinking'} tuning`, async () => {
+      manifest.github!.notifications!.issueAssignment!.mode = 'work';
+      const input = await next();
+      await prepare(input);
+      const original = await record();
+      Object.assign(session!, change);
+      const effective = {
+        status: 'verified',
+        model: change.model ?? original.request!.model,
+        effort: session!.thinkingLevel,
+      };
+      const reconciled = await service.run(manifest, root, coordinator, {
+        action: 'reconcile',
+        id: input.id,
+      });
+      assert.equal(reconciled.status, 'session-created', JSON.stringify(reconciled));
+      assert.ok('model' in reconciled && reconciled.model === effective.model);
+      assert.ok('effort' in reconciled && reconciled.effort === effective.effort);
+      await assess(input.id);
+      const verified = await context(input.id);
+      assert.equal(verified.status, 'verified');
+      assert.ok('effective' in verified);
+      assert.deepEqual(verified.effective, effective);
+      assert.equal((await submit(input.id)).status, 'recorded');
+      const receipt = (await record()).stageReceipt;
+      inputReceipts = [];
+      assert.equal(
+        (
+          await service.run(manifest, root, assessor(input.id), {
+            action: 'implementation-context',
+            id: input.id,
+          })
+        ).status,
+        'verified',
+      );
+      assessmentReply(input.id);
+      assert.equal((await workPass('continue-tuned-work')).status, 'implementation-pending');
+      const saved = await record();
+      assert.deepEqual(saved.effective, effective);
+      assert.deepEqual(saved.request, original.request);
+      assert.equal(saved.routing, original.routing);
+      assert.deepEqual(saved.stageReceipt, receipt);
+      assert.equal(saved.sessionCreation?.sessionId, original.sessionCreation?.sessionId);
+      assert.equal(creates().length, 1);
+      assert.equal(
+        calls.some(({ method }) => method === 'sessions.patch'),
+        false,
+      );
+    });
 
   for (const mode of ['work', 'auto'] as const)
     it(`should hand ${mode} directly from assessment to implementation without a coordinator send`, async () => {
@@ -4113,6 +4219,7 @@ describe('agent/openclaw issue dispatch', () => {
     const input = await next();
     await prepare(input);
     await assess(input.id);
+    Object.assign(session!, { model: 'openai/operator-model', thinkingLevel: 'low' });
     assessmentReply(input.id);
     const blocked = await assess(input.id);
     assert.ok('code' in blocked && blocked.code === 'dispatch-assessment-result-missing');
