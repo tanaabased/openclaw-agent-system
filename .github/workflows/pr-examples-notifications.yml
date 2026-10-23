@@ -1,126 +1,85 @@
-name: OpenClaw notification tests
+name: Notification fixture cleanup
 
 on:
-  pull_request:
   workflow_dispatch:
-    inputs:
-      profile:
-        description: Capture GitHub request metadata
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
-concurrency:
-  group: examples-notifications-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
-env:
-  HOMEBREW_NO_AUTO_UPDATE: '1'
-  NO_COLOR: '1'
-
 jobs:
-  examples:
-    name: ${{ matrix.example }} (ubuntu-24.04)
+  cleanup:
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        example:
-          - openclaw-notifications-intake
-          - openclaw-notifications-assessment-recovery
-          - openclaw-notifications-feedback-policy
-          - openclaw-notifications-assignment-policy
-          - openclaw-notifications-reactivation
-          - openclaw-notifications-retirement
-          - openclaw-notifications-reset
-          - openclaw-notifications-issue-journey
-          - openclaw-notifications-conversation
-          - openclaw-notifications-pr-journey
-          - openclaw-notifications-pr-recipients
-          - openclaw-notifications-pr-update
-          - openclaw-notifications-pr-presentation
-          - openclaw-notifications-pr-collaboration
-          - openclaw-notifications-pr-discovery
-          - openclaw-notifications-pr-reply-recovery
-          - openclaw-notifications-progression
+    timeout-minutes: 5
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: PATH updates
-        shell: bash
-        run: |
-          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
-          echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
-          echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
-          echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
-      - name: Brew updates
-        shell: bash
-        run: HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed
-      - name: Install OpenClaw
-        uses: tanaabased/actions/setup-openclaw@v1
-      - name: Install Node
-        uses: tanaabased/actions/setup-node@v1
-      - name: Install Bun
-        uses: tanaabased/actions/setup-bun@v1
-      - name: Install dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
-      - name: Prepare release-shaped build
-        uses: tanaabased/actions/prepare-release@v1
-        with:
-          version: dev
-          commands: |
-            version-injector .codex-plugin/plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
-            version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
-            bun run format:write
-            bun run build
-      - name: Check prepared plugin
-        run: |
-          bun run plugin:check
-          bun run format:check
-      - name: Pack prepared plugin
-        id: pack
-        uses: tanaabased/actions/npm-pack@v1
-      - name: Run Leia-backed example
-        shell: bash
+      - name: Dispose only retained fixtures from run 39903842345
         env:
-          AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
-          CODEX_HOME: ${{ runner.temp }}/codex-home
-          CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
+          GH_TOKEN: ${{ secrets.GH_TOKEN_TANAABOT }}
           GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
-          XDG_CONFIG_HOME: ${{ runner.temp }}/agent-system-config
-          GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
-          AGENT_SYSTEM_GITHUB_PROFILE_DIR: ${{ (inputs.profile || github.head_ref == 'pirog-381-example-workflows') && format('{0}/github-profile', runner.temp) || '' }}
+        shell: bash
         run: |
-          if [[ -n "$AGENT_SYSTEM_GITHUB_PROFILE_DIR" ]]; then
-            native_gh=$(command -v gh)
-            mkdir -p "$AGENT_SYSTEM_GITHUB_PROFILE_DIR/bin"
-            chmod 700 "$AGENT_SYSTEM_GITHUB_PROFILE_DIR"
-            printf '#!/usr/bin/env bash\nexec node --import tsx %q %q "$@"\n' "$GITHUB_WORKSPACE/scripts/github-profile-command.ts" "$native_gh" > "$AGENT_SYSTEM_GITHUB_PROFILE_DIR/bin/gh"
-            chmod 700 "$AGENT_SYSTEM_GITHUB_PROFILE_DIR/bin/gh"
-            export PATH="$AGENT_SYSTEM_GITHUB_PROFILE_DIR/bin:$PATH"
-          fi
-          report_api_budget() {
-            GH_TOKEN="$GH_TOKEN_TANAABOT" gh api rate_limit --jq '{account:"tanaabot", resources:(.resources | {core: (.core | {limit,remaining,reset}), graphql: (.graphql | {limit,remaining,reset})})}' || true
-            GH_TOKEN="$GH_TOKEN_EMORI" gh api rate_limit --jq '{account:"emoriwan", resources:(.resources | {core: (.core | {limit,remaining,reset}), graphql: (.graphql | {limit,remaining,reset})})}' || true
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {execFileSync} from 'node:child_process';
+          const repository = 'repos/tanaabased/big-test-bucket';
+          const fixtures = [
+            {pr: 7520, issue: 7511, head: '7511-document-disposable-test-issue-cleanup-7be8ad5b2b0af8c8', sha: 'f0a20f508b8f3fa49975b9f0987f27371cd435de'},
+            {pr: 7518, issue: 7506, head: '7506-document-disposable-test-issue-cleanup-7c11bdc9d24278c0', sha: 'edcf620514675d386443a6463dc1368f00503edb'},
+          ];
+          function api(route, ...args) {
+            return JSON.parse(execFileSync('gh', ['api', route, ...args], {encoding: 'utf8'}));
           }
-          trap report_api_budget EXIT
-          report_api_budget
-          leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
-      - name: Summarize GitHub request profile
-        if: ${{ always() && (inputs.profile || github.head_ref == 'pirog-381-example-workflows') }}
-        shell: bash
-        run: node --import tsx scripts/github-profile-report.ts "$RUNNER_TEMP/github-profile" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: RUNNING A LEVEL THREE DIAGNOSTICS
-        if: failure()
-        shell: bash
-        run: |
-          jq -s '[.. | objects | select(.providerDiagnostic? != null) | {code, providerDiagnostic, retry, retryAfter}]' "$RUNNER_TEMP/agent-system-config/tanaab/agent-system/agent-system-dispatch-v2/"*.json || true
-          if [[ -d "${OPENCLAW_WORKSPACE:-}" ]]; then
-            openclaw-diagnostics
-          else
-            echo "No OpenClaw workspace was created; see the scenario failure output above."
-          fi
+          function identity(account, token, minimum) {
+            const response = execFileSync('gh', ['api', '--include', 'user'], {
+              encoding: 'utf8', env: {...process.env, GH_TOKEN: token},
+            });
+            const body = JSON.parse(response.slice(response.indexOf('{')));
+            assert.equal(body.login, account);
+            const remaining = Number(response.match(/^x-ratelimit-remaining:\s*(\d+)/im)?.[1]);
+            const reset = Number(response.match(/^x-ratelimit-reset:\s*(\d+)/im)?.[1]);
+            console.log(JSON.stringify({account, resource: 'core', remaining, reset}));
+            assert.ok(Number.isFinite(remaining) && remaining >= minimum, 'insufficient fresh quota for trial');
+          }
+          identity('tanaabot', process.env.GH_TOKEN, 4900);
+          identity('emoriwan', process.env.GH_TOKEN_EMORI, 4900);
+          for (const fixture of fixtures) {
+            const issue = api(repository + '/issues/' + fixture.issue);
+            assert.equal(issue.user.login, 'emoriwan');
+            assert.equal(issue.title, 'Agent System pr flow 39903842345-1');
+            assert.ok(issue.body.startsWith('This is a disposable Agent System notification-flow fixture.'));
+            const pr = api(repository + '/pulls/' + fixture.pr);
+            assert.equal(pr.user.login, 'tanaabot');
+            assert.equal(pr.head.repo.full_name, 'tanaabased/big-test-bucket');
+            assert.equal(pr.head.ref, fixture.head);
+            assert.equal(pr.head.sha, fixture.sha);
+            assert.equal(pr.merged, false);
+            assert.ok(pr.body.endsWith('/issues/' + fixture.issue));
+          }
+          const titles = new Set([
+            'agent-system-pr-39903842345-1',
+            'agent-system-pr-reply-recovery-39903842345-1',
+            'agent-system-retirement-39903842345-1',
+          ]);
+          const keys = api('user/keys', '--paginate', '--slurp').flat().filter(key => titles.has(key.title));
+          for (const fixture of fixtures) {
+            assert.equal(api(repository + '/pulls/' + fixture.pr, '--method', 'PATCH', '-f', 'state=closed').state, 'closed');
+            execFileSync('gh', ['api', repository + '/git/refs/heads/' + fixture.head, '--method', 'DELETE'], {stdio: 'pipe'});
+            assert.equal(api(repository + '/issues/' + fixture.issue, '--method', 'PATCH', '-f', 'state=closed').state, 'closed');
+            console.log(JSON.stringify({closedIssue: fixture.issue, closedPr: fixture.pr, deletedBranch: fixture.head}));
+          }
+          for (const key of keys) {
+            execFileSync('gh', ['api', 'user/keys/' + key.id, '--method', 'DELETE'], {stdio: 'pipe'});
+            console.log(JSON.stringify({deletedKeyTitle: key.title}));
+          }
+          assert.equal(api('user/keys', '--paginate', '--slurp').flat().filter(key => titles.has(key.title)).length, 0);
+          for (const fixture of fixtures) {
+            assert.equal(api(repository + '/pulls/' + fixture.pr).state, 'closed');
+            assert.equal(api(repository + '/issues/' + fixture.issue).state, 'closed');
+            let absent = false;
+            try { api(repository + '/git/ref/heads/' + fixture.head); }
+            catch (error) { absent = /HTTP 404/.test(String(error.stderr)); }
+            assert.ok(absent, 'fixture branch removal not verified');
+          }
+          identity('tanaabot', process.env.GH_TOKEN, 4800);
+          identity('emoriwan', process.env.GH_TOKEN_EMORI, 4900);
+          console.log('bounded fixture cleanup verified; quota ready for one full trial');
+          NODE
