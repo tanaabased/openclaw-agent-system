@@ -389,13 +389,16 @@ describe('agent/codex-dispatch', () => {
           const endpoint = argv.slice(1).find((arg) => arg.startsWith('/'));
           let value: unknown;
           if (argv.includes('graphql')) {
-            const nodeId = JSON.parse(options.input).variables.id;
-            const identity = [fixture.repository.owner, fixture.client.identity].find(
-              (entry) => entry.nodeId === nodeId,
-            )!;
+            const nodeIds = JSON.parse(options.input).variables.ids as string[];
             value = {
               data: {
-                node: { id: identity.nodeId, login: identity.login, __typename: identity.type },
+                nodes: nodeIds.map((nodeId) => {
+                  const identity = [fixture.repository.owner, fixture.client.identity].find(
+                    (entry) => entry.nodeId === nodeId,
+                  );
+                  assert.ok(identity, 'requested identity belongs to the fixture');
+                  return { id: identity.nodeId, login: identity.login, __typename: identity.type };
+                }),
               },
             };
           } else if (endpoint === '/user') value = fixture.client.identity;

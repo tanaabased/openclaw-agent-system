@@ -1,0 +1,29 @@
+schema-version: 1
+
+agent:
+  id: descendants-tanaabot
+  name: Descendants Tanaabot
+  email: tanaabot@tanaab.dev
+
+environment:
+  set:
+    GH_TOKEN_TANAABOT: ${GH_TOKEN_TANAABOT}
+  required:
+    - GH_TOKEN_TANAABOT
+
+git: {}
+
+github:
+  host: github.com
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+
+setup-agent:
+  steps:
+    - id: tool-identity
+      runtimes: [openclaw]
+      check: test -f setup.complete
+      apply: [sh, ./probe.sh, setup]
+
+automations:
+  file: ./automations.yaml

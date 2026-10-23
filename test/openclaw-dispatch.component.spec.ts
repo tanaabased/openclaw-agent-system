@@ -3515,14 +3515,15 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 1);
   });
 
-  for (const { recover, loseResponse, preparationFailure } of [
-    { recover: false, loseResponse: false },
-    { recover: false, loseResponse: true },
-    { recover: true, loseResponse: false },
-    { recover: true, loseResponse: true },
-    { recover: true, loseResponse: false, preparationFailure: true },
+  for (const { recover, loseResponse, preparationFailure, variant } of [
+    { recover: false, loseResponse: false, variant: 'default' },
+    { recover: false, loseResponse: true, variant: 'skill' },
+    { recover: true, loseResponse: false, variant: 'inline' },
+    { recover: true, loseResponse: true, variant: 'file' },
+    { recover: true, loseResponse: false, preparationFailure: true, variant: 'skill-inline' },
+    { recover: false, loseResponse: false, variant: 'skill-file' },
   ]) {
-    it(`should retain one assessment summary in openclaw ${recover ? 'after handoff and restart' : 'in the assessment turn'} after ${preparationFailure ? 'candidate connection failure' : loseResponse ? 'a lost response' : 'successful publication'}`, async () => {
+    it(`should retain one ${variant} assessment summary in openclaw ${recover ? 'after handoff and restart' : 'in the assessment turn'} after ${preparationFailure ? 'candidate connection failure' : loseResponse ? 'a lost response' : 'successful publication'}`, async () => {
       const input = await next();
       await prepare(input);
       await assess(input.id);
@@ -3531,6 +3532,27 @@ describe('agent/openclaw issue dispatch', () => {
       assert.ok(
         'presentation' in recorded && recorded.presentation?.includes(plan.fullAssessment!),
       );
+      const guidance = 'Explain the outcome.\nKeep the uncertainty visible.';
+      await writeFile(join(root, 'summary-guidance.md'), guidance);
+      await mkdir(join(root, 'reply'));
+      await writeFile(join(root, 'reply', 'SKILL.md'), 'Compose a concise public summary.');
+      ordinarySkills.push({
+        name: 'ordinary-reply',
+        source: 'openclaw-workspace',
+        filePath: join(root, 'reply', 'SKILL.md'),
+        eligible: true,
+        modelVisible: true,
+      });
+      manifest.github!.notifications!.issueAssignment!.feedback = {
+        inherit: true,
+        allowed: [],
+        ...(variant.includes('skill') ? { skill: 'ordinary-reply' } : {}),
+        ...(variant.includes('inline')
+          ? { guidance }
+          : variant.includes('file')
+            ? { guidance: { file: 'summary-guidance.md' } }
+            : {}),
+      };
       let who = assessor(input.id);
       if (preparationFailure) {
         const composed = await service.run(manifest, root, who, {
@@ -3636,6 +3658,17 @@ describe('agent/openclaw issue dispatch', () => {
       const composed = await summary('compose');
       assert.equal(composed.status, 'composition-ready', JSON.stringify(composed));
       assert.ok('digest' in composed);
+      assert.ok('selection' in composed);
+      const selected = composed.selection as AssessmentSelection;
+      assert.equal(
+        selected.skill.name,
+        variant.includes('skill') ? 'ordinary-reply' : 'agent-system-feedback-reply',
+      );
+      assert.equal(selected.guidance?.content, /inline|file/u.test(variant) ? guidance : undefined);
+      assert.equal(
+        selected.skill.path,
+        join(root, variant.includes('skill') ? 'reply/SKILL.md' : 'SKILL.md'),
+      );
       assert.equal(
         (
           await summary(
@@ -4804,6 +4837,137 @@ describe('agent/openclaw issue dispatch', () => {
     });
   }
 
+  for (const variant of ['default', 'skill', 'inline', 'file', 'skill-inline', 'skill-file']) {
+    it(`should independently consume implementation customization for ${variant}`, async () => {
+      const guidance = 'Preserve the caller contract.\nCheck the changed behavior before delivery.';
+      await writeFile(join(root, 'implementation.md'), guidance);
+      await mkdir(join(root, 'implementation'));
+      await writeFile(
+        join(root, 'implementation', 'SKILL.md'),
+        'Implement the requested change and check it.',
+      );
+      ordinarySkills.push({
+        name: 'ordinary-implementation',
+        source: 'openclaw-workspace',
+        filePath: join(root, 'implementation', 'SKILL.md'),
+        eligible: true,
+        modelVisible: true,
+      });
+      const policy = manifest.github!.notifications!.issueAssignment!;
+      policy.mode = 'work';
+      policy.assessment = {
+        skill: 'ordinary-assessment',
+        guidance: 'Assess only the caller contract.',
+      };
+      policy.feedback = {
+        inherit: true,
+        allowed: [],
+        skill: 'missing-reply',
+        guidance: 'Do not consume this during implementation.',
+      };
+      policy.implementation =
+        variant === 'default'
+          ? undefined
+          : {
+              ...(variant.includes('skill') ? { skill: 'ordinary-implementation' } : {}),
+              ...(variant.includes('inline')
+                ? { guidance }
+                : variant.includes('file')
+                  ? { guidance: { file: 'implementation.md' } }
+                  : {}),
+            };
+      const input = await next();
+      await prepare(input);
+      await assess(input.id);
+      await context(input.id);
+      await submit(input.id);
+      const before = await record();
+      inputReceipts = [];
+      const verified = await service.run(
+        manifest,
+        root,
+        assessor(input.id),
+        { action: 'implementation-context', id: input.id },
+        false,
+      );
+      assert.equal(verified.status, 'verified');
+      assert.ok('implementation' in verified);
+      const selection = verified.implementation as AssessmentSelection;
+      assert.equal(
+        selection.skill.name,
+        variant.includes('skill') ? 'ordinary-implementation' : 'agent-system-issue-implementation',
+      );
+      assert.equal(
+        selection.skill.path,
+        join(root, variant.includes('skill') ? 'implementation/SKILL.md' : 'SKILL.md'),
+      );
+      assert.equal(
+        selection.guidance?.content,
+        /inline|file/u.test(variant) ? guidance : undefined,
+      );
+      const result = {
+        outcome: 'done' as const,
+        summary: 'Caller fixed.',
+        fullResult: 'Changed the caller.\nChecked return values; live transport remains untested.',
+      };
+      const saved = await service.run(
+        manifest,
+        root,
+        assessor(input.id),
+        { action: 'implementation-result', id: input.id, implementationResult: result },
+        false,
+      );
+      assert.ok('handoff' in saved && saved.handoff?.next === 'delivery');
+      const after = await record();
+      assert.deepEqual(after.work!.selection, selection);
+      assert.deepEqual(after.work!.result, result);
+      assert.deepEqual(after.result, before.result);
+      assert.deepEqual(after.stageReceipt, before.stageReceipt);
+      assert.equal(after.threadId, before.threadId);
+      assert.equal(after.worktree, before.worktree);
+      assert.equal(creates().length, 1);
+    });
+  }
+
+  for (const invalid of [
+    'missing',
+    'disabled',
+    'hidden',
+    'ineligible',
+    'ambiguous',
+    'unreadable',
+  ]) {
+    it(`should recover a ${invalid} explicit implementation skill without default substitution`, async () => {
+      const { id, who } = await operatorFollowup();
+      manifest.github!.notifications!.issueAssignment!.implementation = {
+        skill: 'ordinary-assessment',
+      };
+      const valid = structuredClone(ordinarySkills);
+      if (invalid === 'missing') ordinarySkills = [];
+      if (invalid === 'disabled') ordinarySkills[0]!.disabled = true;
+      if (invalid === 'hidden') ordinarySkills[0]!.modelVisible = false;
+      if (invalid === 'ineligible') ordinarySkills[0]!.eligible = false;
+      if (invalid === 'ambiguous') ordinarySkills.push({ ...ordinarySkills[0] });
+      if (invalid === 'unreadable') ordinarySkills[0]!.filePath = join(root, 'missing.md');
+      const before = await record();
+      const run = () =>
+        service.run(manifest, root, who, { action: 'implementation-context', id }, true);
+      await assert.rejects(run(), /(?:dispatch-assessment-skill|assessment-skill)/u);
+      assert.equal((await record()).work?.selection, undefined);
+      ordinarySkills = valid;
+      const corrected = await run();
+      assert.equal(corrected.status, 'verified');
+      assert.ok('implementation' in corrected);
+      assert.equal(
+        (corrected.implementation as AssessmentSelection).skill.name,
+        'ordinary-assessment',
+      );
+      assert.deepEqual((await record()).result, before.result);
+      assert.equal((await record()).threadId, before.threadId);
+      assert.equal(creates().length, 1);
+    });
+  }
+
   it('should not let ordinary skill guidance grant implementation or publication in plan mode', async () => {
     manifest.github!.notifications!.issueAssignment!.mode = 'plan';
     manifest.github!.notifications!.issueAssignment!.assessment = {
@@ -5612,6 +5776,33 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(after.feedbackReactivation?.assignmentEventId, 'removed');
     assert.equal(after.threadId, before.threadId);
     assert.equal(after.feedback?.events[0]?.sourceId, comments[0]!.nodeId);
+    assert.equal(creates().length, 1);
+  });
+  it('should reuse one issue observation per feedback authorization and refresh on the next call', async () => {
+    const { id } = await feedbackOwner();
+    consumeSend = true;
+    await service.check(manifest, root);
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const event = (await record()).feedback!.events[0]!;
+    const who = assessor(id, event.turn!.runId);
+    const input = {
+      action: 'feedback' as const,
+      operation: 'context' as const,
+      id,
+      eventId: event.id,
+    };
+    const read = fixture.client.getItem;
+    let reads = 0;
+    fixture.client.getItem = async (...args) => {
+      reads++;
+      return structuredClone(await read(...args));
+    };
+    assert.equal((await service.run(manifest, root, who, input)).status, 'verified');
+    assert.equal(reads, 1);
+    fixture.item.state = 'closed';
+    const result = await service.run(manifest, root, who, input);
+    assert.equal('code' in result && result.code, 'dispatch-issue-closed');
+    assert.equal(reads, 2);
     assert.equal(creates().length, 1);
   });
   it('should reconcile an uncertain delivery announcement before discovering same-account feedback', async () => {

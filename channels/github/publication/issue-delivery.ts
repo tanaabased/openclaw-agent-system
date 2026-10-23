@@ -1,6 +1,7 @@
 import providerWriteRejected from '../../../utils/provider-write-rejected.ts';
-import { githubCliDiagnostic } from '../../../credentials/github-diagnostic.ts';
-import { parseGitHubApiResponse } from '../provider/api-response.ts';
+import GitHubWorkEventApiClient, {
+  GitHubWorkEventClientError,
+} from '../provider/work-event-api-client.ts';
 import {
   withProviderDiagnostic,
   type ProviderDiagnostic,
@@ -179,7 +180,10 @@ function hasClosingReference(body: string, repository: string, number: number): 
 /** provider operations shared by runtime-owned delivery wrappers. */
 export default class IssueDeliveryProvider {
   constructor(
-    readonly client: Pick<ConnectedGitHubAccountClient, 'execute' | 'identity'>,
+    readonly client: Pick<
+      ConnectedGitHubAccountClient,
+      'execute' | 'identity' | 'observationScope' | 'credentialFingerprint'
+    >,
     private readonly delay = abortableDelay,
   ) {}
   async inspect(
@@ -575,7 +579,10 @@ export default class IssueDeliveryProvider {
   }
 
   async #reconcileRecipients(
-    github: Pick<ConnectedGitHubAccountClient, 'execute' | 'identity'>,
+    github: Pick<
+      ConnectedGitHubAccountClient,
+      'execute' | 'identity' | 'observationScope' | 'credentialFingerprint'
+    >,
     configured: GitHubPullRequestRecipient[] | undefined,
     input: IssueDeliveryInput,
     repository: string,
@@ -694,62 +701,83 @@ export default class IssueDeliveryProvider {
   }
 
   async #completedReviewers(
-    github: Pick<ConnectedGitHubAccountClient, 'execute' | 'identity'>,
+    github: Pick<
+      ConnectedGitHubAccountClient,
+      'execute' | 'identity' | 'observationScope' | 'credentialFingerprint'
+    >,
     pullEndpoint: string,
     signal?: AbortSignal,
   ): Promise<Set<string>> {
-    const pages = await this.#github(
-      github,
-      ['api', `${pullEndpoint}/reviews`, '--paginate', '--slurp'],
-      signal,
-    );
-    if (!Array.isArray(pages) || !pages.every(Array.isArray)) {
-      throw new Error('GitHub returned invalid pull request review pages.');
-    }
     const reviewers: string[] = [];
-    for (const page of pages) {
-      for (const value of page) {
+    for (let page = 1; ; page++) {
+      const response = await this.#request(
+        github,
+        [
+          'api',
+          '--method',
+          'GET',
+          `${pullEndpoint}/reviews`,
+          '-F',
+          'per_page=100',
+          '-F',
+          `page=${page}`,
+          '--jq',
+          '[.[]|{state,user:{login:.user.login}}]',
+        ],
+        signal,
+      );
+      if (!Array.isArray(response.value))
+        throw new Error('GitHub returned invalid pull request reviews.');
+      for (const value of response.value) {
         const review = record(value, 'pull request review');
         const state = requiredString(review.state, 'pull request review state', 32);
         if (state === 'PENDING') continue;
         const user = record(review.user, 'pull request reviewer');
         reviewers.push(requiredString(user.login, 'pull request reviewer login', 100));
       }
+      if (!response.hasNextPage) break;
     }
     return logins(reviewers, 'completed reviewers');
   }
 
   async #github(
-    client: Pick<ConnectedGitHubAccountClient, 'execute' | 'identity'>,
+    client: Pick<
+      ConnectedGitHubAccountClient,
+      'execute' | 'identity' | 'observationScope' | 'credentialFingerprint'
+    >,
     argv: string[],
     signal?: AbortSignal,
     stdin?: string,
   ): Promise<unknown> {
-    const result = await client.execute(
-      argv.includes('--paginate') ? argv : [argv[0]!, '--include', ...argv.slice(1)],
-      stdin,
-      {
-        ...(signal === undefined ? {} : { signal }),
-        timeoutMs: 60_000,
-      },
-    );
-    if (result.exitCode !== 0 || result.timedOut || result.truncated) {
-      throw new GitHubIssueDeliveryError(
-        'github-request',
-        `GitHub rejected issue delivery reconciliation at ${argv.find((argument) => argument.startsWith('repos/') || argument.startsWith('users/')) ?? 'unknown endpoint'}.`,
-        githubCliDiagnostic(result),
-      );
-    }
+    return (await this.#request(client, argv, signal, stdin)).value;
+  }
+
+  async #request(client: typeof this.client, argv: string[], signal?: AbortSignal, stdin?: string) {
+    let executionFailure: unknown;
     try {
-      return JSON.parse(
-        result.stdout.startsWith('HTTP/')
-          ? parseGitHubApiResponse(result.stdout).body
-          : result.stdout,
-      );
-    } catch {
+      return await new GitHubWorkEventApiClient({
+        identity: client.identity,
+        credentialFingerprint: client.credentialFingerprint,
+        observationScope: client.observationScope ?? client,
+        async execute(...args) {
+          try {
+            return await client.execute(...args);
+          } catch (error) {
+            executionFailure = error;
+            throw error;
+          }
+        },
+      }).request(argv.slice(1), 'issue delivery', stdin, { signal, timeoutMs: 60_000 });
+    } catch (error) {
+      // preserve delivery's transport exceptions and uncertain-write recovery contract.
+      if (executionFailure) throw executionFailure;
       throw new GitHubIssueDeliveryError(
-        'invalid-response',
-        'GitHub returned invalid issue delivery data.',
+        error instanceof GitHubWorkEventClientError &&
+          error.code === 'github-notification-response-invalid'
+          ? 'invalid-response'
+          : 'github-request',
+        'GitHub could not reconcile issue delivery.',
+        error instanceof GitHubWorkEventClientError ? error.providerDiagnostic : undefined,
       );
     }
   }

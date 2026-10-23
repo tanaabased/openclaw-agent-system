@@ -27,7 +27,7 @@ describe('workflow safety and coverage', () => {
     }
   });
 
-  for (const kind of ['os', 'runtime']) {
+  for (const kind of ['codex', 'os', 'openclaw', 'notifications']) {
     it(`should isolate ${kind} example credentials and consume the packed artifact`, async () => {
       const workflow = parse(await readFile(`.github/workflows/pr-examples-${kind}.yml`, 'utf8'));
       assert.deepEqual(workflow.permissions, { contents: 'read' });
@@ -54,4 +54,23 @@ describe('workflow safety and coverage', () => {
       }
     });
   }
+
+  it('should enumerate distinct existing examples in their owning workflows', async () => {
+    const selected = new Set<string>();
+    for (const kind of ['codex', 'os', 'openclaw', 'notifications']) {
+      const workflow = parse(await readFile(`.github/workflows/pr-examples-${kind}.yml`, 'utf8'));
+      const examples = workflow.jobs.examples.strategy.matrix.example as string[];
+      assert.ok(Array.isArray(examples) && examples.length > 0);
+      for (const example of examples) {
+        assert.match(example, /^[a-z][a-z0-9-]+$/u);
+        assert.ok(!selected.has(example), `${example} is selected by more than one workflow`);
+        selected.add(example);
+        const owner = example.startsWith('openclaw-notifications-')
+          ? 'notifications'
+          : example.split('-')[0];
+        assert.equal(owner, kind);
+        await readFile(`examples/${example}/README.md`, 'utf8');
+      }
+    }
+  });
 });

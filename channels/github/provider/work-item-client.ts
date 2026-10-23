@@ -1,4 +1,4 @@
-import resolveGitHubIdentity from './resolve-identity.ts';
+import resolveGitHubIdentity, { resolveGitHubIdentities } from './resolve-identity.ts';
 import {
   githubResponseBoolean,
   githubResponseGitRef,
@@ -47,6 +47,10 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
 
   resolveIdentity(reference: string) {
     return resolveGitHubIdentity(this.#api, reference);
+  }
+
+  resolveIdentities(references: readonly string[]) {
+    return resolveGitHubIdentities(this.#api, references);
   }
 
   get identity(): GitHubIdentity {
@@ -126,9 +130,10 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
   }
 
   async getRepository(owner: string, name: string): Promise<GitHubRepositoryIdentity> {
+    const endpoint = githubRepositoryEndpoint(owner, name);
     const response = await this.#api.request(
       [
-        githubRepositoryEndpoint(owner, name),
+        endpoint,
         '--jq',
         '{databaseId:.id,nodeId:.node_id,name,owner:{login:.owner.login,nodeId:.owner.node_id,type:.owner.type},cloneUrl:.clone_url,defaultBranch:.default_branch,archived,disabled}',
       ],

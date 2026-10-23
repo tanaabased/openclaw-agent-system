@@ -10,7 +10,15 @@ describe('scripts/aimock-server diagnostics', () => {
   it('should expose a strict miss through curl failure output and still stop cleanly', async () => {
     const child = spawn(
       process.execPath,
-      ['--import', 'tsx', 'scripts/aimock-server.ts', '--scenario', 'openclaw-pr', '--port', '0'],
+      [
+        '--import',
+        'tsx',
+        'scripts/aimock-server.ts',
+        '--scenario',
+        'openclaw-notifications-pr-journey',
+        '--port',
+        '0',
+      ],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
     const exited = once(child, 'exit');
@@ -30,7 +38,10 @@ describe('scripts/aimock-server diagnostics', () => {
       assert.match(String(url), /^http:\/\/127\.0\.0\.1:\d+$/u, errors);
       const healthy = await fetch(`${url}/proof/diagnostics`, { signal: timeout });
       assert.equal(healthy.status, 200);
-      assert.deepEqual(await healthy.json(), { scenario: 'openclaw-pr', failed: false });
+      assert.deepEqual(await healthy.json(), {
+        scenario: 'openclaw-notifications-pr-journey',
+        failed: false,
+      });
 
       const missed = await fetch(`${url}/v1/chat/completions`, {
         method: 'POST',

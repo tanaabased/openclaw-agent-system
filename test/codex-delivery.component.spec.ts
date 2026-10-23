@@ -44,7 +44,7 @@ const manifest = {
 };
 const result = (value: unknown) => ({
   exitCode: 0,
-  stdout: JSON.stringify(value),
+  stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(value),
   stderr: '',
   timedOut: false,
   truncated: false,
@@ -423,6 +423,7 @@ describe('agent/codex-delivery', () => {
               if (rejectCreation)
                 return {
                   ...result(null),
+                  stdout: 'HTTP/2 403 Forbidden\n\n{}',
                   exitCode: 1,
                   stderr: 'gh: Resource not accessible by integration (HTTP 403)',
                 };
@@ -525,7 +526,7 @@ describe('agent/codex-delivery', () => {
                 assigned = true;
                 return result([account.login]);
               }
-              if (endpoint === 'repos/owner/repo/pulls/7/reviews') return result([[]]);
+              if (endpoint === 'repos/owner/repo/pulls/7/reviews') return result([]);
               if (endpoint === 'repos/owner/repo/pulls/7/requested_reviewers') {
                 if (argv.includes('POST')) {
                   requested = true;
@@ -1288,7 +1289,12 @@ describe('agent/codex-delivery', () => {
               lagged++;
               return {
                 ...result,
-                stdout: JSON.stringify({ ...JSON.parse(result.stdout), headSha: previous }),
+                stdout:
+                  'HTTP/2 200 OK\n\n' +
+                  JSON.stringify({
+                    ...JSON.parse(result.stdout.split('\n\n').slice(1).join('\n\n')),
+                    headSha: previous,
+                  }),
               };
             }
             return result;

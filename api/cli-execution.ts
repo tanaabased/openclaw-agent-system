@@ -1,5 +1,6 @@
 import type { Static, TSchema } from 'typebox';
 import { resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 
 import type { AgentManifest } from '../manifest/types.ts';
 import resolveToolWorkingDirectory from './resolve-working-directory.ts';
@@ -264,6 +265,9 @@ export default async function executeAgentSystemCliTool<
         options.input,
         resolvedConfiguration,
         {
+          credentialScope: createHash('sha256')
+            .update(JSON.stringify([agentId, workspaceDir, secretValues]))
+            .digest('hex'),
           cwd: childWorkingDirectory,
           async run(argv, stdin) {
             const result = sanitize(await runRequest(argv, stdin));

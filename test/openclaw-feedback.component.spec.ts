@@ -4,7 +4,7 @@ import {
   openclawFeedbackSchema,
   type OpenClawFeedbackEvent,
 } from '../agent/openclaw-feedback-state.ts';
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import openClawFeedback, {
   advanceFeedbackTurn,
@@ -35,11 +35,13 @@ describe('agent/openclaw-feedback', () => {
   let published: { nodeId: string; databaseId: number; body: string } | undefined;
   let messages: Record<string, unknown>[];
   let terminal: boolean;
+  let customSkills: Array<Record<string, unknown>>;
   beforeEach(async () => {
     root = await realpath(await mkdtemp('/tmp/openclaw-feedback-'));
     await writeFile(join(root, 'SKILL.md'), '# reply fixture');
     busy = lost = uncertain = revoked = terminal = false;
     skill = true;
+    customSkills = [];
     sends = writes = saves = 0;
     destination = '';
     published = undefined;
@@ -171,15 +173,18 @@ describe('agent/openclaw-feedback', () => {
         if (method === 'skills.status')
           return {
             skills: skill
-              ? ['agent-system-feedback-reply', 'agent-system-issue-implementation'].map(
-                  (name) => ({
-                    name,
-                    eligible: true,
-                    modelVisible: true,
-                    source: 'openclaw-plugins',
-                    filePath: join(root, 'SKILL.md'),
-                  }),
-                )
+              ? [
+                  ...customSkills,
+                  ...['agent-system-feedback-reply', 'agent-system-issue-implementation'].map(
+                    (name) => ({
+                      name,
+                      eligible: true,
+                      modelVisible: true,
+                      source: 'openclaw-plugins',
+                      filePath: join(root, 'SKILL.md'),
+                    }),
+                  ),
+                ]
               : [],
           };
         if (method === 'chat.send') {
@@ -491,10 +496,10 @@ describe('agent/openclaw-feedback', () => {
                 state: 'open',
                 number: 7,
               };
-            else throw new Error('unexpected request');
+            else throw new Error('unexpected request: ' + JSON.stringify(argv));
             return {
               exitCode: 0,
-              stdout: JSON.stringify(data),
+              stdout: (argv.includes('--include') ? 'HTTP/2 200\n\n' : '') + JSON.stringify(data),
               stderr: '',
               timedOut: false,
               truncated: false,
@@ -762,6 +767,97 @@ describe('agent/openclaw-feedback', () => {
     assert.equal(event.turn?.status, 'consumed');
     assert.equal(openClawCapacity([record], 3).occupied, 1);
   });
+  for (const variant of ['default', 'skill', 'inline', 'file', 'skill-inline', 'skill-file']) {
+    it(`should compose and publish issue-owned feedback with ${variant} customization`, async () => {
+      const guidance = 'Lead with the result.\nKeep the uncertainty visible.';
+      await writeFile(join(root, 'reply-guidance.md'), guidance);
+      await mkdir(join(root, 'reply'));
+      await writeFile(join(root, 'reply', 'SKILL.md'), 'Explain the result to the issue author.');
+      customSkills = [
+        {
+          name: 'custom-reply',
+          filePath: join(root, 'reply', 'SKILL.md'),
+          source: 'openclaw-workspace',
+          eligible: true,
+          modelVisible: true,
+        },
+      ];
+      input.policy.issueAssignment!.assessment = { skill: 'missing-assessment' };
+      input.policy.issueAssignment!.implementation = { skill: 'missing-implementation' };
+      input.policy.issueAssignment!.feedback = {
+        inherit: true,
+        allowed: [],
+        ...(variant.includes('skill') ? { skill: 'custom-reply' } : {}),
+        ...(variant.includes('inline')
+          ? { guidance }
+          : variant.includes('file')
+            ? { guidance: { file: 'reply-guidance.md' } }
+            : {}),
+      };
+      await start();
+      const privateText = 'Full private evidence.\nTransport remains untested.';
+      await action('result', { privateText });
+      const composed = await action('compose');
+      assert.ok('selection' in composed && composed.selection && 'digest' in composed);
+      assert.equal(
+        composed.selection.skill.name,
+        variant.includes('skill') ? 'custom-reply' : 'agent-system-feedback-reply',
+      );
+      assert.equal(
+        composed.selection.guidance?.content,
+        /inline|file/u.test(variant) ? guidance : undefined,
+      );
+      assert.ok('privateResponse' in composed);
+      assert.equal(composed.privateResponse, privateText);
+      assert.deepEqual(event.composition, composed.selection);
+      const publicText = 'Result: caller fixed. Transport remains untested.';
+      await action('candidate', { digest: composed.digest, publicText });
+      const preview = await action('publish');
+      assert.ok('digest' in preview);
+      assert.equal((await action('publish', { digest: preview.digest })).status, 'published');
+      assert.equal(destination, 'item:3');
+      assert.equal(event.result!.privateText, privateText);
+      assert.ok(published!.body.includes(publicText));
+      assert.ok(!published!.body.includes(privateText));
+      await action('publish', { digest: preview.digest });
+      assert.equal(writes, 1);
+    });
+  }
+
+  for (const invalid of ['missing', 'disabled', 'hidden', 'ineligible', 'ambiguous']) {
+    it(`should recover a ${invalid} explicit reply skill without publishing a default`, async () => {
+      input.policy.issueAssignment!.feedback = {
+        inherit: true,
+        allowed: [],
+        skill: 'custom-reply',
+      };
+      const valid = {
+        name: 'custom-reply',
+        filePath: join(root, 'SKILL.md'),
+        source: 'openclaw-workspace',
+        eligible: true,
+        modelVisible: true,
+      };
+      customSkills = [{ ...valid }];
+      await start();
+      await action('result', { privateText: 'Retain the complete answer.' });
+      if (invalid === 'missing') customSkills = [];
+      if (invalid === 'disabled') customSkills[0]!.disabled = true;
+      if (invalid === 'hidden') customSkills[0]!.modelVisible = false;
+      if (invalid === 'ineligible') customSkills[0]!.eligible = false;
+      if (invalid === 'ambiguous') customSkills.push({ ...valid });
+      await assert.rejects(action('compose'), /skill/u);
+      assert.equal(event.composition, undefined);
+      assert.equal(writes, 0);
+      customSkills = [valid];
+      const corrected = await action('compose');
+      assert.ok('selection' in corrected && corrected.selection);
+      assert.equal(corrected.selection.skill.name, 'custom-reply');
+      assert.equal(event.result!.privateText, 'Retain the complete answer.');
+      assert.equal(sends, 1);
+    });
+  }
+
   it('should retain the full private answer and publish one separately composed attributed reply', async () => {
     const context = await start();
     assert.equal(context.status, 'verified');
@@ -795,6 +891,29 @@ describe('agent/openclaw-feedback', () => {
     assert.equal((await action('reconcile')).status, 'uncertain');
     assert.equal(writes, 1);
   });
+  for (const changed of ['issue', 'source'])
+    it(`should refresh ${changed} authorization before publishing without repeating the issue read`, async () => {
+      await start();
+      const digest = await compose();
+      const issue = intakeFixture().item;
+      let checks = 0;
+      input.reauthorize = async () => {
+        if (++checks === 2) {
+          if (changed === 'issue') issue.state = 'closed';
+          else source.body = '@receiver changed request';
+        }
+        return structuredClone(issue);
+      };
+      provider.getItem = async () => {
+        throw new Error('duplicate issue read');
+      };
+      await assert.rejects(
+        action('publish', { digest }),
+        changed === 'issue' ? /feedback-source-owner-changed/ : /feedback-source-changed/,
+      );
+      assert.equal(checks, 2);
+      assert.equal(writes, 0);
+    });
   it('should reject feedback results from another native run', async () => {
     await start();
     input.caller.runId = 'foreign';
@@ -898,21 +1017,25 @@ describe('agent/openclaw-feedback', () => {
     const parent = reviewCommentFixture({ databaseId: 70, nodeId: 'parent', reviewId: 60 });
     Object.assign(provider, { reviews: reviewClientFixture(review, [reply, parent]) });
     provider.reviews!.getReviewComments = async () => [reply];
-    provider.getItem = async () => ({
-      ...intakeFixture().item,
-      itemType: 'pull-request',
-      nodeId: 'PR',
-      number: 4,
-      pullRequest: {
-        baseRef: 'main',
-        baseRepositoryDatabaseId: 10,
-        baseRepositoryNodeId: 'R_repo',
-        draft: false,
-        headRef: 'task',
-        headSha: 'a'.repeat(40),
-        merged: false,
-      },
-    });
+    input.reauthorize = async () => intakeFixture().item;
+    provider.getItem = async (_owner, _name, number) => {
+      assert.equal(number, 4);
+      return {
+        ...intakeFixture().item,
+        itemType: 'pull-request',
+        nodeId: 'PR',
+        number: 4,
+        pullRequest: {
+          baseRef: 'main',
+          baseRepositoryDatabaseId: 10,
+          baseRepositoryNodeId: 'R_repo',
+          draft: false,
+          headRef: 'task',
+          headSha: 'a'.repeat(40),
+          merged: false,
+        },
+      };
+    };
     record.work = {
       assessmentDigest: 'd'.repeat(64),
       delivery: {

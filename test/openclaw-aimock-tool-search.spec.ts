@@ -112,7 +112,7 @@ describe('scripts/aimock-tool-search', () => {
       modelProvider: 'aimock',
       modelId: 'gpt-5.5',
     });
-    const scenario = withToolSearch(resolveScenario('openclaw-pr'));
+    const scenario = withToolSearch(resolveScenario('openclaw-notifications-pr-journey'));
     const id = 'a'.repeat(64);
     const digest = 'b'.repeat(64);
     const input = request(
@@ -157,7 +157,7 @@ describe('scripts/aimock-tool-search', () => {
           runtime: 'openclaw',
           id,
           project: { path: '/tmp/owned' },
-          assessment: {},
+          assessment: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
           resultContract: 'assessment-result/v1',
         })
       ).id,
@@ -168,6 +168,7 @@ describe('scripts/aimock-tool-search', () => {
       stdout: '/tmp/owned\n',
       truncated: false,
     });
+    await step('assessment-skill', 'read', 'Default assessment.');
     const saved = await step('result', 'agent_system_dispatch', {
       status: 'recorded',
       presentation: '> Retained plan',
@@ -178,7 +179,7 @@ describe('scripts/aimock-tool-search', () => {
     await step('summary-compose', 'agent_system_dispatch', {
       status: 'composition-ready',
       digest,
-      selection: { skill: { path: '/tmp/reply/SKILL.md' } },
+      selection: { defaultSkill: true, skill: { path: '/tmp/reply/SKILL.md' } },
     });
     await step('summary-skill', 'read', { content: 'Compose a concise public summary.' });
     assert.equal(
@@ -220,8 +221,10 @@ describe('scripts/aimock-tool-search', () => {
       runtime: 'openclaw',
       publicationAuthorized: true,
       project: { path: '/tmp/owned' },
+      implementation: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
     });
-    for (const stage of ['apply', 'add', 'commit']) {
+    await step('implementation-skill', 'read', 'Default implementation.');
+    for (const stage of ['apply', 'check', 'add', 'commit']) {
       assert.equal(
         (await step(stage, 'agent_system_git', { exitCode: 0, truncated: false })).cwd,
         '/tmp/owned',
@@ -247,7 +250,7 @@ describe('scripts/aimock-tool-search', () => {
     await step('delivery-compose', 'agent_system_dispatch', {
       status: 'composition-ready',
       digest,
-      selection: { skill: { path: '/skills/reply/SKILL.md' } },
+      selection: { defaultSkill: true, skill: { path: '/skills/reply/SKILL.md' } },
     });
     await step('delivery-skill', 'read', { content: 'Reply skill instructions.' });
     await step('delivery-candidate', 'agent_system_dispatch', {
@@ -284,7 +287,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should identify a rejected notification tool envelope without exposing call arguments', async () => {
-    const scenario = withToolSearch(resolveScenario('openclaw-pr'));
+    const scenario = withToolSearch(resolveScenario('openclaw-notifications-pr-journey'));
     const input = request(
       `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${'a'.repeat(64)}`,
     );
@@ -323,7 +326,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should continue the worktree fixture with retained first-turn tool history', async () => {
-    const scenario = withToolSearch(resolveScenario('openclaw-worktree'));
+    const scenario = withToolSearch(resolveScenario('openclaw-worktree-session'));
     const input = request('Execute the worktree first probe.');
     input.messages.unshift({ role: 'system', content: 'canonical-worktree-tanaabot' });
     input.tools!.push({ type: 'function', function: { name: 'exec' } });
@@ -456,7 +459,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should admit only an authored denial result without accepting another tool failure', async () => {
-    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    const scenario = withToolSearch(resolveScenario('openclaw-lifecycle-approvals'));
     const input = request('Call agent_system_install exactly once');
     append(
       input,
@@ -492,7 +495,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should project an authored pre-execution denial without requiring an execution envelope', async () => {
-    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    const scenario = withToolSearch(resolveScenario('openclaw-lifecycle-approvals'));
     for (const prefix of ['', 'Error: ']) {
       const input = request('Call agent_system_install exactly once');
       append(
@@ -552,7 +555,7 @@ describe('scripts/aimock-tool-search', () => {
       error:
         'Denied by user. The tool call did not run.\nThis denial is final: the approval request is closed. Do not mention /approve or any other approval command to the user.\nDo not run the tool call again or ask the user to approve it again.\nIf the user still wants the action, explain that a new tool call will trigger a fresh approval request.',
     };
-    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    const scenario = withToolSearch(resolveScenario('openclaw-lifecycle-approvals'));
     const input = request('Call agent_system_install exactly once');
     append(
       input,

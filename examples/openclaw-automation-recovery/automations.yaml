@@ -1,0 +1,13 @@
+- id: identity
+  runtimes: [openclaw]
+  schedule: every 1 hour
+  # the native deadline includes openclaw startup as well as the managed command.
+  timeout-seconds: 120
+  run: [sh, ./probe.sh]
+- id: prompt
+  runtimes: [openclaw]
+  schedule: every 1 hour
+  timeout-seconds: 120
+  prompt:
+    file: ./prompt.md
+  thread: { id: automation-status, name: Automation status }

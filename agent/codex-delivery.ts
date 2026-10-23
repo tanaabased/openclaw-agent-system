@@ -612,6 +612,8 @@ export default async function runCodexDelivery(
           const provider = new IssueDeliveryProvider(
             {
               identity: connected.account.identity,
+              observationScope: connected.account.observationScope,
+              credentialFingerprint: connected.account.credentialFingerprint,
               execute: async (...args) => {
                 const argv = args[0];
                 if (

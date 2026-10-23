@@ -1,11 +1,14 @@
 import openClawWorkAction from '../agent/openclaw-work.ts';
 import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
 import assert from 'node:assert/strict';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import announcementFixture from './delivery-announcement-fixture.ts';
+import { intakeFixture } from './github-intake-fixture.ts';
+import openClawSkill from '../agent/openclaw-skill.ts';
+import selectFeedbackStage from '../agent/feedback-stage.ts';
 
 import { automationHash } from '../agent/automation-hash.ts';
 import openClawDelivery from '../agent/openclaw-delivery.ts';
@@ -14,7 +17,7 @@ import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 
 const response = (value: unknown) => ({
   exitCode: 0,
-  stdout: JSON.stringify(value),
+  stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(value),
   stderr: '',
   timedOut: false,
   truncated: false,
@@ -157,6 +160,7 @@ describe('agent/openclaw-delivery', () => {
                 if (rejectCreation)
                   return {
                     ...response(null),
+                    stdout: 'HTTP/2 403 Forbidden\n\n{}',
                     exitCode: 1,
                     stderr: 'gh: Resource not accessible by integration (HTTP 403)',
                   };
@@ -229,6 +233,84 @@ describe('agent/openclaw-delivery', () => {
     assert.ok('digest' in prepared);
     return request('publish', { digest: prepared.digest, ...content });
   }
+  for (const variant of ['default', 'skill', 'inline', 'file', 'skill-inline', 'skill-file']) {
+    it(`should publish the pr announcement with ${variant} reply customization`, async () => {
+      const guidance = 'Explain the delivered change.\nPreserve the validation limit.';
+      await mkdir(join(root, 'reply'));
+      await writeFile(join(root, 'reply', 'SKILL.md'), 'Compose a concise public handoff.');
+      await writeFile(join(root, 'SKILL.md'), 'Default reply.');
+      await writeFile(join(root, 'guidance.md'), guidance);
+      const policy = intakeFixture().policy;
+      policy.issueAssignment!.assessment = { skill: 'unavailable-assessment' };
+      policy.issueAssignment!.implementation = { skill: 'unavailable-implementation' };
+      policy.issueAssignment!.feedback = {
+        inherit: true,
+        allowed: [],
+        ...(variant.includes('skill') ? { skill: 'ordinary-reply' } : {}),
+        ...(variant.includes('inline')
+          ? { guidance }
+          : variant.includes('file')
+            ? { guidance: { file: 'guidance.md' } }
+            : {}),
+      };
+      input.selectAnnouncement = async (retained) =>
+        (
+          await selectFeedbackStage({
+            policy,
+            workflow: 'issue-assignment',
+            workspace: root,
+            observedAt: retained?.composition.observedAt ?? 1,
+            resolveSkill: (id) =>
+              openClawSkill(
+                async () => ({
+                  skills: [
+                    {
+                      name: 'ordinary-reply',
+                      source: 'openclaw-workspace',
+                      filePath: join(root, 'reply', 'SKILL.md'),
+                      eligible: true,
+                      modelVisible: true,
+                    },
+                    {
+                      name: 'agent-system-feedback-reply',
+                      source: 'openclaw-plugins',
+                      filePath: join(root, 'SKILL.md'),
+                      eligible: true,
+                      modelVisible: true,
+                    },
+                  ],
+                }),
+                { key: 'issue-chat', agentId: 'agent' },
+                id,
+              ),
+          })
+        ).selection;
+      await publish();
+      const composed = await request('compose');
+      assert.ok('selection' in composed && composed.selection && 'digest' in composed);
+      assert.equal(
+        composed.selection.skill.name,
+        variant.includes('skill') ? 'ordinary-reply' : 'agent-system-feedback-reply',
+      );
+      assert.equal(
+        composed.selection.guidance?.content,
+        /inline|file/u.test(variant) ? guidance : undefined,
+      );
+      const candidate = await request('candidate', {
+        digest: composed.digest,
+        publicText: 'Cleanup documented. Live transport remains untested.',
+      });
+      assert.ok('digest' in candidate);
+      assert.equal((await request('announce', { digest: candidate.digest })).status, 'announced');
+      assert.deepEqual(record.work!.delivery!.announcement!.composition, composed.selection);
+      assert.ok(announcement.comments[0]!.body.includes('Live transport remains untested.'));
+      assert.equal(record.result!.fullAssessment, 'Complete plan');
+      await request('announce', { digest: candidate.digest });
+      assert.equal(announcement.posts, 1);
+      assert.equal(creates, 1);
+    });
+  }
+
   it('should finish a new implementation through the same pr after earlier delivery completed', async () => {
     await publish();
     const composed = await request('compose');
@@ -644,7 +726,12 @@ describe('agent/openclaw-delivery', () => {
               lagged++;
               return {
                 ...result,
-                stdout: JSON.stringify({ ...JSON.parse(result.stdout), headSha: 'a'.repeat(40) }),
+                stdout:
+                  'HTTP/2 200 OK\n\n' +
+                  JSON.stringify({
+                    ...JSON.parse(result.stdout.split('\n\n').slice(1).join('\n\n')),
+                    headSha: 'a'.repeat(40),
+                  }),
               };
             }
             return result;

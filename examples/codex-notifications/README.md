@@ -1,166 +1,43 @@
 # Codex Notifications Example
 
-Verify packaged notification activation boundaries, intake responses, and work preparation in isolated Codex state. Installation and workspace lifecycle checks live in the [Codex install example](../codex-install/README.md); generic automation planning and conversation persistence live in the [Codex automations example](../codex-automations/README.md). Runtime tests run this scenario on Ubuntu without a live model or hosted secrets.
+Load notification declarations through the packaged Codex runtime, plan an intake conversation and schedule bound to that installation, and verify that missing activation or native ownership cannot authorize dispatch, continuation, feedback, or delivery.
 
-These headless checks establish activation and authority boundaries. Successful assignment admission and plan creation need a separate installed end-to-end example; these checks do not establish that flow or desktop rendering.
+## What Belongs Here
 
-For native intake verification, reconcile the installed schedule before its next occurrence. Confirm that a host-access retry retains the exact command through subsequent busy responses, routing identifiers reach preparation unchanged, and native chat creation happens separately and only once. An actual native approval denial must stop the operation and appear in the intake report; a closed historical fixture must not define the scope of unrelated assignments under the active recurring authorization. With disposable assigned issues A and B, decline A's exact `dispatch:prepare` escalation before it executes. Verify B starts in the current permitted occurrence, or in the next permitted occurrence if the host ends the turn. Repeat after restarting and replacing the coordinator, then reassign A: its hold and original source receipts must survive, with no repeated prepare approval or duplicate chat/send. Verify one report contains A's operation, safely redacted actual reason (or explicitly unavailable reason), recovery identifiers, and B's started link. From an operator chat, preview and apply `retry-denied` against A's exact call and current digest; only then may A receive a fresh preparation attempt. Repeat with denied `create_thread` and one available slot: verified non-execution releases capacity, but an uncertain creation retains it. A shared refusal, unrelated denied effect, incomplete history, or altered command must not authorize continued intake. The generated transport and journal have controlled unit/component coverage, but desktop approval/readback behavior still requires genuine native evidence; this headless scenario cannot supply it.
+- Active and paused declaration handling without silently activating intake or writing scheduler files.
+- Installed runtime/caller/receipt boundaries before managed workflow effects, including rejection of unowned retained assessments.
+- A native schedule request using the installed runtime and bound plugin data, without global scanner rules.
 
-For retirement, verify that the native archive arguments exactly match the retained
-`retirement-prepared` request. A lookup or unavailable-host error must retain its
-actual diagnostic rather than being reported as an approval denial. The next
-scheduled run reconciles the attempt before preparing another archive; an uncertain
-write or explicit denial must not trigger a blind retry.
+## What Does Not Belong Here
 
-For routing verification, include an issue with verified medium Complexity and a
-coordinator assessment of high. Preparation must select the configured medium
-profile, retain the verified metadata source and reason, and create only one chat.
-Without verified Complexity, the bounded content assessment must still select the
-profile. Repeat this native preparation check in OpenClaw intake; neither path
-should require editing credentials or reassigning the issue to resolve a content
-assessment disagreement.
+- Package binding and setup: [Codex install](../codex-install/README.md). Generic automation planning and durable conversations: [Codex automations](../codex-automations/README.md).
+- Reset/history recovery, schema compatibility permutations, detailed heartbeat presentation, unsupported CLI spelling, and cadence-change variants.
+- Successful assignment-to-plan or PR journeys, desktop approval behavior, final-text preservation, and rendered cards. The executable headless checks do not establish those outcomes.
 
-For pause parity, use that disposable native setup to compare UI Pause/Resume with
-`paused: true`/`paused: false` followed by Install. Record the same automation and
-intake chat IDs, baseline, pending event IDs, and delivery receipts before and
-after each path. Let an accepted occurrence and issue turn finish while paused;
-confirm the next occurrence does not start. Create one approved assignment and
-issue/PR comment during the pause, then verify discovery after resume with one
-chat and one reply per source. Retain the native occurrence receipts and actual UI
-observation separately from component results; headless planning is not UI proof.
+## Notes
 
-For report presentation verification, use an explicitly authorized disposable native
-desktop setup with updated installed instructions, or operator-provided captures.
-Observe one healthy status report and one warning report without manufacturing a
-production intake failure. Include historical retired records without stored cleanup
-evidence: false/omitted debug must hide those details, while true shows a separate
-🔬 Debug card, never a warning or a cleanup-success claim. Toggle the live manifest
-and repeat the same report to verify visibility changes without replaying starts
-or changing its notification decision. Repeat an unchanged scheduled check with
-DONT_NOTIFY. Also capture assessment skill/guidance and successful delivery recovery
-under the same Debug heading with their stage context; real blockers remain visible
-with debug off. For each, retain separately:
+- These direct Ubuntu checks use isolated Codex state without hosted secrets or model generation. Both active and paused fixtures declare V3; a paused declaration retains configuration while future occurrences remain disabled.
+- Pending relocation: explicit-target reset refusal, host/update/quiet heartbeat cases, restored pre-reset history, removed configuration fields, and cadence-change checks remain below.
+- Native acceptance below is an inventory of separate installed/manual checks, not coverage executed by this README. Keep results, app/plugin revision, time, redacted source IDs, and actual native receipts in issue or PR evidence.
 
-1. The runtime's complete returned `response`.
-2. The actual final assistant text from native history or export, compared exactly
-   with that response.
-3. A screenshot or direct observation of the displayed card: heading, emphasis,
-   link or recovery text where present, one card only, and notification behavior.
+### Native Acceptance Inventory
 
-Record app/version, plugin revision, time, notification decision, and redacted source
-identifiers with each capture. Preserve `DONT_NOTIFY`; do not flip it to make a card
-visible. If generated and final text differ, retain the exact diff. If they match
-but display is literal, retain a minimal unchanged native-heartbeat reproduction
-with expected/actual display and captures for the identified upstream host. Keep
-results and the upstream destination in issue or PR context. These headless checks,
-a model echo, and an HTML preview cannot prove native final-text preservation or
-desktop rendering; missing native captures leave that acceptance unverified.
-
-For comment-card display verification on both native Codex and OpenClaw, capture
-incoming comments, outgoing replies, inline reviews, public plan summaries, and PR
-announcements. Compare the exact returned/final text with the published prose;
-observe body first, no added heading/top padding, visible space before the italic
-footer, and no literal HTML. Open each label and author link to verify the exact
-comment and profile. Verify an unlinked draft before publication, a verified footer
-instead of a success card afterward, and visible publication obstacles with debug
-off. Preserve private plans, review code context, individual finding links, private
-PR cards and native attachments. Use the capture metadata and evidence limits above;
-this headless scenario does not prove either host's displayed spacing.
-
-For coordinator replacement verification, retain an active issue, archive the intake
-chat through native controls, run Doctor, then Install. Doctor must report
-`automation-thread-replacement-required` without creating a chat. Install must bind
-a different coordinator while preserving the baseline, issue records, assessment,
-and completed delivery receipts. Continue that same issue: its original creation
-source remains intact and new sends record the replacement coordinator.
-
-In that disposable setup, invoke `$agent-system-notifications-reset` from an operator
-chat. Decline one preview and verify no changes. Confirm a new preview and verify
-that the schedule pauses, local tracking clears, the baseline advances, the old
-intake chat is archived, and a different chat receives the restored schedule.
-Before restoration, verify the replacement appears under `AGENT SYSTEM` with its
-bound workspace unchanged. Exercise both an existing section and an absent section;
-refresh native inventory after each sidebar action. An unverified move must keep
-reset incomplete and intake paused, without repeating the native action.
-If native archival removes the old heartbeat, verify reset creates one paused
-replacement with the retained cadence, prompt, and notification preference before
-restoring its prior status. Interrupt after native creation but before readback;
-resuming must adopt that exact schedule, not create another.
-Repeat with purge on disposable managed work: verify issue chat archival and native
-checkout removal while the GitHub issue, assignment, comments, and open PR remain
-unchanged. Interrupt after archival and verify the same reset resumes without
-creating two replacements. These are native desktop checks; headless tests do not
-establish app archival, approval, or worktree-removal behavior.
-Include a prepared creation with no saved chat or checkout. Reset must inspect
-active and archived native chats before treating that request as absent; a found
-unrecorded chat or incomplete search must leave the reset paused with its recovery
-inventory intact.
-Also retain a retired record whose chat and checkout were already removed. Reset
-must reconcile it only after complete active and archived native inventories omit
-the chat and the checkout is absent. A still-listed chat, remaining checkout, or
-incomplete inventory must preserve the recovery barrier.
-
-Native same-turn verification also requires the desktop: run one Work issue and one
-Auto issue whose recorded decision selects Work. Confirm implementation context
-binds to the assessment turn and implementation starts without a coordinator send.
-End a turn before implementation completes and confirm the next intake resumes the
-same issue with its saved assessment and checkout. A clarification result must wait
-for an answer rather than being retried on each scan.
-After delivery, confirm the PR, announcement, attachment, and card-generation receipts
-make status complete and the next scan idle without a separate completion transition.
-Interrupt before the announcement or card and confirm recovery finishes those steps
-without repeating implementation or creating another PR.
-
-For message parity, compare a question, plan revision, clarification answer,
-implementation request, and repair sent directly and through approved issue/linked-PR
-comments in the same task state. Compare explicit implementation in Plan and Auto
-without an extra decision object, including an older Auto Plan decision. Verify
-that both receive the retained plans and
-partial work before interpreting the message. Questions in Plan must not start
-implementation; an authorized repair must retain the conversation, checkout, and PR.
-Check the full private answer in the native chat and the public reply at its exact
-GitHub source. Controlled component pairs cover state and context; headless checks
-and OpenClaw-hosted Codex do not establish standalone desktop display or interpretation.
-
-For removal-authority verification in the desktop, remove an admitted assignment
-through an actor outside the live `issue-assignment.allowed` list. Confirm inspection
-reports missing assignment and unresolved authority, preserves the exact chat,
-checkout and implementation stage, and permits only already authorized work. Verify
-reassignment clears the warning without creating another owner. An approved removal
-must instead queue normal retirement; removing that actor from the live list before
-cleanup must prevent stale removal authority from reclaiming resources. Controlled
-source tests cover actor/evidence permutations; these headless checks do not establish
-the desktop journey.
-
-For saved-plan readback verification in the native issue chat, request the full
-assessment, evidence, and investigation. Confirm the bound `present` request with
-`includeDetails: true` shows those notes and the complete plan without changing the
-saved result or its digest. For a result with `reviewSummary`, the default reply must
-show the user journey and documentation/test impact without the engineering source.
-Implementation context must still receive the complete saved assessment and plan; a
-different chat must not read them.
-
-Native retirement verification also requires the desktop: let normal intake create an assessment with its helper and Guardian review chats, close the idle issue, and observe automatic archival and worktree reclamation after the [shared installation grace period](../../CONFIG.md#shared-cleanup). Include a worktree with more than twelve helpers and an inactive, verified Guardian descendant with empty native turn history. Neither should prevent retirement; running, unrelated, pinned, and automation-owned chats must still protect the checkout. A remaining retirement blocker should identify the issue and diagnostic once, suppress unchanged repeats, and report recovery. Retain the assessment and routing receipt, and do not manually remove resources to manufacture success. Invoke `$agent-system-task-retirement` on a second open assigned task: inspect and apply its exact preview, verify grace is skipped, then redeem only the prepared native archive request. A request from its own active turn must stay pending. Repeat the same entry after archival and desktop reclamation; verify one archive effect and retained assessment/history with no duplicate admission of the unchanged assignment. These native manual outcomes require installed desktop evidence, not the headless activation check below.
-
-For direct reply verification in a fresh native Codex task, invoke
-`agent-system-feedback-reply` for a selected disposable comment or response URL
-without activating intake. Verify one native skill selection/read, the invoking
-agent's default or configured guidance, and a retained draft with no GitHub write.
-Explicitly request publication in a later turn; verify the exact issue/thread,
-author and permalink, then reconcile without another post. In the managed issue
-chat, repeat for a retained source and verify the existing owner, selected inputs,
-results and receipts are reused. Invalid managed context must not become manual
-authority. The packaged checks below establish command/binding boundaries, not
-this desktop skill-invocation journey.
-
-Both active and paused fixtures declare V3. The paused fixture retains its
-workflow configuration while Install leaves future schedule occurrences disabled.
-
-For native purge verification, reset a disposable managed issue with purge selected.
-After native chat archival, confirm purge waits for checkout removal and completes
-without manual cleanup when removal finishes within 30 seconds. If removal stays
-pending, confirm purge reports incomplete and retains its recovery record; repeating
-the same reset after native removal must finish without repeating chat archival.
+- **Admission and denial recovery:** reconcile the installed schedule, preserve exact commands through host-access/busy retries, and verify one native creation independently. Deny one disposable issue's exact preparation/create request while another eligible issue proceeds. Report the denied operation, safely redacted actual reason or its unavailability, recovery IDs, and the other issue's started link. Preserve the denied issue's hold/source across restart, coordinator replacement, and reassignment; only a digest-bound operator `retry-denied` permits a fresh attempt. Verified non-creation releases capacity; uncertain creation retains it. Shared refusals, unrelated denials, altered commands, or incomplete history cannot authorize continuation.
+- **Routing:** verified medium Complexity must win over a high coordinator content assessment, retaining source/reason and one chat. Without verified Complexity, bounded content assessment selects the profile. Verify the same contract in OpenClaw without credential edits or reassignment.
+- **Pause/resume:** compare UI controls with manifest `paused` plus Install. Preserve automation/chat IDs, baseline, pending events, and receipts; accepted turns finish while future occurrences stop. After resume, discover assignments and issue/PR comments once without replay.
+- **Reports and debug:** capture healthy, warning, and unchanged `DONT_NOTIFY` reports. Debug toggles expose retained cleanup/assessment/delivery context separately without changing work, notification decisions, or blocker visibility. Historical records without cleanup evidence cannot claim cleanup success.
+- **Text and rendering:** retain the complete runtime response, exact final assistant text/diff, and actual displayed card separately. Capture app/version, revision, time, decision, and redacted IDs. A model echo or HTML preview cannot prove desktop rendering; matching text displayed literally needs a minimal upstream reproduction.
+- **Comment cards:** on standalone Codex and OpenClaw, inspect incoming/outgoing comments, inline reviews, plan summaries, and PR announcements against [GitHub presentation](../../channels/github/PRESENTATION.md). Verify body-first display without added headings or literal HTML, space before the italic footer, exact author/source links, unlinked drafts, verified publication footers, visible blockers, and retained private plans, findings, PR cards, and attachments.
+- **Coordinator replacement:** archive the intake chat natively; Doctor must report replacement required without creating a chat. Install binds a new coordinator while retaining baseline, issue/assessment/delivery state, and original creation provenance; new sends identify the replacement.
+- **Reset and sidebar:** decline a preview without effects, then confirm a fresh preview. Verify pause, new baseline/tracking, native archival, one replacement coordinator under `AGENT SYSTEM`, unchanged workspace, and restored schedule/preferences. Unverified sidebar movement retains the pause. Lost readback after schedule creation must adopt the same replacement rather than create another.
+- **Purge and uncertain resources:** purge disposable managed work through native chat/worktree removal while leaving GitHub state unchanged. Resume interrupted reset without repeated archival or replacements. Prepared creation and already-removed resources require complete active/archived inventory and verified checkout absence; found or uncertain resources retain recovery. Removal observed within 30 seconds completes purge without manual cleanup; pending removal stays incomplete, and a later reset resumes without another archival.
+- **Same-turn progression:** one Work issue and one Auto-to-Work issue must implement from the assessment turn without an extra coordinator send. Interrupt and resume with the same assessment/checkout; clarification waits for an answer. PR, announcement, attachment, and card receipts make completion; unfinished delivery recovers without another implementation or PR.
+- **Message parity:** compare direct and approved issue/PR questions, revisions, clarification answers, implementation requests, and repairs at equivalent task stages. Preserve full plans/partial work, owner and PR; Plan questions never implement, and explicit Plan/Auto implementation needs no extra decision object. Headless/component pairs do not prove desktop interpretation or display.
+- **Removal authority:** an assignment removed by an actor outside the live allowed list preserves chat, checkout, and stage while reporting unresolved authority. Reassignment clears the warning without a new owner. Approved removal queues retirement; later actor-policy revocation must prevent stale cleanup authority.
+- **Saved-plan readback:** `present` with `includeDetails: true` exposes the complete assessment, evidence, investigation, and plan only in its bound chat without changing saved results/digests. Default `reviewSummary` presentation remains concise; implementation still receives the full retained material.
+- **Retirement:** observe automatic archival/reclamation after [shared installation grace](../../CONFIG.md#shared-cleanup), preserving assessment/routing evidence. Include more than twelve helpers and an inactive verified Guardian with empty native history; running, unrelated, pinned, or automation-owned chats still protect the checkout. Blockers report once and recover without manual resource removal to manufacture success.
+- **Explicit retirement:** preview/apply retirement of a second open assigned task, skip grace, and redeem only the prepared native archive request. Own-active-turn requests stay pending. Reconciliation after native cleanup must retain history with one archive and no duplicate admission. Lookup/host errors keep their actual diagnostic; uncertain writes or denials never trigger blind retries.
+- **Direct reply:** a fresh task selects the configured reply skill/guidance for a disposable source and retains an unpublished draft without intake activation. Later explicit publication verifies the exact destination, author, and permalink. Managed sources reuse their owner, inputs, results, and receipts; invalid managed context cannot become manual authority.
 
 ## Setup
 
@@ -336,13 +213,6 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(printf '%s\n' '{"action":"retry-denied","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","approvedCallId":"fixture-denied-call"}' | CODEX_THREAD_ID=fixture-operator node "$runtime" dispatch --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required" and .operation == "dispatch:retry-denied"'
 test ! -d "$CODEX_HOME/automations"
-
-# should return an actionable diagnostic for an unsupported stdin flag
-root="$TMPDIR/agent-system-codex-notifications"
-plugin_root=$(jq -r .cachePath "$root/cache.json")
-runtime="$plugin_root/dist/codex/codex-runtime.js"
-if output=$(node "$runtime" dispatch --plugin-data "$root/notification-data" --input - 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and (.message | contains("--plugin-data")) and (.message | contains("stdin")) and (.message | contains("--input"))'
 
 # should reject missing or unowned retained assessments
 root="$TMPDIR/agent-system-codex-notifications"

@@ -89,7 +89,7 @@ export default async function scanAssignments(
       budget.check();
       const client = await input.connect(AbortSignal.any([signal, budget.signal]));
       const identities = new GitHubIdentityCache(input.store.location);
-      await identities.resolve(input.policy, client, 'assignment');
+      await identities.resolve(input.policy, client, 'assignment', true);
       const account: GitHubIdentity = client.identity;
       if (previous && !identityMatches(previous.account, account))
         throw new IntakeError('intake-account-changed');

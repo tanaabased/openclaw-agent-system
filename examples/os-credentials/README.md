@@ -1,10 +1,24 @@
 # OS Credentials Example
 
-Verify installed Agent System storage on macOS and Linux: private managed directories, agent-scoped file credentials, native SSH private-key access, trusted commit signing, and refusal to follow unsafe paths. Commands run directly without starting a Gateway or model and without contacting external services.
+Use private managed storage and a local signing key on macOS and Linux, verify a trusted signed commit, and refuse unsafe permissions or symlink escapes without exposing credentials or damaging peer/outside state.
 
-The file-store fixtures contain synthetic tokens and exercise the public credential removal command. Credential creation and provider validation remain separate: the OP set command requires a real declared 1Password resource. Native Keychain and Secret Service enrollment are covered by `os-install`. The generated SSH key is local and is never registered with a remote service. A private dotenv fixture supplies that key to the declared signing binding; native Git independently verifies the resulting commit against its public key.
+## What Belongs Here
 
-Copy the workspaces under runner-owned temporary paths containing spaces to exercise native path handling, permissions, and symlink containment against separate outside targets. Inspect modes through Node instead of platform-specific `stat` flags.
+- Private owned directories, agent-scoped file credential removal, and preservation of another agent's credential.
+- Native key access and independently verified SSH commit signing under the installed managed identity.
+- Refusals for unsafe modes and redirected paths, preserving the original file, peer credential, and outside target rather than repairing or following them.
+
+## What Does Not Belong Here
+
+- Keychain/Secret Service device enrollment: [dispatch enrollment](../os-dispatch-enrollment/README.md). Real provider resolution/cache: [credentials](../openclaw-credentials/README.md).
+- Remote SSH-key registration, hosted GitHub content, Gateway sessions, or model behavior.
+
+## Notes
+
+- Synthetic file-store tokens exercise public credential removal. Creation/provider validation remain separate because `credentials set op` requires a real declared 1Password resource.
+- The generated SSH key is local and never registered remotely. A private dotenv fixture supplies it to the signing binding; native Git verifies the resulting commit against its public key.
+- Workspaces run under temporary paths containing spaces with separate outside targets. Node mode checks avoid platform-specific `stat` flags.
+- Negative permission/path cases are essential native safety coverage, not optional detours. All checks run directly without a Gateway, model, or external service.
 
 ## Setup
 

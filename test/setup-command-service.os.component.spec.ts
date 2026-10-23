@@ -150,7 +150,9 @@ describe('agent/setup-command-service', function () {
             request.executable === 'git'
               ? 'agent-private-key-fixture\n'
               : request.argv[1] === 'user'
-                ? 'emori\n'
+                ? request.argv.includes('--jq')
+                  ? 'emori\n'
+                  : JSON.stringify({ login: 'emori', node_id: 'U_emori' })
                 : 'agent-private-token\n',
           stderr: '',
           timedOut: false,
@@ -296,7 +298,7 @@ describe('agent/setup-command-service', function () {
       assert.equal((await run(apply)).exitCode, 0);
     }
     assert.deepEqual(environmentCalls, ['emori', 'emori', 'emori']);
-    assert.equal(requests.length, 6);
+    assert.equal(requests.filter(({ argv }) => argv.includes('--jq')).length, 3);
     for (const request of requests) {
       assert.equal(request.environment.GH_TOKEN, 'agent-private-token');
       assert.equal(request.environment.GH_CONFIG_DIR, join(root, 'emori', 'gh-config'));

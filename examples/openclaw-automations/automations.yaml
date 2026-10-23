@@ -3,8 +3,11 @@
   schedule: every 1 hour
   # the native deadline includes openclaw startup as well as the managed command.
   timeout-seconds: 120
-  run: [sh, ./probe.sh]
+  run:
+    command: sh
+    args: [./probe.sh]
 - id: prompt
+  enabled: true
   runtimes: [openclaw]
   schedule: every 1 hour
   timeout-seconds: 120

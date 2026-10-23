@@ -226,12 +226,13 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 0);
   });
   it('should share default and custom inline or file guidance across both workflow kinds', async () => {
-    await writeFile(join(root, 'guidance.md'), 'Preserve caveats.');
+    await writeFile(join(root, 'guidance.md'), 'Preserve caveats.\nExplain the outcome.');
     for (const workflow of ['issueAssignment', 'reviewRequest'] as const) {
       for (const configuration of [
         {},
         { skill: 'custom:reply' },
-        { guidance: 'Inline guidance.' },
+        { guidance: 'Inline guidance.\nPreserve uncertainty.' },
+        { skill: 'custom:reply', guidance: 'Inline guidance.\nPreserve uncertainty.' },
         { guidance: { file: 'guidance.md' } },
         { skill: 'custom:reply', guidance: { file: 'guidance.md' } },
       ]) {
@@ -276,12 +277,12 @@ describe('agent/feedback-reply', () => {
           typeof configuration.guidance === 'string'
             ? configuration.guidance
             : configuration.guidance
-              ? 'Preserve caveats.'
+              ? 'Preserve caveats.\nExplain the outcome.'
               : undefined,
         );
       }
     }
-    assert.equal(selections, 10);
+    assert.equal(selections, 12);
   });
   it('should reuse managed owners without resolving another skill and never bypass invalid or foreign owners', async () => {
     owners = [

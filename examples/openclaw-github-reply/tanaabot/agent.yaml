@@ -1,0 +1,31 @@
+schema-version: 1
+
+agent:
+  id: github-reply-tanaabot
+  name: Notification Tanaabot
+  email: tanaabot@tanaab.dev
+
+models:
+  default:
+    model: aimock/gpt-5.5
+    effort: medium
+
+environment:
+  set:
+    GH_TOKEN_TANAABOT: ${GH_TOKEN_TANAABOT}
+  required: [GH_TOKEN_TANAABOT]
+
+github:
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+  schema-version: 3
+  runtimes: [openclaw]
+  interval-minutes: 1440
+  allowed-repository-owners: ['@tanaabased']
+  issue-assignment:
+    mode: plan
+    paused: true
+    allowed: ['@emoriwan']
+  review-request:
+    paused: true
+    allowed: ['@emoriwan']

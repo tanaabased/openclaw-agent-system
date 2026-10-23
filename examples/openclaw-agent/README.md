@@ -1,15 +1,25 @@
 # OpenClaw Agent Example
 
-This scenario runs the prepared Agent System package in the default Gateway with an explicitly installed agent and a strict AIMock fixture. It verifies agent onboarding, passive Gateway manifest loading, read-only model routing, and value-free lifecycle logging without depending on live model behavior.
+Install an agent in the real Gateway, load its manifest passively during native turns, and resolve declared routing without activating notification work or exposing manifest values in logs.
 
-The readiness turn uses a GitHub-shaped session key after the installed agent's
-manifest declares notification V3. It must reach the mock model using passive
-manifest discovery. Both workflows declare paused schedules, and their intake has
-not been installed; this tests passive loading without activating notification work.
-The routing turn also requests issue-session dispatch before intake activation and must be rejected before credential access or creation. This scenario does not exercise successful issue-session creation;
-passing it does not establish dispatch recovery or single-execution guarantees.
+## What Belongs Here
 
-Runtime tests run this scenario on Ubuntu without a live model or hosted secrets. The passive-loading check changes the checked-in manifest after installation on the disposable runner.
+- Installed registration and a completed strict agent/tool exchange using passive manifest discovery.
+- Read-only model-routing resolution and refusal of dispatch before intake activation.
+- Value-free lifecycle/Gateway logging and explicit inactive-intake results through public commands.
+
+## What Does Not Belong Here
+
+- Successful assignment creation, concurrent admission, or duplicate prevention: [notification intake](../openclaw-notifications-intake/README.md).
+- Retired-schema permutations or assertions that merely freeze temporary tracing text.
+- General setup convergence: [workspace](../openclaw-workspace/README.md). Native execution: [runtime boundaries](../openclaw-runtimes/README.md), with approvals in [lifecycle approvals](../openclaw-lifecycle-approvals/README.md).
+
+## Notes
+
+- Strict AIMock supplies fixed responses; the Gateway and tools run normally without a live model or hosted secrets.
+- After installation, the fixture appends V3 declarations with paused schedules and uses a GitHub-shaped session key. Intake has not been installed; successful loading must not create notification work.
+- The routing turn requests issue-session dispatch and must be rejected before credential access or creation. It does not prove successful dispatch or recovery.
+- Pending relocation: retired-notification validation and absence of temporary dispatch-invocation tracing remain below.
 
 ## Setup
 

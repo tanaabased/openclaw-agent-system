@@ -1,0 +1,107 @@
+name: Notification tests
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: examples-notifications-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+  NO_COLOR: '1'
+
+jobs:
+  examples:
+    name: ${{ matrix.example }} (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        example:
+          - openclaw-notifications-intake
+          - openclaw-notifications-scheduling
+          - openclaw-notifications-assessment-recovery
+          - openclaw-notifications-feedback-policy
+          - openclaw-notifications-assignment-policy
+          - openclaw-notifications-reactivation
+          - openclaw-notifications-retirement
+          - openclaw-notifications-reset
+          - openclaw-notifications-issue-journey
+          - openclaw-notifications-conversation
+          - openclaw-notifications-pr-journey
+          - openclaw-notifications-pr-recipients
+          - openclaw-notifications-pr-update
+          - openclaw-notifications-pr-presentation
+          - openclaw-notifications-pr-collaboration
+          - openclaw-notifications-pr-discovery
+          - openclaw-notifications-pr-reply-recovery
+          - openclaw-notifications-progression
+          - openclaw-notifications-decision-recovery
+          - openclaw-notifications-work
+          - openclaw-notifications-work-custom
+          - openclaw-notifications-auto-work
+          - openclaw-notifications-auto-plan
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: PATH updates
+        shell: bash
+        run: |
+          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/scripts" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Brew updates
+        shell: bash
+        run: HOMEBREW_NO_AUTO_UPDATE= brew update-if-needed
+      - name: Install OpenClaw
+        uses: tanaabased/actions/setup-openclaw@v1
+      - name: Install Node
+        uses: tanaabased/actions/setup-node@v1
+      - name: Install Bun
+        uses: tanaabased/actions/setup-bun@v1
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare release-shaped build
+        uses: tanaabased/actions/prepare-release@v1
+        with:
+          version: dev
+          commands: |
+            version-injector .codex-plugin/plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
+            version-injector openclaw.plugin.json --style json --version "$PREPARE_RELEASE_VERSION"
+            bun run format:write
+            bun run build
+      - name: Check prepared plugin
+        run: |
+          bun run plugin:check
+          bun run format:check
+      - name: Pack prepared plugin
+        id: pack
+        uses: tanaabased/actions/npm-pack@v1
+      - name: Run Leia-backed example
+        shell: bash
+        env:
+          AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+          CODEX_TOOLS_CODEX_HOME: ${{ runner.temp }}/codex-home
+          GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
+          XDG_CONFIG_HOME: ${{ runner.temp }}/agent-system-config
+          GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
+        run: |
+          leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
+      - name: RUNNING A LEVEL THREE DIAGNOSTICS
+        if: failure()
+        shell: bash
+        run: |
+          jq -s '[.. | objects | select(.providerDiagnostic? != null) | {code, providerDiagnostic, retry, retryAfter}]' "$RUNNER_TEMP/agent-system-config/tanaab/agent-system/agent-system-dispatch-v2/"*.json || true
+          if [[ -d "${OPENCLAW_WORKSPACE:-}" ]]; then
+            openclaw-diagnostics
+          else
+            echo "No OpenClaw workspace was created; see the scenario failure output above."
+          fi

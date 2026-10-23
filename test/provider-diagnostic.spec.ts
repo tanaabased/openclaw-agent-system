@@ -4,6 +4,7 @@ import createAgentLifecycleContribution from '../agent/lifecycle.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import doctorAgentSystem from '../cli/doctor.ts';
 import GitHubAccountClient, { GitHubAccountClientError } from '../core/github-account-client.ts';
+import retryGitHubRead from '../core/github-read-retry.ts';
 import GitHubAccountKeyError from '../tools/github/account-key-error.ts';
 import assert from 'node:assert/strict';
 import {
@@ -440,16 +441,19 @@ describe('safe provider diagnostics', () => {
       [503, 'transport'],
       [404, 'unknown'],
     ] as const) {
-      const api = new GitHubWorkEventApiClient({
-        identity: { login: 'data', nodeId: 'U_data' },
-        execute: async () => ({
-          exitCode: 1,
-          stdout: `HTTP/2 ${status}\nx-ratelimit-reset: 1800000000\nretry-after: 10\nX-Untrusted: ${hostile.trim()}\n\n${hostile}`,
-          stderr: `gh: Request rejected (HTTP ${status})\n${hostile}`,
-          timedOut: false,
-          truncated: false,
-        }),
-      });
+      const api = new GitHubWorkEventApiClient(
+        {
+          identity: { login: 'data', nodeId: 'U_data' },
+          execute: async () => ({
+            exitCode: 1,
+            stdout: `HTTP/2 ${status}\nx-ratelimit-reset: 1800000000\nretry-after: 10\nX-Untrusted: ${hostile.trim()}\n\n${hostile}`,
+            stderr: `gh: Request rejected (HTTP ${status})\n${hostile}`,
+            timedOut: false,
+            truncated: false,
+          }),
+        },
+        (read, options) => retryGitHubRead(read, { ...options, sleep: async () => undefined }),
+      );
       await assert.rejects(api.request(['user'], 'identity'), (error: unknown) => {
         assert.ok(error instanceof GitHubWorkEventClientError);
         assert.equal(

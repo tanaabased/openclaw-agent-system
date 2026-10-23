@@ -53,21 +53,137 @@ describe('channels/github/identity-cache', () => {
     assert.equal(fresh.issueAssignment!.allowed[1]!.login, actor.login);
   });
 
+  it('should batch retained immutable pins during scans while preserving rename and conflict checks', async () => {
+    const cache = new GitHubIdentityCache({ root, scope: 'batch' });
+    await cache.resolve(policy(), { resolveIdentity });
+    const batches: string[][] = [];
+    const client = {
+      resolveIdentity: async () => assert.fail('retained pins must use the batch'),
+      resolveIdentities: async (ids: readonly string[]) => {
+        batches.push([...ids]);
+        return Promise.all(
+          ids.map(async (id) => {
+            const identity = await resolveIdentity(id);
+            return identity.nodeId === actor.nodeId ? { ...identity, login: 'renamed' } : identity;
+          }),
+        );
+      },
+    };
+    const fresh = policy();
+    await cache.resolve(fresh, client, 'all', true);
+    assert.equal(batches.length, 1);
+    assert.deepEqual(new Set(batches[0]), new Set(['O_owner', 'U_actor', 'U_reviewer']));
+    assert.equal(fresh.issueAssignment!.allowed[0]!.login, 'renamed');
+    await assert.rejects(
+      cache.resolve(
+        policy(),
+        {
+          ...client,
+          resolveIdentities: async (ids) =>
+            (await client.resolveIdentities(ids)).map((identity) => ({
+              ...identity,
+              nodeId: 'U_replacement',
+            })),
+        },
+        'all',
+        true,
+      ),
+      /github-identity-conflict/,
+    );
+  });
+
   it('should follow a pinned immutable identity across rename without granting its old name to a new account', async () => {
     await new GitHubIdentityCache({ root, scope: 'test' }).resolve(policy(), { resolveIdentity });
     const requests: string[] = [];
     const fresh = policy();
-    await new GitHubIdentityCache({ root, scope: 'test' }).resolve(fresh, {
-      resolveIdentity: async (reference) => {
-        requests.push(reference);
-        if (reference === 'U_actor') return { ...actor, login: 'renamed' };
-        if (reference === '@actor') return { ...actor, nodeId: 'U_replacement' };
-        return resolveIdentity(reference);
+    await new GitHubIdentityCache({ root, scope: 'test' }).resolve(
+      fresh,
+      {
+        resolveIdentity: async (reference) => {
+          requests.push(reference);
+          if (reference === 'U_actor') return { ...actor, login: 'renamed' };
+          if (reference === '@actor') return { ...actor, nodeId: 'U_replacement' };
+          return resolveIdentity(reference);
+        },
       },
-    });
+      'all',
+      true,
+    );
     assert.equal(requests.includes('@actor'), false);
     assert.equal(fresh.issueAssignment!.allowed[0]!.nodeId, 'U_actor');
     assert.equal(fresh.issueAssignment!.allowed[0]!.login, 'renamed');
+  });
+
+  it('should reuse persisted pins across connections and refresh names only for discovery', async () => {
+    const requests: string[] = [];
+    const client = {
+      resolveIdentity: async (reference: string) => {
+        requests.push(reference);
+        return resolveIdentity(reference);
+      },
+    };
+    const location = { root, scope: 'operation' };
+    await new GitHubIdentityCache(location).resolve(policy(), client);
+    const first = requests.length;
+    await new GitHubIdentityCache(location).resolve(policy(), client);
+    assert.equal(requests.length, first);
+    await new GitHubIdentityCache(location).resolve(policy(), {
+      resolveIdentity: async () => {
+        throw new Error('task operations must reuse verified pins');
+      },
+    });
+    const changed = decode({
+      'schema-version': 3,
+      'allowed-repository-owners': ['@owner'],
+      'issue-assignment': { allowed: ['@owner'] },
+    });
+    await assert.rejects(
+      new GitHubIdentityCache(location).resolve(changed, client),
+      /github-identity-type-invalid/,
+    );
+    const next = policy();
+    await new GitHubIdentityCache(location).resolve(
+      next,
+      {
+        resolveIdentity: async (reference) => {
+          requests.push(reference);
+          const identity = await resolveIdentity(reference);
+          return identity.nodeId === actor.nodeId ? { ...identity, login: 'renamed' } : identity;
+        },
+      },
+      'all',
+      true,
+    );
+    assert.ok(requests.length > first);
+    assert.equal(next.issueAssignment!.allowed[0]!.login, 'renamed');
+    const beforeOther = requests.length;
+    await new GitHubIdentityCache({ root, scope: 'other-workspace' }).resolve(policy(), client);
+    assert.equal(requests.length, beforeOther + first);
+  });
+
+  it('should resolve newly configured identities without reviving removed policy entries', async () => {
+    const cache = new GitHubIdentityCache({ root, scope: 'policy' });
+    await cache.resolve(policy(), { resolveIdentity }, 'assignment');
+    const changed = decode({
+      'schema-version': 3,
+      'allowed-repository-owners': ['@owner'],
+      'issue-assignment': { allowed: ['@reviewer'] },
+    });
+    const requests: string[] = [];
+    await cache.resolve(changed, {
+      resolveIdentity: async (reference) => {
+        requests.push(reference);
+        return resolveIdentity(reference);
+      },
+    });
+    assert.deepEqual(requests, ['@reviewer']);
+    assert.deepEqual(changed.issueAssignment!.allowed, [
+      {
+        reference: '@reviewer',
+        login: reviewer.login,
+        nodeId: reviewer.nodeId,
+      },
+    ]);
   });
 
   it('should reject mismatched pins, inappropriate types and unresolved compact inputs', async () => {

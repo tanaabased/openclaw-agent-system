@@ -31,7 +31,7 @@ import {
 import type { AgentManifest } from '../manifest/types.ts';
 import GitCommandError from '../tools/git/command-error.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
-import { revalidateFeedbackAssignment } from './assignment-feedback-reactivation.ts';
+import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import { automationHash } from './automation-hash.ts';
 import { inspectContinuedIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
@@ -220,19 +220,17 @@ export default class OpenClawDispatchContext {
       feedback ? 'feedback' : 'assignment',
     );
     await identities.hydrate(manifest.github?.notifications);
-    const repo =
+    const { repo, item } =
       (record.sessionCreation?.verified || record.effective?.status === 'verified') && !feedback
-        ? (
-            await inspectContinuedIssue(
-              intake,
-              client,
-              liveManifest.github?.notifications?.issueAssignment?.allowed ?? [],
-              record,
-              (this.dependencies.now ?? Date.now)(),
-            )
-          ).repo
+        ? await inspectContinuedIssue(
+            intake,
+            client,
+            liveManifest.github?.notifications?.issueAssignment?.allowed ?? [],
+            record,
+            (this.dependencies.now ?? Date.now)(),
+          )
         : feedback
-          ? await revalidateFeedbackAssignment(
+          ? await inspectFeedbackAssignment(
               {
                 ...current.policy,
                 policy: {
@@ -247,7 +245,7 @@ export default class OpenClawDispatchContext {
               client,
               record,
             )
-          : (await inspectAdmittedIssue(intake, client)).repo;
+          : await inspectAdmittedIssue(intake, client);
     const worktreeInput = {
       agentId: manifest.agent.id,
       attemptId: record.worktreeAttemptId,
@@ -264,7 +262,7 @@ export default class OpenClawDispatchContext {
       });
       if (path !== record.worktree) throw new Error('dispatch-worktree-diverged');
     }
-    return { client, repo, intake, worktreeInput };
+    return { client, repo, item, intake, worktreeInput };
   }
 
   async promptContext(

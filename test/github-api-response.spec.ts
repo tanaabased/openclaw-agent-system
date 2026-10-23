@@ -3,6 +3,15 @@ import assert from 'node:assert/strict';
 import { parseGitHubApiResponse } from '../channels/github/provider/api-response.ts';
 
 describe('channels/github/provider/api-response', () => {
+  it('should retain only bounded header-safe etags for conditional reads', () => {
+    for (const etag of ['"version"', 'W/"version"'])
+      assert.equal(parseGitHubApiResponse('HTTP/2 200 OK\netag: ' + etag + '\n\n{}').etag, etag);
+    for (const etag of ['unquoted', '"' + 'x'.repeat(300) + '"', '"private\u0000value"'])
+      assert.equal(
+        parseGitHubApiResponse('HTTP/2 200 OK\netag: ' + etag + '\n\n{}').etag,
+        undefined,
+      );
+  });
   it('should parse the final included response and rate-limit controls', () => {
     const response = parseGitHubApiResponse(
       [

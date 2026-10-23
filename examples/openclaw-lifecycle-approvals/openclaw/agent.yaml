@@ -1,0 +1,14 @@
+schema-version: 1
+agent:
+  id: runtime-openclaw
+  name: Runtime OpenClaw
+  email: runtime-openclaw@example.invalid
+models:
+  default:
+    model: aimock/gpt-5.5
+    effort: medium
+setup-agent:
+  check: |
+    printf 'checked\n' >> "$TMPDIR/agent-system-approval-check"
+    test -f "$TMPDIR/agent-system-approval-apply"
+  apply: printf 'applied\n' >> "$TMPDIR/agent-system-approval-apply"

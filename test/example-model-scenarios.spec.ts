@@ -64,17 +64,38 @@ describe('scripts/example-model-scenarios', () => {
       'openclaw-agent',
       'openclaw-collaboration',
       'openclaw-automations',
+      'openclaw-automation-recovery',
       'openclaw-credentials',
       'openclaw-github',
       'os-execution',
       'openclaw-runtimes',
-      'openclaw-memory',
-      'openclaw-worktree',
-      'openclaw-pr',
-      'openclaw-progression',
-      'openclaw-issue',
-      'openclaw-intake',
-      'openclaw-lifecycle',
+      'openclaw-lifecycle-approvals',
+      'openclaw-memory-embeddings',
+      'openclaw-worktree-session',
+      'openclaw-notifications-pr-journey',
+      'openclaw-notifications-pr-recipients',
+      'openclaw-notifications-pr-update',
+      'openclaw-notifications-pr-presentation',
+      'openclaw-notifications-pr-collaboration',
+      'openclaw-notifications-pr-discovery',
+      'openclaw-notifications-pr-reply-recovery',
+      'openclaw-notifications-progression',
+      'openclaw-notifications-decision-recovery',
+      'openclaw-notifications-work',
+      'openclaw-notifications-work-custom',
+      'openclaw-notifications-auto-work',
+      'openclaw-notifications-auto-plan',
+      'openclaw-notifications-issue-journey',
+      'openclaw-github-reply',
+      'openclaw-issue-assessment',
+      'openclaw-notifications-conversation',
+      'openclaw-notifications-intake',
+      'openclaw-notifications-assessment-recovery',
+      'openclaw-notifications-feedback-policy',
+      'openclaw-notifications-assignment-policy',
+      'openclaw-notifications-reactivation',
+      'openclaw-notifications-retirement',
+      'openclaw-notifications-reset',
     ]);
     assert.equal(resolveExampleModelScenario('openclaw-agent').id, 'openclaw-agent');
     assert.equal(resolveExampleModelScenario('openclaw-credentials').id, 'openclaw-credentials');
@@ -100,8 +121,8 @@ describe('scripts/example-model-scenarios', () => {
   });
 
   it('should require canonical worktree guidance and the current phase execution receipt', async () => {
-    const scenario = resolveExampleModelScenario('openclaw-worktree');
-    const guidance = await readFile('examples/openclaw-worktree/SOUL.md', 'utf8');
+    const scenario = resolveExampleModelScenario('openclaw-worktree-session');
+    const guidance = await readFile('examples/openclaw-worktree-session/SOUL.md', 'utf8');
     for (const phase of ['first', 'continued']) {
       const input = request('worktree-tanaabot', `Execute the worktree ${phase} probe.`, ['exec']);
       input.messages[0]!.content = 'Name: Worktree Tanaabot';
@@ -136,9 +157,9 @@ describe('scripts/example-model-scenarios', () => {
   });
 
   it('should complete native runtime fixtures only after their own execution or doctor result', () => {
-    const scenario = resolveExampleModelScenario('openclaw-runtimes');
-    for (const [tool, prompt, callId, validResult, invalidResult, expected] of [
+    for (const [scenarioId, tool, prompt, callId, validResult, invalidResult, expected] of [
       [
+        'openclaw-runtimes',
         'exec',
         'Run agent-system-runtime-probe openclaw',
         'call_runtime_exec',
@@ -147,6 +168,7 @@ describe('scripts/example-model-scenarios', () => {
         'runtime-exec-ready',
       ],
       [
+        'openclaw-lifecycle-approvals',
         'agent_system_doctor',
         'Call agent_system_doctor exactly once',
         'call_runtime_doctor',
@@ -155,7 +177,12 @@ describe('scripts/example-model-scenarios', () => {
         'runtime-doctor-ready',
       ],
     ] as const) {
+      const scenario = resolveExampleModelScenario(scenarioId);
       const input = request('runtime-openclaw', prompt, [tool]);
+      const other = resolveExampleModelScenario(
+        scenarioId === 'openclaw-runtimes' ? 'openclaw-lifecycle-approvals' : 'openclaw-runtimes',
+      );
+      assert.equal(matchFixture([...other.fixtures], input), null);
       const fixture = matchFixture([...scenario.fixtures], input);
       assert.ok(fixture);
       const response = fixture.response;
@@ -313,40 +340,46 @@ describe('scripts/example-model-scenarios', () => {
     assert.equal(matchFixture([...scenario.fixtures], input(history, 'another-call')), null);
   });
 
-  it('should keep automation ownership strict and report only failed match booleans', () => {
-    const scenario = resolveExampleModelScenario('openclaw-automations');
-    const diagnostic = mock.method(console, 'error', () => {});
-    const valid = request('automation-tanaabot', scenario.userPromptSignals![0]!, []);
-    valid.messages[0]!.content = scenario.systemPromptSignals[0]!;
-    valid.messages.push({ role: 'user', content: 'Additional runtime context.' });
-    try {
-      assert.equal(matchFixture([...scenario.fixtures], valid), scenario.fixtures[0]);
-      assert.equal(diagnostic.mock.callCount(), 0);
-      for (const field of ['model', 'identity', 'prompt', 'noToolResult'] as const) {
-        const invalid = structuredClone(valid);
-        if (field === 'model') invalid.model = 'private-model';
-        if (field === 'identity') invalid.messages[0]!.content = 'private-identity';
-        if (field === 'prompt') {
-          invalid.messages[1]!.content = 'private-prompt';
-          invalid.messages.push({ role: 'assistant', content: scenario.userPromptSignals![0]! });
+  for (const scenarioId of ['openclaw-automations', 'openclaw-automation-recovery']) {
+    it(`should keep ${scenarioId} ownership strict and report only failed match booleans`, () => {
+      const scenario = resolveExampleModelScenario(scenarioId);
+      const diagnostic = mock.method(console, 'error', () => {});
+      const valid = request('automation-tanaabot', scenario.userPromptSignals![0]!, []);
+      valid.messages[0]!.content = scenario.systemPromptSignals[0]!;
+      valid.messages.push({ role: 'user', content: 'Additional runtime context.' });
+      try {
+        assert.equal(matchFixture([...scenario.fixtures], valid), scenario.fixtures[0]);
+        assert.equal(diagnostic.mock.callCount(), 0);
+        for (const field of ['model', 'identity', 'prompt', 'noToolResult'] as const) {
+          const invalid = structuredClone(valid);
+          if (field === 'model') invalid.model = 'private-model';
+          if (field === 'identity') invalid.messages[0]!.content = 'private-identity';
+          if (field === 'prompt') {
+            invalid.messages[1]!.content = 'private-prompt';
+            invalid.messages.push({ role: 'assistant', content: scenario.userPromptSignals![0]! });
+          }
+          if (field === 'noToolResult') {
+            invalid.messages.push({
+              role: 'tool',
+              content: 'private-result',
+              tool_call_id: 'call',
+            });
+          }
+          assert.equal(matchFixture([...scenario.fixtures], invalid), null);
+          const output = String(diagnostic.mock.calls.at(-1)!.arguments[0]);
+          assert.deepEqual(JSON.parse(output.slice(output.indexOf('{'))), {
+            model: field !== 'model',
+            identity: field !== 'identity',
+            prompt: field !== 'prompt',
+            noToolResult: field !== 'noToolResult',
+          });
+          assert.ok(!output.includes('private-'));
         }
-        if (field === 'noToolResult') {
-          invalid.messages.push({ role: 'tool', content: 'private-result', tool_call_id: 'call' });
-        }
-        assert.equal(matchFixture([...scenario.fixtures], invalid), null);
-        const output = String(diagnostic.mock.calls.at(-1)!.arguments[0]);
-        assert.deepEqual(JSON.parse(output.slice(output.indexOf('{'))), {
-          model: field !== 'model',
-          identity: field !== 'identity',
-          prompt: field !== 'prompt',
-          noToolResult: field !== 'noToolResult',
-        });
-        assert.ok(!output.includes('private-'));
+      } finally {
+        diagnostic.mock.restore();
       }
-    } finally {
-      diagnostic.mock.restore();
-    }
-  });
+    });
+  }
 
   it('should return each login only after validating the real tool result', () => {
     const scenario = resolveExampleModelScenario('openclaw-github');

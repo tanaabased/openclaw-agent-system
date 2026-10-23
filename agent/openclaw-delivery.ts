@@ -25,7 +25,10 @@ import type { ConnectedGitHubAccountClient } from '../core/github-account-client
 import { gitRemoteIdentity } from '../tools/git/worktree-remote.ts';
 
 export interface OpenClawDeliveryConnection {
-  account: Pick<ConnectedGitHubAccountClient, 'execute' | 'identity'>;
+  account: Pick<
+    ConnectedGitHubAccountClient,
+    'execute' | 'identity' | 'observationScope' | 'credentialFingerprint'
+  >;
   git(argv: string[]): Promise<string>;
 }
 
@@ -188,6 +191,8 @@ export default async function openClawDelivery(input: {
     };
   const provider = new IssueDeliveryProvider({
     identity: connection.account.identity,
+    observationScope: connection.account.observationScope,
+    credentialFingerprint: connection.account.credentialFingerprint,
     async execute(...args) {
       await assertCurrent();
       // The fixed provider uses explicit REST methods for writes; its GraphQL lookup is read-only.

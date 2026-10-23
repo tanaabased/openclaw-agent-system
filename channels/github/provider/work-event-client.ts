@@ -6,6 +6,7 @@ import type { GitHubRateLimit } from './api-response.ts';
 import GitHubIssueCommentClient from './issue-comment-client.ts';
 import readItemContext from './read-item-context.ts';
 import GitHubWorkEventApiClient from './work-event-api-client.ts';
+import retryGitHubRead from '../../../core/github-read-retry.ts';
 import type {
   GitHubAssignedItemDiscovery,
   GitHubIssueCommentPage,
@@ -54,9 +55,10 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
   constructor(
     readonly account: ConnectedGitHubAccountClient,
     maximumCommentCharacters = defaultMaximumCommentCharacters,
+    retryRead = retryGitHubRead,
   ) {
     this.maximumCommentCharacters = validateMaximumCommentCharacters(maximumCommentCharacters);
-    this.#api = new GitHubWorkEventApiClient(account);
+    this.#api = new GitHubWorkEventApiClient(account, retryRead);
     this.reviews = new GitHubReviewClient(this.#api, this.maximumCommentCharacters);
     this.replies = new GitHubReviewReplyClient(this.#api, this.reviews);
     this.#comments = new GitHubIssueCommentClient(this.#api, this.maximumCommentCharacters);
@@ -69,6 +71,10 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
 
   resolveIdentity(reference: string) {
     return this.#items.resolveIdentity(reference);
+  }
+
+  resolveIdentities(references: readonly string[]) {
+    return this.#items.resolveIdentities(references);
   }
 
   get identity(): GitHubIdentity {

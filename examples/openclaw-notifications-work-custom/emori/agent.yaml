@@ -1,0 +1,15 @@
+schema-version: 1
+
+agent:
+  id: notifications-emori
+  name: Notification EMORI
+  email: emori@tanaab.dev
+
+environment:
+  set:
+    GH_TOKEN_EMORI: ${GH_TOKEN_EMORI}
+  required: [GH_TOKEN_EMORI]
+
+github:
+  username: emoriwan
+  token: GH_TOKEN_EMORI
