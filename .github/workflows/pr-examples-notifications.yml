@@ -26,8 +26,8 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
-      # Temporary #381 profiling trial: isolate quota deltas, then restore all 17 examples.
-      max-parallel: 1
+      # Temporary #381 request audit; restore all 17 examples before merge.
+      max-parallel: 2
       matrix:
         example:
           - openclaw-notifications-issue-journey

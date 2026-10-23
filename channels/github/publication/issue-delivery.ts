@@ -729,6 +729,7 @@ export default class IssueDeliveryProvider {
       argv.includes('--paginate') ? argv : [argv[0]!, '--include', ...argv.slice(1)],
       stdin,
       {
+        profileOperation: 'issue-delivery',
         ...(signal === undefined ? {} : { signal }),
         timeoutMs: 60_000,
       },

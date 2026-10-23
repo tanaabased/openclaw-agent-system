@@ -3,11 +3,13 @@ import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import PrivateStateFile from './private-state-file.ts';
+import { parseGitHubApiResponse } from '../channels/github/provider/api-response.ts';
 
 export interface GitHubProfileContext {
   agentId?: string;
   account?: string;
   source?: string;
+  operation?: string;
 }
 
 export interface GitHubProfileRequest {
@@ -155,12 +157,21 @@ export async function saveGitHubRequestProfile(
   context: GitHubProfileContext | undefined,
   profile: Pick<
     ReturnType<ReturnType<typeof createGitHubRequestProfile>['finish']>,
-    'requests' | 'complete'
+    'requests' | 'complete' | 'stdout'
   >,
   exitCode: number | null,
 ) {
   const label = (value: string | undefined) =>
     value && /^[a-zA-Z0-9_.:-]{1,100}$/.test(value) ? value : undefined;
+  const response = (() => {
+    if (!profile.stdout.startsWith('HTTP/')) return undefined;
+    try {
+      const { status, rateLimit } = parseGitHubApiResponse(profile.stdout);
+      return { status, ...rateLimit };
+    } catch {
+      return undefined;
+    }
+  })();
   await new PrivateStateFile({
     directories: [directory],
     path: join(directory, `${randomUUID()}.json`),
@@ -174,9 +185,11 @@ export async function saveGitHubRequestProfile(
       agentId: label(context?.agentId),
       account: label(context?.account),
       source: label(context?.source),
+      operation: label(context?.operation),
       exitCode,
       complete: profile.complete,
       requests: profile.requests,
+      response,
     }) + '\n',
   );
 }

@@ -44,6 +44,7 @@ export interface GitHubAccountClientDependencies {
 }
 
 export interface GitHubAccountExecutionOptions {
+  profileOperation?: string;
   maxOutputBytes?: number;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -307,6 +308,7 @@ export default class GitHubAccountClient {
               agentId: context.manifest.agent.id,
               account: username.value,
               source: 'account',
+              operation: options?.profileOperation,
             },
             excludedExecutableDirectories,
             maxOutputBytes: limits.maxOutputBytes,
@@ -331,7 +333,13 @@ export default class GitHubAccountClient {
     };
 
     const identity = parseIdentity(
-      await execute(['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}']),
+      await execute(
+        ['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}'],
+        undefined,
+        {
+          profileOperation: 'account-identity',
+        },
+      ),
     );
     if (identity.login.toLowerCase() !== username.value.trim().toLowerCase()) {
       this.#dependencies.environmentService.invalidateCredentials?.(context.manifest.agent.id);

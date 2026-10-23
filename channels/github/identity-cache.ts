@@ -54,7 +54,8 @@ function key(pin: GitHubIdentityPin) {
 
 /** Non-secret pins belong to a runtime's existing workspace/host intake scope. */
 export default class GitHubIdentityCache {
-  readonly refreshed = new Map<string, GitHubIdentity>();
+  // connected clients are operation-owned; a later connection must refresh provider facts.
+  static readonly #refreshed = new WeakMap<object, Map<string, GitHubIdentity>>();
   readonly file: PrivateStateFile;
   readonly path: string;
   constructor(readonly location: { root: string; scope: string }) {
@@ -106,11 +107,15 @@ export default class GitHubIdentityCache {
       directories: [this.location.root],
       label: 'GitHub identity cache',
     });
+    const refreshed =
+      GitHubIdentityCache.#refreshed.get(client) ?? new Map<string, GitHubIdentity>();
+    GitHubIdentityCache.#refreshed.set(client, refreshed);
     // Resolve outside the file lease so provider latency cannot block other issue turns.
     // Commit each verified pin before the next lookup, preserving partial progress.
     for (const { pin, user } of selected) {
       const reference = key(pin);
-      let identity = this.refreshed.get(reference);
+      const cacheKey = `${this.path}\0${reference}`;
+      let identity = refreshed.get(cacheKey);
       if (!identity) {
         const retained = (await this.read()).entries[reference];
         identity = await client.resolveIdentity(retained?.nodeId ?? pin.reference ?? pin.nodeId);
@@ -128,7 +133,7 @@ export default class GitHubIdentityCache {
       )
         throw new Error('github-identity-conflict');
       await this.retain(reference, identity);
-      this.refreshed.set(reference, identity);
+      refreshed.set(cacheKey, identity);
       Object.assign(pin, { login: identity.login, nodeId: identity.nodeId });
     }
   }

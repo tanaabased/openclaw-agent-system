@@ -2,11 +2,15 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import type { GitHubRateLimit } from '../channels/github/provider/api-response.ts';
+
 interface Profile {
   version: number;
   agentId?: string;
   account?: string;
   source?: string;
+  operation?: string;
+  response?: GitHubRateLimit & { status: number };
   complete: boolean;
   requests: Array<{ route: string; durationMs?: number }>;
 }
@@ -19,20 +23,47 @@ export function summarizeGitHubProfiles(profiles: Profile[]) {
       agent: string;
       account: string;
       source: string;
+      operation: string;
       route: string;
       requests: number;
       durationMs: number;
     }
   >();
+  const quotas = new Map<
+    string,
+    { account: string; resource: string; samples: number; minimum: number; maximum: number }
+  >();
   for (const profile of profiles) {
     if (profile.version !== 1 || !Array.isArray(profile.requests))
       throw new Error('unsupported github profile');
+    const quota = profile.response;
+    if (quota?.resource && quota.remaining !== undefined) {
+      const key = JSON.stringify([profile.account, quota.resource]);
+      const group = quotas.get(key) ?? {
+        account: profile.account ?? 'unattributed',
+        resource: quota.resource,
+        samples: 0,
+        minimum: quota.remaining,
+        maximum: quota.remaining,
+      };
+      group.samples++;
+      group.minimum = Math.min(group.minimum, quota.remaining);
+      group.maximum = Math.max(group.maximum, quota.remaining);
+      quotas.set(key, group);
+    }
     for (const request of profile.requests) {
-      const key = JSON.stringify([profile.agentId, profile.account, profile.source, request.route]);
+      const key = JSON.stringify([
+        profile.agentId,
+        profile.account,
+        profile.source,
+        profile.operation,
+        request.route,
+      ]);
       const group = groups.get(key) ?? {
         agent: profile.agentId ?? 'unattributed',
         account: profile.account ?? 'unattributed',
         source: profile.source ?? 'unattributed',
+        operation: profile.operation ?? 'unattributed',
         route: request.route,
         requests: 0,
         durationMs: 0,
@@ -47,6 +78,7 @@ export function summarizeGitHubProfiles(profiles: Profile[]) {
     incomplete: profiles.filter((profile) => !profile.complete).length,
     requests: [...groups.values()].reduce((sum, g) => sum + g.requests, 0),
     groups: [...groups.values()].sort((a, b) => b.requests - a.requests),
+    quotas: [...quotas.values()],
   };
 }
 
@@ -67,12 +99,21 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     `${summary.requests} HTTP requests across ${summary.commands} CLI invocations; ${summary.incomplete} incomplete traces.\n\n`,
   );
   process.stdout.write(
-    '| Agent | Account label | Source | Route | Requests | Observed duration, ms |\n|---|---|---|---|---:|---:|\n',
+    '| Agent | Account label | Source | Operation | Route | Requests | Observed duration, ms |\n|---|---|---|---|---|---:|---:|\n',
   );
   for (const group of summary.groups)
     process.stdout.write(
-      `| ${group.agent} | ${group.account} | ${group.source} | ${group.route} | ${group.requests} | ${group.durationMs.toFixed(1)} |\n`,
+      `| ${group.agent} | ${group.account} | ${group.source} | ${group.operation} | ${group.route} | ${group.requests} | ${group.durationMs.toFixed(1)} |\n`,
     );
+  if (summary.quotas.length) {
+    process.stdout.write(
+      '\nAvailable response quota counters (not consumption deltas):\n\n| Account | Resource | Samples | Minimum remaining | Maximum remaining |\n|---|---|---:|---:|---:|\n',
+    );
+    for (const quota of summary.quotas)
+      process.stdout.write(
+        `| ${quota.account} | ${quota.resource} | ${quota.samples} | ${quota.minimum} | ${quota.maximum} |\n`,
+      );
+  }
   process.stdout.write(
     '\nConcurrent requests retain counts; ambiguous per-route timings are omitted. Counts cover traced gh traffic, not Git transport or calls from other processes/accounts.\n',
   );

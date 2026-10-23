@@ -144,6 +144,33 @@ describe('api/cli-runner github profiling', () => {
     assert.equal((await saved(directory)).complete, false);
   });
 
+  it('should retain operation labels and allowlisted response counters without storing headers or bodies', async () => {
+    const directory = join(root, 'profile');
+    const output =
+      'HTTP/2 200 OK\nx-ratelimit-resource: core\nx-ratelimit-remaining: 4990\nx-ratelimit-used: 10\nx-ratelimit-reset: 1000\nx-private: header-secret\n\n{"private":"payload-secret"}';
+    const run = createToolCliRunner(async (_argv, options) => {
+      assert.ok(options && typeof options === 'object');
+      options.onOutputChunk?.(Buffer.from(output), 'stdout');
+      return success;
+    }, directory);
+    const result = await run({
+      ...request(),
+      maxOutputBytes: 1024,
+      githubProfileContext: { account: 'bot', operation: 'configured-identity' },
+    });
+    assert.equal(result.stdout, output);
+    const report = await saved(directory);
+    assert.equal(report.operation, 'configured-identity');
+    assert.deepEqual(report.response, {
+      status: 200,
+      resource: 'core',
+      remaining: 4990,
+      used: 10,
+      resetAt: 1000000,
+    });
+    assert.doesNotMatch(JSON.stringify(report), /header-secret|payload-secret|x-private/);
+  });
+
   it('should retain host cancellation errors and the partial trace', async () => {
     const directory = join(root, 'profile');
     const failure = new Error('cancelled');

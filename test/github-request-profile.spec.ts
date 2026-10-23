@@ -66,12 +66,15 @@ describe('core/github-request-profile', () => {
     assert.equal(result.requests.length, 1);
   });
 
-  it('should separate agent and source totals and flag incomplete command traces', () => {
+  it('should separate operation totals and summarize response counters without treating them as quota deltas', () => {
     const summary = summarizeGitHubProfiles([
       {
         version: 1,
         agentId: 'bot',
+        account: 'bot',
         source: 'account',
+        operation: 'configured-identity',
+        response: { status: 200, resource: 'core', remaining: 4999 },
         complete: true,
         requests: [
           { route: '/user', durationMs: 2 },
@@ -81,9 +84,12 @@ describe('core/github-request-profile', () => {
       {
         version: 1,
         agentId: 'bot',
-        source: 'github',
+        account: 'bot',
+        source: 'account',
+        operation: 'account-identity',
+        response: { status: 200, resource: 'core', remaining: 4997 },
         complete: false,
-        requests: [{ route: '/graphql' }],
+        requests: [{ route: '/user' }],
       },
     ]);
     assert.equal(summary.requests, 3);
@@ -91,5 +97,9 @@ describe('core/github-request-profile', () => {
     assert.equal(summary.incomplete, 1);
     assert.equal(summary.groups[0]?.requests, 2);
     assert.equal(summary.groups[0]?.durationMs, 5);
+    assert.equal(summary.groups.length, 2);
+    assert.deepEqual(summary.quotas, [
+      { account: 'bot', resource: 'core', samples: 2, minimum: 4997, maximum: 4999 },
+    ]);
   });
 });

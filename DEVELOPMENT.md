@@ -106,9 +106,11 @@ startup setting until restarted.
 
 The profiler observes the GitHub CLI's body-free debug mode through the existing
 bounded process runner. Private per-invocation JSON files contain normalized
-routes, available agent/account labels, request counts, and unambiguous request
-durations. They exclude raw URLs, query parameters, command arguments, credentials,
-headers, and payloads. Normal command output remains separate. Profiling does not
+routes, available agent/account/operation labels, request counts, and unambiguous request
+durations. Existing `gh api --include` output also supplies response status and
+allowlisted quota counters; the report shows observed remaining ranges rather than
+inferring consumption from counter differences. Files exclude raw URLs, query parameters,
+command arguments, credentials, other headers, and payloads. Normal command output remains separate. Profiling does not
 change authorization, retries, or caching. Save failures emit
 `github-request-profile-unavailable`; missing or incomplete traces cannot establish
 an exact total.

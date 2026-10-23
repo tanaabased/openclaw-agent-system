@@ -70,6 +70,43 @@ describe('channels/github/identity-cache', () => {
     assert.equal(fresh.issueAssignment!.allowed[0]!.login, 'renamed');
   });
 
+  it('should reuse identity reads within one connection and refresh them for a new operation', async () => {
+    const requests: string[] = [];
+    const client = {
+      resolveIdentity: async (reference: string) => {
+        requests.push(reference);
+        return resolveIdentity(reference);
+      },
+    };
+    const location = { root, scope: 'operation' };
+    await new GitHubIdentityCache(location).resolve(policy(), client);
+    const first = requests.length;
+    await new GitHubIdentityCache(location).resolve(policy(), client);
+    assert.equal(requests.length, first);
+    const changed = decode({
+      'schema-version': 3,
+      'allowed-repository-owners': ['@owner'],
+      'issue-assignment': { allowed: ['@owner'] },
+    });
+    await assert.rejects(
+      new GitHubIdentityCache(location).resolve(changed, client),
+      /github-identity-type-invalid/,
+    );
+    const next = policy();
+    await new GitHubIdentityCache(location).resolve(next, {
+      resolveIdentity: async (reference) => {
+        requests.push(reference);
+        const identity = await resolveIdentity(reference);
+        return identity.nodeId === actor.nodeId ? { ...identity, login: 'renamed' } : identity;
+      },
+    });
+    assert.ok(requests.length > first);
+    assert.equal(next.issueAssignment!.allowed[0]!.login, 'renamed');
+    const beforeOther = requests.length;
+    await new GitHubIdentityCache({ root, scope: 'other-workspace' }).resolve(policy(), client);
+    assert.equal(requests.length, beforeOther + first);
+  });
+
   it('should reject mismatched pins, inappropriate types and unresolved compact inputs', async () => {
     for (const identity of [
       { ...actor, type: 'Organization' },

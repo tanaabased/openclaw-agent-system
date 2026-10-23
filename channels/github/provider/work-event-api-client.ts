@@ -66,6 +66,7 @@ export default class GitHubWorkEventApiClient {
     let result;
     try {
       result = await this.#client.execute(['api', '--include', ...argv], stdin, {
+        profileOperation: label.replaceAll(' ', '-'),
         maxOutputBytes: 512 * 1024,
         timeoutMs: 30_000,
       });
