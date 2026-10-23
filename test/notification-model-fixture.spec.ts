@@ -834,12 +834,7 @@ for (const scenario of [
               ? `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`
               : `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
           );
-          if (mode === 'operator') {
-            await action(input, 'handoff');
-            append(input, 'handoff-preview', { status: 'handoff-available', digest });
-            assert.equal((await action(input, 'handoff')).digest, digest);
-            append(input, 'handoff', { status: 'handed-off' });
-          } else {
+          if (mode !== 'operator') {
             await action(input, 'context');
             append(input, 'context', {
               status: 'verified',
@@ -876,7 +871,9 @@ for (const scenario of [
             });
             await publishProgressionSummary(input);
           }
-          await action(input, 'implementation-context');
+          if (mode === 'operator')
+            assert.equal((await action(input, 'implementation')).operation, 'context');
+          else await action(input, 'implementation-context');
           append(input, 'work-context', {
             status: 'verified',
             runtime: 'openclaw',
@@ -1064,11 +1061,11 @@ for (const scenario of [
         assert.equal((await action(input, 'delivery')).operation, 'present');
       });
 
-      it('should stop when native authority rejects the operator handoff', async () => {
+      it('should stop when native authority rejects direct implementation context', async () => {
         const input = request(
           `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
         );
-        append(input, 'handoff-preview', { status: 'blocked', code: 'dispatch-operator-required' });
+        append(input, 'work-context', { status: 'blocked', code: 'dispatch-operator-required' });
         assert.equal(matchFixture([...scenario.fixtures], input), null);
       });
     } else {

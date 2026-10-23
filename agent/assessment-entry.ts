@@ -20,6 +20,8 @@ import { automationHash } from './automation-hash.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import type { DispatchGit } from './codex-dispatch-project.ts';
 import dispatchContext from './dispatch-context.ts';
+import type { ImplementationResult } from './implementation-result.ts';
+import type { OpenClawDeliveryConnection } from './openclaw-delivery.ts';
 import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
 import { replyLocator } from './reply-target.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
@@ -29,6 +31,10 @@ export interface AssessmentEntryDependencies {
   binding: AssessmentEntryBinding;
   turnId: string;
   inputId: string;
+  message?: string;
+  operator?: boolean;
+  currentTarget?: string;
+  connectDelivery?(path: string): Promise<OpenClawDeliveryConnection>;
   manifest: AgentManifest;
   now: number;
   git: DispatchGit;
@@ -40,6 +46,8 @@ export interface AssessmentEntryDependencies {
   managed(target: { repository: string; number: number }): Promise<
     | {
         digest: string;
+        owner?: { id: string; eventId?: string };
+        implementationResult?: ImplementationResult;
         path: string;
         selection: AssessmentSelection;
         evidence: string;

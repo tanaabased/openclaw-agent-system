@@ -504,6 +504,8 @@ export default class OpenClawDispatchIssue {
       input.action === 'implementation-result' ||
       input.action === 'delivery'
     ) {
+      if (input.action === 'implementation-context' && input.scope && !operator)
+        throw new Error('implementation-operator-scope-required');
       const signal = authority.signal
         ? AbortSignal.any([authority.signal, transactionSignal])
         : transactionSignal;

@@ -55,6 +55,7 @@ export default async function openClawDelivery(input: {
   if (action.operation === 'present')
     return presentOpenClawDelivery(record, intake, input.feedbackEnabled);
   const work = record.work;
+  if (work?.scope === 'local') throw new Error('implementation-publication-not-authorized');
   if (!work || (!retainedIssueProgression(record) && !work.publication))
     throw new Error('delivery-implementation-incomplete');
   if (

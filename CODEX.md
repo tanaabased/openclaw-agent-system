@@ -205,6 +205,16 @@ results are not adapted or submitted again.
 The complete assessment is shown inline and returned on same-chat revisions; it
 remains the source of truth rather than its summaries. Guidance cannot widen the
 assessment's authority.
+For implementation without another assessment or chat, invoke
+`$agent-system-issue-implementation` with the issue URL, existing checkout and an
+authorized actionable plan, or reuse matching retained work. The thin direct collector
+supplies the same implementation payload as managed execution and uses your current
+[implementation selection](./MANIFEST.md#implementation-and-review-selection).
+Missing plan details produce a focused question. Manual entry is local-only unless
+you explicitly request PR delivery; supplying a plan does not authorize publication.
+Resume through the returned context and result handoff, not a replacement attempt.
+Stale managed work must recover through its original owner, never manual fallback.
+
 [Implementation and review selections](./MANIFEST.md#implementation-and-review-selection)
 use the same trusted selection contract. Work uses the bundled
 [issue implementation skill](./skills/issue-implementation/SKILL.md) by default;

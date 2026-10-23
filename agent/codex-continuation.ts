@@ -119,8 +119,11 @@ export default async function runCodexContinuation(
         admissions,
         save,
         signal,
+        ...(deps.directOperator ? { operatorInput: await native.operatorInput(caller) } : {}),
       };
-      const decision = await advanceCodexAutoDecision(state, context);
+      const decision = context.operatorInput
+        ? { response: undefined, decisionPending: undefined }
+        : await advanceCodexAutoDecision(state, context);
       if (decision.response) return decision.response;
       const decisionPending = decision.decisionPending;
       if (input.action !== 'next' && decisionPending) return decisionPending;

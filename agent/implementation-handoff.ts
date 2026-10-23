@@ -3,8 +3,23 @@ export default function implementationHandoff(
   id: string,
   outcome: 'done' | 'blocked' | 'clarification-needed' | undefined,
   runtime: 'codex' | 'openclaw',
+  direct?: { publication: boolean },
 ) {
   if (outcome !== 'done') return { next: outcome ?? 'implementation' };
+  if (direct)
+    return direct.publication
+      ? {
+          next: 'delivery' as const,
+          request: {
+            action: 'implementation',
+            operation: 'delivery',
+            id,
+            deliveryOperation: 'prepare',
+          },
+          instruction:
+            'Continue direct implementation delivery in this same chat through dispatch implementation delivery. Supply title and body, then publish the prepared digest. Resume uncertain effects through these original receipts; never repeat implementation or create a replacement PR.',
+        }
+      : { next: 'complete' as const };
   return {
     next: 'delivery' as const,
     request:
