@@ -1,0 +1,11 @@
+schema-version: 1
+
+agent:
+  id: tool-access-data
+  name: Tool Access Data
+  description: Agent System native tool access scenario
+
+git:
+  worktrees: {}
+
+github: {}

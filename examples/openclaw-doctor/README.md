@@ -11,13 +11,12 @@ Inspect a healthy installed agent, introduce one identity drift, detect it throu
 ## What Does Not Belong Here
 
 - Native installation/enrollment differences: [OS install](../os-install/README.md). Workspace setup and convergence: [workspace](../openclaw-workspace/README.md).
-- Identity rename/rotation, exhaustive help/alias/presentation variants, and native tool-grant reconciliation. Tool grants need their own focused installed contract; ordinary tool execution belongs to [tools](../openclaw-tools/README.md).
+- Identity rename/rotation, exhaustive help/alias/presentation variants, and native tool-grant reconciliation. Tool grants belong to [tool access](../openclaw-tool-access/README.md); ordinary tool execution belongs to [tools](../openclaw-tools/README.md).
 
 ## Notes
 
 - Direct checks install the prepared package without a model, Gateway, or provider credential. Workspaces run in place.
-- Pending relocation: command-tree/alias and warning-layout checks, installation identity administration, and additive/allowlist/deny/stale tool-grant variants remain below.
-- A temporary baseline restores the original manifest after tool-grant changes. Preserve those permission assertions when separating the grant contract; they are not redundant merely because they sit outside Doctor's core path.
+- Pending relocation: command-tree/alias and warning-layout checks and installation identity administration remain below.
 
 ## Setup
 
@@ -28,7 +27,6 @@ openclaw-setup \
   --agent-system "$AGENT_SYSTEM_PACKAGE"
 
 # should install the disposable doctor workspace through agent system
-cp "$GITHUB_WORKSPACE/examples/openclaw-doctor/data/agent.yaml" "$TMPDIR/doctor-base.yaml"
 cd "$GITHUB_WORKSPACE/examples/openclaw-doctor/data"
 openclaw agent-system install
 ```
@@ -96,56 +94,4 @@ printf '%s\n' "$output" | grep -F 'drift' | grep -F 'agent'
 cd "$GITHUB_WORKSPACE/examples/openclaw-doctor/data"
 openclaw agent-system install --json | jq -e '.outcomes | any(.status == "updated")'
 openclaw agent-system doctor --json | jq -e '.status == "healthy"'
-```
-
-```bash
-# should reconcile additive native tool grants while preserving unrelated access
-openclaw config set 'agents.entries.doctor-data.tools.alsoAllow' '["message"]' --strict-json
-cp "$GITHUB_WORKSPACE/examples/openclaw-doctor/with-tools.yaml" "$GITHUB_WORKSPACE/examples/openclaw-doctor/data/agent.yaml"
-cd "$GITHUB_WORKSPACE/examples/openclaw-doctor/data"
-if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
-printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
-openclaw agent-system install --json | jq -e '.outcomes | any(.code == "set-agent-tool-access")'
-openclaw config get 'agents.entries.doctor-data.tools.alsoAllow' --json | jq -e 'index("message") != null'
-openclaw agent-system doctor --json | jq -e '.findings | any(.code == "agent-tool-access-ready")'
-```
-
-```bash
-# should reconcile selected native tools through an exact allowlist
-openclaw config unset 'agents.entries.doctor-data.tools.alsoAllow'
-openclaw config set 'agents.entries.doctor-data.tools.allow' '["read"]' --strict-json
-cd "$GITHUB_WORKSPACE/examples/openclaw-doctor/data"
-if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
-printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
-openclaw agent-system install --json | jq -e '.outcomes | any(.code == "set-agent-tool-access")'
-openclaw config get 'agents.entries.doctor-data.tools.allow' --json | jq -e 'index("read") != null'
-openclaw agent-system doctor --json | jq -e '.findings | any(.code == "agent-tool-access-ready")'
-```
-
-```bash
-# should leave converged native tool access unchanged
-cd "$GITHUB_WORKSPACE/examples/openclaw-doctor/data"
-openclaw agent-system install --json | jq -e '.outcomes | any(.code == "agent-tool-access-unchanged")'
-openclaw agent-system doctor --json | jq -e '.findings | any(.code == "agent-tool-access-ready")'
-```
-
-```bash
-# should block a selected native tool denied by operator policy
-openclaw config set 'agents.entries.doctor-data.tools.deny' '["agent_system_github"]' --strict-json
-cd "$GITHUB_WORKSPACE/examples/openclaw-doctor/data"
-if output=$(openclaw agent-system doctor --json); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.findings | any(.component == "tool-access" and .status == "blocked" and .code == "agent-tool-access-denied" and (.message | contains("agent_system_github")))'
-if output=$(openclaw agent-system install --json 2>&1); then exit 1; fi
-printf '%s\n' "$output" | grep -F 'code=agent-tool-access-denied'
-```
-
-```bash
-# should remove stale owned grants when capabilities disappear
-openclaw config set 'agents.entries.doctor-data.tools.deny' '[]' --strict-json
-cp "$TMPDIR/doctor-base.yaml" "$GITHUB_WORKSPACE/examples/openclaw-doctor/data/agent.yaml"
-cd "$GITHUB_WORKSPACE/examples/openclaw-doctor/data"
-if output=$(openclaw agent-system doctor 2>&1); then exit 1; fi
-printf '%s\n' "$output" | grep -F 'drift' | grep -F 'tool-access'
-openclaw agent-system install --json | jq -e '.outcomes | any(.code == "set-agent-tool-access")'
-openclaw config get 'agents.entries.doctor-data.tools' --json | jq -e '(.allow | sort) == (["read", "agent_system_install", "agent_system_doctor"] | sort) and (has("alsoAllow") | not)'
 ```

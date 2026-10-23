@@ -26,6 +26,7 @@ jobs:
           - openclaw-agent
           - openclaw-workspace
           - openclaw-doctor
+          - openclaw-tool-access
           - openclaw-github
           - openclaw-issue-assessment
           - openclaw-github-reply
