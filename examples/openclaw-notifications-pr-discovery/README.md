@@ -48,13 +48,9 @@ mkdir -p "$TMPDIR/pr-provider"
 node --import tsx --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
 import {writeFileSync} from 'node:fs';
-import {join} from 'node:path';
 const {resolveToolExecutable} = await import(process.env.GITHUB_WORKSPACE + '/api/cli-runner.ts');
 assert.equal(process.env.GITHUB_ACTIONS, 'true');
-// forward to native gh; the ci profiler shim cannot run in the agent's restricted environment
-const excluded = process.env.AGENT_SYSTEM_GITHUB_PROFILE_DIR
-  ? [join(process.env.AGENT_SYSTEM_GITHUB_PROFILE_DIR, 'bin')] : [];
-const executable = await resolveToolExecutable('gh', process.env.PATH ?? '', excluded);
+const executable = await resolveToolExecutable('gh', process.env.PATH ?? '');
 writeFileSync(process.env.TMPDIR + '/pr-provider/control.json', JSON.stringify({ci: true, executable, paused: false}));
 NODE
 cp "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-discovery/provider-fixture.mjs" "$TMPDIR/pr-provider/gh"

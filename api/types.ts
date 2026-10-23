@@ -5,7 +5,6 @@ import type {
 import type { Static, TSchema } from 'typebox';
 
 import type { AgentManifest } from '../manifest/types.ts';
-import type { GitHubProfileContext } from '../core/github-request-profile.ts';
 import type { ResolvableString } from '../manifest/value-types.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type AgentSystemToolRuntime from './runtime.ts';
@@ -46,7 +45,6 @@ export interface AgentSystemCliResult {
 }
 
 export interface AgentSystemCliRunRequest {
-  githubProfileContext?: GitHubProfileContext;
   argv: string[];
   cwd: string;
   environment: NodeJS.ProcessEnv;

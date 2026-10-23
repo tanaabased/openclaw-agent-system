@@ -1,5 +1,5 @@
 import { access, lstat, realpath } from 'node:fs/promises';
-import { basename, delimiter, isAbsolute, join, resolve } from 'node:path';
+import { delimiter, isAbsolute, join, resolve } from 'node:path';
 
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
@@ -9,9 +9,6 @@ import {
 } from '../core/private-state-lock-context.ts';
 import isPathContained from '../utils/is-path-contained.ts';
 import type { AgentSystemCliRunner } from './types.ts';
-import createGitHubRequestProfile, {
-  saveGitHubRequestProfile,
-} from '../core/github-request-profile.ts';
 
 const forcedTerminationGraceMs = 100;
 
@@ -70,69 +67,36 @@ export async function resolveToolExecutable(
 /** Run a selected executable through the host's bounded command lifecycle. */
 export default function createToolCliRunner(
   runCommandWithTimeout: OpenClawPluginApi['runtime']['system']['runCommandWithTimeout'],
-  githubProfileDirectory = process.env.AGENT_SYSTEM_GITHUB_PROFILE_DIR,
-  profileUnavailable: () => void = () => undefined,
 ): AgentSystemCliRunner {
   return async (request) => {
     const executable = await resolveToolExecutable(
       request.executable,
       request.environment.PATH ?? '',
-      [
-        ...(request.excludedExecutableDirectories ?? []),
-        ...(githubProfileDirectory ? [join(githubProfileDirectory, 'bin')] : []),
-      ],
+      request.excludedExecutableDirectories,
     );
     const signal = privateStateLockSignal(request.signal);
-    const profile =
-      githubProfileDirectory && isAbsolute(githubProfileDirectory) && basename(executable) === 'gh'
-        ? createGitHubRequestProfile(request.maxOutputBytes)
-        : undefined;
-    const persist = async (
-      captured: ReturnType<NonNullable<typeof profile>['finish']>,
-      exitCode: number | null,
-    ) => {
-      await saveGitHubRequestProfile(
-        githubProfileDirectory!,
-        request.githubProfileContext,
-        captured,
-        exitCode,
-      ).catch(profileUnavailable);
-    };
     const result = await runCommandWithTimeout([executable, ...request.argv], {
       baseEnv: {},
       cwd: request.cwd,
-      env: profile ? { ...request.environment, GH_DEBUG: '1' } : request.environment,
+      env: request.environment,
       input: request.stdin ?? '',
       killGraceMs: forcedTerminationGraceMs,
       killProcessTree: true,
       maxCombinedOutputBytes: request.maxOutputBytes,
       maxOutputBytes: request.maxOutputBytes,
-      outputCapture: profile ? 'discard' : 'head',
-      ...(profile ? { onOutputChunk: profile.observe } : {}),
+      outputCapture: 'head',
       ...(signal === undefined ? {} : { signal }),
       timeoutMs: request.timeoutMs,
-    }).catch(async (error: unknown) => {
-      const captured = profile?.finish();
-      if (captured) await persist({ ...captured, complete: false }, null);
-      throw error;
     });
     assertPrivateStateLocksHeld();
-    const captured = profile?.finish();
-    if (captured)
-      await persist(
-        { ...captured, complete: captured.complete && result.termination === 'exit' },
-        result.code,
-      );
     const timedOut = result.termination === 'timeout' || result.termination === 'no-output-timeout';
     return {
       exitCode: timedOut ? null : result.code,
       resolvedExecutable: executable,
-      stderr: captured?.stderr ?? result.stderr,
-      stdout: captured?.stdout ?? result.stdout,
+      stderr: result.stderr,
+      stdout: result.stdout,
       timedOut,
-      truncated:
-        captured?.truncated ??
-        ((result.stdoutTruncatedBytes ?? 0) > 0 || (result.stderrTruncatedBytes ?? 0) > 0),
+      truncated: (result.stdoutTruncatedBytes ?? 0) > 0 || (result.stderrTruncatedBytes ?? 0) > 0,
     };
   };
 }

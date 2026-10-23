@@ -167,7 +167,6 @@ export default class GitHubWorkEventApiClient {
           ],
           stdin,
           {
-            profileOperation: label.replaceAll(' ', '-'),
             maxOutputBytes: 512 * 1024,
             ...options,
             timeoutMs,

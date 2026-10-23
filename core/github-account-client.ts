@@ -46,7 +46,6 @@ export interface GitHubAccountClientDependencies {
 }
 
 export interface GitHubAccountExecutionOptions {
-  profileOperation?: string;
   maxOutputBytes?: number;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -326,12 +325,6 @@ export default class GitHubAccountClient {
             cwd: context.workspaceDir,
             environment,
             executable: 'gh',
-            githubProfileContext: {
-              agentId: context.manifest.agent.id,
-              account: username.value,
-              source: 'account',
-              operation: options?.profileOperation,
-            },
             excludedExecutableDirectories,
             maxOutputBytes: limits.maxOutputBytes,
             ...(requestSignal ? { signal: requestSignal } : {}),
@@ -366,7 +359,6 @@ export default class GitHubAccountClient {
                 ['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}'],
                 undefined,
                 {
-                  profileOperation: 'account-identity',
                   timeoutMs,
                 },
               ),
@@ -401,11 +393,6 @@ export default class GitHubAccountClient {
             cwd: context.workspaceDir,
             environment: profileEnvironment(configDirectory),
             executable: 'gh',
-            githubProfileContext: {
-              agentId: context.manifest.agent.id,
-              account: username.value,
-              source: 'profile-verification',
-            },
             excludedExecutableDirectories,
             maxOutputBytes: defaultMaximumOutputBytes,
             ...(signal ? { signal } : {}),

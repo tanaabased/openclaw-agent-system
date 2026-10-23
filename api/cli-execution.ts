@@ -232,7 +232,6 @@ export default async function executeAgentSystemCliTool<
         cwd: childWorkingDirectory,
         environment: childEnvironment,
         executable: options.definition.runner.executable,
-        githubProfileContext: { agentId, source: options.definition.id },
         excludedExecutableDirectories: excludedToolExecutableDirectories(
           manifest,
           workspaceDir,

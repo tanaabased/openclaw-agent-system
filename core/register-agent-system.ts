@@ -213,11 +213,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       return service.loadForAgentId(agentId, trigger);
     },
   };
-  const runCli = createToolCliRunner(
-    (argv, options) => api.runtime.system.runCommandWithTimeout(argv, options),
-    process.env.AGENT_SYSTEM_GITHUB_PROFILE_DIR,
-    () =>
-      api.logger.warn('github-request-profile-unavailable: request metadata could not be saved'),
+  const runCli = createToolCliRunner((argv, options) =>
+    api.runtime.system.runCommandWithTimeout(argv, options),
   );
   const capabilityDependencies = {
     runCli,
