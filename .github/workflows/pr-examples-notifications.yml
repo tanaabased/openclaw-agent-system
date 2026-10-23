@@ -29,6 +29,7 @@ jobs:
       matrix:
         example:
           - openclaw-notifications-intake
+          - openclaw-notifications-scheduling
           - openclaw-notifications-assessment-recovery
           - openclaw-notifications-feedback-policy
           - openclaw-notifications-assignment-policy
@@ -45,6 +46,7 @@ jobs:
           - openclaw-notifications-pr-discovery
           - openclaw-notifications-pr-reply-recovery
           - openclaw-notifications-progression
+          - openclaw-notifications-decision-recovery
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

@@ -72,16 +72,19 @@ Keep source specs flat under `test/`. Select deterministic units with `test:unit
 
 ### Notification baseline follow-up
 
-Before further extraction, establish a passing notification-only CI baseline. Then
-revisit intake's scheduler controls, unavailable-issue handling, and debug-card
-checks, and separate progression's interrupted Auto decision from its ordinary
-mode/clarification path. Their README notes retain the current exceptions.
+Keep intake focused on concurrent admission and repeat-scan duplicate prevention.
+Notification scheduler pause/resume belongs to `openclaw-notifications-scheduling`;
+unavailable candidates belong to assignment policy, and the refreshed assessment
+owns stage-specific debug presentation. Keep ordinary progression and clarification
+in `openclaw-notifications-progression`, with interrupted Auto-decision recovery in
+`openclaw-notifications-decision-recovery`. Preserve independent cleanup and the
+original assessment, native owner, execution settings, and one-time handoff evidence.
 
 During this branch's baseline run, unrelated PR jobs are gated off for
 `pirog-381-example-workflows`. Remove those temporary branch conditions before
 requesting merge, and run the full PR checks. Start notification measurements
 without a matrix concurrency cap. If GitHub throttles, try caps of 9, 5, 3, 2,
-then 1 for the 17 examples. Record actual overlap, duration, and provider
+then 1 for the selected examples. Record actual overlap, duration, and provider
 diagnostics; distinguish exhausted primary quota from burst throttling and honor
 the provider's retry/reset timing between trials. A per-run cap does not limit
 the combined load from multiple PRs using the same accounts.

@@ -1,9 +1,10 @@
 # OpenClaw Notification Assignment Policy Example
 
-Remove an admitted assignment through an actor outside the live allowed list, verify that unresolved removal authority preserves its native work, then reassign it and clear the warning without creating another owner.
+Retain an unavailable candidate without preventing a valid assignment, remove the admitted assignment through an actor outside the live allowed list, verify that unresolved removal authority preserves its native work, then reassign it and clear the warning without creating another owner.
 
 ## What Belongs Here
 
+- Unavailable-candidate retention without blocking a later valid assignment.
 - Provider-verified removal actor evidence evaluated against the current manifest.
 - Missing assignment reporting without retirement, archival, or loss of the retained assessment, checkout, and implementation stage.
 - Verified reassignment preserving the original native owner and clearing the unresolved observation.
@@ -85,6 +86,11 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 ## Testing
 
 ```bash
+# should retain an unavailable issue without blocking later assignments
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-assignment-policy/tanaabot"
+openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number 2147483647 --json | jq -e '.status == "completed" and .admitted == 0'
+jq -es '[.[].deferred[]?] | any(.[]; (.candidate | fromjson).number == 2147483647 and .code == "intake-github-permission")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json
+
 # should assign one disposable issue from emori to tanaabot after the safe intake baseline
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-assignment-policy/emori"
 openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System assignment-policy flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications-assignment-policy/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'

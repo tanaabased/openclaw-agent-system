@@ -1,0 +1,25 @@
+schema-version: 1
+
+agent:
+  id: scheduling-tanaabot
+  name: Scheduling Tanaabot
+
+environment:
+  set:
+    GH_TOKEN_TANAABOT: ${GH_TOKEN_TANAABOT}
+  required: [GH_TOKEN_TANAABOT]
+
+github:
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+  schema-version: 3
+  runtimes: [openclaw]
+  interval-minutes: 1440
+  allowed-repository-owners:
+    - org: tanaabased
+      node-id: __OWNER_NODE_ID__
+  issue-assignment:
+    mode: plan
+    allowed:
+      - login: tanaabot
+        node-id: __RECEIVER_NODE_ID__

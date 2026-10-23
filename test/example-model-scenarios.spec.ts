@@ -78,6 +78,7 @@ describe('scripts/example-model-scenarios', () => {
       'openclaw-notifications-pr-discovery',
       'openclaw-notifications-pr-reply-recovery',
       'openclaw-notifications-progression',
+      'openclaw-notifications-decision-recovery',
       'openclaw-notifications-issue-journey',
       'openclaw-github-reply',
       'openclaw-issue-assessment',

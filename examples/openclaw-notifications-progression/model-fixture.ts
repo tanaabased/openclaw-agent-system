@@ -62,7 +62,10 @@ function call(stage: string, name: string, args: unknown): FixtureResponse {
 }
 
 /** fixture judgment follows native structured results; it never manufactures their identities. */
-function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
+function respond(
+  request: ChatCompletionRequest,
+  interruptDecision: boolean,
+): FixtureResponse | undefined {
   const messages = currentTurn(request);
   const prompt = messages
     .filter(({ role }) => role === 'user')
@@ -238,7 +241,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     prompt,
   )?.[1];
   if (decisionId) {
-    if (!prompt.includes('Resume the unfinished Auto decision.'))
+    if (interruptDecision && !prompt.includes('Resume the unfinished Auto decision.'))
       return { content: 'The decision was interrupted before its result was recorded.' };
     const fresh = result('refresh-context');
     if (!fresh) return dispatch('refresh-context', { action: 'context', id: decisionId });
@@ -412,9 +415,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   return summary(id, saved.presentation);
 }
 
-function response(request: ChatCompletionRequest) {
+function response(request: ChatCompletionRequest, interruptDecision: boolean) {
   try {
-    return respond(request);
+    return respond(request, interruptDecision);
   } catch (error) {
     if (
       error instanceof Error &&
@@ -427,52 +430,62 @@ function response(request: ChatCompletionRequest) {
   }
 }
 
-const final: Fixture = {
-  match: {
-    model: /^(?:aimock\/)?gpt-5\.5$/u,
-    systemMessage: [identity],
-    predicate: (request) => 'content' in (response(request) ?? {}),
-  },
-  response: (request) => {
-    const value = response(request);
-    assert.ok(value && 'content' in value);
-    return value;
-  },
-};
-
-export const progressionExampleScenario: OpenClawAIMockScenario = {
-  id: 'openclaw-notifications-progression',
-  model: { match: /^(?:aimock\/)?gpt-5\.5$/u, reference: 'aimock/gpt-5.5' },
-  systemPromptSignals: [identity],
-  finalResponses: [],
-  dynamicFinalResponseFixtures: [final],
-  toolCalls: [
-    { id: prefix + 'summary-skill', name: 'read' },
-    { id: prefix + 'scan', name: 'agent_system_intake' },
-    ...dispatchStages.flatMap((stage) =>
-      [0, 1, 2, 3].map((attempt) => ({
-        id: prefix + retryStage(stage, attempt),
-        name: 'agent_system_dispatch',
-      })),
-    ),
-    ...['git', 'apply', 'add', 'commit'].map((stage) => ({
-      id: prefix + stage,
-      name: 'agent_system_git',
-    })),
-  ],
-  fixtures: [
-    {
-      match: {
-        model: /^(?:aimock\/)?gpt-5\.5$/u,
-        systemMessage: [identity],
-        predicate: (request) => 'toolCalls' in (response(request) ?? {}),
-      },
-      response: (request) => {
-        const value = response(request);
-        assert.ok(value && 'toolCalls' in value);
-        return value;
-      },
+export function createProgressionScenario(
+  id: string,
+  interruptDecision = false,
+): OpenClawAIMockScenario {
+  const respond = (request: ChatCompletionRequest) => response(request, interruptDecision);
+  const final: Fixture = {
+    match: {
+      model: /^(?:aimock\/)?gpt-5\.5$/u,
+      systemMessage: [identity],
+      predicate: (request) => 'content' in (respond(request) ?? {}),
     },
-    final,
-  ],
-};
+    response: (request) => {
+      const value = respond(request);
+      assert.ok(value && 'content' in value);
+      return value;
+    },
+  };
+
+  return {
+    id,
+    model: { match: /^(?:aimock\/)?gpt-5\.5$/u, reference: 'aimock/gpt-5.5' },
+    systemPromptSignals: [identity],
+    finalResponses: [],
+    dynamicFinalResponseFixtures: [final],
+    toolCalls: [
+      { id: prefix + 'summary-skill', name: 'read' },
+      { id: prefix + 'scan', name: 'agent_system_intake' },
+      ...dispatchStages.flatMap((stage) =>
+        [0, 1, 2, 3].map((attempt) => ({
+          id: prefix + retryStage(stage, attempt),
+          name: 'agent_system_dispatch',
+        })),
+      ),
+      ...['git', 'apply', 'add', 'commit'].map((stage) => ({
+        id: prefix + stage,
+        name: 'agent_system_git',
+      })),
+    ],
+    fixtures: [
+      {
+        match: {
+          model: /^(?:aimock\/)?gpt-5\.5$/u,
+          systemMessage: [identity],
+          predicate: (request) => 'toolCalls' in (respond(request) ?? {}),
+        },
+        response: (request) => {
+          const value = respond(request);
+          assert.ok(value && 'toolCalls' in value);
+          return value;
+        },
+      },
+      final,
+    ],
+  };
+}
+
+export const progressionExampleScenario = createProgressionScenario(
+  'openclaw-notifications-progression',
+);

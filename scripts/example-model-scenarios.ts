@@ -18,6 +18,7 @@ import { reactivationExampleScenario } from '../examples/openclaw-notifications-
 import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
 import { resetExampleScenario } from '../examples/openclaw-notifications-reset/model-fixture.ts';
 import { progressionExampleScenario } from '../examples/openclaw-notifications-progression/model-fixture.ts';
+import { decisionRecoveryExampleScenario } from '../examples/openclaw-notifications-decision-recovery/model-fixture.ts';
 import { prExampleScenario } from '../examples/openclaw-notifications-pr-journey/model-fixture.ts';
 import { prRecipientsExampleScenario } from '../examples/openclaw-notifications-pr-recipients/model-fixture.ts';
 import { prUpdateExampleScenario } from '../examples/openclaw-notifications-pr-update/model-fixture.ts';
@@ -46,6 +47,7 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [prDiscoveryExampleScenario.id, prDiscoveryExampleScenario],
   [prReplyRecoveryExampleScenario.id, prReplyRecoveryExampleScenario],
   [progressionExampleScenario.id, progressionExampleScenario],
+  [decisionRecoveryExampleScenario.id, decisionRecoveryExampleScenario],
   [issueExampleScenario.id, issueExampleScenario],
   [githubReplyExampleScenario.id, githubReplyExampleScenario],
   [issueAssessmentExampleScenario.id, issueAssessmentExampleScenario],

@@ -20,6 +20,8 @@ for (const id of [
   'openclaw-notifications-retirement',
   'openclaw-notifications-reset',
   'openclaw-notifications-progression',
+  'openclaw-notifications-decision-recovery',
+  'openclaw-notifications-scheduling',
 ]) {
   describe(`examples/${id} fixture configuration`, () => {
     it('should accept the prepared fixture and route its supported workflow to the owning runtime', async () => {

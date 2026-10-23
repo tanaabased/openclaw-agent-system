@@ -631,6 +631,50 @@ for (const scenario of [
         assert.deepEqual(await response(input), { content: 'Published retained plan.' });
       });
     if (scenario.id === 'openclaw-notifications-progression') {
+      for (const interrupted of [false, true])
+        it(`should record an auto decision only after verified context with interruption ${interrupted}`, async () => {
+          const selected = interrupted
+            ? resolveExampleModelScenario('openclaw-notifications-decision-recovery')
+            : scenario;
+          const input = request(`Refresh agent_system_dispatch action context with id ${id}.`);
+          if (interrupted) {
+            const first = await response(input, selected);
+            assert.ok('content' in first && !('toolCalls' in first));
+            input.messages[1]!.content = `Resume the unfinished Auto decision. Refresh agent_system_dispatch action context with id ${id}.`;
+          }
+          assert.equal((await action(input, 'context', selected)).id, id);
+          append(input, 'refresh-context', {
+            status: 'verified',
+            mode: 'plan',
+            previousResult: { outcome: 'plan-ready', plan: 'Retained plan.' },
+          });
+          assert.equal(matchFixture([...selected.fixtures], input), null);
+          input.messages.at(-1)!.content = JSON.stringify({
+            status: 'verified',
+            mode: 'auto',
+            previousResult: {
+              version: 1,
+              outcome: 'plan-ready',
+              summary: 'Ready.',
+              assessment: 'Bounded documentation.',
+              plan: 'Retained plan.',
+              evidence: [],
+              progress: { completed: [], remaining: [] },
+            },
+            previousResultDigest: digest,
+          });
+          const result = await action(input, 'result', selected);
+          assert.equal(result.previousResultDigest, digest);
+          assert.ok(result.result.outcome === 'plan-ready');
+          assert.equal(result.result.plan, 'Retained plan.');
+          assert.equal(result.result.decision?.mode, 'work');
+          append(input, 'refresh-result', {
+            status: 'recorded',
+            presentation: 'Verified decision.',
+            handoff: { next: 'implementation' },
+          });
+          assert.equal((await action(input, 'implementation-context', selected)).id, id);
+        });
       for (const direct of [false, true])
         it(`should ask clarification during automatic work and resume an answer with direct handoff ${direct}`, async () => {
           const automatic = request(
