@@ -20,9 +20,55 @@ describe('example environment resolution', () => {
         'GH_TOKEN_TANAABOT',
         'tanaabot',
       ],
-      ['examples/openclaw-notifications-lifecycle/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
       [
-        'examples/openclaw-notifications-lifecycle/tanaabot/agent.yaml',
+        'examples/openclaw-notifications-assessment-recovery/emori/agent.yaml',
+        'GH_TOKEN_EMORI',
+        'emoriwan',
+      ],
+      [
+        'examples/openclaw-notifications-assessment-recovery/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      [
+        'examples/openclaw-notifications-feedback-policy/emori/agent.yaml',
+        'GH_TOKEN_EMORI',
+        'emoriwan',
+      ],
+      [
+        'examples/openclaw-notifications-feedback-policy/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      [
+        'examples/openclaw-notifications-assignment-policy/emori/agent.yaml',
+        'GH_TOKEN_EMORI',
+        'emoriwan',
+      ],
+      [
+        'examples/openclaw-notifications-assignment-policy/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      [
+        'examples/openclaw-notifications-reactivation/emori/agent.yaml',
+        'GH_TOKEN_EMORI',
+        'emoriwan',
+      ],
+      [
+        'examples/openclaw-notifications-reactivation/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      ['examples/openclaw-notifications-retirement/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
+      [
+        'examples/openclaw-notifications-retirement/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      ['examples/openclaw-notifications-reset/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
+      [
+        'examples/openclaw-notifications-reset/tanaabot/agent.yaml',
         'GH_TOKEN_TANAABOT',
         'tanaabot',
       ],

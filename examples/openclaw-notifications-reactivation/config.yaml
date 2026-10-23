@@ -1,0 +1,3 @@
+schema-version: 1
+cleanup:
+  grace-minutes: 0

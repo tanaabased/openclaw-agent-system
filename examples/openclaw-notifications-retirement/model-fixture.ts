@@ -11,7 +11,7 @@ import { issueExampleScenario } from '../openclaw-notifications-issue/model-fixt
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
-const prefix = 'call_lifecycle_retire_';
+const prefix = 'call_retirement_';
 const stages = ['preview', 'apply'];
 function retirement(request: ChatCompletionRequest): FixtureResponse | undefined {
   const start = request.messages.findLastIndex(
@@ -86,9 +86,9 @@ const final: Fixture = {
     return result;
   },
 };
-export const lifecycleExampleScenario: OpenClawAIMockScenario = {
+export const retirementExampleScenario: OpenClawAIMockScenario = {
   ...issueExampleScenario,
-  id: 'openclaw-notifications-lifecycle',
+  id: 'openclaw-notifications-retirement',
   dynamicFinalResponseFixtures: [
     ...(issueExampleScenario.dynamicFinalResponseFixtures ?? []),
     final,

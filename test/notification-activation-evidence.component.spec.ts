@@ -36,7 +36,12 @@ for (const scenario of [
   'openclaw-notifications-issue',
   'openclaw-notifications-pr-delivery',
   'openclaw-notifications-intake',
-  'openclaw-notifications-lifecycle',
+  'openclaw-notifications-assessment-recovery',
+  'openclaw-notifications-feedback-policy',
+  'openclaw-notifications-assignment-policy',
+  'openclaw-notifications-reactivation',
+  'openclaw-notifications-retirement',
+  'openclaw-notifications-reset',
 ]) {
   for (const agent of ['emori', 'tanaabot']) {
     describe(`examples/${scenario} ${agent} install evidence`, () => {
@@ -53,7 +58,7 @@ for (const scenario of [
           const activation = source.match(
             agent === 'emori'
               ? /# should install emori in its fixture workspace\n([\s\S]*?)\n\n/u
-              : /# should install tanaabot and activate native intake with explicit dispatch enrollment\n([\s\S]*?)\n```/u,
+              : /# should install tanaabot and activate native intake with explicit dispatch enrollment\n([\s\S]*?)(?=\n\n# should |\n```)/u,
           )?.[1];
           assert.ok(activation);
           const root = await mkdtemp(join(tmpdir(), 'notification-activation-'));

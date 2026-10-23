@@ -11,7 +11,7 @@ Assign one issue, retain its assessment in one native chat and managed worktree,
 ## What Does Not Belong Here
 
 - Activation and concurrent admission: [intake](../openclaw-notifications-intake/README.md). Implementation and PR delivery: [PR delivery](../openclaw-notifications-pr-delivery/README.md).
-- Restart, reactivation, reset, and retirement: currently collected in [lifecycle](../openclaw-notifications-lifecycle/README.md).
+- Restart recovery: [assessment recovery](../openclaw-notifications-assessment-recovery/README.md). Unassigned-issue feedback: [reactivation](../openclaw-notifications-reactivation/README.md). Coordinator/tracking reset: [reset](../openclaw-notifications-reset/README.md). Resource reconciliation: [retirement](../openclaw-notifications-retirement/README.md).
 - Live author-policy changes, cosmetic chat edits, repeated-question/direct-input comparison, clarification journeys, and manual assessment or reply on an unassigned issue.
 
 ## Notes

@@ -74,7 +74,12 @@ describe('scripts/example-model-scenarios', () => {
       'openclaw-notifications-progression',
       'openclaw-notifications-issue',
       'openclaw-notifications-intake',
-      'openclaw-notifications-lifecycle',
+      'openclaw-notifications-assessment-recovery',
+      'openclaw-notifications-feedback-policy',
+      'openclaw-notifications-assignment-policy',
+      'openclaw-notifications-reactivation',
+      'openclaw-notifications-retirement',
+      'openclaw-notifications-reset',
     ]);
     assert.equal(resolveExampleModelScenario('openclaw-agent').id, 'openclaw-agent');
     assert.equal(resolveExampleModelScenario('openclaw-credentials').id, 'openclaw-credentials');

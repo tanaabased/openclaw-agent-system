@@ -8,7 +8,12 @@ import { runtimeBoundaryScenario } from '../examples/openclaw-runtimes/model-fix
 import { memoryExampleScenario } from '../examples/openclaw-memory/model-fixture.ts';
 import { issueExampleScenario } from '../examples/openclaw-notifications-issue/model-fixture.ts';
 import { intakeExampleScenario } from '../examples/openclaw-notifications-intake/model-fixture.ts';
-import { lifecycleExampleScenario } from '../examples/openclaw-notifications-lifecycle/model-fixture.ts';
+import { assessmentRecoveryExampleScenario } from '../examples/openclaw-notifications-assessment-recovery/model-fixture.ts';
+import { feedbackPolicyExampleScenario } from '../examples/openclaw-notifications-feedback-policy/model-fixture.ts';
+import { assignmentPolicyExampleScenario } from '../examples/openclaw-notifications-assignment-policy/model-fixture.ts';
+import { reactivationExampleScenario } from '../examples/openclaw-notifications-reactivation/model-fixture.ts';
+import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
+import { resetExampleScenario } from '../examples/openclaw-notifications-reset/model-fixture.ts';
 import { progressionExampleScenario } from '../examples/openclaw-notifications-progression/model-fixture.ts';
 import { prExampleScenario } from '../examples/openclaw-notifications-pr-delivery/model-fixture.ts';
 import { worktreeExampleScenario } from '../examples/openclaw-worktree/model-fixture.ts';
@@ -28,7 +33,12 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [progressionExampleScenario.id, progressionExampleScenario],
   [issueExampleScenario.id, issueExampleScenario],
   [intakeExampleScenario.id, intakeExampleScenario],
-  [lifecycleExampleScenario.id, lifecycleExampleScenario],
+  [assessmentRecoveryExampleScenario.id, assessmentRecoveryExampleScenario],
+  [feedbackPolicyExampleScenario.id, feedbackPolicyExampleScenario],
+  [assignmentPolicyExampleScenario.id, assignmentPolicyExampleScenario],
+  [reactivationExampleScenario.id, reactivationExampleScenario],
+  [retirementExampleScenario.id, retirementExampleScenario],
+  [resetExampleScenario.id, resetExampleScenario],
 ]);
 
 export const exampleModelScenarioIds = Object.freeze([...scenarios.keys()]);

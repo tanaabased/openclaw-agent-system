@@ -6,7 +6,12 @@ for (const id of [
   'openclaw-notifications-issue',
   'openclaw-notifications-pr-delivery',
   'openclaw-notifications-intake',
-  'openclaw-notifications-lifecycle',
+  'openclaw-notifications-assessment-recovery',
+  'openclaw-notifications-feedback-policy',
+  'openclaw-notifications-assignment-policy',
+  'openclaw-notifications-reactivation',
+  'openclaw-notifications-retirement',
+  'openclaw-notifications-reset',
   'openclaw-notifications-progression',
 ]) {
   describe(`examples/${id} fixture configuration`, () => {

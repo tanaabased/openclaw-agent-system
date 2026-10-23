@@ -10,7 +10,7 @@ import { Value } from 'typebox/value';
 
 import { issueExampleScenario } from '../examples/openclaw-notifications-issue/model-fixture.ts';
 import { intakeExampleScenario } from '../examples/openclaw-notifications-intake/model-fixture.ts';
-import { lifecycleExampleScenario } from '../examples/openclaw-notifications-lifecycle/model-fixture.ts';
+import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
 import { progressionExampleScenario } from '../examples/openclaw-notifications-progression/model-fixture.ts';
 import { prExampleScenario } from '../examples/openclaw-notifications-pr-delivery/model-fixture.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
@@ -21,7 +21,7 @@ for (const scenario of [
   prExampleScenario,
   progressionExampleScenario,
   intakeExampleScenario,
-  lifecycleExampleScenario,
+  retirementExampleScenario,
 ]) {
   const id = 'a'.repeat(64);
   const job = openclawIntakeJobs({

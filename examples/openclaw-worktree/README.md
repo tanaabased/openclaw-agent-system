@@ -12,7 +12,7 @@ Prepare a managed worktree from a declared local repository, reuse it without lo
 
 - Remote SSH enrollment and native session execution in a remote checkout; these form a separate installed journey.
 - Session continuation after Gateway restart and NUL-delimited command-output transport variants.
-- General command forwarding: [tools](../openclaw-tools/README.md). Native signing protections: [OS credentials](../os-credentials/README.md). Notification retirement: currently in [lifecycle](../openclaw-notifications-lifecycle/README.md).
+- General command forwarding: [tools](../openclaw-tools/README.md). Native signing protections: [OS credentials](../os-credentials/README.md). Notification retirement: [retirement](../openclaw-notifications-retirement/README.md).
 
 ## Notes
 

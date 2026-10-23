@@ -63,7 +63,7 @@ describe('examples/openclaw-notifications-pr-delivery retained feedback evidence
 for (const [scenario, itemType] of [
   ['openclaw-notifications-issue', 'issue'],
   ['openclaw-notifications-pr-delivery', 'pull-request'],
-  ['openclaw-notifications-lifecycle', 'issue'],
+  ['openclaw-notifications-reactivation', 'issue'],
 ]) {
   describe(`examples/${scenario} feedback evidence`, () => {
     it('should inspect only its requested run while rejecting real duplicate responses', async () => {
@@ -92,7 +92,9 @@ for (const [scenario, itemType] of [
           itemType === 'issue'
             ? [
                 'summary',
-                ...(scenario === 'openclaw-notifications-lifecycle' ? ['refreshed-summary'] : []),
+                ...(scenario === 'openclaw-notifications-reactivation'
+                  ? ['refreshed-summary']
+                  : []),
               ]
             : [];
         await write('feedback', {

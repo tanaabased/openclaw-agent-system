@@ -1,7 +1,7 @@
 schema-version: 1
 
 agent:
-  id: lifecycle-emori
+  id: reset-emori
   name: Notification EMORI
   email: emori@tanaab.dev
 

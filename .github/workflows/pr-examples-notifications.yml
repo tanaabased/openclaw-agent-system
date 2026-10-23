@@ -23,7 +23,12 @@ jobs:
       matrix:
         example:
           - openclaw-notifications-intake
-          - openclaw-notifications-lifecycle
+          - openclaw-notifications-assessment-recovery
+          - openclaw-notifications-feedback-policy
+          - openclaw-notifications-assignment-policy
+          - openclaw-notifications-reactivation
+          - openclaw-notifications-retirement
+          - openclaw-notifications-reset
           - openclaw-notifications-issue
           - openclaw-notifications-pr-delivery
           - openclaw-notifications-progression
