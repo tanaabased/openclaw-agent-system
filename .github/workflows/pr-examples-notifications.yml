@@ -1,4 +1,4 @@
-name: OpenClaw notification tests
+name: Notification tests
 
 on:
   pull_request:

@@ -10,7 +10,7 @@ Use private managed storage and a local signing key on macOS and Linux, verify a
 
 ## What Does Not Belong Here
 
-- Keychain/Secret Service device enrollment: [OS install](../os-install/README.md). Real provider resolution/cache: [credentials](../openclaw-credentials/README.md).
+- Keychain/Secret Service device enrollment: [dispatch enrollment](../os-dispatch-enrollment/README.md). Real provider resolution/cache: [credentials](../openclaw-credentials/README.md).
 - Remote SSH-key registration, hosted GitHub content, Gateway sessions, or model behavior.
 
 ## Notes

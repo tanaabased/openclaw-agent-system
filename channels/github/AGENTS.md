@@ -109,6 +109,18 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   authentication, permission, throttling, transport, and unknown failures. An
   issue-specific failure must not stop unrelated eligible work.
 
+## Conditional Provider Reads
+
+- Route eligible product-owned GitHub REST reads through the shared conditional
+  transport in `provider/work-event-api-client.ts`. Preserve ETags and revalidate
+  with `If-None-Match`; reuse the saved body only after a provider-confirmed 304.
+  Endpoints without validators continue with ordinary fresh reads.
+- Keep observations credential-scoped and preserve mutation invalidation. Never
+  substitute cached success for a denied, malformed, or interrupted response.
+  Writes and GraphQL requests must not inherit conditional REST validators.
+- Preserve the behavioral coverage in `test/github-conditional-reads.spec.ts`
+  when changing provider reads; temporary profiling is not the enforcement mechanism.
+
 ## Optimization Audit
 
 For each gate, identify the effect, owner, scope, and recovery. Ask whether it:

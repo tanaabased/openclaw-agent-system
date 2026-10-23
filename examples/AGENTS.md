@@ -55,7 +55,7 @@
 - Use bounded polling only for asynchronous readiness or completion that the preceding command does not already await. Keep cleanup and diagnostic branches tied to scenario-owned resources; they must not turn failed work into success.
 - Prefer one command per line; avoid `command && next-command` when ordinary newline sequencing expresses the same fail-fast flow.
 - Treat blank-line-separated blocks as separate scripts; do not rely on variables, shell options, functions, or working directories persisting between them.
-- Keep cleanup limited to a product teardown contract or external resources that survive the runner. Do not stop local mock processes or delete ephemeral files merely to leave an empty runner. Before disposing of live GitHub fixtures, quiesce their Gateway once with a short bound; do not repeat shutdown or assert marker files solely to prove cleanup may run.
+- Keep cleanup limited to a product teardown contract or external resources that survive the runner. Do not stop local mock processes or delete ephemeral files merely to leave an empty runner. Before disposing of live GitHub fixtures, quiesce their Gateway once with a short bound. When Leia can continue after a failed case, guard external cleanup on confirmed quiescence; preserve those safety guards without repeating shutdown or merely restating its successful result.
 - Keep runtime evidence beneath the scenario's `TMPDIR`; keep scenario-owned outputs in the disposable workspace when the operation requires them. Never commit generated state.
 - Keep scenario-specific expected values visible in the README or checked-in fixture; use helpers only for bounded process coordination or structured validation.
 

@@ -1,4 +1,4 @@
-name: OpenClaw runtime tests
+name: OpenClaw tests
 
 on:
   pull_request:

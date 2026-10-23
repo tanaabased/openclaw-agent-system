@@ -1,4 +1,4 @@
-name: Codex runtime tests
+name: Codex tests
 
 on:
   pull_request:
