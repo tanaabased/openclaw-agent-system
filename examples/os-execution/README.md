@@ -1,12 +1,24 @@
 # Native Execution Example
 
-Verify Agent System's native execution boundary on macOS and Linux: manifest PATH projection, workspace paths containing spaces, shell arguments and stdin, exit status, PTYs, and managed identity after a directory change. Strict AIMock selects two fixed OpenClaw exec calls; the Gateway, shell, terminal, and managed Git launcher run normally. No provider credentials or live model are needed. Codex-specific execution remains with runtime coverage.
+Run real shell and PTY commands on macOS and Linux, preserving manifest PATH, arguments, stdin, exit status, and managed identity after a directory change while rejecting cross-agent execution.
 
-The workspace is copied because the test requires a path containing spaces. The probe emits success only after checking the actual child process and the rejected cross-agent invocation.
+## What Belongs Here
 
-On mock failure, cleanup fails after stopping the provider and reports bounded scenario-owned tool results so Leia retains the underlying probe failure or timeout. Each execution has a 120-second limit within a 180-second agent turn.
+- Actual native process/terminal behavior through the installed execution boundary.
+- Workspace paths containing spaces and identity/containment after changing directory.
+- One shell exchange and one PTY exchange, each requiring its probe's completed receipt.
 
-The isolated Gateway disables cron so unrelated scheduled maintenance cannot add model requests to the two authored execution exchanges.
+## What Does Not Belong Here
+
+- Runtime-specific hosted Codex execution: [runtimes](../openclaw-runtimes/README.md). Interactive approval journeys also remain there pending separation.
+- Provider transport, model interpretation, scheduler behavior, and exhaustive command-form permutations.
+
+## Notes
+
+- Strict AIMock selects two fixed OpenClaw exec calls; the Gateway, shell, terminal, and managed Git launcher run normally without a live model or provider credentials.
+- Workspaces are copied because paths containing spaces are part of the contract. The probe emits success only after checking the actual child process and rejected cross-agent invocation.
+- Each command has a 120-second limit within a 180-second turn. Cron is disabled so unrelated maintenance cannot consume mock exchanges.
+- Cleanup stops the provider and fails on strict mock misses, retaining bounded probe results for diagnosis.
 
 ## Setup
 

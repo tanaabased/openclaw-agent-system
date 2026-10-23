@@ -1,8 +1,25 @@
 # OpenClaw Automations Example
 
-Verify the installed scheduler's critical paths through `openclaw agent-system automations`: sync without duplication, diagnose native drift without mutating it, reconcile through Install, execute a command under the owning agent, and retain native identity and persistent prompt routing through a Gateway restart. Strict AIMock verifies one completed prompt in the owning agent's context. OpenClaw runtime tests run this example on Ubuntu without provider credentials or remote SSH.
+Synchronize one command and one prompt automation without duplication, execute each under its owning agent, and verify completed runs and stable native job identities/routing.
 
-Command execution writes receipts in the checked-in workspace on the disposable runner. Both jobs recur hourly; explicit `run` requests exercise them immediately, and exact run IDs distinguish admission from completion. Source tests cover option variants, offline failures, one-shot retention, unmanaged jobs, stale authority, containment, timeouts, cancellation cleanup, and thread-selection permutations.
+## What Belongs Here
+
+- Public managed sync/list/run boundaries and repeated sync preserving the same native jobs.
+- A completed command receipt proving managed Git identity and a completed prompt in the owning agent context.
+- Exact native run IDs and durable completion evidence, rather than treating queued admission as success.
+
+## What Does Not Belong Here
+
+- Gateway-unavailable diagnostics, scheduler drift/repair, presentation variants, and job routing after restart.
+- Strict Git/GitHub launcher descendants and token isolation: currently collected in [tools](../openclaw-tools/README.md), pending a focused descendant contract.
+- Notification intake and issue progression: [intake](../openclaw-notifications-intake/README.md) and [progression](../openclaw-notifications-progression/README.md).
+
+## Notes
+
+- Both jobs recur hourly; explicit run requests exercise them immediately. Command receipts are written beside the checked-in manifest on the disposable runner.
+- Strict AIMock supplies one prompt completion; scheduling, the Gateway, and command execution remain real. No hosted provider credential or remote SSH is needed.
+- Pending relocation: pre-start offline diagnostics, native drift followed by Doctor/Install reconciliation, category/name presentation, and Gateway restart before the prompt run remain below.
+- Source tests cover option/offline variants, one-shot retention, unmanaged jobs, stale authority, containment, timeout/cancellation cleanup, and thread-selection permutations.
 
 ## Setup
 

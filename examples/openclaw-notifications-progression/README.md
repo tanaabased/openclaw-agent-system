@@ -1,10 +1,25 @@
 # OpenClaw Notification Progression Example
 
-Exercise Plan-to-Auto changes, an interrupted Auto decision, direct assessment-to-implementation handoff, clarification, and an authorized answer in one native issue chat and worktree. The live mode edit takes effect without Install; the coordinator reconciles completed native turns without repeating implementation or requiring another approval.
+Move an already assessed issue from Plan to Auto, retain the verified Work decision, enter implementation in the same native owner, hold on clarification, and resume an authorized answer to a local commit without another handoff.
 
-Strict AIMock supplies judgment while the installed plugin, GitHub assignment, managed checkout, native coordinator, and receipt checks remain real. The final operator answer explicitly requests a local commit and prohibits pushing or publishing. PR delivery and PR feedback belong to `openclaw-notifications-pr-delivery`; restart, reactivation, and retirement belong to `openclaw-notifications-lifecycle`.
+## What Belongs Here
 
-Only Tanaabot is assigned. EMORI creates the disposable issue. Each refresh targets this example's issue, and the 24-hour interval keeps recurring discovery outside the bounded run. CI owns the workspace, issue, and SSH key and removes only those resources.
+- A live mode edit taking effect without Install and preserving the original assessment, model selection, chat, and worktree.
+- The authorized assessment-to-implementation transition, with completed work reconciled rather than dispatched again.
+- Clarification holding the implementation stage until an answer arrives, then resuming the same work without pushing or publishing.
+
+## What Does Not Belong Here
+
+- Initial concurrent intake: [intake](../openclaw-notifications-intake/README.md). Ordinary planning questions: [issue planning](../openclaw-notifications-issue/README.md).
+- PR publication and PR feedback: [PR delivery](../openclaw-notifications-pr-delivery/README.md). Restart, reactivation, reset, and retirement currently live in [lifecycle](../openclaw-notifications-lifecycle/README.md).
+- Interrupted-decision recovery or a matrix of every mode/customization combination.
+
+## Notes
+
+- Strict AIMock supplies decisions; the installed plugin, GitHub assignment, managed checkout, coordinator, and receipts remain real. This is not proof of genuine model judgment.
+- Pending relocation: the Auto decision is deliberately left unfinished and resumed before implementation clarification. The current body therefore combines ordinary progression with interruption recovery.
+- The final operator answer explicitly requests a local commit and prohibits push/PR publication. The test verifies the committed change, not delivery.
+- EMORI creates the disposable issue; only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule isolate discovery. CI owns and cleans up the issue, workspace, and SSH key.
 
 ## Setup
 

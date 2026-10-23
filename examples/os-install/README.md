@@ -1,8 +1,25 @@
 # Install Example
 
-Verify installation, repeat convergence, read-only Doctor inspection, and native credential enrollment on macOS and Ubuntu. Portable help, presentation, and tool-grant variants belong to the Ubuntu Doctor example. The enrollment fixture uses a strict local GitHub CLI substitute with synthetic identity responses, a paused issue-assignment workflow, and no allowed actors. Gateway device enrollment, Keychain or Secret Service storage, consent, and restart remain real; no hosted secret, GitHub request, or model call is needed.
+Install the declared agent on macOS and Ubuntu, repeat without foundational changes, inspect it through read-only Doctor, and explicitly enroll/reuse the native session-dispatch credential.
 
-Enrollment commands preserve the prepared PATH so OpenClaw's CLI bootstrap does not put the system GitHub CLI ahead of the fixture.
+## What Belongs Here
+
+- Real native installation, convergence, and read-only readiness on both operating systems.
+- Consent before first enrollment and Doctor reporting missing credentials without issuing them.
+- Successful device enrollment through Keychain or Secret Service and reuse without another consent/bootstrap.
+
+## What Does Not Belong Here
+
+- Unsupported review-adapter permutations, portable help/presentation, or native tool-grant matrices; the latter variants are currently collected in [Doctor](../openclaw-doctor/README.md) pending separation.
+- Gateway-unavailable enrollment recovery and connectivity after restart. Any extracted native enrollment/recovery contract must retain both operating systems where their storage boundary differs.
+- Hosted GitHub discovery or model behavior: [notification intake](../openclaw-notifications-intake/README.md).
+
+## Notes
+
+- A strict local GitHub CLI substitute supplies synthetic identity responses. The issue workflow is paused with no allowed actors; Gateway device enrollment, native credential storage, consent, and restart are real.
+- No hosted secret, GitHub request, or model call is needed. Preserve the prepared PATH so CLI bootstrap cannot put the system GitHub CLI ahead of the fixture.
+- Pending relocation: unsupported review validation/install/Doctor variants, bounded enrollment failure before Gateway startup, and device-only connectivity after restart remain below.
+- The successful enrollment currently verifies reuse of the device ID retained by the preceding failed attempt. Preserve that recovery evidence when separating the ordinary enrollment path.
 
 ## Setup
 

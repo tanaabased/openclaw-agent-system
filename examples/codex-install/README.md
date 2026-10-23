@@ -1,6 +1,23 @@
 # Codex Install Example
 
-Install the prepared plugin in isolated Codex state, discover its skills through a fresh app server, and verify workspace binding, runtime-aware setup, session context, model routing, and unbinding. The checked-in workspaces run in place; separate manifest snapshots prove they remain unchanged. These direct checks require no model or provider credentials. Run only in GitHub Actions.
+Install the prepared plugin in isolated Codex state, discover its skills through a fresh app server, explicitly bind a workspace, apply only standalone Codex setup, load its session context, and unbind without changing workspace manifests.
+
+## What Belongs Here
+
+- Packaged plugin installation and skill discovery, with explicit confirmation before persisting a workspace binding.
+- Read-only inspection and installation of applicable setup, preserving the OpenClaw-owned boundary and converged installed identity.
+- A packaged SessionStart hook loading the bound workspace, including paths containing spaces, and safe unbinding with manifest preservation.
+
+## What Does Not Belong Here
+
+- Automation planning/conversation persistence: [Codex automations](../codex-automations/README.md). Notification authority: [Codex notifications](../codex-notifications/README.md).
+- Routing input/fallback permutations, identity rename/rotation, inactive/replacement binding variants, and setup timeout or detailed diagnostic variants.
+
+## Notes
+
+- Direct checks need no model or provider credentials. Workspaces run in place; independent snapshots verify that shared manifests stay unchanged. Run only in GitHub Actions.
+- Session context includes model-routing projection as a binding smoke check; detailed routing resolution is a separate contract.
+- Pending relocation: delivery action mismatch and direct-assessment caller guards, quiet/debug setup diagnostics, missing-identity inspection and rename/rotation, inherited-pipe timeout, routing variants, local-settings refresh, and inactive/replacement binding checks remain below.
 
 ## Setup
 

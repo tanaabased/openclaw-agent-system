@@ -1,8 +1,25 @@
 # OpenClaw Worktree Example
 
-Verify the installed managed worktree lifecycle against a disposable local repository: prepare, reuse without losing edits, execute Git with the owning agent identity, and remove safely. Public Agent System commands own preparation and removal; both the public Git command and the packaged contextual shim must discover the agent from inside the worktree.
+Prepare a managed worktree from a declared local repository, reuse it without losing edits, execute Git with its owning identity, refuse dirty removal, and safely remove it once clean while preserving the source checkout.
 
-Ubuntu coverage also provisions disposable GitHub authentication/signing keys, prepares a remote SSH worktree, and runs an ordinary native agent session there. Strict AIMock requires canonical workspace guidance before issuing either real execution call. An explicit session label keeps automatic model-generated titles outside this execution contract. A continuation after Gateway restart must retain its session, working directory, and Git identity. CI supplies only the existing Tanaabot token; generated public keys are removed after the test.
+## What Belongs Here
+
+- Managed preparation/listing and reuse of the same branch and checkout.
+- Public Git and contextual shim discovery of the owning agent from inside the worktree.
+- Dirty-worktree refusal and clean removal without changing source content, branch, or local edits.
+
+## What Does Not Belong Here
+
+- Remote SSH enrollment and native session execution in a remote checkout; these form a separate installed journey.
+- Session continuation after Gateway restart and NUL-delimited command-output transport variants.
+- General command forwarding: [tools](../openclaw-tools/README.md). Native signing protections: [OS credentials](../os-credentials/README.md). Notification retirement: currently in [lifecycle](../openclaw-notifications-lifecycle/README.md).
+
+## Notes
+
+- Pending relocation: the current job also registers disposable GitHub authentication/signing keys, prepares a remote SSH worktree, and runs a strict-AIMock native session with canonical workspace guidance before continuing that session after restart.
+- An explicit session label excludes automatic title generation from the execution contract. Continued-session checks require the same working directory, identity, native session, and one invocation per input.
+- Pending relocation: both managed Git entrypoints also check NUL-delimited output.
+- Ubuntu CI supplies the Tanaabot token and shared SSH fixture. Cleanup removes only this run's generated public-key registrations and clean remote checkout, then stops the Gateway/provider.
 
 ## Setup
 

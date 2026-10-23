@@ -1,8 +1,24 @@
 # OpenClaw Memory Example
 
-Verify manifest-managed memory through the packed plugin: install keyword-only search, index a known note, retrieve its content, and confirm repeat installation and Doctor preserve the configured provider. Native OpenClaw commands own indexing and search because Agent System has no equivalent subcommands.
+Install manifest-managed keyword memory, index a known workspace note, retrieve its content, and verify that repeat installation and Doctor preserve the configured provider and usable search.
 
-Ubuntu coverage also exercises the installed secret-provider handoff to OpenClaw embeddings and resolution after a Gateway restart. Strict AIMock returns fixed vectors only when it receives the synthetic fixture credential. No live model or hosted embedding service is used; this tests credential handoff and retrieval rather than embedding quality.
+## What Belongs Here
+
+- The declared memory configuration producing a real indexed and retrievable note.
+- Repeat convergence, read-only readiness, and retrieval after the repeated install.
+- Native OpenClaw indexing/search commands, because Agent System has no equivalent subcommands.
+
+## What Does Not Belong Here
+
+- Credential-backed embedding-provider handoff and retrieval; that is a separate valid installed path.
+- Secret resolution after Gateway restart, embedding quality, or live provider/model evaluation.
+- Generic provider-cache behavior: [credentials](../openclaw-credentials/README.md).
+
+## Notes
+
+- Keyword checks use direct commands without a Gateway, model, or hosted credential.
+- Pending relocation: an additional workspace installs an embedding secret reference without persisting its value, retrieves through the Gateway, then resolves it again after restart.
+- That embedding fixture uses strict AIMock with fixed vectors and a required synthetic credential. It proves credential handoff/retrieval rather than embedding quality or hosted provider transport.
 
 ## Setup
 

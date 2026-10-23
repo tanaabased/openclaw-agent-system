@@ -1,8 +1,23 @@
 # OpenClaw Backup Example
 
-Verify the installed backup critical path through public Agent System commands: capture explicitly included private memory despite Git ignore rules, verify the archive, and restore its contents into a fresh staging directory without changing the source workspace. A populated target must be rejected rather than overwritten.
+Create and verify an archive containing explicitly included private memory and agent database state, restore it into fresh staging without changing the source, and refuse to overwrite the populated recovery target.
 
-OpenClaw runtime tests run this example on Ubuntu without a model, Gateway, or provider credentials. The checked-in workspace runs in place; a checksum baseline and separate restore target prove source preservation and recovery. The archive also captures a real agent database with committed WAL content. Retention and adversarial archive variants remain in source tests.
+## What Belongs Here
+
+- Actual archived/restored data despite workspace Git-ignore rules, including committed SQLite WAL content.
+- Preserved safe links, executable modes, manifest identity, and source checksums.
+- A populated-target refusal that preserves the existing recovery data.
+
+## What Does Not Belong Here
+
+- Incomplete-artifact cleanup preview/apply/repeat behavior; that needs its own bounded cleanup contract.
+- Retention policy, adversarial archive permutations, or general live-agent recovery; exhaustive variants remain in source tests.
+
+## Notes
+
+- Direct Ubuntu commands need no Gateway, model, or provider credential. The checked-in workspace runs in place with an independent checksum baseline and separate restore target.
+- The database fixture keeps real committed WAL content present during capture; restoration verifies the recovered database, not just archive membership.
+- Pending relocation: cleanup fixtures distinguish incomplete artifacts from complete/uncertain and differently owned attempts, then apply cleanup twice and reverify the published backup.
 
 ## Setup
 

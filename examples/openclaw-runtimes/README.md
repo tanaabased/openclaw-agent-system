@@ -1,12 +1,26 @@
 # OpenClaw Runtime Boundaries Example
 
-Verify the installed Agent System boundary through native OpenClaw and OpenClaw-hosted Codex. Each runtime executes one manifest-PATH command under its own Git identity, rejects a change into the peer agent's workspace, and rejects unattended operator installation. The installed Control UI approval route then proves denied install, approved install, and read-only Doctor behavior. Assertions use filesystem receipts and native approval events rather than model wording.
+Execute one declared-PATH command through native OpenClaw and OpenClaw-hosted Codex, preserving each agent's identity and context while rejecting peer-workspace access and unattended operator installation.
 
-Native exec uses an issued command capability; hosted Codex uses its per-agent home and native thread context. The probe checks the appropriate context before exercising the same managed operations. The evidence assertion prints bounded scenario-owned tool results and preserves HTTP error bodies so Leia retains the diagnostics when that assertion fails. System/user prompts and transport credentials are excluded.
+## What Belongs Here
 
-One Ubuntu job installs the prepared package and one agent per runtime. Strict AIMock supplies all six model turns with synthetic credentials and no live-model fallback. The real Gateway and hosted Codex app-server execute the tools and native approval flow. Hosted Codex uses direct tool loading; this scenario verifies tool execution and approvals, not model judgment or deferred discovery.
+- Real native execution through each runtime's trusted agent binding, PATH, and managed Git identity.
+- Cross-agent containment and rejection of operator-only effects through ordinary execution.
+- Filesystem receipts and actual tool results establishing completed effects without relying on model wording.
 
-The shared probe is installed into each workspace's declared command directory; a conflicting host executable makes incorrect PATH precedence fail immediately. All turns run once with no retries. A running Codex command is polled through its returned session ID at most three times within the existing turn timeout; completion requires exit code zero and the probe receipt. Memory search is disabled because this scenario does not test embeddings. A denied tool can end its chat before another model request; the approval driver verifies the exact denial and absent effects independently.
+## What Does Not Belong Here
+
+- Interactive Control UI approval journeys for denied/approved Install and read-only Doctor; these need a focused native-approval contract.
+- Standalone Codex lifecycle: [Codex install](../codex-install/README.md). Cross-platform shell/PTY behavior: [OS execution](../os-execution/README.md).
+- Model judgment, deferred tool discovery, embedding behavior, or a cross-product of every OS and runtime.
+
+## Notes
+
+- One Ubuntu job installs one agent per runtime. Native exec uses an issued command capability; hosted Codex uses its configured per-agent home and native thread context.
+- Strict AIMock supplies all six authored turns with synthetic credentials and no live fallback. Hosted Codex uses direct tool loading; the Gateway and Codex app server are real.
+- A shared workspace probe and conflicting host executable make wrong PATH precedence fail. Turns run once; an active Codex command is polled through its session ID at most three times within the turn timeout.
+- Pending relocation: four approval-driver checks verify denied native Install, approved hosted-Codex Install, and Doctor through both runtimes. Denial events and absent effects are observed even if denial ends the chat before another model request.
+- Bounded tool results and HTTP error bodies support diagnostics without exposing prompts or transport credentials. Memory search is disabled.
 
 ## Setup
 

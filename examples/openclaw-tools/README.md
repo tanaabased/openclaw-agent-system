@@ -1,8 +1,24 @@
 # OpenClaw Tools Example
 
-Verify managed Git and GitHub execution through the public command, the installed package's shims, agent setup, and a native command automation. The operator and setup checks use contextual `git` and `gh` shims; the automation uses strict `agent-system-git` and `agent-system-gh` launchers under trusted agent authority. Each path must retain Tanaabot's identity; setup and automation descendants must not receive the declared GitHub token. The GitHub operation reads account identity and creates no remote fixture. No model is needed.
+Execute managed Git and GitHub commands through the public route and installed contextual shims, preserving the owning identity, stdin/machine output, and critical configuration and assignment protection boundaries.
 
-OpenClaw runtime tests run this example on Ubuntu with `GH_TOKEN_TANAABOT`. The checked-in workspace owns setup and automation receipts on the disposable runner. Signed commits and native credential-store protections remain in OS coverage.
+## What Belongs Here
+
+- Real account/author identity through both managed command entrypoints.
+- Stdin forwarding and diagnostics kept out of machine-readable results.
+- Consequential configuration/self-unassignment refusals with actionable, redacted results through those installed routes.
+
+## What Does Not Belong Here
+
+- Setup-script and scheduled-command descendants; these need a focused descendant-authority contract rather than expanding ordinary command execution.
+- Full scheduler lifecycle: [automations](../openclaw-automations/README.md). Model-facing two-account identity: [GitHub](../openclaw-github/README.md).
+- Signed commits and native storage protections: [OS credentials](../os-credentials/README.md).
+
+## Notes
+
+- Direct Ubuntu checks use `GH_TOKEN_TANAABOT` without a model. GitHub operations read account identity; this job creates no remote content.
+- Pending relocation: setup uses contextual `git`/`gh` shims, while one native command automation uses strict `agent-system-git`/`agent-system-gh` launchers. Both descendants must retain identity without receiving the declared GitHub token.
+- Descendant checks retain receipts in the checked-in disposable workspace, verify setup convergence, and require exactly one automation execution. Preserve these distinct credential/launcher assertions when separating them.
 
 ## Setup
 

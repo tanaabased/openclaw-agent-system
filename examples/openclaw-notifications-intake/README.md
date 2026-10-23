@@ -1,13 +1,25 @@
 # OpenClaw Notification Intake Example
 
-Verify notification activation compatibility, native channel readiness and a safe baseline, then start three ordinary issue assessments before any result completes. Retain all three initial assessments and prove a repeat scan preserves their native chats, worktrees and turns without duplication.
+Activate notification intake, start three independent issue assessments before any result completes, retain all three plans, and verify that a repeat scan preserves the same chats, worktrees, and assessment turns.
 
-`openclaw-notifications-lifecycle` owns recovery, reactivation, replay-safe replies and retirement. Assessment presentation and ordinary feedback belong to `openclaw-notifications-issue`; implementation and PR delivery belong to `openclaw-notifications-pr-delivery`; scheduler drift belongs to `openclaw-automations`.
+## What Belongs Here
 
-Strict AIMock reuses the issue assessment protocol with a per-receipt release barrier. This job owns its three issues, agent workspaces, native state and SSH registration; it consumes no other job's resources. Scoped refreshes and a 24-hour schedule isolate discovery. Only Tanaabot receives assignments. Failed activation retains diagnostics. Cleanup stops the Gateway before closing its issues or revoking its key.
+- Native channel readiness and a safe intake baseline before fixture assignment.
+- Concurrent admission with distinct verified native owners and complete retained assessments.
+- One repeat scan proving that admission does not duplicate chats, checkouts, or turns.
 
-Tanaabot uses V3 object identities so installation and intake preserve the supplied
-name and node-ID pairs through the packed plugin.
+## What Does Not Belong Here
+
+- Assessment presentation and ordinary issue feedback: [issue planning](../openclaw-notifications-issue/README.md). Implementation and PR feedback: [PR delivery](../openclaw-notifications-pr-delivery/README.md).
+- Restart recovery, reactivation, reset, and retirement; the [lifecycle example](../openclaw-notifications-lifecycle/README.md) currently contains those paths pending separation.
+- Scheduler-control variants, unavailable-assignment recovery, and detailed debug-card presentation.
+
+## Notes
+
+- Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases all three only after verifying their native starts; model judgment is not under test.
+- V3 object identities preserve supplied names and node IDs through installation and intake. Only Tanaabot receives the three disposable assignments.
+- Scoped refreshes and a 24-hour schedule bound discovery. The job owns its workspaces, issues, native state, and SSH registration; cleanup stops the Gateway before changing external fixtures.
+- Pending relocation: native/manifest pause and resume, unavailable-issue retention, and stage-specific debug-card checks remain in the executable body.
 
 ## Setup
 

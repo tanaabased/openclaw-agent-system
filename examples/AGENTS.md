@@ -11,6 +11,16 @@
 - Use one Leia execution step after setup in each example workflow, with all scenario environment variables in that step's `env` block. Unused values may be shared across matrix entries, including test credentials and model settings; do not split the invocation solely to narrow environment scope. Keep credentials off setup steps. Follow Leia with the same generic `failure()` diagnostics block in each example workflow; do not restrict it to selected matrix entries.
 - Use the shared Leia command helpers from `scripts/`; do not recreate or wrap them inside an example.
 
+## Scope and Placement
+
+- Begin each scenario README with a short critical-path paragraph, followed by `What Belongs Here`, `What Does Not Belong Here`, and `Notes` sections before executable setup. The paragraph names the trigger, necessary transitions, and observable terminal result. A focused safety contract may own critical refusal cases instead of a happy-path journey.
+- Use `What Belongs Here` for the few properties needed to prove that outcome. Use `What Does Not Belong Here` for nearby concerns and links to existing owners. Keep fixture rationale, technical constraints, and evidence limitations in concise `Notes` bullets; do not turn the scope into an assertion inventory.
+- Before adding coverage, read the existing README scopes and choose the narrowest owner. Convenient installed state, a shared prerequisite, or a related feature name does not establish ownership. Keep scope in the README rather than duplicating it in per-example guidance, manifests, or workflow matrices.
+- Add a check only when it advances the named path or protects an essential guarantee. Do not widen the scope to accommodate an unrelated check. Explain a proposed scope change and its execution cost before expanding the example.
+- An additional install, Gateway restart, model turn, or live provider request must prove a required behavior that existing evidence cannot establish. Keep one representative convergence or duplicate-prevention check where it is part of the contract; route independent recovery conditions and permutations elsewhere.
+- If coverage does not fit, first consider an existing example, an owning unit or component test, or the dependency that owns the behavior. Add a new example when a distinct installed flow, native boundary, or safety contract requires its own execution. Remove confirmed duplication rather than moving it mechanically.
+- During scope alignment, identify still-present out-of-scope checks in `Notes` as coverage awaiting relocation. Distinguish executed checks from manual or future acceptance work, and link only existing destinations. Do not claim a split or evidence that has not happened.
+
 ## OpenClaw Runtime
 
 - Follow the repository’s Tanaabot-only test assignment rule. Each GitHub-backed notification example must refresh only its own fixture by repository, kind, and number; observing one issue with `notifications wait --number` alone does not restrict discovery.

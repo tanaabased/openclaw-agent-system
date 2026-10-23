@@ -1,22 +1,27 @@
 # OpenClaw Notification Lifecycle Example
 
-Normally admit disposable issues, retain its native chat, worktree and assessment across restart and equivalent permission reordering, reactivate it from an approved comment after unassignment, suppress replayed replies, and retire closed work after operator worktree cleanup while preserving the assessment. The worktree example covers removal itself; this scenario checks that retirement reconciles cleanup performed outside its own transaction.
+Retain an admitted issue's native chat, worktree, and assessment across Gateway restart, refresh its context, and finish a pending public summary from the saved assessment revision without replacing its owner. This restart-recovery path is the scope for new coverage; the existing body still includes the other lifecycle journeys listed below.
 
-`openclaw-notifications-intake` owns activation compatibility, concurrent admission and repeat-scan duplicate prevention. Assessment presentation and ordinary feedback belong to `openclaw-notifications-issue`; implementation and PR delivery belong to `openclaw-notifications-pr-delivery`; scheduler drift belongs to `openclaw-automations`.
+## What Belongs Here
 
-Strict AIMock reuses the issue assessment protocol without the intake release barrier. This job owns its two issues, agent workspaces, native state and SSH registration; it consumes no other job's resources. Scoped refreshes and a 24-hour schedule isolate discovery. Only Tanaabot receives assignments. Failed activation retains diagnostics. Cleanup stops the Gateway before closing its issue or revoking its key.
+- Recovery of the same verified native owner and retained assessment after restart.
+- Equivalent permission ordering preserving identity while fresh issue facts reach the owning assessment context.
+- Publication of an unfinished summary from the retained assessment revision without replacing the chat, checkout, or result.
 
-For operator reset recovery, retain a prepared session request whose exact native
-key is absent. After the coordinator drains, reset must confirm that absence and
-finish; a resolved or ambiguous key must retain the recovery inventory. The
-component suite covers these lookup outcomes and purge of the owned checkout.
-Reset and retirement share session observation, including unavailable-session
-recovery. An already-missing chat needs no archival; checkout identity and shared
-use remain independently verified before purge.
-Reset failures report the safe underlying code, failed phase and operation, and
-affected resource when available. Chat identifiers are masked in terminal
-diagnostics and retained in JSON; raw provider errors remain private. The component
-and CLI suites cover injected failures without adding destructive runtime cases.
+## What Does Not Belong Here
+
+- Activation and concurrent admission: [intake](../openclaw-notifications-intake/README.md). Ordinary planning/feedback: [issue planning](../openclaw-notifications-issue/README.md). PR implementation: [PR delivery](../openclaw-notifications-pr-delivery/README.md).
+- Author-policy holds, assignment-removal authority, reassignment/reactivation, retirement, fresh attempts after retirement, and coordinator reset. These are distinct paths awaiting separation, not additions to restart recovery.
+- Generic worktree removal: [worktree](../openclaw-worktree/README.md). Scheduler drift currently remains in [automations](../openclaw-automations/README.md) pending separation.
+
+## Notes
+
+- Strict AIMock supplies the assessment protocol without intake's release barrier. The job owns two disposable issues, their workspaces/state, and SSH registration; only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule bound discovery.
+- Pending relocation: live feedback-author changes, unauthorized assignment removal, verified reassignment, approved-comment reactivation, and replay-safe replies remain below.
+- Pending relocation: external worktree cleanup followed by retirement, a fresh attempt preserving the retired branch, reset with a replacement coordinator, and explicit retirement after session deletion remain below. Worktree removal itself belongs to its owning example; this body observes cleanup performed outside the retirement transaction.
+- Five 61-second waits serve assignment/retirement observation intervals. Zero cleanup grace does not remove those observation intervals.
+- Missing/ambiguous session lookup, reset purge, and injected reset diagnostic failures have component/CLI coverage; this example does not establish every reset recovery outcome. Missing chat archival never substitutes for verified checkout identity and safe removal.
+- Reset diagnostics keep raw provider errors private, mask chat IDs in terminal output, and retain complete IDs in JSON. Cleanup stops the Gateway before external fixture changes.
 
 ## Setup
 

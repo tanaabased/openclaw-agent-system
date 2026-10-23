@@ -1,25 +1,30 @@
 # OpenClaw Notification PR Delivery and Feedback Example
 
-Assign one disposable issue, retain its plan, and use an approved GitHub implementation request without an extra decision to implement it and deliver a linked PR in the same chat and worktree. Implement one approved PR conversation comment in the existing implementation stage, after incorporating a disposable collaborator commit, then verify the same PR head, exact publication, and no duplicate reply after another scan. Other issue-comment coverage belongs to `openclaw-notifications-issue`; installed review-thread coverage is deferred to the OpenClaw review flow.
+Assign one issue, retain its plan, implement an approved GitHub request, and deliver one linked PR in the same native chat and worktree. Then implement one ordinary approved PR conversation comment, update that same PR, publish its reply, and verify that another scan repeats no completed effect.
 
-Each manual refresh admits only this example’s issue, then asks the existing native coordinator to advance retained work. Initial feedback allows up to three native passes: reconciling the assessment can consume the first pass. Continuation requires the exact source revision to remain queued and eligible; coordinator completion alone never proves feedback dispatch. The 24-hour recurring interval keeps scheduled discovery outside the bounded CI run; the examples still run in parallel.
+## What Belongs Here
 
-Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and retained receipts remain real. Native tool context establishes operator identity; transcript receipts bind the exact input without requiring a duplicated owner flag in history. Operator messages use the public Gateway SDK with `operator.admin`; the enrolled dispatch device keeps `operator.read` and `operator.write`. EMORI creates the issue and posts the feedback comment. Only Tanaabot receives issue and PR assignments; EMORI has a production OpenClaw instance. CI owns the disposable workspaces, issue, PR, branch, and SSH key and cleans up only those resources.
+- Authorized Plan-to-Work progression without an extra decision or delivery wake-up.
+- Actual pushed changes, issue linkage, configured recipients, one issue announcement, and their durable delivery receipts.
+- One PR feedback change preserving the original assessment, owner, checkout, PR, and announcement, with an exact source-bound reply and duplicate prevention.
 
-An approved issue comment enters Work from Plan and publishes its linked PR in the same turn without a decision object. An authenticated operator follow-up adds a commit and updates the existing PR title and body while retaining its announcement. A final follow-up recovers the saved plan and complete PR card despite uncommitted edits, before approved PR feedback is implemented. The feedback run retains its pushed repair and answer, then ends before publication; an explicit native operator input resumes only the reply. Controlled component coverage separately exercises an aborted handler. Mode changes, interrupted decisions, and clarification/resumption are covered by `openclaw-notifications-progression`.
+## What Does Not Belong Here
 
-The provider fixture delays only the registered PR’s incremental comment read beyond the installed discovery deadline. Three bounded checks must retain an empty PR read checkpoint and a named obstacle; coordinator recovery then consumes the real GitHub comment once. Detailed timing and pagination permutations remain in source tests.
+- Planning-only feedback: [issue planning](../openclaw-notifications-issue/README.md). Mode transitions and implementation clarification: [progression](../openclaw-notifications-progression/README.md).
+- Reviewer customization, extra operator update journeys, dirty-worktree presentation recovery, collaborator-commit reconciliation, delayed discovery, and interrupted publication.
+- Inline review-thread processing or replacement-coordinator recovery; neither is established by this scenario.
 
-This scenario retains one coordinator key. Replacement-key recovery has component coverage for assessment and implementation: the current coordinator resumes the same issue, preserves its original creation evidence, and sends no duplicate turns after restart. Native replacement verification must also confirm that the automation resolves the replacement key; do not edit private journals to simulate that result.
+## Notes
 
-The strict fixture reconciles a retained PR when GitHub’s closing-issue association is delayed, with three bounded prepare/publish passes on the same delivery. It never creates a replacement PR or skips the linkage assertion.
-
-Failed agent installation or intake activation reports allowlisted saved configuration, Gateway configuration revisions, and the running agent list. Successful steps make no extra diagnostic requests. These observations do not retry installation or change reload behavior.
-
-A failed activation preserves its original exit status and reports the install result with registration evidence, automation state, configured reload mode, and a redacted Gateway log tail before cleanup. Later tests require successful activation; diagnostics never retry or repair setup.
-
-The operator delivery preview adds a compact reviewer after intake, then removes it before
-publication. It exercises reviewer resolution without requesting a review from a production agent.
+- Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and receipts remain real. EMORI creates fixtures and comments; only Tanaabot receives issue or PR assignments.
+- Refreshes admit only this issue. Initial feedback allows three bounded coordinator passes because assessment reconciliation can consume a pass; the exact source revision must remain queued and eligible.
+- Native operator messages use the public Gateway SDK with `operator.admin`; the enrolled dispatch device retains `operator.read` and `operator.write`. Transcript receipts bind the exact input.
+- Pending relocation: the current body previews a newly configured compact reviewer without requesting review, updates the PR through an extra operator commit, and recovers the saved plan/card after uncommitted edits.
+- Pending relocation: PR feedback currently adds a collaborator commit, stalls its incremental comment read beyond the discovery deadline for three checks, then interrupts reply publication after the pushed repair. Explicit operator input resumes only the reply. An ordinary uninterrupted feedback baseline still needs to be separated from these recovery conditions.
+- The strict fixture reconciles delayed closing-issue linkage with at most three prepare/publish passes on the same delivery; linkage must be verified without creating a replacement PR.
+- This fixture retains one coordinator key. Replacement-key, aborted-handler, and detailed discovery/pagination cases have source coverage; native replacement still requires evidence that the automation resolves the new key.
+- Activation failures retain their exit status and report bounded registration/configuration evidence, automation state, and a redacted Gateway log tail. Diagnostics do not retry or repair installation.
+- CI owns the disposable workspaces, issue, PR, branch, and SSH key; cleanup stops the Gateway before changing those external resources.
 
 ## Setup
 

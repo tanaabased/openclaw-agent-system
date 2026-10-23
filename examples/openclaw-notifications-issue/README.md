@@ -1,19 +1,26 @@
 # OpenClaw Notification Issue Planning and Feedback Example
 
-Assign one disposable issue, retain its assessment in a native chat and managed worktree, publish the proposed-plan summary after the private plan, and answer approved comments. Compare a later GitHub question with direct input using the retained responses; neither starts implementation. Repeat scans verify the same owner and no duplicate assessment or reply.
+Assign one issue, retain its assessment in one native chat and managed worktree, publish the plan summary after the private plan, and answer one approved GitHub question without starting implementation. A repeat scan must preserve the owner and avoid duplicate assessment or publication.
 
-Notification installation compatibility and concurrent admission belong to `openclaw-notifications-intake`; restart recovery, reactivation, replay-safe replies, and retirement belong to `openclaw-notifications-lifecycle`. Implementation and PR delivery belong to `openclaw-notifications-pr-delivery`; scheduler drift belongs to `openclaw-automations`.
+## What Belongs Here
 
-The compact reviewer reference differs from the assigning actor, so first-task creation must work before that reviewer's identity has been cached. This planning-only scenario does not create a PR or request a review.
+- A complete saved assessment and plan bound to the verified issue, chat, worktree, and assessment turn.
+- The private plan before its public summary, with private investigation excluded from publication.
+- One approved issue comment, its retained private answer and exact public reply, and repeat-scan duplicate prevention.
 
-Strict AIMock supplies judgment and text; GitHub, native scheduling, dispatch, managed Git, and receipts remain real. Scoped refreshes admit only this run’s issue, and the 24-hour schedule avoids unrelated recurring scans. Only Tanaabot receives assignments. Failed activation preserves its status and redacted diagnostics; cleanup stops the Gateway before closing fixtures or revoking the disposable key.
+## What Does Not Belong Here
 
-The assessment selects an ordinary workspace skill with no Agent System commands or
-required headings. Strict AIMock reads that selected method and supplies the adapted
-result; this proves installed selection and retention, not genuine model adaptation.
-The assessment fixture also requests retained evidence through the bound presentation
-route. Its default reply shows the user-journey review and documentation/test impact;
-the full engineering assessment and investigation remain saved and readable on request.
+- Activation and concurrent admission: [intake](../openclaw-notifications-intake/README.md). Implementation and PR delivery: [PR delivery](../openclaw-notifications-pr-delivery/README.md).
+- Restart, reactivation, reset, and retirement: currently collected in [lifecycle](../openclaw-notifications-lifecycle/README.md).
+- Live author-policy changes, cosmetic chat edits, repeated-question/direct-input comparison, clarification journeys, and manual assessment or reply on an unassigned issue.
+
+## Notes
+
+- Strict AIMock supplies judgment and text; GitHub, scheduling, dispatch, managed Git, and receipts remain real. The selected ordinary workspace assessment skill proves installed selection and retention, not genuine model adaptation.
+- The fixture's compact reviewer differs from the assigning actor and is initially uncached. This example creates no PR and requests no review.
+- The default private response shows the user journey and documentation/test impact; full engineering assessment and evidence remain retained for explicit readback.
+- Only Tanaabot is assigned. Refreshes target this job's issue; the 24-hour schedule avoids unrelated discovery. Cleanup stops the Gateway before closing fixtures or revoking its SSH key.
+- Pending relocation: author exclusion, chat renaming, later GitHub/direct questions, clarification and answer, manual unassigned assessment/reply, managed-assessment reuse, and later explicit manual publication remain below.
 
 ## Setup
 

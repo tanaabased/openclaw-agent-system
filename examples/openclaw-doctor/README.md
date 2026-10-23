@@ -1,6 +1,23 @@
 # OpenClaw Doctor Example
 
-This scenario installs the prepared Agent System package and verifies foundational lifecycle state through the public doctor and install commands. Workspaces run in place; a temporary baseline restores the original manifest after testing tool-grant changes.
+Inspect a healthy installed agent, introduce one identity drift, detect it through read-only Doctor with a failing status, repair it through Install, and verify healthy state again.
+
+## What Belongs Here
+
+- Meaningful healthy inspection through public commands and structured output.
+- Drift detection without implicit repair, followed by explicit reconciliation and a healthy result.
+- The installed CLI boundary; one representative path is enough to prove diagnosis and repair.
+
+## What Does Not Belong Here
+
+- Native installation/enrollment differences: [OS install](../os-install/README.md). Workspace setup and convergence: [workspace](../openclaw-workspace/README.md).
+- Identity rename/rotation, exhaustive help/alias/presentation variants, and native tool-grant reconciliation. Tool grants need their own focused installed contract; ordinary tool execution belongs to [tools](../openclaw-tools/README.md).
+
+## Notes
+
+- Direct checks install the prepared package without a model, Gateway, or provider credential. Workspaces run in place.
+- Pending relocation: command-tree/alias and warning-layout checks, installation identity administration, and additive/allowlist/deny/stale tool-grant variants remain below.
+- A temporary baseline restores the original manifest after tool-grant changes. Preserve those permission assertions when separating the grant contract; they are not redundant merely because they sit outside Doctor's core path.
 
 ## Setup
 
