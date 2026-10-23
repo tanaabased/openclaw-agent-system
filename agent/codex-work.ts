@@ -307,20 +307,68 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     if (fresh.sourceThreadId !== activation.sourceThreadId)
       throw new Error('continuation-schedule-binding-mismatch');
     if (input.action !== 'reconcile' && input.action !== 'result') await authorizeLive();
-    if (
-      input.action === 'context' &&
-      !work.attempt &&
-      !work.binding &&
-      (found.turnId === record.resultTurnId || context.operatorInput?.turnId === found.turnId) &&
-      !found.turnEnded &&
-      !['completed', 'failed', 'interrupted'].includes(found.turnStatus ?? '')
-    ) {
+    if (input.action === 'context' && !work.attempt && !work.binding) {
+      const unresolved = (reason: string) => ({
+        status: 'unresolved' as const,
+        id: record.id,
+        code: 'continuation-turn-state-unresolved',
+        reason,
+        instruction:
+          'Preserve the assessment, chat and worktree. Reconcile the current native turn through its owning workflow; do not force a send or treat an interrupted turn as active.',
+      });
+      if (found.turnId !== record.resultTurnId && context.operatorInput?.turnId !== found.turnId)
+        return unresolved('assessment-turn-changed');
+      if (found.turnEnded || ['completed', 'failed'].includes(found.turnStatus ?? ''))
+        return unresolved('assessment-turn-ended');
       if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
       if (
         (!context.operatorInput && record.stageReceipt?.binding.turnId !== found.turnId) ||
         record.stageReceipt?.resultDigest !== automationHash(record.result)
       )
         throw new Error('continuation-assessment-changed');
+      if (found.turnStatus === 'interrupted') {
+        const assessmentDigest = automationHash(record.result);
+        if (
+          work.observation &&
+          (work.observation.turnId !== found.turnId ||
+            work.observation.assessmentDigest !== assessmentDigest)
+        )
+          throw new Error('continuation-observation-binding-changed');
+        if (!work.observation) {
+          work.observation = {
+            turnId: found.turnId,
+            afterItemId: await native.intakeBoundary(record.threadId, found.turnId),
+            assessmentDigest,
+          };
+          await save();
+        }
+        const observed = await context.observeTurn?.({
+          threadId: record.threadId,
+          turnId: found.turnId,
+          afterItemId: work.observation.afterItemId,
+        });
+        if (observed?.status === 'denied') {
+          work.phase = 'blocked';
+          work.code = 'continuation-native-approval-denied';
+          await save();
+          return { status: 'blocked' as const, id: record.id, code: work.code };
+        }
+        if (observed?.status !== 'active')
+          return {
+            ...unresolved(
+              observed?.status === 'unresolved' ? observed.reason : 'native-observation-required',
+            ),
+            status: 'observation-required' as const,
+            request: {
+              tool: 'read_thread',
+              arguments: { threadId: record.threadId, turnLimit: 1, includeOutputs: false },
+            },
+            instruction:
+              'Call the native Codex read_thread tool with these exact arguments, then call continuation context again with this retained id. The runtime verifies the actual native receipt; do not submit status JSON. If the tool is unavailable or denied, stop and report continuation-turn-state-unresolved. Preserve the assessment and work; never force a coordinator send.',
+          };
+        work.observation.receiptId = observed.receiptId;
+        await authorizeLive();
+      }
       record.progression = { ...transition.progression, workOwner: 'issue' };
       work.assessmentDigest = automationHash(record.result);
       work.attempt = {

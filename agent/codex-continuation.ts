@@ -17,6 +17,7 @@ import { dispatchGit } from './codex-dispatch-project.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
+import codexLiveTurn from './codex-live-turn.ts';
 import advanceCodexWork, { prepareCodexWork } from './codex-work.ts';
 import { feedbackWorkStarted } from './feedback-work.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
@@ -114,6 +115,7 @@ export default async function runCodexContinuation(
         schedule,
         native,
         continuationNative,
+        observeTurn: deps.observeTurn ?? (connection && codexLiveTurn(connection.request)),
         git,
         occurrence,
         admissions,

@@ -2,6 +2,7 @@ import { type Static, Type } from 'typebox';
 
 import type { inspectCodexDispatchActivation } from './codex-automations.ts';
 import type codexContinuationNative from './codex-continuation-native.ts';
+import type codexLiveTurn from './codex-live-turn.ts';
 import {
   type default as runCodexDelivery,
   type CodexDeliveryDependencies,
@@ -40,6 +41,7 @@ export interface CodexContinuationDependencies extends CodexDispatchDependencies
   directOperator?: boolean;
   directScope?: 'local' | 'pull-request';
   continuationNative?: ReturnType<typeof codexContinuationNative>;
+  observeTurn?: ReturnType<typeof codexLiveTurn>;
   deliver?: typeof runCodexDelivery;
   deliveryDependencies?: CodexDeliveryDependencies;
 }
@@ -54,6 +56,7 @@ export interface CodexWorkContext {
   schedule: NonNullable<Awaited<ReturnType<typeof inspectCodexDispatchActivation>>['schedule']>;
   native: ReturnType<typeof codexDispatchNative>;
   continuationNative: ReturnType<typeof codexContinuationNative>;
+  observeTurn?: ReturnType<typeof codexLiveTurn>;
   git: typeof dispatchGit;
   preparedSelections?: Set<string>;
   operatorInput?: { turnId: string; inputId: string };
