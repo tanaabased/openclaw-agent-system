@@ -26,26 +26,12 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
-      max-parallel: 9
+      # Temporary #381 profiling trial: isolate quota deltas, then restore all 17 examples.
+      max-parallel: 1
       matrix:
         example:
-          - openclaw-notifications-intake
-          - openclaw-notifications-assessment-recovery
-          - openclaw-notifications-feedback-policy
-          - openclaw-notifications-assignment-policy
-          - openclaw-notifications-reactivation
-          - openclaw-notifications-retirement
-          - openclaw-notifications-reset
           - openclaw-notifications-issue-journey
-          - openclaw-notifications-conversation
           - openclaw-notifications-pr-journey
-          - openclaw-notifications-pr-recipients
-          - openclaw-notifications-pr-update
-          - openclaw-notifications-pr-presentation
-          - openclaw-notifications-pr-collaboration
-          - openclaw-notifications-pr-discovery
-          - openclaw-notifications-pr-reply-recovery
-          - openclaw-notifications-progression
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -94,7 +80,7 @@ jobs:
           GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
           XDG_CONFIG_HOME: ${{ runner.temp }}/agent-system-config
           GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
-          AGENT_SYSTEM_GITHUB_PROFILE_DIR: ${{ inputs.profile && format('{0}/github-profile', runner.temp) || '' }}
+          AGENT_SYSTEM_GITHUB_PROFILE_DIR: ${{ (inputs.profile || github.head_ref == 'pirog-381-example-workflows') && format('{0}/github-profile', runner.temp) || '' }}
         run: |
           if [[ -n "$AGENT_SYSTEM_GITHUB_PROFILE_DIR" ]]; then
             native_gh=$(command -v gh)
@@ -112,8 +98,9 @@ jobs:
           report_api_budget
           leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
       - name: Summarize GitHub request profile
-        if: ${{ always() && inputs.profile }}
-        run: node --import tsx scripts/github-profile-report.ts "$RUNNER_TEMP/github-profile" >> "$GITHUB_STEP_SUMMARY"
+        if: ${{ always() && (inputs.profile || github.head_ref == 'pirog-381-example-workflows') }}
+        shell: bash
+        run: node --import tsx scripts/github-profile-report.ts "$RUNNER_TEMP/github-profile" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()
         shell: bash
