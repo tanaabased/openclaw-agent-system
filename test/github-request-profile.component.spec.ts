@@ -191,6 +191,9 @@ describe('api/cli-runner github profiling', () => {
     assert.match(output, /1 HTTP requests across 1 CLI invocations; 1 incomplete traces/);
     assert.match(output, /Incomplete traces prevent an exact request total/);
     assert.match(output, /unavailable/);
+    assert.match(output, /0 REST non-304 responses \(quota proxy\)/);
+    assert.match(output, /1 unclassified requests/);
+    assert.match(output, /GraphQL requests are not GraphQL points/);
   });
 
   it('should retain operation labels and allowlisted response counters without storing headers or bodies', async () => {

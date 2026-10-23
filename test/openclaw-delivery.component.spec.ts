@@ -14,7 +14,7 @@ import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 
 const response = (value: unknown) => ({
   exitCode: 0,
-  stdout: JSON.stringify(value),
+  stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(value),
   stderr: '',
   timedOut: false,
   truncated: false,
@@ -157,6 +157,7 @@ describe('agent/openclaw-delivery', () => {
                 if (rejectCreation)
                   return {
                     ...response(null),
+                    stdout: 'HTTP/2 403 Forbidden\n\n{}',
                     exitCode: 1,
                     stderr: 'gh: Resource not accessible by integration (HTTP 403)',
                   };
@@ -644,7 +645,12 @@ describe('agent/openclaw-delivery', () => {
               lagged++;
               return {
                 ...result,
-                stdout: JSON.stringify({ ...JSON.parse(result.stdout), headSha: 'a'.repeat(40) }),
+                stdout:
+                  'HTTP/2 200 OK\n\n' +
+                  JSON.stringify({
+                    ...JSON.parse(result.stdout.split('\n\n').slice(1).join('\n\n')),
+                    headSha: 'a'.repeat(40),
+                  }),
               };
             }
             return result;

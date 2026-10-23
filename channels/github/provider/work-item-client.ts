@@ -39,10 +39,6 @@ const maximumEventPages = 3;
 
 /** Read bounded assignment, repository, and work-item control facts from GitHub. */
 export default class GitHubWorkItemClient implements GitHubNotificationIntakeClient {
-  static readonly #repositories = new WeakMap<
-    object,
-    Map<string, { etag: string; repository: GitHubRepositoryIdentity }>
-  >();
   readonly #api: GitHubWorkEventApiClient;
 
   constructor(api: GitHubWorkEventApiClient) {
@@ -135,31 +131,14 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
 
   async getRepository(owner: string, name: string): Promise<GitHubRepositoryIdentity> {
     const endpoint = githubRepositoryEndpoint(owner, name);
-    const repositories =
-      GitHubWorkItemClient.#repositories.get(this.#api.observationScope) ??
-      new Map<string, { etag: string; repository: GitHubRepositoryIdentity }>();
-    GitHubWorkItemClient.#repositories.set(this.#api.observationScope, repositories);
-    const cached = repositories.get(endpoint.toLowerCase());
-    const response = await this.#api
-      .request(
-        [
-          endpoint,
-          '--jq',
-          '{databaseId:.id,nodeId:.node_id,name,owner:{login:.owner.login,nodeId:.owner.node_id,type:.owner.type},cloneUrl:.clone_url,defaultBranch:.default_branch,archived,disabled}',
-        ],
-        'repository',
-        undefined,
-        cached?.etag,
-      )
-      .catch((error: unknown) => {
-        repositories.delete(endpoint.toLowerCase());
-        throw error;
-      });
-    if (response.notModified) {
-      if (!cached) throw new Error('github-repository-observation-missing');
-      return structuredClone(cached.repository);
-    }
-    repositories.delete(endpoint.toLowerCase());
+    const response = await this.#api.request(
+      [
+        endpoint,
+        '--jq',
+        '{databaseId:.id,nodeId:.node_id,name,owner:{login:.owner.login,nodeId:.owner.node_id,type:.owner.type},cloneUrl:.clone_url,defaultBranch:.default_branch,archived,disabled}',
+      ],
+      'repository',
+    );
     const value = githubResponseRecord(response.value, 'repository');
     const repository = {
       archived: githubResponseBoolean(value.archived, 'repository archived flag'),
@@ -180,13 +159,6 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
       githubResponseHasControlCharacter(repository.defaultBranch)
     ) {
       throw new Error('GitHub returned an unsupported default branch.');
-    }
-    if (response.etag) {
-      if (repositories.size >= 128) repositories.delete(repositories.keys().next().value!);
-      repositories.set(endpoint.toLowerCase(), {
-        etag: response.etag,
-        repository: structuredClone(repository),
-      });
     }
     return repository;
   }

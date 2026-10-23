@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 
 for (const id of [
@@ -31,7 +32,11 @@ for (const id of [
         .replaceAll('__RECEIVER_NODE_ID__', 'U_receiver');
       const parsed = parseAgentManifest(source);
       assert.equal(parsed.status, 'valid', JSON.stringify(parsed.diagnostics));
-      const policy = parsed.manifest?.github?.notifications;
+      assert.ok(parsed.manifest);
+      assert.ok(
+        openclawIntakeJobs(parsed.manifest).some((job) => job.id === 'github-issue-assignment'),
+      );
+      const policy = parsed.manifest.github?.notifications;
       assert.equal(policy?.schemaVersion, 3);
       assert.deepEqual(policy?.runtimes, ['openclaw']);
       assert.equal(policy?.issueAssignment?.mode, 'plan');

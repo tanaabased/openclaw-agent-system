@@ -18,6 +18,18 @@ interface Profile {
 
 /** Aggregate private metadata only; quota deltas remain independent account-wide evidence. */
 export function summarizeGitHubProfiles(profiles: Profile[]) {
+  const emptyUsage = () => ({
+    restNon304: 0,
+    notModified: 0,
+    graphql: 0,
+    rateLimit: 0,
+    unclassified: 0,
+  });
+  const usage = emptyUsage();
+  const resources = new Map<
+    string,
+    ReturnType<typeof emptyUsage> & { account: string; resource: string }
+  >();
   const groups = new Map<
     string,
     {
@@ -28,6 +40,11 @@ export function summarizeGitHubProfiles(profiles: Profile[]) {
       route: string;
       requests: number;
       durationMs: number;
+      restNon304: number;
+      notModified: number;
+      graphql: number;
+      rateLimit: number;
+      unclassified: number;
     }
   >();
   const quotas = new Map<
@@ -35,7 +52,10 @@ export function summarizeGitHubProfiles(profiles: Profile[]) {
     { account: string; resource: string; samples: number; minimum: number; maximum: number }
   >();
   const failures = profiles.filter(
-    (profile) => profile.exitCode !== undefined && profile.exitCode !== 0,
+    (profile) =>
+      profile.exitCode !== undefined &&
+      profile.exitCode !== 0 &&
+      !(profile.complete && profile.requests.length === 1 && profile.response?.status === 304),
   );
   for (const profile of profiles) {
     if (profile.version !== 1 || !Array.isArray(profile.requests))
@@ -56,6 +76,33 @@ export function summarizeGitHubProfiles(profiles: Profile[]) {
       quotas.set(key, group);
     }
     for (const request of profile.requests) {
+      // a command's final response cannot classify several (possibly overlapping) requests.
+      const response =
+        profile.complete && profile.requests.length === 1 ? profile.response : undefined;
+      const category =
+        request.route === '/rate_limit'
+          ? 'rateLimit'
+          : request.route === '/graphql'
+            ? 'graphql'
+            : response?.status === 304
+              ? 'notModified'
+              : response &&
+                  response.status !== 304 &&
+                  response.resource &&
+                  response.resource !== 'graphql'
+                ? 'restNon304'
+                : 'unclassified';
+      const resource =
+        request.route === '/graphql' ? 'graphql' : (response?.resource ?? 'unclassified');
+      const resourceKey = JSON.stringify([profile.account, resource]);
+      const resourceUsage = resources.get(resourceKey) ?? {
+        account: profile.account ?? 'unattributed',
+        resource,
+        ...emptyUsage(),
+      };
+      resourceUsage[category]++;
+      usage[category]++;
+      resources.set(resourceKey, resourceUsage);
       const key = JSON.stringify([
         profile.agentId,
         profile.account,
@@ -71,8 +118,10 @@ export function summarizeGitHubProfiles(profiles: Profile[]) {
         route: request.route,
         requests: 0,
         durationMs: 0,
+        ...emptyUsage(),
       };
       group.requests++;
+      group[category]++;
       group.durationMs += request.durationMs ?? 0;
       groups.set(key, group);
     }
@@ -80,9 +129,12 @@ export function summarizeGitHubProfiles(profiles: Profile[]) {
   return {
     commands: profiles.length,
     incomplete: profiles.filter((profile) => !profile.complete).length,
-    notModified: profiles.filter((profile) => profile.response?.status === 304).length,
+    ...usage,
+    resources: [...resources.values()],
     requests: [...groups.values()].reduce((sum, g) => sum + g.requests, 0),
-    groups: [...groups.values()].sort((a, b) => b.requests - a.requests),
+    groups: [...groups.values()].sort(
+      (a, b) => b.restNon304 - a.restNon304 || b.requests - a.requests,
+    ),
     quotas: [...quotas.values()],
     failures: failures.map(
       ({ agentId, account, source, operation, exitCode, response, requests }) => ({
@@ -110,7 +162,21 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       ),
     ),
   );
-  process.stdout.write('### GitHub request profile\n\n');
+  process.stdout.write('### GitHub primary-quota profile\n\n');
+  process.stdout.write(
+    `${summary.restNon304} REST non-304 responses (quota proxy); ${summary.notModified} HTTP 304s; ${summary.graphql} GraphQL requests; ${summary.rateLimit} rate-limit checks; ${summary.unclassified} unclassified requests.\n\n`,
+  );
+  process.stdout.write(
+    'The REST proxy counts observed non-304 responses with a quota resource; it is not an exact charge. Authenticated 304s and rate-limit checks are primary-exempt. GraphQL requests are not GraphQL points. Unknown or multi-request response associations remain unclassified.\n\n',
+  );
+  process.stdout.write(
+    '| Account | Resource | REST non-304 proxy | 304 | GraphQL requests | Rate-limit checks | Unclassified |\n|---|---|---:|---:|---:|---:|---:|\n',
+  );
+  for (const resource of summary.resources)
+    process.stdout.write(
+      `| ${resource.account} | ${resource.resource} | ${resource.restNon304} | ${resource.notModified} | ${resource.graphql} | ${resource.rateLimit} | ${resource.unclassified} |\n`,
+    );
+  process.stdout.write('\n');
   process.stdout.write(
     `${summary.requests} HTTP requests across ${summary.commands} CLI invocations; ${summary.incomplete} incomplete traces.\n\n`,
   );
@@ -119,11 +185,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       `${summary.notModified} HTTP 304 responses (included in HTTP counts).\n\n`,
     );
   process.stdout.write(
-    '| Agent | Account label | Source | Operation | Route | Requests | Observed duration, ms |\n|---|---|---|---|---|---:|---:|\n',
+    '| Agent | Account label | Source | Operation | Route | REST non-304 proxy | 304 | Unclassified | HTTP requests | Observed duration, ms |\n|---|---|---|---|---|---:|---:|---:|---:|---:|\n',
   );
   for (const group of summary.groups)
     process.stdout.write(
-      `| ${group.agent} | ${group.account} | ${group.source} | ${group.operation} | ${group.route} | ${group.requests} | ${group.durationMs.toFixed(1)} |\n`,
+      `| ${group.agent} | ${group.account} | ${group.source} | ${group.operation} | ${group.route} | ${group.restNon304} | ${group.notModified} | ${group.unclassified} | ${group.requests} | ${group.durationMs.toFixed(1)} |\n`,
     );
   if (summary.quotas.length) {
     process.stdout.write(
@@ -136,7 +202,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
   if (summary.failures.length) {
     process.stdout.write(
-      '\nNonzero or unavailable command exits (not necessarily provider denials):\n\n| Agent | Account label | Source | Operation | Exit code | HTTP status | Requests |\n|---|---|---|---|---:|---:|---:|\n',
+      '\nNonzero or unavailable command exits, excluding HTTP 304 (not necessarily provider denials):\n\n| Agent | Account label | Source | Operation | Exit code | HTTP status | Requests |\n|---|---|---|---|---:|---:|---:|\n',
     );
     for (const failure of summary.failures)
       process.stdout.write(

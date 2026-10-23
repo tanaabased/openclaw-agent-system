@@ -23,7 +23,10 @@ const cooldown = new GitHubRequestCooldown();
 
 export interface CodexGitHubConnection {
   client: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient;
-  account: Pick<ConnectedGitHubAccountClient, 'identity' | 'execute'>;
+  account: Pick<
+    ConnectedGitHubAccountClient,
+    'identity' | 'execute' | 'observationScope' | 'credentialFingerprint'
+  >;
 }
 
 /** ambient host authorization only; no manifest environment, tokens, or managed gh configuration. */

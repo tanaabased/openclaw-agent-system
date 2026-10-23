@@ -23,7 +23,68 @@ describe('core/github-request-profile', () => {
     ]);
     assert.equal(summary.requests, 2);
     assert.equal(summary.notModified, 1);
-    assert.equal(summary.failures[0]?.httpStatus, 304);
+    assert.equal(summary.failures.length, 0);
+    assert.equal(summary.unclassified, 1);
+  });
+
+  it('should separate quota proxies exemptions graphql and unknown response associations', () => {
+    const base = { version: 1, complete: true, account: 'bot' };
+    const summary = summarizeGitHubProfiles([
+      {
+        ...base,
+        response: { status: 200, resource: 'core', used: 100 },
+        requests: [{ route: '/user' }],
+      },
+      {
+        ...base,
+        response: { status: 304, resource: 'core', used: 120 },
+        requests: [{ route: '/user' }],
+      },
+      {
+        ...base,
+        response: { status: 200, resource: 'search' },
+        requests: [{ route: '/search/issues' }],
+      },
+      {
+        ...base,
+        response: { status: 200, resource: 'graphql', used: 30 },
+        requests: [{ route: '/graphql' }],
+      },
+      { ...base, requests: [{ route: '/rate_limit' }] },
+      {
+        ...base,
+        response: { status: 200, resource: 'core' },
+        requests: [{ route: '/user' }, { route: '/user' }],
+      },
+      {
+        ...base,
+        complete: false,
+        response: { status: 200, resource: 'core' },
+        requests: [{ route: '/user' }],
+      },
+    ]);
+    assert.equal(summary.requests, 8);
+    assert.equal(summary.restNon304, 2);
+    assert.equal(summary.notModified, 1);
+    assert.equal(summary.graphql, 1);
+    assert.equal(summary.rateLimit, 1);
+    assert.equal(summary.unclassified, 3);
+    assert.deepEqual(
+      summary.resources.find((value) => value.resource === 'core'),
+      {
+        account: 'bot',
+        resource: 'core',
+        restNon304: 1,
+        notModified: 1,
+        graphql: 0,
+        rateLimit: 0,
+        unclassified: 0,
+      },
+    );
+    assert.equal(
+      summary.groups.reduce((sum, group) => sum + group.restNon304, 0),
+      2,
+    );
   });
   it('should count repeated requests across arbitrary chunks without retaining urls or queries', () => {
     const profile = createGitHubRequestProfile(1024);

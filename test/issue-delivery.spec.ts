@@ -41,7 +41,7 @@ function fixture() {
           : (++reads, observed);
         return {
           exitCode: 0,
-          stdout: JSON.stringify(value),
+          stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(value),
           stderr: '',
           timedOut: false,
           truncated: false,
@@ -71,6 +71,37 @@ function fixture() {
 }
 
 describe('github delivery head observation', () => {
+  it('should conditionally revalidate delivery reads and still reject a changed remote head', async () => {
+    const f = fixture();
+    f.observed.headSha = f.input.headSha;
+    const execute = f.provider.client.execute;
+    let reuse = false;
+    const validators: boolean[] = [];
+    f.provider.client.execute = async (...args) => {
+      const conditional = args[0].some((value) => value.startsWith('If-None-Match:'));
+      validators.push(conditional);
+      if (reuse && conditional)
+        return {
+          exitCode: 1,
+          stdout: 'HTTP/2 304 Not Modified\n\n',
+          stderr: '',
+          timedOut: false,
+          truncated: false,
+        };
+      const result = await execute(...args);
+      return { ...result, stdout: result.stdout.replace('200 OK\n', '200 OK\netag: "read"\n') };
+    };
+    await f.provider.inspect(f.input);
+    reuse = true;
+    await f.provider.inspect(f.input);
+    assert.deepEqual(validators, [false, false, true, true]);
+    reuse = false;
+    f.observed.headSha = 'c'.repeat(40);
+    await assert.rejects(
+      f.provider.inspect(f.input),
+      (error) => openClawDispatchFailureCode(error) === 'github-delivery-binding-head-changed',
+    );
+  });
   it('should retry only the exact previously verified head and bound the wait', async () => {
     const f = fixture();
     await assert.rejects(
