@@ -42,7 +42,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-worktree"
 openclaw agent-system tool worktree -- prepare fixture 306-critical-path HEAD | tee "$TMPDIR/worktree-created.json" | jq -e '.status == "created" and .repositoryId == "fixture" and (.branch == (.path | split("/") | last))'
 worktree_path=$(jq -er .path "$TMPDIR/worktree-created.json")
 grep -Fx 'tracked source content' "$worktree_path/tracked.txt"
-openclaw agent-system tool worktree -- list fixture | jq -e --arg path "$worktree_path" 'length == 1 and .[0].status == "active" and .[0].path == $path'
+openclaw as tool worktree -- list fixture | jq -e --arg path "$worktree_path" 'length == 1 and .[0].status == "active" and .[0].path == $path'
 
 # should reuse the same worktree while preserving uncommitted edits
 cd "$GITHUB_WORKSPACE/examples/openclaw-worktree"
