@@ -96,36 +96,6 @@ Agent System records value-free events through OpenClaw's logger with an
 manifest values, resolved environment values, or credentials. `devguard tail`
 shows DevGuard policy audit records rather than the plugin logger stream.
 
-### GitHub Request Profiling
-
-Set `AGENT_SYSTEM_GITHUB_PROFILE_DIR` to an absolute private output directory
-before starting an OpenClaw CLI invocation or Gateway to opt into request
-profiling. Leave it unset for normal execution; enabling it adds local capture
-and file writes, with no extra GitHub requests. A running Gateway retains its
-startup setting until restarted.
-
-The profiler observes the GitHub CLI's body-free debug mode through the existing
-bounded process runner. Private per-invocation JSON files contain normalized
-routes, available agent/account/operation labels, request counts, and unambiguous request
-durations. Existing `gh api --include` output also supplies response status and
-allowlisted quota counters; the report shows observed remaining ranges rather than
-inferring consumption from counter differences. Files exclude raw URLs, query parameters,
-command arguments, credentials, other headers, and payloads. Normal command output remains separate. Profiling does not
-change authorization, retries, or caching. Save failures emit
-`github-request-profile-unavailable`; missing or incomplete traces cannot establish
-an exact total.
-
-For CI reports, run `node --import tsx scripts/github-profile-report.ts <directory>`.
-The notification workflow's manual `profile` input defaults to false. Before a
-measurement run, temporarily select only the reviewed audit examples in its
-explicit matrix; restore the full matrix before merge. CI also traces direct
-fixture `gh` calls. Internal account calls carry the configured login, public
-tools carry the bound agent ID, and fixture account labels identify matching
-`GH_TOKEN_*` inputs without recording their values. Git transport, standalone
-Codex native GitHub execution, and unrelated processes are outside this first
-slice. Use the separately labeled quota snapshots to measure account-wide budget
-changes; GraphQL request counts and quota points are different measurements.
-
 ## Testing
 
 Run the narrowest relevant check while iterating, then complete the repository-only suite before handoff.

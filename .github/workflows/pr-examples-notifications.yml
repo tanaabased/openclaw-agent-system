@@ -2,12 +2,6 @@ name: Notification tests
 
 on:
   pull_request:
-  workflow_dispatch:
-    inputs:
-      profile:
-        description: Capture GitHub request metadata
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -99,27 +93,8 @@ jobs:
           GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
           XDG_CONFIG_HOME: ${{ runner.temp }}/agent-system-config
           GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
-          AGENT_SYSTEM_GITHUB_PROFILE_DIR: ${{ (inputs.profile || github.head_ref == 'pirog-381-example-workflows') && format('{0}/github-profile', runner.temp) || '' }}
         run: |
-          if [[ -n "$AGENT_SYSTEM_GITHUB_PROFILE_DIR" ]]; then
-            native_gh=$(command -v gh)
-            mkdir -p "$AGENT_SYSTEM_GITHUB_PROFILE_DIR/bin"
-            chmod 700 "$AGENT_SYSTEM_GITHUB_PROFILE_DIR"
-            printf '#!/usr/bin/env bash\nexec node --import tsx %q %q "$@"\n' "$GITHUB_WORKSPACE/scripts/github-profile-command.ts" "$native_gh" > "$AGENT_SYSTEM_GITHUB_PROFILE_DIR/bin/gh"
-            chmod 700 "$AGENT_SYSTEM_GITHUB_PROFILE_DIR/bin/gh"
-            export PATH="$AGENT_SYSTEM_GITHUB_PROFILE_DIR/bin:$PATH"
-          fi
-          report_api_budget() {
-            GH_TOKEN="$GH_TOKEN_TANAABOT" gh api rate_limit --jq '{account:"tanaabot", resources:(.resources | {core: (.core | {limit,remaining,reset}), graphql: (.graphql | {limit,remaining,reset})})}' || true
-            GH_TOKEN="$GH_TOKEN_EMORI" gh api rate_limit --jq '{account:"emoriwan", resources:(.resources | {core: (.core | {limit,remaining,reset}), graphql: (.graphql | {limit,remaining,reset})})}' || true
-          }
-          trap report_api_budget EXIT
-          report_api_budget
           leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
-      - name: Summarize GitHub request profile
-        if: ${{ always() && (inputs.profile || github.head_ref == 'pirog-381-example-workflows') }}
-        shell: bash
-        run: node --import tsx scripts/github-profile-report.ts "$RUNNER_TEMP/github-profile" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()
         shell: bash
