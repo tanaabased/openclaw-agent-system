@@ -308,6 +308,14 @@ native turn, with the complete plan, current guidance, and selected model and ef
 The coordinator resumes interrupted or older issues; a second wake-up is not
 required between assessment and implementation.
 
+If the stored reader reports the assessment turn as interrupted without a verified
+end, continuation returns `observation-required` with `continuation-turn-state-unresolved`.
+Call the native `read_thread` tool with the returned arguments, then repeat continuation
+context. The runtime verifies the actual desktop tool receipt after its retained history
+boundary; caller-supplied status JSON cannot authorize the handoff. A stale, inactive,
+unavailable or denied observation never counts as an active turn. Preserve the existing
+chat and work when resolving it; do not force another coordinator message.
+
 The runtime reads live workflow policy and checks the owning chat, active assignment,
 and native receipts without renewed stage approval. Policy-only edits take effect
 without Install. Disabled effects and currently ineligible authors are held and

@@ -8,6 +8,7 @@ import type { ClaimClient } from '../agent/assignment-claim.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
+import codexLiveTurn from '../agent/codex-live-turn.ts';
 import runCodexContinuation, {
   type CodexContinuationDependencies,
 } from '../agent/codex-continuation.ts';
@@ -3322,7 +3323,9 @@ describe('agent/codex-dispatch', () => {
           ? {
               status: 'verified',
               turnId: attempt.origin === 'assessment' ? attempt.turnId! : native!.turnId!,
-              ended: ['completed', 'failed', 'interrupted'].includes(native!.turnStatus!),
+              ended:
+                native!.turnEnded ??
+                ['completed', 'failed', 'interrupted'].includes(native!.turnStatus!),
             }
           : { status: 'uncertain' },
     };
@@ -3342,6 +3345,7 @@ describe('agent/codex-dispatch', () => {
       receive() {
         received = true;
         native!.turnId = 'implementation-turn';
+        delete native!.turnEnded;
         native!.status = 'active';
         native!.turnStatus = 'inProgress';
       },
@@ -3433,8 +3437,13 @@ describe('agent/codex-dispatch', () => {
     assert.equal(running.continuation, undefined);
   });
 
-  for (const mode of ['work', 'auto'] as const)
-    it(`should hand ${mode} directly from assessment to implementation without a coordinator send`, async () => {
+  for (const [mode, isolatedReader] of [
+    ['work', false],
+    ['work', true],
+    ['auto', false],
+    ['auto', true],
+  ] as const)
+    it(`should hand ${mode} directly from assessment to implementation without a coordinator send with isolated reader ${isolatedReader}`, async () => {
       const assessment = {
         ...result,
         fullAssessment:
@@ -3461,6 +3470,71 @@ describe('agent/codex-dispatch', () => {
         { threadId: native!.id },
       );
       assert.ok(String(detailed.presentation).includes(assessment.fullAssessment));
+      if (isolatedReader) {
+        native!.status = 'notLoaded';
+        native!.turnStatus = 'interrupted';
+        native!.turnEnded = false;
+        let readReceived = false;
+        work.continuation.observeTurn = codexLiveTurn(async (method, input) => {
+          if (method === 'thread/turns/list')
+            return { data: [{ id: turnId, status: 'interrupted', completedAt: null }] };
+          assert.equal(input.turnId, turnId);
+          return {
+            data: [
+              { turnId, item: { id: 'routing-command', type: 'commandExecution' } },
+              ...(readReceived
+                ? [
+                    {
+                      turnId,
+                      item: {
+                        id: 'owner-observation',
+                        type: 'mcpToolCall',
+                        server: 'codex_app',
+                        tool: 'read_thread',
+                        status: 'completed',
+                        arguments: { threadId: native!.id, turnLimit: 1, includeOutputs: false },
+                        result: {
+                          content: [
+                            {
+                              type: 'text',
+                              text: JSON.stringify({
+                                schemaVersion: 1,
+                                thread: {
+                                  id: native!.id,
+                                  kind: 'codex',
+                                  hostId: 'local',
+                                  status: { type: 'active' },
+                                },
+                                page: { order: 'newest_first' },
+                                turns: [{ id: turnId, status: 'inProgress', completedAt: null }],
+                              }),
+                            },
+                          ],
+                        },
+                      },
+                    },
+                  ]
+                : []),
+            ],
+          };
+        });
+        const pending = await work.run('context', {}, true);
+        assert.equal(pending.status, 'observation-required', JSON.stringify(pending));
+        assert.deepEqual('request' in pending && pending.request, {
+          tool: 'read_thread',
+          arguments: { threadId: native!.id, turnLimit: 1, includeOutputs: false },
+        });
+        assert.equal((await work.run('context', {}, true)).status, 'observation-required');
+        assert.equal((await work.run('next')).status, 'idle');
+        const current = await selectCodexIntake(pluginData, deps);
+        const state = await new CodexDispatchStore(
+          current.store.location.root,
+          current.store.location.scope,
+        ).read();
+        assert.equal(state.records[0]!.continuation!.attempt, undefined);
+        assert.notEqual(state.records[0]!.progression?.stage, 'implementation');
+        readReceived = true;
+      }
       const verified = await work.run('context', {}, true);
       assert.equal(verified.status, 'verified', JSON.stringify(verified));
       assert.ok('assessment' in verified);
@@ -3478,6 +3552,11 @@ describe('agent/codex-dispatch', () => {
       assert.equal(started.continuation!.attempt!.origin, 'assessment');
       assert.equal(started.continuation!.binding!.turnId, turnId);
       assert.equal(started.progression!.via, mode);
+      assert.equal((await work.run('context', {}, true)).status, 'verified');
+      assert.deepEqual(
+        (await store.read()).records[0]!.continuation!.attempt,
+        started.continuation!.attempt,
+      );
       assert.equal((await work.run('next')).status, 'idle');
       const saved = await work.run(
         'result',
@@ -3503,11 +3582,89 @@ describe('agent/codex-dispatch', () => {
       assert.equal(native!.turnId, turnId);
       native!.status = 'idle';
       native!.turnStatus = 'completed';
+      native!.turnEnded = true;
       const recovery = await work.run('next');
       assert.equal(recovery.status, 'prepared');
       assert.match('request' in recovery ? recovery.request!.prompt : '', /only.*delivery/i);
       assert.deepEqual((await store.read()).records[0]!.result, assessment);
     });
+
+  it('should keep unresolved owner reads in planning and permit one verified coordinator recovery', async () => {
+    const work = await workIssue();
+    native!.status = 'notLoaded';
+    native!.turnStatus = 'interrupted';
+    native!.turnEnded = false;
+    assert.equal((await work.run('context', {}, true)).status, 'observation-required');
+    work.continuation.observeTurn = async () => ({
+      status: 'unresolved',
+      reason: 'native-observation-turn-inactive',
+    });
+    const inactive = await work.run('context', {}, true);
+    assert.equal(inactive.status, 'observation-required');
+    assert.equal('code' in inactive && inactive.code, 'continuation-turn-state-unresolved');
+    assert.equal((await work.run('next')).status, 'idle');
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    native!.turnEnded = true;
+    const prepared = await work.run('next');
+    assert.equal(prepared.status, 'prepared');
+    assert.notEqual((await work.run('next')).status, 'prepared');
+    work.receive();
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    assert.equal((await work.run('next')).status, 'idle');
+  });
+
+  for (const stop of ['cancel', 'denial', 'new-turn', 'ended'] as const)
+    it(`should preserve ${stop} while an initial owner observation is pending`, async () => {
+      const work = await workIssue();
+      native!.status = 'notLoaded';
+      native!.turnStatus = 'interrupted';
+      native!.turnEnded = false;
+      assert.equal((await work.run('context', {}, true)).status, 'observation-required');
+      let reads = 0;
+      work.continuation.observeTurn = async () => {
+        reads++;
+        return stop === 'denial' ? { status: 'denied' } : { status: 'active', receiptId: 'fresh' };
+      };
+      if (stop === 'cancel') await work.run('cancel', {}, true);
+      if (stop === 'new-turn') native!.turnId = 'new-turn';
+      if (stop === 'ended') native!.turnEnded = true;
+      const stopped = await work.run('context', {}, true);
+      assert.notEqual(stopped.status, 'verified');
+      assert.equal(reads, stop === 'denial' ? 1 : 0);
+      if (stop === 'denial')
+        assert.equal('code' in stopped && stopped.code, 'continuation-native-approval-denied');
+      const current = await selectCodexIntake(pluginData, deps);
+      const state = await new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      ).read();
+      assert.equal(state.records[0]!.continuation!.attempt, undefined);
+      assert.notEqual(state.records[0]!.progression?.stage, 'implementation');
+      if (stop === 'cancel' || stop === 'denial') {
+        native!.status = 'idle';
+        native!.turnStatus = 'completed';
+        native!.turnEnded = true;
+      }
+      assert.notEqual((await work.run('next')).status, 'prepared');
+    });
+
+  it('should reject an observation request bound to a different saved assessment', async () => {
+    const work = await workIssue();
+    native!.status = 'notLoaded';
+    native!.turnStatus = 'interrupted';
+    native!.turnEnded = false;
+    assert.equal((await work.run('context', {}, true)).status, 'observation-required');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.continuation!.observation!.assessmentDigest = '0'.repeat(64);
+      await save();
+    });
+    work.continuation.observeTurn = async () => ({ status: 'active', receiptId: 'fresh' });
+    await assert.rejects(work.run('context', {}, true), /observation-binding-changed/);
+    assert.equal((await store.read()).records[0]!.continuation!.attempt, undefined);
+  });
 
   it('should recover interrupted direct work using its original assessment and native receipt', async () => {
     const work = await workIssue();
