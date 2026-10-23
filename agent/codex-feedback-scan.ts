@@ -1,3 +1,4 @@
+import workflowFailure from './workflow-failure.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import feedbackOwnPublications from './feedback-own-publications.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
@@ -149,10 +150,7 @@ export async function scanCodexFeedback(input: {
         break;
       }
       if (codexHostAccess(error)) throw error;
-      const diagnostic = error instanceof Error ? error.message : '';
-      feedback.code = /^[a-z][a-z0-9-]{0,127}$/u.test(diagnostic)
-        ? diagnostic
-        : 'feedback-provider-unavailable';
+      feedback.code = workflowFailure(error, 'feedback-provider-unavailable').code;
     }
     feedback.discoveryPending = false;
     await save();
