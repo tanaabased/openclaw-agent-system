@@ -5,6 +5,7 @@ import { directAssessmentRequestSchema } from '../tools/dispatch/assessment-sche
 import type { AgentManifest } from '../manifest/types.ts';
 import renderAssessmentResult from '../channels/github/presentation/assessment-result.ts';
 import assessmentSkillSource from './assessment-skill-source.ts';
+import assessmentSubmission from './assessment-submission.ts';
 import assessmentCheckout from './assessment-checkout.ts';
 import { assessmentInstructions } from './assessment-instructions.ts';
 import {
@@ -116,6 +117,7 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
       previousResult: saved.result,
       previousResultDigest: automationHash(saved.result),
       previousResultTurnId: saved.resultTurnId,
+      currentTurnId: deps.turnId,
       presentation: renderAssessmentResult(saved.result, {
         issue: { label: `${repository}#${locator.number}`, url: saved.target },
         assessment: saved.selection,
@@ -223,9 +225,18 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
       handoff,
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
+      resultSubmission: assessmentSubmission({
+        entry: 'direct',
+        id: record.id,
+        target: canonical,
+        previousResultDigest:
+          (record.result ?? managed?.result)
+            ? automationHash(record.result ?? managed!.result)
+            : undefined,
+      }),
       instructions:
         assessmentInstructions +
-        '\n\nDirect execution: use these verified inputs and the selected assessment body, never its entry bootstrap again. Preserve the current chat/model. Submit using dispatch assessment result (action assessment, operation result) with id, target and previousResultDigest; use assessment context/present for refresh/readback. Do not use managed context/result or publication routes. The runtime returns assessment-only even with Work/Auto defaults. Missing or dirty checkout limitations belong in evidence. No assignment, setup, implementation, publication, or new chat is authorized.',
+        '\n\nDirect execution: use these verified inputs and the selected assessment body, never its entry bootstrap again. Preserve the current chat/model. Submit using resultSubmission.request plus result matching resultSchema through dispatch assessment result (action assessment, operation result); use resultSubmission.refreshRequest for reconciliation and assessment present for readback. Do not use managed context/result or publication routes. The runtime returns assessment-only even with Work/Auto defaults. Missing or dirty checkout limitations belong in evidence. No assignment, setup, implementation, publication, or new chat is authorized.',
     });
     if (input.operation === 'context') {
       if (entry?.result && !input.revise)

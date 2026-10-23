@@ -10,7 +10,11 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import { issueKey } from '../agent/dispatch-pending.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
-import { assessmentResultSchema, type AssessmentResult } from '../agent/assessment-result.ts';
+import {
+  assessmentResultContextSchema,
+  assessmentResultSchema,
+  type AssessmentResult,
+} from '../agent/assessment-result.ts';
 import type { AssessmentSelection } from '../agent/assessment-selection.ts';
 import AgentSystemToolError from '../api/error.ts';
 import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
@@ -3715,7 +3719,20 @@ describe('agent/openclaw issue dispatch', () => {
     const verified = await context(input.id);
     assert.ok('runtime' in verified && verified.runtime === 'openclaw');
     assert.ok('evidence' in verified && 'resultContract' in verified && 'assessment' in verified);
-    const recorded = await submit(input.id);
+    assert.deepEqual(
+      'resultSchema' in verified && verified.resultSchema,
+      assessmentResultContextSchema,
+    );
+    assert.ok('resultSubmission' in verified && 'entry' in verified);
+    assert.equal(verified.entry, 'managed');
+    assert.deepEqual(verified.resultSubmission.request, { action: 'result', id: input.id });
+    assert.deepEqual(verified.resultSubmission.refreshRequest, { action: 'context', id: input.id });
+    const candidate = {
+      ...verified.resultSubmission.request,
+      [verified.resultSubmission.resultField]: plan,
+    };
+    assert.ok(Value.Check(dispatchParameters, candidate));
+    const recorded = await service.run(manifest, root, assessor(input.id), candidate);
     assert.ok('presentation' in recorded && recorded.presentation?.includes(plan.fullAssessment!));
     assert.equal(recorded.status, 'recorded');
     const saved = await record();
@@ -3725,6 +3742,14 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(saved.resultTurnId, `${input.id}:assessment`);
     assert.equal(saved.stageReceipt?.binding.threadId, assessor(input.id).sessionKey);
     assert.equal(saved.stageReceipt?.binding.worktree, join(root, 'worktree'));
+    const readback = await context(input.id);
+    assert.ok('previousResultTurnId' in readback && 'currentTurnId' in readback);
+    assert.equal(readback.previousResultTurnId, readback.currentTurnId);
+    assert.equal(
+      'previousPresentation' in readback && readback.previousPresentation,
+      recorded.presentation,
+    );
+    assert.equal((await record()).assessmentHistory?.length, 1);
     assessmentReply(input.id);
     service = new OpenClawDispatch(service.dependencies);
     assert.equal((await assess(input.id)).status, 'assessment-completed');

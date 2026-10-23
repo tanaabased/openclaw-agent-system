@@ -8,6 +8,8 @@ import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
+import assessmentSubmission from '../agent/assessment-submission.ts';
 import { issueExampleScenario } from '../examples/openclaw-notifications-issue-journey/model-fixture.ts';
 import { intakeExampleScenario } from '../examples/openclaw-notifications-intake/model-fixture.ts';
 import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
@@ -39,6 +41,14 @@ for (const scenario of [
   const digest = 'd'.repeat(64);
 
   const source = 'https://github.com/tanaabased/big-test-bucket/issues/123';
+
+  function assessmentContract(previousResultDigest?: string) {
+    return {
+      entry: 'managed',
+      resultSchema: assessmentResultContextSchema,
+      resultSubmission: assessmentSubmission({ entry: 'managed', id, previousResultDigest }),
+    };
+  }
 
   function request(prompt: string): ChatCompletionRequest {
     return {
@@ -433,6 +443,8 @@ for (const scenario of [
         assert.equal((await action(later, 'context')).id, id);
         append(later, 'refresh-context', {
           status: 'verified',
+          id,
+          ...assessmentContract(digest),
           previousResultDigest: digest,
           previousResult: {
             version: 1,
@@ -512,6 +524,7 @@ for (const scenario of [
       const context = {
         status: 'verified',
         runtime: 'openclaw',
+        ...assessmentContract(),
         id,
         project: { path: '/tmp/managed-worktree' },
         assessment: {
@@ -1118,6 +1131,7 @@ for (const scenario of [
           append(input, 'context', {
             status: 'verified',
             runtime: 'openclaw',
+            ...assessmentContract(digest),
             id,
             project: { path: '/tmp/managed-worktree' },
             assessment: { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } },

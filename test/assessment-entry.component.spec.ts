@@ -9,7 +9,10 @@ import assessmentOwner from '../agent/assessment-owner.ts';
 import assessmentSkillSource from '../agent/assessment-skill-source.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import type { AssessmentEntry } from '../agent/assessment-entry-state.ts';
-import type { AssessmentResult } from '../agent/assessment-result.ts';
+import {
+  assessmentResultContextSchema,
+  type AssessmentResult,
+} from '../agent/assessment-result.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
@@ -82,23 +85,41 @@ describe('agent/assessment-entry', () => {
     assessmentEntry({ action: 'assessment', operation, target, path: root, ...extra }, deps);
   it('should select once and retain complete output without workflow authority or invented routing', async () => {
     const context = await call('context');
-    assert.ok('id' in context && 'assessment' in context);
+    assert.ok('id' in context && 'assessment' in context && 'resultSubmission' in context);
+    assert.deepEqual(context.resultSchema, assessmentResultContextSchema);
+    assert.deepEqual(context.resultSubmission.request, {
+      action: 'assessment',
+      operation: 'result',
+      id: context.id,
+      target,
+    });
+    assert.deepEqual(context.resultSubmission.refreshRequest, {
+      action: 'assessment',
+      operation: 'context',
+      id: context.id,
+      target,
+    });
     assert.equal(context.assessment!.requestedSkill, 'agent-system:agent-system-issue-assessment');
     assert.equal((await call('context')).status, 'verified');
     assert.equal(selections.length, 1);
-    const result = await call('result', {
-      id: context.id,
-      result: {
-        ...ready,
-        decision: { mode: 'work', reasons: ['Model recommendation is not permission.'] },
+    const result = await assessmentEntry(
+      {
+        ...context.resultSubmission.request,
+        result: {
+          ...ready,
+          decision: { mode: 'work', reasons: ['Model recommendation is not permission.'] },
+        },
       },
-    });
+      deps,
+    );
     assert.equal(result.status, 'recorded');
     assert.deepEqual('handoff' in result && result.handoff, { next: 'assessment-only' });
     assert.ok('presentation' in result && !result.presentation!.includes('Continue automatically'));
     assert.ok('presentation' in result && !result.presentation!.includes('Model routing'));
     const recovered = await call('context');
     assert.equal(recovered.status, 'presented');
+    assert.ok('currentTurnId' in recovered && 'previousResultTurnId' in recovered);
+    assert.equal(recovered.currentTurnId, recovered.previousResultTurnId);
     assert.deepEqual(
       'previousResult' in recovered && recovered.previousResult?.fullAssessment,
       ready.fullAssessment,
@@ -172,6 +193,14 @@ describe('agent/assessment-entry', () => {
     );
     revision = 'a'.repeat(40);
     await call('result', { id: first.id, result: ready });
+    await assert.rejects(
+      call('result', { id: first.id, result: { ...ready, progress: [] } }),
+      /assessment-request-invalid/,
+    );
+    const correction = await call('context');
+    assert.ok('previousResult' in correction);
+    assert.deepEqual(correction.previousResult, ready);
+    assert.equal((await call('result', { id: first.id, result: ready })).status, 'recorded');
     await assert.rejects(
       call('result', { id: first.id, result: { ...ready, fullAssessment: 'x'.repeat(96001) } }),
       /assessment-request-invalid/,

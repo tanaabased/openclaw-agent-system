@@ -1361,10 +1361,12 @@ describe('agent/codex-dispatch', () => {
     const context = await request('context', { id: prepared.id }, child);
     assert.equal(context.currentTurnId, 'first-turn');
     assert.equal(context.previousResultTurnId, undefined);
-    assert.match(String(context.instructions), /ordinary assessment skill/);
-    assert.match(String(context.instructions), /fullAssessment/);
-    assert.match(String(context.instructions), /consistency check in this turn/);
-    assert.match(String(context.instructions), /without another adaptation or submission/);
+    assert.equal(context.entry, 'managed');
+    assert.deepEqual(context.resultSubmission, {
+      request: { action: 'result', id: prepared.id },
+      resultField: 'result',
+      refreshRequest: { action: 'context', id: prepared.id },
+    });
     const original =
       'Keep records until the retention decision is answered.\n\nPartial plan: inspect the store, then remove eligible records only after approval.\n\nWhich retention period applies?\n\nThe failure cause is unverified.';
     const question = {
