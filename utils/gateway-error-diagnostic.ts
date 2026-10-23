@@ -11,6 +11,40 @@ export interface GatewayErrorDiagnostic {
   requestDispatched: boolean | null;
 }
 
+const closeCodes = [
+  1000, 1001, 1002, 1003, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014, 1015,
+];
+
+/** reconstruct public evidence; typed callers can still carry extra or invalid runtime data. */
+export function retainGatewayErrorDiagnostic(value: unknown): GatewayErrorDiagnostic {
+  const input = value && typeof value === 'object' ? value : {};
+  const category =
+    'category' in input &&
+    (input.category === 'timeout' || input.category === 'closed' || input.category === 'rejected')
+      ? input.category
+      : 'unknown';
+  return {
+    category,
+    gatewayCode:
+      category === 'rejected' && 'gatewayCode' in input
+        ? (Object.values(ErrorCodes).find((code) => code === input.gatewayCode) ?? null)
+        : null,
+    closeCode:
+      category === 'closed' &&
+      'closeCode' in input &&
+      typeof input.closeCode === 'number' &&
+      closeCodes.includes(input.closeCode)
+        ? input.closeCode
+        : null,
+    requestDispatched:
+      (category === 'timeout' || category === 'closed') &&
+      'requestDispatched' in input &&
+      typeof input.requestDispatched === 'boolean'
+        ? input.requestDispatched
+        : null,
+  };
+}
+
 /** retain protocol evidence only; upstream prose and connection details can contain secrets. */
 export default function gatewayErrorDiagnostic(error: unknown): GatewayErrorDiagnostic {
   const diagnostic: GatewayErrorDiagnostic = {
@@ -30,12 +64,7 @@ export default function gatewayErrorDiagnostic(error: unknown): GatewayErrorDiag
       ...diagnostic,
       category: error.kind,
       closeCode:
-        error.kind === 'closed' &&
-        [
-          1000, 1001, 1002, 1003, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014, 1015,
-        ].includes(error.code ?? 0)
-          ? error.code!
-          : null,
+        error.kind === 'closed' && closeCodes.includes(error.code ?? 0) ? error.code! : null,
       requestDispatched:
         typeof error.requestDispatched === 'boolean' ? error.requestDispatched : null,
     };

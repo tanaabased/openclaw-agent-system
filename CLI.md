@@ -715,6 +715,11 @@ If reconciliation fails, install exits nonzero and reports completed outcomes,
 the blocking component, and unattempted work. Earlier changes remain applied;
 rerun install after fixing the blocker. With `--json`, stdout contains one
 failure object with `status: "failed"`, `outcomes`, `blocked`, and `unattempted`.
+Automation Gateway failures also report allowlisted evidence in
+`blocked.automationGatewayDiagnostic` and the human diagnostic: the failed method,
+failure category, Gateway or close code, and whether the request was dispatched.
+Unavailable values remain `null` or `unknown`; dispatch does not prove an operation
+completed. Raw upstream errors and connection details are excluded.
 
 > [!NOTE]
 > Environment flags accept trimmed, case-insensitive `1`, `true`, `yes`, or `on`.
