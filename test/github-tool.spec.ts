@@ -127,7 +127,10 @@ function createRuntime(
       (async (request) => ({
         exitCode: 0,
         stderr: '',
-        stdout: request.argv[0] === 'api' ? 'tanaabot\n' : '{"name":"project"}\n',
+        stdout:
+          request.argv[0] === 'api'
+            ? '{"login":"tanaabot","node_id":"SELF"}\n'
+            : '{"name":"project"}\n',
         timedOut: false,
         truncated: false,
       })),
@@ -135,6 +138,139 @@ function createRuntime(
 }
 
 describe('tools/github/tool', () => {
+  it('should reuse identity proof across concurrent commands and refresh on credential rejection or rotation', async () => {
+    const requests: string[][] = [];
+    const values = { GH_TOKEN_TANAABOT: 'private-token', GITHUB_USERNAME: 'tanaabot' };
+    let rejected = false;
+    const runtime = createRuntime({
+      environmentValues: values,
+      runCli: async ({ argv, environment }) => {
+        requests.push(argv);
+        return {
+          exitCode: rejected && argv[1] !== 'user' ? 1 : 0,
+          stderr: rejected ? 'gh: Bad credentials (HTTP 401)' : '',
+          stdout:
+            argv[1] === 'user'
+              ? JSON.stringify({
+                  login: environment.GH_TOKEN === 'wrong-account' ? 'other' : 'tanaabot',
+                  node_id: 'SELF',
+                })
+              : 'result',
+          timedOut: false,
+          truncated: false,
+        };
+      },
+    });
+    const tool = createTool();
+    const invoke = () =>
+      tool.invoke(runtime, ['repo', 'view', 'owner/repo'], { source: 'command', workspaceDir });
+    await Promise.all([invoke(), invoke()]);
+    assert.equal(requests.filter((argv) => argv[1] === 'user').length, 1);
+    assert.equal(requests.filter((argv) => argv[0] === 'repo').length, 2);
+    values.GH_TOKEN_TANAABOT = 'rotated-token';
+    await invoke();
+    assert.equal(requests.filter((argv) => argv[1] === 'user').length, 2);
+    rejected = true;
+    const denied = await invoke();
+    assert.equal(denied.kind, 'cli');
+    if (denied.kind !== 'cli') throw new Error('expected cli result');
+    assert.equal(denied.commandResult.exitCode, 1);
+    rejected = false;
+    await invoke();
+    assert.equal(requests.filter((argv) => argv[1] === 'user').length, 3);
+    values.GH_TOKEN_TANAABOT = 'wrong-account';
+    const before = requests.filter((argv) => argv[0] === 'repo').length;
+    await assert.rejects(
+      invoke(),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError && error.code === 'tool_identity_mismatch',
+    );
+    assert.equal(requests.filter((argv) => argv[0] === 'repo').length, before);
+  });
+
+  it('should scope identity reuse to the bound workspace and agent', async () => {
+    let reads = 0;
+    const tool = createTool();
+    for (const [id, workspace] of [
+      ['data', workspaceDir],
+      ['data', '/other'],
+      ['another', workspaceDir],
+    ]) {
+      const inputManifest = structuredClone(manifest);
+      inputManifest.agent.id = id!;
+      const runtime = createRuntime({
+        boundWorkspaceDir: workspace,
+        inputManifest,
+        runCli: async ({ argv }) => {
+          if (argv[1] === 'user') reads++;
+          return {
+            exitCode: 0,
+            stderr: '',
+            stdout: '{"login":"tanaabot","node_id":"SELF"}',
+            timedOut: false,
+            truncated: false,
+          };
+        },
+      });
+      await tool.invoke(runtime, ['repo', 'view'], { source: 'command', workspaceDir: workspace });
+    }
+    assert.equal(reads, 3);
+  });
+
+  it('should refresh assignment membership even when account identity was already verified', async () => {
+    let assigned = true;
+    let identityReads = 0;
+    let membershipReads = 0;
+    let mutations = 0;
+    let login = 'tanaabot';
+    const tool = createTool();
+    const runtime = createRuntime({
+      runCli: async ({ argv }) => {
+        let value: unknown = {};
+        if (argv[1] === 'user') {
+          identityReads++;
+          value = { login, node_id: 'SELF' };
+        } else if (argv.includes('PATCH')) mutations++;
+        else if (argv[1]?.replace(/^\//u, '').startsWith('repos/')) {
+          membershipReads++;
+          value = { assignees: assigned ? [{ login: 'tanaabot' }] : [] };
+        }
+        return {
+          exitCode: 0,
+          stderr: '',
+          stdout: JSON.stringify(value),
+          timedOut: false,
+          truncated: false,
+        };
+      },
+    });
+    const scope = { source: 'command' as const, workspaceDir };
+    await tool.invoke(runtime, ['repo', 'view'], scope);
+    const replace = () =>
+      tool.invoke(
+        runtime,
+        ['api', 'repos/owner/repo/issues/12', '--method', 'PATCH', '--input', '-'],
+        scope,
+        '{"assignees":[]}',
+      );
+    await assert.rejects(
+      replace(),
+      (error: unknown) => error instanceof AgentSystemToolError && error.code === 'approval_denied',
+    );
+    assert.equal(mutations, 0);
+    assigned = false;
+    await replace();
+    assert.equal(identityReads, 3);
+    assert.equal(membershipReads, 2);
+    assert.equal(mutations, 1);
+    login = 'renamed';
+    const mismatch = (error: unknown) =>
+      error instanceof AgentSystemToolError && error.code === 'tool_identity_mismatch';
+    await assert.rejects(replace(), mismatch);
+    await assert.rejects(tool.invoke(runtime, ['repo', 'view'], scope), mismatch);
+    assert.equal(mutations, 1);
+  });
+
   it('should execute the inspected file bytes even when the file changes during preflight', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'github-input-'));
     const path = join(directory, 'payload.json');
@@ -296,7 +432,7 @@ describe('tools/github/tool', () => {
             truncated: false,
             stdout: request.argv.includes('user')
               ? request.argv.includes('--jq')
-                ? 'tanaabot\n'
+                ? '{"login":"tanaabot","node_id":"SELF"}\n'
                 : JSON.stringify({ login: 'tanaabot', node_id: 'SELF' })
               : JSON.stringify({ assignees: [{ login: 'tanaabot' }] }),
           };
@@ -344,7 +480,10 @@ describe('tools/github/tool', () => {
         return {
           exitCode: 0,
           stderr: '',
-          stdout: request.argv[0] === 'api' ? 'tanaabot\n' : '{"name":"project"}\n',
+          stdout:
+            request.argv[0] === 'api'
+              ? '{"login":"tanaabot","node_id":"SELF"}\n'
+              : '{"name":"project"}\n',
           timedOut: false,
           truncated: false,
         };
@@ -367,7 +506,7 @@ describe('tools/github/tool', () => {
     assert.deepEqual(
       requests.map(({ argv }) => argv),
       [
-        ['api', 'user', '--jq', '.login'],
+        ['api', 'user'],
         ['repo', 'view', 'tanaabased/openclaw-agent-system', '--json', 'name'],
       ],
     );
@@ -395,7 +534,8 @@ describe('tools/github/tool', () => {
         return {
           exitCode: 0,
           stderr: '',
-          stdout: request.argv[0] === 'api' ? 'tanaabot\n' : 'output\n',
+          stdout:
+            request.argv[0] === 'api' ? '{"login":"tanaabot","node_id":"SELF"}\n' : 'output\n',
           timedOut: false,
           truncated: false,
         };
@@ -502,7 +642,7 @@ describe('tools/github/tool', () => {
         return {
           exitCode: 0,
           stderr: '',
-          stdout: request.argv[0] === 'api' ? 'tanaabot\n' : '',
+          stdout: request.argv[0] === 'api' ? '{"login":"tanaabot","node_id":"SELF"}\n' : '',
           timedOut: false,
           truncated: false,
         };
@@ -581,7 +721,7 @@ describe('tools/github/tool', () => {
           return {
             exitCode: 0,
             stderr: '',
-            stdout: request.argv[0] === 'api' ? 'tanaabot\n' : '',
+            stdout: request.argv[0] === 'api' ? '{"login":"tanaabot","node_id":"SELF"}\n' : '',
             timedOut: false,
             truncated: false,
           };
@@ -594,7 +734,7 @@ describe('tools/github/tool', () => {
     assert.deepEqual(
       requests.map(({ argv }) => argv),
       [
-        ['api', 'user', '--jq', '.login'],
+        ['api', 'user'],
         ['repo', 'vaporize', 'owner/repository'],
       ],
     );
@@ -635,7 +775,7 @@ describe('tools/github/tool', () => {
       runCli: async () => ({
         exitCode: 0,
         stderr: '',
-        stdout: 'someone-else\n',
+        stdout: '{"login":"someone-else","node_id":"OTHER"}\n',
         timedOut: false,
         truncated: false,
       }),
@@ -662,7 +802,7 @@ describe('tools/github/tool', () => {
             ? {
                 exitCode: 0,
                 stderr: '',
-                stdout: 'tanaabot\n',
+                stdout: '{"login":"tanaabot","node_id":"SELF"}\n',
                 timedOut: false,
                 truncated: false,
               }

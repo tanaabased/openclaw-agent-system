@@ -4,6 +4,27 @@ import createGitHubRequestProfile from '../core/github-request-profile.ts';
 import { summarizeGitHubProfiles } from '../scripts/github-profile-report.ts';
 
 describe('core/github-request-profile', () => {
+  it('should distinguish conditional responses from fewer observed http requests', () => {
+    const summary = summarizeGitHubProfiles([
+      {
+        version: 1,
+        complete: true,
+        exitCode: 1,
+        response: { status: 304 },
+        requests: [{ route: '/repos/:owner/:repo' }],
+      },
+      {
+        version: 1,
+        complete: true,
+        exitCode: 0,
+        response: { status: 200 },
+        requests: [{ route: '/repos/:owner/:repo' }],
+      },
+    ]);
+    assert.equal(summary.requests, 2);
+    assert.equal(summary.notModified, 1);
+    assert.equal(summary.failures[0]?.httpStatus, 304);
+  });
   it('should count repeated requests across arbitrary chunks without retaining urls or queries', () => {
     const profile = createGitHubRequestProfile(1024);
     const trace =

@@ -53,6 +53,45 @@ describe('channels/github/identity-cache', () => {
     assert.equal(fresh.issueAssignment!.allowed[1]!.login, actor.login);
   });
 
+  it('should batch retained immutable pins during scans while preserving rename and conflict checks', async () => {
+    const cache = new GitHubIdentityCache({ root, scope: 'batch' });
+    await cache.resolve(policy(), { resolveIdentity });
+    const batches: string[][] = [];
+    const client = {
+      resolveIdentity: async () => assert.fail('retained pins must use the batch'),
+      resolveIdentities: async (ids: readonly string[]) => {
+        batches.push([...ids]);
+        return Promise.all(
+          ids.map(async (id) => {
+            const identity = await resolveIdentity(id);
+            return identity.nodeId === actor.nodeId ? { ...identity, login: 'renamed' } : identity;
+          }),
+        );
+      },
+    };
+    const fresh = policy();
+    await cache.resolve(fresh, client, 'all', true);
+    assert.equal(batches.length, 1);
+    assert.deepEqual(new Set(batches[0]), new Set(['O_owner', 'U_actor', 'U_reviewer']));
+    assert.equal(fresh.issueAssignment!.allowed[0]!.login, 'renamed');
+    await assert.rejects(
+      cache.resolve(
+        policy(),
+        {
+          ...client,
+          resolveIdentities: async (ids) =>
+            (await client.resolveIdentities(ids)).map((identity) => ({
+              ...identity,
+              nodeId: 'U_replacement',
+            })),
+        },
+        'all',
+        true,
+      ),
+      /github-identity-conflict/,
+    );
+  });
+
   it('should follow a pinned immutable identity across rename without granting its old name to a new account', async () => {
     await new GitHubIdentityCache({ root, scope: 'test' }).resolve(policy(), { resolveIdentity });
     const requests: string[] = [];

@@ -8,6 +8,7 @@ export interface GitHubRateLimit {
 }
 
 export interface GitHubApiResponse {
+  etag?: string;
   body: string;
   hasNextPage: boolean;
   rateLimit: GitHubRateLimit;
@@ -47,6 +48,9 @@ export function parseGitHubApiResponse(value: string): GitHubApiResponse {
   const resetSeconds = finiteInteger(headers.get('x-ratelimit-reset'));
   const retryAfterSeconds = finiteInteger(headers.get('retry-after'));
   return {
+    ...(/^(?:W\/)?"[\x21\x23-\x7e]{1,256}"$/u.test(headers.get('etag') ?? '')
+      ? { etag: headers.get('etag')! }
+      : {}),
     body: response.slice(separator.index + separator[0].length),
     hasNextPage: /(?:^|,)\s*<[^>]+>\s*;\s*rel="next"(?:,|$)/u.test(headers.get('link') ?? ''),
     rateLimit: {

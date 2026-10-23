@@ -93,7 +93,7 @@ export default class GitHubIdentityCache {
   /** Resolve new pins; discovery scans also refresh retained names by their immutable ids. */
   async resolve(
     policy: GitHubNotificationPolicy | undefined,
-    client: Pick<GitHubNotificationIntakeClient, 'resolveIdentity'>,
+    client: Pick<GitHubNotificationIntakeClient, 'resolveIdentity' | 'resolveIdentities'>,
     purpose: Purpose = 'all',
     refresh = false,
   ) {
@@ -111,6 +111,29 @@ export default class GitHubIdentityCache {
     const refreshed =
       GitHubIdentityCache.#refreshed.get(client) ?? new Map<string, GitHubIdentity>();
     GitHubIdentityCache.#refreshed.set(client, refreshed);
+    const batch = new Map<string, GitHubIdentity>();
+    if (client.resolveIdentities) {
+      const entries = (await this.read()).entries;
+      const references = [
+        ...new Set(
+          selected.flatMap(({ pin }) => {
+            const reference = key(pin);
+            if (refreshed.has(`${this.path}\0${reference}`) || (!refresh && entries[reference]))
+              return [];
+            const id = entries[reference]?.nodeId ?? pin.reference ?? pin.nodeId;
+            return id.startsWith('@') ? [] : [id];
+          }),
+        ),
+      ];
+      if (references.length > 1) {
+        for (let start = 0; start < references.length; start += 100) {
+          const ids = references.slice(start, start + 100);
+          const identities = await client.resolveIdentities(ids);
+          if (identities.length !== ids.length) throw new Error('github-identity-unresolved');
+          ids.forEach((id, index) => batch.set(id, identities[index]!));
+        }
+      }
+    }
     // Resolve outside the file lease so provider latency cannot block other issue turns.
     // Commit each verified pin before the next lookup, preserving partial progress.
     for (const { pin, user } of selected) {
@@ -122,7 +145,8 @@ export default class GitHubIdentityCache {
         const retained = (await this.read()).entries[reference];
         identity = !refresh ? retained : undefined;
         if (!identity) {
-          identity = await client.resolveIdentity(retained?.nodeId ?? pin.reference ?? pin.nodeId);
+          const id = retained?.nodeId ?? pin.reference ?? pin.nodeId;
+          identity = batch.get(id) ?? (await client.resolveIdentity(id));
           resolved = true;
         }
         if (!Value.Check(identitySchema, identity) || (user && identity.type !== 'User'))

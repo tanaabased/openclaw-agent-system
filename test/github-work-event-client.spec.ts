@@ -27,6 +27,134 @@ function response(body: unknown, link?: string): AgentSystemCliResult {
 }
 
 describe('channels/github/provider/work-event-client', () => {
+  const repository = {
+    archived: false,
+    disabled: false,
+    cloneUrl: 'https://github.com/owner/repo.git',
+    databaseId: 1,
+    nodeId: 'R_repo',
+    name: 'repo',
+    defaultBranch: 'main',
+    owner: { login: 'owner', nodeId: 'O_owner', type: 'Organization' },
+  };
+
+  it('should revalidate repository observations across connections and expose changed provider facts', async () => {
+    const headers: Array<string | undefined> = [];
+    let changed = false;
+    const account = {
+      observationScope: {},
+      identity: { login: 'receiver', nodeId: 'U_receiver' },
+      async execute(argv: string[]) {
+        const conditional = argv.find((value) => value.startsWith('If-None-Match:'));
+        headers.push(conditional);
+        if (conditional && !changed)
+          return {
+            ...response({}),
+            exitCode: 1,
+            stderr: 'gh: HTTP 304',
+            stdout: 'HTTP/2 304 Not Modified\nx-ratelimit-remaining: 99\n\n',
+          };
+        return {
+          ...response({ ...repository, archived: changed }),
+          stdout:
+            'HTTP/2 200 OK\netag: "repo-v' +
+            (changed ? '2' : '1') +
+            '"\n\n' +
+            JSON.stringify({ ...repository, archived: changed }),
+        };
+      },
+    };
+    const first = await new GitHubWorkEventClient(account).getRepository('owner', 'repo');
+    first.owner.nodeId = 'caller-mutated';
+    const second = new GitHubWorkEventClient({ ...account });
+    assert.equal((await second.getRepository('owner', 'repo')).owner.nodeId, 'O_owner');
+    assert.equal(second.rateLimit.remaining, 99);
+    changed = true;
+    assert.equal((await second.getRepository('owner', 'repo')).archived, true);
+    assert.deepEqual(headers, [undefined, 'If-None-Match: "repo-v1"', 'If-None-Match: "repo-v1"']);
+    changed = false;
+    await new GitHubWorkEventClient({ ...account, observationScope: {} }).getRepository(
+      'owner',
+      'repo',
+    );
+    assert.equal(headers.at(-1), undefined);
+  });
+
+  it('should never substitute cached repository facts for provider errors', async () => {
+    for (const status of [401, 403, 404, 503]) {
+      let failing = false;
+      const conditionals: boolean[] = [];
+      const client = new GitHubWorkEventClient({
+        identity: { login: 'receiver', nodeId: 'U_receiver' },
+        async execute(argv) {
+          conditionals.push(argv.some((value) => value.startsWith('If-None-Match:')));
+          return failing
+            ? { ...response({}), exitCode: 1, stdout: 'HTTP/2 ' + status + ' Error\n\n{}' }
+            : {
+                ...response(repository),
+                stdout: 'HTTP/2 200 OK\netag: "repo"\n\n' + JSON.stringify(repository),
+              };
+        },
+      });
+      await client.getRepository('owner', 'repo');
+      failing = true;
+      await assert.rejects(client.getRepository('owner', 'repo'), GitHubWorkEventClientError);
+      failing = false;
+      await client.getRepository('owner', 'repo');
+      assert.deepEqual(conditionals, [false, true, false]);
+    }
+  });
+
+  it('should reject unsolicited not-modified responses and read repositories without etags normally', async () => {
+    let unsolicited = true;
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'receiver', nodeId: 'U_receiver' },
+      async execute(argv) {
+        assert.equal(
+          argv.some((value) => value.startsWith('If-None-Match:')),
+          false,
+        );
+        return unsolicited
+          ? { ...response({}), exitCode: 1, stdout: 'HTTP/2 304 Not Modified\n\n' }
+          : response(repository);
+      },
+    });
+    await assert.rejects(client.getRepository('owner', 'repo'), GitHubWorkEventClientError);
+    unsolicited = false;
+    assert.equal((await client.getRepository('owner', 'repo')).nodeId, 'R_repo');
+    await client.getRepository('owner', 'repo');
+  });
+
+  it('should resolve a group of immutable identities with one provider request and reject incomplete groups', async () => {
+    let missing = false;
+    let requests = 0;
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'receiver', nodeId: 'U_receiver' },
+      async execute(_argv, stdin) {
+        requests++;
+        assert.deepEqual(JSON.parse(stdin!).variables.ids, ['U_actor', 'O_owner']);
+        return response({
+          data: {
+            nodes: [
+              { id: 'U_actor', login: 'renamed', __typename: 'User' },
+              missing ? null : { id: 'O_owner', login: 'owner', __typename: 'Organization' },
+            ],
+          },
+        });
+      },
+    });
+    assert.deepEqual(await client.resolveIdentities(['U_actor', 'O_owner']), [
+      { login: 'renamed', nodeId: 'U_actor', type: 'User' },
+      { login: 'owner', nodeId: 'O_owner', type: 'Organization' },
+    ]);
+    assert.equal(requests, 1);
+    missing = true;
+    await assert.rejects(
+      client.resolveIdentities(['U_actor', 'O_owner']),
+      /github-identity-unresolved/,
+    );
+  });
+
   it('should resolve names and opaque node ids through bounded provider facts', async () => {
     const calls: string[][] = [];
     let missing = false;

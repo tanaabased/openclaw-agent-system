@@ -67,6 +67,7 @@ describe('core/github-account-client', () => {
     changed.git = { name: 'new author' };
     const second = await client.connect({ manifest: changed, workspaceDir });
     assert.equal(second.identity.nodeId, 'U_agent');
+    assert.equal(second.observationScope, first.observationScope);
     assert.equal(second.gitAuthor?.name, 'new author');
     assert.equal(requests.length, 1);
     denied = true;
@@ -104,17 +105,18 @@ describe('core/github-account-client', () => {
         },
       };
       let client = new GitHubAccountClient(dependencies);
-      await client.connect({ manifest, workspaceDir });
+      const first = await client.connect({ manifest, workspaceDir });
       const next = structuredClone(manifest);
       if (change === 'token') token = 'rotated-token';
       if (change === 'username') username = 'another-account';
       if (change === 'agent') next.agent.id = 'another-agent';
       if (change === 'service') client = new GitHubAccountClient(dependencies);
-      await client.connect({
+      const second = await client.connect({
         manifest: next,
         workspaceDir: change === 'workspace' ? '/other' : workspaceDir,
       });
       assert.equal(executions, 2, change);
+      assert.notEqual(first.observationScope, second.observationScope, change);
     }
   });
 

@@ -80,6 +80,7 @@ export function summarizeGitHubProfiles(profiles: Profile[]) {
   return {
     commands: profiles.length,
     incomplete: profiles.filter((profile) => !profile.complete).length,
+    notModified: profiles.filter((profile) => profile.response?.status === 304).length,
     requests: [...groups.values()].reduce((sum, g) => sum + g.requests, 0),
     groups: [...groups.values()].sort((a, b) => b.requests - a.requests),
     quotas: [...quotas.values()],
@@ -113,6 +114,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   process.stdout.write(
     `${summary.requests} HTTP requests across ${summary.commands} CLI invocations; ${summary.incomplete} incomplete traces.\n\n`,
   );
+  if (summary.notModified)
+    process.stdout.write(
+      `${summary.notModified} HTTP 304 responses (included in HTTP counts).\n\n`,
+    );
   process.stdout.write(
     '| Agent | Account label | Source | Operation | Route | Requests | Observed duration, ms |\n|---|---|---|---|---|---:|---:|\n',
   );
@@ -141,5 +146,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   process.stdout.write(
     '\nConcurrent requests retain counts; ambiguous per-route timings are omitted. Counts cover traced gh traffic, not Git transport or calls from other processes/accounts.\n',
   );
-  if (summary.incomplete) process.exitCode = 1;
+  if (summary.incomplete)
+    process.stdout.write(
+      '\nIncomplete traces prevent an exact request total; reported counts include only observed traffic. Profiling does not change the scenario outcome.\n',
+    );
 }

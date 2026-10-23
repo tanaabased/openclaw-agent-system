@@ -21,6 +21,7 @@ Assign one issue, retain its assessment in one native chat and managed worktree,
 - The fixture's compact reviewer differs from the assigning actor and is initially uncached. This example creates no PR and requests no review.
 - The default private response shows the user journey and documentation/test impact; full engineering assessment and evidence remain retained for explicit readback.
 - Only Tanaabot is assigned. Refreshes target this job's issue; the 24-hour schedule avoids unrelated discovery. Cleanup stops the Gateway before closing fixtures or revoking its SSH key.
+- Repository reads remain live conditional requests. An HTTP 304 reuses the verified unchanged record; profile counts still include that request. Issue state and exact comment receipts remain fresh provider observations.
 
 ## Setup
 

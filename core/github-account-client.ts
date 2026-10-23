@@ -74,6 +74,8 @@ export interface GitHubCredentialMaterializer {
 }
 
 export interface ConnectedGitHubAccountClient {
+  /** Opaque lifetime for account-scoped provider observations; replaced on rebinding or rejection. */
+  readonly observationScope?: object;
   credentialFingerprint?: string;
   execute(
     argv: string[],
@@ -189,7 +191,7 @@ export default class GitHubAccountClient {
   readonly #cooldown = new GitHubRequestCooldown();
   readonly #identities = new Map<
     string,
-    { credentialFingerprint: string; identity?: GitHubAccountIdentity }
+    { credentialFingerprint: string; identity?: GitHubAccountIdentity; observationScope: object }
   >();
 
   constructor(dependencies: GitHubAccountClientDependencies) {
@@ -248,7 +250,7 @@ export default class GitHubAccountClient {
     ]);
     let verification = this.#identities.get(binding);
     if (verification?.credentialFingerprint !== credentialFingerprint) {
-      verification = { credentialFingerprint };
+      verification = { credentialFingerprint, observationScope: {} };
       this.#identities.set(binding, verification);
     }
 
@@ -455,6 +457,7 @@ export default class GitHubAccountClient {
       : undefined;
 
     return {
+      observationScope: verification.observationScope,
       credentialFingerprint,
       execute,
       ...(gitAuthor === undefined ? {} : { gitAuthor }),

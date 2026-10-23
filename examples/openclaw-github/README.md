@@ -16,6 +16,7 @@ Install two managed GitHub identities, execute one real identity request as each
 ## Notes
 
 - Strict AIMock drives the real Gateway/tools without testing model judgment. Ubuntu CI supplies the existing Tanaabot and EMORI tokens; identity requests are read-only.
+- The Gateway may reuse account identity proof for an unchanged credential binding. The explicit identity requests below still execute under each selected agent's real credential; a cached preflight must not change their account.
 - Pending relocation: additional model turns verify generated-config mutation rejection and self-unassignment rejection. The latter uses a nonexistent issue and must stop locally before remote mutation.
 - This job creates no GitHub issues, PRs, or SSH registrations.
 

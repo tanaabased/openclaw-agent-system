@@ -11,6 +11,8 @@ import { parseGitHubApiResponse, type GitHubRateLimit } from './api-response.ts'
 import type { GitHubIdentity } from './work-item.ts';
 
 export interface GitHubApiPage<T> {
+  etag?: string;
+  notModified?: boolean;
   hasNextPage: boolean;
   value: T;
 }
@@ -62,14 +64,27 @@ export default class GitHubWorkEventApiClient {
     return { ...this.#rateLimit };
   }
 
-  async request(argv: string[], label: string, stdin?: string): Promise<GitHubApiPage<unknown>> {
+  get observationScope(): object {
+    return this.#client.observationScope ?? this.#client;
+  }
+
+  async request(
+    argv: string[],
+    label: string,
+    stdin?: string,
+    etag?: string,
+  ): Promise<GitHubApiPage<unknown>> {
     let result;
     try {
-      result = await this.#client.execute(['api', '--include', ...argv], stdin, {
-        profileOperation: label.replaceAll(' ', '-'),
-        maxOutputBytes: 512 * 1024,
-        timeoutMs: 30_000,
-      });
+      result = await this.#client.execute(
+        ['api', '--include', ...(etag ? ['--header', `If-None-Match: ${etag}`] : []), ...argv],
+        stdin,
+        {
+          profileOperation: label.replaceAll(' ', '-'),
+          maxOutputBytes: 512 * 1024,
+          timeoutMs: 30_000,
+        },
+      );
     } catch (error) {
       throw new GitHubWorkEventClientError(
         'github-notification-request-failed',
@@ -107,6 +122,10 @@ export default class GitHubWorkEventApiClient {
         }),
       );
     }
+    // gh reports HTTP 304 as exit 1; it is successful only for our conditional read.
+    if ((result.exitCode === 0 || result.exitCode === 1) && response.status === 304 && etag) {
+      return { hasNextPage: false, notModified: true, value: undefined };
+    }
     if (result.exitCode !== 0 || response.status < 200 || response.status >= 300) {
       throw new GitHubWorkEventClientError(
         response.status === 404
@@ -126,6 +145,7 @@ export default class GitHubWorkEventApiClient {
     }
     try {
       return {
+        ...(response.etag ? { etag: response.etag } : {}),
         hasNextPage: response.hasNextPage,
         value:
           response.status === 204 && !response.body.trim()

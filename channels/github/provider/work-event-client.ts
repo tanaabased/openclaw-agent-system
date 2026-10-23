@@ -71,6 +71,10 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
     return this.#items.resolveIdentity(reference);
   }
 
+  resolveIdentities(references: readonly string[]) {
+    return this.#items.resolveIdentities(references);
+  }
+
   get identity(): GitHubIdentity {
     return this.#api.identity;
   }

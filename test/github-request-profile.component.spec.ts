@@ -167,6 +167,32 @@ describe('api/cli-runner github profiling', () => {
     assert.equal((await saved(directory)).complete, false);
   });
 
+  it('should report interrupted reads without failing the observed scenario', async () => {
+    await writeFile(
+      join(root, 'cancelled.json'),
+      JSON.stringify({
+        version: 1,
+        complete: false,
+        exitCode: null,
+        requests: [{ route: '/repos/:owner/:repo/issues/:value/comments' }],
+      }),
+    );
+    const output = await new Promise<string>((resolve, reject) => {
+      execFile(
+        process.execPath,
+        ['--import', 'tsx', 'scripts/github-profile-report.ts', root],
+        { timeout: 5000 },
+        (error, stdout) => {
+          if (error) reject(error);
+          else resolve(stdout);
+        },
+      );
+    });
+    assert.match(output, /1 HTTP requests across 1 CLI invocations; 1 incomplete traces/);
+    assert.match(output, /Incomplete traces prevent an exact request total/);
+    assert.match(output, /unavailable/);
+  });
+
   it('should retain operation labels and allowlisted response counters without storing headers or bodies', async () => {
     const directory = join(root, 'profile');
     const output =
