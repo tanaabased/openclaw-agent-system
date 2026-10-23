@@ -99,7 +99,9 @@ export default function codexRuntimeRequest(route: string, args: string[], input
       !(
         ['assessment', 'implementation'].includes(action)
           ? ['context', 'result', 'present']
-          : ['compose', 'candidate', 'publish', 'reconcile']
+          : action === 'reply'
+            ? ['context', 'compose', 'candidate', 'publish', 'reconcile']
+            : ['compose', 'candidate', 'publish', 'reconcile']
       ).includes(operation)
     )
       throw new Error('workflow-command-operation-invalid');

@@ -25,6 +25,7 @@ import properLockfile from 'proper-lockfile';
 import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
 import type { DispatchNativeThread } from '../agent/codex-dispatch-native.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import runCodexFeedback from '../agent/codex-feedback.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { githubNotificationMarkdownText } from '../channels/github/presentation/card.ts';
@@ -3684,6 +3685,130 @@ describe('agent/codex-dispatch', () => {
     assert.equal(retained.continuation!.retries![0]!.attempt.origin, 'assessment');
     assert.deepEqual(retained.result, result);
     assert.equal(retained.progression!.stage, 'implementation');
+  });
+
+  it('should reuse live managed ownership for status updates without restarting assessment or implementation', async () => {
+    await writeFile(join(root, 'SKILL.md'), '# status composer');
+    await workIssue(result, 'Follow the plan.', 'company:implement', 'plan');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.assessmentRevision ??= 1;
+      record.assessmentSummaries = [
+        {
+          revision: record.assessmentRevision,
+          resultDigest: automationHash(record.result),
+          binding: record.stageReceipt!.binding,
+          turnId: record.resultTurnId!,
+          authorityDigest: 'a'.repeat(64),
+          selection: record.assessment!,
+          publicText: 'Delivered assessment.',
+          receipt: { nodeId: 'SUMMARY', databaseId: 7 },
+        },
+      ];
+      await save();
+    });
+    const before = await store.read();
+    const provider = {
+      ...(await deps.connect!(workspace, AbortSignal.timeout(1000))),
+      listIssueComments: async () => ({ comments: [], truncated: false }),
+      getIssueComment: async () => {
+        throw new Error('unexpected source read');
+      },
+      findOwnIssueComment: async () => undefined,
+      createIssueComment: async () => {
+        throw new Error('unexpected publication');
+      },
+      replies: {
+        find: async () => undefined,
+        create: async () => {
+          throw new Error('unexpected inline reply');
+        },
+      },
+    };
+    const nativeDeps = {
+      ...deps,
+      threadId: native!.id,
+      replyProvider: async () => provider,
+      replyConnection: async () => ({
+        request: async (method: string) => {
+          if (method === 'thread/read') return { thread: { id: native!.id } };
+          if (method === 'thread/turns/list')
+            return { data: [{ id: 'later-operator-turn', status: 'inProgress' }] };
+          if (method === 'thread/items/list')
+            return {
+              data: [
+                {
+                  turnId: 'later-operator-turn',
+                  item: { type: 'userMessage', id: 'operator', content: 'Draft a status update.' },
+                },
+              ],
+            };
+          if (method === 'skills/list')
+            return {
+              data: [
+                {
+                  cwd: workspace,
+                  errors: [],
+                  skills: [
+                    {
+                      name: 'agent-system:agent-system-feedback-reply',
+                      path: join(root, 'SKILL.md'),
+                      scope: 'user',
+                      enabled: true,
+                    },
+                  ],
+                },
+              ],
+            };
+          throw new Error(`unexpected native method: ${method}`);
+        },
+        close: async () => {},
+      }),
+    };
+    const target = 'https://github.com/owner/repo/issues/3';
+    const read = await runCodexFeedback(
+      pluginData,
+      { action: 'reply', operation: 'context', purpose: 'status-update', target },
+      nativeDeps,
+    );
+    assert.ok('observation' in read && typeof read.observation === 'string');
+    assert.ok('entry' in read && read.entry === 'managed');
+    const composed = await runCodexFeedback(
+      pluginData,
+      {
+        action: 'reply',
+        operation: 'compose',
+        purpose: 'status-update',
+        target,
+        privateText: 'Retained progress.',
+        update: {
+          observation: read.observation,
+          facts: [
+            {
+              key: 'decision',
+              reference: 'operator',
+              revision: '1',
+              text: 'Use the smaller approach.',
+            },
+          ],
+        },
+      },
+      nativeDeps,
+    );
+    assert.equal(composed.status, 'composition-ready');
+    assert.deepEqual(await store.read(), before);
+    native!.cwd = root;
+    await assert.rejects(
+      runCodexFeedback(
+        pluginData,
+        { action: 'reply', operation: 'context', purpose: 'status-update', target },
+        nativeDeps,
+      ),
+      /reply-managed-context-invalid/,
+    );
+    assert.deepEqual(await store.read(), before);
   });
 
   it('should include a github plan revision in direct planning context without entering work', async () => {

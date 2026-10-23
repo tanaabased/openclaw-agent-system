@@ -54,6 +54,8 @@ and partial work before interpreting the new message; that history supplies cont
 not new authority.
 No separate repair policy or author list is required.
 
+For an explicitly requested issue progress update, use [GitHub Update](../../skills/github-update/SKILL.md). It compares public facts with verified progress in this chat, uses the configured shared reply composer, and returns the full private answer plus the exact confirmed public quote. Already-current issues get no comment; unfinished original publications recover first. This does not start implementation or change mode.
+
 Discovery retains bounded observations independently of reply eligibility.
 Feedback authors are the union of configured allowed actors and reviewers. Activity observed while no authors are
 approved stays in GitHub history and is not queued for later dispatch. When the runtime observes acceptance resume, it saves an admission

@@ -15,6 +15,7 @@ export type GitHubNotificationPublicationIntent =
   | 'github-reply'
   | 'initial-acknowledgment'
   | 'manual-response'
+  | 'status-update'
   | 'pull-request-handoff';
 
 export type GitHubNotificationPublicationSafetyCategory =
@@ -26,6 +27,7 @@ const publicationIntents = new Set<GitHubNotificationPublicationIntent>([
   'github-reply',
   'initial-acknowledgment',
   'manual-response',
+  'status-update',
   'pull-request-handoff',
 ]);
 
@@ -182,6 +184,7 @@ type GitHubNotificationPublicationTargetInput = GitHubNotificationPublicationCon
           | 'assignment-response'
           | 'initial-acknowledgment'
           | 'manual-response'
+          | 'status-update'
           | 'pull-request-handoff';
         publicationId: string;
       }

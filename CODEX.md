@@ -240,6 +240,8 @@ native approval. Matching managed work reuses its existing owner and receipts;
 invalid managed context never becomes a manual bypass. See the
 [reply skill](./skills/feedback-reply/SKILL.md) for selection and recovery.
 
+For an explicitly requested issue progress update, use [GitHub Update](./skills/github-update/SKILL.md). It compares public facts with verified progress in this chat, uses the configured shared reply composer, and returns the full private answer plus the exact confirmed public quote. Already-current issues get no comment; unfinished original publications recover first. This does not start implementation or change mode.
+
 Public replies to inline feedback stay in the original review thread. Replies to
 submitted reviews and ordinary PR comments appear in the PR conversation.
 

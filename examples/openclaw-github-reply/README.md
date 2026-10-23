@@ -1,6 +1,6 @@
 # OpenClaw Direct GitHub Reply Example
 
-Draft a reply to an explicitly selected unassigned issue in an ordinary chat without publishing it, then publish only after a later explicit request and reconcile that publication without another post.
+Draft a reply to an explicitly selected unassigned issue in an ordinary chat without publishing it, then publish only after a later explicit request and reconcile that publication without another post. Repeat the same boundary for a verified operator decision as a status update, then return an already-current no-op.
 
 ## What Belongs Here
 
@@ -97,6 +97,57 @@ jq -e --slurpfile draft "$TMPDIR/notification-manual-draft.json" 'length == 1 an
 openclaw gateway call chat.history --params '{"sessionKey":"agent:github-reply-tanaabot:manual-reply","inputRunIds":["notification-manual-publish"],"limit":200,"maxChars":100000}' --json > "$TMPDIR/notification-manual-history.json"
 node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-manual-"+n+".json","utf8")); const comment=read("comments")[0]; const history=read("history"); const text=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId==="notification-manual-publish" && m.stopReason==="stop").map(m=>typeof m.content==="string"?m.content:m.content.map(c=>c.text??"").join("")).join("\n"); assert.ok(text.includes(comment.html_url)); assert.ok(text.includes(read("draft").publicText));'
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
+```
+
+## Status Update
+
+This adds a status draft, a later authorized publication and an already-current
+request in the same chat. These three turns prove native input, retained publication
+and no-op behavior; strict AIMock supplies materiality judgment, not real reasoning.
+
+```bash
+# should retain a typed update draft without publishing or beginning work
+cd "$GITHUB_WORKSPACE/examples/openclaw-github-reply/tanaabot"
+conversation="agent:github-reply-tanaabot:manual-reply"
+target=$(jq -er .html_url "$TMPDIR/notification-manual-issue.json")
+params=$(jq -nc --arg key "$conversation" --arg target "$target" '{sessionKey:$key,agentId:"github-reply-tanaabot",message:("Operator status update target: " + $target + "\nDecision: use the shared reply approach; implementation remains unstarted. Draft this public update."),deliver:false,idempotencyKey:"notification-status-draft"}')
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-status-draft"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-status-draft 300000
+jq -es '[.[].drafts[] | select(.update != null)] | if length == 1 then .[0] else error("one status draft required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-status-draft.json"
+jq -e '.publicText != null and .receipt == null and .attempted != true' "$TMPDIR/notification-status-draft.json"
+number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-status-before.json"
+
+# should publish the original update on a later operator turn and reconcile its receipt
+id=$(jq -er .id "$TMPDIR/notification-status-draft.json")
+params=$(jq -nc --arg key "$conversation" --arg id "$id" '{sessionKey:$key,agentId:"github-reply-tanaabot",message:("Direct reply publish draft: " + $id),deliver:false,idempotencyKey:"notification-status-publish"}')
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-status-publish"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-status-publish 300000
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-status-comments.json"
+jq -e --slurpfile before "$TMPDIR/notification-status-before.json" --slurpfile draft "$TMPDIR/notification-status-draft.json" 'length == (($before[0] | length) + 1) and ([.[] | select(.body | contains("agent-system-github-publication:status-update:"))] | length) == 1 and any(.[]; .user.login == "tanaabot" and (.body | startswith($draft[0].publicText)))' "$TMPDIR/notification-status-comments.json"
+params=$(jq -nc --arg key "$conversation" '{sessionKey:$key,inputRunIds:["notification-status-publish"],limit:200,maxChars:100000}')
+openclaw gateway call chat.history --params "$params" --json > "$TMPDIR/notification-status-history.json"
+node --input-type=module <<'NODE'
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const read = name => JSON.parse(readFileSync(process.env.TMPDIR + '/notification-status-' + name + '.json', 'utf8'));
+const draft = read('draft');
+const comment = read('comments').find(value => value.body.includes('agent-system-github-publication:status-update:'));
+const text = read('history').messages.filter(value => value.role === 'assistant' && value.__openclaw?.runId === 'notification-status-publish' && value.stopReason === 'stop').map(value => typeof value.content === 'string' ? value.content : value.content.map(part => part.text ?? '').join('')).join('\n');
+assert.equal(comment.user.login, 'tanaabot');
+assert.ok(text.includes(comment.html_url));
+assert.ok(text.includes(draft.publicText));
+assert.ok(text.includes('https://github.com/tanaabot'));
+assert.ok(text.includes(draft.privateText));
+NODE
+
+# should return already-current without another comment or draft
+params=$(jq -nc --arg key "$conversation" --arg target "$target" '{sessionKey:$key,agentId:"github-reply-tanaabot",message:("Check current status target: " + $target),deliver:false,idempotencyKey:"notification-status-current"}')
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-status-current"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-status-current 300000
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-status-after.json"
+jq -e --slurpfile before "$TMPDIR/notification-status-comments.json" '. == $before[0]' "$TMPDIR/notification-status-after.json"
+jq -es '[.[].drafts[] | select(.update != null)] | length == 1 and .[0].receipt != null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json
 ```
 
 ## Cleanup

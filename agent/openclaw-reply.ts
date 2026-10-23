@@ -2,7 +2,7 @@ import feedbackReply from './feedback-reply.ts';
 import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 import { operatorInputEvent } from './openclaw-session-input.ts';
-import type { DispatchCaller } from './openclaw-session-create.ts';
+import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
 import replyOwner from './reply-owner.ts';
 import pendingPublicResponse from './pending-public-response.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
@@ -72,6 +72,7 @@ export default async function openClawReply(input: {
       },
       turnId: caller.runId,
       inputId: turn.inputEventId,
+      message: turn.message,
       manifest,
       readManifest,
       now: (deps.now ?? Date.now)(),
@@ -79,9 +80,14 @@ export default async function openClawReply(input: {
       assertCurrent,
       resolveSkill: (id) =>
         openClawSkill(request, { agentId: manifest.agent.id, key: caller.sessionKey }, id),
-      managed: async (target) => {
+      managed: async (target, purpose) => {
         const state = await journal.read();
         const admitted = await current.store.read();
+        if (purpose) {
+          const owners = state.records.filter((record) => record.threadId === caller.sessionKey);
+          if (owners.length > 1) throw new Error('reply-managed-owner-ambiguous');
+          if (owners[0]) await describeIssueSession(request, owners[0], deps.config());
+        }
         return replyOwner(
           state.records.map((record) => {
             const item = admitted?.records.find((entry) => entry.id === record.intakeId);
@@ -125,6 +131,16 @@ export default async function openClawReply(input: {
                   }
                 : undefined,
               delivery: record.work?.delivery,
+              summaryPending: Boolean(pending),
+              announcementPending: Boolean(
+                record.work?.delivery?.pullRequest &&
+                (!record.work.delivery.announcement?.receipt ||
+                  record.work.delivery.announcement.code),
+              ),
+              announcementAttempted: Boolean(
+                record.work?.delivery?.announcement?.attempted ||
+                record.work?.delivery?.announcement?.receipt,
+              ),
               implementation: record.work?.result,
               deliveredPullRequest: record.work?.delivery?.pullRequest,
               result: record.result,
@@ -134,6 +150,7 @@ export default async function openClawReply(input: {
           caller.sessionKey,
           caller.sessionId,
           target,
+          purpose,
         );
       },
     });

@@ -29,6 +29,9 @@ export interface ReplyOwner {
     attempt?: string;
   };
   delivery?: unknown;
+  summaryPending?: boolean;
+  announcementPending?: boolean;
+  announcementAttempted?: boolean;
   deliveredPullRequest?: unknown;
   implementation?: Static<typeof implementationResultSchema>;
   result?: AssessmentResult;
@@ -41,6 +44,7 @@ export default function replyOwner(
   session: string,
   incarnation: string,
   target: ReplyTarget,
+  purpose?: 'status-update',
 ) {
   const repository = `${target.owner}/${target.name}`.toLowerCase();
   const matches = owners.filter(
@@ -57,7 +61,10 @@ export default function replyOwner(
     throw new Error('reply-managed-context-invalid');
   if (matches.length > 1) throw new Error('reply-managed-owner-ambiguous');
   const owner = matches[0];
-  if (!owner) return;
+  if (!owner) {
+    if (purpose && callers.length) throw new Error('reply-managed-owner-required');
+    return;
+  }
   if (
     owner.inactive ||
     owner.threadId !== session ||
@@ -129,33 +136,64 @@ export default function replyOwner(
         'Reuse this exact managed feedback route and retained response. The owning route verifies current source and authority. If its previous run ended, use supported owner resume with explicit user direction; never fall back to manual reply or repeat implementation.',
     };
   }
-  if (target.number === owner.number && owner.summary)
+  if (
+    target.number === owner.number &&
+    owner.summary &&
+    (!purpose || owner.summaryPending || !owner.summary.receipt)
+  )
     return {
       status: 'managed-reply-required' as const,
       id: owner.id,
       digest: undefined,
       route: 'summary',
-      operation: owner.summary.receipt
-        ? 'present'
-        : owner.summary.attempt
+      operation:
+        purpose && owner.summaryPending && owner.summary.receipt
           ? 'reconcile'
-          : 'compose',
+          : owner.summary.receipt
+            ? 'present'
+            : owner.summary.attempt
+              ? 'reconcile'
+              : 'compose',
       selection: owner.summary.selection,
       retainedResult: owner.result,
       receipt: owner.summary.receipt,
       instruction:
         'Reuse the retained assessment-summary owner and result. Use dispatch present for a delivered summary; otherwise use summary compose/reconcile as directed by its owner. Do not create a manual update or repeat assessment.',
     };
-  if (owner.delivery)
+  if (owner.delivery && (!purpose || owner.announcementPending))
     return {
       status: 'managed-reply-required' as const,
       id: owner.id,
       digest: undefined,
       route: 'delivery',
-      operation: 'present',
+      operation: purpose ? (owner.announcementAttempted ? 'announce' : 'compose') : 'present',
       retainedResult: owner.result,
       instruction:
         'Reuse the existing delivery owner and retained PR/announcement receipts. Present or recover its supported operation; do not create another reply, PR or implementation turn.',
+    };
+  if (purpose)
+    return {
+      status: 'status-update-context' as const,
+      workflow: 'issue-assignment' as const,
+      ownerId: owner.id,
+      pullRequestNumber: owner.pullRequestNumber,
+      verifiedOutcome: {
+        assessment: owner.result,
+        implementation: owner.implementation,
+        delivery: owner.deliveredPullRequest,
+        feedback: owner.events?.flatMap((event) =>
+          event.result || event.work?.result
+            ? [
+                {
+                  eventId: event.id,
+                  result: event.result,
+                  work: event.work?.result,
+                  receipt: event.receipt,
+                },
+              ]
+            : [],
+        ),
+      },
     };
   throw new Error('reply-managed-response-required');
 }

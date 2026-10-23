@@ -15,6 +15,52 @@ import { maximumGitHubNotificationReplyLength } from '../channels/github/publica
 import { publicationItem } from './github-provider-fixtures.ts';
 
 describe('channels/github/publication/publication-contract', () => {
+  it('should keep status updates source-less and distinct from manual replies with the shared safety limit', () => {
+    const update = githubNotificationPublicationTarget({
+      intent: 'status-update',
+      item: publicationItem(),
+      publicationId: 'verified-delta',
+    });
+    const reply = githubNotificationPublicationTarget({
+      intent: 'manual-response',
+      item: publicationItem(),
+      publicationId: 'verified-delta',
+    });
+    assert.notEqual(update, reply);
+    assert.equal(parseGitHubNotificationPublicationTarget(update).intent, 'status-update');
+    const body = 'Verified checks passed.\n\nInstalled checks remain unrun.';
+    assert.equal(
+      githubNotificationPublicationText('status-update', [{ text: body }], redactFeedback),
+      body,
+    );
+    assert.ok(
+      githubNotificationPublicationComment(
+        body,
+        githubNotificationPublicationMarker(update),
+      ).startsWith(body),
+    );
+    assert.throws(() =>
+      githubNotificationPublicationText(
+        'status-update',
+        [{ text: githubNotificationCommenterToken }],
+        redactFeedback,
+      ),
+    );
+    assert.throws(() =>
+      githubNotificationPublicationText(
+        'status-update',
+        [{ text: 'x'.repeat(maximumGitHubNotificationReplyLength + 1) }],
+        redactFeedback,
+      ),
+    );
+    assert.throws(() =>
+      githubNotificationPublicationText(
+        'status-update',
+        [{ text: 'TOKEN=private-value' }],
+        redactFeedback,
+      ),
+    );
+  });
   it('should mint one opaque target and hidden marker for a publication intent', () => {
     const target = githubNotificationPublicationTarget({
       intent: 'initial-acknowledgment',
