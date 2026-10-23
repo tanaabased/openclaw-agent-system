@@ -40,7 +40,7 @@ jobs:
             assert.ok(Number.isFinite(remaining) && remaining >= minimum, 'insufficient fresh quota for trial');
           }
           identity('tanaabot', process.env.GH_TOKEN, 4900);
-          identity('emoriwan', process.env.GH_TOKEN_EMORI, 4900);
+          identity('emoriwan', process.env.GH_TOKEN_EMORI, 4000);
           for (const fixture of fixtures) {
             const issue = api(repository + '/issues/' + fixture.issue);
             assert.equal(issue.user.login, 'emoriwan');
@@ -80,6 +80,6 @@ jobs:
             assert.ok(absent, 'fixture branch removal not verified');
           }
           identity('tanaabot', process.env.GH_TOKEN, 4800);
-          identity('emoriwan', process.env.GH_TOKEN_EMORI, 4900);
+          identity('emoriwan', process.env.GH_TOKEN_EMORI, 4000);
           console.log('bounded fixture cleanup verified; quota ready for one full trial');
           NODE
