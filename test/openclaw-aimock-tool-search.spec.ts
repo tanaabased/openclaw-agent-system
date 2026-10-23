@@ -112,7 +112,7 @@ describe('scripts/aimock-tool-search', () => {
       modelProvider: 'aimock',
       modelId: 'gpt-5.5',
     });
-    const scenario = withToolSearch(resolveScenario('openclaw-notifications-pr-delivery'));
+    const scenario = withToolSearch(resolveScenario('openclaw-notifications-pr-journey'));
     const id = 'a'.repeat(64);
     const digest = 'b'.repeat(64);
     const input = request(
@@ -284,7 +284,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should identify a rejected notification tool envelope without exposing call arguments', async () => {
-    const scenario = withToolSearch(resolveScenario('openclaw-notifications-pr-delivery'));
+    const scenario = withToolSearch(resolveScenario('openclaw-notifications-pr-journey'));
     const input = request(
       `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${'a'.repeat(64)}`,
     );

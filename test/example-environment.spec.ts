@@ -107,12 +107,64 @@ describe('example environment resolution', () => {
         'tanaabot',
       ],
       [
-        'examples/openclaw-notifications-pr-delivery/emori/agent.yaml',
+        'examples/openclaw-notifications-pr-recipients/emori/agent.yaml',
         'GH_TOKEN_EMORI',
         'emoriwan',
       ],
       [
-        'examples/openclaw-notifications-pr-delivery/tanaabot/agent.yaml',
+        'examples/openclaw-notifications-pr-recipients/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      ['examples/openclaw-notifications-pr-update/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
+      [
+        'examples/openclaw-notifications-pr-update/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      [
+        'examples/openclaw-notifications-pr-presentation/emori/agent.yaml',
+        'GH_TOKEN_EMORI',
+        'emoriwan',
+      ],
+      [
+        'examples/openclaw-notifications-pr-presentation/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      [
+        'examples/openclaw-notifications-pr-collaboration/emori/agent.yaml',
+        'GH_TOKEN_EMORI',
+        'emoriwan',
+      ],
+      [
+        'examples/openclaw-notifications-pr-collaboration/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      [
+        'examples/openclaw-notifications-pr-discovery/emori/agent.yaml',
+        'GH_TOKEN_EMORI',
+        'emoriwan',
+      ],
+      [
+        'examples/openclaw-notifications-pr-discovery/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      [
+        'examples/openclaw-notifications-pr-reply-recovery/emori/agent.yaml',
+        'GH_TOKEN_EMORI',
+        'emoriwan',
+      ],
+      [
+        'examples/openclaw-notifications-pr-reply-recovery/tanaabot/agent.yaml',
+        'GH_TOKEN_TANAABOT',
+        'tanaabot',
+      ],
+      ['examples/openclaw-notifications-pr-journey/emori/agent.yaml', 'GH_TOKEN_EMORI', 'emoriwan'],
+      [
+        'examples/openclaw-notifications-pr-journey/tanaabot/agent.yaml',
         'GH_TOKEN_TANAABOT',
         'tanaabot',
       ],

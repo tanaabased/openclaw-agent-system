@@ -4,9 +4,9 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-describe('examples/openclaw-notifications-pr-delivery retained feedback evidence', () => {
+describe('examples/openclaw-notifications-pr-journey retained feedback evidence', () => {
   it('should permit only terminal acknowledgement on the earlier feedback event', async () => {
-    const source = await readFile('examples/openclaw-notifications-pr-delivery/README.md', 'utf8');
+    const source = await readFile('examples/openclaw-notifications-pr-journey/README.md', 'utf8');
     const code = [...source.matchAll(/jq -e --slurp '([^']+)'/gu)]
       .map((match) => match[1]!)
       .find((text) => text.includes('initial-feedback-receipts-changed'));
@@ -62,7 +62,7 @@ describe('examples/openclaw-notifications-pr-delivery retained feedback evidence
 
 for (const [scenario, itemType] of [
   ['openclaw-notifications-issue-journey', 'issue'],
-  ['openclaw-notifications-pr-delivery', 'pull-request'],
+  ['openclaw-notifications-pr-journey', 'pull-request'],
   ['openclaw-notifications-reactivation', 'issue'],
 ]) {
   describe(`examples/${scenario} feedback evidence`, () => {
@@ -101,7 +101,7 @@ for (const [scenario, itemType] of [
           assessmentSummaries: summaries.map((nodeId) => ({ receipt: { nodeId } })),
           feedback: {
             events: [
-              ...(scenario === 'openclaw-notifications-pr-delivery'
+              ...(scenario === 'openclaw-notifications-pr-journey'
                 ? [{ itemType: 'issue', turn: { runId: 'earlier' } }]
                 : []),
               {

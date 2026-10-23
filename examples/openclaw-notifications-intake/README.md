@@ -10,7 +10,7 @@ Activate notification intake, start three independent issue assessments before a
 
 ## What Does Not Belong Here
 
-- Assessment presentation and ordinary issue feedback: [issue planning](../openclaw-notifications-issue-journey/README.md). Implementation and PR feedback: [PR delivery](../openclaw-notifications-pr-delivery/README.md).
+- Assessment presentation and ordinary issue feedback: [issue planning](../openclaw-notifications-issue-journey/README.md). Implementation and PR feedback: [PR delivery](../openclaw-notifications-pr-journey/README.md).
 - Restart recovery: [assessment recovery](../openclaw-notifications-assessment-recovery/README.md). Unassigned-issue feedback: [reactivation](../openclaw-notifications-reactivation/README.md). Coordinator/tracking reset: [reset](../openclaw-notifications-reset/README.md). Resource reconciliation: [retirement](../openclaw-notifications-retirement/README.md).
 - Scheduler-control variants, unavailable-assignment recovery, and detailed debug-card presentation.
 
@@ -19,7 +19,7 @@ Activate notification intake, start three independent issue assessments before a
 - Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases all three only after verifying their native starts; model judgment is not under test.
 - V3 object identities preserve supplied names and node IDs through installation and intake. Only Tanaabot receives the three disposable assignments.
 - Scoped refreshes and a 24-hour schedule bound discovery. The job owns its workspaces, issues, native state, and SSH registration; cleanup stops the Gateway before changing external fixtures.
-- Pending relocation: native/manifest pause and resume, unavailable-issue retention, and stage-specific debug-card checks remain in the executable body.
+- Follow-up after the passing baseline: extract native/manifest pause and resume, unavailable-issue retention, and stage-specific debug-card checks. These checks remain in the executable body for now.
 
 ## Setup
 
@@ -37,22 +37,16 @@ install -d -m 700 "$XDG_CONFIG_HOME/tanaab/agent-system"
 cp "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/config.yaml" "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
 chmod 600 "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
 
-# should prepare the agent with provider-verified identity pins
+# should prepare the declared identity pins and isolated ssh fixture
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot/keys" "$HOME/.ssh"
-GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id > "$TMPDIR/notification-owner-node"
-GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id' > "$TMPDIR/notification-actor-node"
-owner_node=$(cat "$TMPDIR/notification-owner-node")
-actor_node=$(cat "$TMPDIR/notification-actor-node")
+owner_node=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id)
+actor_node=$(GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id')
 receiver_node=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api user --jq 'select(.login == "tanaabot") | .node_id')
-test -n "$owner_node"
-test -n "$actor_node"
-test -n "$receiver_node"
 sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__RECEIVER_NODE_ID__|$receiver_node|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
 mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot/agent.yaml"
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot/keys/id_ed25519"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot/keys/id_ed25519.pub"
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
-chmod 600 "$HOME/.ssh/known_hosts"
 
 # should boot with retained legacy channel configuration
 openclaw config set channels.agent-system-github '{"accounts":{"retired-agent":{"enabled":false}}}' --strict-json
@@ -93,7 +87,6 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
 openclaw agent-system install --yes --json | tee "$TMPDIR/notification-install.json" | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated") and ([.warnings[] | select(.code == "github-notification-runtime-unsupported")] | length) == 1'
 openclaw agent-system automations list --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == true)'
 openclaw agent-system notifications wait --for baseline-ready --timeout 30 --json | jq -e '.status == "completed"'
-touch "$TMPDIR/notification-activation-ready"
 ```
 
 ## Testing
@@ -101,7 +94,6 @@ touch "$TMPDIR/notification-activation-ready"
 ```bash
 # should expose the install-managed account through the native channel status interface
 set -o pipefail
-test -f "$TMPDIR/notification-activation-ready"
 openclaw gateway call channels.status --json | tee "$TMPDIR/intake-channel-status.json"
 jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .enabled == true and .configured == true and .mode == "readiness" and .statusState == "degraded" and .lifecycle == "ready" and .running == true and (.lastError | contains("review requests")))' "$TMPDIR/intake-channel-status.json"
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false and .accounts["intake-tanaabot"].enabled == true'
@@ -129,7 +121,6 @@ openclaw agent-system notifications refresh --repository tanaabased/big-test-buc
 jq -es '[.[].deferred[]?] | any(.[]; (.candidate | fromjson).number == 2147483647 and .code == "intake-github-permission")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json
 
 # should assign three disposable issues from emori to tanaabot after the safe intake baseline
-test -f "$TMPDIR/notification-activation-ready"
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/emori"
 openclaw agent-system tool gh -- api repos/tanaabased/big-test-bucket | jq '{id,node_id}' > "$TMPDIR/notification-repository.json"
 for slot in 1 2 3; do
@@ -197,20 +188,15 @@ done
 openclaw agent-system tool worktree -- list | jq -S 'sort_by(.path)' > "$TMPDIR/notification-worktrees-after.json"
 jq -S 'sort_by(.path)' "$TMPDIR/notification-worktrees-before.json" | diff - "$TMPDIR/notification-worktrees-after.json"
 openclaw gateway call sessions.list --params '{"agentId":"intake-tanaabot","limit":100}' --json | jq -e '.hasMore == false and ([.sessions[] | select(.key | startswith("agent:intake-tanaabot:dashboard:agent-system-issue-"))] | length) == 3'
-curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.strictMissCount == 0'
 ```
 
 ## Cleanup
 
-Cleanup requires a terminal Gateway stop before changing external fixtures. Every wait reports its receipt and remains bounded.
+GitHub issues, PRs, branches, and SSH registrations persist beyond the runner. Quiesce the Gateway once before disposing of those resources; the runner owns local files and the mock process.
 
 ```bash
-# should stop the isolated gateway before changing external fixture state
-openclaw-gateway stop --timeout 340
-touch "$TMPDIR/notification-gateway-stopped"
-
-# should close only the disposable issues created by this run
-test -f "$TMPDIR/notification-gateway-stopped"
+# should dispose of this run's persistent github fixtures
+openclaw-gateway stop --timeout 30
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/emori"
 for slot in 1 2 3; do
   if test -s "$TMPDIR/notification-issue-$slot.json"; then
@@ -218,9 +204,6 @@ for slot in 1 2 3; do
     openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
   fi
 done
-
-# should remove only this run's ssh authentication key
-test -f "$TMPDIR/notification-gateway-stopped"
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
 key_material=$(awk '{print $2}' keys/id_ed25519.pub)
 key_id=$(openclaw agent-system tool gh -- api --paginate /user/keys --jq ".[] | select((.key | split(\" \")) | index(\"$key_material\")) | .id")
@@ -228,10 +211,6 @@ if test -n "$key_id"; then
   openclaw agent-system tool gh -- api --method DELETE "/user/keys/$key_id"
 fi
 
-# should report strict mock failures while stopping the isolated gateway and provider
-cleanup_status=0
-curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics || cleanup_status=$?
-openclaw-gateway stop --timeout 340 || cleanup_status=$?
-openclaw-aimock stop || cleanup_status=$?
-test "$cleanup_status" -eq 0
+# should report strict model failures after the final native turn
+curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics
 ```

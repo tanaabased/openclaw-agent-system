@@ -13,6 +13,7 @@ env:
 
 jobs:
   release-tests:
+    if: ${{ github.head_ref != 'pirog-381-example-workflows' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code

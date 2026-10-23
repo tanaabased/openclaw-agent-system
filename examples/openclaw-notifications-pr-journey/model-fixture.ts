@@ -100,8 +100,16 @@ function call(stage: string, name: string, args: unknown): FixtureResponse {
   return { toolCalls: [{ id: prefix + stage, name, arguments: JSON.stringify(args) }] };
 }
 
+interface PRFixtureOptions {
+  incorporateCollaborator?: boolean;
+  interruptFeedbackReply?: boolean;
+}
+
 /** fixture judgment follows native structured results; it never manufactures their identities. */
-function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
+function respond(
+  request: ChatCompletionRequest,
+  options: PRFixtureOptions,
+): FixtureResponse | undefined {
   const messages = currentTurn(request);
   const prompt = messages
     .filter(({ role }) => role === 'user')
@@ -339,9 +347,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       const file = `notification-fixture-${id}.md`;
       const patch = initial
         ? `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1 @@\n+Close disposable test issues after capturing their evidence.\n`
-        : `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1,2 +1,3 @@\n Close disposable test issues after capturing their evidence.\n Verify the same PR and announcement after follow-up commits.\n+Keep feedback changes on the original PR.\n`;
+        : `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1,2 @@\n Close disposable test issues after capturing their evidence.\n+Keep feedback changes on the original PR.\n`;
       const steps = [
-        ...(!initial
+        ...(!initial && options.incorporateCollaborator
           ? [
               {
                 stage: 'feedback-fetch',
@@ -481,7 +489,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
             : 'The approved feedback added a continuity note on the original branch. The diff check passed and the new commit was pushed to the same PR; the original assessment and announcement remain intact.',
         });
       if (saved.status !== 'recorded') return;
-      if (!initial)
+      if (!initial && options.interruptFeedbackReply)
         return {
           content:
             'The pushed repair and private reply are retained. Awaiting the explicit reply-only continuation.',
@@ -813,9 +821,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   return summary(id, saved.presentation);
 }
 
-function response(request: ChatCompletionRequest) {
+function response(request: ChatCompletionRequest, options: PRFixtureOptions) {
   try {
-    return respond(request);
+    return respond(request, options);
   } catch (error) {
     if (
       error instanceof Error &&
@@ -828,67 +836,76 @@ function response(request: ChatCompletionRequest) {
   }
 }
 
-const final: Fixture = {
-  match: {
-    model: /^(?:aimock\/)?gpt-5\.5$/u,
-    systemMessage: [identity],
-    predicate: (request) => 'content' in (response(request) ?? {}),
-  },
-  response: (request) => {
-    const value = response(request);
-    assert.ok(value && 'content' in value);
-    return value;
-  },
-};
-
-export const prExampleScenario: OpenClawAIMockScenario = {
-  id: 'openclaw-notifications-pr-delivery',
-  model: { match: /^(?:aimock\/)?gpt-5\.5$/u, reference: 'aimock/gpt-5.5' },
-  systemPromptSignals: [identity],
-  finalResponses: [],
-  dynamicFinalResponseFixtures: [final],
-  toolCalls: [
-    { id: prefix + 'scan', name: 'agent_system_intake' },
-    { id: prefix + 'feedback-skill', name: 'read' },
-    { id: prefix + 'feedback-implementation-skill', name: 'read' },
-    { id: prefix + 'delivery-skill', name: 'read' },
-    { id: prefix + 'summary-skill', name: 'read' },
-    ...dispatchStages.flatMap((stage) =>
-      [0, 1, 2, 3].map((attempt) => ({
-        id: prefix + retryStage(stage, attempt),
-        name: 'agent_system_dispatch',
-      })),
-    ),
-    ...[
-      'git',
-      'apply',
-      'add',
-      'commit',
-      'feedback-branch',
-      'feedback-fetch',
-      'feedback-incorporate',
-      'feedback-apply',
-      'feedback-check',
-      'feedback-add',
-      'feedback-commit',
-    ].map((stage) => ({
-      id: prefix + stage,
-      name: 'agent_system_git',
-    })),
-  ],
-  fixtures: [
-    {
-      match: {
-        model: /^(?:aimock\/)?gpt-5\.5$/u,
-        systemMessage: [identity],
-        predicate: (request) => 'toolCalls' in (response(request) ?? {}),
-      },
-      response: (request) => {
-        const value = response(request);
-        assert.ok(value && 'toolCalls' in value);
-        return value;
-      },
+/** reuse the pr protocol while each scenario selects only its owned fault. */
+export function createPRExampleScenario(
+  id: string,
+  options: PRFixtureOptions = {},
+): OpenClawAIMockScenario {
+  const runResponse = (request: ChatCompletionRequest) => response(request, options);
+  const final: Fixture = {
+    match: {
+      model: /^(?:aimock\/)?gpt-5\.5$/u,
+      systemMessage: [identity],
+      predicate: (request) => 'content' in (runResponse(request) ?? {}),
     },
-    final,
-  ],
-};
+    response: (request) => {
+      const value = runResponse(request);
+      assert.ok(value && 'content' in value);
+      return value;
+    },
+  };
+
+  return {
+    id,
+    model: { match: /^(?:aimock\/)?gpt-5\.5$/u, reference: 'aimock/gpt-5.5' },
+    systemPromptSignals: [identity],
+    finalResponses: [],
+    dynamicFinalResponseFixtures: [final],
+    toolCalls: [
+      { id: prefix + 'scan', name: 'agent_system_intake' },
+      { id: prefix + 'feedback-skill', name: 'read' },
+      { id: prefix + 'feedback-implementation-skill', name: 'read' },
+      { id: prefix + 'delivery-skill', name: 'read' },
+      { id: prefix + 'summary-skill', name: 'read' },
+      ...dispatchStages.flatMap((stage) =>
+        [0, 1, 2, 3].map((attempt) => ({
+          id: prefix + retryStage(stage, attempt),
+          name: 'agent_system_dispatch',
+        })),
+      ),
+      ...[
+        'git',
+        'apply',
+        'add',
+        'commit',
+        'feedback-branch',
+        'feedback-fetch',
+        'feedback-incorporate',
+        'feedback-apply',
+        'feedback-check',
+        'feedback-add',
+        'feedback-commit',
+      ].map((stage) => ({
+        id: prefix + stage,
+        name: 'agent_system_git',
+      })),
+    ],
+    fixtures: [
+      {
+        match: {
+          model: /^(?:aimock\/)?gpt-5\.5$/u,
+          systemMessage: [identity],
+          predicate: (request) => 'toolCalls' in (runResponse(request) ?? {}),
+        },
+        response: (request) => {
+          const value = runResponse(request);
+          assert.ok(value && 'toolCalls' in value);
+          return value;
+        },
+      },
+      final,
+    ],
+  };
+}
+
+export const prExampleScenario = createPRExampleScenario('openclaw-notifications-pr-journey');

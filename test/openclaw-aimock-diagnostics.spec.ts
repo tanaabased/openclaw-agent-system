@@ -75,7 +75,7 @@ describe('scripts/aimock-diagnostics', () => {
   });
 
   it('should retain the first failed request after retries and later failures fill the journal', () => {
-    const scenario = resolveScenario('openclaw-notifications-pr-delivery');
+    const scenario = resolveScenario('openclaw-notifications-pr-journey');
     const entries: Entry[] = Array.from({ length: 12 }, (_, index) => ({
       method: 'POST',
       path: '/responses',
@@ -99,7 +99,7 @@ describe('scripts/aimock-diagnostics', () => {
   });
 
   it('should distinguish model and prompt mismatches from unavailable tools without disclosing inputs', () => {
-    const scenario = resolveScenario('openclaw-notifications-pr-delivery');
+    const scenario = resolveScenario('openclaw-notifications-pr-journey');
     const result = diagnostics(scenario, [
       {
         method: 'POST',

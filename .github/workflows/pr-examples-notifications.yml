@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
+      max-parallel: 3
       matrix:
         example:
           - openclaw-notifications-intake
@@ -31,7 +32,13 @@ jobs:
           - openclaw-notifications-reset
           - openclaw-notifications-issue-journey
           - openclaw-notifications-conversation
-          - openclaw-notifications-pr-delivery
+          - openclaw-notifications-pr-journey
+          - openclaw-notifications-pr-recipients
+          - openclaw-notifications-pr-update
+          - openclaw-notifications-pr-presentation
+          - openclaw-notifications-pr-collaboration
+          - openclaw-notifications-pr-discovery
+          - openclaw-notifications-pr-reply-recovery
           - openclaw-notifications-progression
     steps:
       - name: Checkout code
@@ -81,7 +88,12 @@ jobs:
           GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
           XDG_CONFIG_HOME: ${{ runner.temp }}/agent-system-config
           GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
-        run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
+        run: |
+          report_api_budget() {
+            GH_TOKEN="$GH_TOKEN_TANAABOT" gh api rate_limit --jq '.resources | {core: (.core | {limit,remaining,reset}), graphql: (.graphql | {limit,remaining,reset})}' || true
+          }
+          trap report_api_budget EXIT
+          leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
       - name: RUNNING A LEVEL THREE DIAGNOSTICS
         if: failure()
         shell: bash

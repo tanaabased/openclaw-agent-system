@@ -18,7 +18,13 @@ import { reactivationExampleScenario } from '../examples/openclaw-notifications-
 import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
 import { resetExampleScenario } from '../examples/openclaw-notifications-reset/model-fixture.ts';
 import { progressionExampleScenario } from '../examples/openclaw-notifications-progression/model-fixture.ts';
-import { prExampleScenario } from '../examples/openclaw-notifications-pr-delivery/model-fixture.ts';
+import { prExampleScenario } from '../examples/openclaw-notifications-pr-journey/model-fixture.ts';
+import { prRecipientsExampleScenario } from '../examples/openclaw-notifications-pr-recipients/model-fixture.ts';
+import { prUpdateExampleScenario } from '../examples/openclaw-notifications-pr-update/model-fixture.ts';
+import { prPresentationExampleScenario } from '../examples/openclaw-notifications-pr-presentation/model-fixture.ts';
+import { prCollaborationExampleScenario } from '../examples/openclaw-notifications-pr-collaboration/model-fixture.ts';
+import { prDiscoveryExampleScenario } from '../examples/openclaw-notifications-pr-discovery/model-fixture.ts';
+import { prReplyRecoveryExampleScenario } from '../examples/openclaw-notifications-pr-reply-recovery/model-fixture.ts';
 import { worktreeExampleScenario } from '../examples/openclaw-worktree/model-fixture.ts';
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 
@@ -33,6 +39,12 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [memoryExampleScenario.id, memoryExampleScenario],
   [worktreeExampleScenario.id, worktreeExampleScenario],
   [prExampleScenario.id, prExampleScenario],
+  [prRecipientsExampleScenario.id, prRecipientsExampleScenario],
+  [prUpdateExampleScenario.id, prUpdateExampleScenario],
+  [prPresentationExampleScenario.id, prPresentationExampleScenario],
+  [prCollaborationExampleScenario.id, prCollaborationExampleScenario],
+  [prDiscoveryExampleScenario.id, prDiscoveryExampleScenario],
+  [prReplyRecoveryExampleScenario.id, prReplyRecoveryExampleScenario],
   [progressionExampleScenario.id, progressionExampleScenario],
   [issueExampleScenario.id, issueExampleScenario],
   [githubReplyExampleScenario.id, githubReplyExampleScenario],

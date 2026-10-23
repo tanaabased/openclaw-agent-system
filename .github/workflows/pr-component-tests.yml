@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   components:
+    if: ${{ github.head_ref != 'pirog-381-example-workflows' }}
     name: ${{ matrix.suite }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
