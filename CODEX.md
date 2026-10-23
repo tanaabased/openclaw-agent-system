@@ -300,7 +300,9 @@ A ready plan alone does not authorize implementation.
 A Plan decision retains the complete plan and releases its implementation slot.
 Polling alone does not change the decision. Newly admitted feedback may support a
 new Auto decision; Plan mode still needs operator direction to enter implementation.
-Missing or invalid decisions, lost task identity, and native denials stop continuation.
+Missing or invalid decisions, lost task identity, and native denials affecting implementation stop continuation.
+A denial limited to the public assessment summary holds that publication while independently authorized work
+can request fresh implementation context in the same permitted turn. Broader or unknown denial scope remains a stop.
 Preserve the issue chat and its retained work when resolving an obstacle. Live mode changes govern
 entry into implementation for existing planning issues. Once implementation has
 started, later mode changes preserve that stage. Auto requires
@@ -357,7 +359,9 @@ authorized external write. Saved action-on-stdin commands remain compatible.
 A saved assessment summary can resume in a newer verified turn, including after
 implementation has begun. Its source assessment remains unchanged; recovery finishes
 only the missing response. Summary-only native continuations use the existing issue
-chat and exact send receipts. A native denial remains a blocker across turns, and an
+chat and exact send receipts. A native summary denial remains a publication hold across turns,
+not ordinary pending-response recovery. It is not retried or published through another route;
+supported verified recovery or renewed authorization is required. An
 uncertain GitHub post is observed rather than reposted. Private recovery notices name
 the affected response and preserve the complete private result and draft.
 

@@ -2,11 +2,14 @@ import { nativeObject } from './automation-gateway.ts';
 import { dispatchHistoryPages } from './codex-dispatch-history.ts';
 import type { CodexThreadRequest } from './codex-thread-client.ts';
 import codexTurnApprovalDenied from './codex-turn-approval.ts';
+import codexSummaryDenial from './codex-summary-denial.ts';
+import type { AssessmentSummary } from './assessment-summary-state.ts';
 
 export interface LiveTurnRequest {
   threadId: string;
   turnId: string;
   afterItemId: string;
+  summaries?: AssessmentSummary[];
 }
 
 /** read the host's native observation receipt, never caller-supplied status or private desktop ipc. */
@@ -20,7 +23,12 @@ export default function codexLiveTurn(request: CodexThreadRequest) {
     if (entries.some((entry) => entry.turnId !== input.turnId || !nativeObject(entry.item)))
       throw new Error('continuation-observation-history-invalid');
     const items = entries.map((entry) => entry.item).filter(nativeObject);
-    if (codexTurnApprovalDenied(items)) return { status: 'denied' as const };
+    if (
+      codexTurnApprovalDenied(
+        codexSummaryDenial(items, input.threadId, input.turnId, input.summaries),
+      )
+    )
+      return { status: 'denied' as const };
     const boundary = items.findIndex((item) => item.id === input.afterItemId);
     if (boundary < 0) throw new Error('continuation-observation-boundary-missing');
     const observed = items.findLastIndex(
