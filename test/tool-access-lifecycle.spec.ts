@@ -51,9 +51,8 @@ describe('api/access-lifecycle', () => {
   it('should report healthy access when installed grants match the manifest', async () => {
     const { contribution } = createHarness({
       agents: {
-        list: [
-          {
-            id: 'emori',
+        entries: {
+          emori: {
             tools: {
               alsoAllow: [
                 'message',
@@ -64,7 +63,7 @@ describe('api/access-lifecycle', () => {
               ],
             },
           },
-        ],
+        },
       },
     });
 
@@ -80,12 +79,7 @@ describe('api/access-lifecycle', () => {
   it('should report missing and stale grants as doctor drift', async () => {
     const { contribution } = createHarness({
       agents: {
-        list: [
-          {
-            id: 'emori',
-            tools: { alsoAllow: ['message', 'agent_system_github'] },
-          },
-        ],
+        entries: { emori: { tools: { alsoAllow: ['message', 'agent_system_github'] } } },
       },
     });
 
@@ -133,7 +127,7 @@ describe('api/access-lifecycle', () => {
   it('should add grants to an existing exact allowlist', async () => {
     const config: OpenClawConfig = {
       agents: {
-        list: [{ id: 'emori', tools: { allow: ['read'] } }],
+        entries: { emori: { tools: { allow: ['read'] } } },
       },
     };
     const { contribution } = createHarness(config);
@@ -143,20 +137,19 @@ describe('api/access-lifecycle', () => {
       manifest: { schemaVersion: 1, agent: manifest.agent, github: {} },
     });
 
-    assert.deepEqual(config.agents?.list?.[0]?.tools?.allow, [
+    assert.deepEqual(config.agents?.entries?.emori?.tools?.allow, [
       'read',
       'agent_system_github',
       'github_identity_status',
     ]);
-    assert.equal(config.agents?.list?.[0]?.tools?.alsoAllow, undefined);
+    assert.equal(config.agents?.entries?.emori?.tools?.alsoAllow, undefined);
   });
 
   it('should move owned grants to an existing exact allowlist and clean both lists', async () => {
     const config: OpenClawConfig = {
       agents: {
-        list: [
-          {
-            id: 'emori',
+        entries: {
+          emori: {
             tools: {
               allow: ['read', 'agent_system_git'],
               alsoAllow: [
@@ -168,29 +161,28 @@ describe('api/access-lifecycle', () => {
               ],
             },
           },
-        ],
+        },
       },
     };
     const { contribution } = createHarness(config);
 
     await contribution.reconcile?.(context);
 
-    assert.deepEqual(config.agents?.list?.[0]?.tools?.allow, [
+    assert.deepEqual(config.agents?.entries?.emori?.tools?.allow, [
       'read',
       'agent_system_git',
       'agent_system_git_worktree',
       'agent_system_github',
       'github_identity_status',
     ]);
-    assert.deepEqual(config.agents?.list?.[0]?.tools?.alsoAllow, ['message']);
+    assert.deepEqual(config.agents?.entries?.emori?.tools?.alsoAllow, ['message']);
   });
 
   it('should remove stale owned grants when capabilities disappear', async () => {
     const config: OpenClawConfig = {
       agents: {
-        list: [
-          {
-            id: 'emori',
+        entries: {
+          emori: {
             tools: {
               alsoAllow: [
                 'message',
@@ -201,7 +193,7 @@ describe('api/access-lifecycle', () => {
               ],
             },
           },
-        ],
+        },
       },
     };
     const { contribution } = createHarness(config);
@@ -211,11 +203,11 @@ describe('api/access-lifecycle', () => {
       manifest: { schemaVersion: 1, agent: manifest.agent },
     });
 
-    assert.deepEqual(config.agents?.list?.[0]?.tools?.alsoAllow, ['message']);
+    assert.deepEqual(config.agents?.entries?.emori?.tools?.alsoAllow, ['message']);
   });
 
   it('should report a missing agent as drift and refuse reconciliation', async () => {
-    const { contribution } = createHarness({ agents: { list: [] } });
+    const { contribution } = createHarness({ agents: { entries: {} } });
 
     assert.equal((await contribution.inspect?.(context))?.[0]?.status, 'drift');
     await assert.rejects(
@@ -229,9 +221,8 @@ describe('api/access-lifecycle', () => {
   it('should report explicit deny conflicts as blocked and refuse reconciliation', async () => {
     const { contribution, mutations } = createHarness({
       agents: {
-        list: [
-          {
-            id: 'emori',
+        entries: {
+          emori: {
             tools: {
               alsoAllow: [
                 'agent_system_git',
@@ -242,7 +233,7 @@ describe('api/access-lifecycle', () => {
               deny: ['github_identity_status'],
             },
           },
-        ],
+        },
       },
     });
 
@@ -269,7 +260,7 @@ describe('api/access-lifecycle', () => {
         return { result: true };
       },
       readConfig: () => ({
-        agents: { list: [{ id: 'emori', tools: { alsoAllow: ['message'] } }] },
+        agents: { entries: { emori: { tools: { alsoAllow: ['message'] } } } },
       }),
       toolGrants,
     });

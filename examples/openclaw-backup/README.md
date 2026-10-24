@@ -1,12 +1,12 @@
 # OpenClaw Backup Example
 
-Create and verify an archive containing explicitly included private memory and agent database state, restore it into fresh staging without changing the source, and refuse to overwrite the populated recovery target.
+Create and verify an archive containing explicitly included private memory and agent database state, restore it into fresh staging without changing the source, and refuse live-agent and populated recovery targets.
 
 ## What Belongs Here
 
 - Actual archived/restored data despite workspace Git-ignore rules, including committed SQLite WAL content.
 - Preserved safe links, executable modes, manifest identity, and source checksums.
-- A populated-target refusal that preserves the existing recovery data.
+- Refusal to restore into another registered agent’s live workspace or a populated recovery target.
 
 ## What Does Not Belong Here
 
@@ -68,6 +68,14 @@ test -x "$TMPDIR/backup-recovered/workspace/run.sh"
 cmp "$GITHUB_WORKSPACE/examples/openclaw-backup/data/run.sh" "$TMPDIR/backup-recovered/workspace/run.sh"
 jq -e '.agentId == "backup-tanaabot"' "$TMPDIR/backup-recovered/manifest.json"
 sha256sum --check "$TMPDIR/backup-source.sha256"
+
+# should refuse a recovery target inside another registered agent workspace
+cd "$GITHUB_WORKSPACE/examples/openclaw-backup/data"
+openclaw agents add backup-other --workspace "$TMPDIR/backup-other" --non-interactive --json
+archive=$(jq -er .archive "$TMPDIR/backup-created.json")
+if openclaw agent-system backup restore "$archive" --target "$TMPDIR/backup-other/recovery" --json > "$TMPDIR/backup-live-refused.json"; then exit 1; fi
+jq -e '.status == "failed" and any(.diagnostics[]; .code == "backup-target-live")' "$TMPDIR/backup-live-refused.json"
+test ! -e "$TMPDIR/backup-other/recovery"
 
 # should refuse to overwrite the populated recovery directory
 cd "$GITHUB_WORKSPACE/examples/openclaw-backup/data"
