@@ -39,7 +39,6 @@ export default function createGoogleTool(store: GoogleStore) {
     runner: {
       executable: 'gog',
       maxOutputBytes: 65536,
-      timeoutMs: 30000,
       credentialRejected: (result) => result.exitCode === 4,
       argv(input, configuration) {
         return [

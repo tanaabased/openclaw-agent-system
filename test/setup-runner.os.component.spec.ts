@@ -103,7 +103,7 @@ describe('agent/setup-runner', () => {
       assert.equal(options.maxOutputBytes, 65_536);
       assert.equal(options.maxCombinedOutputBytes, 65_536);
       assert.equal(options.killProcessTree, true);
-      assert.equal(options.killGraceMs, 100);
+      assert.equal(options.killGraceMs, 5_000);
       assert.equal(options.outputCapture, 'head');
       assert.equal(options.signal, controller.signal);
       return { ...success, code: 1, stdout: 'private output', stderr: 'private error' };

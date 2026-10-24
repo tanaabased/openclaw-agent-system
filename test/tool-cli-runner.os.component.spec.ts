@@ -84,7 +84,7 @@ describe('api/cli-runner', () => {
         cwd: root,
         env: { PATH: '/usr/bin', DECLARED_VALUE: 'selected' },
         input: 'request-body',
-        killGraceMs: 100,
+        killGraceMs: 5_000,
         killProcessTree: true,
         maxCombinedOutputBytes: 1024,
         maxOutputBytes: 1024,

@@ -63,6 +63,8 @@ export type AgentSystemCliRunner = (
 export interface AgentSystemToolScope {
   configurationMode?: 'inspect';
   source: 'agent-command' | 'command' | 'tool';
+  /** trusted caller's monotonic execution deadline; never model input or credential expiry. */
+  executionDeadline?: number;
   admittedWorkingDirectories?: readonly string[];
   agentId?: string;
   terminalColumns?: number;
@@ -208,7 +210,8 @@ export interface AgentSystemCliToolDefinition<
       scope: { agentId: string; workspaceDir: string; configurationMode?: 'inspect' },
     ): Promise<void> | void;
     stdin?(input: Static<TParameters>, configuration: TResolvedConfiguration): string | undefined;
-    timeoutMs?: number;
+    timeoutMs?:
+      number | ((input: Static<TParameters>, configuration: TResolvedConfiguration) => number);
     admittedWorkingDirectories?(
       input: Static<TParameters>,
       configuration: TResolvedConfiguration,
@@ -252,6 +255,7 @@ export interface AgentSystemSemanticToolDefinition<
       resolveEnvironment(name: string): string | undefined;
       signal?: AbortSignal;
       source: AgentSystemToolScope['source'];
+      executionDeadline?: number;
       toolContext?: OpenClawPluginToolContext;
       workspaceDir: string;
     },

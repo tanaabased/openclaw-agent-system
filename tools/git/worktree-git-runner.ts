@@ -1,3 +1,4 @@
+import gitCommandTimeout from './command-timeout.ts';
 import type { AgentSystemCliRunner } from '../../api/types.ts';
 import AgentSystemToolError from '../../api/error.ts';
 import type { GitSshConfiguration } from './config-schema.ts';
@@ -28,6 +29,7 @@ export interface GitWorktreeGitRunnerFactoryDependencies {
   baseEnvironment: Readonly<NodeJS.ProcessEnv>;
   excludedExecutableDirectories?: readonly string[];
   runCli: AgentSystemCliRunner;
+  now?: () => number;
   sshResourceService?: Pick<GitSshResourceService, 'acquire'>;
 }
 
@@ -53,6 +55,7 @@ export default class GitWorktreeGitRunnerFactory {
     scope: {
       resolveEnvironment(name: string): string | undefined;
       signal?: AbortSignal;
+      executionDeadline?: number;
       workspaceDir: string;
     },
     options: { authentication?: boolean } = {},
@@ -97,6 +100,22 @@ export default class GitWorktreeGitRunnerFactory {
       },
       git: {
         run: async (input) => {
+          const signal =
+            scope.signal && input.signal
+              ? AbortSignal.any([scope.signal, input.signal])
+              : (input.signal ?? scope.signal);
+          signal?.throwIfAborted();
+          const timeoutMs =
+            scope.executionDeadline === undefined
+              ? gitCommandTimeout(input.argv)
+              : Math.floor(
+                  scope.executionDeadline - (this.#dependencies.now?.() ?? performance.now()),
+                );
+          if (timeoutMs <= 0)
+            throw new AgentSystemToolError(
+              'execution_timed_out',
+              'The Git worktree execution budget is exhausted.',
+            );
           let result;
           try {
             result = await this.#runCli({
@@ -108,8 +127,8 @@ export default class GitWorktreeGitRunnerFactory {
                 ...(this.#dependencies.excludedExecutableDirectories ?? []),
               ],
               maxOutputBytes: 65_536,
-              ...(input.signal === undefined ? {} : { signal: input.signal }),
-              timeoutMs: 120_000,
+              ...(signal === undefined ? {} : { signal }),
+              timeoutMs,
             });
           } catch {
             throw new AgentSystemToolError(

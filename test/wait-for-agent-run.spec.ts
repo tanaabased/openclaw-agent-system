@@ -64,3 +64,27 @@ describe('scripts/wait-for-agent-run', () => {
     }
   });
 });
+
+describe('extended ci agent-run observation', () => {
+  it('should observe exact native work completing after five minutes without extending native polls', async () => {
+    let now = 0;
+    const runId = 'late-native-run';
+    const budgets: number[] = [];
+    await waitForAgentRun({
+      runId,
+      timeoutMs: 600_000,
+      now: () => now,
+      request(timeout) {
+        budgets.push(timeout);
+        now += timeout;
+        return { runId, status: now > 300_000 ? 'ok' : 'timeout' };
+      },
+      report() {},
+      async sleep(ms) {
+        now += ms;
+      },
+    });
+    assert.ok(now > 300_000 && now < 600_000);
+    assert.ok(budgets.every((budget) => budget <= 30_000));
+  });
+});

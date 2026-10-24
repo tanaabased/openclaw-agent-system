@@ -19,6 +19,7 @@ function execute(
     truncated: boolean;
   }>,
   signal?: AbortSignal,
+  budget: { deadline?: number; now?: () => number } = {},
 ) {
   return executeAgentSystemCliTool({
     baseEnvironment: { PATH: '/usr/bin', SHOULD_NOT_INHERIT: 'host-private' },
@@ -32,12 +33,70 @@ function execute(
     definition,
     input: { argument: 'status' },
     runCli,
-    scope: { source: 'command', workspaceDir: toolTestWorkspaceDir },
+    scope: {
+      source: 'command',
+      workspaceDir: toolTestWorkspaceDir,
+      ...(budget.deadline === undefined ? {} : { executionDeadline: budget.deadline }),
+    },
+    ...(budget.now ? { now: budget.now } : {}),
     ...(signal === undefined ? {} : { signal }),
   });
 }
 
 describe('api/cli-execution', () => {
+  for (const phase of ['preflight', 'command'] as const) {
+    for (const rejects of [false, true]) {
+      it(`should preserve cancellation and clean resources when ${phase} ${rejects ? 'rejects' : 'resolves'}`, async () => {
+        const controller = new AbortController();
+        const events: string[] = [];
+        const definition = createToolTestDefinition({
+          acquireResources() {
+            return {
+              async dispose() {
+                events.push('dispose');
+              },
+            };
+          },
+        });
+        if (phase === 'preflight') {
+          definition.runner.preflight = () => ({
+            argv: ['identity'],
+            validate() {
+              assert.fail('must not validate a cancelled preflight');
+            },
+          });
+        }
+        await assert.rejects(
+          execute(
+            definition,
+            async (request) => {
+              events.push(request.argv[0]!);
+              assert.equal(request.signal, controller.signal);
+              controller.abort(new Error('private-cancellation-reason'));
+              if (rejects) throw controller.signal.reason;
+              return {
+                exitCode: null,
+                stderr: '',
+                stdout: '',
+                timedOut: false,
+                truncated: false,
+              };
+            },
+            controller.signal,
+          ),
+          (error: unknown) => {
+            assert.ok(error instanceof AgentSystemToolError);
+            assert.equal(error.code, 'execution_cancelled');
+            assert.doesNotMatch(error.message, /private-cancellation-reason/);
+            assert.equal(error.cause, undefined);
+            return true;
+          },
+        );
+        assert.deepEqual(events, [phase === 'preflight' ? 'identity' : 'status', 'dispose']);
+      });
+    }
+  }
+
   it('should isolate the child environment and redact invocation-scoped resources', async () => {
     const events: string[] = [];
     const requests: AgentSystemCliRunRequest[] = [];
@@ -137,5 +196,54 @@ describe('api/cli-execution', () => {
         error.message === 'The test-tool tool executable is unavailable.',
     );
     assert.deepEqual(events, ['acquire', 'run', 'dispose']);
+  });
+});
+
+describe('managed command deadline ownership', () => {
+  it('should propagate a longer caller budget and subtract identity preparation time', async () => {
+    let now = 0;
+    const budgets: number[] = [];
+    const definition = createToolTestDefinition();
+    definition.runner.preflight = () => ({ argv: ['identity'], validate() {} });
+    await execute(
+      definition,
+      async (request) => {
+        budgets.push(request.timeoutMs);
+        now += 25_000;
+        return { exitCode: 0, stderr: '', stdout: '', timedOut: false, truncated: false };
+      },
+      undefined,
+      { deadline: 900_000, now: () => now },
+    );
+    assert.deepEqual(budgets, [30_000, 875_000]);
+  });
+
+  it('should stop before execution and dispose resources when preparation uses the caller budget', async () => {
+    let now = 0;
+    let disposed = false;
+    let calls = 0;
+    const definition = createToolTestDefinition({
+      acquireResources: () => ({
+        async dispose() {
+          disposed = true;
+        },
+      }),
+    });
+    definition.runner.preflight = () => ({ argv: ['identity'], validate() {} });
+    await assert.rejects(
+      execute(
+        definition,
+        async () => {
+          calls++;
+          now = 10_000;
+          return { exitCode: 0, stderr: '', stdout: '', timedOut: false, truncated: false };
+        },
+        undefined,
+        { deadline: 10_000, now: () => now },
+      ),
+      { code: 'execution_timed_out' },
+    );
+    assert.equal(calls, 1);
+    assert.equal(disposed, true);
   });
 });

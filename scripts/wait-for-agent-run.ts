@@ -38,7 +38,7 @@ export default async function waitForAgentRun(input: {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions only.');
-  const [runId = '', timeout = '300000'] = process.argv.slice(2);
+  const [runId = '', timeout = '600000'] = process.argv.slice(2);
   await waitForAgentRun({
     runId,
     timeoutMs: Number(timeout),

@@ -2,6 +2,7 @@ import { access, lstat, mkdtemp, realpath, rm, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
+import { commandTerminationGraceMs } from '../api/cli-budget.ts';
 import { resolveToolExecutable } from '../api/cli-runner.ts';
 import type { AgentSetupCommand, AgentSetupShell } from '../manifest/setup-schema.ts';
 import isPathContained from '../utils/is-path-contained.ts';
@@ -249,7 +250,7 @@ export default function createSetupCommandRunner(dependencies: {
         maxOutputBytes: maximumOutputBytes,
         maxCombinedOutputBytes: maximumOutputBytes,
         outputCapture: 'head',
-        killGraceMs: 100,
+        killGraceMs: commandTerminationGraceMs,
         killProcessTree: true,
         ...(signal === undefined ? {} : { signal }),
       });

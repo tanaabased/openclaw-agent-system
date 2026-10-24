@@ -5,20 +5,27 @@ import { setTimeout } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
+import { DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS } from '@openclaw/gateway-client';
+
 /** admit this fixture, then advance retained work in the existing native coordinator. */
 export default async function refreshNotifications(input: {
-  request(timeoutMs: number): unknown;
-  ready(timeoutMs: number): boolean;
-  dispatch(): Promise<{ runId?: unknown }>;
+  request(timeoutMs: number): unknown | Promise<unknown>;
+  ready(timeoutMs: number): boolean | Promise<boolean>;
+  dispatch(timeoutMs: number): Promise<{ runId?: unknown }>;
   report(receipt: unknown): void;
   sleep(ms: number): Promise<void>;
   now(): number;
   timeoutMs: number;
 }): Promise<string> {
   const deadline = input.now() + input.timeoutMs;
+  const remaining = () => {
+    const milliseconds = Math.floor(deadline - input.now());
+    if (milliseconds <= 0)
+      throw new Error('notification refresh timed out waiting for fixture admission');
+    return milliseconds;
+  };
   while (input.now() < deadline) {
-    const remaining = Math.min(30_000, deadline - input.now());
-    const receipt = input.request(remaining);
+    const receipt = await input.request(remaining());
     input.report(receipt);
     assert.ok(receipt && typeof receipt === 'object', 'invalid notification refresh receipt');
     assert.equal(
@@ -26,8 +33,8 @@ export default async function refreshNotifications(input: {
       'completed',
       'selected intake failed',
     );
-    if (input.ready(remaining)) {
-      const run = await input.dispatch();
+    if (await input.ready(remaining())) {
+      const run = await input.dispatch(remaining());
       input.report(run);
       assert.ok(
         typeof run.runId === 'string' && run.runId.trim(),
@@ -38,6 +45,21 @@ export default async function refreshNotifications(input: {
     await input.sleep(Math.min(2000, Math.max(0, deadline - input.now())));
   }
   throw new Error('notification refresh timed out waiting for fixture admission');
+}
+
+/** reserve process startup and cleanup beyond the explicitly selected native operation allowance. */
+export function notificationCli(
+  args: string[],
+  timeoutMs: number,
+  warnings = false,
+  run = spawnSync,
+) {
+  const result = run('openclaw', args, { encoding: 'utf8', timeout: timeoutMs + 30_000 });
+  assert.ok(
+    result.status === 0 || (warnings && result.status === 1),
+    result.error?.message ?? String(result.stdout) + String(result.stderr),
+  );
+  return JSON.parse(String(result.stdout));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -61,20 +83,23 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     '--number',
     values.number,
   ];
-  function cli(args: string[], timeout: number, warnings = false) {
-    const result = spawnSync('openclaw', args, { encoding: 'utf8', timeout });
-    assert.ok(
-      result.status === 0 || (warnings && result.status === 1),
-      result.error?.message ?? result.stdout + result.stderr,
-    );
-    return JSON.parse(result.stdout);
-  }
   const { callGatewayFromCli } = await import('openclaw/plugin-sdk/gateway-runtime');
   const runId = await refreshNotifications({
     request: (timeout) =>
-      cli(['agent-system', 'notifications', 'refresh', ...selector, '--json'], timeout),
+      notificationCli(
+        [
+          'agent-system',
+          'notifications',
+          'refresh',
+          ...selector,
+          '--timeout',
+          String(Math.max(1, Math.floor(timeout / 1000))),
+          '--json',
+        ],
+        timeout,
+      ),
     ready(timeout) {
-      const status = cli(
+      const status = notificationCli(
         ['agent-system', 'notifications', 'status', ...selector, '--json'],
         timeout,
         true,
@@ -82,8 +107,20 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       assert.equal(status.diagnosticCode, undefined, 'fixture intake must be healthy');
       return status.items.length === 1;
     },
-    async dispatch() {
-      const installed = cli(['agent-system', 'automations', 'list', '--json'], 30000);
+    async dispatch(timeoutMs) {
+      const deadline = performance.now() + timeoutMs;
+      const remaining = () => {
+        const milliseconds = Math.floor(deadline - performance.now());
+        assert.ok(
+          milliseconds > 0,
+          'native coordinator dispatch observation deadline exhausted; do not replay an uncertain send',
+        );
+        return milliseconds;
+      };
+      const installed = notificationCli(
+        ['agent-system', 'automations', 'list', '--json'],
+        remaining(),
+      );
       assert.equal(installed.status, 'aligned');
       const jobs = installed.jobs.filter(
         (job: { id: string }) => job.id === 'github-issue-assignment',
@@ -97,7 +134,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       };
       const job = await callGatewayFromCli(
         'cron.get',
-        { json: true },
+        { json: true, timeout: String(Math.min(DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS, remaining())) },
         { id: jobs[0].nativeId },
         read,
       );
@@ -108,7 +145,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const sessionKey = job.sessionTarget.slice('session:'.length);
       const history = await callGatewayFromCli(
         'chat.history',
-        { json: true },
+        { json: true, timeout: String(Math.min(DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS, remaining())) },
         { sessionKey, limit: 1 },
         read,
       );
@@ -119,7 +156,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       assert.equal(sessionInfo.hasActiveRun, false, 'wait for the preceding coordinator run');
       return callGatewayFromCli(
         'chat.send',
-        { json: true },
+        { json: true, timeout: String(Math.min(DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS, remaining())) },
         {
           sessionKey,
           agentId: job.agentId,
@@ -136,7 +173,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     },
     report: (receipt) => process.stderr.write(JSON.stringify(receipt) + '\n'),
     sleep: setTimeout,
-    now: Date.now,
+    now: () => performance.now(),
     timeoutMs: 180000,
   });
   process.stdout.write(runId + '\n');

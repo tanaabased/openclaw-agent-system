@@ -73,7 +73,7 @@ openclaw-aimock evidence \
 
 ```bash
 # should stop the background gateway cleanly
-openclaw-gateway stop
+openclaw-gateway stop --timeout 340
 
 # should report mock failures and stop the strict model cleanly
 cleanup_status=0

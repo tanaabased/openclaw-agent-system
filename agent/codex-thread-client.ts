@@ -1,6 +1,7 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { realpath } from 'node:fs/promises';
 
+import { commandTerminationGraceMs, metadataCommandTimeoutMs } from '../api/cli-budget.ts';
 import { AutomationError, nativeObject } from './automation-gateway.ts';
 import type { AutomationThreadAdapter } from './automation-threads.ts';
 
@@ -17,44 +18,104 @@ export type CodexThreadRequest = (
   params: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
 
-/** bound native app-server protocol, never scheduler files, generated turns, or a second scheduler. */
-export async function connectCodexThreads(workspace: string, codexHome: string) {
-  const child = spawn('codex', ['app-server'], {
-    cwd: workspace,
-    env: { ...process.env, CODEX_HOME: codexHome },
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
+interface ThreadConnectionOptions {
+  /** trusted caller's monotonic deadline, shared by initialization and subsequent requests. */
+  deadline?: number;
+  signal?: AbortSignal;
+}
+interface ThreadConnectionDependencies {
+  start(workspace: string, codexHome: string): ChildProcessWithoutNullStreams;
+  realpath(path: string): Promise<string>;
+  now(): number;
+  schedule(callback: () => void, milliseconds: number): () => void;
+}
+const connectionDependencies: ThreadConnectionDependencies = {
+  start: (workspace, codexHome) =>
+    spawn('codex', ['app-server'], {
+      cwd: workspace,
+      env: { ...process.env, CODEX_HOME: codexHome },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }),
+  realpath,
+  now: () => performance.now(),
+  schedule(callback, milliseconds) {
+    const timer = setTimeout(callback, milliseconds);
+    timer.unref();
+    return () => clearTimeout(timer);
+  },
+};
+
+/** one cold app-server lifecycle budget, with shorter control calls and no native write replay. */
+export async function connectCodexThreads(
+  workspace: string,
+  codexHome: string,
+  options: ThreadConnectionOptions = {},
+  dependencies: ThreadConnectionDependencies = connectionDependencies,
+) {
+  // reuse the existing two-minute codex prerequisite allowance; this is not latency-percentile calibration.
+  const deadline = options.deadline ?? dependencies.now() + 120_000;
+  const child = dependencies.start(workspace, codexHome);
   let sequence = 0;
   let buffer = '';
   let diagnosticTail = '';
   let hostAccessDenied = false;
+  let failed: Error | undefined;
+  let closing: Promise<void> | undefined;
   const pending = new Map<
     number,
     {
-      resolve: (value: Record<string, unknown>) => void;
-      reject: (error: Error) => void;
-      timer: ReturnType<typeof setTimeout>;
+      resolve(value: Record<string, unknown>): void;
+      reject(error: Error): void;
+      cancel(): void;
     }
   >();
-  const fail = () => {
-    for (const item of pending.values()) {
-      clearTimeout(item.timer);
-      item.reject(
-        new AutomationError(
-          hostAccessDenied
-            ? 'automation-thread-host-access-required'
-            : 'automation-thread-transport-unavailable',
-        ),
+  const fail = (error?: Error) => {
+    failed ??=
+      error ??
+      new AutomationError(
+        hostAccessDenied
+          ? 'automation-thread-host-access-required'
+          : 'automation-thread-transport-unavailable',
       );
+    for (const item of pending.values()) {
+      item.cancel();
+      item.reject(failed);
     }
     pending.clear();
+  };
+  const abort = () => {
+    fail(new AutomationError('automation-thread-request-cancelled'));
+    void close();
+  };
+  const close = (): Promise<void> => {
+    if (closing) return closing;
+    fail();
+    options.signal?.removeEventListener('abort', abort);
+    child.stdin.destroy();
+    child.stdout.destroy();
+    child.stderr.destroy();
+    closing = new Promise<void>((resolve) => {
+      if (!child.pid || child.exitCode !== null || child.signalCode !== null) {
+        resolve();
+        return;
+      }
+      const cancel = dependencies.schedule(() => {
+        child.kill('SIGKILL');
+      }, commandTerminationGraceMs);
+      child.once('close', () => {
+        cancel();
+        resolve();
+      });
+      child.kill();
+    });
+    return closing;
   };
   child.once('error', (error: NodeJS.ErrnoException) => {
     hostAccessDenied ||= error.code === 'EACCES' || error.code === 'EPERM';
     fail();
   });
-  child.once('exit', fail);
-  child.stdin.on('error', fail);
+  child.once('exit', () => fail());
+  child.stdin.on('error', () => fail());
   child.stderr.on('data', (chunk: Buffer) => {
     diagnosticTail = (diagnosticTail + chunk.toString()).slice(-2048);
     hostAccessDenied ||= /permission denied|operation not permitted/iu.test(diagnosticTail);
@@ -63,8 +124,7 @@ export async function connectCodexThreads(workspace: string, codexHome: string) 
   child.stdout.on('data', (chunk: string) => {
     buffer += chunk;
     if (buffer.length > 8 * 1024 * 1024) {
-      fail();
-      child.kill();
+      void close();
       return;
     }
     let newline: number;
@@ -75,15 +135,14 @@ export async function connectCodexThreads(workspace: string, codexHome: string) 
       try {
         message = JSON.parse(line);
       } catch {
-        fail();
-        child.kill();
+        void close();
         return;
       }
       if (!nativeObject(message) || typeof message.id !== 'number') continue;
       const item = pending.get(message.id);
       if (!item) continue;
       pending.delete(message.id);
-      clearTimeout(item.timer);
+      item.cancel();
       if (
         nativeObject(message.error) &&
         typeof message.error.code === 'number' &&
@@ -96,39 +155,44 @@ export async function connectCodexThreads(workspace: string, codexHome: string) 
   });
   const request: CodexThreadRequest = (method, params) =>
     new Promise((resolve, reject) => {
-      const id = ++sequence;
-      const timer = setTimeout(() => {
+      if (failed) {
+        reject(failed);
+        return;
+      }
+      const remaining = Math.floor(deadline - dependencies.now());
+      const lifecycle = [
+        'initialize',
+        'thread/start',
+        'thread/resume',
+        'thread/read',
+        'thread/list',
+        'thread/inject_items',
+      ].includes(method);
+      const timeoutMs = lifecycle ? remaining : Math.min(metadataCommandTimeoutMs, remaining);
+      const timeout = () => {
         pending.delete(id);
         reject(new AutomationError('automation-thread-request-timeout'));
-        child.kill();
-      }, 15000);
-      pending.set(id, { resolve, reject, timer });
+        void close();
+      };
+      const id = ++sequence;
+      if (timeoutMs <= 0) {
+        timeout();
+        return;
+      }
+      const cancel = dependencies.schedule(timeout, timeoutMs);
+      pending.set(id, { resolve, reject, cancel });
       child.stdin.write(JSON.stringify({ id, method, params }) + '\n');
     });
-  const close = async () => {
-    fail();
-    child.stdin.destroy();
-    child.stdout.destroy();
-    child.stderr.destroy();
-    if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        child.kill('SIGKILL');
-      }, 1000);
-      child.once('close', () => {
-        clearTimeout(timer);
-        resolve();
-      });
-      child.kill();
-    });
-  };
+  options.signal?.addEventListener('abort', abort, { once: true });
   try {
+    if (options.signal?.aborted) abort();
     const initialized = await request('initialize', {
       clientInfo: { name: 'agent_system', version: '1' },
     });
     if (
       typeof initialized.codexHome !== 'string' ||
-      (await realpath(initialized.codexHome)) !== (await realpath(codexHome))
+      (await dependencies.realpath(initialized.codexHome)) !==
+        (await dependencies.realpath(codexHome))
     )
       throw new AutomationError('automation-thread-profile-mismatch');
     child.stdin.write(JSON.stringify({ method: 'initialized' }) + '\n');

@@ -113,6 +113,42 @@ function fixture() {
 }
 
 describe('credentials/session-dispatch', () => {
+  it('should coordinate every install connection with the same active enrollment authority', async () => {
+    const f = fixture();
+    const connections: { bootstrap: boolean; wait: boolean | undefined }[] = [];
+    const connect = f.dependencies.connect;
+    const controller = new AbortController();
+    let guards = 0;
+    f.dependencies.connect = async (record, bootstrap, authority) => {
+      connections.push({ bootstrap, wait: authority.waitForGateway });
+      if (authority.waitForGateway) {
+        assert.equal(authority.signal, controller.signal);
+        const before = guards;
+        await authority.assertCurrent?.();
+        assert.ok(guards > before);
+        authority.assertEnrollmentCurrent?.();
+      }
+      return connect(record, bootstrap, authority);
+    };
+    const authority = {
+      signal: controller.signal,
+      sessionDispatchConsent: true,
+      async assertCurrent() {
+        guards++;
+      },
+    };
+    await f.service.enroll(authority);
+    await f.service.enroll(authority);
+    await f.service.inspect();
+    assert.deepEqual(connections, [
+      { bootstrap: true, wait: true },
+      { bootstrap: false, wait: true },
+      { bootstrap: false, wait: true },
+      { bootstrap: false, wait: undefined },
+    ]);
+    assert.equal(authority.signal.aborted, false);
+  });
+
   for (const [category, failure, phase, reasonCode] of [
     [
       'timeout',

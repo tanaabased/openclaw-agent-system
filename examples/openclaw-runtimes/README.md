@@ -81,6 +81,6 @@ jq -e '.scenario == "openclaw-runtimes" and .strictMissCount == 0 and .finalResp
 
 ```bash
 # should stop the scenario gateway and mock provider
-openclaw-gateway stop
+openclaw-gateway stop --timeout 340
 openclaw-aimock stop
 ```

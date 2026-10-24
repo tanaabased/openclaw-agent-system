@@ -21,7 +21,6 @@ Change the live reviewer configuration for an already delivered PR, prepare its 
 - Each job prepares its own issue, assessment, and linked PR. Initial feedback permits three bounded coordinator passes for native assessment reconciliation, while preserving the exact source revision. Refreshes target only this issue; the 24-hour schedule avoids unrelated discovery.
 - Native operator messages use the public Gateway SDK with `operator.admin`; the enrolled dispatch device retains `operator.read` and `operator.write`. Native transcript receipts bind the input.
 - The shared PR fixture reconciles delayed closing-issue linkage with at most three prepare/publish passes on the same delivery. Unknown failures and uncertain writes do not create replacement PRs.
-- The first Tanaabot install retains bounded, redacted output, timing, and native Gateway logs in the `install-evidence-*` CI artifact before cleanup. Native logs may omit sub-second session-create phases and do not reliably identify which session-access guard failed.
 - EMORI is previewed as a compact reviewer only. The scenario never requests a review from a production agent.
 
 ## Setup
@@ -45,10 +44,7 @@ cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-not
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 
 # should start the isolated gateway
-openclaw config set logging.file "$TMPDIR/install-native.log"
-openclaw config set logging.level debug
-openclaw config set diagnostics.enabled true --strict-json
-OPENCLAW_LOG_LEVEL=debug OPENCLAW_PLUGIN_LIFECYCLE_TRACE=1 openclaw-gateway start
+OPENCLAW_LOG_LEVEL=info openclaw-gateway start
 
 # should install emori in its fixture workspace
 set -o pipefail
@@ -80,12 +76,7 @@ activation_diagnostics() {
 }
 trap activation_diagnostics EXIT
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-recipients/tanaabot"
-first_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-first_status=0
-openclaw agent-system install --yes --json > "$TMPDIR/notification-install.json" 2> "$TMPDIR/notification-install.stderr" || first_status=$?
-node --import tsx "$GITHUB_WORKSPACE/scripts/install-evidence.ts" recipients-first "$first_status" "$first_started" "$TMPDIR/notification-install.json" "$TMPDIR/notification-install.stderr" "$TMPDIR/install-native.log" || printf '%s\n' 'install evidence capture unavailable' >&2
-cat "$TMPDIR/notification-install.stderr" >&2
-if test "$first_status" -ne 0; then exit "$first_status"; fi
+openclaw agent-system install --yes --json > "$TMPDIR/notification-install.json"
 openclaw agent-system notifications wait --for baseline-ready --timeout 30 --json | jq -e '.status == "completed"'
 
 # should create an issue as emori and assign it as tanaabot after the safe intake baseline
@@ -98,13 +89,13 @@ openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bu
 # should retain a plan through the installed owning coordinator
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-recipients/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for plan-ready --refresh --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1 and .observation.items[0].workflow.phase == "plan-ready"'
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
 run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-dispatch-before.json")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
 
 # should implement approved github direction without an extra decision and publish its linked pr
@@ -128,7 +119,7 @@ feedback_checkpoint
 feedback_run=
 for attempt in 1 2 3; do
   run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
-  node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+  node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
   feedback_checkpoint
   feedback_run=$(jq -rs --slurpfile source "$TMPDIR/notification-initial-source.json" '[.[].records[].feedback.events[]? | select(.sourceId == $source[0].node_id and (.source | fromjson).updatedAt == $source[0].updated_at)] | if length == 1 then .[0].turn.runId // empty else error("one exact initial feedback revision required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
   if test -n "$feedback_run"; then
@@ -136,7 +127,7 @@ for attempt in 1 2 3; do
   fi
   jq -es --slurpfile source "$TMPDIR/notification-initial-source.json" '[.[].records[] | select(.assessmentTurn.status == "completed" and .feedback.discoveryPending == false and .feedback.code == null and .feedback.activity.busy == false) | .feedback.events[]? | select(.sourceId == $source[0].node_id and (.source | fromjson).updatedAt == $source[0].updated_at)] | length == 1 and .[0].phase == "queued" and .[0].turn == null and .[0].code == null and .[0].policyHeld == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 done
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-delivery.json"
 jq -e --slurp '.[1].progression.workOwner == .[1].feedback.events[0].id and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[1].progression.stage == "implementation" and .[1].progression.via == "operator" and .[1].feedback.events[0].work.decision == null and .[1].feedback.events[0].work.result.outcome == "done" and .[1].feedback.events[0].phase == "published" and .[1].work.delivery.reconciled == true and .[1].work.delivery.binding.sessionId == .[1].sessionCreation.sessionId and .[1].work.delivery.binding.issueId == .[1].stageReceipt.binding.subjectId' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-delivery.json"
 ```
@@ -155,7 +146,7 @@ receipt=$(jq -er .id "$TMPDIR/notification-delivery.json")
 leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
 params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"pr-recipients-tanaabot",sessionId:$session,message:("Operator request for managed issue " + $receipt + ": Preview reviewer delivery without publishing."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-reviewer-preview"}')"
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-reviewer-preview"'
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-reviewer-preview" 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-reviewer-preview" 600000
 cp "$TMPDIR/notification-pre-reviewer.yaml" agent.yaml
 trap - EXIT
 pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
@@ -168,7 +159,7 @@ GitHub issues, PRs, branches, and SSH registrations persist beyond the runner. Q
 
 ```bash
 # should dispose of this run's persistent github fixtures
-openclaw-gateway stop --timeout 30
+openclaw-gateway stop --timeout 340
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-recipients/tanaabot"
 if test -s "$TMPDIR/notification-dispatch-before.json"; then
   receipt=$(jq -er .id "$TMPDIR/notification-dispatch-before.json")

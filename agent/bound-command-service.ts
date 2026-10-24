@@ -37,6 +37,7 @@ export default class BoundCommandService {
   ): Promise<SetupCommandResult> {
     const dependencies = this.dependencies;
     let toolFailed = false;
+    let executionDeadline: number;
     const authority = new AgentCommandAuthority({
       manifestService: dependencies.manifestService,
       currentUid: dependencies.currentUid ?? process.getuid?.(),
@@ -51,6 +52,7 @@ export default class BoundCommandService {
             input.argv,
             {
               source: 'agent-command',
+              executionDeadline,
               ...(target.mode === 'check' ? { configurationMode: 'inspect' as const } : {}),
               agentId: binding.agentId,
               workspaceDir: binding.workingDirectory,
@@ -98,6 +100,7 @@ export default class BoundCommandService {
       if (!binding?.executeCommand || binding.agentId !== target.agentId) {
         throw new SetupCommandError('setup-agent-not-resolved');
       }
+      executionDeadline = performance.now() + command.timeoutSeconds * 1000;
       result = await createSetupCommandRunner(dependencies)(
         command,
         {

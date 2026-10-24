@@ -6,6 +6,7 @@ import type { AgentManifest } from '../manifest/types.ts';
 import resolveToolWorkingDirectory from './resolve-working-directory.ts';
 import { excludedToolExecutableDirectories } from './executable-requirements.ts';
 import AgentSystemToolError from './error.ts';
+import { managedCommandTimeoutMs, metadataCommandTimeoutMs } from './cli-budget.ts';
 import isManagedWorktreeWorkspace from '../tools/git/worktree-workspace.ts';
 import type {
   AgentSystemCliResult,
@@ -57,6 +58,7 @@ interface ExecuteAgentSystemCliToolOptions<
   excludedExecutableDirectories?: readonly string[];
   input: Static<TParameters>;
   runCli: AgentSystemCliRunner;
+  now?: () => number;
   scope: AgentSystemToolScope;
   signal?: AbortSignal;
 }
@@ -87,6 +89,13 @@ export default async function executeAgentSystemCliTool<
   >,
 ): Promise<AgentSystemCliToolExecutionPayload<TOutput>> {
   const { agentId, manifest, resolvedConfiguration, values, workspaceDir } = options.context;
+  const now = options.now ?? (() => performance.now());
+  const configuredTimeout = options.definition.runner.timeoutMs;
+  const timeoutMs =
+    typeof configuredTimeout === 'function'
+      ? configuredTimeout(options.input, resolvedConfiguration)
+      : (configuredTimeout ?? managedCommandTimeoutMs);
+  const deadline = options.scope.executionDeadline ?? now() + timeoutMs;
   // native execution context was verified by manifest binding before credential resolution.
   const executionWorkingDirectory =
     options.scope.source === 'tool' ? options.scope.toolContext?.workspaceDir : undefined;
@@ -226,8 +235,22 @@ export default async function executeAgentSystemCliTool<
       secretValues.push(...(resourceLease.sensitiveValues ?? []));
     }
 
-    const runRequest = (argv: string[], stdin?: string) =>
-      options.runCli({
+    const throwIfCancelled = () => {
+      if (options.signal?.aborted)
+        throw new AgentSystemToolError(
+          'execution_cancelled',
+          `The ${options.definition.id} tool request was cancelled.`,
+        );
+    };
+    const runRequest = async (argv: string[], stdin?: string, control = false) => {
+      throwIfCancelled();
+      const remaining = Math.floor(deadline - now());
+      if (remaining <= 0)
+        throw new AgentSystemToolError(
+          'execution_timed_out',
+          'The managed command execution budget is exhausted.',
+        );
+      const result = await options.runCli({
         argv,
         cwd: childWorkingDirectory,
         environment: childEnvironment,
@@ -240,8 +263,11 @@ export default async function executeAgentSystemCliTool<
         maxOutputBytes: options.definition.runner.maxOutputBytes ?? 65_536,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         ...(stdin === undefined ? {} : { stdin }),
-        timeoutMs: options.definition.runner.timeoutMs ?? 30_000,
+        timeoutMs: control ? Math.min(metadataCommandTimeoutMs, remaining) : remaining,
       });
+      throwIfCancelled();
+      return result;
+    };
     const sanitize = (result: AgentSystemCliResult): AgentSystemCliResult => ({
       ...result,
       stderr: redact(result.stderr, secretValues),
@@ -252,7 +278,7 @@ export default async function executeAgentSystemCliTool<
     try {
       const preflight = options.definition.runner.preflight?.(resolvedConfiguration);
       if (preflight) {
-        const result = sanitize(await runRequest(preflight.argv));
+        const result = sanitize(await runRequest(preflight.argv, undefined, true));
         if (result.timedOut) {
           throw new AgentSystemToolError(
             'execution_timed_out',
@@ -270,7 +296,7 @@ export default async function executeAgentSystemCliTool<
             .digest('hex'),
           cwd: childWorkingDirectory,
           async run(argv, stdin) {
-            const result = sanitize(await runRequest(argv, stdin));
+            const result = sanitize(await runRequest(argv, stdin, true));
             if (result.timedOut) {
               throw new AgentSystemToolError(
                 'execution_timed_out',
@@ -282,6 +308,7 @@ export default async function executeAgentSystemCliTool<
         },
       );
     } catch (error) {
+      throwIfCancelled();
       if (error instanceof AgentSystemToolError) throw error;
       throw new AgentSystemToolError(
         'tool_unavailable',
@@ -300,7 +327,9 @@ export default async function executeAgentSystemCliTool<
             : options.definition.runner.stdin?.(options.input, resolvedConfiguration),
         ),
       );
-    } catch {
+    } catch (error) {
+      throwIfCancelled();
+      if (error instanceof AgentSystemToolError) throw error;
       throw new AgentSystemToolError(
         'tool_unavailable',
         `The ${options.definition.id} tool executable is unavailable.`,

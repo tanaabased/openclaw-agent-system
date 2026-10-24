@@ -176,6 +176,9 @@ export default class AgentSystemToolRuntime {
         },
         ...(signal === undefined ? {} : { signal }),
         source: scope.source,
+        ...(scope.executionDeadline === undefined
+          ? {}
+          : { executionDeadline: scope.executionDeadline }),
         ...(scope.toolContext === undefined ? {} : { toolContext: scope.toolContext }),
         workspaceDir: context.workspaceDir,
       });

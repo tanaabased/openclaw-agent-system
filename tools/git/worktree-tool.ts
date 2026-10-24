@@ -176,6 +176,9 @@ export function createGitWorktreeToolDefinition(
       configuration,
       {
         resolveEnvironment: scope.resolveEnvironment,
+        ...(scope.executionDeadline === undefined
+          ? {}
+          : { executionDeadline: scope.executionDeadline }),
         ...(scope.signal === undefined ? {} : { signal: scope.signal }),
         workspaceDir: scope.workspaceDir,
       },
@@ -251,6 +254,9 @@ export function createGitWorktreeToolDefinition(
       configuration,
       {
         resolveEnvironment: scope.resolveEnvironment,
+        ...(scope.executionDeadline === undefined
+          ? {}
+          : { executionDeadline: scope.executionDeadline }),
         ...(scope.signal === undefined ? {} : { signal: scope.signal }),
         workspaceDir: scope.workspaceDir,
       },

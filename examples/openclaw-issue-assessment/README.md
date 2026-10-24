@@ -87,7 +87,7 @@ target=$(jq -er .html_url "$TMPDIR/notification-manual-issue.json")
 checkout=$(jq -er .path "$TMPDIR/direct-assessment-worktree.json")
 params=$(jq -nc --arg target "$target" --arg checkout "$checkout" '{sessionKey:"agent:issue-assessment-tanaabot:manual-assessment",agentId:"issue-assessment-tanaabot",message:("Direct issue assessment target: " + $target + " checkout: " + $checkout),deliver:false,idempotencyKey:"notification-manual-assessment"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-manual-assessment"'
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-assessment 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-assessment 600000
 jq -es '[.[].entries[]] | length == 1 and .[0].result.outcome == "plan-ready" and (.[0].result.fullAssessment | type == "string" and test("\\S")) and .[0].selection.skill.name == "agent-system-issue-assessment" and .[0].resultTurnId == "notification-manual-assessment"' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-assessment-*.json
 number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/emori"

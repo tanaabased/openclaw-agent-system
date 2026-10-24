@@ -145,3 +145,78 @@ describe('agent/wait-for-gateway-agent', () => {
     assert.deepEqual(calls, ['agents.list', 'config.get']);
   });
 });
+
+describe('agent registration read budgets', () => {
+  it('should observe through a slow transient read using only the remaining total budget', async () => {
+    let now = 0;
+    const budgets: number[] = [];
+    await waitForGatewayAgent('data', undefined, {
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+      request: async (method, _params, timeout) => {
+        assert.equal(method, 'agents.list');
+        budgets.push(timeout);
+        if (budgets.length === 1) {
+          now += 12_000;
+          throw Object.assign(new Error('private timeout'), {
+            name: 'GatewayTransportError',
+            connectionDetails: {},
+            kind: 'timeout',
+            requestDispatched: true,
+          });
+        }
+        return { agents: [{ id: 'data' }] };
+      },
+    });
+    assert.deepEqual(budgets, [30_000, 17_000]);
+  });
+
+  it('should exhaust transient read observations without config writes or renewed budgets', async () => {
+    let now = 0;
+    let requests = 0;
+    await assert.rejects(
+      waitForGatewayAgent('data', undefined, {
+        now: () => now,
+        sleep: async (ms) => {
+          now += ms;
+        },
+        request: async (method, _params, timeout) => {
+          assert.equal(method, 'agents.list');
+          assert.ok(timeout <= 30_000 - now);
+          requests++;
+          now += Math.min(7_000, timeout);
+          throw Object.assign(new Error('private reset'), {
+            name: 'GatewayTransportError',
+            connectionDetails: {},
+            kind: 'closed',
+            code: 1006,
+            requestDispatched: true,
+          });
+        },
+      }),
+      { code: 'agent-gateway-registration-pending' },
+    );
+    assert.equal(now, 30_000);
+    assert.ok(requests > 1);
+  });
+
+  it('should stop on an explicit refusal without treating it as a transient read', async () => {
+    let calls = 0;
+    await assert.rejects(
+      waitForGatewayAgent('data', undefined, {
+        now: () => 0,
+        sleep: async () => {
+          assert.fail('refusal must not retry');
+        },
+        request: async () => {
+          calls++;
+          throw new Error('permission denied');
+        },
+      }),
+      { code: 'agent-gateway-verification-failed' },
+    );
+    assert.equal(calls, 1);
+  });
+});

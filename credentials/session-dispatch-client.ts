@@ -1,9 +1,14 @@
 import { createPublicKey, sign } from 'node:crypto';
 
 import {
+  DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS,
+  DEFAULT_PREAUTH_HANDSHAKE_TIMEOUT_MS,
   GatewayClient,
   GatewayClientRequestError,
   GatewayClientRequestTimeoutError,
+  startGatewayClientWithReadinessWait,
+  type EventLoopReadyOptions,
+  type EventLoopReadyResult,
   type GatewayClientOptions,
 } from '@openclaw/gateway-client';
 import { PROTOCOL_VERSION } from '@openclaw/gateway-protocol/version';
@@ -14,6 +19,7 @@ import {
   SessionDispatchConnectionError,
   sessionDispatchDeadlineError,
 } from './session-dispatch-diagnostic.ts';
+import waitForSessionDispatchGateway from './session-dispatch-readiness.ts';
 import {
   dispatchCredentialError,
   type DispatchAuthority,
@@ -27,10 +33,16 @@ interface SessionDispatchClientDependencies {
     options: GatewayClientOptions,
   ): Pick<GatewayClient, 'start' | 'stop' | 'stopAndWait' | 'request'>;
   scheduleDeadline(callback: () => void, milliseconds: number): () => void;
+  waitForGateway?(
+    port: number,
+    authority: DispatchAuthority,
+    options: EventLoopReadyOptions,
+  ): Promise<EventLoopReadyResult>;
 }
 
 const clientDependencies: SessionDispatchClientDependencies = {
   createClient: (options) => new GatewayClient(options),
+  waitForGateway: waitForSessionDispatchGateway,
   scheduleDeadline(callback, milliseconds) {
     const timer = setTimeout(callback, milliseconds);
     return () => clearTimeout(timer);
@@ -77,6 +89,8 @@ export async function useSessionDispatchClient<T>(
     authority.assertEnrollmentCurrent?.();
   };
   assertCurrent();
+  const startup = new AbortController();
+  let awaitingReadiness = !!authority.waitForGateway;
   const ready = Promise.withResolvers<{ token?: string; scopes: string[] }>();
   const client = dependencies.createClient({
     url: `ws://127.0.0.1:${port}`,
@@ -91,7 +105,6 @@ export async function useSessionDispatchClient<T>(
     maxProtocol: PROTOCOL_VERSION,
     deviceIdentity: record.device,
     ...(bootstrap ? { bootstrapToken: record.bootstrap?.token } : { deviceToken: record.token }),
-    requestTimeoutMs: 10_000,
     hostDeps: {
       beforeConnect: assertCurrent,
       signDevicePayload: (pem, payload) =>
@@ -109,26 +122,69 @@ export async function useSessionDispatchClient<T>(
     },
     onHelloOk: (hello) =>
       ready.resolve({ token: hello.auth?.deviceToken, scopes: hello.auth?.scopes ?? [] }),
-    onConnectError: (error) =>
-      ready.reject(new SessionDispatchConnectionError(classifySessionDispatchFailure(error))),
+    onConnectError: (error) => {
+      const diagnostic = classifySessionDispatchFailure(error);
+      // the sdk reconnects these transport failures with the same explicit credential.
+      if (
+        authority.waitForGateway &&
+        ['connection-refused', 'connection-reset', 'broken-pipe', 'transport-timeout'].includes(
+          diagnostic.reasonCode,
+        )
+      )
+        return;
+      ready.reject(new SessionDispatchConnectionError(diagnostic));
+    },
   });
   const abort = () => {
     ready.reject(new Error('session-dispatch-connect-cancelled'));
+    startup.abort();
     client.stop();
   };
   authority.signal?.addEventListener('abort', abort, { once: true });
   const clearDeadline = dependencies.scheduleDeadline(
-    () => ready.reject(sessionDispatchDeadlineError()),
-    12_000,
+    () => {
+      ready.reject(
+        awaitingReadiness
+          ? new SessionDispatchConnectionError({
+              category: 'timeout',
+              phase: 'connection',
+              reasonCode: 'gateway-readiness-deadline',
+            })
+          : sessionDispatchDeadlineError(),
+      );
+      startup.abort();
+    },
+    DEFAULT_PREAUTH_HANDSHAKE_TIMEOUT_MS +
+      DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS +
+      (authority.waitForGateway ? 30_000 : 0),
   );
   let failed = false;
   try {
     assertCurrent();
-    client.start();
-    const hello = await ready.promise.catch((error: unknown) => {
-      assertCurrent();
-      throw error;
-    });
+    const start = authority.waitForGateway
+      ? startGatewayClientWithReadinessWait(
+          (options) =>
+            (dependencies.waitForGateway ?? waitForSessionDispatchGateway)(
+              port,
+              authority,
+              options ?? {},
+            ),
+          {
+            start() {
+              assertCurrent();
+              awaitingReadiness = false;
+              client.start();
+            },
+          },
+          { signal: startup.signal, timeoutMs: 30_000 },
+        )
+      : Promise.resolve(client.start());
+    const hello = await Promise.race([ready.promise, start.then(() => ready.promise)]).catch(
+      (error: unknown) => {
+        assertCurrent();
+        throw error;
+      },
+    );
     clearDeadline();
     assertCurrent();
     return await operation(
@@ -139,9 +195,10 @@ export async function useSessionDispatchClient<T>(
     failed = true;
     throw error;
   } finally {
+    startup.abort();
     clearDeadline();
     authority.signal?.removeEventListener('abort', abort);
-    await client.stopAndWait({ timeoutMs: 1500 }).catch(() => {
+    await client.stopAndWait().catch(() => {
       // cleanup must not hide the original failure or expose unrestricted sdk errors.
       if (!failed) {
         assertCurrent();

@@ -1,3 +1,4 @@
+import gitCommandTimeout from './command-timeout.ts';
 import { isAbsolute, relative, resolve } from 'node:path';
 
 import defineAgentSystemCliTool from '../../api/define-cli-tool.ts';
@@ -305,7 +306,7 @@ export function createGitToolDefinition(
       stdin(input) {
         return input.stdin;
       },
-      timeoutMs: 30_000,
+      timeoutMs: (input) => gitCommandTimeout(input.argv),
       admittedWorkingDirectories(_input, configuration, scope) {
         if (!configuration.worktrees) return [];
         const layout = resolveGitWorktreeLayout(scope.workspaceDir, configuration.worktrees);
