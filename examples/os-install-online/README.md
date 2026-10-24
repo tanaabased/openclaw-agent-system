@@ -19,6 +19,7 @@ Start the Gateway before the workspace's first Install, enroll dispatch, activat
 - This needs a separate fresh runner because dispatch identity is Gateway-wide; successful online enrollment would invalidate the missing-credential and offline-first conditions in the recovery example. The existing OS matrix gains one scenario on each OS, not another runtime or model matrix.
 - Reuse the enrollment example's synthetic GitHub provider. Enrollment and native storage remain real; neither hosted credentials nor a model turn is needed. Both jobs stay disabled.
 - Setup, first Install, and dependent convergence checks share one fail-fast block. A missing prerequisite or failed first Install ends that journey; no shell retry can turn it green or create misleading downstream failures.
+- Automation Gateway requests use the native CLI timeout; first-attempt failures remain fatal.
 - Evidence is saved beneath `TMPDIR` before a repeat can change state. A Gateway log observation alone does not establish the failure's cause.
 - The local fixture blocks the disposable Gateway once for 18 seconds after a supported plugin configuration change. Its Gateway-only environment flag is absent from the Install CLI. The source regression independently demonstrates the old 12-second verification cutoff; invocation overlap here proves installed convergence, not the exact handshake timing.
 

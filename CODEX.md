@@ -32,7 +32,7 @@ pwd -P
 
 Open the checkout as a local project in the Codex app, or run `codex` there.
 In Codex CLI with the same profile, use `/hooks` to [review and trust](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)
-the Agent System SessionStart hook, then start a fresh task.
+the Agent System SessionStart and PermissionRequest hooks, then start a fresh task.
 
 ```text
 Use $agent-system-codex-binding to bind this plugin to /absolute/path/to/tanaab/me.
@@ -52,6 +52,40 @@ request to “change the instance ID” means renaming unless you explicitly ask
 **rotate the UUID**. Rotation detaches old claim receipts without transferring work;
 use it for a copied installation. The trusted `instanceRuntime` exposes these
 operator actions without reading OpenClaw state.
+
+### Runtime Execution Approval
+
+Trusting the optional PermissionRequest hook delegates native execution approval to
+this installed Agent System runtime, including current and future commands and their
+stdin request data. There is no separate consent store or operation whitelist. The
+runtime continues to own task authorization, operator-only requirements, validation,
+and provider interactions; this hook does not independently assess those decisions.
+
+The hook recognizes direct calls using the absolute Node and runtime paths supplied
+in trusted context, with this installation's `--plugin-data` when supplied. Native
+stdin and one final quoted heredoc are supported. Different executables, compound
+shell commands, expansions, and unrecognized syntax retain normal Codex approval.
+The hook only allows or abstains; it never denies or writes workflow state. Commands
+continue to work normally when the hook is disabled, unavailable, or does not match.
+Native Git, GitHub CLI, and app-tool calls outside this runtime keep their existing
+approval behavior. Future routes in the same runtime need no permission-hook entry.
+
+With `debug: true` in the bound workspace's `agent.yaml`, the hook appends diagnostic
+records to `permission-request.jsonl` in its plugin data directory. Records contain
+invocation and session IDs, a command hash, timing, and the `allow` or `abstain`
+decision, without command text or stdin. Logging is off by default; changing `debug`
+applies on the next invocation and does not change approval behavior. At 1 MiB, the next logged
+invocation clears the file before appending new records; concurrent invocations may
+briefly exceed that threshold. Disabling debug preserves existing records. Logging
+failures never block approval. A logged `allow`
+is not proof that the corresponding command succeeded.
+
+Review and enable the hook through native `/hooks`; disabling it restores ordinary
+approval without any Agent System cleanup. Native hook trust is the opt-in, including
+trust in the installed runtime's implementation and its subsequent updates. Existing
+workflow denials and provider protections remain in their owning paths. See the
+[native hook contract](https://learn.chatgpt.com/docs/hooks#permissionrequest) and the
+[installed example](./examples/codex-install/README.md).
 
 ## Skills
 
