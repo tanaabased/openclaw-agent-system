@@ -380,10 +380,10 @@ Day-of-month and day-of-week use OR when both are restricted.
 
 Schedule objects accept exactly one trigger key, plus:
 
-| Field        | Type                  | Required | Default  | Description               |
-| ------------ | --------------------- | -------- | -------- | ------------------------- |
-| `missed-run` | `native`              | no       | `native` | Native catch-up behavior. |
-| `timezone`   | IANA zone or `native` | no       | `native` | Cron only.                |
+| Field        | Type                | Required | Default  | Description                                                             |
+| ------------ | ------------------- | -------- | -------- | ----------------------------------------------------------------------- |
+| `missed-run` | `native`            | no       | `native` | Native catch-up behavior.                                               |
+| `timezone`   | IANA zone or `null` | no       | local    | Cron only. Omitted or `null` uses local time; `native` is not accepted. |
 
 #### Effective content and trigger identity
 
