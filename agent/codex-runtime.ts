@@ -255,7 +255,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
                 pluginRoot: process.env.PLUGIN_ROOT,
                 pluginData: process.env.PLUGIN_DATA,
               },
-              JSON.parse(await readStandardInput()),
+              await readStandardInput(),
             )
           : {},
       );

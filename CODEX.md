@@ -70,6 +70,16 @@ continue to work normally when the hook is disabled, unavailable, or does not ma
 Native Git, GitHub CLI, and app-tool calls outside this runtime keep their existing
 approval behavior. Future routes in the same runtime need no permission-hook entry.
 
+With `debug: true` in the bound workspace's `agent.yaml`, the hook appends diagnostic
+records to `permission-request.jsonl` in its plugin data directory. Records contain
+invocation and session IDs, a command hash, timing, and the `allow` or `abstain`
+decision, without command text or stdin. Logging is off by default; changing `debug`
+applies on the next invocation and does not change approval behavior. At 1 MiB, the next logged
+invocation clears the file before appending new records; concurrent invocations may
+briefly exceed that threshold. Disabling debug preserves existing records. Logging
+failures never block approval. A logged `allow`
+is not proof that the corresponding command succeeded.
+
 Review and enable the hook through native `/hooks`; disabling it restores ordinary
 approval without any Agent System cleanup. Native hook trust is the opt-in, including
 trust in the installed runtime's implementation and its subsequent updates. Existing

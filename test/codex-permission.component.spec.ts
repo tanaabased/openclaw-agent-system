@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import codexPermission from '../agent/codex-permission.ts';
+import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 
 describe('agent/codex-permission', () => {
   let root: string, script: string;
@@ -35,8 +36,7 @@ describe('agent/codex-permission', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it('should delegate present and future runtime operations without a second registry or state', async () => {
-    const before = await readdir(root);
+  it('should delegate present and future runtime operations without a second operation registry', async () => {
     for (const args of [
       'dispatch summary publish',
       'feedback reply publish',
@@ -48,7 +48,7 @@ describe('agent/codex-permission', () => {
       assert.deepEqual(await codexPermission(runtime, event(command(args))), allowed);
       assert.deepEqual(await codexPermission(runtime, event(command(args))), allowed);
     }
-    assert.deepEqual(await readdir(root), before);
+    await assert.rejects(readdir(runtime.pluginData), { code: 'ENOENT' });
   });
 
   it('should allow direct paths, literal quoting and verified executable symlinks', async () => {
@@ -131,6 +131,95 @@ describe('agent/codex-permission', () => {
       },
     ])
       assert.deepEqual(await codexPermission(runtime, input), {});
+  });
+
+  const configureDebug = async (setting: string) => {
+    const workspace = join(root, 'workspace');
+    await mkdir(workspace, { recursive: true });
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      `schema-version: 1\nagent:\n  id: permission-test\n${setting}\n`,
+    );
+    await bindCodexWorkspace(runtime.pluginData, workspace, { allowInactive: true });
+  };
+
+  it('should follow live debug configuration without changing permission decisions', async () => {
+    for (const setting of ['', 'debug: false', 'debug: invalid']) {
+      await configureDebug(setting);
+      assert.deepEqual(await codexPermission(runtime, event(command())), allowed);
+      assert.deepEqual(await codexPermission(runtime, event('git push')), {});
+      await assert.rejects(readFile(join(runtime.pluginData, 'permission-request.jsonl')), {
+        code: 'ENOENT',
+      });
+    }
+    await configureDebug('debug: true');
+    assert.deepEqual(await codexPermission(runtime, event(command())), allowed);
+    const path = join(runtime.pluginData, 'permission-request.jsonl');
+    const logged = await readFile(path, 'utf8');
+    await configureDebug('debug: false');
+    assert.deepEqual(await codexPermission(runtime, event(command())), allowed);
+    assert.equal(await readFile(path, 'utf8'), logged);
+  });
+
+  it('should correlate allow and abstain diagnostics without retaining input content', async () => {
+    await configureDebug('debug: true');
+    const sessionId = '11111111-2222-3333-4444-555555555555';
+    const input = {
+      ...event(command() + " <<'DATA'\nprivate-payload\nDATA"),
+      session_id: sessionId,
+    };
+    assert.deepEqual(await codexPermission(runtime, JSON.stringify(input)), allowed);
+    assert.deepEqual(await codexPermission(runtime, event('git push private-argument')), {});
+    assert.deepEqual(await codexPermission(runtime, 'invalid private-json'), {});
+    const path = join(runtime.pluginData, 'permission-request.jsonl');
+    const text = await readFile(path, 'utf8');
+    const records = text
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(
+      records.map((record) => record.phase),
+      ['started', 'decision', 'started', 'decision', 'started', 'decision'],
+    );
+    assert.deepEqual(
+      records.filter((record) => record.phase === 'decision').map((record) => record.decision),
+      ['allow', 'abstain', 'abstain'],
+    );
+    assert.equal(records[0].invocationId, records[1].invocationId);
+    assert.notEqual(records[0].invocationId, records[2].invocationId);
+    assert.equal(records[0].sessionId, sessionId);
+    assert.match(records[0].commandSha256, /^[a-f0-9]{64}$/u);
+    assert.doesNotMatch(text, /private-|arbitrary provider prose|tool_input|description/u);
+    assert.equal((await stat(path)).mode & 0o777, 0o600);
+  });
+
+  it('should restart a full diagnostic log without changing approval or retaining archives', async () => {
+    await configureDebug('debug: true');
+    const path = join(runtime.pluginData, 'permission-request.jsonl');
+    await writeFile(path, 'x'.repeat(1024 * 1024), { mode: 0o600 });
+    assert.deepEqual(await codexPermission(runtime, event(command())), allowed);
+    const records = (await readFile(path, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(
+      records.map((record) => record.phase),
+      ['started', 'decision'],
+    );
+    assert.equal(records[0].invocationId, records[1].invocationId);
+    assert.equal(records[1].decision, 'allow');
+    assert.ok((await stat(path)).size < 1024 * 1024);
+    assert.deepEqual((await readdir(runtime.pluginData)).sort(), [
+      'permission-request.jsonl',
+      'workspace-binding.json',
+    ]);
+  });
+
+  it('should preserve decisions when diagnostics cannot be written', async () => {
+    await configureDebug('debug: true');
+    await mkdir(join(runtime.pluginData, 'permission-request.jsonl'));
+    assert.deepEqual(await codexPermission(runtime, event(command())), allowed);
+    assert.deepEqual(await codexPermission(runtime, event('git push')), {});
   });
 
   it('should leave ordinary runtime execution independent of hook approval and consent', async () => {

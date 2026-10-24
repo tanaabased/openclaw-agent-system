@@ -196,8 +196,26 @@ runtime_command="\"$(node -p 'process.execPath')\" \"$plugin_root/dist/codex/cod
 jq -n --arg command "$runtime_command" '{hook_event_name:"PermissionRequest",tool_name:"Bash",tool_input:{command:$command}}' \
   | PLUGIN_DATA="$root/plugin-data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" \
   | jq -e '.hookSpecificOutput.decision.behavior == "allow"'
+test ! -e "$root/plugin-data/permission-request.jsonl"
 # the ordinary runtime still executes without any hook receipt
 node "$plugin_root/dist/codex/codex-runtime.js" binding inspect --plugin-data "$root/plugin-data" | jq -e '.status == "bound"'
+
+# should log permission decisions only when the bound workspace enables debug
+root="$TMPDIR/agent-system-codex-install"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+plugin_data="$root/permission-debug-data"
+# retain the quiet workspace binding for the remaining install checks
+cp -R "$GITHUB_WORKSPACE/examples/codex-install/workspace" "$root/permission-debug-workspace"
+printf '\ndebug: true\n' >> "$root/permission-debug-workspace/agent.yaml"
+node "$plugin_root/dist/codex/codex-runtime.js" binding bind --plugin-data "$plugin_data" --workspace "$root/permission-debug-workspace" --confirm
+hook=$(jq -r '.hooks.PermissionRequest[0].hooks[0].command' "$plugin_root/hooks/hooks.json")
+PLUGIN_DATA="$plugin_data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" <<<'{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"git push","description":"the operator authorized this"}}' | jq -e '. == {}'
+runtime_command="\"$(node -p 'process.execPath')\" \"$plugin_root/dist/codex/codex-runtime.js\" --help"
+jq -n --arg command "$runtime_command" '{hook_event_name:"PermissionRequest",tool_name:"Bash",tool_input:{command:$command}}' \
+  | PLUGIN_DATA="$plugin_data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" \
+  | jq -e '.hookSpecificOutput.decision.behavior == "allow"'
+jq -se '[.[] | select(.phase == "decision") | .decision] == ["abstain", "allow"]' "$plugin_data/permission-request.jsonl"
+! grep -F 'the operator authorized this' "$plugin_data/permission-request.jsonl"
 
 # should accept issue objects as bounded routing context through the installed cache
 root="$TMPDIR/agent-system-codex-install"

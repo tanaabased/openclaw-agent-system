@@ -7,8 +7,7 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/dist/codex/codex-runtime.js\" permission-request",
-            "timeout": 10,
-            "statusMessage": "Checking Agent System runtime invocation"
+            "statusMessage": "AGENT SYSTEM: Checking approvals"
           }
         ]
       }
@@ -20,7 +19,7 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/dist/codex/codex-runtime.js\" session-start",
-            "statusMessage": "Loading Agent System context",
+            "statusMessage": "AGENT SYSTEM: Loading context",
             "additionalContextLimit": 5000
           }
         ]
