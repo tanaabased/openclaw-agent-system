@@ -21,6 +21,7 @@ Change the live reviewer configuration for an already delivered PR, prepare its 
 - Each job prepares its own issue, assessment, and linked PR. Initial feedback permits three bounded coordinator passes for native assessment reconciliation, while preserving the exact source revision. Refreshes target only this issue; the 24-hour schedule avoids unrelated discovery.
 - Native operator messages use the public Gateway SDK with `operator.admin`; the enrolled dispatch device retains `operator.read` and `operator.write`. Native transcript receipts bind the input.
 - The shared PR fixture reconciles delayed closing-issue linkage with at most three prepare/publish passes on the same delivery. Unknown failures and uncertain writes do not create replacement PRs.
+- The first Tanaabot install retains bounded, redacted output, timing, and native Gateway logs in the `install-evidence-*` CI artifact before cleanup. Native logs may omit sub-second session-create phases and do not reliably identify which session-access guard failed.
 - EMORI is previewed as a compact reviewer only. The scenario never requests a review from a production agent.
 
 ## Setup
@@ -44,7 +45,10 @@ cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-not
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 
 # should start the isolated gateway
-OPENCLAW_LOG_LEVEL=info openclaw-gateway start
+openclaw config set logging.file "$TMPDIR/install-native.log"
+openclaw config set logging.level debug
+openclaw config set diagnostics.enabled true --strict-json
+OPENCLAW_LOG_LEVEL=debug OPENCLAW_PLUGIN_LIFECYCLE_TRACE=1 openclaw-gateway start
 
 # should install emori in its fixture workspace
 set -o pipefail
@@ -76,7 +80,12 @@ activation_diagnostics() {
 }
 trap activation_diagnostics EXIT
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-recipients/tanaabot"
-openclaw agent-system install --yes --json > "$TMPDIR/notification-install.json"
+first_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+first_status=0
+openclaw agent-system install --yes --json > "$TMPDIR/notification-install.json" 2> "$TMPDIR/notification-install.stderr" || first_status=$?
+node --import tsx "$GITHUB_WORKSPACE/scripts/install-evidence.ts" recipients-first "$first_status" "$first_started" "$TMPDIR/notification-install.json" "$TMPDIR/notification-install.stderr" "$TMPDIR/install-native.log" || printf '%s\n' 'install evidence capture unavailable' >&2
+cat "$TMPDIR/notification-install.stderr" >&2
+if test "$first_status" -ne 0; then exit "$first_status"; fi
 openclaw agent-system notifications wait --for baseline-ready --timeout 30 --json | jq -e '.status == "completed"'
 
 # should create an issue as emori and assign it as tanaabot after the safe intake baseline
