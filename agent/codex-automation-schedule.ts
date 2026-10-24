@@ -1,8 +1,27 @@
 import { CodexAutomationError } from './codex-automation-state.ts';
 import type { AutomationSchedule } from '../manifest/automation-schedule.ts';
 
-/** compile only one-job recurrences with demonstrated native equivalents. */
-export default function codexAutomationSchedule(schedule: AutomationSchedule): string {
+/** map shared schedules to native recurrences; codex owns clock and dst behavior. */
+export default function codexAutomationSchedule(
+  schedule: AutomationSchedule,
+  previous?: string,
+  now = new Date(),
+): string {
+  const rule = compile(schedule);
+  if (schedule.kind !== 'cron' || schedule.timezone === null) return rule;
+  // retain the owned anchor; a new one starts in the past in every named zone.
+  // old epoch anchors make the native hourly evaluator walk decades of occurrences.
+  const anchor =
+    /^DTSTART(?:;TZID=[^:\r\n]+)?:([0-9]{8}T[0-9]{6})Z?(?:\r?\n|$)/u.exec(previous ?? '')?.[1] ??
+    `${new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10).replaceAll('-', '')}T000000`;
+  const start =
+    schedule.timezone === 'UTC'
+      ? `DTSTART:${anchor}Z`
+      : `DTSTART;TZID=${schedule.timezone}:${anchor}`;
+  return `${start}\nRRULE:${rule};BYSECOND=0`;
+}
+
+function compile(schedule: AutomationSchedule): string {
   if (schedule.kind === 'every') {
     const unit = schedule.seconds % 3600 === 0 ? 3600 : 60;
     const interval = schedule.seconds / unit;
@@ -12,8 +31,6 @@ export default function codexAutomationSchedule(schedule: AutomationSchedule): s
     return `FREQ=${unit === 3600 ? 'HOURLY' : 'MINUTELY'};INTERVAL=${interval}`;
   }
   if (schedule.kind !== 'cron') throw new CodexAutomationError('automation-one-shot-unsupported');
-  if (schedule.timezone !== 'native')
-    throw new CodexAutomationError('automation-timezone-unsupported');
   const f = schedule.fields;
   if (f.months.length !== 12 || f.minutes.length !== 1 || (!f.dayWildcard && !f.weekdayWildcard)) {
     throw new CodexAutomationError('automation-schedule-unsupported');

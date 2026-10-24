@@ -3,6 +3,13 @@ import assert from 'node:assert/strict';
 import normalize from '../manifest/automation-schedule.ts';
 
 describe('manifest/automation-schedule', () => {
+  it('should normalize omitted and null cron zones to local time', () => {
+    const local = normalize('0 8 * * *');
+    assert.equal(local.kind === 'cron' && local.timezone, null);
+    assert.deepEqual(normalize({ cron: '0 8 * * *' }), local);
+    assert.deepEqual(normalize({ cron: '0 8 * * *', timezone: null }), local);
+    assert.equal(local.missedRun, 'native');
+  });
   it('should normalize recurring durations and keep relative delays unanchored', () => {
     for (const input of [
       ' every  1 hour ',
@@ -99,7 +106,7 @@ describe('manifest/automation-schedule', () => {
       { every: 3600 },
       { cron: '* * * * *', timezone: 'Mars/Olympus' },
       { cron: '* * * * *', timezone: '+01:00' },
-      { cron: '* * * * *', timezone: null },
+      { cron: '* * * * *', timezone: 'native' },
       { cron: '* * * * *', extra: true },
     ])
       assert.throws(() => normalize(value), JSON.stringify(value));

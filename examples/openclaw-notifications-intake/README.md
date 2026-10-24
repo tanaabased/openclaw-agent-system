@@ -19,6 +19,7 @@ Activate notification intake, start three independent issue assessments before a
 - Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases all three only after verifying their native starts; model judgment is not under test.
 - V3 object identities preserve supplied names and node IDs through installation and intake. Only Tanaabot receives the three disposable assignments.
 - Scoped refreshes and a 24-hour schedule bound discovery. The job owns its workspaces, issues, native state, and SSH registration; cleanup stops the Gateway before changing external fixtures.
+- A failed native channel-status assertion captures the original response, saved channel-account flags, Gateway config revision metadata, and bounded redacted logs before cleanup. `config.get` may be cached; its snapshot is not proof of applied account configuration. The native status response records the accounts exposed by the running Gateway. Evidence is retained in the workflow's `install-evidence` artifact without retrying or replacing the failed assertion.
 
 ## Setup
 
@@ -50,7 +51,10 @@ cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 # should boot with retained legacy channel configuration
 openclaw config set channels.agent-system-github '{"accounts":{"retired-agent":{"enabled":false}}}' --strict-json
 openclaw config set plugins.entries.agent-system.config.githubNotifications '{"maxCommentCharacters":8000}' --strict-json
-OPENCLAW_LOG_LEVEL=info openclaw-gateway start
+openclaw config set logging.file "$TMPDIR/install-native.log"
+openclaw config set logging.level debug
+openclaw config set diagnostics.enabled true --strict-json
+OPENCLAW_LOG_LEVEL=debug OPENCLAW_PLUGIN_LIFECYCLE_TRACE=1 openclaw-gateway start
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false'
 
 # should install emori in its fixture workspace
@@ -93,8 +97,17 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 ```bash
 # should expose the install-managed account through the native channel status interface
 set -eo pipefail
+channel_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+channel_diagnostics() {
+  channel_status=$?
+  if test "$channel_status" -ne 0; then
+    node --import tsx "$GITHUB_WORKSPACE/scripts/install-evidence.ts" intake-channel-status "$channel_status" "$channel_started" "$TMPDIR/intake-channel-status.json" "$TMPDIR/intake-channel-status.stderr" "$TMPDIR/install-native.log" channel-status || printf '%s\n' 'channel evidence capture unavailable' >&2
+  fi
+  exit "$channel_status"
+}
+trap channel_diagnostics EXIT
 for attempt in $(seq 1 30); do
-  openclaw gateway call channels.status --json > "$TMPDIR/intake-channel-status.json"
+  openclaw gateway call channels.status --json > "$TMPDIR/intake-channel-status.json" 2> "$TMPDIR/intake-channel-status.stderr"
   if jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot")' "$TMPDIR/intake-channel-status.json" > /dev/null; then
     break
   fi

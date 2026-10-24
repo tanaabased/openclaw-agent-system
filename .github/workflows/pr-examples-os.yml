@@ -96,3 +96,11 @@ jobs:
           else
             echo "No OpenClaw workspace was created; see the scenario failure output above."
           fi
+      - name: Preserve first-install evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: install-evidence-${{ matrix.example }}-${{ matrix.os || 'ubuntu-24.04' }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/install-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
