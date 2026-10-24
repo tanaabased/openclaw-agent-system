@@ -1,4 +1,6 @@
 import codexTurnApprovalDenied from './codex-turn-approval.ts';
+import codexSummaryDenial from './codex-summary-denial.ts';
+import type { AssessmentSummary } from './assessment-summary-state.ts';
 import { nativeObject } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
 import type { CodexContinuationState } from './codex-continuation-state.ts';
@@ -18,6 +20,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
   return async (
     sourceThreadId: string,
     attempt: NonNullable<CodexContinuationState['attempt']>,
+    summaries?: AssessmentSummary[],
   ) => {
     if (attempt.origin === 'input') {
       if (
@@ -36,7 +39,11 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
       )
         throw new Error('continuation-input-unverified');
       const items = entries.map((entry) => entry.item).filter(nativeObject);
-      if (codexTurnApprovalDenied(items))
+      if (
+        codexTurnApprovalDenied(
+          codexSummaryDenial(items, attempt.request.threadId, attempt.sourceTurnId, summaries),
+        )
+      )
         return {
           status: 'blocked' as const,
           code: 'continuation-native-approval-denied',
@@ -73,7 +80,11 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
         typeof turn.completedAt === 'number' &&
         Number.isFinite(turn.completedAt) &&
         turn.completedAt > 0;
-      if (codexTurnApprovalDenied(turn.items))
+      if (
+        codexTurnApprovalDenied(
+          codexSummaryDenial(turn.items, attempt.request.threadId, attempt.turnId!, summaries),
+        )
+      )
         return {
           status: 'blocked' as const,
           code: 'continuation-native-approval-denied',

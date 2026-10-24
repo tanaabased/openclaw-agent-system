@@ -293,8 +293,12 @@ assessment-summary instructions when supplied. The host verifies the active issu
 and summary operation, selects the current voice-aware reply skill, and owns the
 candidate, exact issue destination, native approval and publication receipt. Explain the proposed user
 journey in that separate public summary; keep the recorded private review visible in
-the chat and the full assessment available on request. A denial stops publication. A delivery failure leaves the plan
-recorded; show its diagnostic and reconcile an uncertain write without repeating it.
+the chat and the full assessment available on request. A denial scoped only to this summary stops publication,
+not independently authorized implementation. If the host permits further tracking, retain the rejected summary
+through summary operation `hold` with its preview digest and a bounded redacted diagnostic; never retry the denied
+publish call or use another route. Keep that hold and diagnostic across continuation and restart. Do not offer
+ordinary pending-summary recovery for it; publication needs supported verified recovery or renewed authorization.
+A delivery failure leaves the plan recorded; reconcile an uncertain write without repeating it.
 
 ### Continuing after assessment
 
@@ -331,7 +335,9 @@ outcomes separately. Once implementation has started, resume through the owning
 implementation context, not assessment context. Clarification preserves that stage
 and partial work; incorporate a new answer without another approval. Refresh the
 current skill and guidance while preserving prior results, chat, worktree, and routing.
-Respect cancellation, inactive lifecycle, and actual native denials. Reconcile
+Respect cancellation, inactive lifecycle, broader or implementation-specific native denials,
+and a host-terminated turn. A summary-only denial does not waive these checks or grant implementation;
+follow the retained handoff through fresh implementation context in the same permitted turn. Reconcile
 uncertain effects using their saved receipts; never reset the issue or create a
 replacement chat or PR to get past a failed operation.
 

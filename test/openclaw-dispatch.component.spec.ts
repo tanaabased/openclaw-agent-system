@@ -2822,6 +2822,96 @@ describe('agent/openclaw issue dispatch', () => {
   const workPass = (runId: string) =>
     service.run(manifest, root, { ...coordinator, runId }, { action: 'next' });
 
+  for (const mode of ['work', 'auto', 'plan', 'auto-plan'] as const)
+    it(`should retain summary denial independently of ${mode} implementation in openclaw`, async () => {
+      manifest.github!.notifications!.issueAssignment!.mode = mode === 'auto-plan' ? 'auto' : mode;
+      const input = await next();
+      await prepare(input);
+      await assess(input.id);
+      await context(input.id);
+      const assessment: AssessmentResult = {
+        ...plan,
+        ...(mode === 'auto' || mode === 'auto-plan'
+          ? { decision: { mode: mode === 'auto-plan' ? 'plan' : 'work', reasons: ['Assessed.'] } }
+          : {}),
+      };
+      await submit(input.id, assessment);
+      const who = assessor(input.id);
+      const summary = (
+        operation: 'compose' | 'candidate' | 'publish' | 'hold',
+        digest?: string,
+        publicText?: string,
+      ) =>
+        service.run(manifest, root, who, {
+          action: 'summary',
+          id: input.id,
+          operation,
+          digest,
+          publicText,
+          ...(operation === 'hold' ? { diagnostic: 'Native review refused this summary.' } : {}),
+        });
+      const composed = await summary('compose');
+      assert.ok('digest' in composed);
+      await summary('candidate', composed.digest, 'The proposal restores your result.');
+      const preview = await summary('publish');
+      assert.ok('digest' in preview);
+      // the native host rejects the publish call before invoking its handler.
+      const held = await summary('hold', preview.digest);
+      assert.equal(held.status, 'blocked');
+      await assert.rejects(
+        service.run(
+          manifest,
+          root,
+          { ...who, sessionId: 'unrelated-session' },
+          { action: 'implementation-context', id: input.id },
+        ),
+        /mismatch|session/,
+      );
+      inputReceipts = [];
+      service = new OpenClawDispatch(service.dependencies);
+      if (mode === 'plan' || mode === 'auto-plan') {
+        const stopped = await service.run(manifest, root, who, {
+          action: 'implementation-context',
+          id: input.id,
+        });
+        assert.equal(stopped.status, 'policy-held', JSON.stringify(stopped));
+        assert.equal((await record()).progression, undefined);
+      } else {
+        const entered = await service.run(manifest, root, who, {
+          action: 'implementation-context',
+          id: input.id,
+        });
+        assert.equal(entered.status, 'verified', JSON.stringify(entered));
+        assert.ok(
+          'pendingPublicResponse' in entered && entered.pendingPublicResponse?.state === 'blocked',
+        );
+        assert.match(entered.pendingPublicResponse!.instruction, /Do not retry/);
+        assert.equal((await record()).work?.turn?.runId, who.runId);
+        await service.run(manifest, root, who, {
+          action: 'implementation-result',
+          id: input.id,
+          implementationResult: {
+            outcome: 'done',
+            summary: 'Implemented.',
+            fullResult: 'Controlled result.',
+          },
+        });
+      }
+      const retained = await record();
+      assert.deepEqual(retained.result, assessment);
+      assert.equal(
+        retained.assessmentSummaries?.[0]?.code,
+        'assessment-summary-native-approval-denied',
+      );
+      assert.equal(
+        retained.assessmentSummaries?.[0]?.diagnostic,
+        'Native review refused this summary.',
+      );
+      assert.equal(retained.assessmentSummaries?.[0]?.attempt, undefined);
+      assert.equal((await summary('publish', preview.digest)).status, 'blocked');
+      assert.equal(sends().length, 1);
+    });
+
   for (const mode of ['work', 'auto'] as const)
     it(`should hand ${mode} directly from assessment to implementation without a coordinator send`, async () => {
       manifest.github!.notifications!.issueAssignment!.mode = mode;
@@ -3519,6 +3609,47 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 1);
   });
 
+  it('should retain a native summary denial observed during openclaw recovery after restart', async () => {
+    const input = await next();
+    await prepare(input);
+    await assess(input.id);
+    await context(input.id);
+    await submit(input.id);
+    await service.run(manifest, root, assessor(input.id), {
+      action: 'summary',
+      id: input.id,
+      operation: 'compose',
+    });
+    assessmentReply(input.id);
+    const who = assessor(input.id, 'summary-observation');
+    messages.push({
+      role: 'user',
+      content: 'Inspect saved summary outcome.',
+      __openclaw: { id: 'summary-observation-input', idempotencyKey: 'summary-observation:user' },
+    });
+    waitResult = { status: 'error', code: 'approval-denied' };
+    const stopped = await service.run(manifest, root, who, {
+      action: 'summary',
+      id: input.id,
+      operation: 'compose',
+    });
+    assert.ok('code' in stopped && stopped.code === 'assessment-summary-native-approval-denied');
+    assert.equal(
+      (await record()).assessmentSummaries?.[0]?.code,
+      'assessment-summary-native-approval-denied',
+    );
+    waitResult = { status: 'timeout' };
+    service = new OpenClawDispatch(service.dependencies);
+    const retained = await service.run(manifest, root, who, {
+      action: 'summary',
+      id: input.id,
+      operation: 'compose',
+    });
+    assert.ok('code' in retained && retained.code === 'assessment-summary-native-approval-denied');
+    assert.deepEqual((await record()).result, plan);
+    assert.equal((await record()).assessmentSummaries?.[0]?.attempt, undefined);
+  });
+
   for (const { recover, loseResponse, preparationFailure, variant } of [
     { recover: false, loseResponse: false, variant: 'default' },
     { recover: false, loseResponse: true, variant: 'skill' },
@@ -3651,12 +3782,13 @@ describe('agent/openclaw issue dispatch', () => {
           publicText,
         });
       if (recover) {
-        waitResult = { status: 'error', code: 'approval-denied' };
-        await assert.rejects(summary('compose'), /assessment-summary-native-approval-denied/);
         waitResult = { status: 'timeout' };
         const terminal = messages.findIndex((entry) => entry.role === 'assistant');
         const [reply] = messages.splice(terminal, 1);
-        await assert.rejects(summary('compose'), /dispatch-assessment-continuation-not-ready/);
+        const unverified = await summary('compose');
+        assert.ok(
+          'code' in unverified && unverified.code === 'dispatch-assessment-continuation-not-ready',
+        );
         messages.splice(terminal, 0, reply!);
       }
       const composed = await summary('compose');

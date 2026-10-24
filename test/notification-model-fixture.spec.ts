@@ -118,6 +118,7 @@ for (const scenario of [
   async function publishProgressionSummary(
     input: ChatCompletionRequest,
     selectedScenario = scenario,
+    hold = false,
   ) {
     assert.equal((await action(input, 'summary', selectedScenario)).operation, 'compose');
     append(input, 'summary-compose', {
@@ -135,10 +136,13 @@ for (const scenario of [
     append(input, 'summary-candidate', { status: 'candidate-recorded' });
     assert.equal((await action(input, 'summary', selectedScenario)).digest, undefined);
     append(input, 'summary-preview', { status: 'publication-ready', digest: 'e'.repeat(64) });
-    assert.equal((await action(input, 'summary', selectedScenario)).digest, 'e'.repeat(64));
-    append(input, 'summary-publish', {
-      status: 'published',
-      presentation: 'Published retained plan.',
+    const publication = await action(input, 'summary', selectedScenario);
+    assert.equal(publication.digest, 'e'.repeat(64));
+    assert.equal(publication.operation, hold ? 'hold' : 'publish');
+    append(input, hold ? 'summary-hold' : 'summary-publish', {
+      status: hold ? 'blocked' : 'published',
+      ...(hold ? { code: 'assessment-summary-native-approval-denied' } : {}),
+      presentation: hold ? 'Summary held; no publication.' : 'Published retained plan.',
     });
   }
 
@@ -793,6 +797,7 @@ for (const scenario of [
             presentation: 'Verified decision.',
             handoff: { next: 'implementation' },
           });
+          if (!interrupted) await publishProgressionSummary(input, selected, true);
           assert.equal((await action(input, 'implementation-context', selected)).id, id);
         });
       for (const direct of [false, true])
@@ -824,6 +829,7 @@ for (const scenario of [
               presentation: 'The retained plan.',
               handoff: { next: 'implementation' },
             });
+            await publishProgressionSummary(automatic, scenario, true);
           }
           await action(automatic, 'implementation-context');
           append(automatic, 'work-context', {
@@ -833,16 +839,18 @@ for (const scenario of [
             pendingPublicResponse: {
               kind: 'assessment-summary',
               revision: direct ? 2 : 1,
-              state: 'pending',
+              state: direct ? 'blocked' : 'pending',
             },
             project: { path: '/tmp/owned' },
           });
-          await action(automatic, 'present');
-          append(automatic, 'recovery-present', {
-            status: 'presented',
-            presentation: 'The retained plan.',
-          });
-          await publishProgressionSummary(automatic);
+          if (!direct) {
+            await action(automatic, 'present');
+            append(automatic, 'recovery-present', {
+              status: 'presented',
+              presentation: 'The retained plan.',
+            });
+            await publishProgressionSummary(automatic);
+          }
           const question = await action(automatic, 'implementation-result');
           assert.equal(question.implementationResult.outcome, 'clarification-needed');
           append(automatic, 'work-result', {

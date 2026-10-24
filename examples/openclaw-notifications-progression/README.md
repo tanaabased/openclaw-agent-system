@@ -6,6 +6,7 @@ Move an already assessed issue from Plan to Auto, retain the verified Work decis
 
 - A live mode edit taking effect without Install and preserving the original assessment, model selection, chat, and worktree.
 - The authorized assessment-to-implementation transition, with completed work reconciled rather than dispatched again.
+- A reported summary-publication hold retained independently of same-turn authorized implementation.
 - Clarification holding the implementation stage until an answer arrives, then resuming the same work without pushing or publishing.
 
 ## What Does Not Belong Here
@@ -18,6 +19,7 @@ Move an already assessed issue from Plan to Auto, retain the verified Work decis
 ## Notes
 
 - Strict AIMock supplies decisions; the installed plugin, GitHub assignment, managed checkout, coordinator, and receipts remain real. This is not proof of genuine model judgment.
+- The Auto decision turn records a controlled reported summary denial without invoking publication. This verifies the installed hold protocol and independent progression, not an actual native reviewer refusal. Controlled Codex and OpenClaw adapter coverage owns denial and negative-authority permutations.
 - The final operator answer explicitly requests a local commit and prohibits push/PR publication. The test verifies the committed change, not delivery.
 - EMORI creates the disposable issue; only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule isolate discovery. Cleanup disposes of the issue and SSH registration; the runner owns the local workspace.
 
@@ -116,6 +118,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$receipt:au
 jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].records[]] | length == 1 and .[0].threadId == $before[0].threadId and .[0].worktree == $before[0].worktree and .[0].assessmentTurn.runId == $before[0].assessmentTurn.runId and .[0].result.plan == $before[0].result.plan and .[0].routing == $before[0].routing and .[0].effective == $before[0].effective and .[0].request.model == $before[0].request.model and .[0].request.thinkingLevel == $before[0].request.thinkingLevel and .[0].result.decision.mode == "work" and .[0].resultTurnId == .[0].decisionTurn.runId' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-clarification.json"
 jq -e --arg run "$receipt:auto-decision" '.progression.stage == "implementation" and .progression.via == "auto" and .work.turn.runId == $run and .work.turn.origin == "assessment" and .work.result.outcome == "clarification-needed" and (.work.result.questions | length) == 1' "$TMPDIR/notification-clarification.json"
+jq -e '.assessmentSummaries | any(.code == "assessment-summary-native-approval-denied" and (.diagnostic | length > 0) and .attempt == null and .receipt == null)' "$TMPDIR/notification-clarification.json"
 openclaw agent-system notifications status --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")" --json | jq -e '.items[0].workflow.phase == "clarification-needed"'
 
 # should reconcile the finished auto handoff without restarting work while clarification is pending
@@ -136,6 +139,7 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notificatio
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-implemented.json"
 jq -e --slurp '.[1].progression.workOwner == "issue" and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].routing == .[1].routing and .[0].effective == .[1].effective and .[0].request.model == .[1].request.model and .[0].request.thinkingLevel == .[1].request.thinkingLevel and .[0].result == (.[1].result | del(.decision)) and .[1].progression.stage == "implementation" and .[1].progression.via == "auto" and .[1].work.caller.runId == "notification-answer" and .[1].work.result.outcome == "done" and .[1].work.delivery == null' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-implemented.json"
 jq -e --slurp '.[0].work.implementation == .[1].work.implementation and .[0].work.turn.runId == .[1].work.turn.runId and .[0].handoff == .[1].handoff and .[1].work.caller.runId == "notification-answer"' "$TMPDIR/notification-clarification.json" "$TMPDIR/notification-implemented.json"
+jq -e --slurp '.[0].assessmentSummaries == .[1].assessmentSummaries and .[1].summaryRecovery == null' "$TMPDIR/notification-clarification.json" "$TMPDIR/notification-implemented.json"
 worktree=$(jq -er .worktree "$TMPDIR/notification-implemented.json")
 git -C "$worktree" show HEAD | grep -F 'Close disposable test issues after capturing their evidence.'
 
