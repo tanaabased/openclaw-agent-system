@@ -1305,9 +1305,13 @@ for (const scenario of [
                 ? []
                 : [{ eventId: 'd'.repeat(64), result: { outcome: 'done' } }],
             });
-            const entry = await runAction(input, 'feedback');
-            assert.equal(entry.operation, 'implementation-context');
-            assert.equal(entry.decision, undefined);
+            const entry = await runAction(input, 'implementation');
+            assert.deepEqual(entry, {
+              action: 'implementation',
+              operation: 'context',
+              id,
+              scope: 'local',
+            });
             append(input, 'feedback-work-context', {
               status: 'verified',
               worktree: '/tmp/worktree',

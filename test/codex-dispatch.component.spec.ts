@@ -9,6 +9,7 @@ import type { GitHubCanonicalIssueComment } from '../channels/github/provider/co
 import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import codexLiveTurn from '../agent/codex-live-turn.ts';
+import codexImplementationEntry from '../agent/codex-implementation-entry.ts';
 import codexContinuationNative from '../agent/codex-continuation-native.ts';
 import runCodexContinuation, {
   type CodexContinuationDependencies,
@@ -3581,6 +3582,42 @@ describe('agent/codex-dispatch', () => {
         );
         assert.equal(retained.assessmentSummaries?.[0]?.attempt, undefined);
       });
+
+  for (const scope of ['local', 'pull-request'] as const)
+    it(`should route ${scope} entry to the existing codex feedback owner`, async () => {
+      await workIssue();
+      const current = await selectCodexIntake(pluginData, deps);
+      const store = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      await store.exclusive(async (state, save) => {
+        state.records[0]!.progression = {
+          stage: 'implementation',
+          via: 'work',
+          workOwner: 'e'.repeat(64),
+        };
+        await save();
+      });
+      const routed = await codexImplementationEntry(
+        pluginData,
+        { action: 'implementation', operation: 'context', scope },
+        {
+          ...deps,
+          threadId: native!.id,
+          replyConnection: async () => ({
+            request: async () => assert.fail('managed work must not fall back to manual entry'),
+            close: async () => {},
+          }),
+        },
+      );
+      assert.equal(routed.status, 'managed');
+      assert.ok('owner' in routed);
+      assert.deepEqual(routed.owner, {
+        id: (await store.read()).records[0]!.id,
+        eventId: 'e'.repeat(64),
+      });
+    });
 
   it('should compose a retained assessment summary during implementation without requiring the initial checkout', async () => {
     const assessment = { ...result, fullAssessment: 'Complete saved assessment.' };

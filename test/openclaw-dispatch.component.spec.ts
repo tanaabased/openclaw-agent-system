@@ -5754,45 +5754,47 @@ describe('agent/openclaw issue dispatch', () => {
     assert.deepEqual(after.result, before.result);
   });
 
-  it('should reuse the exact approved feedback owner through direct implementation without an extra decision', async () => {
-    const { id, comments } = await feedbackOwner(false);
-    comments[0]!.body = '@receiver Please implement the agreed plan.';
-    consumeSend = true;
-    await service.check(manifest, root);
-    await service.run(manifest, root, coordinator, { action: 'reconcile', id });
-    await service.run(manifest, root, coordinator, { action: 'next' });
-    const before = await record();
-    const event = before.feedback!.events[0]!;
-    assert.ok(event.turn);
-    const who = assessor(id, event.turn.runId);
-    const request = {
-      action: 'feedback' as const,
-      operation: 'implementation-context' as const,
-      id,
-      eventId: event.id,
-    };
-    await assert.rejects(
-      service.run(manifest, root, { ...who, runId: 'unbound-native-owner' }, request, true),
-      /feedback-owner-caller-required/,
-    );
-    const result = await service.run(
-      manifest,
-      root,
-      who,
-      { action: 'implementation', operation: 'context', id },
-      false,
-    );
-    assert.equal(result.status, 'verified');
-    const after = await record();
-    assert.equal(after.progression?.stage, 'implementation');
-    assert.equal(after.progression?.via, 'operator');
-    assert.equal(after.progression?.workOwner, event.id);
-    assert.equal(after.feedback!.events[0]!.work!.decision, undefined);
-    assert.deepEqual(after.result, before.result);
-    assert.equal(after.threadId, before.threadId);
-    assert.equal(after.worktree, before.worktree);
-    assert.equal(creates().length, 1);
-  });
+  for (const scope of [undefined, 'local', 'pull-request'] as const)
+    it(`should reuse the exact approved feedback owner through direct implementation with ${scope ?? 'retained'} scope`, async () => {
+      const { id, comments } = await feedbackOwner(false);
+      comments[0]!.body = '@receiver Please implement the agreed plan.';
+      consumeSend = true;
+      await service.check(manifest, root);
+      await service.run(manifest, root, coordinator, { action: 'reconcile', id });
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      const before = await record();
+      const event = before.feedback!.events[0]!;
+      assert.ok(event.turn);
+      const who = assessor(id, event.turn.runId);
+      const request = {
+        action: 'feedback' as const,
+        operation: 'implementation-context' as const,
+        id,
+        eventId: event.id,
+      };
+      await assert.rejects(
+        service.run(manifest, root, { ...who, runId: 'unbound-native-owner' }, request, true),
+        /feedback-owner-caller-required/,
+      );
+      const result = await service.run(
+        manifest,
+        root,
+        who,
+        { action: 'implementation', operation: 'context', id, scope },
+        false,
+      );
+      assert.equal(result.status, 'verified');
+      const after = await record();
+      assert.equal(after.progression?.stage, 'implementation');
+      assert.equal(after.progression?.via, 'operator');
+      assert.equal(after.progression?.workOwner, event.id);
+      assert.equal(after.work?.scope, before.work?.scope);
+      assert.equal(after.feedback!.events[0]!.work!.decision, undefined);
+      assert.deepEqual(after.result, before.result);
+      assert.equal(after.threadId, before.threadId);
+      assert.equal(after.worktree, before.worktree);
+      assert.equal(creates().length, 1);
+    });
 
   it('should preserve a publication-only request without promoting implementation', async () => {
     const { id, who } = await operatorFollowup();
