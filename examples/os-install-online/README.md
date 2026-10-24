@@ -35,7 +35,7 @@ git -C "$GITHUB_WORKSPACE" rev-parse HEAD | tee "$TMPDIR/online-agent-system-rev
 chmod +x "$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider/gh"
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service
 export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider:$PATH"
-openclaw plugins install --link "$GITHUB_WORKSPACE/examples/os-install-online/reload-plugin"
+openclaw plugins install --link --force "$GITHUB_WORKSPACE/examples/os-install-online/reload-plugin"
 openclaw config set cron.enabled false --strict-json
 AGENT_SYSTEM_TEST_RELOAD_DIR="$TMPDIR/controlled-reload" openclaw-gateway start --debug
 gateway_log=$(openclaw-gateway log-path)
