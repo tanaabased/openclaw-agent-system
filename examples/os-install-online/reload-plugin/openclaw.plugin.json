@@ -1,9 +1,0 @@
-{
-  "id": "enrollment-reload-fixture",
-  "name": "Enrollment Reload Fixture",
-  "configSchema": {
-    "type": "object",
-    "additionalProperties": false,
-    "properties": { "slow": { "type": "boolean" } }
-  }
-}
