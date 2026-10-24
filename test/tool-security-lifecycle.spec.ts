@@ -65,7 +65,7 @@ describe('api/security-lifecycle', () => {
     const findings = await inspect({
       agents: {
         defaults: { sandbox: { mode: 'all', scope: 'agent' } },
-        list: [{ id: 'emori', tools: { exec: { host: 'gateway' } } }],
+        entries: { emori: { tools: { exec: { host: 'gateway' } } } },
       },
       tools: { elevated: { enabled: false } },
     });

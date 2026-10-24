@@ -130,6 +130,37 @@ describe('github readiness channel', () => {
     assert.deepEqual(config.bindings, originalBindings);
   });
 
+  it('should inspect saved account configuration without loading runtime readiness', () => {
+    const unavailable = async (): Promise<never> => {
+      throw Error('runtime inspection must not run');
+    };
+    const channel = createGitHubStatusChannel({
+      manifestService: { loadForAgentId: unavailable },
+      intake: { inspect: unavailable },
+      automationReadiness: unavailable,
+    });
+    const config: OpenClawConfig = {
+      channels: {
+        [githubChannelId]: {
+          accounts: { receiver: { enabled: true }, retired: { enabled: false } },
+        },
+      },
+    };
+    for (const [accountId, enabled, configured] of [
+      ['receiver', true, true],
+      ['retired', false, true],
+      ['missing', false, false],
+    ] as const) {
+      assert.deepEqual(channel.config.inspectAccount!(config, accountId), {
+        accountId,
+        enabled,
+        configured,
+        name: accountId,
+        mode: 'readiness',
+      });
+    }
+  });
+
   it('should report readiness, drift and failures without starting a transport or exposing errors', async () => {
     const value = manifest();
     let automation: string | undefined;

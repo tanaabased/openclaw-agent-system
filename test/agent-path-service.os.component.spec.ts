@@ -90,13 +90,12 @@ describe('paths/service', () => {
     ]);
     const config: OpenClawConfig = {
       agents: {
-        list: [
-          {
-            id: 'data',
+        entries: {
+          data: {
             workspace: workspaceDir,
             tools: { exec: { pathPrepend: ['/old/package/bin', '/user/bin'] } },
           },
-        ],
+        },
       },
     };
     const service = new AgentPathService({
@@ -125,7 +124,7 @@ describe('paths/service', () => {
       workspaceDir,
     });
 
-    assert.deepEqual(config.agents?.list?.[0]?.tools?.exec?.pathPrepend, [
+    assert.deepEqual(config.agents?.entries?.data?.tools?.exec?.pathPrepend, [
       ...result.projection.entries.map(({ path }) => path),
       '/user/bin',
     ]);
@@ -137,7 +136,7 @@ describe('paths/service', () => {
     const packageDir = join(root, 'package');
     await Promise.all([mkdir(workspaceDir), mkdir(join(packageDir, 'bin'), { recursive: true })]);
     const config: OpenClawConfig = {
-      agents: { list: [{ id: 'data', workspace: workspaceDir }] },
+      agents: { entries: { data: { workspace: workspaceDir } } },
     };
     let stored: StoredPathProjection | undefined;
     const codexConfigService = new CodexPathConfigService();
@@ -183,7 +182,7 @@ describe('paths/service', () => {
     const packageDir = join(root, 'package');
     await Promise.all([mkdir(workspaceDir), mkdir(join(packageDir, 'bin'), { recursive: true })]);
     const config: OpenClawConfig = {
-      agents: { list: [{ id: 'data', workspace: workspaceDir }] },
+      agents: { entries: { data: { workspace: workspaceDir } } },
     };
     let stored: StoredPathProjection | undefined;
     const dependencies = {
