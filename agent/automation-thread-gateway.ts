@@ -1,15 +1,12 @@
 import { realpath } from 'node:fs/promises';
-import { setTimeout } from 'node:timers/promises';
 
 import { AutomationError, nativeObject, type AutomationGateway } from './automation-gateway.ts';
-import { automationHash } from './automation-hash.ts';
 import type { AutomationThreadAdapter } from './automation-threads.ts';
 
 /** operator-only native session transport. never inspect or edit the Gateway's private stores. */
 export default function automationThreadGateway(
   request: AutomationGateway,
   context: { agentId: string; workspaceDir: string; scope: string },
-  sleep: (ms: number) => Promise<unknown> = setTimeout,
 ): AutomationThreadAdapter {
   async function lookup(id: string) {
     let resolved = await request('sessions.resolve', {
@@ -80,27 +77,13 @@ export default function automationThreadGateway(
         record.nativeId ??
         `agent:${context.agentId}:automation:${context.scope}:${record.key}${record.generation ? `:${record.generation}` : ''}`;
       if (!record.nativeId) await saveId(key);
-      const params = { key, agentId: context.agentId, cwd: context.workspaceDir };
-      // the native key and idempotency receipt remain fixed across readiness retries.
-      const idempotencyKey = automationHash(params);
-      for (let attempt = 0; ; attempt += 1) {
-        if (await lookup(key)) return key;
-        try {
-          await request('sessions.create', { ...params, idempotencyKey });
-          return key;
-        } catch (error) {
-          // retry only a completed temporary rejection; a lost response remains uncertain.
-          if (
-            attempt >= 2 ||
-            !(error instanceof AutomationError) ||
-            error.diagnostic?.method !== 'sessions.create' ||
-            error.diagnostic.category !== 'rejected' ||
-            error.diagnostic.gatewayCode !== 'UNAVAILABLE'
-          )
-            throw error;
-          await sleep(1000 * (attempt + 1));
-        }
-      }
+      if (!(await lookup(key)))
+        await request('sessions.create', {
+          key,
+          agentId: context.agentId,
+          cwd: context.workspaceDir,
+        });
+      return key;
     },
     async setGroup(id, group) {
       const current = await lookup(id);

@@ -596,7 +596,7 @@ describe('agent/automation-service', () => {
         return sessions.has(key) ? { ok: true, key, agentId: 'tanaabot' } : { ok: false };
       if (method === 'sessions.list') return { sessions: [...sessions.values()] };
       if (method === 'sessions.create') {
-        assert.match(String(params.idempotencyKey), /^[a-f0-9]{64}$/u);
+        assert.equal(Object.hasOwn(params, 'idempotencyKey'), false);
         assert.equal(params.agentId, 'tanaabot');
         assert.equal(params.cwd, root);
         assert.match(key, /^agent:tanaabot:automation:/u);
