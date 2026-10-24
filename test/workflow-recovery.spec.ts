@@ -4,6 +4,12 @@ import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { intakeRemediation } from '../channels/github/intake/record-store.ts';
 
 describe('agent/workflow-recovery', () => {
+  it('should explain how to recover from a malformed dispatch receipt id', () => {
+    const recovery = workflowRecovery('dispatch-receipt-id-invalid')!;
+    assert.match(recovery.summary, /not looked up/);
+    assert.match(recovery.next, /exact receipt ID from verified workflow context/);
+    assert.match(recovery.next, /Do not guess/);
+  });
   it('should explain pre-reset restoration without authorizing replay or deletion', () => {
     const recovery = workflowRecovery('notification-state-reset-required')!;
     assert.match(recovery.summary, /no workflow was resumed/);

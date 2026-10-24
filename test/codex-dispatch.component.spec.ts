@@ -299,6 +299,23 @@ describe('agent/codex-dispatch', () => {
     return { store, client, comments };
   }
 
+  it('should reject malformed receipt ids without changing state and preserve lookup behavior', async () => {
+    const prepared = await prepare();
+    created();
+    const child = { threadId: 'issue-thread' };
+    const before = await request('inspect');
+    await assert.rejects(
+      request('context', { id: 'x'.repeat(100) }, child),
+      /dispatch-receipt-id-invalid/,
+    );
+    assert.deepEqual(await request('inspect'), before);
+    await assert.rejects(
+      request('context', { id: 'a'.repeat(64) }, child),
+      /dispatch-receipt-missing/,
+    );
+    assert.equal((await request('context', { id: prepared.id }, child)).status, 'verified');
+  });
+
   it('should prepare and reconcile without claims or creating installation state', async () => {
     const prepared = await prepare();
     created();

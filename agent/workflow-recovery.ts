@@ -19,6 +19,10 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     };
   }
   const reasons: Record<string, [string, string]> = {
+    'dispatch-receipt-id-invalid': [
+      'The supplied receipt ID is malformed, so it was not looked up or used to change workflow state.',
+      'Copy the exact receipt ID from verified workflow context and retry. Do not guess, correct, reset, or recreate the workflow.',
+    ],
     'codex-branch-owner-required': [
       'This assignment has no verified ownership record for its current branch.',
       'Preserve all files and commits. Resume a clean detached checkout at the retained starting commit through implementation context, or reconcile an existing delivery receipt with its original issue chat. A same-issue branch name or historical comment cannot establish ownership.',

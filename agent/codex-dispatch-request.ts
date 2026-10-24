@@ -3,7 +3,7 @@ import { Value } from 'typebox/value';
 import { assessmentSummaryRequestProperties } from './assessment-summary-state.ts';
 import { assessmentSchema } from './model-routing.ts';
 
-const id = Type.String();
+const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const digest = Type.Optional(Type.String());
 const object = (properties: Parameters<typeof Type.Object>[0]) =>
   Type.Object(properties, { additionalProperties: false });
@@ -38,12 +38,33 @@ const schemas = {
   }),
 };
 export type DispatchAction = keyof typeof schemas;
+const receiptIdActions = new Set<DispatchAction>([
+  'handoff',
+  'reset',
+  'retire',
+  'retry-denied',
+  'prepare',
+  'reconcile',
+  'context',
+  'present',
+  'summary',
+  'result',
+]);
+const receiptIdPattern = /^[a-f0-9]{64}$/u;
 
 /** Validate the command envelope once; resource and result validation remain with their owners. */
 export default function validateDispatchRequest(
   action: string,
   input: unknown,
 ): asserts input is Record<string, unknown> {
-  if (!Object.hasOwn(schemas, action) || !Value.Check(schemas[action as DispatchAction], input))
+  if (!Object.hasOwn(schemas, action)) throw new Error('dispatch-request-invalid');
+  const request = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+  if (
+    receiptIdActions.has(action as DispatchAction) &&
+    Object.hasOwn(request, 'id') &&
+    (typeof request.id !== 'string' || !receiptIdPattern.test(request.id))
+  )
+    throw new Error('dispatch-receipt-id-invalid');
+  if (!Value.Check(schemas[action as DispatchAction], input))
     throw new Error('dispatch-request-invalid');
 }
