@@ -12,6 +12,8 @@ export interface SessionDispatchDiagnostic {
 const diagnostics = {
   unknown: { category: 'unknown', phase: 'unknown' },
   'enrollment-deadline': { category: 'timeout', phase: 'unknown' },
+  'gateway-readiness-deadline': { category: 'timeout', phase: 'connection' },
+  'gateway-reload-failed': { category: 'gateway-rejected', phase: 'connection' },
   'connect-request-timeout': { category: 'timeout', phase: 'handshake' },
   'connect-unsent-timeout': { category: 'timeout', phase: 'unknown' },
   'connection-refused': { category: 'transport', phase: 'connection' },

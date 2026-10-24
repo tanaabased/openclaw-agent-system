@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   GatewayClientRequestError,
   GatewayClientRequestTimeoutError,
+  type EventLoopReadyOptions,
+  type EventLoopReadyResult,
   type GatewayClientOptions,
 } from '@openclaw/gateway-client';
 
@@ -20,6 +22,13 @@ function connectionFixture(
   start: (options: GatewayClientOptions, deadline: () => void) => void,
   authority: DispatchAuthority = {},
   shutdownFails = false,
+  waitForGateway: (options: EventLoopReadyOptions) => Promise<EventLoopReadyResult> = async () => ({
+    ready: true,
+    elapsedMs: 0,
+    maxDriftMs: 0,
+    checks: 1,
+    aborted: false,
+  }),
 ) {
   const calls: string[] = [];
   let deadline = () => {};
@@ -34,6 +43,7 @@ function connectionFixture(
   };
   return {
     calls,
+    expire: () => deadline(),
     run: () =>
       useSessionDispatchClient(
         {},
@@ -45,6 +55,7 @@ function connectionFixture(
           return 'ready';
         },
         {
+          waitForGateway: (_port, _authority, options) => waitForGateway(options),
           createClient(options) {
             assert.deepEqual(options.env, {});
             assert.equal(options.deviceToken, record.token);
@@ -67,7 +78,7 @@ function connectionFixture(
             };
           },
           scheduleDeadline(callback, milliseconds) {
-            assert.equal(milliseconds, 12_000);
+            assert.equal(milliseconds, authority.waitForGateway ? 30_000 : 12_000);
             deadline = callback;
             return () => {
               calls.push('clear-deadline');
@@ -79,6 +90,116 @@ function connectionFixture(
 }
 
 describe('credentials/session-dispatch-client', () => {
+  it('should leave retryable install transport recovery to the sdk without ignoring gateway rejection', async () => {
+    for (const install of [false, true]) {
+      for (const rejection of [false, true]) {
+        const f = connectionFixture(
+          (options) => {
+            options.onConnectError!(
+              rejection
+                ? new GatewayClientRequestError({ code: 'FORBIDDEN', message: 'private-token' })
+                : Object.assign(new Error('private-token'), { code: 'ECONNRESET' }),
+            );
+            options.onHelloOk!({ auth: { scopes: [] } } as unknown as Parameters<
+              NonNullable<GatewayClientOptions['onHelloOk']>
+            >[0]);
+          },
+          { waitForGateway: install },
+        );
+        if (install && !rejection) assert.equal(await f.run(), 'ready');
+        else await assert.rejects(f.run());
+        assert.equal(f.calls.filter((call) => call === 'start').length, 1);
+        assert.equal(f.calls.includes('operation'), install && !rejection);
+        assert.equal(f.calls.at(-1), 'shutdown');
+      }
+    }
+  });
+
+  it('should cancel an outstanding readiness probe on deadline or operator cancellation before starting the client', async () => {
+    for (const cancel of [false, true]) {
+      const controller = new AbortController();
+      const entered = Promise.withResolvers<void>();
+      let probeSignal: AbortSignal | undefined;
+      const f = connectionFixture(
+        () => assert.fail('client must not start'),
+        { waitForGateway: true, signal: controller.signal },
+        false,
+        (options) =>
+          new Promise((_resolve, reject) => {
+            probeSignal = options.signal;
+            options.signal!.addEventListener('abort', () => reject(new Error('probe-aborted')), {
+              once: true,
+            });
+            entered.resolve();
+          }),
+      );
+      const pending = f.run();
+      await entered.promise;
+      const failure = new Error('operator-cancelled');
+      if (cancel) controller.abort(failure);
+      else f.expire();
+      await assert.rejects(pending, (error: unknown) => {
+        if (cancel) return error === failure;
+        assert.ok(error instanceof Error && 'sessionDispatchDiagnostic' in error);
+        assert.deepEqual(error.sessionDispatchDiagnostic, {
+          category: 'timeout',
+          phase: 'connection',
+          reasonCode: 'gateway-readiness-deadline',
+        });
+        return true;
+      });
+      assert.equal(probeSignal?.aborted, true);
+      assert.ok(!f.calls.includes('start'));
+      assert.ok(!f.calls.includes('operation'));
+      assert.equal(f.calls.at(-1), 'shutdown');
+    }
+  });
+
+  it('should allow install verification to finish when a reload delays hello past twelve seconds', async () => {
+    let deadlineMs = 0;
+    let expire = () => {};
+    const result = await useSessionDispatchClient(
+      {},
+      {
+        version: 1,
+        device: { deviceId: 'a'.repeat(64), publicKeyPem: 'fixture', privateKeyPem: 'fixture' },
+        token: 'retained-device',
+      },
+      false,
+      { waitForGateway: true },
+      async () => 'verified',
+      {
+        async waitForGateway() {
+          return { ready: true, elapsedMs: 0, maxDriftMs: 0, checks: 1, aborted: false };
+        },
+        createClient(options) {
+          assert.equal(options.deviceToken, 'retained-device');
+          return {
+            start() {
+              // a reload starts after the readiness observation and delays hello until 14s.
+              if (deadlineMs <= 14_000) expire();
+              else
+                options.onHelloOk!({ auth: { scopes: [] } } as unknown as Parameters<
+                  NonNullable<GatewayClientOptions['onHelloOk']>
+                >[0]);
+            },
+            stop() {},
+            async stopAndWait() {},
+            async request<T>() {
+              return undefined as T;
+            },
+          };
+        },
+        scheduleDeadline(callback, milliseconds) {
+          deadlineMs = milliseconds;
+          expire = callback;
+          return () => {};
+        },
+      },
+    );
+    assert.equal(result, 'verified');
+  });
+
   for (const deadline of [false, true]) {
     it(`should retain safe connection evidence from the ${deadline ? 'deadline' : 'callback'}`, async () => {
       const f = connectionFixture((options, expire) => {

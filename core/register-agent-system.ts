@@ -113,6 +113,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   const privateStateRoot = resolveFileCredentialStoreRoot(process.env);
   const readConfig = readFreshRuntimeConfig;
   const sessionDispatch = createSessionDispatchCredential({
+    logger: lifecycleLogger,
     stateDir: api.runtime.state.resolveStateDir(),
     readConfig,
   });

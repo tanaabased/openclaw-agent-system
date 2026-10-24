@@ -710,7 +710,14 @@ the available evidence cannot establish that detail. For connectivity failures,
 check Gateway availability before rerunning Install to resume the retained identity;
 a connection failure alone does not authorize replacement. Gateway rejection or
 pending pairing still requires its specific recovery action, including approval
-of the exact device request when present. Install does not retry automatically.
+of the exact device request when present. Each Install enrollment connection allows
+up to 30 seconds for Gateway startup, plugin reload, and device authentication,
+followed by bounded connection cleanup. It waits only for startup/reload activity,
+not unrelated channel health, and lets the native client reconnect transient
+transport failures within that budget. Authentication rejection is not retried.
+`gateway-readiness-deadline` identifies an exhausted readiness wait;
+`gateway-reload-failed` identifies terminal plugin replacement failure. Doctor and
+ordinary workflow connections keep their existing timeout behavior.
 
 If reconciliation fails, install exits nonzero and reports completed outcomes,
 the blocking component, and unattempted work. Earlier changes remain applied;

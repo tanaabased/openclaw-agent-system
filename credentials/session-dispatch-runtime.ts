@@ -12,14 +12,17 @@ import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
 import connectSessionDispatch, { useSessionDispatchClient } from './session-dispatch-client.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import KeychainCredentialStore from './keychain-store.ts';
+import type { Logger } from '../core/logger.ts';
 import SecretServiceCredentialStore from './secret-service-store.ts';
 import SessionDispatchCredential from './session-dispatch.ts';
+import { classifySessionDispatchFailure } from './session-dispatch-diagnostic.ts';
 import { sessionDispatchScopes } from '../agent/session-dispatch-requirements.ts';
 
 /** share one protected service identity across registrations and processes for this gateway. */
 export default function createSessionDispatchCredential(options: {
   stateDir: string;
   readConfig(): OpenClawConfig | Promise<OpenClawConfig>;
+  logger?: Pick<Logger, 'debug'>;
 }) {
   const stateDir = resolve(options.stateDir);
   const scope = createHash('sha256').update(stateDir).digest('hex');
@@ -75,7 +78,30 @@ export default function createSessionDispatchCredential(options: {
         authority,
         (request, hello) => operation(request, hello.scopes),
       ),
-    connect: async (record, bootstrap, authority) =>
-      connectSessionDispatch(await options.readConfig(), record, bootstrap, authority),
+    async connect(record, bootstrap, authority) {
+      const started = performance.now();
+      const facts = {
+        authentication: bootstrap ? 'bootstrap' : 'device',
+        install: !!authority.waitForGateway,
+      };
+      options.logger?.debug?.(`session dispatch connection started: ${JSON.stringify(facts)}`);
+      try {
+        const result = await connectSessionDispatch(
+          await options.readConfig(),
+          record,
+          bootstrap,
+          authority,
+        );
+        options.logger?.debug?.(
+          `session dispatch connection verified: ${JSON.stringify({ ...facts, elapsedMs: Math.round(performance.now() - started) })}`,
+        );
+        return result;
+      } catch (error) {
+        options.logger?.debug?.(
+          `session dispatch connection failed: ${JSON.stringify({ ...facts, elapsedMs: Math.round(performance.now() - started), diagnostic: classifySessionDispatchFailure(error) })}`,
+        );
+        throw error;
+      }
+    },
   });
 }

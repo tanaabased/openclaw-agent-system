@@ -38,6 +38,7 @@ const recordSchema = Type.Object(
 
 export type DispatchCredential = Static<typeof recordSchema>;
 export interface DispatchAuthority {
+  waitForGateway?: boolean;
   signal?: AbortSignal;
   assertCurrent?(): Promise<void>;
   assertEnrollmentCurrent?(): void;
@@ -96,7 +97,7 @@ export default class SessionDispatchCredential {
     return (await this.inspect()).code === 'session-dispatch-credential-revoked';
   }
 
-  async inspect() {
+  async inspect(authority: DispatchAuthority = {}) {
     const record = await this.read();
     if (!record)
       return {
@@ -125,9 +126,12 @@ export default class SessionDispatchCredential {
           'Remove this device in Devices, then rerun Install with enrollment consent to replace the retained identity.',
       };
     try {
-      const connected = await this.dependencies.connect(record, false, {});
+      const connected = await this.dependencies.connect(record, false, authority);
       this.verifyScopes(connected.scopes);
     } catch (error) {
+      authority.signal?.throwIfAborted();
+      authority.assertEnrollmentCurrent?.();
+      await authority.assertCurrent?.();
       const sessionDispatchDiagnostic = classifySessionDispatchFailure(error);
       return {
         sessionDispatchDiagnostic,
@@ -157,10 +161,16 @@ export default class SessionDispatchCredential {
         await authority.assertCurrent?.();
         assertCurrent();
       };
+      const connectionAuthority: DispatchAuthority = {
+        ...authority,
+        waitForGateway: true,
+        assertCurrent: guard,
+        assertEnrollmentCurrent: assertCurrent,
+      };
       await guard();
       let record = await this.read();
       if (record?.token) {
-        const finding = await this.inspect();
+        const finding = await this.inspect(connectionAuthority);
         await guard();
         if (
           finding.code === 'session-dispatch-credential-revoked' &&
@@ -242,7 +252,7 @@ export default class SessionDispatchCredential {
       await guard();
       let connected;
       try {
-        connected = await this.dependencies.connect(record, true, authority);
+        connected = await this.dependencies.connect(record, true, connectionAuthority);
       } catch (error) {
         await guard();
         const pairing = await this.dependencies.pairing(record.device.deviceId);
@@ -269,7 +279,7 @@ export default class SessionDispatchCredential {
       delete record.bootstrap;
       await guard();
       await this.write(record);
-      const finding = await this.inspect();
+      const finding = await this.inspect(connectionAuthority);
       await guard();
       if (finding.status !== 'healthy')
         dispatchCredentialError(finding.code, finding.message, finding.sessionDispatchDiagnostic);
