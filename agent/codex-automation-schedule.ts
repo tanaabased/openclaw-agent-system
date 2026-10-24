@@ -1,16 +1,24 @@
 import { CodexAutomationError } from './codex-automation-state.ts';
-import codexAutomationUtc from './codex-automation-utc.ts';
 import type { AutomationSchedule } from '../manifest/automation-schedule.ts';
 
-/** compile only one-job recurrences with demonstrated native equivalents. */
+/** map shared schedules to native recurrences; codex owns clock and dst behavior. */
 export default function codexAutomationSchedule(
   schedule: AutomationSchedule,
-  year?: number,
+  previous?: string,
+  now = new Date(),
 ): string {
   const rule = compile(schedule);
   if (schedule.kind !== 'cron' || schedule.timezone === null) return rule;
-  if (schedule.timezone === 'UTC') return `DTSTART:19700101T000000Z\nRRULE:${rule};BYSECOND=0`;
-  return codexAutomationUtc(schedule, year);
+  // retain the owned anchor; a new one starts in the past in every named zone.
+  // old epoch anchors make the native hourly evaluator walk decades of occurrences.
+  const anchor =
+    /^DTSTART(?:;TZID=[^:\r\n]+)?:([0-9]{8}T[0-9]{6})Z?(?:\r?\n|$)/u.exec(previous ?? '')?.[1] ??
+    `${new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10).replaceAll('-', '')}T000000`;
+  const start =
+    schedule.timezone === 'UTC'
+      ? `DTSTART:${anchor}Z`
+      : `DTSTART;TZID=${schedule.timezone}:${anchor}`;
+  return `${start}\nRRULE:${rule};BYSECOND=0`;
 }
 
 function compile(schedule: AutomationSchedule): string {

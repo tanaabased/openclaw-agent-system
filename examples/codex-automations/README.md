@@ -16,7 +16,7 @@ Plan automation reconciliation through the packaged Codex runtime, create native
 
 ## Notes
 
-- The named-zone declaration compiles to repeating UTC rules without an expiry or background refresh. Native review is required before saving that schedule.
+- The named-zone declaration maps to a native timezone-qualified recurrence. Native review is required before saving it; native timing limitations are documented in [Codex automations](../../CODEX.md#repository-automations).
 - Lookup inventories are explicit fixtures. `list` and `sync` inspect or plan native app actions; they do not write scheduler files. `threads-sync` creates/resumes real conversations through `codex app-server` under installation authorization and a fresh digest.
 - Native readback checks `auto_review`, `on-request`, and `workspace-write`. No model generation or provider credentials are used; run only in GitHub Actions.
 - Pending relocation: prepare/cancel retains a pending journal until verification and permits cancellation only while the failed target is unchanged. Pending creates also require no new native IDs; an unmarked job may be a partial create.
@@ -47,7 +47,7 @@ node "$runtime" binding bind --plugin-data "$root/automation-data" --workspace "
 jq -n --arg workspace "$workspace" '{projects:{schemaVersion:2,projects:[{projectId:"fixture-project",projectKind:"local",hostId:"local",path:$workspace}]}}' > "$root/automation-input.json"
 node "$runtime" automations plan --plugin-data "$root/automation-data" < "$root/automation-input.json" \
   | tee "$root/automation-plan.json" \
-  | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create" and .actions[0].review == true and (.actions[0].expected.rrule | startswith("DTSTART:19700101T000000Z")) and .actions[0].expected.projectId == "fixture-project" and .actions[0].expected.status == "PAUSED"'
+  | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create" and .actions[0].review == true and (.actions[0].expected.rrule | startswith("DTSTART;TZID=America/New_York:")) and .actions[0].expected.projectId == "fixture-project" and .actions[0].expected.status == "PAUSED"'
 node "$runtime" setup install --plugin-data "$root/automation-data" \
   | jq -e '.status == "requires-native-app-sync"'
 test ! -d "$CODEX_HOME/automations"

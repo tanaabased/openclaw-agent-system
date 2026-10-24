@@ -622,17 +622,21 @@ schedules. Codex supports this subset:
 | `prompt`, `payload`                               | Recurring prompts, including prompts asking a model to run a script.                                                                                                                                                                                                                                        |
 | `run`                                             | Zero-model commands are unsupported, including `payload.kind: command`.                                                                                                                                                                                                                                     |
 | `schedule`                                        | Whole-minute intervals from 1 to 1440 or whole-hour intervals from 1 to 999. Cron supports one minute every hour, or one daily time with daily, weekday, or month-day selection across all months. Multiple-job expressions and unsupported day-field combinations are rejected; one-shots are unsupported. |
-| `schedule.timezone`                               | Omit or use `null` for local time. Named zones compile to repeating UTC rules for one daily clock time with daily, weekday, or month-day selection. UTC also supports hourly cron. `native` is not accepted.                                                                                                |
+| `schedule.timezone`                               | Omit or use `null` for native local time. Named IANA zones map directly to native `DTSTART;TZID=…` recurrence rules; UTC uses a UTC start. Available for every supported cron shape, including hourly. `native` is not accepted.                                                                            |
 | `thread`                                          | Creates a persistent conversation per automation. Explicit model and effort overrides set initial native chat settings; later drift requires the native chat controls.                                                                                                                                      |
 | `timeout-seconds`                                 | Unsupported. Native timeout, concurrency, retry, and catch-up rules apply.                                                                                                                                                                                                                                  |
 
-Named-zone schedules preserve the zone’s current DST rules without an expiry or
-background refresh. Creation and schedule edits require saving the native review
-card; a proposal alone is not a synced automation. Unrelated edits preserve the
-saved recurrence. Resync after timezone-rule changes to project the updated rules.
-Calendars that cannot be represented by recurring UTC predicates, including
-irregular non-Gregorian DST patterns, return
-`automation-timezone-recurrence-unsupported` instead of an approximate schedule.
+Zoned creation and schedule edits require saving the native review card; a proposal
+alone is not a synced automation. Unrelated edits preserve the saved recurrence.
+Codex owns timezone evaluation, DST, and missed-run behavior. The adapter does not
+expand calendars or translate named-zone clock times into UTC.
+
+**Native timezone limitation:** in desktop version 26.1021.22027 (21747), the
+inspected named-zone recurrence calculation depends on the scheduler host’s
+timezone and can produce the wrong wall-clock time. Saving and retaining a zone
+does not establish correct execution timing. This adapter preserves the requested
+zone without compensating for that native defect or promising OpenClaw-identical
+DST behavior.
 
 Missing or ambiguous projects block planning; worktree bindings do not select the
 parent checkout. Chat targets require a fresh native exact-chat read with active,

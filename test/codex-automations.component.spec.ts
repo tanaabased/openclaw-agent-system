@@ -38,24 +38,20 @@ const rejectsCode = (code: string) => (error: unknown) =>
   !!error && typeof error === 'object' && 'code' in error && error.code === code;
 
 describe('agent/codex-automation-native-contract', () => {
-  it('should preserve the reviewed utc recurrence through native saved-state parsing', async () => {
-    const captured = JSON.parse(await capture('utc'));
-    const id = 'agent-system-424-utc-conversion-fixture';
-    const created = parseSavedAutomation(captured.create.saved, id);
-    const updated = parseSavedAutomation(captured.update.saved, id);
-    assert.equal(created.definition.status, 'PAUSED');
+  it('should preserve the reviewed native timezone and schedule edits through saved-state parsing', async () => {
+    const captured = JSON.parse(await capture('timezone'));
+    const id = 'agent-system-424-timezone-fixture';
+    const unrelated = parseSavedAutomation(captured.unrelatedEdit, id);
+    const updated = parseSavedAutomation(captured.scheduleEdit, id);
+    assert.equal(unrelated.definition.status, 'PAUSED');
+    assert.equal(updated.definition.status, 'PAUSED');
     assert.equal(
-      created.definition.rrule,
-      codexAutomationSchedule(
-        normalizeAutomationSchedule(captured.declaration),
-        captured.referenceYear,
-      ),
+      unrelated.definition.rrule,
+      'DTSTART;TZID=America/New_York:20261024T080000\nRRULE:FREQ=DAILY;BYHOUR=8;BYMINUTE=0;BYSECOND=0',
     );
-    assert.equal(updated.definition.rrule, created.definition.rrule);
-    assert.equal(parseAutomationReceipt(captured.update.response, 'update'), id);
-    assert.throws(
-      () => parseAutomationReceipt(captured.create.response, 'create'),
-      rejectsCode('automation-native-receipt-missing'),
+    assert.equal(
+      updated.definition.rrule,
+      unrelated.definition.rrule.replace('BYHOUR=8', 'BYHOUR=9'),
     );
   });
   it('should consume the reviewed scheduled execution capture through native parsers', async () => {
@@ -229,8 +225,8 @@ describe('agent/codex-automations', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it('should keep reviewed utc schedules pending until saved and reuse their native identity', async () => {
-    const zoned = (zone = 'UTC', hour = 8) =>
+  it('should keep reviewed zoned schedules pending until saved and reuse their native identity', async () => {
+    const zoned = (zone = 'Europe/London', hour = 8) =>
       job().replace('every 1 hour', `{ cron: "0 ${hour} * * *", timezone: "${zone}" }`);
     await manifest(zoned());
     const first = await inspect();
