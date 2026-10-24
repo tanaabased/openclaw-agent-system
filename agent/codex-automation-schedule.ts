@@ -12,8 +12,7 @@ export default function codexAutomationSchedule(schedule: AutomationSchedule): s
     return `FREQ=${unit === 3600 ? 'HOURLY' : 'MINUTELY'};INTERVAL=${interval}`;
   }
   if (schedule.kind !== 'cron') throw new CodexAutomationError('automation-one-shot-unsupported');
-  if (schedule.timezone !== 'native')
-    throw new CodexAutomationError('automation-timezone-unsupported');
+  if (schedule.timezone !== null) throw new CodexAutomationError('automation-timezone-unsupported');
   const f = schedule.fields;
   if (f.months.length !== 12 || f.minutes.length !== 1 || (!f.dayWildcard && !f.weekdayWildcard)) {
     throw new CodexAutomationError('automation-schedule-unsupported');

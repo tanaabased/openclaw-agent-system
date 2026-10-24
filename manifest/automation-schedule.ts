@@ -12,7 +12,7 @@ export interface AutomationCronFields {
 export type AutomationSchedule = (
   | { kind: 'every' | 'in'; seconds: number }
   | { kind: 'at'; at: string }
-  | { kind: 'cron'; fields: AutomationCronFields; timezone: string }
+  | { kind: 'cron'; fields: AutomationCronFields; timezone: string | null }
 ) & { missedRun: 'native' };
 
 function invalid(): never {
@@ -87,7 +87,10 @@ function cronField(
   return { values: [...values].sort((a, b) => a - b), wildcard };
 }
 
-function cron(source: string, timezone: string): Extract<AutomationSchedule, { kind: 'cron' }> {
+function cron(
+  source: string,
+  timezone: string | null,
+): Extract<AutomationSchedule, { kind: 'cron' }> {
   const parts = source.split(' ');
   if (parts.length !== 5) return invalid();
   const minute = cronField(parts[0]!, 0, 59),
@@ -95,7 +98,7 @@ function cron(source: string, timezone: string): Extract<AutomationSchedule, { k
   const day = cronField(parts[2]!, 1, 31),
     month = cronField(parts[3]!, 1, 12),
     weekday = cronField(parts[4]!, 0, 6);
-  if (timezone !== 'native') {
+  if (timezone !== null) {
     // intl also accepts fixed offsets; the manifest contract accepts named iana zones only.
     if (/^[+-]/u.test(timezone)) return invalid();
     try {
@@ -138,7 +141,7 @@ export default function normalizeAutomationSchedule(value: unknown): AutomationS
     if (source.startsWith('in '))
       return { kind: 'in', seconds: duration(source.slice(3)), missedRun: 'native' };
     if (/^\d{4}-/u.test(source)) return { kind: 'at', at: timestamp(source), missedRun: 'native' };
-    return cron(source, 'native');
+    return cron(source, null);
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid();
   const object = value as Record<string, unknown>;
@@ -157,8 +160,8 @@ export default function normalizeAutomationSchedule(value: unknown): AutomationS
     return invalid();
   const source = input.trim().replace(/\s+/gu, ' ');
   if (kind === 'cron') {
-    const timezone = Object.hasOwn(object, 'timezone') ? object['timezone'] : 'native';
-    if (typeof timezone !== 'string' || !timezone.trim()) return invalid();
+    const timezone = object['timezone'] ?? null;
+    if (timezone !== null && (typeof timezone !== 'string' || !timezone.trim())) return invalid();
     return cron(source, timezone);
   }
   if (kind === 'at') return { kind, at: timestamp(source), missedRun: 'native' };

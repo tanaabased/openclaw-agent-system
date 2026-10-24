@@ -124,6 +124,8 @@ describe('agent/codex-automation-native-contract', () => {
     const schedules = JSON.parse(await capture('schedules'));
     const cases = [
       ['0 9 * * *', native.create.request.rrule],
+      [{ cron: '0 9 * * *' }, native.create.request.rrule],
+      [{ cron: '0 9 * * *', timezone: null }, native.create.request.rrule],
       ['0 9 * * 1-5', schedules[0].request.rrule],
       ['0 9 1 * *', schedules[1].request.rrule],
       ['every 15 minutes', schedules[2].request.rrule],
