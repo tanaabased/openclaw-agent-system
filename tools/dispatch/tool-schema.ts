@@ -4,7 +4,7 @@ import { directAssessmentRequestSchema } from './assessment-schema.ts';
 import { feedbackDecisionSchema } from '../../agent/feedback-work.ts';
 import { Type, type TProperties } from 'typebox';
 import { assessmentSummaryRequestProperties } from '../../agent/assessment-summary-state.ts';
-import { assessmentResultSchema } from '../../agent/assessment-result.ts';
+import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';
 import { feedbackResultSchema } from '../../agent/feedback-state.ts';
 import { implementationResultSchema } from '../../agent/implementation-result.ts';
@@ -89,7 +89,7 @@ const dispatchRequestVariants = Type.Union([
   object({
     action: Type.Literal('result'),
     id,
-    result: assessmentResultSchema,
+    result: assessmentSubmissionSchema,
     previousResultDigest: Type.Optional(id),
   }),
   object({
