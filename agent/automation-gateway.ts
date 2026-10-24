@@ -132,7 +132,7 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
       'sessions.patch',
     ].includes(method);
     try {
-      return await call(method, { timeout: '10000' }, params, {
+      return await call(method, {}, params, {
         progress: false,
         scopes: [readOnly ? 'operator.read' : 'operator.admin'],
         ...(readOnly ? { sharedStateMode: 'read-only' as const } : {}),
