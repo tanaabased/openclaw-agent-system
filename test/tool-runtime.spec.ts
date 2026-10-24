@@ -701,21 +701,14 @@ describe('api/runtime', () => {
 
   it('should dispose resources when execution is cancelled', async () => {
     const events: string[] = [];
+    const auditEvents: AgentSystemAuditEvent[] = [];
     const controller = new AbortController();
     controller.abort();
     const runtime = createRuntime({
       events,
-      runCli: async (request) => {
-        events.push('run');
-        assert.equal(request.signal, controller.signal);
-        assert.equal(request.signal?.aborted, true);
-        return {
-          exitCode: null,
-          stderr: '',
-          stdout: '',
-          timedOut: false,
-          truncated: false,
-        };
+      auditEvents,
+      runCli: async () => {
+        assert.fail('must not launch an already-cancelled command');
       },
     });
     const definition = createToolTestDefinition({
@@ -730,14 +723,18 @@ describe('api/runtime', () => {
       },
     });
 
-    const result = await runtime.executeCli(
-      definition,
-      { argument: 'status' },
-      { agentId: 'data', source: 'command' },
-      controller.signal,
+    await assert.rejects(
+      runtime.executeCli(
+        definition,
+        { argument: 'status' },
+        { agentId: 'data', source: 'command' },
+        controller.signal,
+      ),
+      (error: unknown) =>
+        error instanceof AgentSystemToolError && error.code === 'execution_cancelled',
     );
-    assert.equal(result.commandResult.exitCode, null);
-    assert.deepEqual(events.slice(-3), ['run', 'dispose', 'audit:completed']);
+    assert.deepEqual(events.slice(-3), ['acquire', 'dispose', 'audit:failed']);
+    assert.equal(auditEvents.at(-1)?.status, 'execution_cancelled');
   });
 
   it('should dispose resources when output normalization fails', async () => {

@@ -44,6 +44,59 @@ function execute(
 }
 
 describe('api/cli-execution', () => {
+  for (const phase of ['preflight', 'command'] as const) {
+    for (const rejects of [false, true]) {
+      it(`should preserve cancellation and clean resources when ${phase} ${rejects ? 'rejects' : 'resolves'}`, async () => {
+        const controller = new AbortController();
+        const events: string[] = [];
+        const definition = createToolTestDefinition({
+          acquireResources() {
+            return {
+              async dispose() {
+                events.push('dispose');
+              },
+            };
+          },
+        });
+        if (phase === 'preflight') {
+          definition.runner.preflight = () => ({
+            argv: ['identity'],
+            validate() {
+              assert.fail('must not validate a cancelled preflight');
+            },
+          });
+        }
+        await assert.rejects(
+          execute(
+            definition,
+            async (request) => {
+              events.push(request.argv[0]!);
+              assert.equal(request.signal, controller.signal);
+              controller.abort(new Error('private-cancellation-reason'));
+              if (rejects) throw controller.signal.reason;
+              return {
+                exitCode: null,
+                stderr: '',
+                stdout: '',
+                timedOut: false,
+                truncated: false,
+              };
+            },
+            controller.signal,
+          ),
+          (error: unknown) => {
+            assert.ok(error instanceof AgentSystemToolError);
+            assert.equal(error.code, 'execution_cancelled');
+            assert.doesNotMatch(error.message, /private-cancellation-reason/);
+            assert.equal(error.cause, undefined);
+            return true;
+          },
+        );
+        assert.deepEqual(events, [phase === 'preflight' ? 'identity' : 'status', 'dispose']);
+      });
+    }
+  }
+
   it('should isolate the child environment and redact invocation-scoped resources', async () => {
     const events: string[] = [];
     const requests: AgentSystemCliRunRequest[] = [];

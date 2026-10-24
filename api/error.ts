@@ -5,6 +5,7 @@ export type AgentSystemToolErrorCode =
   | 'capability_not_configured'
   | 'configuration_unavailable'
   | 'credential_unavailable'
+  | 'execution_cancelled'
   | 'execution_failed'
   | 'execution_timed_out'
   | 'invalid_arguments'

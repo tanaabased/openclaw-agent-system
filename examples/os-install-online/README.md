@@ -52,7 +52,11 @@ cat "$TMPDIR/online-first.json" "$TMPDIR/online-first.stderr"
 node --import tsx "$GITHUB_WORKSPACE/scripts/install-evidence.ts" online-first "$first_status" "$first_started" "$TMPDIR/online-first.json" "$TMPDIR/online-first.stderr" "$TMPDIR/install-native.log" || printf '%s\n' 'install evidence capture unavailable' >&2
 if test "$first_status" -ne 0; then exit "$first_status"; fi
 jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated") and all(.warnings[]; .code != "automation-sync-deferred")' "$TMPDIR/online-first.json"
-openclaw agent-system automations list --json | tee "$TMPDIR/online-jobs-before.json" | jq -e '.status == "aligned" and ([.jobs[].id] | sort) == ["cold-install-command", "github-issue-assignment"] and all(.jobs[]; .nativeEnabled == false)'
+openclaw agent-system automations list --json >"$TMPDIR/online-jobs-before.json"
+if ! jq -e '.status == "attention" and ([.findings[] | select(.status != "healthy" and .status != "skipped") | {stepId, status, code}] == [{stepId: "scheduler", status: "blocked", code: "automation-scheduler-disabled"}]) and ([.jobs[].id] | sort) == ["cold-install-command", "github-issue-assignment"] and all(.jobs[]; .nativeEnabled == false)' "$TMPDIR/online-jobs-before.json"; then
+  jq '{status, jobs: [.jobs[] | {id, nativeEnabled}], findings: [.findings[] | {stepId, status, code}]}' "$TMPDIR/online-jobs-before.json" >&2
+  exit 1
+fi
 openclaw config set plugins.entries.enrollment-reload-fixture.config.slow true --strict-json
 node "$GITHUB_WORKSPACE/examples/os-install-online/wait-reload.mjs" "$TMPDIR/controlled-reload/started.json"
 node -e 'process.stdout.write(JSON.stringify({startedAt:Date.now()}))' >"$TMPDIR/reload-install-start.json"

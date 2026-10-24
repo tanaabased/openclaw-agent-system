@@ -235,15 +235,22 @@ export default async function executeAgentSystemCliTool<
       secretValues.push(...(resourceLease.sensitiveValues ?? []));
     }
 
-    const runRequest = (argv: string[], stdin?: string, control = false) => {
-      options.signal?.throwIfAborted();
+    const throwIfCancelled = () => {
+      if (options.signal?.aborted)
+        throw new AgentSystemToolError(
+          'execution_cancelled',
+          `The ${options.definition.id} tool request was cancelled.`,
+        );
+    };
+    const runRequest = async (argv: string[], stdin?: string, control = false) => {
+      throwIfCancelled();
       const remaining = Math.floor(deadline - now());
       if (remaining <= 0)
         throw new AgentSystemToolError(
           'execution_timed_out',
           'The managed command execution budget is exhausted.',
         );
-      return options.runCli({
+      const result = await options.runCli({
         argv,
         cwd: childWorkingDirectory,
         environment: childEnvironment,
@@ -258,6 +265,8 @@ export default async function executeAgentSystemCliTool<
         ...(stdin === undefined ? {} : { stdin }),
         timeoutMs: control ? Math.min(metadataCommandTimeoutMs, remaining) : remaining,
       });
+      throwIfCancelled();
+      return result;
     };
     const sanitize = (result: AgentSystemCliResult): AgentSystemCliResult => ({
       ...result,
@@ -299,6 +308,7 @@ export default async function executeAgentSystemCliTool<
         },
       );
     } catch (error) {
+      throwIfCancelled();
       if (error instanceof AgentSystemToolError) throw error;
       throw new AgentSystemToolError(
         'tool_unavailable',
@@ -318,6 +328,7 @@ export default async function executeAgentSystemCliTool<
         ),
       );
     } catch (error) {
+      throwIfCancelled();
       if (error instanceof AgentSystemToolError) throw error;
       throw new AgentSystemToolError(
         'tool_unavailable',
