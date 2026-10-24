@@ -52,8 +52,10 @@ cat "$TMPDIR/online-first.json" "$TMPDIR/online-first.stderr"
 node --import tsx "$GITHUB_WORKSPACE/scripts/install-evidence.ts" online-first "$first_status" "$first_started" "$TMPDIR/online-first.json" "$TMPDIR/online-first.stderr" "$TMPDIR/install-native.log" || printf '%s\n' 'install evidence capture unavailable' >&2
 if test "$first_status" -ne 0; then exit "$first_status"; fi
 jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated") and all(.warnings[]; .code != "automation-sync-deferred")' "$TMPDIR/online-first.json"
-openclaw agent-system automations list --json >"$TMPDIR/online-jobs-before.json"
-if ! jq -e '.status == "attention" and ([.findings[] | select(.status != "healthy" and .status != "skipped") | {stepId, status, code}] == [{stepId: "scheduler", status: "blocked", code: "automation-scheduler-disabled"}]) and ([.jobs[].id] | sort) == ["cold-install-command", "github-issue-assignment"] and all(.jobs[]; .nativeEnabled == false)' "$TMPDIR/online-jobs-before.json"; then
+before_status=0
+openclaw agent-system automations list --json >"$TMPDIR/online-jobs-before.json" || before_status=$?
+if test "$before_status" -ne 1 || ! jq -e '.status == "attention" and ([.findings[] | select(.status != "healthy" and .status != "skipped") | {stepId, status, code}] == [{stepId: "scheduler", status: "blocked", code: "automation-scheduler-disabled"}]) and ([.jobs[].id] | sort) == ["cold-install-command", "github-issue-assignment"] and all(.jobs[]; .nativeEnabled == false)' "$TMPDIR/online-jobs-before.json"; then
+  printf 'automation list before reload exited %s\n' "$before_status" >&2
   jq '{status, jobs: [.jobs[] | {id, nativeEnabled}], findings: [.findings[] | {stepId, status, code}]}' "$TMPDIR/online-jobs-before.json" >&2
   exit 1
 fi
@@ -64,7 +66,13 @@ openclaw agent-system install --non-interactive --json >"$TMPDIR/online-repeat.j
 cat "$TMPDIR/online-repeat.json" "$TMPDIR/online-repeat.stderr"
 jq -e --slurpfile invocation "$TMPDIR/reload-install-start.json" --slurpfile reload "$TMPDIR/controlled-reload/started.json" '.completedAt > $invocation[0].startedAt and $invocation[0].startedAt >= $reload[0].startedAt' "$TMPDIR/controlled-reload/completed.json"
 jq -e 'any(.outcomes[]; .code == "session-dispatch-unchanged") and all(.outcomes[]; .component != "automations" or .status == "unchanged")' "$TMPDIR/online-repeat.json"
-openclaw agent-system automations list --json >"$TMPDIR/online-jobs-after.json"
+after_status=0
+openclaw agent-system automations list --json >"$TMPDIR/online-jobs-after.json" || after_status=$?
+if test "$after_status" -ne 1 || ! jq -e '.status == "attention" and ([.findings[] | select(.status != "healthy" and .status != "skipped") | {stepId, status, code}] == [{stepId: "scheduler", status: "blocked", code: "automation-scheduler-disabled"}]) and ([.jobs[].id] | sort) == ["cold-install-command", "github-issue-assignment"] and all(.jobs[]; .nativeEnabled == false)' "$TMPDIR/online-jobs-after.json"; then
+  printf 'automation list after reload exited %s\n' "$after_status" >&2
+  jq '{status, jobs: [.jobs[] | {id, nativeEnabled}], findings: [.findings[] | {stepId, status, code}]}' "$TMPDIR/online-jobs-after.json" >&2
+  exit 1
+fi
 jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/online-jobs-before.json" >"$TMPDIR/online-identities-before.json"
 jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/online-jobs-after.json" | diff - "$TMPDIR/online-identities-before.json"
 ```
