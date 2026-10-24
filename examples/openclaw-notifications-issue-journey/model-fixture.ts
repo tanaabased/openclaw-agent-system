@@ -49,6 +49,9 @@ const dispatchStages = [
   'manual-preview',
   'manual-publish',
   'manual-reconcile',
+  'update-context',
+  'update-compose',
+  'update-candidate',
 ];
 
 function assessmentRequest(context: Record<string, unknown>, payload: object) {
@@ -245,6 +248,68 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     assert.equal(saved.status, 'recorded');
     assert.equal((saved.handoff as { next: string }).next, 'assessment-only');
     return { content: String(saved.presentation) };
+  }
+  const updateTarget =
+    /(?:Operator status update|Check current status) target: (https:\/\/github\.com\/[^\s]+)/u.exec(
+      prompt,
+    )?.[1];
+  if (updateTarget) {
+    const current = result('update-context');
+    if (!current)
+      return dispatch('update-context', {
+        action: 'reply',
+        operation: 'context',
+        purpose: 'status-update',
+        target: updateTarget,
+      });
+    assert.equal(current.status, 'status-update-context');
+    assert.ok(typeof current.observation === 'string');
+    const noOp = prompt.includes('Check current status target:');
+    const composed = result('update-compose');
+    if (!composed)
+      return dispatch('update-compose', {
+        action: 'reply',
+        operation: 'compose',
+        purpose: 'status-update',
+        target: updateTarget,
+        privateText: noOp
+          ? 'The issue already reflects the selected approach.'
+          : 'The operator selected the shared reply approach. Implementation remains unstarted.',
+        update: {
+          observation: current.observation,
+          facts: noOp
+            ? []
+            : [
+                {
+                  key: 'operator-decision',
+                  reference: 'current-chat:operator-decision',
+                  revision: 'shared-reply-v1',
+                  text: 'The operator selected the shared reply approach. Implementation remains unstarted.',
+                },
+              ],
+        },
+      });
+    if (noOp) {
+      assert.equal(composed.status, 'already-current');
+      return { content: String(composed.presentation) };
+    }
+    assert.equal(composed.status, 'composition-ready');
+    assert.equal((composed.source as { kind: string }).kind, 'status-update');
+    const selection = composed.selection as { skill: { path: string } };
+    if (openClawAIMockToolResultText(messages, prefix + 'update-skill') === undefined)
+      return call('update-skill', 'read', { path: selection.skill.path });
+    const candidate = result('update-candidate');
+    if (!candidate)
+      return dispatch('update-candidate', {
+        action: 'reply',
+        operation: 'candidate',
+        id: composed.id,
+        digest: composed.digest,
+        publicText:
+          'The operator selected the shared reply approach. Implementation remains unstarted.',
+      });
+    assert.equal(candidate.status, 'candidate-recorded');
+    return { content: String(candidate.presentation) };
   }
   const directTarget = /Direct reply draft target: (https:\/\/github\.com\/[^\s]+)/u.exec(
     prompt,
@@ -638,6 +703,7 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
     { id: prefix + 'direct-assessment-invalid', name: 'agent_system_dispatch' },
     { id: prefix + 'feedback-skill', name: 'read' },
     { id: prefix + 'summary-skill', name: 'read' },
+    { id: prefix + 'update-skill', name: 'read' },
     ...dispatchStages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({
         id: prefix + retryStage(stage, attempt),

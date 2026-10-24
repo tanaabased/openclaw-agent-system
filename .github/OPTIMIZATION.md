@@ -40,10 +40,13 @@ Keep ClawHub in both the `Brewfile` npm packages and pinned `devDependencies`. T
 ### V1 notification retirement
 
 V1 notification runtime and configuration support are retired by operator decision.
-Keep its historical on-disk records untouched; do not restore a decoder, scanner,
-channel, or compatibility engine to manufacture parity. Preserve shared provider,
-publication, presentation, and native V2 authority/receipt contracts. Missing V2
-features remain explicit limitations and separate implementation work.
+Do not automatically revive, migrate, or delete its historical on-disk records;
+explicit operator-authorized reset and purge use the existing lifecycle owners.
+Do not restore legacy polling, session handling, or compatibility machinery to
+manufacture parity. The current readiness/status channel is not a legacy intake
+engine. Preserve shared provider, publication, presentation, and current native
+authority/receipt contracts. Missing features remain explicit limitations and
+separate implementation work.
 
 ### Lifecycle-neutral provider primitives
 

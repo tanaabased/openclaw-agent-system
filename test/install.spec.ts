@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { AutomationError, createAutomationGateway } from '../agent/automation-gateway.ts';
 import { cliDiagnosticContext } from '../core/cli-diagnostic-context.ts';
 import ansis from 'ansis';
 
@@ -118,6 +119,202 @@ function createHarness(
 }
 
 describe('cli/install', () => {
+  it('should not invent gateway evidence for unrelated automation failures', async () => {
+    const harness = createHarness({
+      json: true,
+      install: new AgentSystemLifecycleError(
+        'automations',
+        'automation-ownership-conflict',
+        'Automation reconciliation stopped.',
+        { cause: new AutomationError('automation-ownership-conflict') },
+      ),
+    });
+    await harness.run();
+    assert.equal(
+      JSON.parse(harness.output.join('')).blocked.automationGatewayDiagnostic,
+      undefined,
+    );
+    assert.doesNotMatch(harness.diagnostics.join(''), /gateway diagnostic/u);
+    assert.deepEqual(harness.exitCodes, [1]);
+  });
+
+  it('should report absent automation diagnostics as unknown without inventing dispatch evidence', async () => {
+    const harness = createHarness({
+      json: true,
+      install: new AgentSystemLifecycleError(
+        'automations',
+        'automation-gateway-failed',
+        'Automation reconciliation stopped.',
+        { cause: new AutomationError('automation-gateway-failed') },
+      ),
+    });
+    await harness.run();
+    assert.deepEqual(JSON.parse(harness.output.join('')).blocked.automationGatewayDiagnostic, {
+      method: null,
+      category: 'unknown',
+      gatewayCode: null,
+      closeCode: null,
+      requestDispatched: null,
+    });
+    assert.deepEqual(harness.exitCodes, [1]);
+  });
+
+  for (const [category, fields, code, expected] of [
+    [
+      'timeout',
+      {
+        name: 'GatewayTransportError',
+        kind: 'timeout',
+        requestDispatched: true,
+        connectionDetails: {},
+      },
+      'automation-gateway-failed',
+      { category: 'timeout', gatewayCode: null, closeCode: null, requestDispatched: true },
+    ],
+    [
+      'closed',
+      {
+        name: 'GatewayTransportError',
+        kind: 'closed',
+        code: 1006,
+        requestDispatched: false,
+        connectionDetails: {},
+      },
+      'automation-gateway-unavailable',
+      { category: 'closed', gatewayCode: null, closeCode: 1006, requestDispatched: false },
+    ],
+    [
+      'rejected',
+      { name: 'GatewayClientRequestError', gatewayCode: 'FORBIDDEN', retryable: false },
+      'automation-gateway-rejected',
+      { category: 'rejected', gatewayCode: 'FORBIDDEN', closeCode: null, requestDispatched: null },
+    ],
+    [
+      'unknown',
+      {},
+      'automation-gateway-failed',
+      { category: 'unknown', gatewayCode: null, closeCode: null, requestDispatched: null },
+    ],
+  ] as const) {
+    it(`should preserve ${category} automation evidence through lifecycle wrapping and both install projections`, async () => {
+      for (const json of [true, false]) {
+        let calls = 0;
+        const request = createAutomationGateway(async () => {
+          calls += 1;
+          throw Object.assign(new Error('private-token ws://private-host private-key'), fields, {
+            connectionDetails: { token: 'private-token', url: 'ws://private-host' },
+          });
+        });
+        const earlier = [
+          {
+            component: 'session-dispatch',
+            code: 'session-dispatch-enrolled',
+            status: 'created' as const,
+            message: 'Enrollment completed.',
+          },
+          {
+            component: 'github-intake',
+            code: 'intake-activated',
+            status: 'created' as const,
+            message: 'Intake activated.',
+          },
+        ];
+        const partial = {
+          component: 'automations',
+          stepId: 'first',
+          code: 'automation-created',
+          status: 'created' as const,
+          message: 'Automation first',
+        };
+        const warning = {
+          component: 'automations',
+          code: 'fixture-warning',
+          message: 'fixture warning',
+        };
+        const registry = new AgentSystemLifecycleRegistry([
+          ...earlier.map((outcome) => ({
+            id: outcome.component,
+            isConfigured: () => true,
+            reconcile: async () => ({ outcomes: [outcome] }),
+          })),
+          {
+            id: 'automations',
+            isConfigured: () => true,
+            async reconcile() {
+              try {
+                await request('cron.add', { token: 'private-token' });
+              } catch (error) {
+                assert.ok(error instanceof AutomationError);
+                Object.assign(error.diagnostic!, {
+                  token: 'private-token',
+                  connectionDetails: 'private-host',
+                  toJSON: () => ({ token: 'private-token' }),
+                });
+                throw new AgentSystemLifecycleError(
+                  'automations',
+                  error.code,
+                  'Automation reconciliation stopped.',
+                  { cause: error },
+                  undefined,
+                  'second',
+                  {
+                    outcomes: [partial],
+                    warnings: [warning],
+                    unattempted: [{ component: 'automations', stepId: 'third' }],
+                  },
+                );
+              }
+              throw new Error('fixture transport must fail');
+            },
+          },
+          {
+            id: 'memory',
+            isConfigured: () => true,
+            reconcile: async () => {
+              throw new Error('must remain unattempted');
+            },
+          },
+        ]);
+        const harness = createHarness({
+          json,
+          installService: new AgentInstallService({ lifecycleRegistry: registry }),
+        });
+        await harness.run();
+        assert.equal(calls, 1);
+        assert.deepEqual(harness.exitCodes, [1]);
+        assert.doesNotMatch(harness.events.join(''), /private-/u);
+        const diagnostic = { method: 'cron.add', ...expected };
+        const stderr = harness.diagnostics.join('');
+        assert.match(stderr, /gateway diagnostic/u);
+        assert.ok(stderr.replace(/\s/gu, '').includes(JSON.stringify(diagnostic)));
+        assert.ok(
+          harness.events.indexOf(harness.output[0]!) <
+            harness.events.indexOf(harness.diagnostics[0]!),
+        );
+        if (json) {
+          const result = JSON.parse(harness.output.join(''));
+          assert.deepEqual(result.blocked.automationGatewayDiagnostic, diagnostic);
+          assert.equal(result.blocked.code, code);
+          assert.equal(result.blocked.component, 'automations');
+          assert.equal(result.blocked.stepId, 'second');
+          assert.deepEqual(result.outcomes, [...earlier, partial]);
+          assert.deepEqual(result.warnings, [warning]);
+          assert.deepEqual(result.unattempted, [
+            { component: 'automations', stepId: 'third' },
+            { component: 'memory' },
+          ]);
+          assert.equal(result.earlierChangesRemainApplied, true);
+          assert.doesNotMatch(stderr, /messages/u);
+          assert.ok(!stderr.includes('\u001b'));
+        } else {
+          assert.equal(stderr.match(/^messages$/gmu)?.length, 1);
+          assert.match(stderr, /earlier completed changes remain applied/u);
+          assert.match(harness.output.join(''), /session-dispatch|github-channel-intake/u);
+        }
+      }
+    });
+  }
+
   it('should carry safe enrollment evidence through registry, install service and both cli projections', async () => {
     const diagnostic = {
       category: 'transport' as const,

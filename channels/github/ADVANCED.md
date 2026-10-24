@@ -54,6 +54,8 @@ and partial work before interpreting the new message; that history supplies cont
 not new authority.
 No separate repair policy or author list is required.
 
+For an explicitly requested issue progress update, use [GitHub Update](../../skills/github-update/SKILL.md). It compares public facts with verified progress in this chat, uses the configured shared reply composer, and returns the full private answer plus the exact confirmed public quote. Already-current issues get no comment; unfinished original publications recover first. This does not start implementation or change mode.
+
 Discovery retains bounded observations independently of reply eligibility.
 Feedback authors are the union of configured allowed actors and reviewers. Activity observed while no authors are
 approved stays in GitHub history and is not queued for later dispatch. When the runtime observes acceptance resume, it saves an admission
@@ -479,7 +481,7 @@ with the delivery. Explicit title/body changes update that PR; commit-only pushe
 preserve text edited on GitHub. Interrupted updates reconcile the same operation.
 OpenClaw delivery reconciliation can finish incomplete provider checkpoints when the retained commit is already remote; a missing push requires the prepared publication path. Newer local or uncommitted work is not included by reconciliation.
 If initial PR creation is still uncertain, reconcile it before changing its text.
-Public assessment summaries, approved comment/review replies and PR announcements retain their drafts and attempted writes across interruptions. Continue in the same issue chat to finish only the missing response. An unconfirmed post is checked by its original marker and exact content, never blindly reposted. Missing access, changed sources, edited posts and native denials remain visible obstacles; the complete private result stays available. Pending assessment summaries can receive a response-only native continuation after the owner is idle. Implementation context also exposes pending summaries without moving work back to planning.
+Public assessment summaries, approved comment/review replies and PR announcements retain their drafts and attempted writes across interruptions. Continue in the same issue chat to finish only the missing response. An unconfirmed post is checked by its original marker and exact content, never blindly reposted. Missing access, changed sources, edited posts and native denials remain visible obstacles; the complete private result stays available. Pending assessment summaries can receive a response-only native continuation after the owner is idle. A denied summary instead retains its publication hold and diagnostic without automatic retry or another publication route; supported verified recovery or renewed authorization is required. Independently authorized implementation can still enter fresh native context in the same permitted turn. Cancellation, lost authority and broader or implementation-specific denials remain stops. Implementation context reports the summary hold separately without moving work back to planning.
 
 In OpenClaw, an explicit operator request in the owning chat can finish a retained feedback reply after its handler stops. The agent uses feedback context with `resume: true` to verify the current operator input and old terminal run, retaining the answer, pushed work and uncertain publication receipts. A manual stop alone never restarts work; real denials remain stops.
 

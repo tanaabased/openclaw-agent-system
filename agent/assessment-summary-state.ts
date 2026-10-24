@@ -11,11 +11,13 @@ export const assessmentSummaryRequestProperties = {
     Type.Literal('candidate'),
     Type.Literal('publish'),
     Type.Literal('reconcile'),
+    Type.Literal('hold'),
   ]),
   digest: Type.Optional(hash),
   publicText: Type.Optional(
     Type.String({ minLength: 1, maxLength: maximumGitHubNotificationReplyLength }),
   ),
+  diagnostic: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })),
 };
 export const assessmentSummarySchema = Type.Object(
   {
@@ -37,6 +39,15 @@ export const assessmentSummarySchema = Type.Object(
       ),
     ),
     code: Type.Optional(text),
+    diagnostic: Type.Optional(text),
+    publicationCommand: Type.Optional(Type.String({ minLength: 1, maxLength: 16000 })),
+    previewDigest: Type.Optional(hash),
+    nativeDenial: Type.Optional(
+      Type.Object(
+        { turnId: text, callId: text, commandDigest: hash },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -48,5 +59,5 @@ export const assessmentSummaryConsent =
   'Assessment-summary authorization: activating this workflow authorizes one concise public issue summary per deliberately revised retained assessment, after the complete assessment is presented in its owning chat. Use only the assessment-summary operation and its verified issue and draft. Preserve the configured voice and explain the user journey, proposed change and expected outcome. No per-summary human confirmation is required; native approval review remains in force and a denial stops publication. This grants no implementation, review, or unrelated GitHub action.';
 
 export function assessmentSummaryInstructions(runtime: 'codex' | 'openclaw') {
-  return `First reproduce the complete recorded private review presentation in this chat. Then call ${runtime === 'codex' ? 'dispatchRuntime action:summary' : 'agent_system_dispatch action summary'}, operation compose with this id. Read the returned voice-aware reply skill and compose a separate concise user-journey summary. Follow candidate and publication instructions. A summary failure leaves the assessment recorded: show its diagnostic, preserve the private review here and the full assessment in saved context, and stop on native denial. Never publish the private plan or invent an incoming comment.`;
+  return `First reproduce the complete recorded private review presentation in this chat. Then call ${runtime === 'codex' ? 'dispatchRuntime action:summary' : 'agent_system_dispatch action summary'}, operation compose with this id. Read the returned voice-aware reply skill and compose a separate concise user-journey summary. Follow candidate and publication instructions. A summary failure leaves the assessment recorded. A native denial of only this summary stops publication, not independently authorized implementation: if the host permits further tracking, call summary operation hold with the preview digest and bounded redacted diagnostic, without repeating publish. Preserve the held summary across continuation; never retry it or use another publication route. Follow the assessment handoff into fresh implementation context in this same permitted turn. Cancellation, lost authority, broader or implementation-specific denials still stop affected work; unknown denial scope is not permission to continue. Never publish the private plan or invent an incoming comment.`;
 }

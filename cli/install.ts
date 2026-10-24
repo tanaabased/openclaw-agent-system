@@ -1,5 +1,7 @@
 import { formatErrorMessage } from 'openclaw/plugin-sdk/error-runtime';
 
+import { AutomationError } from '../agent/automation-gateway.ts';
+import { retainAutomationGatewayDiagnostic } from '../agent/automation-gateway-diagnostic.ts';
 import { retainSessionDispatchDiagnostic } from '../credentials/session-dispatch-diagnostic.ts';
 
 import { manifestNotices, lifecycleWarningNotice } from './diagnostic-notices.ts';
@@ -208,12 +210,19 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
     );
   } catch (error) {
     const failure = error instanceof AgentSystemLifecycleError ? error : undefined;
+    const automationGatewayDiagnostic =
+      failure?.component === 'automations' &&
+      failure.cause instanceof AutomationError &&
+      (failure.cause.diagnostic || failure.code.startsWith('automation-gateway-'))
+        ? retainAutomationGatewayDiagnostic(failure.cause.diagnostic)
+        : undefined;
     const blocked = {
       component:
         failure?.component ?? (error instanceof AgentInstallError ? 'credentials' : 'install'),
       code: failure?.code ?? (error instanceof AgentInstallError ? error.code : 'install-failed'),
       message: error instanceof Error ? error.message : 'Installation failed.',
       ...(failure?.stepId ? { stepId: failure.stepId } : {}),
+      ...(automationGatewayDiagnostic ? { automationGatewayDiagnostic } : {}),
       ...(failure?.sessionDispatchDiagnostic
         ? {
             sessionDispatchDiagnostic: retainSessionDispatchDiagnostic(
@@ -287,7 +296,12 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
         component: blocked.component,
         stepId: blocked.stepId,
         message: formatErrorMessage(error),
-        details: guidance.slice(0, outcomes.length > 0 ? 1 : 2),
+        details: [
+          ...guidance.slice(0, outcomes.length > 0 ? 1 : 2),
+          ...(automationGatewayDiagnostic
+            ? [`gateway diagnostic: ${JSON.stringify(automationGatewayDiagnostic)}`]
+            : []),
+        ],
         remediation: guidance.slice(outcomes.length > 0 ? 1 : 2),
       },
     ]);
