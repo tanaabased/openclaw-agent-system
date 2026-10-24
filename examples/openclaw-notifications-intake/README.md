@@ -135,7 +135,10 @@ for slot in 1 2 3; do
 done
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
-jq -es '[.[].records[]] | length == 3 and ([.[].threadId] | unique | length) == 3 and all(.[]; .sessionCreation.verified == true and .assessmentTurn.status == "accepted" and .result == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+if ! jq -es '[.[].records[]] | length == 3 and ([.[].threadId] | unique | length) == 3 and all(.[]; .sessionCreation.verified == true and (.assessmentTurn.status == "accepted" or (.assessmentTurn.status == "consumed" and (.assessmentTurn.consumedByEventId | type == "string" and length > 0))) and .assessmentTurn.failed != true and .assessmentTurn.cancelled != true and .result == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json; then
+  jq -s '[.[].records[]] | {count: length, records: (.[0:10] | map({id, phase, blocker, threadId, sessionVerified: .sessionCreation.verified, assessmentTurn: (.assessmentTurn | {runId, status, consumedByEventId, failed, cancelled}), hasResult: (.result != null)}))}' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json >&2
+  exit 1
+fi
 jq -es '[.[].records[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-started.json"
 for conversation in $(jq -r '.[].threadId' "$TMPDIR/notification-started.json"); do
   openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.parentSessionKey == "agent:intake-tanaabot:main" and .session.spawnDepth == 0 and .session.spawnedBy == null'
