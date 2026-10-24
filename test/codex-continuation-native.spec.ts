@@ -251,6 +251,22 @@ describe('agent/codex-continuation-native', () => {
       );
   });
 
+  it('should verify settings-inheriting sends while rejecting injected overrides', async () => {
+    const inherited = {
+      ...attempt,
+      request: { threadId: 'issue', prompt: attempt.request.prompt },
+    };
+    assert.equal(
+      (await fixture({ arguments: inherited.request })('source', inherited)).status,
+      'verified',
+    );
+    for (const override of [{ model: 'other' }, { thinking: 'low' }])
+      assert.deepEqual(
+        await fixture({ arguments: { ...inherited.request, ...override } })('source', inherited),
+        { status: 'blocked', code: 'continuation-send-mismatch' },
+      );
+  });
+
   it('should retain a completed altered prompt as mismatch evidence without verifying it', async () => {
     const altered = { ...attempt.request, prompt: 'Continue this issue' };
     const inspect = fixture({

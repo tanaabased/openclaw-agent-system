@@ -49,7 +49,6 @@ export async function runCodexDispatch(
     const context = await codexImplementationEntry(pluginData, request, deps);
     if (context.status !== 'managed' || !('owner' in context) || !context.owner) return context;
     if (context.owner.eventId) {
-      if (request.scope) throw new Error('implementation-feedback-scope-owner-required');
       if (request.operation === 'delivery')
         throw new Error('implementation-feedback-delivery-owner-required');
       return runCodexFeedback(

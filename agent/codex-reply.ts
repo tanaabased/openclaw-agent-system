@@ -12,7 +12,7 @@ import { connectCodexThreads } from './codex-thread-client.ts';
 import codexAssessmentSkill from './codex-assessment-skill.ts';
 import feedbackReply from './feedback-reply.ts';
 import replyOwner from './reply-owner.ts';
-import pendingPublicResponse from './pending-public-response.ts';
+import replyOwnerContext from './reply-owner-context.ts';
 import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
 import { replyRequestSchema } from '../tools/dispatch/reply-schema.ts';
 
@@ -128,55 +128,16 @@ export default async function codexReply(
           }
         }
         return replyOwner(
-          state.records.map((record) => {
-            const item = admitted?.records.find((entry) => entry.id === record.intakeId);
-            if (!item && record.threadId === caller)
-              throw new Error('reply-managed-context-invalid');
-            const pending = pendingPublicResponse(record);
-            const summary =
-              pending?.summary ??
-              record.assessmentSummaries?.find(
-                (entry) => entry.revision === record.assessmentRevision,
-              );
-            return {
-              id: record.id,
-              threadId: record.threadId,
-              inactive: Boolean(
-                record.retired ||
-                record.retirement ||
-                record.reset ||
-                record.nativeInactive ||
-                (record.threadId && !record.request),
-              ),
-              repository: item
-                ? `${item.repository.owner.login}/${item.repository.name}`
-                : undefined,
-              number: item?.issue.number,
-              pullRequestNumber: record.delivery?.pullRequest?.pullRequestNumber,
-              events: record.feedback?.events,
-              summary: record.result
-                ? {
-                    selection: summary?.selection,
-                    receipt: summary?.receipt,
-                    publicText: summary?.publicText,
-                    attempt: summary?.attempt,
-                  }
-                : undefined,
+          state.records.map((record) =>
+            replyOwnerContext({
+              record,
+              intake: admitted?.records.find((entry) => entry.id === record.intakeId),
+              caller,
+              custodyInvalid: !record.request,
               delivery: record.delivery,
-              summaryPending: Boolean(pending),
-              announcementPending: Boolean(
-                record.delivery?.pullRequest &&
-                (!record.delivery.announcement?.receipt || record.delivery.announcement.code),
-              ),
-              announcementAttempted: Boolean(
-                record.delivery?.announcement?.attempted || record.delivery?.announcement?.receipt,
-              ),
               implementation: record.continuation?.result,
-              deliveredPullRequest: record.delivery?.pullRequest,
-              result: record.result,
-              publisherLogin: item?.receiving.login,
-            };
-          }),
+            }),
+          ),
           caller,
           caller,
           target,

@@ -106,6 +106,7 @@ export default async function runCodexContinuation(
       }
       const admissions = await current.store.read();
       const context: CodexWorkContext = {
+        records: state.records,
         pluginData,
         input,
         deps,

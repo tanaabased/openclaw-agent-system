@@ -21,6 +21,7 @@ Assign one issue, retain its plan, implement approved GitHub direction, and deli
 - Strict AIMock supplies model text and tool selection; GitHub, native chat execution, dispatch, managed Git, and receipts remain real. Only Tanaabot is assigned; EMORI creates fixtures and comments.
 - Each job prepares its own issue, assessment, and linked PR. Initial feedback permits three bounded coordinator passes for native assessment reconciliation, while preserving the exact source revision. Refreshes target only this issue; the 24-hour schedule avoids unrelated discovery.
 - Approved GitHub comments retain their exact source, native turn, and publication receipts in the owning issue chat.
+- Feedback work enters through direct implementation with a scope argument; re-entry must preserve the existing feedback owner and its publication contract.
 - The shared PR fixture reconciles delayed closing-issue linkage with at most three prepare/publish passes on the same delivery. Unknown failures and uncertain writes do not create replacement PRs.
 
 ## Setup

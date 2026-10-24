@@ -136,6 +136,20 @@ export const dispatchRecordSchema = Type.Object(
       Type.Union([Type.Literal('plan'), Type.Literal('work'), Type.Literal('auto')]),
     ),
     project: Type.Optional(dispatchProjectSchema),
+    issueBranch: Type.Optional(
+      Type.Object(
+        {
+          attemptId: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+          name: text,
+          phase: Type.Union([
+            Type.Literal('planned'),
+            Type.Literal('creating'),
+            Type.Literal('ready'),
+          ]),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     repositoryPreparation: Type.Optional(
       Type.Object(
         {
@@ -198,6 +212,7 @@ export default class CodexDispatchStore extends DispatchStore<DispatchRecord> {
       runtime: 'codex',
       recordSchema: dispatchRecordSchema,
       validRecord: (record) =>
+        (!record.issueBranch || record.issueBranch.attemptId === record.id) &&
         (!record.request || Boolean(record.project && record.reservationVersion === 1)) &&
         (!(
           record.continuation?.attempt ||

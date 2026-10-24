@@ -166,6 +166,13 @@ and roots, then reconcile through Install. Interrupted clones also require recov
 at their original location before selecting another destination. Once the saved project is verified, dispatch refreshes the
 default branch and pins the exact starting commit for the native issue worktree.
 
+Assessment leaves that checkout detached. Verified implementation selects and retains
+an issue branch for the current assignment attempt, starting at the pinned commit.
+Retries keep that branch, including after an issue title change. After retirement
+completes, a new assignment uses a distinct branch; earlier branches, commits and
+pull requests remain preserved. Reassignment before retirement completes follows
+the existing reactivation rules and may continue the same attempt.
+
 For assessment without assignment, invoke `$agent-system-issue-assessment` with an
 explicit GitHub issue URL and an existing local checkout root in the current chat.
 It uses the bound agent's [assessment selection](./MANIFEST.md#assessment-selection)
@@ -178,8 +185,11 @@ its retained source. An unavailable checkout or invalid explicit skill/guidance 
 be corrected before retrying in the same chat.
 
 Bounded issue evidence and structured metadata inform the shared model router.
-The saved model and effort are passed explicitly to native creation and retained
-on continuation. Requested settings and verified effective settings remain distinct.
+The saved model and effort are passed explicitly to native creation. After verified
+creation, operators may tune either through native controls in the same issue chat;
+continuation inherits current settings without resetting them. Original routing,
+current native readback, and historical execution evidence remain distinct. Missing
+readback stays unverified; this does not authorize agents to change settings.
 The issue chat performs read-only assessment and records one of three outcomes:
 `plan-ready`, `clarification-needed`, or `operator-setup-blocker`, with evidence and
 completed/remaining investigation. A user follow-up may revise the assessment in
@@ -418,6 +428,14 @@ and `body`. Preparation grants no publication authority. Codex uses native host
 Git and GitHub authorization, preserves authored commits and PR metadata, and
 adds the original issue's closing reference. The PR must be open, authored by the
 active account, and target the same repository's default branch.
+
+Delivery requires the branch retained for this assignment attempt. If the checkout
+uses another branch, preserve any local changes and return to the retained branch
+before resuming. A same-issue branch name or historical comment does not establish
+ownership. Older active work can retain an exact delivery binding with a saved PR receipt; authored
+work without that evidence stops for recovery rather than adopting a branch or
+resetting commits. Resume incomplete branch creation through implementation context
+in the existing chat. A closed PR on the selected branch still blocks publication.
 
 Publication retains the PR before recipient reconciliation. If a later step
 fails, prepare and resume that operation. An uncertain creation is reconciled

@@ -94,6 +94,32 @@ describe('agent/codex-dispatch-state', () => {
     }
   });
 
+  it('should retain branch preparation but reject ownership copied from another attempt', async () => {
+    await store.exclusive(async (state, save) => {
+      state.records.push({
+        id: 'b'.repeat(64),
+        intakeId: 'b'.repeat(64),
+        issueKey: 'b'.repeat(64),
+        sourceThreadId: 'intake',
+        phase: 'routing',
+        createdAt: 1,
+        manifestDigest: 'manifest',
+        issueBranch: { attemptId: 'b'.repeat(64), name: '42-owned-branch', phase: 'creating' },
+      });
+      await save();
+    });
+    const retained = await store.read();
+    assert.equal(retained.records[0]!.issueBranch?.phase, 'creating');
+    await assert.rejects(
+      store.exclusive(async (state, save) => {
+        state.records[0]!.issueBranch!.attemptId = 'c'.repeat(64);
+        await save();
+      }),
+      /dispatch-state-invalid/,
+    );
+    assert.deepEqual(await store.read(), retained);
+  });
+
   it('should retain the storage limit for work records', async () => {
     const before = await store.read();
     await assert.rejects(

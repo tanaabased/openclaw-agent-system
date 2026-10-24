@@ -19,8 +19,8 @@ export const attemptSchema = Type.Object(
       {
         threadId: text,
         prompt: Type.String({ minLength: 1, maxLength: 32000 }),
-        model: text,
-        thinking: text,
+        model: Type.Optional(text),
+        thinking: Type.Optional(text),
       },
       { additionalProperties: false },
     ),
