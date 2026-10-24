@@ -1,3 +1,5 @@
+import { issueKey } from './dispatch-pending.ts';
+import { operatorIssueSchema } from './managed-issue.ts';
 import { assessmentEntriesSchema } from './assessment-entry-state.ts';
 import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
 import { assertNotificationManagement } from './notification-reset-state.ts';
@@ -38,7 +40,8 @@ export const dispatchRecordProperties = {
   directAssessments: Type.Optional(assessmentEntriesSchema),
   providerDiagnostic: Type.Optional(providerDiagnosticSchema),
   id: hash,
-  intakeId: hash,
+  intakeId: Type.Optional(hash),
+  manualIssue: Type.Optional(operatorIssueSchema),
   issueKey: hash,
   sourceThreadId: text,
   phase: Type.Union([
@@ -268,6 +271,12 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       ).size !== state.records.filter((r) => !r.reset && !r.retired && !r.retirement).length ||
       state.records.some(
         (r) =>
+          Boolean(r.intakeId) === Boolean(r.manualIssue) ||
+          (r.manualIssue &&
+            (r.manualIssue.id !== r.id ||
+              r.manualIssue.scope !== this.scope ||
+              r.manualIssue.initiation.session !== r.sourceThreadId ||
+              issueKey(r.manualIssue) !== r.issueKey)) ||
           (r.request && (!r.context || !r.routing || !r.routingNote)) ||
           (['creating', 'assessing', 'complete'].includes(r.phase) && !r.request) ||
           (r.phase === 'created' &&
@@ -343,6 +352,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
                 'retirement',
                 'feedbackReactivation',
                 'intakeId',
+                'manualIssue',
                 'handoff',
                 'manifestDigest',
                 'request',

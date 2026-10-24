@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
 
 import { automationHash } from './automation-hash.ts';
@@ -30,8 +31,9 @@ export default async function continueCodexResponse(
     return;
   // normal implementation/delivery turns can finish their own pending response without another send.
   if (record.continuation && record.continuation.phase !== 'complete') return;
-  requireWorkflowSchedule(context.schedule.saved, context.schedule.current, 'assessment-summary');
-  const intake = context.admissions?.records.find((entry) => entry.id === record.intakeId);
+  if (context.schedule)
+    requireWorkflowSchedule(context.schedule.saved, context.schedule.current, 'assessment-summary');
+  const intake = dispatchAdmission(record, context.admissions?.records ?? []);
   if (!intake) return;
   await revalidateDispatchAssignment(current, intake, deps, signal, true, record);
   const found = await native.find({

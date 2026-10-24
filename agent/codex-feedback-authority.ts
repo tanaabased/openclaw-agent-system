@@ -6,7 +6,7 @@ import type { DispatchRecord } from './codex-dispatch-state.ts';
 import type connectCodexFeedback from './codex-feedback-client.ts';
 import type { selectCodexIntake } from './codex-intake.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import {
   isReviewFeedback,
   readReviewFeedback,

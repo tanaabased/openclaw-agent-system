@@ -14,7 +14,7 @@ import { realpath } from 'node:fs/promises';
 import { automationHash } from './automation-hash.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import type { OpenClawWorkAction } from './openclaw-work.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import IssueDeliveryProvider, {
   type IssueDeliveryInput,
 } from '../channels/github/publication/issue-delivery.ts';
@@ -113,7 +113,10 @@ export default async function openClawDelivery(input: {
       )
     )
       throw new Error('delivery-push-destination-mismatch');
-    resolvePullRequestRecipients(input.recipients, intake.assignment.actor);
+    resolvePullRequestRecipients(
+      input.recipients ?? (intake.assignment ? undefined : []),
+      intake.assignment?.actor,
+    );
   }
   const binding = {
     repositoryId: intake.repository.nodeId,
@@ -211,13 +214,13 @@ export default async function openClawDelivery(input: {
       repositoryOwner: intake.repository.owner.login,
       repositoryName: intake.repository.name,
       repositoryDefaultBranch: input.base,
-      assignmentActorLogin: intake.assignment.actor.login,
-      assignmentActorNodeId: intake.assignment.actor.nodeId,
+      assignmentActorLogin: intake.assignment?.actor.login,
+      assignmentActorNodeId: intake.assignment?.actor.nodeId,
     },
     branch,
     title,
     body,
-    recipients: input.recipients,
+    recipients: input.recipients ?? (intake.assignment ? undefined : []),
     headSha: head,
     repositoryNodeId: intake.repository.nodeId,
     linkIssue: true,

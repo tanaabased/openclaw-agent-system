@@ -28,6 +28,7 @@ jobs:
           - openclaw-tool-access
           - openclaw-github
           - openclaw-issue-assessment
+          - openclaw-issue-launch
           - openclaw-github-reply
           - openclaw-google
           - openclaw-tools

@@ -1,3 +1,4 @@
+import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import {
   cleanupConfigurationDiagnostic,
   type CleanupConfiguration,
@@ -7,7 +8,6 @@ import { inspectAdmittedIssue, inspectAssignmentRemoval } from './dispatch-assig
 import { issueKey } from './dispatch-pending.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type assignmentIntakePolicy from './assignment-intake-policy.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 import workflowFailure from './workflow-failure.ts';
@@ -66,7 +66,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
     .slice(0, 12);
   for (const record of selected) {
     record.lifecycleCheckedAt = now;
-    const admitted = input.admitted.find((item) => item.id === record.intakeId);
+    const admitted = dispatchAdmission(record, input.admitted);
     if (!admitted) continue;
     try {
       const wasMissing = Boolean(record.assignmentObservation);
@@ -147,7 +147,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         record.retirement = assignmentRetirement({
           previous: record.retirement,
           reason,
-          intakeId: latest.get(record.issueKey)?.id ?? record.intakeId,
+          intakeId: latest.get(record.issueKey)?.id ?? record.intakeId ?? record.manualIssue!.id,
           now,
           graceMinutes,
         });
@@ -189,7 +189,9 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         record.retirement?.reason !== 'chat-archived' &&
         successor &&
         (!record.retirement?.operatorRequest ||
-          Date.parse(successor.assignment.createdAt) > record.retirement.operatorRequest.at) &&
+          (successor.assignment
+            ? Date.parse(successor.assignment.createdAt)
+            : successor.admittedAt) > record.retirement.operatorRequest.at) &&
         successor.id !== (record.retirement?.intakeId ?? record.intakeId)
       ) {
         await inspectAdmittedIssue(successor, client);
@@ -235,7 +237,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           native?.archived && record.retirement?.reason !== 'assignment-removed'
             ? 'chat-archived'
             : reason,
-        intakeId: successor?.id ?? record.intakeId,
+        intakeId: successor?.id ?? record.intakeId ?? record.manualIssue!.id,
         now,
         graceMinutes,
         activityId: native?.activityId,

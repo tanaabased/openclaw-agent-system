@@ -1,3 +1,4 @@
+import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
 import implementationContext from './implementation-context.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import feedbackComposition from './feedback-composition.ts';
@@ -34,7 +35,7 @@ import type { OpenClawFeedbackEvent } from './openclaw-feedback-state.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import type { GitHubNotificationProviderClient } from '../channels/github/provider/work-event-types.ts';
 import type { GitHubCanonicalWorkItem } from '../channels/github/provider/work-item.ts';
 import type GitHubReviewReplyClient from '../channels/github/provider/review-reply-client.ts';
@@ -557,7 +558,9 @@ export default async function openClawFeedback(input: {
       },
       source: { runId: caller.runId!, inputEventId: event.contextInputId! },
       base: event.workDelivery?.binding.base ?? repo.defaultBranch,
-      recipients: work.pullRequest ? [] : policy.issueAssignment?.pullRequest?.recipients,
+      recipients: work.pullRequest
+        ? []
+        : issuePullRequestRecipients(policy, 'initiation' in intake),
       existingOnly: Boolean(work.pullRequest),
       feedbackEnabled: true,
       selectAnnouncement: async (retained) =>

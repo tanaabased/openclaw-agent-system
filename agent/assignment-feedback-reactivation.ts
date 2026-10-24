@@ -9,7 +9,7 @@ import { inspectActiveIssue, inspectContinuedIssue } from './dispatch-assignment
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { admitFeedback, discoverFeedback, observeFeedbackPolicy } from './feedback-source.ts';
 import type { FeedbackSourceState } from './feedback-state.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import type {
   GitHubNotificationCommentClient,
   GitHubNotificationIntakeClient,
@@ -73,6 +73,8 @@ export default async function reactivateAssignmentFeedback(input: {
   pullRequest?: { number: number; nodeId: string };
 }) {
   const { record, intake, policy, client } = input;
+  // Operator origin has no assignment event to reactivate or replay.
+  if ('initiation' in intake) return false;
   if (!workflowFeedbackAccepting(policy.policy, 'issue-assignment')) {
     const feedback = (record.feedback ??= { startedAt: input.now, baseline: {}, events: [] });
     observeFeedbackPolicy(feedback, policy.policy, input.now);

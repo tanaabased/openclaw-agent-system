@@ -27,6 +27,7 @@ interface ApprovalContext {
 interface PendingOperation {
   loaded: LoadedManifest;
   rebuildCodexPath: boolean;
+  manualSessionDispatch: boolean;
   workspaceDir: string;
   skipSetupHost: boolean;
   skipSetupAgent: boolean;
@@ -86,7 +87,13 @@ export default class AgentLifecycleApproval {
       denied();
     }
     const consumers =
-      name === 'agent_system_install' ? sessionDispatchRequirements(loaded.manifest) : [];
+      name === 'agent_system_install'
+        ? sessionDispatchRequirements(
+            loaded.manifest,
+            (params as { manualSessionDispatch?: boolean } | undefined)?.manualSessionDispatch ===
+              true,
+          )
+        : [];
     if (consumers.length && context.requester?.senderIsOwner !== true) denied();
     const workspaceDir = await realpath(loaded.scope.workspaceDir);
     context.abortSignal?.throwIfAborted();
@@ -103,6 +110,9 @@ export default class AgentLifecycleApproval {
       loaded.path === previous.loaded.path &&
       workspaceDir === previous.workspaceDir &&
       rebuildCodexPath === previous.rebuildCodexPath &&
+      ((params as { manualSessionDispatch?: boolean } | undefined)?.manualSessionDispatch ===
+        true) ===
+        previous.manualSessionDispatch &&
       selection.skipSetupHost === previous.skipSetupHost &&
       selection.skipSetupAgent === previous.skipSetupAgent
     ) {
@@ -143,6 +153,8 @@ export default class AgentLifecycleApproval {
     const pending: PendingOperation = {
       loaded: structuredClone(loaded),
       rebuildCodexPath,
+      manualSessionDispatch:
+        (params as { manualSessionDispatch?: boolean } | undefined)?.manualSessionDispatch === true,
       workspaceDir,
       ...selection,
       allowed: false,
@@ -192,6 +204,9 @@ export default class AgentLifecycleApproval {
     if (!pending) denied();
     pending.dispose();
     if (
+      ((params as { manualSessionDispatch?: boolean } | undefined)?.manualSessionDispatch ===
+        true) !==
+        pending.manualSessionDispatch ||
       !pending.allowed ||
       Date.now() >= pending.expiresAt ||
       !Value.Check(lifecycleParameters(name), params) ||
@@ -251,6 +266,7 @@ export default class AgentLifecycleApproval {
         return name === 'agent_system_install'
           ? this.dependencies.installService.install({
               ...input,
+              manualSessionDispatch: pending.manualSessionDispatch,
               ...(pending.sessionDispatchConsent
                 ? { sessionDispatchConsent: true, assertEnrollmentCurrent }
                 : {}),

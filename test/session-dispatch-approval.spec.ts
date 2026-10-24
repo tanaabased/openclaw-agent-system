@@ -95,6 +95,24 @@ describe('agent/session-dispatch-approval', () => {
     });
   });
 
+  it('should disclose manual-only enrollment and bind its option to the approved invocation', async () => {
+    const f = await fixture();
+    delete f.loaded.manifest.github!.notifications;
+    const params = { manualSessionDispatch: true };
+    const request = await f.approval.request('agent_system_install', params, f.context);
+    assert.ok(request.requireApproval?.description.includes('manual issue launch'));
+    assert.ok(request.requireApproval?.description.includes('operator.write'));
+    request.requireApproval!.onResolution('allow-once');
+    await assert.rejects(f.approval.execute('agent_system_install', {}, 'call', f.tool), {
+      code: 'approval_denied',
+    });
+    assert.deepEqual(f.calls, []);
+    const retry = await f.approval.request('agent_system_install', params, f.context);
+    retry.requireApproval!.onResolution('allow-once');
+    await f.approval.execute('agent_system_install', params, 'call', f.tool);
+    assert.deepEqual(f.calls, [true]);
+  });
+
   it('should reject a non-owner before requesting enrollment approval', async () => {
     const f = await fixture();
     await assert.rejects(

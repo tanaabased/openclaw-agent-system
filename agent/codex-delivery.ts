@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
@@ -46,7 +47,9 @@ import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts
 import IssueDeliveryProvider, {
   type IssueDeliveryInput,
 } from '../channels/github/publication/issue-delivery.ts';
-import resolvePullRequestRecipients from '../channels/github/pull-request-recipients.ts';
+import resolvePullRequestRecipients, {
+  issuePullRequestRecipients,
+} from '../channels/github/pull-request-recipients.ts';
 
 const requestSchema = Type.Object(
   {
@@ -185,9 +188,7 @@ export default async function runCodexDelivery(
         (await realpath(found.cwd)) !== (await realpath(record.worktree))
       )
         throw new Error('delivery-native-binding-mismatch');
-      const intake = (await current.store.read())?.records.find(
-        (entry) => entry.id === record.intakeId,
-      );
+      const intake = dispatchAdmission(record, (await current.store.read())?.records ?? []);
       if (!intake) throw new Error('delivery-admission-missing');
       const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
       const previous = record.delivery;
@@ -363,7 +364,10 @@ export default async function runCodexDelivery(
         )
           throw new Error('delivery-continuation-stopped');
         const transition = issueProgression(record, {
-          mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
+          mode:
+            record.manualIssue?.selections?.mode ??
+            current.manifest.github?.notifications?.issueAssignment?.mode ??
+            'auto',
           now: (deps.now ?? Date.now)(),
         });
         if (
@@ -439,9 +443,16 @@ export default async function runCodexDelivery(
         input.eventId && previous?.pullRequest
           ? []
           : current.manifest.github?.notifications !== undefined
-            ? current.manifest.github.notifications.issueAssignment?.pullRequest?.recipients
+            ? issuePullRequestRecipients(
+                current.manifest.github.notifications,
+                Boolean(record.manualIssue),
+              )
             : undefined;
-      if (!announcementOnly) resolvePullRequestRecipients(recipients, intake.assignment.actor);
+      if (!announcementOnly)
+        resolvePullRequestRecipients(
+          recipients ?? (intake.assignment ? undefined : []),
+          intake.assignment?.actor,
+        );
       const binding = {
         repositoryId: intake.repository.nodeId,
         issueId: intake.issue.nodeId,
@@ -600,14 +611,14 @@ export default async function runCodexDelivery(
               repositoryOwner: intake.repository.owner.login,
               repositoryName: intake.repository.name,
               repositoryDefaultBranch: checked.repo.defaultBranch,
-              assignmentActorLogin: intake.assignment.actor.login,
-              assignmentActorNodeId: intake.assignment.actor.nodeId,
+              assignmentActorLogin: intake.assignment?.actor.login,
+              assignmentActorNodeId: intake.assignment?.actor.nodeId,
             },
             branch,
             title: delivery.title,
             body: delivery.body,
             signal,
-            recipients,
+            recipients: recipients ?? (intake.assignment ? undefined : []),
             expectedPullRequest: delivery.pullRequest,
             headSha: head,
             repositoryNodeId: intake.repository.nodeId,

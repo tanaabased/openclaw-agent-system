@@ -66,6 +66,7 @@ export async function describeIssueSession(
       (!record.sessionCreation.sessionId || row.sessionId === record.sessionCreation.sessionId),
     'sessionId',
   );
+  match(row.archived !== true && !row.archivedAt, 'archived');
   // Retained presentation proves session custody only; it grants no new workflow authority.
   if (retained) return row.sessionId;
   match(typeof cwd === 'string' && (await realpath(cwd)) === (await realpath(expected.cwd)), 'cwd');
@@ -83,7 +84,6 @@ export async function describeIssueSession(
   );
   match(!row.spawnedBy, 'spawnedBy');
   match(row.spawnDepth === undefined || row.spawnDepth === 0, 'spawnDepth');
-  match(row.archived !== true && !row.archivedAt, 'archived');
   record.effective = settings.effective;
   return row.sessionId;
 }

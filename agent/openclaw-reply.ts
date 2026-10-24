@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import feedbackReply from './feedback-reply.ts';
 import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
@@ -92,7 +93,7 @@ export default async function openClawReply(input: {
           state.records.map((record) =>
             replyOwnerContext({
               record,
-              intake: admitted?.records.find((entry) => entry.id === record.intakeId),
+              intake: dispatchAdmission(record, admitted?.records ?? []),
               caller: caller.sessionKey,
               incarnation: record.sessionCreation?.sessionId,
               custodyInvalid:

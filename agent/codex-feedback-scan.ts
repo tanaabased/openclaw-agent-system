@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import workflowFailure from './workflow-failure.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import feedbackOwnPublications from './feedback-own-publications.ts';
@@ -60,7 +61,7 @@ export async function scanCodexFeedback(input: {
   const scans: FeedbackScan[] = [];
   for (const record of records) {
     if (budget.exhausted) break;
-    const admitted = intake.records.find((item) => item.id === record.intakeId);
+    const admitted = dispatchAdmission(record, intake.records ?? []);
     if (!admitted) throw new Error('feedback-admission-missing');
     const feedback = structuredClone(
       record.feedback ?? { startedAt: now, baseline: {}, events: [] },

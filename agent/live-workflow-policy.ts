@@ -1,5 +1,5 @@
 import type { AgentManifest } from '../manifest/types.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 
 /** current workflow settings decide eligibility; receipts retain effects and identity. */
@@ -10,12 +10,15 @@ export default function liveWorkflowPolicy(
   effect: 'assignment' | 'implementation' | 'continued-work' | 'feedback' = 'assignment',
 ) {
   const policy = manifest.github?.notifications;
+  if ('initiation' in intake && effect === 'assignment') return;
   // admission rules apply once; live mode governs the first implementation transition.
   if (effect === 'implementation')
-    return (policy?.issueAssignment?.mode ?? 'auto') === 'plan'
+    return (('initiation' in intake ? intake.selections?.mode : undefined) ??
+      policy?.issueAssignment?.mode ??
+      'auto') === 'plan'
       ? 'implementation-disabled'
       : undefined;
-  if (effect !== 'assignment') return;
+  if (effect !== 'assignment' || 'initiation' in intake) return;
   if (!policy || !policy.runtimes.includes(runtime)) return 'workflow-disabled';
   if (!policy.issueAssignment) return 'issue-workflow-disabled';
   if (

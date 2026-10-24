@@ -1,3 +1,4 @@
+import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import { withNotificationResetDiagnostic } from './notification-reset-diagnostic.ts';
 import { lstat } from 'node:fs/promises';
@@ -178,16 +179,16 @@ export default class OpenClawNotificationReset {
     const adapter: NotificationResetAdapter = {
       fence: (run) => intake.exclusive(() => journal.exclusive(() => run(), true)),
       snapshot: async () => {
-        const state = await intake.read();
+        const records = (await journal.read()).records;
+        const state = managedIssueState(await intake.read(), records);
         if (!state) throw new Error('notification-reset-intake-missing');
         if (state.agentId !== manifest.agent.id || state.workspaceDir !== workspace)
           throw new Error('notification-reset-scope-changed');
-        const records = (await journal.read()).records;
         const contents = { intake: state, records };
         const resources = purge ? notificationResetResources(contents) : [];
         for (const resource of resources.filter(({ kind }) => kind === 'worktree')) {
           const entry = records.find(({ id }) => id === resource.identity)!;
-          const item = state.records.find(({ id }) => id === entry.intakeId);
+          const item = dispatchAdmission(entry, state.records);
           if (!item) throw new Error('notification-reset-intake-identity-missing');
           const { client } = await deps.connect(manifest, workspace);
           const repository = await client.getRepository(
@@ -402,7 +403,7 @@ export default class OpenClawNotificationReset {
           });
           return { status: 'done' };
         }
-        const item = retained.intake.records.find(({ id }) => id === entry.intakeId);
+        const item = dispatchAdmission(entry, retained.intake.records);
         if (!item) throw new Error('notification-reset-intake-identity-missing');
         if (resource.kind === 'pull-request')
           throw new Error('notification-reset-remote-effect-forbidden');

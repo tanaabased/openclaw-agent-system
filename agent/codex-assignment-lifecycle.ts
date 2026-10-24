@@ -1,3 +1,4 @@
+import { managedIssueState } from './managed-issue.ts';
 import cleanupConfiguration from './cleanup-configuration.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
 import DiscoveryBudget from './discovery-budget.ts';
@@ -25,12 +26,12 @@ export default async function reconcileCodexLifecycle(
   const current = await selectCodexIntake(pluginData, deps);
   const readConfiguration = deps.readInstallationConfig ?? cleanupConfiguration;
   const configuration = await readConfiguration();
-  const retained = await current.store.read();
+  const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const retained = managedIssueState(await current.store.read(), (await store.read()).records);
   if (!retained?.records.length) return;
   current.policy = retainedIntakePolicy(current.manifest, retained, 'codex');
   current.policy.policy.issueAssignment!.allowed =
     current.manifest.github?.notifications?.issueAssignment?.allowed ?? [];
-  const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   const feedbackBudget = new DiscoveryBudget();
   const now = (deps.now ?? Date.now)();
   const snapshot = await store.read();
@@ -47,12 +48,16 @@ export default async function reconcileCodexLifecycle(
   )
     return;
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
-  const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
-    pluginData,
-    { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-    false,
-    true,
-  );
+  const manualTarget =
+    manual && snapshot.records.find((record) => record.id === manual.id && record.manualIssue);
+  const activation = manualTarget
+    ? { sourceThreadId: manualTarget.sourceThreadId }
+    : await (deps.activation ?? inspectCodexDispatchActivation)(
+        pluginData,
+        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+        false,
+        true,
+      );
   if (!manual && caller !== activation.sourceThreadId)
     throw new Error('dispatch-intake-caller-required');
   const connection = deps.native
@@ -65,7 +70,7 @@ export default async function reconcileCodexLifecycle(
     const occurrence = manual
       ? { id: (await native.operatorInput(caller)).turnId }
       : await native.occurrence(caller);
-    const admitted = await current.store.read();
+    const admitted = managedIssueState(await current.store.read(), snapshot.records);
     if (!admitted) throw new Error('dispatch-policy-reconciliation-required');
     return await store.exclusive(async (state, save, signal) => {
       const target = manual && state.records.find((record) => record.id === manual.id);
@@ -98,12 +103,14 @@ export default async function reconcileCodexLifecycle(
           current.policy!.policy = live.policy;
           current.policy!.policy.issueAssignment!.allowed =
             selected.manifest.github?.notifications?.issueAssignment?.allowed ?? [];
-          const verified = await (deps.activation ?? inspectCodexDispatchActivation)(
-            pluginData,
-            { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-            false,
-            true,
-          );
+          const verified = manualTarget
+            ? { sourceThreadId: manualTarget.sourceThreadId }
+            : await (deps.activation ?? inspectCodexDispatchActivation)(
+                pluginData,
+                { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+                false,
+                true,
+              );
           if (
             selected.store.location.scope !== current.store.location.scope ||
             verified.sourceThreadId !== activation.sourceThreadId

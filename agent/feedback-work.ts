@@ -1,3 +1,4 @@
+import type { OperatorIssue } from './managed-issue.ts';
 import { Type, type Static } from 'typebox';
 
 import { automationHash } from './automation-hash.ts';
@@ -19,7 +20,9 @@ export const feedbackDecisionSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-type Issue = Parameters<typeof issueProgression>[0];
+type Issue = Parameters<typeof issueProgression>[0] & {
+  manualIssue?: Pick<OperatorIssue, 'selections'>;
+};
 
 /** retained conversation context is evidence, not fresh direction or implementation authority. */
 export function feedbackWorkContext(
@@ -46,7 +49,9 @@ export function feedbackMode(record: Issue, policy: GitHubNotificationPolicy) {
     (record.continuation?.phase === 'cancelled' && !record.handoff)
   )
     throw new Error('feedback-issue-inactive');
-  return retainedIssueProgression(record) ? 'work' : (policy.issueAssignment?.mode ?? 'auto');
+  return retainedIssueProgression(record)
+    ? 'work'
+    : (record.manualIssue?.selections?.mode ?? policy.issueAssignment?.mode ?? 'auto');
 }
 
 /** feedback uses the issue transition; its own result never replaces the original attempt. */
@@ -81,7 +86,10 @@ export async function beginFeedbackWork(input: {
   if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
   const selected = await selectWorkflowStage({
     stage: 'implementation',
-    configuration: input.policy.issueAssignment?.implementation,
+    configuration: {
+      ...input.policy.issueAssignment?.implementation,
+      ...input.record.manualIssue?.selections?.implementation,
+    },
     workspace: input.workspace,
     observedAt: event.work?.selection.observedAt ?? input.now,
     resolveSkill: input.resolveSkill,
