@@ -33,7 +33,7 @@ export default function codexRetirementNative(request: CodexThreadRequest) {
       const users = new Map<string, Record<string, unknown>>();
       let cursor: string | undefined;
       const seen = new Set<string>();
-      for (let page = 0; page < 20; page++) {
+      for (;;) {
         const result = await request('thread/list', {
           archived: false,
           limit: 100,
@@ -67,7 +67,6 @@ export default function codexRetirementNative(request: CodexThreadRequest) {
           throw new Error('retirement-native-inventory-invalid');
         seen.add(result.nextCursor);
         cursor = result.nextCursor;
-        if (page === 19) throw new Error('retirement-native-inventory-incomplete');
       }
       const owners = new Set(retiringOwners);
       const helpers = [...users.values()].filter(

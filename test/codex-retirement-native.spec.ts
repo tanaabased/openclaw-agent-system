@@ -3,20 +3,20 @@ import nativeRetirement from '../agent/codex-retirement-native.ts';
 import type { CodexThreadRequest } from '../agent/codex-thread-client.ts';
 
 describe('codex retirement native evidence', () => {
-  it('should inspect every native page for other users of the worktree', async () => {
+  it('should inspect beyond twenty native pages for other users of the worktree', async () => {
     const reader = nativeRetirement(async (method, params) => {
       assert.equal(method, 'thread/list');
       assert.equal(params.archived, false);
       assert.deepEqual(params.modelProviders, []);
-      return params.cursor
-        ? { data: [{ id: 'other', cwd: '/worktree' }], nextCursor: null }
-        : {
-            data: [
-              { id: 'child', cwd: '/worktree' },
-              { id: 'unrelated', cwd: '/elsewhere' },
-            ],
-            nextCursor: 'page2',
-          };
+      const page = Number(params.cursor ?? 1);
+      if (page === 25) return { data: [{ id: 'other', cwd: '/worktree' }], nextCursor: null };
+      return {
+        data: [
+          ...(page === 1 ? [{ id: 'child', cwd: '/worktree' }] : []),
+          { id: `unrelated-${page}`, cwd: '/elsewhere' },
+        ],
+        nextCursor: String(page + 1),
+      };
     });
     assert.deepEqual(await reader.worktreeUsers('/worktree'), ['child', 'other']);
   });
