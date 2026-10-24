@@ -72,7 +72,7 @@ export function projectAutomation(
                 schedule.fields.months.join(','),
                 schedule.fields.weekdayWildcard ? '*' : schedule.fields.weekdays.join(','),
               ].join(' '),
-              tz: schedule.timezone === 'native' ? context.timezone : schedule.timezone,
+              tz: schedule.timezone ?? context.timezone,
               staggerMs: 0,
             }
           : (() => {

@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 
 import {
   effectiveAutomation,
+  projectAutomation,
   type AutomationProjectionContext,
 } from '../agent/automation-projection.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
+import normalizeSchedule from '../manifest/automation-schedule.ts';
 
 const context: AutomationProjectionContext = {
   agentId: 'tanaabot',
@@ -21,6 +23,29 @@ function job(payload: { prompt: string } | { run: string[] }) {
 }
 
 describe('agent/automation-projection', () => {
+  it('should project omitted and null zones locally and preserve explicit zones', () => {
+    const record = {
+      id: 'review',
+      marker: 'fixture',
+      hash: '',
+      triggerHash: '',
+      generation: 1,
+      anchorMs: 0,
+      removed: false,
+    };
+    for (const [declaration, timezone] of [
+      ['0 8 * * *', 'UTC'],
+      [{ cron: '0 8 * * *' }, 'UTC'],
+      [{ cron: '0 8 * * *', timezone: null }, 'UTC'],
+      [{ cron: '0 8 * * *', timezone: 'America/New_York' }, 'America/New_York'],
+    ] as const) {
+      const scheduled = {
+        ...job({ prompt: 'Review activity.' }),
+        schedule: normalizeSchedule(declaration),
+      };
+      assert.equal(projectAutomation(scheduled, record, context).schedule.tz, timezone);
+    }
+  });
   it('should keep prompt fingerprints stable across cli and gateway launcher contexts', () => {
     const prompt = job({ prompt: 'Review activity.' });
     const original = structuredClone(context);
