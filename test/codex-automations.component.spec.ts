@@ -38,6 +38,26 @@ const rejectsCode = (code: string) => (error: unknown) =>
   !!error && typeof error === 'object' && 'code' in error && error.code === code;
 
 describe('agent/codex-automation-native-contract', () => {
+  it('should preserve the reviewed utc recurrence through native saved-state parsing', async () => {
+    const captured = JSON.parse(await capture('utc'));
+    const id = 'agent-system-424-utc-conversion-fixture';
+    const created = parseSavedAutomation(captured.create.saved, id);
+    const updated = parseSavedAutomation(captured.update.saved, id);
+    assert.equal(created.definition.status, 'PAUSED');
+    assert.equal(
+      created.definition.rrule,
+      codexAutomationSchedule(
+        normalizeAutomationSchedule(captured.declaration),
+        captured.referenceYear,
+      ),
+    );
+    assert.equal(updated.definition.rrule, created.definition.rrule);
+    assert.equal(parseAutomationReceipt(captured.update.response, 'update'), id);
+    assert.throws(
+      () => parseAutomationReceipt(captured.create.response, 'create'),
+      rejectsCode('automation-native-receipt-missing'),
+    );
+  });
   it('should consume the reviewed scheduled execution capture through native parsers', async () => {
     const recorded = JSON.parse(await capture('execution'));
     const id = parseAutomationReceipt(recorded.create.response, 'create');
@@ -135,13 +155,6 @@ describe('agent/codex-automation-native-contract', () => {
     for (const input of ['in 1 hour', 'every 1 second', '0 9 1 * 1', '0 9 * 1 *']) {
       assert.throws(() => codexAutomationSchedule(normalizeAutomationSchedule(input)));
     }
-    assert.throws(
-      () =>
-        codexAutomationSchedule(
-          normalizeAutomationSchedule({ cron: '0 9 * * *', timezone: 'America/New_York' }),
-        ),
-      rejectsCode('automation-timezone-unsupported'),
-    );
   });
 });
 
@@ -214,6 +227,70 @@ describe('agent/codex-automations', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should keep reviewed utc schedules pending until saved and reuse their native identity', async () => {
+    const zoned = (zone = 'UTC', hour = 8) =>
+      job().replace('every 1 hour', `{ cron: "0 ${hour} * * *", timezone: "${zone}" }`);
+    await manifest(zoned());
+    const first = await inspect();
+    assert.equal(first.actions[0]!.review, true);
+    const prepared = await prepareCodexAutomation(pluginData, first.digest, inputs(), deps());
+    assert.equal(prepared.request.mode, 'suggested_create');
+    const proposal = { content: [{ type: 'text', text: 'Rendered automation card in the app.' }] };
+    await assert.rejects(
+      acknowledgeCodexAutomation(pluginData, first.digest, proposal, deps()),
+      rejectsCode('automation-native-receipt-missing'),
+    );
+    await assert.rejects(
+      acknowledgeCodexAutomation(pluginData, first.digest, undefined, deps()),
+      rejectsCode('automation-review-pending'),
+    );
+    assert.deepEqual((await inspect()).actions, []);
+    await nativeWrite(first.actions[0]!.expected);
+    await acknowledgeCodexAutomation(pluginData, first.digest, undefined, deps());
+    assert.equal((await inspect()).status, 'aligned');
+
+    await manifest(zoned().replace('Review this workspace.', 'Review changed content.'));
+    const unrelated = await inspect();
+    assert.equal(unrelated.actions[0]!.review, undefined);
+    assert.equal(unrelated.actions[0]!.expected.rrule, first.actions[0]!.expected.rrule);
+    await syncOne();
+
+    await manifest(zoned('America/New_York', 9));
+    const edit = await inspect();
+    assert.equal(edit.actions[0]!.id, 'fixture-native');
+    const changed = await prepareCodexAutomation(pluginData, edit.digest, inputs(), deps());
+    assert.equal(changed.request.mode, 'suggested_update');
+    await assert.rejects(
+      acknowledgeCodexAutomation(pluginData, edit.digest, undefined, deps()),
+      rejectsCode('automation-review-pending'),
+    );
+    await nativeWrite({ ...edit.actions[0]!.expected, rrule: first.actions[0]!.expected.rrule });
+    await assert.rejects(
+      acknowledgeCodexAutomation(pluginData, edit.digest, undefined, deps()),
+      rejectsCode('automation-readback-diverged'),
+    );
+    await nativeWrite(edit.actions[0]!.expected);
+    await acknowledgeCodexAutomation(pluginData, edit.digest, undefined, deps());
+    assert.equal((await inspect()).status, 'aligned');
+    await manifest(zoned('America/New_York', 9) + '    enabled: false\n');
+    assert.equal((await inspect()).actions[0]!.review, undefined);
+    await syncOne();
+  });
+
+  it('should cancel dismissed review only when no possible saved create exists', async () => {
+    await manifest(job().replace('every 1 hour', '{ cron: "0 8 * * *", timezone: UTC }'));
+    const plan = await inspect();
+    await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+    await cancelCodexAutomation(pluginData, plan.digest, deps());
+    assert.equal((await inspect()).status, 'requires-native-app-sync');
+    await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+    await nativeWrite({ ...plan.actions[0]!.expected, prompt: 'Reviewer removed the marker.' });
+    await assert.rejects(
+      cancelCodexAutomation(pluginData, plan.digest, deps()),
+      rejectsCode('automation-cancel-recovery-required'),
+    );
   });
 
   it('should preserve intake on coordinator repair and retarget a reset only while paused', async () => {

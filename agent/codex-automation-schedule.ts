@@ -1,8 +1,19 @@
 import { CodexAutomationError } from './codex-automation-state.ts';
+import codexAutomationUtc from './codex-automation-utc.ts';
 import type { AutomationSchedule } from '../manifest/automation-schedule.ts';
 
 /** compile only one-job recurrences with demonstrated native equivalents. */
-export default function codexAutomationSchedule(schedule: AutomationSchedule): string {
+export default function codexAutomationSchedule(
+  schedule: AutomationSchedule,
+  year?: number,
+): string {
+  const rule = compile(schedule);
+  if (schedule.kind !== 'cron' || schedule.timezone === null) return rule;
+  if (schedule.timezone === 'UTC') return `DTSTART:19700101T000000Z\nRRULE:${rule};BYSECOND=0`;
+  return codexAutomationUtc(schedule, year);
+}
+
+function compile(schedule: AutomationSchedule): string {
   if (schedule.kind === 'every') {
     const unit = schedule.seconds % 3600 === 0 ? 3600 : 60;
     const interval = schedule.seconds / unit;
@@ -12,7 +23,6 @@ export default function codexAutomationSchedule(schedule: AutomationSchedule): s
     return `FREQ=${unit === 3600 ? 'HOURLY' : 'MINUTELY'};INTERVAL=${interval}`;
   }
   if (schedule.kind !== 'cron') throw new CodexAutomationError('automation-one-shot-unsupported');
-  if (schedule.timezone !== null) throw new CodexAutomationError('automation-timezone-unsupported');
   const f = schedule.fields;
   if (f.months.length !== 12 || f.minutes.length !== 1 || (!f.dayWildcard && !f.weekdayWildcard)) {
     throw new CodexAutomationError('automation-schedule-unsupported');

@@ -7,7 +7,7 @@ automations:
     runtimes: [codex]
     schedule:
       cron: '0 9 * * *'
-      timezone: null
+      timezone: America/New_York
     prompt: Review this workspace and report findings.
     overrides:
       codex:

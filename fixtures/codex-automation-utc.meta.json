@@ -1,0 +1,33 @@
+{
+  "issue": 424,
+  "surface": "Native automation_update review/save, update and deletion with read-only saved-definition inspection",
+  "appVersion": "26.1021.22027",
+  "appBuild": "21747",
+  "review": "Compared native saved recurrence byte-for-byte with the adapter output. The user saved the review card. The fixture stayed paused and was deleted through the native tool.",
+  "sanitization": {
+    "projectId": "fixture-project",
+    "workspacePath": "/workspace/fixture"
+  },
+  "captures": [
+    {
+      "file": "codex-automation-utc.approved.txt",
+      "sha256": "137ceff6e284fb6b0c2e10c353e18ca08c7fbda25f461fefe8e2ef22bebc597b"
+    }
+  ],
+  "calculationEvidence": {
+    "source": ".vite/build/src-Ua8hv5rp.js nominal scheduler function vl and its lexical dependencies",
+    "archiveSha256": "c288204a062a691a3f252d547a6bfea6b56f6e0b3122c46476dda35fcb68e787",
+    "hostTimezones": ["UTC", "America/New_York", "America/Los_Angeles"],
+    "dates": [
+      "2026-03-07T13:00:00Z",
+      "2026-03-08T12:00:00Z",
+      "2026-10-31T12:00:00Z",
+      "2026-11-01T13:00:00Z"
+    ],
+    "scope": "Executed extracted native calculation, not a scheduled model run. UTC recurrence sets avoid the observed host-dependent TZID path."
+  },
+  "remainingProof": [
+    "No actual scheduled occurrence was authorized or run.",
+    "GitHub Actions-only Leia was not run locally."
+  ]
+}

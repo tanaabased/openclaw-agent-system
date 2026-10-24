@@ -30,6 +30,7 @@ export type CodexAutomationRecord = Static<typeof automationRecordSchema>;
 export interface CodexAutomationAction {
   manifestId: string;
   mode: 'create' | 'update';
+  review?: boolean;
   id?: string;
   expected: NativeAutomation;
   removed: boolean;
@@ -258,6 +259,9 @@ export default async function planCodexAutomations(options: {
         actions.push({
           manifestId: job.id,
           mode: actual ? 'update' : 'create',
+          ...(rrule.startsWith('DTSTART:') && rrule !== actual?.definition.rrule
+            ? { review: true }
+            : {}),
           ...(actual ? { id: actual.id } : {}),
           expected,
           removed: false,

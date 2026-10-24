@@ -16,6 +16,8 @@ history item without model generation, and verifies resume through a fresh
 process, including native `auto_review`, `on-request`, and `workspace-write`
 permission readback. Repeated sync reuses those conversations.
 
+The named-zone declaration compiles to repeating UTC rules without an expiry or
+background refresh. Native review is required before saving that schedule.
 The prepare/cancel check retains a pending journal until saved-state verification
 and permits cancellation only while the failed write's target remains unchanged.
 Pending creates also require no new native IDs: an unmarked job could be a partial
@@ -51,7 +53,7 @@ node "$runtime" binding bind --plugin-data "$root/automation-data" --workspace "
 jq -n --arg workspace "$workspace" '{projects:{schemaVersion:2,projects:[{projectId:"fixture-project",projectKind:"local",hostId:"local",path:$workspace}]}}' > "$root/automation-input.json"
 node "$runtime" automations plan --plugin-data "$root/automation-data" < "$root/automation-input.json" \
   | tee "$root/automation-plan.json" \
-  | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create" and .actions[0].expected.projectId == "fixture-project" and .actions[0].expected.status == "PAUSED"'
+  | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create" and .actions[0].review == true and (.actions[0].expected.rrule | startswith("DTSTART:19700101T000000Z")) and .actions[0].expected.projectId == "fixture-project" and .actions[0].expected.status == "PAUSED"'
 node "$runtime" setup install --plugin-data "$root/automation-data" \
   | jq -e '.status == "requires-native-app-sync"'
 test ! -d "$CODEX_HOME/automations"
@@ -76,7 +78,7 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 digest=$(jq -r .digest "$root/automation-plan.json")
 jq --arg digest "$digest" '. + {digest:$digest}' "$root/automation-input.json" \
   | node "$runtime" automations prepare --plugin-data "$root/automation-data" \
-  | jq -e '.status == "prepared" and .request.mode == "create"'
+  | jq -e '.status == "prepared" and .request.mode == "suggested_create"'
 node "$runtime" automations inspect --plugin-data "$root/automation-data" < "$root/automation-input.json" \
   | jq -e '.status == "blocked" and ([.findings[].code] | index("automation-pending-readback-required") != null)'
 jq -n --arg digest "$digest" '{digest:$digest}' \

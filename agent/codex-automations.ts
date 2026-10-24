@@ -47,6 +47,7 @@ const actionSchema = Type.Object(
   {
     manifestId: Type.String(),
     mode: Type.Union([Type.Literal('create'), Type.Literal('update')]),
+    review: Type.Optional(Type.Boolean()),
     id: Type.Optional(Type.String()),
     expected: nativeAutomationSchema,
     removed: Type.Boolean(),
@@ -799,7 +800,11 @@ export async function prepareCodexAutomation(
     return {
       status: 'prepared',
       digest,
-      request: { mode: action.mode, ...(action.id ? { id: action.id } : {}), ...action.expected },
+      request: {
+        mode: action.review ? `suggested_${action.mode}` : action.mode,
+        ...(action.id ? { id: action.id } : {}),
+        ...action.expected,
+      },
     };
   });
 }
@@ -823,6 +828,8 @@ export async function acknowledgeCodexAutomation(
     const actual = matches.length === 1 ? matches[0] : undefined;
     const receiptId =
       receipt === undefined ? undefined : parseAutomationReceipt(receipt, action.mode);
+    if (action.review && (!actual || automationHash(matches) === pending.targetBefore?.hash))
+      throw new CodexAutomationError('automation-review-pending');
     if (
       !actual ||
       (action.id && actual.id !== action.id) ||
