@@ -29,6 +29,8 @@ export default function replyOwnerContext(input: {
     id: record.id,
     threadId: record.threadId,
     ...(input.incarnation ? { incarnation: input.incarnation } : {}),
+    retired: Boolean(record.retired),
+    reset: Boolean(record.reset),
     inactive: Boolean(
       record.retired ||
       record.retirement ||

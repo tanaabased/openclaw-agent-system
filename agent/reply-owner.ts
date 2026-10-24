@@ -12,12 +12,15 @@ import {
   type GitHubCanonicalFeedback,
 } from '../channels/github/provider/review-feedback.ts';
 import redactFeedback from './feedback-redaction.ts';
+import managedOwner from './managed-owner.ts';
 
 export interface ReplyOwner {
   id: string;
   threadId?: string;
   incarnation?: string;
   inactive: boolean;
+  retired?: boolean;
+  reset?: boolean;
   repository?: string;
   number?: number;
   pullRequestNumber?: number;
@@ -47,22 +50,26 @@ export default function replyOwner(
   purpose?: 'status-update',
 ) {
   const repository = `${target.owner}/${target.name}`.toLowerCase();
-  const matches = owners.filter(
+  const ownership = managedOwner(
+    owners,
+    session,
     (owner) =>
       owner.repository?.toLowerCase() === repository &&
       (target.number === owner.number || target.number === owner.pullRequestNumber),
   );
-  const callers = owners.filter((owner) => owner.threadId === session);
+  if (ownership.status === 'ambiguous') throw new Error('reply-managed-owner-ambiguous');
+  const { owner, caller } = ownership;
   if (
-    callers.some(
-      (owner) => owner.inactive || (owner.incarnation && owner.incarnation !== incarnation),
-    )
+    caller &&
+    (caller.inactive ||
+      caller.retired ||
+      caller.reset ||
+      (caller.incarnation && caller.incarnation !== incarnation))
   )
     throw new Error('reply-managed-context-invalid');
-  if (matches.length > 1) throw new Error('reply-managed-owner-ambiguous');
-  const owner = matches[0];
   if (!owner) {
-    if (purpose && callers.length) throw new Error('reply-managed-owner-required');
+    if (ownership.status === 'historical' || (purpose && caller))
+      throw new Error('reply-managed-owner-required');
     return;
   }
   if (

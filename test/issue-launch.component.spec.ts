@@ -146,6 +146,38 @@ describe('agent/issue-launch', () => {
     );
   });
 
+  it('should reuse current work beside retired history and refuse the retired caller', async () => {
+    await launch();
+    await journal.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.threadId = 'current-chat';
+      const previous = structuredClone(record);
+      previous.id = 'b'.repeat(64);
+      previous.manualIssue!.id = previous.id;
+      previous.threadId = 'old-chat';
+      previous.retired = { at: baseline, by: 'operator' };
+      state.records.unshift(previous);
+      await save();
+    });
+    const before = await journal.read();
+    const result = await launch();
+    assert.ok('destination' in result && result.destination === 'current-chat');
+    context.binding.session = 'old-chat';
+    await assert.rejects(launch(), /launch-owner-inactive/);
+    assert.deepEqual(await journal.read(), before);
+  });
+
+  it('should retain historical-only attempts without creating a replacement', async () => {
+    await launch();
+    await journal.exclusive(async (state, save) => {
+      state.records[0]!.retired = { at: baseline, by: 'operator' };
+      await save();
+    });
+    const before = await journal.read();
+    await assert.rejects(launch(), /launch-owner-inactive/);
+    assert.deepEqual(await journal.read(), before);
+  });
+
   it('should reject unauthorized or closed work before reservation', async () => {
     context.operator = false;
     await assert.rejects(launch(), /operator-required/);

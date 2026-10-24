@@ -75,10 +75,12 @@ async function freshSkills(
   codex: string,
   env: NodeJS.ProcessEnv,
   cwd: string,
+  permissionHookPath: string,
 ): Promise<Map<string, { path: string; scope: string }>> {
   return new Promise<Map<string, { path: string; scope: string }>>((resolveSkills, reject) => {
     const child = spawn(codex, ['app-server'], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     let buffer = '';
+    let discovered = new Map<string, { path: string; scope: string }>();
     let settled = false;
     const finish = (
       error?: Error,
@@ -111,7 +113,7 @@ async function freshSkills(
           finish(new Error('fresh Codex skill discovery returned malformed JSON'));
           return;
         }
-        if (!record(message) || (message.id !== 1 && message.id !== 2)) continue;
+        if (!record(message) || ![1, 2, 3].includes(Number(message.id))) continue;
         if ('error' in message || !record(message.result)) {
           finish(new Error(`fresh Codex skill discovery request ${String(message.id)} failed`));
           return;
@@ -119,6 +121,30 @@ async function freshSkills(
         if (message.id === 1) {
           send({ method: 'initialized' });
           send({ id: 2, method: 'skills/list', params: { cwds: [cwd], forceReload: true } });
+          continue;
+        }
+        if (message.id === 3) {
+          try {
+            assert.ok(Array.isArray(message.result.data));
+            const entry = message.result.data.find((item) => record(item) && item.cwd === cwd);
+            assert.ok(record(entry) && Array.isArray(entry.hooks));
+            const hooks = entry.hooks.filter(
+              (item) =>
+                record(item) &&
+                item.sourcePath === permissionHookPath &&
+                item.eventName === 'permissionRequest',
+            );
+            assert.equal(hooks.length, 1, 'the installed permission hook must be discoverable');
+            assert.equal(hooks[0].enabled, true);
+            assert.equal(
+              hooks[0].trustStatus,
+              'untrusted',
+              'installation must not grant native hook trust',
+            );
+            finish(undefined, discovered);
+          } catch (error) {
+            finish(error as Error);
+          }
           continue;
         }
         const entries = Array.isArray(message.result.data)
@@ -142,7 +168,8 @@ async function freshSkills(
           }
           if (skill.enabled) names.set(skill.name, { path: skill.path, scope: skill.scope });
         }
-        finish(undefined, names);
+        discovered = names;
+        send({ id: 3, method: 'hooks/list', params: { cwds: [cwd] } });
       }
     });
     child.once('error', (error) => finish(error));
@@ -248,7 +275,12 @@ try {
     );
   }
 
-  const discovered = await freshSkills(codex, environment, home);
+  const discovered = await freshSkills(
+    codex,
+    environment,
+    home,
+    join(cacheRoot, 'hooks/hooks.json'),
+  );
   const missing = [...expectedSkillNames.values()]
     .map((name) => `${manifest.name}:${name}`)
     .filter((name) => !discovered.has(name));
@@ -277,7 +309,12 @@ try {
       join(fixtureSkill, 'SKILL.md'),
     );
   }
-  const replacements = await freshSkills(codex, environment, fixtureWorkspace);
+  const replacements = await freshSkills(
+    codex,
+    environment,
+    fixtureWorkspace,
+    join(cacheRoot, 'hooks/hooks.json'),
+  );
   for (const [name, directory] of fixtures) {
     const replacement = replacements.get(name);
     const path = join(fixtureWorkspace, '.agents/skills', name, 'SKILL.md');
