@@ -1,4 +1,5 @@
 import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
+import managedOwner from './managed-owner.ts';
 import { automationHash } from './automation-hash.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 
@@ -11,7 +12,7 @@ export default function assessmentOwner<
   session: string,
   target: { repository: string; number: number },
 ) {
-  const matching = records.filter((record) => {
+  const ownership = managedOwner(records, session, (record) => {
     const item = dispatchAdmission(record, admitted);
     if (!item) throw new Error('assessment-managed-admission-missing');
     return (
@@ -19,12 +20,11 @@ export default function assessmentOwner<
         target.repository.toLowerCase() && item.issue.number === target.number
     );
   });
-  const callers = records.filter((record) => record.threadId === session);
-  if (matching.length > 1 || callers.length > 1)
-    throw new Error('assessment-managed-owner-ambiguous');
-  const record = matching[0];
-  if (callers.length && callers[0] !== record)
-    throw new Error('assessment-managed-target-mismatch');
+  if (ownership.status === 'ambiguous') throw new Error('assessment-managed-owner-ambiguous');
+  const { owner: record, caller } = ownership;
+  if (ownership.status === 'historical' || caller?.retired || caller?.reset)
+    throw new Error('assessment-managed-context-invalid');
+  if (caller && caller !== record) throw new Error('assessment-managed-target-mismatch');
   if (!record) return;
   if (
     record.reset ||
