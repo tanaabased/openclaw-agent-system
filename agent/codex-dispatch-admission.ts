@@ -33,6 +33,7 @@ import { failDispatch, notice } from './codex-dispatch-reporting.ts';
 import prepareDispatchRepository from './codex-dispatch-repository.ts';
 import { type DispatchRecord } from './codex-dispatch-state.ts';
 import { selectCodexIntake } from './codex-intake.ts';
+import codexSessionSettings from './codex-session-settings.ts';
 import codexRuntimeInstructions from './codex-runtime-instructions.ts';
 import dispatchContext from './dispatch-context.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
@@ -68,18 +69,10 @@ export async function recover(
   record.worktree = found.cwd;
   await save();
   await verifyDispatchWorktree(record.project, found.cwd, repository(intake), deps.git, purpose);
-  if (
-    (found.model && found.model !== record.request.model) ||
-    (found.effort && found.effort !== record.request.thinking)
-  )
-    throw new Error('dispatch-native-model-diverged');
+  const settings = codexSessionSettings(record, found);
   // native titles may be edited independently of the retained issue identity.
   if (!record.effective) record.dispatchedAt = (deps.now ?? Date.now)();
-  record.effective = {
-    status: found.model && found.effort ? 'verified' : 'unverified',
-    ...(found.model ? { model: found.model } : {}),
-    ...(found.effort ? { effort: found.effort } : {}),
-  };
+  record.effective = settings;
   record.phase = record.phase === 'complete' ? 'complete' : 'assessing';
   if (record.phase !== 'complete' && record.result?.outcome === 'operator-setup-blocker') {
     delete record.result;

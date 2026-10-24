@@ -143,7 +143,6 @@ export async function advanceFeedbackTurn(input: {
     request,
     sessionKey: expected.key,
     sessionId: record.sessionCreation.sessionId!,
-    model: expected.model,
     turn: event.turn,
     save,
   });

@@ -65,7 +65,6 @@ export default async function continueOpenClawResponse(input: {
       request,
       sessionKey: expected.key,
       sessionId: record.sessionCreation!.sessionId!,
-      model: expected.model,
       turn: record.summaryRecovery.turn,
       save: input.save,
     });

@@ -4,7 +4,7 @@ import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 import { operatorInputEvent } from './openclaw-session-input.ts';
 import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
 import replyOwner from './reply-owner.ts';
-import pendingPublicResponse from './pending-public-response.ts';
+import replyOwnerContext from './reply-owner-context.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import openClawSkill from './openclaw-skill.ts';
@@ -89,64 +89,23 @@ export default async function openClawReply(input: {
           if (owners[0]) await describeIssueSession(request, owners[0], deps.config());
         }
         return replyOwner(
-          state.records.map((record) => {
-            const item = admitted?.records.find((entry) => entry.id === record.intakeId);
-            if (!item && record.threadId === caller.sessionKey)
-              throw new Error('reply-managed-context-invalid');
-            const pending = pendingPublicResponse(record);
-            const summary =
-              pending?.summary ??
-              record.assessmentSummaries?.find(
-                (entry) => entry.revision === record.assessmentRevision,
-              );
-            return {
-              id: record.id,
-              threadId: record.threadId,
+          state.records.map((record) =>
+            replyOwnerContext({
+              record,
+              intake: admitted?.records.find((entry) => entry.id === record.intakeId),
+              caller: caller.sessionKey,
               incarnation: record.sessionCreation?.sessionId,
-              inactive: Boolean(
-                record.retired ||
-                record.retirement ||
-                record.reset ||
-                record.nativeInactive ||
-                (record.threadId &&
-                  (!record.sessionCreation?.verified ||
-                    !record.sessionCreation.sessionId ||
-                    !record.request ||
-                    !('key' in record.request) ||
-                    record.request.key !== record.threadId ||
-                    record.request.agentId !== manifest.agent.id)),
-              ),
-              repository: item
-                ? `${item.repository.owner.login}/${item.repository.name}`
-                : undefined,
-              number: item?.issue.number,
-              pullRequestNumber: record.work?.delivery?.pullRequest?.pullRequestNumber,
-              events: record.feedback?.events,
-              summary: record.result
-                ? {
-                    selection: summary?.selection,
-                    receipt: summary?.receipt,
-                    publicText: summary?.publicText,
-                    attempt: summary?.attempt,
-                  }
-                : undefined,
+              custodyInvalid:
+                !record.sessionCreation?.verified ||
+                !record.sessionCreation.sessionId ||
+                !record.request ||
+                !('key' in record.request) ||
+                record.request.key !== record.threadId ||
+                record.request.agentId !== manifest.agent.id,
               delivery: record.work?.delivery,
-              summaryPending: Boolean(pending),
-              announcementPending: Boolean(
-                record.work?.delivery?.pullRequest &&
-                (!record.work.delivery.announcement?.receipt ||
-                  record.work.delivery.announcement.code),
-              ),
-              announcementAttempted: Boolean(
-                record.work?.delivery?.announcement?.attempted ||
-                record.work?.delivery?.announcement?.receipt,
-              ),
               implementation: record.work?.result,
-              deliveredPullRequest: record.work?.delivery?.pullRequest,
-              result: record.result,
-              publisherLogin: item?.receiving.login,
-            };
-          }),
+            }),
+          ),
           caller.sessionKey,
           caller.sessionId,
           target,

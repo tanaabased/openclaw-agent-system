@@ -38,6 +38,7 @@ import { type default as CodexDispatchStore, type DispatchRecord } from './codex
 import connectCodexFeedback from './codex-feedback-client.ts';
 import redactCodexFeedback from './codex-feedback-redaction.ts';
 import codexSummaryAuthority from './codex-summary-authority.ts';
+import codexSessionSettings from './codex-session-settings.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
 import recordDispatchResult from './dispatch-result.ts';
@@ -80,10 +81,16 @@ export async function presentDispatch(
       status: 'presented' as const,
       retained: true,
       id: record.id,
-      presentation: assessmentPresentation(record.result!, record, intake, current.workspace, {
-        debug: current.manifest.debug,
-        includeDetails: input.includeDetails === true,
-      }),
+      presentation: assessmentPresentation(
+        record.result!,
+        { ...record, effective: codexSessionSettings(record, found) },
+        intake,
+        current.workspace,
+        {
+          debug: current.manifest.debug,
+          includeDetails: input.includeDetails === true,
+        },
+      ),
       instruction:
         'Show this complete saved assessment. This read does not authorize assessment, implementation, or publication.',
     };

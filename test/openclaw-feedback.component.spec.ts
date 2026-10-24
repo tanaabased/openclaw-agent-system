@@ -35,6 +35,7 @@ describe('agent/openclaw-feedback', () => {
   let published: { nodeId: string; databaseId: number; body: string } | undefined;
   let messages: Record<string, unknown>[];
   let terminal: boolean;
+  let sessionSettings: { model: string; thinkingLevel: string };
   let customSkills: Array<Record<string, unknown>>;
   beforeEach(async () => {
     root = await realpath(await mkdtemp('/tmp/openclaw-feedback-'));
@@ -42,6 +43,7 @@ describe('agent/openclaw-feedback', () => {
     busy = lost = uncertain = revoked = terminal = false;
     skill = true;
     customSkills = [];
+    sessionSettings = { model: 'openai/test', thinkingLevel: 'high' };
     sends = writes = saves = 0;
     destination = '';
     published = undefined;
@@ -164,8 +166,7 @@ describe('agent/openclaw-feedback', () => {
               agentId: 'receiver',
               sessionId: 'session',
               workspaceDir: root,
-              model: 'openai/test',
-              thinkingLevel: 'high',
+              ...sessionSettings,
               label: '#3',
               category: 'repo',
             },
@@ -234,6 +235,30 @@ describe('agent/openclaw-feedback', () => {
     await advanceFeedbackTurn(input);
     return action('context');
   }
+  for (const change of [{ model: 'openai/operator-model' }, { thinkingLevel: 'low' }])
+    it(`should retain feedback authority after operator ${'model' in change ? 'model' : 'thinking'} tuning`, async () => {
+      input.policy.issueAssignment!.mode = 'work';
+      await start();
+      const original = structuredClone(record.request);
+      Object.assign(sessionSettings, change);
+      assert.equal((await action('context')).status, 'verified');
+      assert.equal(
+        (
+          await action('implementation-context', {
+            decision: { mode: 'work', reasons: ['Bounded revision.'], plan: 'Revise the parser.' },
+          })
+        ).status,
+        'verified',
+      );
+      assert.deepEqual(record.effective, {
+        status: 'verified',
+        model: sessionSettings.model,
+        effort: sessionSettings.thinkingLevel,
+      });
+      assert.deepEqual(record.request, original);
+      assert.equal(sends, 1);
+      assert.equal(writes, 0);
+    });
   for (const mode of ['plan', 'auto'] as const)
     for (const message of ['Why this approach?', 'Keep the smaller approach in the plan.'])
       it(`should retain ${mode} input without implementation for ${message.toLowerCase()}`, async () => {

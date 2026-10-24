@@ -18,8 +18,8 @@ export const feedbackEventSchema = Type.Object(
             {
               threadId: text,
               prompt: Type.String({ maxLength: 32000 }),
-              model: text,
-              thinking: text,
+              model: Type.Optional(text),
+              thinking: Type.Optional(text),
             },
             { additionalProperties: false },
           ),

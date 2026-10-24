@@ -70,7 +70,6 @@ export default async function advanceOpenClawWork(input: {
       request,
       sessionKey: expected.key,
       sessionId: record.sessionCreation!.sessionId!,
-      model: expected.model,
       turn: record.decisionTurn,
       save,
     });
@@ -157,7 +156,6 @@ export default async function advanceOpenClawWork(input: {
     request,
     sessionKey: expected.key,
     sessionId: record.sessionCreation!.sessionId!,
-    model: expected.model,
     turn,
     save,
   });

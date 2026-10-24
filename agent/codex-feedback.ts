@@ -43,6 +43,7 @@ import { feedbackResultSchema } from './codex-feedback-state.ts';
 import codexHostAccess from './codex-host-access.ts';
 import codexIssueBranch from './codex-issue-branch.ts';
 import { selectCodexIntake } from './codex-intake.ts';
+import codexSessionSettings from './codex-session-settings.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import pendingDispatchAssignments from './dispatch-pending.ts';
 import { requireWorkflowSchedule } from './workflow-result.ts';
@@ -383,9 +384,8 @@ export default async function runCodexFeedback(
           });
           if (
             !found?.turnId ||
-            (await realpath(found.cwd)) !== (await realpath(record.worktree!)) ||
-            found.model !== record.request!.model ||
-            found.effort !== record.request!.thinking
+            found.id !== record.threadId ||
+            (await realpath(found.cwd)) !== (await realpath(record.worktree!))
           )
             throw new Error('feedback-native-binding-mismatch');
           await verifyDispatchWorktree(
@@ -395,6 +395,8 @@ export default async function runCodexFeedback(
             deps.git,
             'handoff',
           );
+          record.effective = codexSessionSettings(record, found);
+          await save();
           if (operatorPublication) {
             if (selfFeedback) throw new Error('feedback-self-publication-denied');
             const retainedTurn = event.attempt?.turnId;
@@ -469,8 +471,6 @@ export default async function runCodexFeedback(
               beforeTurnId: found.turnId,
               request: {
                 threadId: record.threadId!,
-                model: record.request!.model,
-                thinking: record.request!.thinking,
                 prompt:
                   'Authorized GitHub feedback is ready in this existing issue chat. Before reading or answering it, call feedbackRuntime from the newest trusted context with JSON on stdin: ' +
                   JSON.stringify({ action: 'context', id: record.id, eventId: event.id }) +
@@ -541,6 +541,7 @@ export default async function runCodexFeedback(
               source,
               discussion: await provider.client.getItemContext(owner, name, event.number),
               assessment: record.result,
+              effective: record.effective,
               previousImplementation: record.continuation?.result,
               previousFeedbackWork: feedbackWorkContext(record, event.id),
               work: event.work,
@@ -603,6 +604,7 @@ export default async function runCodexFeedback(
               decisionSchema: feedbackDecisionSchema,
               work: event.work,
               assessment: record.result,
+              effective: record.effective,
               previousImplementation: record.continuation?.result,
               previousFeedbackWork: feedbackWorkContext(record, event.id),
               discussion: await provider.client.getItemContext(owner, name, event.number),
