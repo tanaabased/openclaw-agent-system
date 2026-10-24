@@ -14,6 +14,7 @@ import {
   assessmentResultContextSchema,
   assessmentResultSchema,
   type AssessmentResult,
+  type AssessmentSubmission,
 } from '../agent/assessment-result.ts';
 import type { AssessmentSelection } from '../agent/assessment-selection.ts';
 import AgentSystemToolError from '../api/error.ts';
@@ -2782,7 +2783,7 @@ describe('agent/openclaw issue dispatch', () => {
     }
     assert.equal((await record()).firstTurn?.status, 'accepted');
   });
-  const plan: AssessmentResult = {
+  const plan: AssessmentSubmission = {
     version: 1,
     outcome: 'plan-ready',
     summary: 'Restore the missing result.',
@@ -2808,7 +2809,13 @@ describe('agent/openclaw issue dispatch', () => {
     result: AssessmentResult = plan,
     previousResultDigest?: string,
     who = assessor(id),
-  ) => service.run(manifest, root, who, { action: 'result', id, result, previousResultDigest });
+  ) =>
+    service.run(manifest, root, who, {
+      action: 'result',
+      id,
+      result: result as AssessmentSubmission,
+      previousResultDigest,
+    });
   function assessmentReply(id: string) {
     active = false;
     inputReceipts = [];
@@ -2935,7 +2942,7 @@ describe('agent/openclaw issue dispatch', () => {
       await prepare(input);
       await assess(input.id);
       await context(input.id);
-      const assessment: AssessmentResult = {
+      const assessment: AssessmentSubmission = {
         ...plan,
         ...(mode === 'auto' || mode === 'auto-plan'
           ? { decision: { mode: mode === 'auto-plan' ? 'plan' : 'work', reasons: ['Assessed.'] } }
@@ -3028,7 +3035,7 @@ describe('agent/openclaw issue dispatch', () => {
       await prepare(input);
       await assess(input.id);
       await context(input.id);
-      const assessment: AssessmentResult = {
+      const assessment: AssessmentSubmission = {
         ...plan,
         reviewSummary:
           'You would receive the missing result. Docs clarify it; tests cover the return.',

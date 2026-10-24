@@ -229,6 +229,10 @@ The issue chat performs read-only assessment and records one of three outcomes:
 `plan-ready`, `clarification-needed`, or `operator-setup-blocker`, with evidence and
 completed/remaining investigation. A user follow-up may revise the assessment in
 the same chat. A result never authorizes implementation or publication.
+New submissions require the complete source in `fullAssessment`; incomplete results
+are rejected before recording. Older saved assessments remain readable. If an older
+assessment lacks summary source or its revision, recovery reports the summary as
+blocked until the missing evidence is restored through the authorized assessment flow.
 
 Use [assessment selection](./MANIFEST.md#assessment-selection) under
 `github.issue-assignment` to select an active skill and optional inline
@@ -656,9 +660,21 @@ schedules. Codex supports this subset:
 | `prompt`, `payload`                               | Recurring prompts, including prompts asking a model to run a script.                                                                                                                                                                                                                                        |
 | `run`                                             | Zero-model commands are unsupported, including `payload.kind: command`.                                                                                                                                                                                                                                     |
 | `schedule`                                        | Whole-minute intervals from 1 to 1440 or whole-hour intervals from 1 to 999. Cron supports one minute every hour, or one daily time with daily, weekday, or month-day selection across all months. Multiple-job expressions and unsupported day-field combinations are rejected; one-shots are unsupported. |
-| `schedule.timezone`                               | `native` only. Native timing and DST behavior apply.                                                                                                                                                                                                                                                        |
+| `schedule.timezone`                               | Omit or use `null` for native local time. Named IANA zones map directly to native `DTSTART;TZID=…` recurrence rules; UTC uses a UTC start. Available for every supported cron shape, including hourly. `native` is not accepted.                                                                            |
 | `thread`                                          | Creates a persistent conversation per automation. Explicit model and effort overrides set initial native chat settings; later drift requires the native chat controls.                                                                                                                                      |
 | `timeout-seconds`                                 | Unsupported. Native timeout, concurrency, retry, and catch-up rules apply.                                                                                                                                                                                                                                  |
+
+Zoned creation and schedule edits require saving the native review card; a proposal
+alone is not a synced automation. Unrelated edits preserve the saved recurrence.
+Codex owns timezone evaluation, DST, and missed-run behavior. The adapter does not
+expand calendars or translate named-zone clock times into UTC.
+
+**Native timezone limitation:** in desktop version 26.1021.22027 (21747), the
+inspected named-zone recurrence calculation depends on the scheduler host’s
+timezone and can produce the wrong wall-clock time. Saving and retaining a zone
+does not establish correct execution timing. This adapter preserves the requested
+zone without compensating for that native defect or promising OpenClaw-identical
+DST behavior.
 
 Missing or ambiguous projects block planning; worktree bindings do not select the
 parent checkout. Chat targets require a fresh native exact-chat read with active,

@@ -1,5 +1,5 @@
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
-import { parseAssessmentResult } from './assessment-result.ts';
+import { parseAssessmentSubmission } from './assessment-result.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
 import { automationHash } from './automation-hash.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
@@ -21,7 +21,7 @@ export default function recordDispatchResult(input: {
   assessmentInputs?: { selection: AssessmentSelection; evidence: string };
 }) {
   const { record, intake } = input;
-  const result = parseAssessmentResult(input.result);
+  const result = parseAssessmentSubmission(input.result);
   const binding = {
     admissionId: intake.id,
     workflow: 'issue-assignment' as const,

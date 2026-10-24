@@ -207,6 +207,34 @@ function fixture() {
 }
 
 describe('agent/assessment-summary', () => {
+  it('should report the unavailable source of a legacy assessment before summary composition starts', async () => {
+    const f = fixture();
+    f.retain();
+    delete f.record.result!.fullAssessment;
+    f.record.stageReceipt!.resultDigest = automationHash(f.record.result);
+    const composed = await f.run({ operation: 'compose' });
+    assert.ok('code' in composed && composed.code === 'assessment-summary-source-unavailable');
+    assert.equal(f.record.assessmentSummaries, undefined);
+    assert.equal(pendingPublicResponse(f.record)?.state, 'blocked');
+    assert.equal(f.writes, 0);
+  });
+  it('should preserve delivered receipts and denial holds when legacy source is missing', async () => {
+    for (const held of [false, true]) {
+      const f = fixture();
+      f.retain();
+      const digest = await f.compose();
+      await f.run({ operation: held ? 'hold' : 'publish', digest });
+      const summaries = structuredClone(f.record.assessmentSummaries);
+      delete f.record.result!.fullAssessment;
+      const pending = pendingPublicResponse(f.record);
+      if (held) {
+        assert.equal(pending?.state, 'blocked');
+        assert.equal(pending?.summary?.code, 'assessment-summary-native-approval-denied');
+        assert.match(pending!.instruction, /Do not retry/);
+      } else assert.equal(pending, undefined);
+      assert.deepEqual(f.record.assessmentSummaries, summaries);
+    }
+  });
   it('should project an older uncertain summary for reply recovery without replacing it with the latest revision', async () => {
     const t = fixture();
     t.retain();

@@ -1,0 +1,35 @@
+{
+  "issue": 424,
+  "surface": "Native reviewed named-zone schedule save and edit, with read-only saved-definition inspection",
+  "appVersion": "26.1021.22027",
+  "appBuild": "21747",
+  "review": "The user saved the timezone fixture and its schedule edit while paused. The captured definitions retain America/New_York through an unrelated prompt edit and an 08:00 to 09:00 schedule edit. The fixture was deleted without running.",
+  "sanitization": {
+    "projectId": "fixture-project",
+    "workspacePath": "/workspace/fixture"
+  },
+  "captures": [
+    {
+      "file": "codex-automation-timezone.approved.txt",
+      "sha256": "eaab52fa781c08db1a1857e0e220cd48c7141ef339c67604c2b355504af9040e"
+    }
+  ],
+  "calculationEvidence": {
+    "source": ".vite/build/src-Ua8hv5rp.js nominal scheduler function vl and its lexical dependencies",
+    "archiveSha256": "c288204a062a691a3f252d547a6bfea6b56f6e0b3122c46476dda35fcb68e787",
+    "scope": "The extracted calculation for a named New York 08:00 recurrence returned different UTC instants on UTC, New York, and Los Angeles hosts. Saved-zone persistence is not evidence of correct wall-clock execution.",
+    "example": {
+      "rrule": "DTSTART;TZID=America/New_York:20261023T000000\nRRULE:FREQ=DAILY;BYHOUR=8;BYMINUTE=0;BYSECOND=0",
+      "now": "2026-10-24T12:20:00Z",
+      "nominalNextByHost": {
+        "UTC": "2026-10-25T12:00:00.000Z",
+        "America/New_York": "2026-10-25T08:00:00.000Z",
+        "America/Los_Angeles": "2026-10-25T05:00:00.000Z"
+      }
+    }
+  },
+  "remainingProof": [
+    "No actual scheduled occurrence was authorized or run.",
+    "GitHub Actions-only Leia was not run locally."
+  ]
+}

@@ -30,6 +30,7 @@ export type CodexAutomationRecord = Static<typeof automationRecordSchema>;
 export interface CodexAutomationAction {
   manifestId: string;
   mode: 'create' | 'update';
+  review?: boolean;
   id?: string;
   expected: NativeAutomation;
   removed: boolean;
@@ -174,14 +175,14 @@ export default async function planCodexAutomations(options: {
       if (job.payload.prompt.includes('Managed by Agent System (codex:')) {
         throw new CodexAutomationError('automation-prompt-marker-conflict');
       }
-      const rrule = codexAutomationSchedule(job.schedule);
+      const record = records.find((r) => r.id === job.id);
+      const rrule = codexAutomationSchedule(job.schedule, record?.definition.rrule);
       const override = job.overrides.codex;
       const selection = automationThreadSelection(job, 'codex');
       const binding = options.bindings?.get(job.id);
       if (selection?.managed && !binding)
         throw new CodexAutomationError('automation-thread-sync-required');
       const target = override?.target ?? (binding ? { thread: binding.id } : 'independent');
-      const record = records.find((r) => r.id === job.id);
       const actual = owned.get(job.id);
       if (record && (!actual || actual.id !== record.nativeId)) {
         throw new CodexAutomationError('automation-native-recovery-required');
@@ -258,6 +259,9 @@ export default async function planCodexAutomations(options: {
         actions.push({
           manifestId: job.id,
           mode: actual ? 'update' : 'create',
+          ...(/^DTSTART[:;]/u.test(rrule) && rrule !== actual?.definition.rrule
+            ? { review: true }
+            : {}),
           ...(actual ? { id: actual.id } : {}),
           expected,
           removed: false,

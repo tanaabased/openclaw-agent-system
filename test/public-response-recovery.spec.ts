@@ -190,6 +190,22 @@ async function fixture() {
 }
 
 describe('agent/public-response recovery', () => {
+  it('should expose missing legacy source without queuing an impossible summary recovery', async () => {
+    const f = await fixture();
+    delete f.record.result!.fullAssessment;
+    for (const revision of [1, undefined]) {
+      f.record.assessmentRevision = revision;
+      const pending = pendingPublicResponse(f.record);
+      assert.equal(pending?.state, 'blocked');
+      assert.ok(pending && 'code' in pending);
+      assert.equal(pending.code, 'assessment-summary-source-unavailable');
+      assert.match(pending.instruction, /complete source.*authorized assessment flow/);
+      assert.equal(openClawResponsePending(f.record), false);
+      await f.run();
+      assert.equal(f.posts, 0);
+      assert.equal(f.record.result?.outcome, 'plan-ready');
+    }
+  });
   it('should retain the summary obligation before composition and never reset implementation stage', async () => {
     const f = await fixture();
     assert.equal(pendingPublicResponse(f.record)?.state, 'pending');

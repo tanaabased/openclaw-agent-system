@@ -1,6 +1,6 @@
 import { Type } from 'typebox';
 
-import { assessmentResultSchema } from '../../agent/assessment-result.ts';
+import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 export const directAssessmentRequestSchema = Type.Object(
@@ -17,7 +17,7 @@ export const directAssessmentRequestSchema = Type.Object(
     revise: Type.Optional(Type.Boolean()),
     includeDetails: Type.Optional(Type.Boolean()),
     previousResultDigest: Type.Optional(id),
-    result: Type.Optional(assessmentResultSchema),
+    result: Type.Optional(assessmentSubmissionSchema),
   },
   { additionalProperties: false },
 );

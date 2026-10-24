@@ -7,7 +7,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import assignmentCard from '../channels/github/presentation/assignment-card.ts';
 import { assessmentInstructions } from './assessment-instructions.ts';
-import { assessmentResultContextSchema } from './assessment-result.ts';
+import { assessmentResultContextSchema, parseAssessmentSubmission } from './assessment-result.ts';
 import assessmentSubmission from './assessment-submission.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 import openClawSkill from './openclaw-skill.ts';
@@ -249,9 +249,7 @@ export async function issueAssessmentAction(input: {
     automationHash(record.result) !== automationHash(input.result)
   )
     throw new Error('assessment-result-conflict');
-  const candidate = sessionObject(input.result);
-  if (typeof candidate.fullAssessment !== 'string' || !candidate.fullAssessment.trim())
-    throw new Error('assessment-result-incomplete');
+  const candidate = parseAssessmentSubmission(input.result);
   if (
     (record.manualIssue?.selections?.mode ?? input.policy?.issueAssignment?.mode ?? 'auto') ===
       'auto' &&
