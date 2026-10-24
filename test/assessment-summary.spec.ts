@@ -4,6 +4,8 @@ import assessmentSummary, {
   assessmentSummaryOwnPublications,
 } from '../agent/assessment-summary.ts';
 import recordDispatchResult from '../agent/dispatch-result.ts';
+import issueProgression from '../agent/issue-progression.ts';
+import pendingPublicResponse from '../agent/pending-public-response.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import type { AssessmentSummaryRequest } from '../agent/assessment-summary-state.ts';
@@ -204,6 +206,78 @@ function fixture() {
 }
 
 describe('agent/assessment-summary', () => {
+  it('should retain a summary-only denial without publishing or granting implementation', async () => {
+    const f = fixture();
+    f.retain();
+    const digest = await f.compose();
+    const held = await f.run({
+      operation: 'hold',
+      digest,
+      diagnostic: 'Native review refused this summary.',
+    } as unknown as AssessmentSummaryRequest);
+    assert.equal(held.status, 'blocked');
+    assert.equal(
+      f.record.assessmentSummaries?.[0]?.code,
+      'assessment-summary-native-approval-denied',
+    );
+    assert.equal(f.record.progression, undefined);
+    for (const inactive of [
+      { reset: { at: 1, by: 'operator' } },
+      { retired: { at: 1, by: 'operator' } },
+      { continuation: { phase: 'cancelled' } },
+    ])
+      assert.equal(
+        issueProgression({ ...f.record, ...inactive }, { mode: 'work', now: 2 }).status,
+        'stopped',
+      );
+    const saved = JSON.parse(JSON.stringify(f.record));
+    Object.assign(f.record, saved);
+    for (const operation of ['compose', 'publish', 'reconcile'] as const) {
+      const stopped = await f.run({ operation, digest }, 'recovery', undefined, true);
+      assert.equal(stopped.status, 'blocked');
+      assert.ok('code' in stopped && stopped.code === 'assessment-summary-native-approval-denied');
+    }
+    assert.equal(f.writes, 0);
+    assert.deepEqual(f.record.result, f.result);
+    f.retain({
+      ...f.result,
+      fullAssessment: 'A revised assessment cannot erase a denied operation.',
+    });
+    const revised = await f.run({ operation: 'compose' });
+    assert.ok('code' in revised && revised.code === 'assessment-summary-native-approval-denied');
+    assert.equal(
+      f.record.assessmentSummaries?.[0]?.diagnostic,
+      'Native review refused this summary.',
+    );
+    assert.equal(pendingPublicResponse(f.record)?.state, 'blocked');
+    assert.equal(
+      pendingPublicResponse(f.record)?.summary?.diagnostic,
+      'Native review refused this summary.',
+    );
+    assert.equal(f.writes, 0);
+  });
+  it('should retain denial discovered while authorizing an existing summary', async () => {
+    const f = fixture();
+    f.retain();
+    const digest = await f.compose();
+    f.revoke();
+    const blocked = await f.run({ operation: 'publish', digest });
+    assert.ok('code' in blocked && blocked.code === 'native-approval-denied');
+    assert.equal(f.record.assessmentSummaries?.[0]?.code, 'native-approval-denied');
+    assert.equal(f.writes, 0);
+  });
+  it('should retain a known refusal without refreshing composition or publication authority', async () => {
+    const f = fixture();
+    f.retain();
+    const digest = await f.compose();
+    f.changeSkill();
+    f.revoke();
+    const held = await f.run({ operation: 'hold', digest }, 'recovery', undefined, true);
+    assert.ok('code' in held && held.code === 'assessment-summary-native-approval-denied');
+    assert.equal(f.record.assessmentSummaries?.[0]?.turnId, 'turn');
+    assert.equal(f.record.progression, undefined);
+    assert.equal(f.writes, 0);
+  });
   it('should resume composition in an authorized newer turn without repeating the assessment', async () => {
     const f = fixture();
     f.retain();

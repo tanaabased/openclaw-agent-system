@@ -1,7 +1,10 @@
+import { realpath } from 'node:fs/promises';
+
 import { Value } from 'typebox/value';
 
 import codexReplyInput from './codex-direct-input.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
+import { withNative } from './codex-dispatch-context.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
 import type { CodexFeedbackDependencies } from './codex-feedback.ts';
 import { selectCodexIntake } from './codex-intake.ts';
@@ -98,9 +101,32 @@ export default async function codexReply(
         if (fresh.turnId !== turn.turnId || fresh.inputId !== turn.inputId)
           throw new Error('reply-native-input-changed');
       },
-      managed: async (target) => {
+      managed: async (target, purpose) => {
         const state = await journal.read();
         const admitted = await current.store.read();
+        if (purpose) {
+          const owners = state.records.filter((record) => record.threadId === caller);
+          if (owners.length > 1) throw new Error('reply-managed-owner-ambiguous');
+          const record = owners[0];
+          if (record) {
+            if (!record.request || !record.worktree)
+              throw new Error('reply-managed-context-invalid');
+            const native = await withNative(current, deps, (host) =>
+              host.find({
+                sourceThreadId: record.sourceThreadId,
+                prompt: record.request!.prompt,
+                createdAfter: record.createdAt,
+                threadId: record.threadId,
+              }),
+            );
+            if (
+              !native ||
+              native.id !== caller ||
+              (await realpath(native.cwd)) !== (await realpath(record.worktree))
+            )
+              throw new Error('reply-managed-context-invalid');
+          }
+        }
         return replyOwner(
           state.records.map((record) => {
             const item = admitted?.records.find((entry) => entry.id === record.intakeId);
@@ -137,6 +163,14 @@ export default async function codexReply(
                   }
                 : undefined,
               delivery: record.delivery,
+              summaryPending: Boolean(pending),
+              announcementPending: Boolean(
+                record.delivery?.pullRequest &&
+                (!record.delivery.announcement?.receipt || record.delivery.announcement.code),
+              ),
+              announcementAttempted: Boolean(
+                record.delivery?.announcement?.attempted || record.delivery?.announcement?.receipt,
+              ),
               implementation: record.continuation?.result,
               deliveredPullRequest: record.delivery?.pullRequest,
               result: record.result,
@@ -146,6 +180,7 @@ export default async function codexReply(
           caller,
           caller,
           target,
+          purpose,
         );
       },
     });

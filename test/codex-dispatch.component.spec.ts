@@ -9,6 +9,7 @@ import type { GitHubCanonicalIssueComment } from '../channels/github/provider/co
 import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import codexLiveTurn from '../agent/codex-live-turn.ts';
+import codexContinuationNative from '../agent/codex-continuation-native.ts';
 import runCodexContinuation, {
   type CodexContinuationDependencies,
 } from '../agent/codex-continuation.ts';
@@ -25,6 +26,7 @@ import properLockfile from 'proper-lockfile';
 import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
 import type { DispatchNativeThread } from '../agent/codex-dispatch-native.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
+import runCodexFeedback from '../agent/codex-feedback.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { githubNotificationMarkdownText } from '../channels/github/presentation/card.ts';
@@ -3461,6 +3463,124 @@ describe('agent/codex-dispatch', () => {
     const active = await work.run('context', {}, true);
     assert.deepEqual('effective' in active && active.effective, { status: 'unverified' });
   });
+  for (const mode of ['work', 'auto', 'plan', 'auto-plan'] as const)
+    for (const broader of mode === 'plan' || mode === 'auto-plan' ? [false] : [false, true])
+      it(`should ${broader ? 'stop broader refusal despite' : mode === 'plan' || mode === 'auto-plan' ? 'retain ' + mode + ' hold despite' : 'continue same-turn ' + mode + ' after'} a held summary denial in codex`, async () => {
+        const assessment = {
+          ...result,
+          fullAssessment: 'Complete retained assessment.',
+          ...(mode === 'auto' || mode === 'auto-plan'
+            ? { decision: { mode: mode === 'auto-plan' ? 'plan' : 'work', reasons: ['Assessed.'] } }
+            : {}),
+        };
+        const work = await workIssue(
+          assessment,
+          'Follow the plan.',
+          'company:implement',
+          mode === 'auto-plan' ? 'auto' : mode,
+        );
+        native!.status = 'active';
+        native!.turnStatus = 'inProgress';
+        const activation = deps.activation!;
+        deps.activation = async (...args) => {
+          const value = await activation(...args);
+          value.schedule!.saved.capabilities.push('assessment-summary');
+          return value;
+        };
+        deps.summaryAuthority = async () => {};
+        const summary = (input: object) =>
+          request('summary', { id: work.id, ...input }, { threadId: native!.id });
+        const composed = await summary({ operation: 'compose' });
+        await summary({
+          operation: 'candidate',
+          digest: composed.digest,
+          publicText: 'The proposed change restores your result.',
+        });
+        const preview = await summary({ operation: 'publish' });
+        const items = [
+          {
+            id: 'summary-denial',
+            type: 'commandExecution',
+            status: 'declined',
+            command: preview.command,
+          },
+          ...(broader
+            ? [{ id: 'implementation-denial', type: 'fileChange', status: 'declined' }]
+            : []),
+        ];
+        // native refusal happens before the publish command executes; do not call publish again.
+        const held = await summary({
+          operation: 'hold',
+          digest: preview.digest,
+          diagnostic: 'Native review refused summary publication.',
+        });
+        assert.equal(held.status, 'blocked');
+        await assert.rejects(
+          work.run('context', {}, 'unrelated-thread'),
+          /caller|binding|owner|managed-issue-required/,
+        );
+        const host = async (method: string) => ({
+          data:
+            method === 'thread/turns/list'
+              ? [{ id: 'first-turn', status: 'inProgress', completedAt: null }]
+              : items.map((item) => ({ turnId: 'first-turn', item })),
+        });
+        work.continuation.continuationNative = codexContinuationNative(host);
+        if (mode === 'plan') {
+          await assert.rejects(
+            work.run('context', {}, true),
+            /continuation-managed-issue-required/,
+          );
+        }
+        const entered = mode === 'plan' ? undefined : await work.run('context', {}, true);
+        const permitted = mode !== 'plan' && mode !== 'auto-plan';
+        if (entered)
+          assert.equal(
+            entered.status,
+            !permitted ? 'policy-held' : broader ? 'blocked' : 'verified',
+            JSON.stringify(entered),
+          );
+        if (entered && permitted && !broader) {
+          assert.ok(
+            'pendingPublicResponse' in entered &&
+              entered.pendingPublicResponse?.state === 'blocked',
+          );
+          assert.match(entered.pendingPublicResponse!.instruction, /Do not retry/);
+          await work.run(
+            'result',
+            {
+              result: {
+                outcome: 'done',
+                summary: 'Implemented.',
+                fullResult: 'Controlled implementation result.',
+              },
+            },
+            true,
+          );
+        }
+        const current = await selectCodexIntake(pluginData, deps);
+        const restarted = await new CodexDispatchStore(
+          current.store.location.root,
+          current.store.location.scope,
+        ).read();
+        const retained = restarted.records[0]!;
+        assert.deepEqual(retained.result, assessment);
+        assert.equal(
+          retained.assessmentSummaries?.[0]?.code,
+          'assessment-summary-native-approval-denied',
+        );
+        assert.equal(
+          retained.assessmentSummaries?.[0]?.diagnostic,
+          'Native review refused summary publication.',
+        );
+        if (permitted && !broader)
+          assert.equal(retained.assessmentSummaries?.[0]?.nativeDenial?.callId, 'summary-denial');
+        assert.equal(
+          (await summary({ operation: 'publish', digest: preview.digest })).status,
+          'blocked',
+        );
+        assert.equal(retained.assessmentSummaries?.[0]?.attempt, undefined);
+      });
 
   it('should compose a retained assessment summary during implementation without requiring the initial checkout', async () => {
     const assessment = { ...result, fullAssessment: 'Complete saved assessment.' };
@@ -3796,6 +3916,130 @@ describe('agent/codex-dispatch', () => {
     assert.equal(retained.continuation!.retries![0]!.attempt.origin, 'assessment');
     assert.deepEqual(retained.result, result);
     assert.equal(retained.progression!.stage, 'implementation');
+  });
+
+  it('should reuse live managed ownership for status updates without restarting assessment or implementation', async () => {
+    await writeFile(join(root, 'SKILL.md'), '# status composer');
+    await workIssue(result, 'Follow the plan.', 'company:implement', 'plan');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.assessmentRevision ??= 1;
+      record.assessmentSummaries = [
+        {
+          revision: record.assessmentRevision,
+          resultDigest: automationHash(record.result),
+          binding: record.stageReceipt!.binding,
+          turnId: record.resultTurnId!,
+          authorityDigest: 'a'.repeat(64),
+          selection: record.assessment!,
+          publicText: 'Delivered assessment.',
+          receipt: { nodeId: 'SUMMARY', databaseId: 7 },
+        },
+      ];
+      await save();
+    });
+    const before = await store.read();
+    const provider = {
+      ...(await deps.connect!(workspace, AbortSignal.timeout(1000))),
+      listIssueComments: async () => ({ comments: [], truncated: false }),
+      getIssueComment: async () => {
+        throw new Error('unexpected source read');
+      },
+      findOwnIssueComment: async () => undefined,
+      createIssueComment: async () => {
+        throw new Error('unexpected publication');
+      },
+      replies: {
+        find: async () => undefined,
+        create: async () => {
+          throw new Error('unexpected inline reply');
+        },
+      },
+    };
+    const nativeDeps = {
+      ...deps,
+      threadId: native!.id,
+      replyProvider: async () => provider,
+      replyConnection: async () => ({
+        request: async (method: string) => {
+          if (method === 'thread/read') return { thread: { id: native!.id } };
+          if (method === 'thread/turns/list')
+            return { data: [{ id: 'later-operator-turn', status: 'inProgress' }] };
+          if (method === 'thread/items/list')
+            return {
+              data: [
+                {
+                  turnId: 'later-operator-turn',
+                  item: { type: 'userMessage', id: 'operator', content: 'Draft a status update.' },
+                },
+              ],
+            };
+          if (method === 'skills/list')
+            return {
+              data: [
+                {
+                  cwd: workspace,
+                  errors: [],
+                  skills: [
+                    {
+                      name: 'agent-system:agent-system-feedback-reply',
+                      path: join(root, 'SKILL.md'),
+                      scope: 'user',
+                      enabled: true,
+                    },
+                  ],
+                },
+              ],
+            };
+          throw new Error(`unexpected native method: ${method}`);
+        },
+        close: async () => {},
+      }),
+    };
+    const target = 'https://github.com/owner/repo/issues/3';
+    const read = await runCodexFeedback(
+      pluginData,
+      { action: 'reply', operation: 'context', purpose: 'status-update', target },
+      nativeDeps,
+    );
+    assert.ok('observation' in read && typeof read.observation === 'string');
+    assert.ok('entry' in read && read.entry === 'managed');
+    const composed = await runCodexFeedback(
+      pluginData,
+      {
+        action: 'reply',
+        operation: 'compose',
+        purpose: 'status-update',
+        target,
+        privateText: 'Retained progress.',
+        update: {
+          observation: read.observation,
+          facts: [
+            {
+              key: 'decision',
+              reference: 'operator',
+              revision: '1',
+              text: 'Use the smaller approach.',
+            },
+          ],
+        },
+      },
+      nativeDeps,
+    );
+    assert.equal(composed.status, 'composition-ready');
+    assert.deepEqual(await store.read(), before);
+    native!.cwd = root;
+    await assert.rejects(
+      runCodexFeedback(
+        pluginData,
+        { action: 'reply', operation: 'context', purpose: 'status-update', target },
+        nativeDeps,
+      ),
+      /reply-managed-context-invalid/,
+    );
+    assert.deepEqual(await store.read(), before);
   });
 
   it('should include a github plan revision in direct planning context without entering work', async () => {

@@ -52,7 +52,8 @@ describe('agent/feedback-reply', () => {
         createdAt: '2026-10-01T00:00:00Z',
         updatedAt: '2026-10-01T00:00:00Z',
       }),
-      findOwnIssueComment: async () => (hidden ? undefined : posted),
+      findOwnIssueComment: async (_o, _n, _number, marker) =>
+        hidden || !posted?.body.includes(marker) ? undefined : posted,
       createIssueComment: async (_o, _n, _number, body) => {
         writes++;
         posted = { nodeId: 'C_published', databaseId: 9, body };
@@ -86,8 +87,8 @@ describe('agent/feedback-reply', () => {
         selections++;
         return assessmentSkillSource({ name, path: join(root, 'SKILL.md'), scope: 'user' });
       },
-      managed: async (target) =>
-        replyOwner(owners, deps.binding.session, deps.binding.incarnation, target),
+      managed: async (target, purpose) =>
+        replyOwner(owners, deps.binding.session, deps.binding.incarnation, target, purpose),
     };
   });
   afterEach(async () => {
@@ -115,6 +116,236 @@ describe('agent/feedback-reply', () => {
     assert.ok('digest' in result && result.status === 'publication-ready');
     return result.digest;
   }
+  const progressFact = {
+    key: 'unit-check',
+    reference: 'commit:abc',
+    revision: 'abc:unit-run-1',
+    text: 'The unit checks passed.',
+  };
+  async function updateContext() {
+    const result = await call('context', { purpose: 'status-update', target: url });
+    assert.ok('observation' in result && typeof result.observation === 'string');
+    return result.observation;
+  }
+  async function updateCandidate() {
+    const result = await call('compose', {
+      purpose: 'status-update',
+      target: url,
+      privateText: 'Complete private answer.\nPreserve the caveats.',
+      update: { observation: await updateContext(), facts: [progressFact] },
+    });
+    assert.ok('id' in result && 'digest' in result && 'source' in result);
+    assert.ok('kind' in result.source && result.source.kind === 'status-update');
+    assert.ok('facts' in result.source);
+    assert.deepEqual(result.source.facts, [progressFact]);
+    assert.equal(result.source.destination, url);
+    await call('candidate', {
+      id: result.id,
+      digest: result.digest,
+      publicText: 'Unit checks passed.\n\nNo installed checks ran.',
+    });
+    return result.id!;
+  }
+  it('should return current public and retained facts before selecting a status composer and no-op without a draft', async () => {
+    const observation = await updateContext();
+    assert.equal(selections, 0);
+    const result = await call('compose', {
+      purpose: 'status-update',
+      target: url,
+      privateText: 'Already current.',
+      update: { observation, facts: [] },
+    });
+    assert.equal(result.status, 'already-current');
+    assert.equal(selections, 0);
+    assert.equal(writes, 0);
+    assert.deepEqual(await readdir(deps.root), []);
+  });
+  it('should publish a source-less status update once and keep its full private answer and exact public quote', async () => {
+    const id = await updateCandidate();
+    deps.turnId = 'later';
+    deps.inputId = 'later-input';
+    const done = await call('publish', { id, digest: await preview(id) });
+    assert.equal(done.status, 'published');
+    assert.ok(posted?.body.startsWith('Unit checks passed.\n\nNo installed checks ran.'));
+    assert.ok(posted?.body.includes(':status-update:'));
+    assert.ok(!posted?.body.includes('@author'));
+    assert.ok(
+      'presentation' in done &&
+        done.presentation?.includes('Complete private answer.\nPreserve the caveats.'),
+    );
+    assert.ok(
+      'presentation' in done &&
+        done.presentation?.includes('> Unit checks passed.\n>\n> No installed checks ran.'),
+    );
+    assert.ok('url' in done && done.url === `${url}#issuecomment-9`);
+    assert.ok(
+      'presentation' in done &&
+        done.presentation?.includes(`https://github.com/${provider.identity.login}`),
+    );
+    const again = await call('compose', {
+      purpose: 'status-update',
+      target: url,
+      privateText: 'Reworded private response.',
+      update: {
+        observation: await updateContext(),
+        facts: [{ ...progressFact, text: 'Same verified run, different wording.' }],
+      },
+    });
+    assert.equal(again.status, 'reply-reconciliation-required');
+    assert.ok('id' in again && again.id === id);
+    await call('reconcile', { id });
+    assert.equal(writes, 1);
+    assert.equal(selections, 1);
+  });
+  it('should recover an uncertain status attempt before a different delta without another composer or create', async () => {
+    const id = await updateCandidate();
+    const digest = await preview(id);
+    lost = true;
+    const lostResult = await call('publish', { id, digest });
+    assert.equal(lostResult.status, 'uncertain');
+    hidden = true;
+    const pending = await call('context', { purpose: 'status-update', target: url });
+    assert.ok('id' in pending && pending.id === id);
+    assert.equal(pending.status, 'reply-reconciliation-required');
+    const uncertain = await call('reconcile', { id });
+    assert.equal(uncertain.status, 'uncertain');
+    assert.ok('presentation' in uncertain && !uncertain.presentation?.includes('#issuecomment-9'));
+    hidden = false;
+    await call('reconcile', { id });
+    assert.equal(writes, 1);
+    assert.equal(selections, 1);
+  });
+  it('should withhold a new status update when public facts changed and never substitute a stale observation', async () => {
+    const old = await updateContext();
+    provider.getItemContext = async () => ({
+      title: 'issue',
+      body: 'The checks are now public.',
+      comments: [],
+      labels: [],
+      truncated: false,
+    });
+    await assert.rejects(
+      call('compose', {
+        purpose: 'status-update',
+        target: url,
+        privateText: 'Progress.',
+        update: { observation: old, facts: [progressFact] },
+      }),
+      /status-update-observation-changed/,
+    );
+    const id = await updateCandidate();
+    const digest = await preview(id);
+    const read = provider.getItemContext;
+    provider.getItemContext = async (...args) => ({
+      ...(await read(...args)),
+      body: 'Newer public facts.',
+    });
+    const changed = await call('publish', { id, digest });
+    assert.equal(changed.status, 'blocked');
+    assert.ok('code' in changed && changed.code === 'status-update-observation-changed');
+    assert.equal(writes, 0);
+  });
+  it('should reject incomplete status evidence and invalid or duplicate fact identities before composition', async () => {
+    const observation = await updateContext();
+    for (const facts of [[{ ...progressFact, key: ' ' }], [progressFact, progressFact]])
+      await assert.rejects(
+        call('compose', {
+          purpose: 'status-update',
+          target: url,
+          privateText: 'Progress.',
+          update: { observation, facts },
+        }),
+        /status-update-facts-invalid/,
+      );
+    provider.getItemContext = async () => ({
+      title: 'issue',
+      body: '',
+      comments: [],
+      labels: [],
+      truncated: true,
+    });
+    await assert.rejects(updateContext(), /status-update-context-incomplete/);
+    assert.equal(selections, 0);
+    assert.equal(writes, 0);
+  });
+  it('should recover pending original publications but allow new status facts after delivered summaries and announcements', async () => {
+    owners = [
+      {
+        id: 'a'.repeat(64),
+        repository: 'owner/repo',
+        number: 3,
+        threadId: 'chat',
+        incarnation: 'session',
+        inactive: false,
+        summary: {},
+      },
+    ];
+    const summary = await call('context', { purpose: 'status-update', target: url });
+    assert.ok('route' in summary && summary.route === 'summary');
+    owners[0]!.summary!.attempt = 'attempt';
+    const uncertain = await call('context', { purpose: 'status-update', target: url });
+    assert.ok('operation' in uncertain && uncertain.operation === 'reconcile');
+    owners[0]!.summary!.receipt = { nodeId: 'summary' };
+    owners[0]!.delivery = {};
+    owners[0]!.announcementPending = true;
+    const announcement = await call('context', { purpose: 'status-update', target: url });
+    assert.ok(
+      'route' in announcement &&
+        announcement.route === 'delivery' &&
+        announcement.operation === 'compose',
+    );
+    owners[0]!.announcementAttempted = true;
+    const attempted = await call('context', { purpose: 'status-update', target: url });
+    assert.ok('operation' in attempted && attempted.operation === 'announce');
+    owners[0]!.announcementPending = false;
+    const context = await call('context', { purpose: 'status-update', target: url });
+    assert.ok('entry' in context && context.entry === 'managed');
+    assert.equal(selections, 0);
+    await updateCandidate();
+    assert.equal(selections, 1);
+    owners[0]!.inactive = true;
+    await assert.rejects(updateContext(), /reply-managed-context-invalid/);
+    assert.equal(writes, 0);
+  });
+  it('should include verified linked pr facts and withhold a candidate after the linked head changes', async () => {
+    const originalItem = provider.getItem;
+    let head = 'a'.repeat(40);
+    provider.getItem = async (owner, name, number) =>
+      number === 3
+        ? originalItem(owner, name, number)
+        : {
+            ...intakeFixture().item,
+            number,
+            itemType: 'pull-request',
+            pullRequest: {
+              baseRef: 'main',
+              headRef: 'topic',
+              headSha: head,
+              baseRepositoryNodeId: 'R_repo',
+              baseRepositoryDatabaseId: 10,
+              draft: true,
+              merged: false,
+            },
+          };
+    provider.getItemContext = async (_owner, _name, number) => ({
+      title: 'Progress',
+      body: number === 3 ? 'See https://github.com/owner/repo/pull/4' : 'Linked work.',
+      comments: [],
+      labels: [],
+      truncated: false,
+    });
+    const read = await call('context', { purpose: 'status-update', target: url });
+    assert.ok('publicContext' in read && read.publicContext);
+    assert.equal(read.publicContext.pullRequests.length, 1);
+    assert.equal(read.publicContext.pullRequests[0]!.item.pullRequest.headSha, head);
+    const id = await updateCandidate();
+    const digest = await preview(id);
+    head = 'b'.repeat(40);
+    const result = await call('publish', { id, digest });
+    assert.equal(result.status, 'blocked');
+    assert.ok('code' in result && result.code === 'status-update-observation-changed');
+    assert.equal(writes, 0);
+  });
   it('should prepare the default context without automation and reuse its draft without another selection', async () => {
     const id = await candidate();
     assert.equal(writes, 0);
@@ -266,6 +497,15 @@ describe('agent/feedback-reply', () => {
         const result = await call('compose', {
           target: workflow === 'issueAssignment' ? url : url.replace('/issues/', '/pull/'),
           privateText: JSON.stringify(configuration),
+          ...(workflow === 'issueAssignment'
+            ? {
+                purpose: 'status-update',
+                update: {
+                  observation: await updateContext(),
+                  facts: [{ ...progressFact, key: JSON.stringify(configuration) }],
+                },
+              }
+            : {}),
         });
         assert.ok('selection' in result && result.selection);
         assert.equal(
@@ -519,6 +759,8 @@ describe('agent/feedback-reply', () => {
     await writeFile(join(workspace, 'agent.yaml'), 'schema-version: 1\nagent:\n  id: receiver\n');
     await bindCodexWorkspace(pluginData, workspace);
     const calls: string[] = [];
+    let operatorTurn = 'turn';
+    let operatorInput = 'input';
     const nativeDeps = {
       codexHome,
       threadId: 'native-chat',
@@ -527,14 +769,14 @@ describe('agent/feedback-reply', () => {
           calls.push(method);
           if (method === 'thread/read') return { thread: { id: 'native-chat' } };
           if (method === 'thread/turns/list')
-            return { data: [{ id: 'turn', status: 'inProgress' }] };
+            return { data: [{ id: operatorTurn, status: 'inProgress' }] };
           if (method === 'thread/items/list')
             return {
               data: [
                 {
-                  turnId: 'turn',
+                  turnId: operatorTurn,
                   item: {
-                    id: 'input',
+                    id: operatorInput,
                     type: 'userMessage',
                     content: [{ type: 'text', text: 'Draft a reply.' }],
                   },
@@ -585,6 +827,32 @@ describe('agent/feedback-reply', () => {
     await direct('reconcile', { id: result.id });
     assert.equal(writes, 1);
     assert.equal(calls.filter((x) => x === 'skills/list').length, 1);
+    const update = await direct('context', { purpose: 'status-update', target: url });
+    assert.ok('observation' in update && typeof update.observation === 'string');
+    const status = await direct('compose', {
+      purpose: 'status-update',
+      target: url,
+      privateText: 'Native status answer.',
+      update: { observation: update.observation, facts: [progressFact] },
+    });
+    assert.ok('id' in status && 'digest' in status);
+    await direct('candidate', {
+      id: status.id,
+      digest: status.digest,
+      publicText: 'One verified unit run passed.',
+    });
+    const statusPreview = await direct('publish', { id: status.id });
+    assert.ok('digest' in statusPreview);
+    // native later-turn verification is independent of the draft's original input receipt.
+    operatorTurn = 'later-operator-turn';
+    operatorInput = 'later-input';
+    const statusPublished = await direct('publish', {
+      id: status.id,
+      digest: statusPreview.digest,
+    });
+    assert.equal(statusPublished.status, 'published');
+    assert.equal(writes, 2);
+    assert.ok(posted?.body.includes(':status-update:'));
   });
   it('should use bound openclaw user input and skills without activating a coordinator or preparing a worktree', async () => {
     const workspace = await realpath(root);
@@ -667,7 +935,7 @@ describe('agent/feedback-reply', () => {
       toolCallId: 'call',
     };
     const direct = (
-      operation: 'compose' | 'candidate' | 'publish' | 'reconcile',
+      operation: 'context' | 'compose' | 'candidate' | 'publish' | 'reconcile',
       extra: object = {},
     ) => service.run(manifest, workspace, caller, { action: 'reply', operation, ...extra }, true);
     await assert.rejects(
@@ -693,5 +961,24 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 1);
     assert.equal(calls.filter((x) => x === 'skills.status').length, 1);
     assert.ok(!(await readdir(root)).includes('intake'));
+    const update = await direct('context', { purpose: 'status-update', target: url });
+    assert.ok('observation' in update && typeof update.observation === 'string');
+    const status = await direct('compose', {
+      purpose: 'status-update',
+      target: url,
+      privateText: 'Native status answer.',
+      update: { observation: update.observation, facts: [progressFact] },
+    });
+    assert.ok('id' in status && 'digest' in status);
+    await direct('candidate', {
+      id: status.id,
+      digest: status.digest,
+      publicText: 'One verified unit run passed.',
+    });
+    const statusPreview = await direct('publish', { id: status.id });
+    assert.ok('digest' in statusPreview);
+    await direct('publish', { id: status.id, digest: statusPreview.digest });
+    assert.equal(writes, 2);
+    assert.ok(posted?.body.includes(':status-update:'));
   });
 });

@@ -15,6 +15,20 @@ import { githubCommentCard } from '../channels/github/presentation/comment.ts';
 import { githubNotificationPublicationText } from '../channels/github/publication/publication-contract.ts';
 import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
 
+function summaryDigest(summary: AssessmentSummary) {
+  return automationHash({
+    ...summary,
+    code: undefined,
+    attempt: undefined,
+    receipt: undefined,
+    authorLogin: undefined,
+    diagnostic: undefined,
+    publicationCommand: undefined,
+    nativeDenial: undefined,
+    previewDigest: undefined,
+  });
+}
+
 /** A retained assessment is its own publication source, never synthetic incoming feedback. */
 export default async function assessmentSummary(input: {
   record: SharedDispatchRecord;
@@ -29,6 +43,7 @@ export default async function assessmentSummary(input: {
   connect(): Promise<GitHubNotificationCommentPublicationConnection & { authorLogin?: string }>;
   redact(text: string): string;
   save(): Promise<void>;
+  publicationCommand?(digest: string): string;
 }) {
   const { record, intake, action } = input;
   const destination = `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/issues/${intake.issue.number}`;
@@ -49,7 +64,6 @@ export default async function assessmentSummary(input: {
     });
   let summary: AssessmentSummary | undefined;
   try {
-    await input.authorize();
     const binding = record.stageReceipt?.binding;
     if (
       !record.result?.fullAssessment ||
@@ -68,6 +82,7 @@ export default async function assessmentSummary(input: {
     const summaries = (record.assessmentSummaries ??= []);
     // Uncertain older writes must be reconciled before a revised summary can be composed.
     summary =
+      summaries.find((entry) => entry.code && /denied|cancelled/.test(entry.code)) ??
       summaries.find((entry) => entry.attempt && !entry.receipt) ??
       summaries.find((entry) => entry.revision === record.assessmentRevision);
     if (
@@ -83,6 +98,20 @@ export default async function assessmentSummary(input: {
     )
       throw new Error('assessment-summary-binding-mismatch');
     if (summary?.code && /denied|cancelled/.test(summary.code)) throw new Error(summary.code);
+    // a reported refusal only restricts this saved effect; it never supplies native authority.
+    if (action.operation === 'hold') {
+      if (!summary?.publicText || summary.attempt || summary.receipt)
+        throw new Error('assessment-summary-hold-source-unavailable');
+      if (action.digest !== summary.previewDigest || action.digest !== summaryDigest(summary))
+        throw new Error('assessment-summary-publication-stale');
+      summary.code = 'assessment-summary-native-approval-denied';
+      summary.diagnostic = input.redact(
+        action.diagnostic ?? 'Native approval denied this assessment summary.',
+      );
+      await input.save();
+      throw new Error(summary.code);
+    }
+    await input.authorize();
     if (summary?.receipt)
       return {
         status: 'published',
@@ -128,7 +157,10 @@ export default async function assessmentSummary(input: {
         if (action.operation !== 'compose')
           throw new Error('assessment-summary-composition-required');
         // Supersede candidates that have never been attempted; retain every provider receipt.
-        record.assessmentSummaries = summaries.filter((entry) => entry.attempt || entry.receipt);
+        record.assessmentSummaries = summaries.filter(
+          (entry) =>
+            entry.attempt || entry.receipt || (entry.code && /denied|cancelled/.test(entry.code)),
+        );
         summary = {
           revision: record.assessmentRevision,
           resultDigest: automationHash(record.result),
@@ -140,13 +172,7 @@ export default async function assessmentSummary(input: {
         record.assessmentSummaries.push(summary);
         await input.save();
       }
-      const digest = automationHash({
-        ...summary,
-        code: undefined,
-        attempt: undefined,
-        receipt: undefined,
-        authorLogin: undefined,
-      });
+      const digest = summaryDigest(summary);
       if (action.operation === 'compose')
         return {
           status: 'composition-ready',
@@ -184,16 +210,23 @@ export default async function assessmentSummary(input: {
         };
       }
       if (!summary.publicText) throw new Error('assessment-summary-candidate-required');
-      if (!action.digest)
+      if (!action.digest) {
+        summary.previewDigest = digest;
+        if (input.publicationCommand) {
+          summary.publicationCommand = input.publicationCommand(digest);
+        }
+        await input.save();
         return {
           status: 'publication-ready',
           digest,
           destination,
           body: summary.publicText,
           presentation: summaryCard(summary),
+          ...(summary.publicationCommand ? { command: summary.publicationCommand } : {}),
           instruction:
-            'Inspect this exact issue and proposed summary, then call summary operation publish with this digest through native approval. No new per-summary human confirmation is needed. Stop on denial; never substitute another route.',
+            'Inspect this exact issue and proposed summary, then call summary operation publish with this digest through native approval. When command is supplied, use that exact single-command transport. No new per-summary human confirmation is needed. A denial stops this publication: if the host permits further tracking, retain it with operation hold, this digest and a bounded redacted diagnostic. Never repeat publish or substitute another route. Then follow the assessment handoff through fresh implementation context; broader restrictions and implementation denial remain stops.',
         };
+      }
       if (action.digest !== digest) throw new Error('assessment-summary-publication-stale');
     }
     if (!summary?.publicText) throw new Error('assessment-summary-candidate-required');
@@ -250,12 +283,13 @@ export default async function assessmentSummary(input: {
     const failure = workflowFailure(error, 'assessment-summary-publication-failed');
     const { code } = failure;
     if (summary) {
-      summary.code = code;
+      if (!summary.code || !/denied|cancelled/.test(summary.code)) summary.code = code;
       await input.save();
     }
     return {
       status: 'blocked',
       ...failure,
+      ...(summary?.diagnostic ? { diagnostic: summary.diagnostic } : {}),
       presentation: [
         input.presentation,
         summary?.publicText && summaryCard(summary),
@@ -269,7 +303,9 @@ export default async function assessmentSummary(input: {
         .filter(Boolean)
         .join('\n\n'),
       instruction:
-        'The private assessment remains recorded. Show its complete presentation and this summary-delivery diagnostic. For an uncertain write, use summary operation reconcile; for missing authority or skill, restore the configured workflow before retrying. Stop on native denial and do not use a different publication route.',
+        summary?.code && /denied|cancelled/.test(summary.code)
+          ? 'The private assessment remains recorded. Show this retained summary hold and diagnostic separately from implementation progress. Do not compose, publish, reconcile, retry or use a different publication route for this held operation; supported verified recovery or renewed authorization is required. A summary-specific hold grants no authority and does not prevent independently authorized implementation through fresh native context. Broader restrictions, cancellation, lost authority and implementation denial still stop affected work.'
+          : 'The private assessment remains recorded. Show its complete presentation and this summary-delivery diagnostic. For an uncertain write, use summary operation reconcile; for missing authority or skill, restore the configured workflow before retrying. A denial stops the affected operation; preserve it without using another publication route.',
     };
   }
 }

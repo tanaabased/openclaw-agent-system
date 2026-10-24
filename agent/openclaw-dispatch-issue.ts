@@ -665,14 +665,6 @@ export default class OpenClawDispatchIssue {
             throw new Error('assessment-summary-assessment-turn-required');
           const expected = record.request;
           const recovery = record.resultTurnId !== caller.runId;
-          if (recovery || record.assessmentCaller?.runId !== caller.runId)
-            await openClawResponseAuthority({
-              request,
-              record,
-              caller,
-              config: this.context.dependencies.config(),
-              observeOnly: input.operation === 'reconcile',
-            });
           return assessmentSummary({
             recovery,
             record,
@@ -689,6 +681,17 @@ export default class OpenClawDispatchIssue {
             save,
             redact: redactFeedback,
             authorize: async () => {
+              if (
+                input.operation !== 'hold' &&
+                (recovery || record.assessmentCaller?.runId !== caller.runId)
+              )
+                await openClawResponseAuthority({
+                  request,
+                  record,
+                  caller,
+                  config: this.context.dependencies.config(),
+                  observeOnly: input.operation === 'reconcile',
+                });
               await childAuthority.assertCurrent();
               await this.context.validate(
                 manifest,

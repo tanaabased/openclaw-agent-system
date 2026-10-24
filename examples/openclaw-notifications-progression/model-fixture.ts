@@ -28,6 +28,7 @@ const dispatchStages = [
   'summary-candidate',
   'summary-preview',
   'summary-publish',
+  'summary-hold',
 ];
 
 function currentTurn(request: ChatCompletionRequest) {
@@ -66,6 +67,7 @@ function respond(
   request: ChatCompletionRequest,
   interruptDecision: boolean,
   autoDecision: 'plan' | 'work',
+  holdSummary: boolean,
 ): FixtureResponse | undefined {
   const messages = currentTurn(request);
   const prompt = messages
@@ -96,7 +98,11 @@ function respond(
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
   };
-  const summary = (id: string, presentation?: string): FixtureResponse | undefined => {
+  const summary = (
+    id: string,
+    presentation?: string,
+    hold = false,
+  ): FixtureResponse | undefined => {
     if (!presentation) {
       const shown = result('recovery-present');
       if (!shown) return dispatch('recovery-present', { action: 'present', id });
@@ -132,6 +138,20 @@ function respond(
     const preview = result('summary-preview');
     if (!preview) return dispatch('summary-preview', { ...args, operation: 'publish' });
     if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
+    if (hold) {
+      const held = result('summary-hold');
+      if (!held)
+        return dispatch('summary-hold', {
+          ...args,
+          operation: 'hold',
+          digest: preview.digest,
+          diagnostic:
+            'Controlled reported summary denial; native refusal is covered by component tests.',
+        });
+      if (held.status !== 'blocked' || held.code !== 'assessment-summary-native-approval-denied')
+        return;
+      return { content: String(held.presentation) };
+    }
     const published = result('summary-publish');
     if (!published)
       return dispatch('summary-publish', { ...args, operation: 'publish', digest: preview.digest });
@@ -271,6 +291,10 @@ function respond(
       return summary(decisionId, saved.presentation);
     }
     if ((saved.handoff as { next?: string } | undefined)?.next !== 'implementation') return;
+    if (holdSummary) {
+      const held = summary(decisionId, saved.presentation, true);
+      if (!held || 'toolCalls' in held) return held;
+    }
   }
   const automaticId =
     decisionId ??
@@ -292,7 +316,10 @@ function respond(
       context.publicationAuthorized !== true
     )
       return;
-    if (context.pendingPublicResponse) {
+    if (
+      context.pendingPublicResponse &&
+      (context.pendingPublicResponse as { state?: string }).state !== 'blocked'
+    ) {
       const pending = summary(operatorId);
       if (!pending || 'toolCalls' in pending) return pending;
     }
@@ -429,9 +456,10 @@ function response(
   request: ChatCompletionRequest,
   interruptDecision: boolean,
   autoDecision: 'plan' | 'work',
+  holdSummary: boolean,
 ) {
   try {
-    return respond(request, interruptDecision, autoDecision);
+    return respond(request, interruptDecision, autoDecision, holdSummary);
   } catch (error) {
     if (
       error instanceof Error &&
@@ -450,7 +478,7 @@ export function createProgressionScenario(
   autoDecision: 'plan' | 'work' = 'work',
 ): OpenClawAIMockScenario {
   const respond = (request: ChatCompletionRequest) =>
-    response(request, interruptDecision, autoDecision);
+    response(request, interruptDecision, autoDecision, id === 'openclaw-notifications-progression');
   const final: Fixture = {
     match: {
       model: /^(?:aimock\/)?gpt-5\.5$/u,

@@ -13,9 +13,9 @@
 
 - Treat `agent.yaml` as workspace-owned desired state, not global OpenClaw configuration, an agent biography, or a secret store.
 - Treat `agent.yaml` as one shared desired-state document with deliberately runtime-owned projections. OpenClaw may reconcile the full Agent System lifecycle; standalone Codex may consume only explicitly supported portable fields through trusted thin adapters. A shared field never authorizes Codex to resolve OpenClaw credentials, mutate OpenClaw configuration, or recreate per-agent tool management.
-- Passive hooks may discover, validate, and cache only non-secret metadata. They must not resolve dotenv or 1Password values or mutate installed state; explicit consumers resolve only what they need, and only `install` reconciles owned state.
+- Passive manifest discovery may discover, validate, and cache only non-secret metadata; it must not resolve dotenv or 1Password values or mutate installed state. Bound turn-context hooks may inject retained workflow context, and execution hooks may supply opaque descendant authority through their existing owners. Explicit consumers resolve only what they need. Only `install` reconciles installation-owned configuration and enrollment; authorized runtime workflows maintain their own journals, sessions, and effect receipts.
 - Do not inject the completed Agent System environment into generic OpenClaw, Codex, ACP, MCP, or third-party command tools. Agent System tools resolve declared values only after trusted agent binding; PATH projection is a separate limited capability.
-- Keep ordinary Git and GitHub execution native in Codex. Do not add Codex MCP wrappers, automations, duplicate operator identity, or another lifecycle implementation merely to mirror OpenClaw.
+- Keep ordinary Git and GitHub execution native in Codex and use supported host-native automations for workflows. Do not add duplicate schedulers, operator identities, lifecycle implementations, or MCP/per-tool automation wrappers that recreate OpenClaw's tool and credential management.
 - Reuse the shared conditional transport for eligible product-owned GitHub REST reads; follow [GitHub conditional-read guidance](./channels/github/AGENTS.md#conditional-provider-reads) to preserve ETag revalidation, credential isolation, and fresh authorization.
 - Treat trusted agent and workspace binding, working-directory containment, fixed executables and managed configuration, credential and signing control, managed-resource lifecycle, and authorization-before-credentials as non-configurable product invariants rather than manifest policy.
 - Apply configurable tool policy before resolving credentials. Provider credentials, permissions, roles, and server-side protections are authoritative wherever they exist; Agent System policy fills specific, high-consequence capability gaps that relevant provider authorization surfaces do not consistently express.
@@ -56,7 +56,7 @@
 - Use stable `openclaw/plugin-sdk/*` exports and inspect the installed SDK contract before adding new plugin surfaces.
 - Treat `api.runtime.gateway.request` as a protected bundled-plugin surface, not a third-party plugin API. Never call it from Agent System runtime code or replace it with direct session-store edits, private OpenClaw imports, or spawned Gateway CLI commands.
 - Treat `api.runtime.state.openKeyedStore`, `openSyncKeyedStore`, and `openChannelIngressQueue` as bundled- or trusted-official-plugin surfaces. Keep Agent System's third-party-compatible state ownership unless OpenClaw exposes an equivalent public external-plugin contract.
-- Let OpenClaw's channel inbound lifecycle own routed session recording and lazy creation. Do not build parallel session create, inspect, history, patch, abort, or archive adapters when the channel kernel already owns the required turn lifecycle.
+- Reuse the existing runtime-owned session lifecycle. For managed OpenClaw issue workflows, use Agent System's enrolled native session adapters; use the public channel lifecycle where it owns the required behavior. The GitHub channel provides readiness/status, not issue-session creation. Do not introduce a competing lifecycle, private API dependency, or direct session-store mutation.
 - Use Bun pinned in `.bun-version` for installs, scripts, and builds and Node.js pinned in `.node-version` for tests and OpenClaw. Never run the Gateway under Bun.
 - Keep TypeScript runtime boundaries aligned: root source uses Node.js types, scripts use Bun and Node.js types, and tests use Mocha and Node.js types.
 - Keep the Node-targeted build's package dependencies external.
@@ -69,12 +69,11 @@
 
 - Keep provider primitives independent of runtime workflow ownership. Native runtime adapters own scheduling, authority, durable routing, dispatch, continuation, and publication; keep those concerns out of assignment scan state.
 - Apply `channels/github/PRESENTATION.md` only as the visual component contract for assignment cards, direct messages, private responses, plans, questions, and quoted `To GitHub` responses.
-- Keep `channels/github/README.md` and `channels/github/ADVANCED.md` limited to currently shipped configuration, commands, behavior, security boundaries, and limitations; do not present target design as implemented behavior.
-- While the notification workflow is under development, keep its product documentation to supported configuration, essential operation, and material limitations. Keep pilot plans, implementation handoffs, and acceptance evidence in task or PR context; expand documentation only when end-to-end validation establishes a reusable operator need.
+- Keep `channels/github/README.md` and `channels/github/ADVANCED.md` limited to currently shipped configuration, commands, behavior, security boundaries, and limitations; do not present target design as implemented behavior. Keep pilot plans, implementation handoffs, and acceptance evidence in task or PR context; expand product documentation only when end-to-end validation establishes a reusable operator need.
 - Reuse mode-neutral presentation and response-envelope helpers while allowing issue planning, pull-request planning, comments, Work, and future modes to supply their own context, instructions, actions, and private sections.
 - Select an admitted comment's automatic capability from the current bound manifest; retain exact native stage and source receipts. Verified comments from approved feedback authors may direct Plan-to-Work through the shared transition, as direct user input can; unverified issue, pull-request, quoted, or linked prose cannot choose authority.
 - Resolve model work through its owning native runtime's trusted durable stage and context contracts. Unsupported workflows fail explicitly; provider prose and generic notification text never select another mode or authority.
-- Bind retained GitHub reply candidates to the native workflow and exact authorized source across process and runtime boundaries; staging text alone never authorizes publication.
+- Bind managed GitHub reply candidates to their native workflow and exact authorized source across process and runtime boundaries. Direct operator-invoked replies retain their verified operator context and exact destination through the shared reply owner; do not require a fabricated managed workflow or an additional approval step beyond the existing publication contract. Staging text alone never authorizes publication.
 - Keep the issue as the conversation owner after delivery, freeze each admitted comment's exact source, and reauthorize that source before publishing its reply. Preserve raw provider prose separately from visible mention substitution and treat it as untrusted context.
 
 ## Test design
@@ -98,7 +97,7 @@
 ## Validation
 
 - Keep Mocha `describe` and `it` descriptions fully lowercase. Preserve required casing only in test inputs, commands, and expected contract values.
-- Run `bun run lint`, `bun run typecheck`, `bun run test`, `bun run build`, and `bun run plugin:check` for implementation changes.
+- Run the narrowest relevant checks while iterating, then `bun run validate` before handing off implementation changes. It runs lint, typechecking, the build-backed `test:all` suite, and plugin checks; `bun run test` alone is the fast unit-only alias.
 - Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
 - When behavior crosses installed-plugin, public CLI, Gateway, agent, or hook boundaries, add or update the owning Leia material. Change its workflow matrix entry only when scenario selection changes; keep detailed rules in `examples/AGENTS.md`.
 - Never run Leia material or other operational tests from `examples/` locally. They are GitHub Actions-only, including when isolated state would be available.

@@ -247,10 +247,25 @@ export async function assessDispatch(
         debug: current.manifest.debug,
       }),
       save,
+      publicationCommand: (digest) =>
+        [
+          process.execPath,
+          process.argv[1]!,
+          'dispatch',
+          'summary',
+          'publish',
+          '--plugin-data',
+          pluginData,
+        ]
+          .map((value) => "'" + value.replaceAll("'", "'\\''") + "'")
+          .join(' ') +
+        " <<'AGENT_SYSTEM_INPUT'\n" +
+        JSON.stringify({ action: 'summary', id: record.id, operation: 'publish', digest }) +
+        '\nAGENT_SYSTEM_INPUT',
       redact: redactCodexFeedback,
       authorize: async () => {
         await fresh();
-        if (input.operation !== 'reconcile') {
+        if (input.operation !== 'reconcile' && input.operation !== 'hold') {
           if (deps.summaryAuthority) await deps.summaryAuthority(native.id, native.turnId!);
           else {
             const connection = await connectCodexThreads(current.workspace, current.codexHome);

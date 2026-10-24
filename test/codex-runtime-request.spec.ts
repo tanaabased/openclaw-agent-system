@@ -28,7 +28,7 @@ describe('agent/codex-runtime-request', () => {
     }
   });
   it('should expose nested publication and summary operations', () => {
-    for (const operation of ['compose', 'candidate', 'publish', 'reconcile']) {
+    for (const operation of ['context', 'compose', 'candidate', 'publish', 'reconcile']) {
       assert.deepEqual(
         parse('feedback', ['reply', operation, '--plugin-data', '/private/plugin'], {
           target: 'https://github.com/owner/repo/issues/3',
