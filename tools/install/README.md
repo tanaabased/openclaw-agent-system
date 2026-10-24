@@ -46,13 +46,14 @@ for consent lifetime, cancellation, and supported chat surfaces.
 
 ### Parameters
 
-| Parameter          | Type    | Required | Default      | Description                                                                                          |
-| ------------------ | ------- | -------- | ------------ | ---------------------------------------------------------------------------------------------------- |
-| `rebuildCodexPath` | boolean | no       | `false`      | Replace the saved Codex PATH baseline with the invoking environment.                                 |
-| `skipSetup`        | boolean | no       | `false`      | Skip every setup check and apply; reconcile other components.                                        |
-| `skipSetupAgent`   | boolean | no       | `false`      | Skip agent setup checks and applies; reconcile other components.                                     |
-| `skipSetupHost`    | boolean | no       | `false`      | Skip host setup checks and applies; reconcile other components.                                      |
-| `timeoutMs`        | integer | no       | host default | OpenClaw-hosted Codex tool-call budget, from `1` through `600000` ms. Pass `600000` for ten minutes. |
+| Parameter               | Type    | Required | Default      | Description                                                                                          |
+| ----------------------- | ------- | -------- | ------------ | ---------------------------------------------------------------------------------------------------- |
+| `manualSessionDispatch` | boolean | no       | `false`      | Explicitly enroll existing session access for manual issue launch without enabling intake.           |
+| `rebuildCodexPath`      | boolean | no       | `false`      | Replace the saved Codex PATH baseline with the invoking environment.                                 |
+| `skipSetup`             | boolean | no       | `false`      | Skip every setup check and apply; reconcile other components.                                        |
+| `skipSetupAgent`        | boolean | no       | `false`      | Skip agent setup checks and applies; reconcile other components.                                     |
+| `skipSetupHost`         | boolean | no       | `false`      | Skip host setup checks and applies; reconcile other components.                                      |
+| `timeoutMs`             | integer | no       | host default | OpenClaw-hosted Codex tool-call budget, from `1` through `600000` ms. Pass `600000` for ten minutes. |
 
 ### Usage
 
@@ -61,6 +62,14 @@ Install the declared configuration and applicable setup:
 ```json
 { "timeoutMs": 600000 }
 ```
+
+Enroll session access for manual issue launch, with chat approval:
+
+```json
+{ "manualSessionDispatch": true, "timeoutMs": 600000 }
+```
+
+This reuses existing enrollment and its disclosed grants; it enables no schedule.
 
 Install other components while skipping setup:
 

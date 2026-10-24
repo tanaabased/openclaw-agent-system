@@ -191,6 +191,8 @@ export interface AgentSystemCliToolDefinition<
       input: Static<TParameters>,
       configuration: TResolvedConfiguration,
       scope: {
+        /** Opaque process-local credential binding; never contains credential values. */
+        credentialScope?: string;
         cwd: string;
         run(argv: string[], stdin?: string): Promise<AgentSystemCliResult>;
       },

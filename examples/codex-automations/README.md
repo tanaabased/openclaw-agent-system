@@ -1,34 +1,28 @@
 # Codex Automations Example
 
-Verify packaged automation planning, pending-action recovery, and durable per-automation conversations in isolated Codex state on a disposable GitHub Actions runner. These direct checks use the native app server without model generation or provider credentials. Run only in GitHub Actions.
+Plan automation reconciliation through the packaged Codex runtime, create native per-automation conversations with the selected execution settings, and reuse those same conversations after the creating process exits.
 
-## Automation Checks
+## What Belongs Here
 
-Automation lookup inputs below are explicit fixtures. The installed runtime's
-`list` and `sync` routes inspect inventory and plan authorized native app actions;
-they do not write scheduler files. The `run` and `runs` checks assert the explicit
-`automation-run-now-unsupported` and `automation-history-unavailable` results.
+- Digest-bound plans for native automation actions without private scheduler-file writes.
+- Real app-server conversation creation, selected model/permission readback, and attributed setup history without model generation.
+- Fresh-process resumption and repeated sync preserving conversation identity and settings.
 
-The trusted `automationRuntime` exposes `threads-sync` under explicit installation
-authorization and a fresh plan digest. It creates per-automation conversations
-through `codex app-server` in the ambient profile, adds an attributed setup
-history item without model generation, and verifies resume through a fresh
-process, including native `auto_review`, `on-request`, and `workspace-write`
-permission readback. Repeated sync reuses those conversations.
+## What Does Not Belong Here
 
-The named-zone declaration compiles to repeating UTC rules without an expiry or
-background refresh. Native review is required before saving that schedule.
-The prepare/cancel check retains a pending journal until saved-state verification
-and permits cancellation only while the failed write's target remains unchanged.
-Pending creates also require no new native IDs: an unmarked job could be a partial
-create. Lost-response recovery may acknowledge the exact saved pending definition
-without another create; further writes require a fresh plan. Older journals retain
-the whole-scheduler cancellation check.
+- Plugin installation and workspace lifecycle: [Codex install](../codex-install/README.md). Notification activation and workflow authority: [Codex notifications](../codex-notifications/README.md).
+- Pending-write cancellation/lost-response recovery and exhaustive unsupported occurrence/history diagnostics.
+- Actual desktop scheduler mutation, scheduled execution, or native desktop-tool behavior; the headless checks do not establish those outcomes.
 
-Native request/response and saved-state captures live in `fixtures/` with separate
-provenance. Ordinary tests consume reviewed captures without contacting the app;
-constructed failure cases are identified in the tests. This packed/headless
-scenario does not replace separate installed desktop-tool verification.
+## Notes
+
+- The named-zone declaration compiles to repeating UTC rules without an expiry or background refresh. Native review is required before saving that schedule.
+- Lookup inventories are explicit fixtures. `list` and `sync` inspect or plan native app actions; they do not write scheduler files. `threads-sync` creates/resumes real conversations through `codex app-server` under installation authorization and a fresh digest.
+- Native readback checks `auto_review`, `on-request`, and `workspace-write`. No model generation or provider credentials are used; run only in GitHub Actions.
+- Pending relocation: prepare/cancel retains a pending journal until verification and permits cancellation only while the failed target is unchanged. Pending creates also require no new native IDs; an unmarked job may be a partial create.
+- Lost-response recovery may acknowledge the exact saved pending definition without another create; further writes need a fresh plan. Older journals retain whole-scheduler cancellation checks in source coverage.
+- Pending relocation: explicit `automation-run-now-unsupported` and `automation-history-unavailable` checks remain below.
+- Reviewed native request/response and saved-state captures in the repository's [fixtures directory](../../fixtures/) retain separate provenance; constructed failures are identified in source tests. They do not replace installed desktop verification.
 
 ## Setup
 

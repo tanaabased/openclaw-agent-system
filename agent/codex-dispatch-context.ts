@@ -1,6 +1,9 @@
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
-import type { IntakeRecord, IntakeState } from '../channels/github/intake/record-store.ts';
+import type {
+  ManagedIssue as IntakeRecord,
+  ManagedIssueState as IntakeState,
+} from './managed-issue.ts';
 import type CodexAssignmentClaims from './codex-assignment-claims.ts';
 import type {
   GitHubNotificationIntakeClient,
@@ -37,6 +40,7 @@ export interface CodexDispatchDependencies extends Omit<CodexIntakeDependencies,
   feedbackConnect?: typeof connectCodexFeedback;
   summaryAuthority?: (threadId: string, turnId: string) => Promise<void>;
   prepareRepository?: typeof prepareDispatchRepository;
+  replyConnection?: typeof connectCodexThreads;
   retirementNative?: ReturnType<typeof codexRetirementNative>;
   threadId?: string;
 }
@@ -59,6 +63,13 @@ export async function revalidateDispatchAssignment(
   retainedWork = false,
   dispatchRecord?: DispatchRecord,
 ) {
+  if (
+    'initiation' in record &&
+    (record.agentId !== current.agentId ||
+      record.workspaceDir !== current.workspace ||
+      record.scope !== current.store.location.scope)
+  )
+    throw new Error('dispatch-workspace-binding-changed');
   const client = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
   await new GitHubIdentityCache(current.store.location).resolve(
     current.manifest.github?.notifications,
@@ -94,6 +105,7 @@ export async function withNative<T>(
 }
 
 export interface CodexDispatchTransaction {
+  operatorInput?: { turnId: string; inputId: string };
   pluginData: string;
   current: CodexDispatchSelection;
   deps: CodexDispatchDependencies;

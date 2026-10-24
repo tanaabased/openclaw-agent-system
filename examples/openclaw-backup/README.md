@@ -1,8 +1,22 @@
 # OpenClaw Backup Example
 
-Verify the installed backup critical path through public Agent System commands: capture explicitly included private memory despite Git ignore rules, verify the archive, and restore its contents into a fresh staging directory without changing the source workspace. A populated target must be rejected rather than overwritten.
+Create and verify an archive containing explicitly included private memory and agent database state, restore it into fresh staging without changing the source, and refuse to overwrite the populated recovery target.
 
-Runtime tests run this example on Ubuntu without a model, Gateway, or provider credentials. The checked-in workspace runs in place; a checksum baseline and separate restore target prove source preservation and recovery. The archive also captures a real agent database with committed WAL content. Retention and adversarial archive variants remain in source tests.
+## What Belongs Here
+
+- Actual archived/restored data despite workspace Git-ignore rules, including committed SQLite WAL content.
+- Preserved safe links, executable modes, manifest identity, and source checksums.
+- A populated-target refusal that preserves the existing recovery data.
+
+## What Does Not Belong Here
+
+- Incomplete-artifact cleanup preview/apply/repeat: [backup cleanup](../openclaw-backup-cleanup/README.md).
+- Retention policy, adversarial archive permutations, or general live-agent recovery; exhaustive variants remain in source tests.
+
+## Notes
+
+- Direct Ubuntu commands need no Gateway, model, or provider credential. The checked-in workspace runs in place with an independent checksum baseline and separate restore target.
+- The database fixture keeps real committed WAL content present during capture; restoration verifies the recovered database, not just archive membership.
 
 ## Setup
 
@@ -38,19 +52,6 @@ git check-ignore "$archive"
 kill "$fixture_pid"
 wait "$fixture_pid" || true
 trap - EXIT
-
-# should preview incomplete artifacts while preserving complete and differently owned attempts
-cd "$GITHUB_WORKSPACE/examples/openclaw-backup/data"
-archive=$(jq -er .archive "$TMPDIR/backup-created.json")
-node "$GITHUB_WORKSPACE/examples/openclaw-backup/cleanup-fixture.mjs" "$archive"
-openclaw agent-system backup cleanup --agent backup-tanaabot --json | jq -e '.status == "preview" and (.deleted | length) == 0 and (.wouldDelete | length) == 2 and any(.preserved[]; .reason == "complete-or-uncertain-archive") and any(.preserved[]; .reason == "ownership-mismatch")'
-
-# should apply bounded cleanup once and leave the published backup verified
-cd "$GITHUB_WORKSPACE/examples/openclaw-backup/data"
-openclaw agent-system backup cleanup --agent backup-tanaabot --apply --json | jq -e '.status == "applied" and (.deleted | length) == 2 and (.wouldDelete | length) == 0'
-openclaw agent-system backup cleanup --agent backup-tanaabot --apply --json | jq -e '.status == "applied" and (.deleted | length) == 0'
-archive=$(jq -er .archive "$TMPDIR/backup-created.json")
-openclaw agent-system backup verify "$archive" --json | jq -e '.status == "verified" and .agentId == "backup-tanaabot"'
 
 # should restore memory safe links and executable modes into empty staging while preserving the source
 cd "$GITHUB_WORKSPACE/examples/openclaw-backup/data"

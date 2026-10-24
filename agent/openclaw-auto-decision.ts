@@ -76,7 +76,6 @@ export default async function advanceOpenClawDecision(input: {
     request,
     sessionKey: expected.key,
     sessionId: record.sessionCreation!.sessionId!,
-    model: expected.model,
     turn: record.decisionTurn,
     save,
   });

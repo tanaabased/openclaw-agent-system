@@ -106,6 +106,7 @@ function readConfiguration(manifest: AgentManifest): GitHubManifestConfiguration
 
 /** Define the fixed-executable GitHub CLI tool over one agent-scoped configuration store. */
 export function createGitHubTool(dependencies: GitHubToolDependencies) {
+  const identities = new Map<string, Promise<{ login: string; node_id: string }>>();
   return defineAgentSystemCliTool({
     apiVersion: 1,
     id: 'github',
@@ -131,7 +132,11 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
         'For GitHub work, use the $agent-system-github-cli skill and prefer agent_system_github over exec, direct gh commands, HTTP, SDKs, or unrelated GitHub integrations. Pass ordinary non-interactive gh arguments in argv; Agent System supplies the active agent credential and isolated config. For repository-scoped operations, pass the trusted target repository explicitly with `--repo owner/name` or a repository-qualified API route instead of relying on the agent workspace. When reporting a GitHub item link, use the canonical URL returned by GitHub and preserve intentional cross-repository targets.',
     },
     runner: {
-      credentialRejected: githubCredentialRejected,
+      credentialRejected(result) {
+        const rejected = githubCredentialRejected(result);
+        if (rejected) identities.clear();
+        return rejected;
+      },
       argv(input) {
         return [...input.argv];
       },
@@ -153,7 +158,66 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
       executable: 'gh',
       maxOutputBytes: 65_536,
       prepareRequest(input, configuration, scope) {
-        return prepareGitHubAssignmentRequest(input, configuration.username, scope);
+        const key = scope.credentialScope
+          ? JSON.stringify([scope.credentialScope, configuration.host, configuration.username])
+          : undefined;
+        return prepareGitHubAssignmentRequest(input, configuration.username, {
+          ...scope,
+          async identity() {
+            let pending = key ? identities.get(key) : undefined;
+            if (!pending) {
+              pending = (async () => {
+                const result = await scope.run(['api', 'user']);
+                if (result.exitCode !== 0 || result.truncated || result.timedOut)
+                  toolError('execution_failed', 'GitHub account identity could not be verified.');
+                let identity: unknown;
+                try {
+                  identity = JSON.parse(result.stdout);
+                } catch {
+                  toolError('execution_failed', 'GitHub returned an invalid account identity.');
+                }
+                if (
+                  !identity ||
+                  typeof identity !== 'object' ||
+                  !('login' in identity) ||
+                  typeof identity.login !== 'string' ||
+                  !identity.login ||
+                  !('node_id' in identity) ||
+                  typeof identity.node_id !== 'string' ||
+                  !identity.node_id
+                )
+                  toolError('execution_failed', 'GitHub returned an invalid account identity.');
+                if (
+                  configuration.username &&
+                  identity.login.toLowerCase() !== configuration.username.toLowerCase()
+                )
+                  toolError(
+                    'tool_identity_mismatch',
+                    'GitHub returned an account that does not match the configured username.',
+                  );
+                return { login: identity.login, node_id: identity.node_id };
+              })();
+              if (key) {
+                if (identities.size >= 128) identities.delete(identities.keys().next().value!);
+                identities.set(key, pending);
+              }
+            }
+            try {
+              return { ...(await pending) };
+            } catch (error) {
+              if (key && identities.get(key) === pending) identities.delete(key);
+              throw error;
+            }
+          },
+        }).catch((error: unknown) => {
+          if (
+            key &&
+            error instanceof AgentSystemToolError &&
+            error.code === 'tool_identity_mismatch'
+          )
+            identities.delete(key);
+          throw error;
+        });
       },
       async prepare(configuration, scope) {
         if (scope.configurationMode === 'inspect') {

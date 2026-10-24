@@ -1,3 +1,4 @@
+import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
 import GitWorktreeConflict from '../tools/git/worktree-conflict.ts';
@@ -31,7 +32,7 @@ import {
 import type { AgentManifest } from '../manifest/types.ts';
 import GitCommandError from '../tools/git/command-error.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
-import { revalidateFeedbackAssignment } from './assignment-feedback-reactivation.ts';
+import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import { automationHash } from './automation-hash.ts';
 import { inspectContinuedIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
@@ -126,7 +127,8 @@ export default class OpenClawDispatchContext {
   async scope(manifest: AgentManifest, workspace: string) {
     const current = await this.dependencies.intake.select(manifest, workspace);
     await assertNotificationManagement(this.dependencies.root, current.store.location.scope);
-    const admitted = await current.store.read();
+    const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
+    const admitted = managedIssueState(await current.store.read(), (await journal.read()).records);
     if (!admitted) throw new Error('dispatch-intake-activation-required');
     const selected = current.selected ?? retainedIntakePolicy(manifest, admitted, 'openclaw');
     return {
@@ -134,7 +136,7 @@ export default class OpenClawDispatchContext {
       admitted,
       policy: selected,
       manifestDigest: automationHash({ policy: selected.digest, models: manifest.models }),
-      journal: new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope),
+      journal,
     };
   }
 
@@ -161,8 +163,15 @@ export default class OpenClawDispatchContext {
       throw new Error('dispatch-issue-inactive');
     if (record.reset) throw new Error('dispatch-reset-pending');
     if (record.handoff && !work && !feedback) throw new Error('dispatch-assessment-handed-off');
-    const intake = current.admitted.records.find((entry) => entry.id === record.intakeId);
+    const intake = dispatchAdmission(record, current.admitted.records ?? []);
     if (!intake) throw new Error('dispatch-admission-missing');
+    if (
+      'initiation' in intake &&
+      (intake.agentId !== manifest.agent.id ||
+        intake.workspaceDir !== current.workspace ||
+        intake.scope !== current.store.location.scope)
+    )
+      throw new Error('dispatch-workspace-binding-changed');
     await new GitHubIdentityCache(current.store.location).hydrate(
       fresh.manifest.github?.notifications,
     );
@@ -220,19 +229,17 @@ export default class OpenClawDispatchContext {
       feedback ? 'feedback' : 'assignment',
     );
     await identities.hydrate(manifest.github?.notifications);
-    const repo =
+    const { repo, item } =
       (record.sessionCreation?.verified || record.effective?.status === 'verified') && !feedback
-        ? (
-            await inspectContinuedIssue(
-              intake,
-              client,
-              liveManifest.github?.notifications?.issueAssignment?.allowed ?? [],
-              record,
-              (this.dependencies.now ?? Date.now)(),
-            )
-          ).repo
+        ? await inspectContinuedIssue(
+            intake,
+            client,
+            liveManifest.github?.notifications?.issueAssignment?.allowed ?? [],
+            record,
+            (this.dependencies.now ?? Date.now)(),
+          )
         : feedback
-          ? await revalidateFeedbackAssignment(
+          ? await inspectFeedbackAssignment(
               {
                 ...current.policy,
                 policy: {
@@ -247,7 +254,7 @@ export default class OpenClawDispatchContext {
               client,
               record,
             )
-          : (await inspectAdmittedIssue(intake, client)).repo;
+          : await inspectAdmittedIssue(intake, client);
     const worktreeInput = {
       agentId: manifest.agent.id,
       attemptId: record.worktreeAttemptId,
@@ -264,7 +271,7 @@ export default class OpenClawDispatchContext {
       });
       if (path !== record.worktree) throw new Error('dispatch-worktree-diverged');
     }
-    return { client, repo, intake, worktreeInput };
+    return { client, repo, item, intake, worktreeInput };
   }
 
   async promptContext(
@@ -272,8 +279,11 @@ export default class OpenClawDispatchContext {
     workspace: string,
     binding: Parameters<typeof openclawTurnContext>[1],
   ) {
-    const current = await this.reportScope(manifest, workspace);
-    const record = (await current.journal.read()).records.find(
+    const current = await this.dependencies.intake.select(manifest, workspace, {
+      resolvePolicy: false,
+    });
+    const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
+    const record = (await journal.read()).records.find(
       (entry) => entry.threadId === binding.sessionKey,
     );
     return record && openclawTurnContext(record, binding);
@@ -281,7 +291,8 @@ export default class OpenClawDispatchContext {
 
   async reportScope(manifest: AgentManifest, workspace: string) {
     const current = await this.dependencies.intake.select(manifest, workspace);
-    const state = await current.store.read();
+    const journal = new OpenClawDispatchStore(this.dependencies.root, current.store.location.scope);
+    const state = managedIssueState(await current.store.read(), (await journal.read()).records);
     if (!state) throw new Error('dispatch-intake-record-missing');
     return {
       ...current,

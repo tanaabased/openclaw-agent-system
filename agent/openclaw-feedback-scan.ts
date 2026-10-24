@@ -1,4 +1,5 @@
 import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
+import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
@@ -113,9 +114,23 @@ export async function scanOpenClawFeedback(input: {
             throw new Error('feedback-workspace-binding-changed');
         };
         await budget.read('workspace-binding', validateLocal);
-        connection ??= await budget.read('github-connection', () =>
-          service.dependencies.connect({ manifest, workspaceDir: input.workspace }, budget.signal),
-        );
+        if (!connection) {
+          connection = await budget.read('github-connection', () =>
+            service.dependencies.connect(
+              { manifest, workspaceDir: input.workspace },
+              budget.signal,
+            ),
+          );
+          const { store } = await service.scope(manifest, input.workspace);
+          await budget.read('feedback-identities', () =>
+            new GitHubIdentityCache(store.location).resolve(
+              manifest.github?.notifications,
+              connection!,
+              'feedback',
+              true,
+            ),
+          );
+        }
         const { intake } = await budget.read('assignment-validation', () =>
           service.validate(
             manifest,
@@ -267,17 +282,4 @@ export async function scanOpenClawFeedback(input: {
   return scans;
 }
 
-export function applyOpenClawFeedbackScans(
-  records: OpenClawDispatchRecord[],
-  scans: OpenClawFeedbackScan[],
-) {
-  let changed = false;
-  for (const scan of scans) {
-    const record = records.find((record) => record.id === scan.id);
-    if (record && automationHash(record) === scan.before) {
-      record.feedback = scan.feedback;
-      changed = true;
-    }
-  }
-  return changed;
-}
+export { default as applyOpenClawFeedbackScans } from './apply-feedback-scans.ts';

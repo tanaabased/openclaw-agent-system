@@ -10,6 +10,7 @@ export const installParameters = Type.Object(
           'Pass 600000 for the ten-minute OpenClaw-hosted Codex tool-call budget. Does not extend approval or setup-command deadlines.',
       }),
     ),
+    manualSessionDispatch: Type.Optional(Type.Boolean()),
     rebuildCodexPath: Type.Optional(Type.Boolean()),
     skipSetup: Type.Optional(Type.Boolean()),
     skipSetupHost: Type.Optional(Type.Boolean()),

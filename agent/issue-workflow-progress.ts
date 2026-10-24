@@ -20,6 +20,7 @@ export interface IssueWorkflowState {
   decisionTurn?: { status: string; inactive?: boolean };
   delivery?: Delivery;
   continuation?: {
+    scope?: 'local' | 'pull-request';
     message?: string;
     phase?: string;
     code?: string;
@@ -29,6 +30,7 @@ export interface IssueWorkflowState {
     head?: string;
   };
   work?: {
+    scope?: 'local' | 'pull-request';
     delivery?: Delivery;
     result?: { outcome: string };
     code?: string;
@@ -88,6 +90,8 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
   )
     return { action: 'wait-input', status: 'clarification-needed' };
   if (result?.outcome === 'blocked' && !resumed) return { action: 'wait-input', status: 'blocked' };
+  if (result?.outcome === 'done' && (continuation?.scope ?? work?.scope) === 'local')
+    return { action: 'complete', status: 'complete' };
   const delivery = record.delivery ?? work?.delivery;
   const implementing =
     (result && result.outcome !== 'done' && resumed) ||

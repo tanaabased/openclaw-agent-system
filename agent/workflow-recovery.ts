@@ -19,6 +19,58 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     };
   }
   const reasons: Record<string, [string, string]> = {
+    'dispatch-receipt-id-invalid': [
+      'The supplied receipt ID is malformed, so it was not looked up or used to change workflow state.',
+      'Copy the exact receipt ID from verified workflow context and retry. Do not guess, correct, reset, or recreate the workflow.',
+    ],
+    'launch-open-issue-required': [
+      'Manual launch requires an accessible open GitHub issue.',
+      'Choose an open issue, not a pull request or comment. Preserve any existing preparation; changing the target is not recovery of that attempt.',
+    ],
+    'launch-owner-inactive': [
+      'This issue already has an inactive managed owner.',
+      'Inspect that owner and recover or retire it through its existing lifecycle. Do not create a replacement chat or delete its record.',
+    ],
+    'launch-owner-ambiguous': [
+      'More than one retained owner matches this issue.',
+      'Reconcile the original native owners before launching; no new chat or checkout was authorized.',
+    ],
+    'launch-preparation-owner-required': [
+      'The issue is already being prepared by another managed source.',
+      'Return to the original launching or intake conversation to reconcile the same attempt. Do not repeat repository or chat creation here.',
+    ],
+    'launch-selections-conflict': [
+      'Explicit launch choices differ from the retained preparation.',
+      'Retry the original receipt with its saved choices. Use the existing stage owner for subsequent policy or direction changes, not a new launch.',
+    ],
+    'launch-assignment-actor-recipient-unavailable': [
+      'An explicit delivery recipient requires an assignment actor, but this work was requested manually.',
+      'Replace that explicit recipient requirement with a named recipient or omit it, then retry the same launch. Do not invent an assigner or assign the issue as a workaround.',
+    ],
+    'launch-receipt-mismatch': [
+      'The launch receipt does not match this issue owner.',
+      'Use the original target and receipt together; inspect existing work before requesting another launch.',
+    ],
+    'codex-branch-owner-required': [
+      'This assignment has no verified ownership record for its current branch.',
+      'Preserve all files and commits. Resume a clean detached checkout at the retained starting commit through implementation context, or reconcile an existing delivery receipt with its original issue chat. A same-issue branch name or historical comment cannot establish ownership.',
+    ],
+    'codex-branch-owner-mismatch': [
+      'The current branch does not belong to this assignment attempt.',
+      'Preserve local work and switch back to this attempt’s retained branch before resuming. Do not reset or adopt a retired attempt’s branch.',
+    ],
+    'codex-branch-preparation-required': [
+      'This attempt’s branch preparation has not completed.',
+      'Resume implementation context in the retained chat to reconcile the saved Git operation before delivery. Do not create another branch or pull request.',
+    ],
+    'codex-branch-start-changed': [
+      'The checkout changed before this attempt’s branch preparation completed.',
+      'Preserve the changed files and commits and inspect the retained preparation before resuming. Do not reset the checkout or move another attempt’s commits onto this branch.',
+    ],
+    'codex-branch-ref-occupied': [
+      'The selected branch already exists without matching preparation evidence.',
+      'Preserve the branch and reconcile its owner before retrying in the same chat. Do not force-create, reset, or rename it to bypass the conflict.',
+    ],
     'git-worktree-branch-exists': [
       'This attempt already has a branch, but its owned checkout is absent.',
       'Preserve the branch and reconcile the retained preparation before retrying. Do not reset it or create another attempt to bypass an uncertain Git effect.',

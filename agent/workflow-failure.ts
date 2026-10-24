@@ -34,6 +34,7 @@ export default function workflowFailure(error: unknown, fallback: string) {
 export function workflowFailureScope(runtime: 'codex' | 'openclaw', route: string, input: unknown) {
   const request = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
   const actions = new Set([
+    'launch',
     'inspect',
     'observe-denials',
     'next',

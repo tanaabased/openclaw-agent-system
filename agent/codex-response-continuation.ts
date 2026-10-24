@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
 
 import { automationHash } from './automation-hash.ts';
@@ -5,6 +6,7 @@ import type { CodexWorkContext } from './codex-continuation-context.ts';
 import { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
 import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
+import codexSessionSettings from './codex-session-settings.ts';
 import pendingPublicResponse from './pending-public-response.ts';
 import { requireWorkflowSchedule } from './workflow-result.ts';
 
@@ -29,8 +31,9 @@ export default async function continueCodexResponse(
     return;
   // normal implementation/delivery turns can finish their own pending response without another send.
   if (record.continuation && record.continuation.phase !== 'complete') return;
-  requireWorkflowSchedule(context.schedule.saved, context.schedule.current, 'assessment-summary');
-  const intake = context.admissions?.records.find((entry) => entry.id === record.intakeId);
+  if (context.schedule)
+    requireWorkflowSchedule(context.schedule.saved, context.schedule.current, 'assessment-summary');
+  const intake = dispatchAdmission(record, context.admissions?.records ?? []);
   if (!intake) return;
   await revalidateDispatchAssignment(current, intake, deps, signal, true, record);
   const found = await native.find({
@@ -41,9 +44,8 @@ export default async function continueCodexResponse(
   });
   if (
     !found?.turnId ||
-    (await realpath(found.cwd)) !== (await realpath(record.worktree)) ||
-    found.model !== record.request.model ||
-    found.effort !== record.request.thinking
+    found.id !== record.threadId ||
+    (await realpath(found.cwd)) !== (await realpath(record.worktree))
   )
     throw new Error('assessment-summary-binding-mismatch');
   await verifyDispatchWorktree(
@@ -53,6 +55,8 @@ export default async function continueCodexResponse(
     context.git,
     'handoff',
   );
+  record.effective = codexSessionSettings(record, found);
+  await save();
   const recovery = record.summaryRecovery;
   if (recovery) {
     const receipt = await continuationNative(record.sourceThreadId, recovery.attempt);
@@ -81,8 +85,6 @@ export default async function continueCodexResponse(
     request: {
       threadId: record.threadId,
       prompt: record.request.prompt,
-      model: record.request.model,
-      thinking: record.request.thinking,
     },
   });
   if (source.status !== 'verified' || !source.ended) {
@@ -97,8 +99,6 @@ export default async function continueCodexResponse(
     beforeTurnId: found.turnId,
     request: {
       threadId: record.threadId,
-      model: record.request.model,
-      thinking: record.request.thinking,
       prompt: `Recover only the pending public assessment summary in this existing issue chat. The complete private assessment is saved. Call dispatchRuntime action summary with id ${record.id} and operation ${pending.summary?.attempt ? 'reconcile' : 'compose'} using the trusted runtime from this chat. Follow verified instructions, retain the complete private presentation and show the public outcome. Do not repeat assessment or implementation, change stages, or repost an uncertain write. Preserve current user direction and native denial.`,
     },
   };

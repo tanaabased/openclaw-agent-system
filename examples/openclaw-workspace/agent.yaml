@@ -25,7 +25,7 @@ setup-host:
   steps:
     - id: host-ready
       runtimes: [openclaw]
-      check: test -f host-ready
+      check: [test, -f, host-ready]
       apply: |
         printf 'host\n' >> setup-runs
         touch host-ready

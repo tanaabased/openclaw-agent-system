@@ -1,7 +1,11 @@
+import { dispatchAdmission } from './managed-issue.ts';
+import { realpath } from 'node:fs/promises';
+
 import { Value } from 'typebox/value';
 
 import codexReplyInput from './codex-direct-input.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
+import { withNative } from './codex-dispatch-context.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
 import type { CodexFeedbackDependencies } from './codex-feedback.ts';
 import { selectCodexIntake } from './codex-intake.ts';
@@ -9,7 +13,7 @@ import { connectCodexThreads } from './codex-thread-client.ts';
 import codexAssessmentSkill from './codex-assessment-skill.ts';
 import feedbackReply from './feedback-reply.ts';
 import replyOwner from './reply-owner.ts';
-import pendingPublicResponse from './pending-public-response.ts';
+import replyOwnerContext from './reply-owner-context.ts';
 import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
 import { replyRequestSchema } from '../tools/dispatch/reply-schema.ts';
 
@@ -98,54 +102,47 @@ export default async function codexReply(
         if (fresh.turnId !== turn.turnId || fresh.inputId !== turn.inputId)
           throw new Error('reply-native-input-changed');
       },
-      managed: async (target) => {
+      managed: async (target, purpose) => {
         const state = await journal.read();
         const admitted = await current.store.read();
-        return replyOwner(
-          state.records.map((record) => {
-            const item = admitted?.records.find((entry) => entry.id === record.intakeId);
-            if (!item && record.threadId === caller)
+        if (purpose) {
+          const owners = state.records.filter((record) => record.threadId === caller);
+          if (owners.length > 1) throw new Error('reply-managed-owner-ambiguous');
+          const record = owners[0];
+          if (record) {
+            if (!record.request || !record.worktree)
               throw new Error('reply-managed-context-invalid');
-            const pending = pendingPublicResponse(record);
-            const summary =
-              pending?.summary ??
-              record.assessmentSummaries?.find(
-                (entry) => entry.revision === record.assessmentRevision,
-              );
-            return {
-              id: record.id,
-              threadId: record.threadId,
-              inactive: Boolean(
-                record.retired ||
-                record.retirement ||
-                record.reset ||
-                record.nativeInactive ||
-                (record.threadId && !record.request),
-              ),
-              repository: item
-                ? `${item.repository.owner.login}/${item.repository.name}`
-                : undefined,
-              number: item?.issue.number,
-              pullRequestNumber: record.delivery?.pullRequest?.pullRequestNumber,
-              events: record.feedback?.events,
-              summary: record.result
-                ? {
-                    selection: summary?.selection,
-                    receipt: summary?.receipt,
-                    publicText: summary?.publicText,
-                    attempt: summary?.attempt,
-                  }
-                : undefined,
+            const native = await withNative(current, deps, (host) =>
+              host.find({
+                sourceThreadId: record.sourceThreadId,
+                prompt: record.request!.prompt,
+                createdAfter: record.createdAt,
+                threadId: record.threadId,
+              }),
+            );
+            if (
+              !native ||
+              native.id !== caller ||
+              (await realpath(native.cwd)) !== (await realpath(record.worktree))
+            )
+              throw new Error('reply-managed-context-invalid');
+          }
+        }
+        return replyOwner(
+          state.records.map((record) =>
+            replyOwnerContext({
+              record,
+              intake: dispatchAdmission(record, admitted?.records ?? []),
+              caller,
+              custodyInvalid: !record.request,
               delivery: record.delivery,
               implementation: record.continuation?.result,
-              deliveredPullRequest: record.delivery?.pullRequest,
-              result: record.result,
-              publisherLogin: item?.receiving.login,
-            };
-          }),
+            }),
+          ),
           caller,
           caller,
           target,
+          purpose,
         );
       },
     });

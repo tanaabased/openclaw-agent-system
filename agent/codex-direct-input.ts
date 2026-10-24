@@ -4,7 +4,10 @@ import type { CodexThreadRequest } from './codex-thread-client.ts';
 import codexTurnApprovalDenied from './codex-turn-approval.ts';
 
 /** native turn and user-item identity, not user-authored markers, establish direct input custody. */
-export default async function codexDirectInput(request: CodexThreadRequest, threadId: string) {
+export default async function codexDirectInput(
+  request: CodexThreadRequest,
+  threadId: string,
+): Promise<{ turnId: string; inputId: string; message?: string }> {
   const thread = await request('thread/read', { threadId, includeTurns: false });
   if (
     !nativeObject(thread.thread) ||
@@ -44,5 +47,9 @@ export default async function codexDirectInput(request: CodexThreadRequest, thre
   );
   if (user < 0 || typeof items[user]!.id !== 'string' || delegated > user)
     throw new Error('reply-native-user-input-required');
-  return { turnId: turn.id, inputId: items[user]!.id as string };
+  return {
+    turnId: turn.id,
+    inputId: items[user]!.id as string,
+    message: JSON.stringify(items[user]!.content),
+  };
 }

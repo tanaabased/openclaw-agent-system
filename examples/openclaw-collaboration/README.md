@@ -1,8 +1,23 @@
 # OpenClaw Collaboration Example
 
-Verify that ordinary Agent System installation enables collaboration between two managed agents while preserving an operator-owned participant grant. A strict AIMock drives a native session exchange and history read; completion requires the actual tool results. Repeat installation and Doctor verify the resulting configuration.
+Install collaboration for two managed agents while preserving an operator-owned participant grant, exchange a native message, read the peer history, and verify repeat installation preserves the working configuration.
 
-Runtime tests run this example on Ubuntu with the packed plugin and no live model or provider credentials. Configuration permutations remain in source tests and the older unscheduled collaboration example.
+## What Belongs Here
+
+- Additive managed collaboration configuration without replacing unrelated operator grants.
+- Actual native session-send and session-history tool results between the agents.
+- Repeat convergence and Doctor verification of the resulting configuration.
+
+## What Does Not Belong Here
+
+- Exhaustive collaboration permission/visibility permutations or unrelated session management.
+- Notification dispatch ownership: [intake](../openclaw-notifications-intake/README.md). Native execution: [runtimes](../openclaw-runtimes/README.md). Interactive approvals belong to [lifecycle approvals](../openclaw-lifecycle-approvals/README.md).
+
+## Notes
+
+- Strict AIMock drives a real Gateway exchange and requires actual tool results. No live model or provider credential is used.
+- An external participant begins in operator configuration so installation must preserve its grant while enabling the managed team.
+- Configuration permutations remain in source tests; this example proves one working installed exchange and history read.
 
 ## Setup
 

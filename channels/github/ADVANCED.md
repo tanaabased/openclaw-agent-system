@@ -54,6 +54,8 @@ and partial work before interpreting the new message; that history supplies cont
 not new authority.
 No separate repair policy or author list is required.
 
+For an explicitly requested issue progress update, use [GitHub Update](../../skills/github-update/SKILL.md). It compares public facts with verified progress in this chat, uses the configured shared reply composer, and returns the full private answer plus the exact confirmed public quote. Already-current issues get no comment; unfinished original publications recover first. This does not start implementation or change mode.
+
 Discovery retains bounded observations independently of reply eligibility.
 Feedback authors are the union of configured allowed actors and reviewers. Activity observed while no authors are
 approved stays in GitHub history and is not queued for later dispatch. When the runtime observes acceptance resume, it saves an admission
@@ -438,10 +440,23 @@ missing checkout or invalid explicit skill/guidance and retry in the same chat.
 A later answer can revise the saved direct assessment; ask for the full assessment
 for source readback. This does not launch the full issue workflow.
 
+For direct implementation in the current chat, invoke
+`$agent-system-issue-implementation` with an explicitly authorized actionable plan,
+issue URL and existing checkout, or reuse matching retained work. The collector
+uses the same configured implementation context as managed execution; no new
+assessment, chat or notification setup is required. Manual entry defaults to local
+work; only an explicit PR request selects publication. Resume its returned handoff
+and original receipts; invalid managed ownership never falls back to manual work.
+
 An authenticated operator can continue a retained Plan-mode assessment in its
 owning issue chat. An actionable Plan-mode issue needs human direction to enter implementation;
 once there, ordinary PR delivery needs no separate publication grant. The agent retains the
-complete plan and uses the existing chat, managed worktree, and model selection.
+complete plan and uses the existing chat and managed worktree. In either runtime, an
+operator may change the model or reasoning effort through native controls without
+recreating the task. Original routing stays recorded separately from current
+session settings; continuation respects the operator's choice. This does not
+authorize the agent to change settings, and initial creation still verifies the
+requested configuration.
 
 Work policy or an Auto Work decision lets the next intake pass continue an
 actionable plan in the same issue chat, using shared capacity and its saved native
@@ -471,7 +486,7 @@ with the delivery. Explicit title/body changes update that PR; commit-only pushe
 preserve text edited on GitHub. Interrupted updates reconcile the same operation.
 OpenClaw delivery reconciliation can finish incomplete provider checkpoints when the retained commit is already remote; a missing push requires the prepared publication path. Newer local or uncommitted work is not included by reconciliation.
 If initial PR creation is still uncertain, reconcile it before changing its text.
-Public assessment summaries, approved comment/review replies and PR announcements retain their drafts and attempted writes across interruptions. Continue in the same issue chat to finish only the missing response. An unconfirmed post is checked by its original marker and exact content, never blindly reposted. Missing access, changed sources, edited posts and native denials remain visible obstacles; the complete private result stays available. Pending assessment summaries can receive a response-only native continuation after the owner is idle. Implementation context also exposes pending summaries without moving work back to planning.
+Public assessment summaries, approved comment/review replies and PR announcements retain their drafts and attempted writes across interruptions. Continue in the same issue chat to finish only the missing response. An unconfirmed post is checked by its original marker and exact content, never blindly reposted. Missing access, changed sources, edited posts and native denials remain visible obstacles; the complete private result stays available. Pending assessment summaries can receive a response-only native continuation after the owner is idle. A denied summary instead retains its publication hold and diagnostic without automatic retry or another publication route; supported verified recovery or renewed authorization is required. Independently authorized implementation can still enter fresh native context in the same permitted turn. Cancellation, lost authority and broader or implementation-specific denials remain stops. Implementation context reports the summary hold separately without moving work back to planning.
 
 In OpenClaw, an explicit operator request in the owning chat can finish a retained feedback reply after its handler stops. The agent uses feedback context with `resume: true` to verify the current operator input and old terminal run, retaining the answer, pushed work and uncertain publication receipts. A manual stop alone never restarts work; real denials remain stops.
 
@@ -545,3 +560,10 @@ keeps its retained custody. An assignment with a saved pilot claim is held befor
 new native work is prepared; preserve its receipts and inspect the original owner
 before resolving it. The claim engine remains internal groundwork for a later
 dispatcher integration.
+
+## Manual Issue Launch
+
+[Issue Dispatch](../../tools/dispatch/README.md#manual-issue-launch) starts the same managed
+issue workflow by explicit operator request, without assignment or schedule activation.
+The [installed launch scenario](../../examples/openclaw-issue-launch/README.md) owns its
+OpenClaw CI journey; scheduled intake and direct assessment remain separate surfaces.

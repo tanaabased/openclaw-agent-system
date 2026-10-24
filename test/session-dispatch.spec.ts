@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 
+import {
+  GatewayClientRequestError,
+  GatewayClientRequestTimeoutError,
+} from '@openclaw/gateway-client';
+
 import AgentInstallService from '../agent/install-service.ts';
 import createSessionDispatchLifecycle from '../agent/session-dispatch-lifecycle.ts';
 import sessionDispatchRequirements, {
@@ -108,6 +113,54 @@ function fixture() {
 }
 
 describe('credentials/session-dispatch', () => {
+  for (const [category, failure, phase, reasonCode] of [
+    [
+      'timeout',
+      new GatewayClientRequestTimeoutError({ method: 'connect', timeoutMs: 1, requestSent: true }),
+      'handshake',
+      'connect-request-timeout',
+    ],
+    [
+      'transport',
+      Object.assign(new Error('private-token'), { code: 'ECONNREFUSED' }),
+      'connection',
+      'connection-refused',
+    ],
+    [
+      'gateway-rejected',
+      new GatewayClientRequestError({
+        code: 'FORBIDDEN',
+        message: 'private-token',
+        details: { token: 'private-token' },
+      }),
+      'unknown',
+      'forbidden',
+    ],
+  ] as const) {
+    it(`should retain bounded ${category} evidence and resume the same enrollment identity`, async () => {
+      const f = fixture();
+      const connect = f.dependencies.connect;
+      f.dependencies.connect = async () => {
+        throw failure;
+      };
+      await assert.rejects(f.service.enroll({ sessionDispatchConsent: true }), (error: unknown) => {
+        assert.ok(error instanceof Error && 'sessionDispatchDiagnostic' in error);
+        assert.deepEqual(error.sessionDispatchDiagnostic, { category, phase, reasonCode });
+        assert.equal(error.cause, undefined);
+        assert.ok(!JSON.stringify(error).includes('private-token'));
+        return true;
+      });
+      const retained = f.record()!;
+      assert.ok(retained.bootstrap);
+      assert.equal(retained.token, undefined);
+      f.dependencies.connect = connect;
+      assert.equal((await f.service.enroll({ sessionDispatchConsent: true })).status, 'created');
+      assert.equal(f.record()!.device.deviceId, retained.device.deviceId);
+      assert.equal(f.calls.filter((call) => call === 'issue').length, 1);
+      assert.ok(!f.calls.includes('remove'));
+    });
+  }
+
   it('should inspect missing enrollment without issuing or persisting credentials', async () => {
     const f = fixture();
     assert.equal((await f.service.inspect()).code, 'session-dispatch-credential-missing');
@@ -243,6 +296,69 @@ describe('credentials/session-dispatch', () => {
     assert.equal(f.calls.filter((call) => call === 'issue').length, 1);
   });
 
+  it('should preserve diagnostics and exact pairing recovery without replacing an existing identity', async () => {
+    const f = fixture();
+    f.setPending(true);
+    await assert.rejects(f.service.enroll({ sessionDispatchConsent: true }), (error: unknown) => {
+      assert.ok(error instanceof Error && 'sessionDispatchDiagnostic' in error);
+      assert.deepEqual(error.sessionDispatchDiagnostic, {
+        category: 'unknown',
+        phase: 'unknown',
+        reasonCode: 'unknown',
+      });
+      assert.match(error.message, /devices approve request-1/);
+      assert.ok(error.message.includes(f.record()!.device.deviceId));
+      return true;
+    });
+    f.setPending(false);
+    await f.service.enroll({ sessionDispatchConsent: true });
+    const retained = f.record()!;
+    f.setUnavailable();
+    const before = [...f.calls];
+    await assert.rejects(f.service.enroll({ sessionDispatchConsent: true }), (error: unknown) => {
+      assert.ok(error instanceof Error && 'sessionDispatchDiagnostic' in error);
+      assert.deepEqual(error.sessionDispatchDiagnostic, {
+        category: 'unknown',
+        phase: 'unknown',
+        reasonCode: 'unknown',
+      });
+      assert.ok(!error.message.includes('fixture-secret'));
+      return true;
+    });
+    assert.deepEqual(f.record(), retained);
+    assert.deepEqual(f.calls.slice(before.length), ['device-connect']);
+  });
+
+  it('should preserve cancellation and current authority after failed or successful connection', async () => {
+    for (const remoteFails of [false, true]) {
+      for (const cancelled of [false, true]) {
+        const f = fixture();
+        const controller = new AbortController();
+        const failure = new Error('authority-changed');
+        let changed = false;
+        f.dependencies.connect = async () => {
+          changed = true;
+          if (cancelled) controller.abort(failure);
+          if (remoteFails) throw new Error('private-token');
+          return { token: 'fixture-device-token', scopes: [...sessionDispatchScopes] };
+        };
+        await assert.rejects(
+          f.service.enroll({
+            sessionDispatchConsent: true,
+            signal: controller.signal,
+            assertEnrollmentCurrent() {
+              if (changed && !cancelled) throw failure;
+            },
+          }),
+          (error: unknown) => error === failure,
+        );
+        assert.equal(f.record()!.token, undefined);
+        assert.ok(f.record()!.bootstrap);
+        assert.ok(!f.calls.includes('remove'));
+      }
+    }
+  });
+
   it('should stop before issuance when protected persistence or current authority fails', async () => {
     const f = fixture();
     f.failWrite();
@@ -311,6 +427,45 @@ describe('agent/session-dispatch-requirements', () => {
     );
     policy.runtimes = ['codex'];
     assert.deepEqual(sessionDispatchRequirements(value), []);
+  });
+
+  it('should require explicit enrollment consent for manual launch without notification configuration', async () => {
+    const value: AgentManifest = { schemaVersion: 1, agent: { id: 'test' } };
+    assert.deepEqual(sessionDispatchRequirements(value), []);
+    assert.deepEqual(sessionDispatchRequirements(value, true), [
+      { id: 'github-issue-launch', name: 'manual issue launch' },
+    ]);
+    let applied = false;
+    const install = new AgentInstallService({
+      sessionDispatch: { needsEnrollment: async () => true },
+      lifecycleRegistry: {
+        reconcile: async (input) => {
+          applied = true;
+          assert.equal(input.manualSessionDispatch, true);
+          assert.equal(input.sessionDispatchConsent, true);
+          return { outcomes: [], warnings: [] };
+        },
+      },
+    });
+    await assert.rejects(
+      install.install({
+        manifest: value,
+        workspaceDir: '/test',
+        runtime: 'openclaw',
+        manualSessionDispatch: true,
+      }),
+      { code: 'session-dispatch-approval-required' },
+    );
+    assert.equal(applied, false);
+    await install.install({
+      manifest: value,
+      workspaceDir: '/test',
+      runtime: 'openclaw',
+      manualSessionDispatch: true,
+      sessionDispatchConsent: true,
+    });
+    assert.equal(applied, true);
+    assert.equal(value.github, undefined);
   });
 
   it('should skip storage and enrollment when no consumer requires dispatch', async () => {

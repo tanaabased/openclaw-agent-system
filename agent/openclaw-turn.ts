@@ -30,7 +30,6 @@ export async function reconcileOpenClawTurn(input: {
   request: DispatchRequest;
   sessionKey: string;
   sessionId: string;
-  model: string;
   turn: OpenClawTurn;
   save(): Promise<void>;
 }) {
@@ -109,8 +108,6 @@ export async function reconcileOpenClawTurn(input: {
         if (typeof effective.provider === 'string' && typeof effective.model === 'string')
           executionModel = `${effective.provider}/${effective.model}`;
       }
-      if (executionModel && executionModel !== input.model)
-        throw new Error('dispatch-turn-model-mismatch');
       turn.status = 'completed';
       turn.replyEventId = String(sessionObject(reply.__openclaw).id);
       if (executionModel) turn.executionModel = executionModel;

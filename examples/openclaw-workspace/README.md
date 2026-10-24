@@ -1,8 +1,26 @@
 # OpenClaw Workspace Example
 
-Verify one declared workspace through validation, installation, repeated installation, and read-only Doctor inspection. The installed agent's name proves host input and ordered dotenv resolution; direct configuration reads prove Codex prerequisite and model routing. No Gateway, model turn, or provider credential is needed. Runtime tests run this example on Ubuntu.
+Validate a declared workspace without effects, install its ordered setup and resolved configuration, repeat installation without changes, and inspect healthy/setup-drift state through read-only Doctor.
 
-Setup writes receipts beside the checked-in manifest on the disposable runner.
+## What Belongs Here
+
+- Validation without host-value resolution, setup execution, or reconciliation.
+- Ordered host/agent setup and dotenv resolution producing the installed identity, Codex prerequisite, and model routing.
+- Repeat convergence and Doctor inspection without repair or secret-value disclosure.
+
+## What Does Not Belong Here
+
+- Failing setup-child termination, timeout, and detailed diagnostic permutations.
+- Gateway agent turns: [agent](../openclaw-agent/README.md). Native OS installation/enrollment: [OS install](../os-install/README.md).
+- Standalone Codex binding: [Codex install](../codex-install/README.md).
+
+## Notes
+
+- Host and agent setup checks use argv and command-object forms alongside shell apply scripts; successful setup and convergence exercise all three forms.
+
+- Direct Ubuntu checks need no Gateway, model, or provider credential. The installed name proves environment resolution; direct configuration reads prove routing and the Codex prerequisite.
+- Setup writes receipts beside the checked-in manifest on the disposable runner. Independent configuration snapshots prove validation, repeat install, and Doctor leave the relevant state unchanged.
+- Pending relocation: the final setup-failure fixture verifies safe child termination and diagnostic redaction through the installed CLI.
 
 ## Setup
 

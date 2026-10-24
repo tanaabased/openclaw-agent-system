@@ -1,3 +1,8 @@
+import {
+  retainSessionDispatchDiagnostic,
+  sessionDispatchDiagnosticMessage,
+  type SessionDispatchDiagnostic,
+} from '../credentials/session-dispatch-diagnostic.ts';
 import { withProviderDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import type SetupLifecycleService from '../agent/setup-lifecycle.ts';
 import setupStepApplies from '../agent/setup-runtime.ts';
@@ -9,6 +14,7 @@ export interface AgentSystemLifecycleContext {
   manifest: AgentManifest;
   /** Replace the accumulated Codex baseline with the invoking environment during install. */
   rebuildCodexPath?: boolean;
+  manualSessionDispatch?: boolean;
   workspaceDir: string;
 }
 
@@ -45,6 +51,7 @@ export type AgentSystemLifecycleFindingStatus =
 
 export interface AgentSystemLifecycleFinding {
   providerDiagnostic?: ProviderDiagnostic;
+  sessionDispatchDiagnostic?: SessionDispatchDiagnostic;
   code: string;
   component: string;
   stepId?: string;
@@ -82,6 +89,7 @@ export interface AgentSystemLifecycleProgress extends AgentSystemLifecycleReconc
 export class AgentSystemLifecycleError extends Error {
   override name = 'AgentSystemLifecycleError';
   readonly rawMessage: string;
+  readonly sessionDispatchDiagnostic?: SessionDispatchDiagnostic;
 
   constructor(
     readonly component: string,
@@ -91,8 +99,20 @@ export class AgentSystemLifecycleError extends Error {
     readonly providerDiagnostic?: ProviderDiagnostic,
     readonly stepId?: string,
     readonly progress?: AgentSystemLifecycleProgress,
+    sessionDispatchDiagnostic?: SessionDispatchDiagnostic,
   ) {
-    super(withProviderDiagnostic(message, providerDiagnostic), options);
+    const safe =
+      sessionDispatchDiagnostic === undefined
+        ? undefined
+        : retainSessionDispatchDiagnostic(sessionDispatchDiagnostic);
+    super(
+      withProviderDiagnostic(
+        safe ? `${message} ${sessionDispatchDiagnosticMessage(safe)}` : message,
+        providerDiagnostic,
+      ),
+      options,
+    );
+    this.sessionDispatchDiagnostic = safe;
     this.rawMessage = message;
   }
 }
@@ -260,6 +280,7 @@ export default class AgentSystemLifecycleRegistry {
               ...pendingWork(ordered.slice(index + 1)),
             ],
           },
+          failure.sessionDispatchDiagnostic,
         );
       }
       if (!result) continue;

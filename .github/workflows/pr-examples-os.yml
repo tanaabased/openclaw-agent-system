@@ -26,6 +26,8 @@ jobs:
           - ubuntu-24.04
         example:
           - os-install
+          - os-install-online
+          - os-dispatch-enrollment
           - os-execution
           - os-credentials
     steps:

@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
 
 import { autoDecisionInstructions, needsAutoDecision } from './auto-decision.ts';
@@ -9,6 +10,7 @@ import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import codexHostAccess from './codex-host-access.ts';
 import { selectCodexIntake } from './codex-intake.ts';
+import codexSessionSettings from './codex-session-settings.ts';
 import { dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import workflowFailure from './workflow-failure.ts';
 
@@ -30,10 +32,13 @@ export default async function advanceCodexAutoDecision(
     save,
     signal,
   } = context;
-  const liveMode = current.manifest.github?.notifications?.issueAssignment?.mode;
   let decisionPending: { status: 'pending' | 'blocked'; id: string; code?: string } | undefined;
   if (occurrence) {
     for (const record of state.records) {
+      const liveMode =
+        record.manualIssue?.selections?.mode ??
+        current.manifest.github?.notifications?.issueAssignment?.mode ??
+        'auto';
       if (input.id && input.id !== record.id) continue;
       const pending = record.autoDecision && !record.autoDecision.ended;
       if (!pending && !needsAutoDecision(record, liveMode)) continue;
@@ -45,7 +50,7 @@ export default async function advanceCodexAutoDecision(
         record.reset
       )
         continue;
-      const admitted = admissions?.records.find((entry) => entry.id === record.intakeId);
+      const admitted = dispatchAdmission(record, admissions?.records ?? []);
       if (!admitted || !record.request || !record.project || !record.threadId || !record.worktree)
         continue;
       if (
@@ -106,9 +111,7 @@ export default async function advanceCodexAutoDecision(
           !found ||
           !found.turnId ||
           found.id !== record.threadId ||
-          (await realpath(found.cwd)) !== (await realpath(record.worktree)) ||
-          found.model !== record.request.model ||
-          found.effort !== record.request.thinking
+          (await realpath(found.cwd)) !== (await realpath(record.worktree))
         )
           throw new Error('continuation-native-binding-mismatch');
         if (found.turnStatus !== 'completed' || !['idle', 'notLoaded'].includes(found.status))
@@ -119,8 +122,17 @@ export default async function advanceCodexAutoDecision(
           admitted.repository.owner.login + '/' + admitted.repository.name,
           git,
         );
+        record.effective = codexSessionSettings(record, found);
+        await save();
         const live = await selectCodexIntake(pluginData, deps);
-        if (!needsAutoDecision(record, live.manifest.github?.notifications?.issueAssignment?.mode))
+        if (
+          !needsAutoDecision(
+            record,
+            record.manualIssue?.selections?.mode ??
+              live.manifest.github?.notifications?.issueAssignment?.mode ??
+              'auto',
+          )
+        )
           continue;
         record.autoDecision = {
           previousAttempts: record.autoDecision
@@ -137,8 +149,6 @@ export default async function advanceCodexAutoDecision(
             beforeTurnId: found.turnId,
             request: {
               threadId: record.threadId,
-              model: record.request.model,
-              thinking: record.request.thinking,
               prompt:
                 autoDecisionInstructions +
                 ' Refresh dispatchRuntime assessment context with JSON on stdin: ' +

@@ -10,7 +10,8 @@ const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 export const attemptSchema = Type.Object(
   {
     id: hash,
-    origin: Type.Optional(Type.Literal('assessment')),
+    origin: Type.Optional(Type.Union([Type.Literal('assessment'), Type.Literal('input')])),
+    inputId: Type.Optional(text),
     sourceThreadId: Type.Optional(text),
     sourceTurnId: text,
     beforeTurnId: text,
@@ -18,8 +19,8 @@ export const attemptSchema = Type.Object(
       {
         threadId: text,
         prompt: Type.String({ minLength: 1, maxLength: 32000 }),
-        model: text,
-        thinking: text,
+        model: Type.Optional(text),
+        thinking: Type.Optional(text),
       },
       { additionalProperties: false },
     ),
@@ -47,6 +48,7 @@ export const codexContinuationStateSchema = Type.Object(
       ),
     ),
     retryAfter: Type.Optional(Type.Integer({ minimum: 0 })),
+    scope: Type.Optional(Type.Union([Type.Literal('local'), Type.Literal('pull-request')])),
     policyDigest: hash,
     policyHeld: Type.Optional(text),
     clarificationTurnId: Type.Optional(text),
@@ -55,6 +57,17 @@ export const codexContinuationStateSchema = Type.Object(
     selection: assessmentSelectionSchema,
     assessmentDigest: Type.Optional(hash),
     assessmentSelectionDigest: Type.Optional(hash),
+    observation: Type.Optional(
+      Type.Object(
+        {
+          turnId: text,
+          afterItemId: text,
+          assessmentDigest: hash,
+          receiptId: Type.Optional(text),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     attempt: Type.Optional(attemptSchema),
     retries: Type.Optional(
       Type.Array(

@@ -17,13 +17,3 @@ github:
   host: github.com
   username: tanaabot
   token: GH_TOKEN_TANAABOT
-
-setup-agent:
-  steps:
-    - id: tool-identity
-      runtimes: [openclaw]
-      check: test -f setup.complete
-      apply: [sh, ./probe.sh, setup]
-
-automations:
-  file: ./automations.yaml

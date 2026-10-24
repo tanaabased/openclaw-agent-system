@@ -1,8 +1,24 @@
 # OpenClaw Google Example
 
-Verify Google onboarding through the packed plugin: host setup installs GoG before credential reconciliation, repeated installation preserves the account, Doctor verifies identity, and both the public command and contextual shim perform one read-only Tasks request. No Gateway or model is needed.
+Install GoG before reconciling the declared Google account, verify its live identity, perform a read-only Tasks request through public and shim routes, and confirm repeat installation preserves the account.
 
-The existing test 1Password environment owns the separate Google test application's client, exported authorization, account, and keyring password. Its grant needs Tasks read-only and identity scopes. Follow [Google onboarding](../../tools/google/README.md#per-agent-onboarding) to provision or renew it; never put authorization material in this repository. CI supplies bootstrap access through `OP_SERVICE_ACCOUNT_TOKEN` and isolated credential homes.
+## What Belongs Here
+
+- Prerequisite ordering and real account credential reconciliation.
+- Repeat convergence and Doctor's live identity result.
+- One read-only Tasks operation through each installed managed entrypoint.
+
+## What Does Not Belong Here
+
+- Google API behavior, service/option permutations, or mutating application workflows.
+- General 1Password cache behavior: [credentials](../openclaw-credentials/README.md). Native credential storage: [OS credentials](../os-credentials/README.md).
+- Gateway/model turns; direct commands establish this contract.
+
+## Notes
+
+- The existing 1Password test environment owns a separate Google test application's client, exported authorization, account, and keyring password. Tasks read-only and identity scopes are required.
+- Follow [Google onboarding](../../tools/google/README.md#per-agent-onboarding) for provisioning/renewal. CI supplies `OP_SERVICE_ACCOUNT_TOKEN` and isolated credential homes; authorization material is not a repository fixture.
+- The job removes its stored bootstrap credential after the read-only checks.
 
 ## Setup
 

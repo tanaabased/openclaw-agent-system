@@ -1,4 +1,5 @@
 import GitHubRequestCooldown from './github-request-cooldown.ts';
+import retryGitHubRead from './github-read-retry.ts';
 import { parseGitHubApiResponse } from '../channels/github/provider/api-response.ts';
 import {
   withProviderDiagnostic,
@@ -41,6 +42,7 @@ export interface GitHubAccountClientDependencies {
     Partial<Pick<AgentEnvironmentService, 'invalidateCredentials'>>;
   excludedExecutableDirectories?: readonly string[];
   runCli: AgentSystemCliRunner;
+  retryRead?: typeof retryGitHubRead;
 }
 
 export interface GitHubAccountExecutionOptions {
@@ -73,6 +75,8 @@ export interface GitHubCredentialMaterializer {
 }
 
 export interface ConnectedGitHubAccountClient {
+  /** Opaque lifetime for account-scoped provider observations; replaced on rebinding or rejection. */
+  readonly observationScope?: object;
   credentialFingerprint?: string;
   execute(
     argv: string[],
@@ -185,11 +189,17 @@ function normalizedExecutionOptions(options: GitHubAccountExecutionOptions | und
 export default class GitHubAccountClient {
   readonly #dependencies: GitHubAccountClientDependencies;
   readonly #runCli: AgentSystemCliRunner;
+  readonly #retryRead: typeof retryGitHubRead;
   readonly #cooldown = new GitHubRequestCooldown();
+  readonly #identities = new Map<
+    string,
+    { credentialFingerprint: string; identity?: GitHubAccountIdentity; observationScope: object }
+  >();
 
   constructor(dependencies: GitHubAccountClientDependencies) {
     this.#dependencies = dependencies;
     this.#runCli = dependencies.runCli;
+    this.#retryRead = dependencies.retryRead ?? retryGitHubRead;
   }
 
   async connect(
@@ -233,6 +243,18 @@ export default class GitHubAccountClient {
     const normalizedToken = token.trim();
     if (!normalizedToken || normalizedToken.length > 2048 || /\s/u.test(normalizedToken)) {
       throw connectionError('The GitHub credential must contain one non-empty line.');
+    }
+    const credentialFingerprint = createHash('sha256').update(normalizedToken).digest('hex');
+    const binding = JSON.stringify([
+      resolve(context.workspaceDir),
+      context.manifest.agent.id,
+      (configuration.host ?? 'github.com').toLowerCase(),
+      username.value.trim().toLowerCase(),
+    ]);
+    let verification = this.#identities.get(binding);
+    if (verification?.credentialFingerprint !== credentialFingerprint) {
+      verification = { credentialFingerprint, observationScope: {} };
+      this.#identities.set(binding, verification);
     }
 
     const resolveOptionalValue = (
@@ -312,8 +334,10 @@ export default class GitHubAccountClient {
           normalizedToken,
         );
         this.#cooldown.observe(account, result);
-        if (githubCredentialRejected(result))
+        if (githubCredentialRejected(result)) {
+          if (this.#identities.get(binding) === verification) this.#identities.delete(binding);
           this.#dependencies.environmentService.invalidateCredentials?.(context.manifest.agent.id);
+        }
         return result;
       } catch (error) {
         throw new GitHubAccountClientError(
@@ -325,9 +349,22 @@ export default class GitHubAccountClient {
       }
     };
 
-    const identity = parseIdentity(
-      await execute(['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}']),
-    );
+    // The token's owner is stable. Actual operations still enforce current provider permissions.
+    const identity = verification.identity
+      ? { ...verification.identity }
+      : parseIdentity(
+          await this.#retryRead(
+            (timeoutMs) =>
+              execute(
+                ['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}'],
+                undefined,
+                {
+                  timeoutMs,
+                },
+              ),
+            { signal },
+          ),
+        );
     if (identity.login.toLowerCase() !== username.value.trim().toLowerCase()) {
       this.#dependencies.environmentService.invalidateCredentials?.(context.manifest.agent.id);
       throw new GitHubAccountClientError(
@@ -335,6 +372,7 @@ export default class GitHubAccountClient {
         `GitHub returned ${identity.login}, not the configured username ${username.value}.`,
       );
     }
+    if (this.#identities.get(binding) === verification) verification.identity = { ...identity };
 
     const profileEnvironment = (configDirectory: string): NodeJS.ProcessEnv => ({
       ...environment,
@@ -346,6 +384,7 @@ export default class GitHubAccountClient {
       argv: string[],
       configDirectory: string,
       stdin?: string,
+      timeoutMs = defaultTimeoutMs,
     ): Promise<AgentSystemCliResult> => {
       try {
         return redact(
@@ -358,7 +397,7 @@ export default class GitHubAccountClient {
             maxOutputBytes: defaultMaximumOutputBytes,
             ...(signal ? { signal } : {}),
             ...(stdin === undefined ? {} : { stdin }),
-            timeoutMs: defaultTimeoutMs,
+            timeoutMs,
           }),
           normalizedToken,
         );
@@ -375,9 +414,15 @@ export default class GitHubAccountClient {
       let profileIdentity;
       try {
         profileIdentity = parseIdentity(
-          await runProfileCli(
-            ['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}'],
-            configDirectory,
+          await this.#retryRead(
+            (timeoutMs) =>
+              runProfileCli(
+                ['api', 'user', '--include', '--jq', '{login:.login,nodeId:.node_id}'],
+                configDirectory,
+                undefined,
+                timeoutMs,
+              ),
+            { signal },
           ),
         );
       } catch (error) {
@@ -415,10 +460,11 @@ export default class GitHubAccountClient {
       : undefined;
 
     return {
-      credentialFingerprint: createHash('sha256').update(normalizedToken).digest('hex'),
+      observationScope: verification.observationScope,
+      credentialFingerprint,
       execute,
       ...(gitAuthor === undefined ? {} : { gitAuthor }),
-      identity,
+      identity: { ...identity },
       ...(materializeCredential === undefined ? {} : { materializeCredential }),
       verifyConfiguredIdentity,
     };

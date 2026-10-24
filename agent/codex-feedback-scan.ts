@@ -1,10 +1,12 @@
+import { dispatchAdmission } from './managed-issue.ts';
+import workflowFailure from './workflow-failure.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import feedbackOwnPublications from './feedback-own-publications.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
 import { automationHash } from './automation-hash.ts';
-import type { DispatchRecord, DispatchState } from './codex-dispatch-state.ts';
+import type { DispatchState } from './codex-dispatch-state.ts';
 import type connectCodexFeedback from './codex-feedback-client.ts';
 import { discoverCodexFeedback } from './codex-feedback-source.ts';
 import type { CodexFeedback } from './codex-feedback-state.ts';
@@ -37,6 +39,7 @@ export async function scanCodexFeedback(input: {
     policy,
     provider.client,
     'feedback',
+    true,
   );
   const intake = await current.store.read();
   if (!intake) throw new Error('feedback-intake-missing');
@@ -58,7 +61,7 @@ export async function scanCodexFeedback(input: {
   const scans: FeedbackScan[] = [];
   for (const record of records) {
     if (budget.exhausted) break;
-    const admitted = intake.records.find((item) => item.id === record.intakeId);
+    const admitted = dispatchAdmission(record, intake.records ?? []);
     if (!admitted) throw new Error('feedback-admission-missing');
     const feedback = structuredClone(
       record.feedback ?? { startedAt: now, baseline: {}, events: [] },
@@ -148,10 +151,7 @@ export async function scanCodexFeedback(input: {
         break;
       }
       if (codexHostAccess(error)) throw error;
-      const diagnostic = error instanceof Error ? error.message : '';
-      feedback.code = /^[a-z][a-z0-9-]{0,127}$/u.test(diagnostic)
-        ? diagnostic
-        : 'feedback-provider-unavailable';
+      feedback.code = workflowFailure(error, 'feedback-provider-unavailable').code;
     }
     feedback.discoveryPending = false;
     await save();
@@ -160,24 +160,4 @@ export async function scanCodexFeedback(input: {
   return scans;
 }
 
-/** called under the journal lock; never replace concurrently saved results or receipts. */
-export function applyFeedbackScans(
-  records: DispatchRecord[],
-  scans: readonly FeedbackScan[],
-): boolean {
-  let changed = false;
-  for (const scan of scans) {
-    const record = records.find((entry) => entry.id === scan.id);
-    if (
-      !record ||
-      record.retired ||
-      record.retirement ||
-      record.reset ||
-      automationHash(record) !== scan.before
-    )
-      continue;
-    record.feedback = scan.feedback;
-    changed = true;
-  }
-  return changed;
-}
+export { default as applyFeedbackScans } from './apply-feedback-scans.ts';

@@ -1,8 +1,24 @@
 # OpenClaw GitHub Example
 
-Verify two distinct GitHub identities through the packed plugin and real Gateway. Installation creates separate native OpenClaw profiles with manifest-derived Git authors; repeat installation preserves those bindings. Strict AIMock drives two managed GitHub identity calls and requires the real safe rejection reason for a generated-config mutation probe. Direct native profile status independently verifies that OpenClaw consumes the matching agent credentials.
+Install two managed GitHub identities, execute one real identity request as each agent, and verify that native OpenClaw profiles and repeat installation preserve separate credentials and Git authors.
 
-Ubuntu CI supplies the existing Tanaabot and EMORI test tokens. Identity calls are read-only. A self-removal probe uses a nonexistent issue and must return the local assignment rejection before any remote mutation; this example creates no GitHub content. SSH-key provisioning and remote checkout belong to the worktree example.
+## What Belongs Here
+
+- Distinct installed native profiles and manifest-derived author identities.
+- Managed agent/tool calls using each agent's actual account, independently observed through native profile status.
+- Repeat installation preserving the verified profile bindings.
+
+## What Does Not Belong Here
+
+- A matrix of configuration-mutation or self-unassignment policy probes; installed command boundaries also have coverage in [tools](../openclaw-tools/README.md). Preserve model-facing refusal evidence when selecting its final owner.
+- SSH registration and remote checkout: [worktree sessions](../openclaw-worktree-session/README.md). Notification content creation: [intake](../openclaw-notifications-intake/README.md).
+
+## Notes
+
+- Strict AIMock drives the real Gateway/tools without testing model judgment. Ubuntu CI supplies the existing Tanaabot and EMORI tokens; identity requests are read-only.
+- The Gateway may reuse account identity proof for an unchanged credential binding. The explicit identity requests below still execute under each selected agent's real credential; a cached preflight must not change their account.
+- Pending relocation: additional model turns verify generated-config mutation rejection and self-unassignment rejection. The latter uses a nonexistent issue and must stop locally before remote mutation.
+- This job creates no GitHub issues, PRs, or SSH registrations.
 
 ## Setup
 

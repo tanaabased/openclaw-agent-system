@@ -1,0 +1,8 @@
+schema-version: 1
+
+agent:
+  id: backup-cleanup-tanaabot
+  name: Backup Cleanup Tanaabot
+
+backup:
+  openclaw-state: off

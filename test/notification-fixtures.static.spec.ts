@@ -1,13 +1,32 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 
 for (const id of [
-  'openclaw-issue',
-  'openclaw-pr',
-  'openclaw-intake',
-  'openclaw-lifecycle',
-  'openclaw-progression',
+  'openclaw-notifications-issue-journey',
+  'openclaw-notifications-conversation',
+  'openclaw-notifications-pr-journey',
+  'openclaw-notifications-work',
+  'openclaw-notifications-work-custom',
+  'openclaw-notifications-auto-work',
+  'openclaw-notifications-auto-plan',
+  'openclaw-notifications-pr-recipients',
+  'openclaw-notifications-pr-update',
+  'openclaw-notifications-pr-presentation',
+  'openclaw-notifications-pr-collaboration',
+  'openclaw-notifications-pr-discovery',
+  'openclaw-notifications-pr-reply-recovery',
+  'openclaw-notifications-intake',
+  'openclaw-notifications-assessment-recovery',
+  'openclaw-notifications-feedback-policy',
+  'openclaw-notifications-assignment-policy',
+  'openclaw-notifications-reactivation',
+  'openclaw-notifications-retirement',
+  'openclaw-notifications-reset',
+  'openclaw-notifications-progression',
+  'openclaw-notifications-decision-recovery',
+  'openclaw-notifications-scheduling',
 ]) {
   describe(`examples/${id} fixture configuration`, () => {
     it('should accept the prepared fixture and route its supported workflow to the owning runtime', async () => {
@@ -17,13 +36,27 @@ for (const id of [
         .replaceAll('__RECEIVER_NODE_ID__', 'U_receiver');
       const parsed = parseAgentManifest(source);
       assert.equal(parsed.status, 'valid', JSON.stringify(parsed.diagnostics));
-      const policy = parsed.manifest?.github?.notifications;
+      assert.ok(parsed.manifest);
+      assert.ok(
+        openclawIntakeJobs(parsed.manifest).some((job) => job.id === 'github-issue-assignment'),
+      );
+      const policy = parsed.manifest.github?.notifications;
       assert.equal(policy?.schemaVersion, 3);
       assert.deepEqual(policy?.runtimes, ['openclaw']);
-      assert.equal(policy?.issueAssignment?.mode, 'plan');
+      assert.equal(
+        policy?.issueAssignment?.mode,
+        id === 'openclaw-notifications-auto-work'
+          ? 'auto'
+          : ['openclaw-notifications-work', 'openclaw-notifications-work-custom'].includes(id)
+            ? 'work'
+            : 'plan',
+      );
       assert.deepEqual(policy?.issueAssignment?.pullRequest?.recipients, [
         { source: 'assignment-actor', roles: ['assignee'] },
-        ...(id === 'openclaw-issue'
+        ...([
+          'openclaw-notifications-issue-journey',
+          'openclaw-notifications-conversation',
+        ].includes(id)
           ? [{ login: 'tanaabot', nodeId: '', reference: '@tanaabot', roles: ['reviewer'] }]
           : []),
       ]);

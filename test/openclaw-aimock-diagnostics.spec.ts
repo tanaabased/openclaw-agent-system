@@ -53,7 +53,7 @@ describe('scripts/aimock-diagnostics', () => {
   });
 
   it('should report evidence projection errors with the offending owned result', () => {
-    const scenario = resolveScenario('openclaw-runtimes');
+    const scenario = resolveScenario('openclaw-lifecycle-approvals');
     const result = diagnostics(scenario, [
       {
         method: 'POST',
@@ -75,7 +75,7 @@ describe('scripts/aimock-diagnostics', () => {
   });
 
   it('should retain the first failed request after retries and later failures fill the journal', () => {
-    const scenario = resolveScenario('openclaw-pr');
+    const scenario = resolveScenario('openclaw-notifications-pr-journey');
     const entries: Entry[] = Array.from({ length: 12 }, (_, index) => ({
       method: 'POST',
       path: '/responses',
@@ -99,7 +99,7 @@ describe('scripts/aimock-diagnostics', () => {
   });
 
   it('should distinguish model and prompt mismatches from unavailable tools without disclosing inputs', () => {
-    const scenario = resolveScenario('openclaw-pr');
+    const scenario = resolveScenario('openclaw-notifications-pr-journey');
     const result = diagnostics(scenario, [
       {
         method: 'POST',

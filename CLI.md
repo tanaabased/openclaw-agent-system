@@ -619,20 +619,21 @@ Reconcile the workspace agent's identity, models, memory, paths, capabilities, a
 
 ### Options
 
-| Option or argument     | Required | Default | Description                                                                                          |
-| ---------------------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| `--json`               | no       | off     | Write one undecorated structured result to stdout.                                                   |
-| `--non-interactive`    | no       | off     | Run without prompts, implying setup consent.                                                         |
-| `--rebuild-codex-path` | no       | off     | Replace the saved Codex PATH baseline with this process environment; see [Path](./MANIFEST.md#path). |
-| `--skip-setup`         | no       | off     | Skip all setup checks and applies; other components still install.                                   |
-| `--skip-setup-agent`   | no       | off     | Skip agent setup checks and applies; other components still install.                                 |
-| `--skip-setup-host`    | no       | off     | Skip host setup checks and applies; other components still install.                                  |
-| `--yes`                | no       | off     | Accept installation, including required session dispatch enrollment, without prompting.              |
+| Option or argument          | Required | Default | Description                                                                                          |
+| --------------------------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| `--json`                    | no       | off     | Write one undecorated structured result to stdout.                                                   |
+| `--non-interactive`         | no       | off     | Run without prompts, implying setup consent.                                                         |
+| `--rebuild-codex-path`      | no       | off     | Replace the saved Codex PATH baseline with this process environment; see [Path](./MANIFEST.md#path). |
+| `--manual-session-dispatch` | no       | off     | Enroll session access for manual issue launch with explicit consent, without enabling intake.        |
+| `--skip-setup`              | no       | off     | Skip all setup checks and applies; other components still install.                                   |
+| `--skip-setup-agent`        | no       | off     | Skip agent setup checks and applies; other components still install.                                 |
+| `--skip-setup-host`         | no       | off     | Skip host setup checks and applies; other components still install.                                  |
+| `--yes`                     | no       | off     | Accept installation, including required session dispatch enrollment, without prompting.              |
 
 ### Usage
 
 ```text
-openclaw agent-system install [--yes] [--non-interactive] [--skip-setup] [--skip-setup-host] [--skip-setup-agent] [--rebuild-codex-path] [--json]
+openclaw agent-system install [--yes] [--non-interactive] [--manual-session-dispatch] [--skip-setup] [--skip-setup-host] [--skip-setup-agent] [--rebuild-codex-path] [--json]
 ```
 
 ```sh
@@ -703,10 +704,23 @@ Devices, then rerun Install with enrollment consent to replace the retained
 identity. There is no separate session-dispatch reset command. Credential
 readiness alone does not establish end-to-end issue or review dispatch.
 
+Enrollment connection failures include a bounded category, phase, and reason code;
+with `--json`, these are in `blocked.sessionDispatchDiagnostic`. `unknown` means
+the available evidence cannot establish that detail. For connectivity failures,
+check Gateway availability before rerunning Install to resume the retained identity;
+a connection failure alone does not authorize replacement. Gateway rejection or
+pending pairing still requires its specific recovery action, including approval
+of the exact device request when present. Install does not retry automatically.
+
 If reconciliation fails, install exits nonzero and reports completed outcomes,
 the blocking component, and unattempted work. Earlier changes remain applied;
 rerun install after fixing the blocker. With `--json`, stdout contains one
 failure object with `status: "failed"`, `outcomes`, `blocked`, and `unattempted`.
+Automation Gateway failures also report allowlisted evidence in
+`blocked.automationGatewayDiagnostic` and the human diagnostic: the failed method,
+failure category, Gateway or close code, and whether the request was dispatched.
+Unavailable values remain `null` or `unknown`; dispatch does not prove an operation
+completed. Raw upstream errors and connection details are excluded.
 
 > [!NOTE]
 > Environment flags accept trimmed, case-insensitive `1`, `true`, `yes`, or `on`.

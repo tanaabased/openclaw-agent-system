@@ -66,6 +66,7 @@ integrations; it is not a universal GitHub restriction.
 - [Git CLI](./skills/git-cli/SKILL.md) — Guide native host Git operations.
 - [GitHub CLI](./skills/github-cli/SKILL.md) — Guide native host GitHub operations.
 - [Install](./skills/install/SKILL.md) — Apply Codex setup and synchronize declared automations through the native app.
+- [Issue launch](./skills/issue-launch/SKILL.md) — Start or reuse the managed issue workflow without assignment or scheduled intake.
 - [Issue assessment](./skills/issue-assessment/SKILL.md) — Assess an admitted issue in its native worktree and retain a plan, questions, or a setup blocker.
 - [Model routing](./skills/model-routing/SKILL.md) — Select model and effort candidates for new tasks.
 
@@ -166,6 +167,13 @@ and roots, then reconcile through Install. Interrupted clones also require recov
 at their original location before selecting another destination. Once the saved project is verified, dispatch refreshes the
 default branch and pins the exact starting commit for the native issue worktree.
 
+Assessment leaves that checkout detached. Verified implementation selects and retains
+an issue branch for the current assignment attempt, starting at the pinned commit.
+Retries keep that branch, including after an issue title change. After retirement
+completes, a new assignment uses a distinct branch; earlier branches, commits and
+pull requests remain preserved. Reassignment before retirement completes follows
+the existing reactivation rules and may continue the same attempt.
+
 For assessment without assignment, invoke `$agent-system-issue-assessment` with an
 explicit GitHub issue URL and an existing local checkout root in the current chat.
 It uses the bound agent's [assessment selection](./MANIFEST.md#assessment-selection)
@@ -178,8 +186,11 @@ its retained source. An unavailable checkout or invalid explicit skill/guidance 
 be corrected before retrying in the same chat.
 
 Bounded issue evidence and structured metadata inform the shared model router.
-The saved model and effort are passed explicitly to native creation and retained
-on continuation. Requested settings and verified effective settings remain distinct.
+The saved model and effort are passed explicitly to native creation. After verified
+creation, operators may tune either through native controls in the same issue chat;
+continuation inherits current settings without resetting them. Original routing,
+current native readback, and historical execution evidence remain distinct. Missing
+readback stays unverified; this does not authorize agents to change settings.
 The issue chat performs read-only assessment and records one of three outcomes:
 `plan-ready`, `clarification-needed`, or `operator-setup-blocker`, with evidence and
 completed/remaining investigation. A user follow-up may revise the assessment in
@@ -205,6 +216,16 @@ results are not adapted or submitted again.
 The complete assessment is shown inline and returned on same-chat revisions; it
 remains the source of truth rather than its summaries. Guidance cannot widen the
 assessment's authority.
+For implementation without another assessment or chat, invoke
+`$agent-system-issue-implementation` with the issue URL, existing checkout and an
+authorized actionable plan, or reuse matching retained work. The thin direct collector
+supplies the same implementation payload as managed execution and uses your current
+[implementation selection](./MANIFEST.md#implementation-and-review-selection).
+Missing plan details produce a focused question. Manual entry is local-only unless
+you explicitly request PR delivery; supplying a plan does not authorize publication.
+Resume through the returned context and result handoff, not a replacement attempt.
+Stale managed work must recover through its original owner, never manual fallback.
+
 [Implementation and review selections](./MANIFEST.md#implementation-and-review-selection)
 use the same trusted selection contract. Work uses the bundled
 [issue implementation skill](./skills/issue-implementation/SKILL.md) by default;
@@ -229,6 +250,8 @@ activating intake. It returns a draft; posting requires an explicit request and
 native approval. Matching managed work reuses its existing owner and receipts;
 invalid managed context never becomes a manual bypass. See the
 [reply skill](./skills/feedback-reply/SKILL.md) for selection and recovery.
+
+For an explicitly requested issue progress update, use [GitHub Update](./skills/github-update/SKILL.md). It compares public facts with verified progress in this chat, uses the configured shared reply composer, and returns the full private answer plus the exact confirmed public quote. Already-current issues get no comment; unfinished original publications recover first. This does not start implementation or change mode.
 
 Public replies to inline feedback stay in the original review thread. Replies to
 submitted reviews and ordinary PR comments appear in the PR conversation.
@@ -290,7 +313,9 @@ A ready plan alone does not authorize implementation.
 A Plan decision retains the complete plan and releases its implementation slot.
 Polling alone does not change the decision. Newly admitted feedback may support a
 new Auto decision; Plan mode still needs operator direction to enter implementation.
-Missing or invalid decisions, lost task identity, and native denials stop continuation.
+Missing or invalid decisions, lost task identity, and native denials affecting implementation stop continuation.
+A denial limited to the public assessment summary holds that publication while independently authorized work
+can request fresh implementation context in the same permitted turn. Broader or unknown denial scope remains a stop.
 Preserve the issue chat and its retained work when resolving an obstacle. Live mode changes govern
 entry into implementation for existing planning issues. Once implementation has
 started, later mode changes preserve that stage. Auto requires
@@ -307,6 +332,14 @@ for automatic continuation; an explicit operator request can still use the retai
 native turn, with the complete plan, current guidance, and selected model and effort.
 The coordinator resumes interrupted or older issues; a second wake-up is not
 required between assessment and implementation.
+
+If the stored reader reports the assessment turn as interrupted without a verified
+end, continuation returns `observation-required` with `continuation-turn-state-unresolved`.
+Call the native `read_thread` tool with the returned arguments, then repeat continuation
+context. The runtime verifies the actual desktop tool receipt after its retained history
+boundary; caller-supplied status JSON cannot authorize the handoff. A stale, inactive,
+unavailable or denied observation never counts as an active turn. Preserve the existing
+chat and work when resolving it; do not force another coordinator message.
 
 The runtime reads live workflow policy and checks the owning chat, active assignment,
 and native receipts without renewed stage approval. Policy-only edits take effect
@@ -339,7 +372,9 @@ authorized external write. Saved action-on-stdin commands remain compatible.
 A saved assessment summary can resume in a newer verified turn, including after
 implementation has begun. Its source assessment remains unchanged; recovery finishes
 only the missing response. Summary-only native continuations use the existing issue
-chat and exact send receipts. A native denial remains a blocker across turns, and an
+chat and exact send receipts. A native summary denial remains a publication hold across turns,
+not ordinary pending-response recovery. It is not retried or published through another route;
+supported verified recovery or renewed authorization is required. An
 uncertain GitHub post is observed rather than reposted. Private recovery notices name
 the affected response and preserve the complete private result and draft.
 
@@ -394,6 +429,14 @@ and `body`. Preparation grants no publication authority. Codex uses native host
 Git and GitHub authorization, preserves authored commits and PR metadata, and
 adds the original issue's closing reference. The PR must be open, authored by the
 active account, and target the same repository's default branch.
+
+Delivery requires the branch retained for this assignment attempt. If the checkout
+uses another branch, preserve any local changes and return to the retained branch
+before resuming. A same-issue branch name or historical comment does not establish
+ownership. Older active work can retain an exact delivery binding with a saved PR receipt; authored
+work without that evidence stops for recovery rather than adopting a branch or
+resetting commits. Resume incomplete branch creation through implementation context
+in the existing chat. A closed PR on the selected branch still blocks publication.
 
 Publication retains the PR before recipient reconciliation. If a later step
 fails, prepare and resume that operation. An uncertain creation is reconciled

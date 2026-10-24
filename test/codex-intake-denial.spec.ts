@@ -16,9 +16,11 @@ const anchor: PreparationObservation = {
     pluginData: '/private/plugin',
   },
 };
+const receiptId = 'a'.repeat(64);
+const otherReceiptId = 'b'.repeat(64);
 const input = {
   action: 'prepare',
-  id: 'issue',
+  id: receiptId,
   digest: 'routing-digest',
   title: 'repair contained behavior',
   assessment: { complexity: 'medium', reason: 'Contained change.' },
@@ -27,7 +29,7 @@ const command =
   "'/node' '/plugin/runtime.js' 'dispatch' 'prepare' '--plugin-data' '/private/plugin' <<'AGENT_SYSTEM_INPUT'\n" +
   JSON.stringify(input) +
   '\nAGENT_SYSTEM_INPUT';
-const record = { id: 'issue', sourceThreadId: 'intake', preparationObservation: anchor };
+const record = { id: receiptId, sourceThreadId: 'intake', preparationObservation: anchor };
 const boundary = { id: 'routing', type: 'commandExecution', status: 'completed' };
 const denied = {
   id: 'refusal',
@@ -60,7 +62,7 @@ describe('agent/codex-intake-denial', () => {
       command.replace('routing-digest', 'other'),
       command.replace('/private/plugin', '/other'),
       command.replace('/node', '/other'),
-      command.replace('"id":"issue"', '"id":"other"'),
+      command.replace(receiptId, otherReceiptId),
       command.replace('"action":"prepare"', '"action":"next"'),
       command.replace('"title":', '"unknown":true,"title":'),
       command.replace("<<'AGENT_SYSTEM_INPUT'", "| other <<'AGENT_SYSTEM_INPUT'"),
@@ -174,7 +176,7 @@ describe('agent/codex-intake-denial', () => {
     const other = {
       ...denied,
       id: 'other',
-      command: command.replace('"id":"issue"', '"id":"other"'),
+      command: command.replace(receiptId, otherReceiptId),
     };
     const native = async (method: string) => {
       assert.equal(method, 'thread/items/list');

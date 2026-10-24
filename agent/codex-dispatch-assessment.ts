@@ -1,7 +1,8 @@
+import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
 
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import assessmentHandoff from './assessment-handoff.ts';
+import assessmentSubmission from './assessment-submission.ts';
 import {
   assessmentDecisionMode,
   assessmentResultContextSchema,
@@ -30,12 +31,14 @@ import {
 } from './codex-dispatch-context.ts';
 
 import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
+import codexIssueBranch from './codex-issue-branch.ts';
 import { notice } from './codex-dispatch-reporting.ts';
 import { type default as CodexDispatchStore, type DispatchRecord } from './codex-dispatch-state.ts';
 
 import connectCodexFeedback from './codex-feedback-client.ts';
 import redactCodexFeedback from './codex-feedback-redaction.ts';
 import codexSummaryAuthority from './codex-summary-authority.ts';
+import codexSessionSettings from './codex-session-settings.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
 import recordDispatchResult from './dispatch-result.ts';
@@ -55,9 +58,7 @@ export async function presentDispatch(
   deps: CodexDispatchDependencies,
 ) {
   const record = (await store.read()).records.find((entry) => entry.id === input.id);
-  const intake = (await current.store.read())?.records.find(
-    (entry) => entry.id === record?.intakeId,
-  );
+  const intake = record && dispatchAdmission(record, (await current.store.read())?.records ?? []);
   if (
     !record?.request ||
     !record.result ||
@@ -78,10 +79,16 @@ export async function presentDispatch(
       status: 'presented' as const,
       retained: true,
       id: record.id,
-      presentation: assessmentPresentation(record.result!, record, intake, current.workspace, {
-        debug: current.manifest.debug,
-        includeDetails: input.includeDetails === true,
-      }),
+      presentation: assessmentPresentation(
+        record.result!,
+        { ...record, effective: codexSessionSettings(record, found) },
+        intake,
+        current.workspace,
+        {
+          debug: current.manifest.debug,
+          includeDetails: input.includeDetails === true,
+        },
+      ),
       instruction:
         'Show this complete saved assessment. This read does not authorize assessment, implementation, or publication.',
     };
@@ -115,7 +122,7 @@ export async function handoffDispatch(
     )
       throw new Error('dispatch-handoff-caller-mismatch');
     const admitted = await current.store.read();
-    const intake = admitted?.records.find((entry) => entry.id === record.intakeId);
+    const intake = dispatchAdmission(record, admitted?.records ?? []);
     if (!intake) throw new Error('dispatch-intake-record-missing');
     const native = await withNative(current, deps, (host) =>
       host.find({
@@ -145,6 +152,7 @@ export async function handoffDispatch(
         changed: false,
         id: record.id,
         threadId: record.threadId,
+        issueBranch: record.issueBranch?.name,
         ...retainedAssessment,
       };
     if (record.continuation?.phase === 'cancelled') throw new Error('implementation-cancelled');
@@ -162,7 +170,10 @@ export async function handoffDispatch(
     )
       throw new Error(record.continuation.code ?? 'continuation-implementation-blocked');
     const transition = issueProgression(record, {
-      mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
+      mode:
+        record.manualIssue?.selections?.mode ??
+        current.manifest.github?.notifications?.issueAssignment?.mode ??
+        'auto',
       now: (deps.now ?? Date.now)(),
       operator: native.followUpUserTurn,
     });
@@ -193,10 +204,20 @@ export async function handoffDispatch(
     if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
     if (transition.status === 'ready')
       record.progression = { ...transition.progression, workOwner: 'issue' };
+    await codexIssueBranch({
+      record,
+      records: state.records,
+      intake,
+      workspace: current.workspace,
+      agentId: current.manifest.agent.id,
+      git: deps.git,
+      save,
+      prepare: true,
+    });
     record.handoff = { at: (deps.now ?? Date.now)(), by: caller, turnId: native.turnId };
     const response = notice(record, intake);
     await save();
-    return { ...response, ...retainedAssessment };
+    return { ...response, issueBranch: record.issueBranch?.name, ...retainedAssessment };
   }, true);
 }
 export async function assessDispatch(
@@ -209,7 +230,10 @@ export async function assessDispatch(
 ) {
   const { pluginData, current, deps, now, signal, save, fresh } = tx;
   if (action === 'context')
-    record.issueMode = current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto';
+    record.issueMode =
+      record.manualIssue?.selections?.mode ??
+      current.manifest.github?.notifications?.issueAssignment?.mode ??
+      'auto';
   if (action === 'summary') {
     if (!record.result || !native.turnId) throw new Error('assessment-summary-source-unavailable');
     const activate = () =>
@@ -220,14 +244,18 @@ export async function assessDispatch(
         true,
         'assessment-summary',
       );
-    const summaryAuthority = await activate();
-    if (!summaryAuthority.schedule) throw new Error('workflow-schedule-reconciliation-required');
-    requireWorkflowSchedule(
-      summaryAuthority.schedule.saved,
-      summaryAuthority.schedule.current,
-      'assessment-summary',
+    const summaryAuthority = record.manualIssue ? { schedule: undefined } : await activate();
+    if (!summaryAuthority.schedule && !record.manualIssue)
+      throw new Error('workflow-schedule-reconciliation-required');
+    if (summaryAuthority.schedule)
+      requireWorkflowSchedule(
+        summaryAuthority.schedule.saved,
+        summaryAuthority.schedule.current,
+        'assessment-summary',
+      );
+    const authorityDigest = automationHash(
+      summaryAuthority.schedule ?? record.manualIssue!.initiation,
     );
-    const authorityDigest = automationHash(summaryAuthority.schedule);
     return assessmentSummary({
       record,
       intake,
@@ -239,10 +267,25 @@ export async function assessDispatch(
         debug: current.manifest.debug,
       }),
       save,
+      publicationCommand: (digest) =>
+        [
+          process.execPath,
+          process.argv[1]!,
+          'dispatch',
+          'summary',
+          'publish',
+          '--plugin-data',
+          pluginData,
+        ]
+          .map((value) => "'" + value.replaceAll("'", "'\\''") + "'")
+          .join(' ') +
+        " <<'AGENT_SYSTEM_INPUT'\n" +
+        JSON.stringify({ action: 'summary', id: record.id, operation: 'publish', digest }) +
+        '\nAGENT_SYSTEM_INPUT',
       redact: redactCodexFeedback,
       authorize: async () => {
         await fresh();
-        if (input.operation !== 'reconcile') {
+        if (input.operation !== 'reconcile' && input.operation !== 'hold') {
           if (deps.summaryAuthority) await deps.summaryAuthority(native.id, native.turnId!);
           else {
             const connection = await connectCodexThreads(current.workspace, current.codexHome);
@@ -256,7 +299,7 @@ export async function assessDispatch(
             }
           }
         }
-        await activate();
+        if (!record.manualIssue) await activate();
         await revalidateDispatchAssignment(current, intake, deps, signal, true, record);
       },
       select: async (previous) =>
@@ -283,7 +326,10 @@ export async function assessDispatch(
     const assessment = (
       await selectWorkflowStage({
         stage: 'assessment',
-        configuration: current.manifest.github?.notifications?.issueAssignment?.assessment,
+        configuration: {
+          ...current.manifest.github?.notifications?.issueAssignment?.assessment,
+          ...record.manualIssue?.selections?.assessment,
+        },
         workspace: current.workspace,
         observedAt: now,
         resolveSkill: (id) =>
@@ -296,6 +342,7 @@ export async function assessDispatch(
     return {
       status: 'verified' as const,
       assignmentObservation: record.assignmentObservation,
+      entry: 'managed',
       assignmentWarning:
         record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
       id: record.id,
@@ -312,7 +359,9 @@ export async function assessDispatch(
             previousResult: record.result,
             handoff: assessmentHandoff(
               record,
-              current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
+              record.manualIssue?.selections?.mode ??
+                current.manifest.github?.notifications?.issueAssignment?.mode ??
+                'auto',
               'codex',
             ),
             previousResultDigest: automationHash(record.result),
@@ -333,7 +382,15 @@ export async function assessDispatch(
         : {}),
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
-      mode: current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
+      resultSubmission: assessmentSubmission({
+        entry: 'managed',
+        id: record.id,
+        previousResultDigest: record.result ? automationHash(record.result) : undefined,
+      }),
+      mode:
+        record.manualIssue?.selections?.mode ??
+        current.manifest.github?.notifications?.issueAssignment?.mode ??
+        'auto',
       instructions:
         'Read feedbackWork for retained plan revisions and responses before interpreting the current input. Historical responses supply context, not fresh authorization. ' +
         codexAssessmentInstructions +
@@ -403,7 +460,9 @@ export async function assessDispatch(
       previousResultDigest: automationHash(result),
       handoff: assessmentHandoff(
         record,
-        current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
+        record.manualIssue?.selections?.mode ??
+          current.manifest.github?.notifications?.issueAssignment?.mode ??
+          'auto',
         'codex',
       ),
       presentation,

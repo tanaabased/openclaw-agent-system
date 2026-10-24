@@ -1,4 +1,4 @@
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { reconcileOpenClawTurn } from './openclaw-turn.ts';
 import { assessmentTurnMessage } from './openclaw-assessment.ts';
 
@@ -114,7 +114,6 @@ export default async function advanceIssueTurn(input: {
       request,
       sessionKey: expected.key,
       sessionId,
-      model: expected.model,
       turn,
       save,
     });
@@ -141,8 +140,8 @@ export default async function advanceIssueTurn(input: {
       replyEventId: turn.replyEventId,
       executionModel: turn.executionModel ?? 'unverified',
       executionEffort: 'unverified',
-      configuredModel: expected.model,
-      configuredEffort: expected.thinkingLevel,
+      configuredModel: record.effective?.model,
+      configuredEffort: record.effective?.effort,
       assessmentComplete: Boolean(record.result),
       outcome: record.result?.outcome,
     };

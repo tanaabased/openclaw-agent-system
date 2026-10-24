@@ -1,3 +1,8 @@
+import issueLaunch from './issue-launch.ts';
+import openClawEntryContext from './openclaw-entry-context.ts';
+import { Value } from 'typebox/value';
+import { launchRequestSchema } from '../tools/dispatch/launch-schema.ts';
+import openClawImplementationEntry from './openclaw-implementation-entry.ts';
 import openClawAssessmentEntry from './openclaw-assessment-entry.ts';
 import retireOpenClawTask from './openclaw-dispatch-retirement.ts';
 import pendingPublicResponse from './pending-public-response.ts';
@@ -30,7 +35,11 @@ import OpenClawDispatchStore, {
 } from './openclaw-dispatch-state.ts';
 import { applyOpenClawFeedbackScans, scanOpenClawFeedback } from './openclaw-feedback-scan.ts';
 import { sameIntakeRun } from './openclaw-intake-pass.ts';
-import { IssueSessionMismatchError, type DispatchCaller } from './openclaw-session-create.ts';
+import {
+  describeIssueSession,
+  IssueSessionMismatchError,
+  type DispatchCaller,
+} from './openclaw-session-create.ts';
 import workflowFailure from './workflow-failure.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
@@ -99,6 +108,140 @@ export default class OpenClawDispatch {
     operator = false,
     authority: DispatchAuthority = {},
   ) {
+    return input.action === 'launch'
+      ? this.launch(manifest, workspace, caller, input, operator, authority)
+      : this.execute(manifest, workspace, caller, input, operator, authority);
+  }
+  private async launch(
+    manifest: AgentManifest,
+    workspace: string,
+    caller: DispatchCaller,
+    input: Extract<Static<typeof dispatchParameters>, { action: 'launch' }>,
+    operator: boolean,
+    authority: DispatchAuthority,
+  ) {
+    if (!Value.Check(launchRequestSchema, input)) throw new Error('launch-request-invalid');
+    const action = input;
+    const admitted = await openClawEntryContext(
+      { manifest, workspace, caller, action, operator, authority, dependencies: this.dependencies },
+      async (context) => {
+        const selected = await this.dependencies.intake.select(manifest, workspace, {
+          resolvePolicy: false,
+        });
+        const journal = new OpenClawDispatchStore(
+          this.dependencies.root,
+          selected.store.location.scope,
+        );
+        const client = await this.dependencies.connect(
+          { manifest, workspaceDir: workspace },
+          authority.signal ?? AbortSignal.timeout(60000),
+        );
+        return issueLaunch<OpenClawDispatchRecord>({
+          action,
+          context,
+          journal,
+          scope: selected.store.location.scope,
+          client,
+          create: (record) => record,
+          verifyExisting: async (record) => {
+            await this.dependencies.credential.use(authority, (request) =>
+              describeIssueSession(request, record, this.dependencies.config(), true),
+            );
+          },
+        });
+      },
+    );
+    if (action.operation === 'context' || admitted.status === 'clarification-needed')
+      return admitted;
+    if (!action.id || !('id' in admitted) || action.id !== admitted.id)
+      throw new Error('launch-receipt-required');
+    const selected = await this.context.scope(manifest, workspace);
+    const record = (await selected.journal.read()).records.find((entry) => entry.id === action.id);
+    if (
+      !record?.manualIssue ||
+      record.sourceThreadId !== caller.sessionKey ||
+      (admitted.status === 'existing' &&
+        (record.result || record.handoff || action.operation !== 'reconcile'))
+    )
+      return admitted;
+    if (action.operation === 'prepare') {
+      if (!action.assessment || !action.title || !action.digest)
+        throw new Error('launch-preparation-required');
+      const prepared = await this.execute(
+        manifest,
+        workspace,
+        caller,
+        {
+          action: 'prepare',
+          id: action.id,
+          assessment: action.assessment,
+          ...(action.fallback ? { fallback: action.fallback } : {}),
+          title: action.title,
+          digest: action.digest,
+        },
+        true,
+        authority,
+      );
+      if (!prepared || !('status' in prepared) || prepared.status !== 'session-created')
+        return prepared;
+    }
+    if (!record.sessionCreation?.verified && action.operation === 'reconcile') {
+      const recovered = await this.execute(
+        manifest,
+        workspace,
+        caller,
+        { action: 'reconcile', id: action.id },
+        true,
+        authority,
+      );
+      if (!recovered || !('status' in recovered) || recovered.status !== 'session-created')
+        return recovered;
+    }
+    return this.execute(
+      manifest,
+      workspace,
+      caller,
+      { action: 'assess', id: action.id },
+      true,
+      authority,
+    );
+  }
+  private async execute(
+    manifest: AgentManifest,
+    workspace: string,
+    caller: DispatchCaller,
+    input: Exclude<Static<typeof dispatchParameters>, { action: 'launch' }>,
+    operator = false,
+    authority: DispatchAuthority = {},
+  ) {
+    if (input.action === 'implementation') {
+      const context = await openClawImplementationEntry({
+        manifest,
+        workspace,
+        caller,
+        action: input,
+        operator,
+        authority,
+        dependencies: this.dependencies,
+      });
+      if (context.status !== 'managed' || !('owner' in context) || !context.owner) return context;
+      const id = context.owner.id;
+      input =
+        input.operation === 'delivery'
+          ? {
+              action: 'delivery',
+              id,
+              operation: input.deliveryOperation ?? 'prepare',
+              title: input.title,
+              body: input.body,
+              digest: input.digest,
+            }
+          : input.operation === 'context'
+            ? { action: 'implementation-context', id, scope: input.scope }
+            : input.operation === 'result' && input.result
+              ? { action: 'implementation-result', id, implementationResult: input.result }
+              : { action: 'implementation-context', id };
+    }
     if (input.action === 'assessment')
       return openClawAssessmentEntry({
         manifest,
@@ -144,7 +287,7 @@ export default class OpenClawDispatch {
       (input.action === 'delivery' && input.operation === 'present')
     ) {
       const selected = await this.dependencies.intake.select(manifest, workspace);
-      const admitted = await selected.store.read();
+      const admitted = (await this.context.scope(manifest, workspace)).admitted;
       if (!admitted) throw new Error('dispatch-intake-record-missing');
       const journal = new OpenClawDispatchStore(
         this.dependencies.root,
@@ -169,11 +312,11 @@ export default class OpenClawDispatch {
       feedbackChild;
     const current = await this.scope(manifest, workspace);
     const retained =
-      childAction && 'id' in input
+      'id' in input
         ? (await current.journal.read()).records.find((record) => record.id === input.id)
         : undefined;
     const sourceThreadId =
-      retained?.sourceThreadId ??
+      (childAction || retained?.manualIssue ? retained?.sourceThreadId : undefined) ??
       (await this.dependencies.coordinator(manifest, current.workspace));
     let preparationStage: OpenClawDispatchRecord['failureStage'] = 'validation';
     let enteredTransaction = false;

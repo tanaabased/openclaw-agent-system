@@ -36,6 +36,31 @@ describe('agent/codex-runtime', () => {
     assert.equal(JSON.parse(result.stderr).message, 'workflow-command-action-mismatch');
   });
 
+  it('should route manual launch through the built command to the binding guard', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codex-launch-route-'));
+    try {
+      const result = spawnSync(
+        process.execPath,
+        ['dist/codex/codex-runtime.js', 'dispatch', 'launch', 'context', '--plugin-data', root],
+        {
+          input: JSON.stringify({
+            action: 'launch',
+            operation: 'context',
+            target: 'tanaabased/big-test-bucket#1',
+          }),
+          encoding: 'utf8',
+          timeout: 10000,
+        },
+      );
+      assert.ifError(result.error);
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      assert.equal(JSON.parse(result.stderr).code, 'intake-binding-unavailable');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('should route summary requests through the built command to the binding guard', async () => {
     const root = await mkdtemp(join(tmpdir(), 'codex-summary-route-'));
     try {

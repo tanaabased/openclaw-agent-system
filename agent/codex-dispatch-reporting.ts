@@ -1,8 +1,9 @@
 import {
-  type default as IntakeRecordStore,
-  type IntakeRecord,
-  type IntakeState,
-} from '../channels/github/intake/record-store.ts';
+  dispatchAdmission,
+  type ManagedIssue as IntakeRecord,
+  type ManagedIssueState as IntakeState,
+} from './managed-issue.ts';
+import { type default as IntakeRecordStore } from '../channels/github/intake/record-store.ts';
 
 import { githubNotificationMarkdownText } from '../channels/github/presentation/card.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
@@ -60,7 +61,7 @@ export default async function reportDispatch(
     };
   const present = (response: string) => {
     const diagnostic = intakeDebug(context.debug, state.records, (record) => {
-      const item = context.admitted.records.find((entry) => entry.id === record.intakeId);
+      const item = dispatchAdmission(record, context.admitted.records ?? []);
       return item ? repository(item) + '#' + item.issue.number : 'Issue';
     });
     return diagnostic
@@ -299,7 +300,7 @@ export async function failDispatch(
     record,
     code(error),
     error,
-    admitted.records.find((entry) => entry.id === record.intakeId)?.repository.databaseId,
+    dispatchAdmission(record, admitted.records ?? [])?.repository.databaseId,
   );
   record.retryAfter = now + 300000;
   scheduleDispatchRetry(record, code(error), error, now);
@@ -320,10 +321,7 @@ export async function failDispatch(
     if (shared) state.run.stopped = 'blocked';
     else delete state.run.stopped;
   }
-  const result = notice(
-    record,
-    admitted.records.find((entry) => entry.id === record.intakeId),
-  );
+  const result = notice(record, dispatchAdmission(record, admitted.records ?? []));
   Object.assign(result, workflowFailure(error, 'dispatch-operation-failed'));
   if (shared) {
     result.nextAction = 'report';

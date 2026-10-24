@@ -12,7 +12,7 @@ describe('scripts/aimock-server embedding authentication', () => {
         'tsx',
         'scripts/aimock-server.ts',
         '--scenario',
-        'openclaw-memory',
+        'openclaw-memory-embeddings',
         '--port',
         '0',
       ],

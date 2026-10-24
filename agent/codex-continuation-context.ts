@@ -1,7 +1,9 @@
+import type { ManagedIssueState } from './managed-issue.ts';
 import { type Static, Type } from 'typebox';
 
 import type { inspectCodexDispatchActivation } from './codex-automations.ts';
 import type codexContinuationNative from './codex-continuation-native.ts';
+import type codexLiveTurn from './codex-live-turn.ts';
 import {
   type default as runCodexDelivery,
   type CodexDeliveryDependencies,
@@ -14,6 +16,7 @@ import {
 
 import type { codexDispatchNative } from './codex-dispatch-native.ts';
 import type { dispatchGit } from './codex-dispatch-project.ts';
+import type { DispatchRecord } from './codex-dispatch-state.ts';
 import { implementationResultSchema } from './implementation-result.ts';
 
 export const requestSchema = Type.Object(
@@ -37,24 +40,31 @@ export const requestSchema = Type.Object(
   { additionalProperties: false },
 );
 export interface CodexContinuationDependencies extends CodexDispatchDependencies {
+  directOperator?: boolean;
+  directScope?: 'local' | 'pull-request';
   continuationNative?: ReturnType<typeof codexContinuationNative>;
+  observeTurn?: ReturnType<typeof codexLiveTurn>;
   deliver?: typeof runCodexDelivery;
   deliveryDependencies?: CodexDeliveryDependencies;
 }
 
 export interface CodexWorkContext {
+  records: DispatchRecord[];
   pluginData: string;
   input: Static<typeof requestSchema>;
   deps: CodexContinuationDependencies;
   current: CodexDispatchSelection;
   caller: string;
   activation: Awaited<ReturnType<typeof inspectCodexDispatchActivation>>;
-  schedule: NonNullable<Awaited<ReturnType<typeof inspectCodexDispatchActivation>>['schedule']>;
+  schedule: Awaited<ReturnType<typeof inspectCodexDispatchActivation>>['schedule'];
   native: ReturnType<typeof codexDispatchNative>;
   continuationNative: ReturnType<typeof codexContinuationNative>;
+  observeTurn?: ReturnType<typeof codexLiveTurn>;
   git: typeof dispatchGit;
+  preparedSelections?: Set<string>;
+  operatorInput?: { turnId: string; inputId: string };
   occurrence: Awaited<ReturnType<ReturnType<typeof codexDispatchNative>['occurrence']>> | undefined;
-  admissions: Awaited<ReturnType<CodexDispatchSelection['store']['read']>>;
+  admissions: ManagedIssueState | undefined;
   save: () => Promise<void>;
   signal: AbortSignal;
 }

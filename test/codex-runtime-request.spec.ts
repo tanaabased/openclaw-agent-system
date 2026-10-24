@@ -28,7 +28,7 @@ describe('agent/codex-runtime-request', () => {
     }
   });
   it('should expose nested publication and summary operations', () => {
-    for (const operation of ['compose', 'candidate', 'publish', 'reconcile']) {
+    for (const operation of ['context', 'compose', 'candidate', 'publish', 'reconcile']) {
       assert.deepEqual(
         parse('feedback', ['reply', operation, '--plugin-data', '/private/plugin'], {
           target: 'https://github.com/owner/repo/issues/3',
@@ -117,6 +117,48 @@ describe('agent/codex-runtime-request', () => {
     assert.throws(
       () => parse('dispatch', ['assessment', 'publish', '--plugin-data', '/private/plugin'], {}),
       /workflow-command-operation-invalid/,
+    );
+  });
+  it('should expose direct implementation and publication without hidden effect substitution', () => {
+    for (const operation of ['context', 'result', 'present'])
+      assert.equal(
+        parse('dispatch', ['implementation', operation, '--plugin-data', '/private/plugin'], {})
+          .request.operation,
+        operation,
+      );
+    for (const operation of ['prepare', 'publish', 'reconcile', 'delivery-present']) {
+      const request = parse(
+        'dispatch',
+        ['implementation', operation, '--plugin-data', '/private/plugin'],
+        {},
+      ).request;
+      assert.equal(request.operation, 'delivery');
+      assert.equal(
+        request.deliveryOperation,
+        operation === 'delivery-present' ? 'present' : operation,
+      );
+    }
+    assert.throws(
+      () =>
+        parse('dispatch', ['implementation', 'prepare', '--plugin-data', '/private/plugin'], {
+          deliveryOperation: 'publish',
+        }),
+      /workflow-command-action-mismatch/,
+    );
+    assert.throws(
+      () =>
+        parse('dispatch', ['implementation', 'context', '--plugin-data', '/private/plugin'], {
+          operation: 'delivery',
+        }),
+      /workflow-command-action-mismatch/,
+    );
+    assert.throws(
+      () =>
+        parse('dispatch', ['--plugin-data', '/private/plugin'], {
+          action: 'implementation',
+          operation: 'context',
+        }),
+      /workflow-command-operation-required/,
     );
   });
   it('should preserve legacy saved requests without changing their effect', () => {

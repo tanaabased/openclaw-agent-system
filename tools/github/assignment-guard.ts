@@ -101,11 +101,13 @@ export default async function prepareGitHubAssignmentRequest(
   scope: {
     cwd: string;
     run: Run;
+    identity?: () => Promise<{ login: string; node_id: string }>;
     readInput?: (path: string, cwd: string, stdin?: string) => Promise<string>;
   },
 ): Promise<GitHubToolInput> {
   const { request, effects } = await inspectAssignmentRequest(input, scope.cwd, scope.readInput);
-  if (!effects.length) {
+  if (!effects.length && !username) return request;
+  if (!effects.length && !scope.identity) {
     if (username) {
       const actual = checked(await scope.run(['api', 'user', '--jq', '.login'])).trim();
       if (actual.toLowerCase() !== username.toLowerCase()) {
@@ -117,7 +119,11 @@ export default async function prepareGitHubAssignmentRequest(
     }
     return request;
   }
-  const user = json(await scope.run(['api', 'user']));
+  // Protected assignment changes need the current login, including provider-side renames.
+  const user =
+    !effects.length && scope.identity
+      ? await scope.identity()
+      : json(await scope.run(['api', 'user']));
   if (
     typeof user.login !== 'string' ||
     !user.login ||
@@ -131,6 +137,7 @@ export default async function prepareGitHubAssignmentRequest(
       'GitHub returned an account that does not match the configured username.',
     );
   }
+  if (!effects.length) return request;
   // legacy and next-generation node ids can identify the same GitHub user.
   const nodeIds = [
     ...new Set(

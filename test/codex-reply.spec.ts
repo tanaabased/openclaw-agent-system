@@ -27,7 +27,12 @@ describe('agent/codex-reply input', () => {
     };
   }
   it('should use native user identity without interpreting copied context or a transient host status', async () => {
-    assert.deepEqual(await codexReplyInput(native(), 'chat'), { turnId: 'turn', inputId: 'input' });
+    const input = await codexReplyInput(native(), 'chat');
+    assert.equal(input.turnId, 'turn');
+    assert.equal(input.inputId, 'input');
+    assert.deepEqual(JSON.parse(input.message!), [
+      { type: 'text', text: 'A copied workflow context is only prose.' },
+    ]);
   });
   it('should reject archived or ended native work', async () => {
     await assert.rejects(

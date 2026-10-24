@@ -3,6 +3,7 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { assessmentSelectionSchema } from './assessment-selection.ts';
+import { statusUpdateSchema } from '../tools/dispatch/reply-schema.ts';
 import { automationHash } from './automation-hash.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
@@ -19,6 +20,7 @@ const draftSchema = Type.Object(
     target: Type.String({ maxLength: 256000 }),
     privateText: Type.String({ minLength: 1, maxLength: 32000 }),
     outcome: Type.Optional(Type.String({ maxLength: 32000 })),
+    update: Type.Optional(statusUpdateSchema),
     configuration: hash,
     selection: assessmentSelectionSchema,
     authorLogin: text,

@@ -1,7 +1,8 @@
+import commentProviderFixture from './github-comment-provider-fixture.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
-import type { CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
+import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -123,6 +124,7 @@ describe('agent/codex-feedback', () => {
         manifestDigest: current.digest,
         threadId: 'child',
         worktree,
+        issueBranch: { attemptId: id, name: 'issue-work', phase: 'ready' },
         effective: { status: 'verified', model: 'model', effort: 'high' },
         project: { id: 'project', path: source, commonDir, ref: 'main', commit: 'a'.repeat(40) },
         reservationVersion: 1,
@@ -205,7 +207,11 @@ describe('agent/codex-feedback', () => {
             ? { status: 'uncertain' }
             : { status: 'verified', turnId: receiptTurn ?? turn, ended },
       git: async (_cwd, args) =>
-        args[0] === 'remote' ? 'https://github.com/owner/repo.git' : commonDir,
+        args[0] === 'remote'
+          ? 'https://github.com/owner/repo.git'
+          : args[0] === 'branch'
+            ? 'issue-work'
+            : commonDir,
       feedbackConnect: async () =>
         ({
           client: {
@@ -282,6 +288,50 @@ describe('agent/codex-feedback', () => {
     assert.equal('mode' in retained && retained.mode, 'work');
     assert.equal((await store.read()).records[0]!.result!.outcome, 'plan-ready');
   });
+
+  for (const scope of ['local', 'pull-request'] as const)
+    it(`should accept ${scope} re-entry through the public codex dispatcher without changing feedback ownership`, async () => {
+      const ref = await prepare();
+      sent = true;
+      turn = 'feedback';
+      assert.equal((await call('context', ref, true)).status, 'verified');
+      await feedbackMode('work');
+      await store.exclusive(async (state, save) => {
+        state.records[0]!.assessment = {
+          version: 1,
+          requestedSkill: 'assessment',
+          defaultSkill: false,
+          observedAt: baseline,
+          skill: await deps.native!.assessmentSkill(root, 'assessment'),
+        };
+        await save();
+      });
+      const nativeDeps = {
+        ...deps,
+        threadId: 'child',
+        replyConnection: async () => ({
+          request: async () => assert.fail('feedback must not fall back to manual work'),
+          close: async () => {},
+        }),
+      };
+      const context = await runCodexDispatch(
+        pluginData,
+        'implementation',
+        {
+          operation: 'context',
+          id,
+          scope,
+        },
+        nativeDeps,
+      );
+      assert.ok(context && 'status' in context);
+      assert.equal(context.status, 'verified');
+      const retained = (await store.read()).records[0]!;
+      assert.equal(retained.progression?.workOwner, ref.eventId);
+      assert.ok(retained.feedback!.events[0]!.work);
+      assert.equal(retained.continuation, undefined);
+      assert.equal(creates, 0);
+    });
   it('should resume the retained feedback after provider access is repaired', async () => {
     const ref = await prepare();
     sent = true;
@@ -490,6 +540,63 @@ describe('agent/codex-feedback', () => {
       [['e'.repeat(64), undefined]],
     );
   });
+  for (const malformed of [false, true]) {
+    it(`should ${malformed ? 'retain a safe parsing cause and continue another record' : 'discover approved feedback after a bot comment'}`, async () => {
+      const state = await store.read();
+      const first = state.records[0]!;
+      const peer = { ...structuredClone(first), id: 'e'.repeat(64) };
+      state.records.push(peer);
+      const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+      const provider = await deps.feedbackConnect!(current.workspace, new AbortController().signal);
+      const raw = {
+        nodeId: 'IC_human',
+        databaseId: 42,
+        author: commenter,
+        body: '@receiver explain this',
+        bodyLength: 22,
+        createdAt: new Date(baseline + 68000).toISOString(),
+        updatedAt: new Date(baseline + 68000).toISOString(),
+      };
+      const bot = {
+        ...raw,
+        nodeId: 'IC_bot',
+        databaseId: 41,
+        author: {
+          login: malformed ? 'bad/private-login' : 'netlify[bot]',
+          nodeId: 'BOT_netlify',
+          type: 'Bot',
+        },
+      };
+      let reads = 0;
+      provider.comments = commentProviderFixture(() => (++reads === 1 ? [bot, raw] : [raw]));
+      for (const record of state.records)
+        record.feedback = { startedAt: baseline, baseline: {}, events: [] };
+      const scans = await scanCodexFeedback({
+        state,
+        current,
+        provider,
+        occurrence: 'bot-regression',
+        sourceThreadId: 'intake',
+        now: baseline + 70000,
+      });
+      assert.equal(scans.length, 2);
+      assert.equal(
+        scans[0]!.feedback.code,
+        malformed ? 'github-response-invalid-issue-comment-author-login' : undefined,
+      );
+      assert.deepEqual(
+        scans[0]!.feedback.events.map((event) => event.sourceId),
+        malformed ? [] : ['IC_human'],
+      );
+      assert.equal(scans[1]!.feedback.code, undefined);
+      assert.deepEqual(
+        scans[1]!.feedback.events.map((event) => event.sourceId),
+        ['IC_human'],
+      );
+      assert.equal(JSON.stringify(scans).includes('bad/private-login'), false);
+    });
+  }
+
   async function prepare(author = commenter, body = '@receiver explain this') {
     await call('next');
     comments.push({
@@ -507,6 +614,33 @@ describe('agent/codex-feedback', () => {
     assert.ok('eventId' in result && result.eventId);
     return { id, eventId: result.eventId };
   }
+  for (const setting of ['model', 'effort'] as const)
+    it(`should preserve feedback after operator ${setting} tuning without overriding settings`, async () => {
+      const before = (await store.read()).records[0]!;
+      const find = deps.native!.find;
+      let tuned = setting === 'model' ? 'another-model' : 'low';
+      deps.native!.find = async (input) => ({ ...(await find(input))!, [setting]: tuned });
+      const ref = await prepare();
+      const attempt = (await store.read()).records[0]!.feedback!.events[0]!.attempt!;
+      assert.equal('model' in attempt.request, false);
+      assert.equal('thinking' in attempt.request, false);
+      sent = true;
+      turn = 'feedback';
+      tuned = setting === 'model' ? 'third-model' : 'medium';
+      assert.equal((await call('context', ref, true)).status, 'verified');
+      await feedbackMode('work');
+      assert.equal((await call('implementation-context', ref, true)).status, 'verified');
+      const after = (await store.read()).records[0]!;
+      assert.deepEqual(after.request, before.request);
+      assert.equal(after.routing, before.routing);
+      assert.deepEqual(after.effective, {
+        status: 'verified',
+        model: setting === 'model' ? tuned : 'model',
+        effort: setting === 'effort' ? tuned : 'high',
+      });
+      assert.equal(creates, 0);
+    });
+
   it('should preserve feedback receipt custody when the scheduler moves to another chat', async () => {
     const ref = await prepare();
     const original = structuredClone((await store.read()).records[0]!.feedback!.events[0]!.attempt);
@@ -1267,6 +1401,7 @@ describe('agent/codex-feedback', () => {
           for (const digit of ['1', '2', '3']) {
             const other = structuredClone(state.records[0]!);
             other.id = digit.repeat(64);
+            delete other.issueBranch;
             other.issueKey = digit.repeat(64);
             other.phase = 'assessing';
             delete other.effective;
@@ -1326,6 +1461,7 @@ describe('agent/codex-feedback', () => {
       for (const digit of ['1', '2', '3']) {
         const other = structuredClone(state.records[0]!);
         other.id = digit.repeat(64);
+        delete other.issueBranch;
         other.issueKey = digit.repeat(64);
         other.phase = 'assessing';
         delete other.effective;

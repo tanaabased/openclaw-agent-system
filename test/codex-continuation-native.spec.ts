@@ -16,6 +16,45 @@ describe('agent/codex-continuation-native', () => {
       thinking: 'high',
     },
   };
+  it('should verify exact native operator input instead of an invented assessment or delegated receipt', async () => {
+    const direct = {
+      ...attempt,
+      origin: 'input' as const,
+      sourceThreadId: 'issue',
+      sourceTurnId: 'operator-turn',
+      beforeTurnId: 'operator-turn',
+      turnId: 'operator-turn',
+      inputId: 'operator-input',
+    };
+    let items: Array<Record<string, unknown>> = [
+      {
+        id: 'operator-input',
+        type: 'userMessage',
+        content: [{ type: 'text', text: 'Implement the plan.' }],
+      },
+    ];
+    const verify = codexContinuationNative(async () => ({
+      data: items.map((item) => ({ turnId: 'operator-turn', item })),
+    }));
+    assert.equal((await verify('intake', direct)).status, 'verified');
+    items[0]!.type = 'agentMessage';
+    await assert.rejects(verify('intake', direct), /continuation-input-unverified/);
+    items[0]!.type = 'userMessage';
+    items.push({
+      type: 'functionCallOutput',
+      namespace: 'codex_app',
+      name: 'send_message_to_thread',
+      output: 'quoted operator direction',
+    });
+    await assert.rejects(verify('intake', direct), /continuation-input-unverified/);
+    items = [{ id: 'wrong-input', type: 'userMessage' }];
+    await assert.rejects(verify('intake', direct), /continuation-input-unverified/);
+    items = [
+      { id: 'operator-input', type: 'userMessage' },
+      { type: 'commandExecution', status: 'declined' },
+    ];
+    assert.equal((await verify('intake', direct)).status, 'blocked');
+  });
   function fixture(
     options: {
       call?: boolean;
@@ -209,6 +248,22 @@ describe('agent/codex-continuation-native', () => {
         changed.threadId === 'other' || changed.prompt
           ? { status: 'uncertain' }
           : { status: 'blocked', code: 'continuation-send-mismatch' },
+      );
+  });
+
+  it('should verify settings-inheriting sends while rejecting injected overrides', async () => {
+    const inherited = {
+      ...attempt,
+      request: { threadId: 'issue', prompt: attempt.request.prompt },
+    };
+    assert.equal(
+      (await fixture({ arguments: inherited.request })('source', inherited)).status,
+      'verified',
+    );
+    for (const override of [{ model: 'other' }, { thinking: 'low' }])
+      assert.deepEqual(
+        await fixture({ arguments: { ...inherited.request, ...override } })('source', inherited),
+        { status: 'blocked', code: 'continuation-send-mismatch' },
       );
   });
 

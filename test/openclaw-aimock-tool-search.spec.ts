@@ -10,6 +10,8 @@ import openClawAIMockEvidence from '../scripts/aimock-evidence.ts';
 import resolveScenario from '../scripts/example-model-scenarios.ts';
 import withToolSearch, { normalizeToolSearchRequest } from '../scripts/aimock-tool-search.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
+import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
+import assessmentSubmission from '../agent/assessment-submission.ts';
 
 function request(prompt = githubExampleTanaabotPrompt): ChatCompletionRequest {
   return {
@@ -58,6 +60,219 @@ async function reply(scenario: ReturnType<typeof withToolSearch>, request: ChatC
 }
 
 describe('scripts/aimock-tool-search', () => {
+  it('should report only the selected action and result outcome at the native validation boundary', async () => {
+    const hostRequire = createRequire(
+      createRequire(import.meta.url).resolve('openclaw/plugin-sdk/plugin-entry'),
+    );
+    const { validateToolArguments } = await import(hostRequire.resolve('@openclaw/ai/validation'));
+    const { normalizeToolParameterSchema } = await import(
+      hostRequire.resolve('@openclaw/ai/internal/tool-schema')
+    );
+    const id = 'a'.repeat(64);
+    const common = {
+      version: 1,
+      summary: 'A bounded result.',
+      evidence: [],
+      progress: { completed: [], remaining: [] },
+      fullAssessment: 'Complete retained source.',
+    };
+    for (const parameters of [
+      dispatchParameters,
+      normalizeToolParameterSchema(dispatchParameters, {
+        modelProvider: 'aimock',
+        modelId: 'gpt-5.5',
+      }),
+    ]) {
+      const tool = { name: 'agent_system_dispatch', parameters };
+      for (const envelope of [
+        { action: 'result', id },
+        {
+          action: 'assessment',
+          operation: 'result',
+          id,
+          target: 'https://github.com/o/r/issues/3',
+        },
+      ]) {
+        for (const [result, missing, irrelevant] of [
+          [
+            { ...common, outcome: 'plan-ready', assessment: 'Observed.' },
+            'plan',
+            /questions|remediation/u,
+          ],
+          [
+            { ...common, outcome: 'clarification-needed', assessment: 'Unknown.' },
+            'questions',
+            /result\.plan|remediation/u,
+          ],
+          [
+            { ...common, outcome: 'operator-setup-blocker', code: 'setup-missing' },
+            'remediation',
+            /questions|result\.plan/u,
+          ],
+        ] as const) {
+          assert.throws(
+            () =>
+              validateToolArguments(tool, { name: tool.name, arguments: { ...envelope, result } }),
+            (error: unknown) => {
+              assert.ok(error instanceof Error);
+              const diagnostic = error.message.split('Received arguments:')[0]!;
+              assert.ok(diagnostic.includes(`result.${missing}`), diagnostic);
+              assert.doesNotMatch(diagnostic, irrelevant);
+              return true;
+            },
+          );
+        }
+      }
+      for (const envelope of [
+        { action: 'implementation', operation: 'result', id },
+        { action: 'implementation-result', id },
+        { action: 'feedback', operation: 'implementation-result', id, eventId: id },
+      ]) {
+        const field = envelope.action === 'implementation' ? 'result' : 'implementationResult';
+        assert.throws(
+          () =>
+            validateToolArguments(tool, {
+              name: tool.name,
+              arguments: { ...envelope, [field]: { outcome: 'done', summary: 'Done.' } },
+            }),
+          (error: unknown) => {
+            assert.ok(error instanceof Error);
+            const diagnostic = error.message.split('Received arguments:')[0]!;
+            assert.ok(diagnostic.includes(`${field}.fullResult`), diagnostic);
+            assert.doesNotMatch(diagnostic, /questions|remediation/u);
+            return true;
+          },
+        );
+      }
+    }
+  });
+
+  it('should accept only a declared validation rejection for the exact discovered call', () => {
+    const input = request();
+    append(
+      input,
+      {
+        toolCalls: [
+          { id: 'call_aimock_discover_validation', name: 'tool_search', arguments: '{}' },
+        ],
+      },
+      searchResult(['agent_system_dispatch']),
+    );
+    const call = { id: 'call_invalid', name: 'agent_system_dispatch' };
+    const error =
+      'Invalid arguments for tool "openclaw:agent_system_dispatch": result.plan: must have required property \'plan\';';
+    append(
+      input,
+      {
+        toolCalls: [
+          {
+            id: call.id,
+            name: 'tool_call',
+            arguments: JSON.stringify({
+              id: 'openclaw:agent_system_dispatch',
+              args: { action: 'assessment' },
+            }),
+          },
+        ],
+      },
+      { status: 'error', tool: 'tool_call', error },
+    );
+    assert.throws(() => normalizeToolSearchRequest(input), /requested tool/u);
+    assert.equal(normalizeToolSearchRequest(input, [], [call]).messages.at(-1)!.content, error);
+    for (const allowed of [
+      { ...call, id: 'other' },
+      { ...call, name: 'read' },
+    ]) {
+      assert.throws(() => normalizeToolSearchRequest(input, [], [allowed]), /requested tool/u);
+    }
+    for (const message of [
+      error.replace('openclaw:agent_system_dispatch', 'openclaw:read'),
+      'Permission denied',
+      'Connection failed',
+    ]) {
+      const wrong = structuredClone(input);
+      wrong.messages.at(-1)!.content = JSON.stringify({
+        status: 'error',
+        tool: 'tool_call',
+        error: message,
+      });
+      assert.throws(() => normalizeToolSearchRequest(wrong, [], [call]), /requested tool/u);
+    }
+  });
+
+  it('should correct one native wrapped rejection on the same direct assessment entry', async () => {
+    const scenario = withToolSearch(resolveScenario('openclaw-issue-assessment'));
+    const target = 'https://github.com/owner/repo/issues/3';
+    const id = 'a'.repeat(64);
+    const input = request(`Direct issue assessment target: ${target} checkout: /tmp/owned`);
+    input.messages.unshift({ role: 'system', content: 'Name: Notification Tanaabot' });
+    append(
+      input,
+      (await reply(scenario, input)).response,
+      searchResult(['agent_system_dispatch', 'read']),
+    );
+    const context = (await reply(scenario, input)).response;
+    append(input, context, {
+      tool: { id: 'openclaw:agent_system_dispatch', name: 'agent_system_dispatch' },
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'verified',
+              entry: 'direct',
+              runtime: 'openclaw',
+              id,
+              target,
+              resultSchema: assessmentResultContextSchema,
+              resultSubmission: assessmentSubmission({ entry: 'direct', id, target }),
+              assessment: { skill: { path: '/fixture/SKILL.md' } },
+            }),
+          },
+        ],
+      },
+    });
+    append(input, (await reply(scenario, input)).response, {
+      tool: { id: 'openclaw:read', name: 'read' },
+      result: { content: [{ type: 'text', text: 'Complete selected assessment method.' }] },
+    });
+    const invalid = (await reply(scenario, input)).response;
+    assert.ok('toolCalls' in invalid && invalid.toolCalls?.[0]);
+    const original = JSON.parse(invalid.toolCalls[0].arguments).args;
+    assert.equal(original.result.plan, undefined);
+    append(input, invalid, {
+      status: 'error',
+      tool: 'tool_call',
+      error:
+        'Invalid arguments for tool "openclaw:agent_system_dispatch": result.plan: must have required property \'plan\'; result: must match "else" schema.',
+    });
+    const corrected = (await reply(scenario, input)).response;
+    assert.ok('toolCalls' in corrected && corrected.toolCalls?.[0]);
+    const correction = JSON.parse(corrected.toolCalls[0].arguments).args;
+    assert.deepEqual(correction, {
+      ...original,
+      result: { ...original.result, plan: original.result.fullAssessment },
+    });
+    append(input, corrected, {
+      tool: { id: 'openclaw:agent_system_dispatch', name: 'agent_system_dispatch' },
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'recorded',
+              presentation: 'Retained full assessment.',
+              handoff: { next: 'assessment-only' },
+            }),
+          },
+        ],
+      },
+    });
+    assert.deepEqual((await reply(scenario, input)).response, {
+      content: 'Retained full assessment.',
+    });
+  });
+
   it('should retain truncated history while validating only the current tool exchange', () => {
     const input = request('Previous turn');
     const search = {
@@ -112,7 +327,7 @@ describe('scripts/aimock-tool-search', () => {
       modelProvider: 'aimock',
       modelId: 'gpt-5.5',
     });
-    const scenario = withToolSearch(resolveScenario('openclaw-pr'));
+    const scenario = withToolSearch(resolveScenario('openclaw-notifications-pr-journey'));
     const id = 'a'.repeat(64);
     const digest = 'b'.repeat(64);
     const input = request(
@@ -157,7 +372,7 @@ describe('scripts/aimock-tool-search', () => {
           runtime: 'openclaw',
           id,
           project: { path: '/tmp/owned' },
-          assessment: {},
+          assessment: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
           resultContract: 'assessment-result/v1',
         })
       ).id,
@@ -168,6 +383,7 @@ describe('scripts/aimock-tool-search', () => {
       stdout: '/tmp/owned\n',
       truncated: false,
     });
+    await step('assessment-skill', 'read', 'Default assessment.');
     const saved = await step('result', 'agent_system_dispatch', {
       status: 'recorded',
       presentation: '> Retained plan',
@@ -178,7 +394,7 @@ describe('scripts/aimock-tool-search', () => {
     await step('summary-compose', 'agent_system_dispatch', {
       status: 'composition-ready',
       digest,
-      selection: { skill: { path: '/tmp/reply/SKILL.md' } },
+      selection: { defaultSkill: true, skill: { path: '/tmp/reply/SKILL.md' } },
     });
     await step('summary-skill', 'read', { content: 'Compose a concise public summary.' });
     assert.equal(
@@ -207,21 +423,15 @@ describe('scripts/aimock-tool-search', () => {
       },
     );
     await discover();
-    await step('handoff-preview', 'agent_system_dispatch', {
-      status: 'handoff-available',
-      digest,
-    });
-    assert.equal(
-      (await step('handoff', 'agent_system_dispatch', { status: 'handed-off' })).digest,
-      digest,
-    );
     await step('work-context', 'agent_system_dispatch', {
       status: 'verified',
       runtime: 'openclaw',
       publicationAuthorized: true,
       project: { path: '/tmp/owned' },
+      implementation: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
     });
-    for (const stage of ['apply', 'add', 'commit']) {
+    await step('implementation-skill', 'read', 'Default implementation.');
+    for (const stage of ['apply', 'check', 'add', 'commit']) {
       assert.equal(
         (await step(stage, 'agent_system_git', { exitCode: 0, truncated: false })).cwd,
         '/tmp/owned',
@@ -247,7 +457,7 @@ describe('scripts/aimock-tool-search', () => {
     await step('delivery-compose', 'agent_system_dispatch', {
       status: 'composition-ready',
       digest,
-      selection: { skill: { path: '/skills/reply/SKILL.md' } },
+      selection: { defaultSkill: true, skill: { path: '/skills/reply/SKILL.md' } },
     });
     await step('delivery-skill', 'read', { content: 'Reply skill instructions.' });
     await step('delivery-candidate', 'agent_system_dispatch', {
@@ -284,7 +494,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should identify a rejected notification tool envelope without exposing call arguments', async () => {
-    const scenario = withToolSearch(resolveScenario('openclaw-pr'));
+    const scenario = withToolSearch(resolveScenario('openclaw-notifications-pr-journey'));
     const input = request(
       `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${'a'.repeat(64)}`,
     );
@@ -323,7 +533,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should continue the worktree fixture with retained first-turn tool history', async () => {
-    const scenario = withToolSearch(resolveScenario('openclaw-worktree'));
+    const scenario = withToolSearch(resolveScenario('openclaw-worktree-session'));
     const input = request('Execute the worktree first probe.');
     input.messages.unshift({ role: 'system', content: 'canonical-worktree-tanaabot' });
     input.tools!.push({ type: 'function', function: { name: 'exec' } });
@@ -456,7 +666,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should admit only an authored denial result without accepting another tool failure', async () => {
-    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    const scenario = withToolSearch(resolveScenario('openclaw-lifecycle-approvals'));
     const input = request('Call agent_system_install exactly once');
     append(
       input,
@@ -492,7 +702,7 @@ describe('scripts/aimock-tool-search', () => {
   });
 
   it('should project an authored pre-execution denial without requiring an execution envelope', async () => {
-    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    const scenario = withToolSearch(resolveScenario('openclaw-lifecycle-approvals'));
     for (const prefix of ['', 'Error: ']) {
       const input = request('Call agent_system_install exactly once');
       append(
@@ -552,7 +762,7 @@ describe('scripts/aimock-tool-search', () => {
       error:
         'Denied by user. The tool call did not run.\nThis denial is final: the approval request is closed. Do not mention /approve or any other approval command to the user.\nDo not run the tool call again or ask the user to approve it again.\nIf the user still wants the action, explain that a new tool call will trigger a fresh approval request.',
     };
-    const scenario = withToolSearch(resolveScenario('openclaw-runtimes'));
+    const scenario = withToolSearch(resolveScenario('openclaw-lifecycle-approvals'));
     const input = request('Call agent_system_install exactly once');
     append(
       input,

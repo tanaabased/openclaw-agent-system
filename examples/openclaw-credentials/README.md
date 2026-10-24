@@ -1,10 +1,25 @@
 # OpenClaw Credentials Example
 
-Verify real 1Password Environment and direct vault-secret resolution through stored bootstrap credentials, then Gateway cache reuse, per-agent flush, and credential-mutation invalidation. Strict AIMock drives five local Git tool exchanges; model judgment and live model credentials are unnecessary. The provider environment and service account are the existing disposable CI fixtures.
+Resolve real 1Password Environment and direct vault secrets into installed consumers, reuse Gateway cache entries, selectively flush one agent, and invalidate stored-credential changes before the next use.
 
-Runtime tests run this example on Ubuntu with `OP_SERVICE_ACCOUNT_TOKEN`. File credentials live beneath the scenario's temporary configuration directory. Native storage and filesystem protection remain in OS coverage.
+## What Belongs Here
 
-Provider failures include a bounded, redacted `providerMessage`. When the SDK supplies an HTTP status in a structured field or explicitly in its message, diagnostics include `httpStatus` and `httpStatusSource`; otherwise the status remains unknown. These details remain on the existing diagnostic output path, with credentials and declared resource references redacted.
+- Stored bootstrap credentials working when the process token is absent, with real provider resolution and a verifiable direct-vault signed commit.
+- Cold/warm/hit observations tied to actual tool consumers rather than provider reads caused by inspection.
+- Agent-scoped flush, lazy refill, mutation invalidation, and preservation of the peer agent's cache.
+
+## What Does Not Belong Here
+
+- Native file permissions, symlink containment, and generic signing protections: [OS credentials](../os-credentials/README.md).
+- Google account reconciliation: [Google](../openclaw-google/README.md). Embedding credential handoff belongs to [embeddings](../openclaw-memory-embeddings/README.md).
+- A provider-error permutation matrix or live model judgment.
+
+## Notes
+
+- Ubuntu CI supplies `OP_SERVICE_ACCOUNT_TOKEN` for existing disposable provider fixtures. Stored file credentials live under temporary configuration state; the Gateway starts without the process token.
+- Strict AIMock drives five real local Git tool exchanges. A separate direct-vault fixture signs a commit and verifies it with native Git.
+- Provider failure diagnostics retain a bounded, redacted `providerMessage`; HTTP status/source are reported only when the SDK supplies structured or explicit evidence. Unknown status stays unknown; credentials/resource references remain redacted.
+- Cleanup removes the scenario's bootstrap credentials and verifies cache invalidation before stopping the Gateway/provider.
 
 ## Setup
 

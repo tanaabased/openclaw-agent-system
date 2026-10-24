@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import {
+  githubResponseIdentity,
   githubResponseIssueComment,
   githubResponseNodeId,
 } from '../channels/github/provider/work-event-normalization.ts';
@@ -20,6 +21,62 @@ function comment(overrides: Record<string, unknown> = {}) {
 }
 
 describe('channels/github/provider/work-event-normalization', () => {
+  it('should preserve valid user and bot identities', () => {
+    for (const [login, type] of [
+      ['pirog', 'User'],
+      ['user-name', 'User'],
+      ['netlify[bot]', 'Bot'],
+      ['github-actions[bot]', 'Bot'],
+      ['legacy-bot', 'Bot'],
+    ]) {
+      const identity = { login, type, nodeId: 'U_identity' };
+      assert.deepEqual(githubResponseIdentity(identity, 'issue-comment author'), identity);
+    }
+  });
+
+  it('should reject malformed identities without exposing their values in diagnostics', () => {
+    for (const login of [
+      '[bot]',
+      '-app[bot]',
+      'app-[bot]',
+      'app[bot][bot]',
+      'app[BOT]',
+      'app/name',
+      'app name',
+      'app\n',
+      'app\0',
+      'app[bot]suffix',
+    ]) {
+      assert.throws(
+        () =>
+          githubResponseIdentity({ login, nodeId: 'U_bot', type: 'Bot' }, 'issue-comment author'),
+        { code: 'github-response-invalid-issue-comment-author-login' },
+      );
+    }
+    assert.throws(
+      () =>
+        githubResponseIdentity(
+          { login: 'netlify[bot]', nodeId: 'U_user', type: 'User' },
+          'review author',
+        ),
+      { code: 'github-response-invalid-review-author-login' },
+    );
+    const secret = 'ghp_' + 'x'.repeat(36);
+    assert.throws(
+      () =>
+        githubResponseIdentity(
+          { login: secret, nodeId: 'U_bot', type: 'Bot' },
+          'issue-comment author',
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal(JSON.stringify(error).includes(secret), false);
+        assert.equal(error.message.includes(secret), false);
+        return true;
+      },
+    );
+  });
+
   it('should preserve a missing comment author while retaining useful control facts', () => {
     assert.deepEqual(githubResponseIssueComment(comment()), {
       author: undefined,

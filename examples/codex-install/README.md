@@ -1,6 +1,23 @@
 # Codex Install Example
 
-Install the prepared plugin in isolated Codex state, discover its skills through a fresh app server, and verify workspace binding, runtime-aware setup, session context, model routing, and unbinding. The checked-in workspaces run in place; separate manifest snapshots prove they remain unchanged. These direct checks require no model or provider credentials. Run only in GitHub Actions.
+Install the prepared plugin in isolated Codex state, discover its skills through a fresh app server, explicitly bind a workspace, apply only standalone Codex setup, load its session context, and unbind without changing workspace manifests.
+
+## What Belongs Here
+
+- Packaged plugin installation and skill discovery, with explicit confirmation before persisting a workspace binding.
+- Read-only inspection and installation of applicable setup, preserving the OpenClaw-owned boundary and converged installed identity.
+- A packaged SessionStart hook loading the bound workspace, including paths containing spaces, and safe unbinding with manifest preservation.
+
+## What Does Not Belong Here
+
+- Automation planning/conversation persistence: [Codex automations](../codex-automations/README.md). Notification authority: [Codex notifications](../codex-notifications/README.md).
+- Routing input/fallback permutations, identity rename/rotation, inactive/replacement binding variants, and setup timeout or detailed diagnostic variants.
+
+## Notes
+
+- Direct checks need no model or provider credentials. Workspaces run in place; independent snapshots verify that shared manifests stay unchanged. Run only in GitHub Actions.
+- Session context includes the model-routing projection; one packaged resolution accepts an issue object. Source tests cover routing input, fallback, and override permutations.
+- Pending relocation: direct-assessment caller guards, quiet/debug setup diagnostics, missing-identity inspection and rename/rotation, inherited-pipe timeout, local-settings refresh, and inactive/replacement binding checks remain below.
 
 ## Setup
 
@@ -55,16 +72,6 @@ node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_W
 node "$runtime" binding inspect --plugin-data "$plugin_data" \
   | jq -e --arg workspace "$workspace" '.status == "bound" and .binding.workspaceDir == $workspace and .preview.manifest.agentId == "codex-example"'
 
-# should expose the workflow operation and reject hidden publication substitution
-root="$TMPDIR/agent-system-codex-install"
-plugin_root=$(jq -r .cachePath "$root/cache.json")
-runtime="$plugin_root/dist/codex/codex-runtime.js"
-if output=$(node "$runtime" delivery prepare --plugin-data "$root/plugin-data" 2>&1 <<'JSON'
-{"action":"publish","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
-JSON
-); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.message == "workflow-command-action-mismatch"'
-
 # should keep standalone setup diagnostics quiet without runner debug
 root="$TMPDIR/agent-system-codex-install"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
@@ -106,6 +113,20 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(env -u CODEX_THREAD_ID node "$runtime" dispatch assessment context --plugin-data "$root/plugin-data" <<<'{"action":"assessment","operation":"context","target":"https://github.com/tanaabased/big-test-bucket/issues/1","path":"/unused"}' 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-native-caller-required"'
+
+# should expose direct implementation without intake activation while requiring native custody
+root="$TMPDIR/agent-system-codex-install"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+if output=$(env -u CODEX_THREAD_ID node "$runtime" dispatch implementation context --plugin-data "$root/plugin-data" <<<'{"target":"https://github.com/tanaabased/big-test-bucket/issues/1","path":"/unused","plan":"Implement the authorized change locally and run focused checks."}' 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-native-caller-required"'
+
+# should reject a hidden direct implementation publication effect before runtime access
+root="$TMPDIR/agent-system-codex-install"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+if output=$(node "$runtime" dispatch implementation prepare --plugin-data "$root/plugin-data" <<<'{"operation":"delivery","deliveryOperation":"publish"}' 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.message == "workflow-command-action-mismatch"'
 
 # should inspect and install only setup applicable to standalone codex
 root="$TMPDIR/agent-system-codex-install"
@@ -165,21 +186,6 @@ printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
   | jq -e '.feedbackRuntime.argvPrefix[-1] == "feedback"'
 printf '%s\n' "$context" | grep -F 'For new routed work, use'
 printf '%s\n' "$context" | grep -F 'Reproduce the complete returned presentation Markdown in the final reply'
-
-# should resolve bounded routing through the installed cache and preserve unresolved reasoning
-root="$TMPDIR/agent-system-codex-install"
-plugin_root=$(jq -r .cachePath "$root/cache.json")
-runtime="$plugin_root/dist/codex/codex-runtime.js"
-plugin_data="$root/plugin-data"
-inspection=$(printf '%s\n' '{"action":"inspect"}' | node "$runtime" model-routing --plugin-data "$plugin_data")
-printf '%s\n' "$inspection" | jq -e '.status == "available" and (.reportGuidance | contains("Model routing"))'
-digest=$(printf '%s\n' "$inspection" | jq -r .manifestDigest)
-jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:"An unspecified task.",assessment:{complexity:"unset",reason:"No defensible tier."}}' \
-  | node "$runtime" model-routing --plugin-data "$plugin_data" \
-  | jq -e '.status == "unresolved" and .profile == null and .selection == null and .reason == "No defensible tier."'
-jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:"An unspecified task.",assessment:{complexity:"unset",reason:"No defensible tier."},fallback:"default",overrides:{effort:"low"}}' \
-  | node "$runtime" model-routing --plugin-data "$plugin_data" \
-  | jq -e '.status == "unresolved" and .profile == "default" and .candidate.thinking == "low" and .execution == "unverified"'
 
 # should accept issue objects as bounded routing context through the installed cache
 root="$TMPDIR/agent-system-codex-install"

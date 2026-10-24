@@ -1,5 +1,9 @@
 import { formatErrorMessage } from 'openclaw/plugin-sdk/error-runtime';
 
+import { AutomationError } from '../agent/automation-gateway.ts';
+import { retainAutomationGatewayDiagnostic } from '../agent/automation-gateway-diagnostic.ts';
+import { retainSessionDispatchDiagnostic } from '../credentials/session-dispatch-diagnostic.ts';
+
 import { manifestNotices, lifecycleWarningNotice } from './diagnostic-notices.ts';
 import confirmSessionDispatch from './session-dispatch-consent.ts';
 import lifecycleDetails from './lifecycle-details.ts';
@@ -42,6 +46,7 @@ export interface InstallAgentSystemOptions extends Pick<
   manifestService: Pick<AgentManifestService, 'loadForCommandDirectory'>;
   output: CliOutput;
   rebuildCodexPath?: boolean;
+  manualSessionDispatch?: boolean;
   setExitCode(code: number): void;
   styles?: CliStyles;
   terminalColumns?: number;
@@ -99,7 +104,10 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
   writeCliDiagnosticNotices(options, manifestNotices(result));
   let sessionDispatchConsent = false;
   try {
-    const plan = await options.installService.sessionDispatchPlan?.(result.manifest);
+    const plan = await options.installService.sessionDispatchPlan?.(
+      result.manifest,
+      options.manualSessionDispatch,
+    );
     if (plan?.enrollmentRequired) {
       sessionDispatchConsent = await confirmSessionDispatch(
         { ...options, runtime: 'openclaw' },
@@ -156,6 +164,7 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
     const selection = selectedSetupPhases(options);
     const installed = await options.installService.install({
       runtime: 'openclaw',
+      ...(options.manualSessionDispatch ? { manualSessionDispatch: true } : {}),
       ...(sessionDispatchConsent
         ? {
             sessionDispatchConsent: true,
@@ -206,12 +215,26 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
     );
   } catch (error) {
     const failure = error instanceof AgentSystemLifecycleError ? error : undefined;
+    const automationGatewayDiagnostic =
+      failure?.component === 'automations' &&
+      failure.cause instanceof AutomationError &&
+      (failure.cause.diagnostic || failure.code.startsWith('automation-gateway-'))
+        ? retainAutomationGatewayDiagnostic(failure.cause.diagnostic)
+        : undefined;
     const blocked = {
       component:
         failure?.component ?? (error instanceof AgentInstallError ? 'credentials' : 'install'),
       code: failure?.code ?? (error instanceof AgentInstallError ? error.code : 'install-failed'),
       message: error instanceof Error ? error.message : 'Installation failed.',
       ...(failure?.stepId ? { stepId: failure.stepId } : {}),
+      ...(automationGatewayDiagnostic ? { automationGatewayDiagnostic } : {}),
+      ...(failure?.sessionDispatchDiagnostic
+        ? {
+            sessionDispatchDiagnostic: retainSessionDispatchDiagnostic(
+              failure.sessionDispatchDiagnostic,
+            ),
+          }
+        : {}),
     };
     const unattempted = failure?.progress?.unattempted ?? [{ component: 'lifecycle' }];
     const outcomes = failure?.progress?.outcomes ?? [];
@@ -278,7 +301,12 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
         component: blocked.component,
         stepId: blocked.stepId,
         message: formatErrorMessage(error),
-        details: guidance.slice(0, outcomes.length > 0 ? 1 : 2),
+        details: [
+          ...guidance.slice(0, outcomes.length > 0 ? 1 : 2),
+          ...(automationGatewayDiagnostic
+            ? [`gateway diagnostic: ${JSON.stringify(automationGatewayDiagnostic)}`]
+            : []),
+        ],
         remediation: guidance.slice(outcomes.length > 0 ? 1 : 2),
       },
     ]);

@@ -47,8 +47,11 @@ export default class AgentInstallService {
     this.#dependencies = dependencies;
   }
 
-  async sessionDispatchPlan(manifest: AgentInstallInput['manifest']) {
-    const consumers = sessionDispatchRequirements(manifest);
+  async sessionDispatchPlan(
+    manifest: AgentInstallInput['manifest'],
+    manualSessionDispatch = false,
+  ) {
+    const consumers = sessionDispatchRequirements(manifest, manualSessionDispatch);
     return {
       consumers,
       enrollmentRequired:
@@ -64,10 +67,10 @@ export default class AgentInstallService {
     await input.assertCurrent?.();
     if (
       input.runtime === 'openclaw' &&
-      sessionDispatchRequirements(input.manifest).length &&
+      sessionDispatchRequirements(input.manifest, input.manualSessionDispatch).length &&
       !input.sessionDispatchConsent
     ) {
-      const plan = await this.sessionDispatchPlan(input.manifest);
+      const plan = await this.sessionDispatchPlan(input.manifest, input.manualSessionDispatch);
       if (plan.enrollmentRequired)
         throw new AgentInstallError(
           'Session dispatch enrollment requires explicit Install consent; use interactive Install or --yes.',

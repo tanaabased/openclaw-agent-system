@@ -1,3 +1,5 @@
+import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
+import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import continueOpenClawResponse, {
   openClawResponseEligible,
@@ -5,7 +7,6 @@ import continueOpenClawResponse, {
 import openClawResponseAuthority from './openclaw-response-authority.ts';
 import type { Static } from 'typebox';
 
-import { type IntakeRecord } from '../channels/github/intake/record-store.ts';
 import feedbackResponse from '../channels/github/presentation/feedback-response.ts';
 import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
@@ -87,7 +88,9 @@ export default class OpenClawDispatchIssue {
     if (
       openClawDecisionPending(
         record,
-        manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
+        record.manualIssue?.selections?.mode ??
+          manifest.github?.notifications?.issueAssignment?.mode ??
+          'auto',
       )
     ) {
       const assertDecision = async () => {
@@ -98,7 +101,9 @@ export default class OpenClawDispatchIssue {
           !record.decisionTurn &&
           !openClawDecisionPending(
             record,
-            live.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
+            record.manualIssue?.selections?.mode ??
+              live.manifest.github?.notifications?.issueAssignment?.mode ??
+              'auto',
           )
         )
           throw new WorkflowPolicyHeld('workflow-mode-updated');
@@ -134,7 +139,10 @@ export default class OpenClawDispatchIssue {
       authority.signal?.throwIfAborted();
       const live = await this.context.validateLocal(manifest, workspace, record, true);
       const transition = issueProgression(record, {
-        mode: live.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
+        mode:
+          record.manualIssue?.selections?.mode ??
+          live.manifest.github?.notifications?.issueAssignment?.mode ??
+          'auto',
         now,
       });
       if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
@@ -156,8 +164,10 @@ export default class OpenClawDispatchIssue {
               ? (
                   await selectWorkflowStage({
                     stage: 'implementation',
-                    configuration:
-                      live.manifest.github?.notifications?.issueAssignment?.implementation,
+                    configuration: {
+                      ...live.manifest.github?.notifications?.issueAssignment?.implementation,
+                      ...record.manualIssue?.selections?.implementation,
+                    },
                     workspace,
                     observedAt: now,
                     resolveSkill: (id) =>
@@ -172,7 +182,10 @@ export default class OpenClawDispatchIssue {
           return advanceOpenClawWork({
             record,
             reconcileOnly,
-            mode: live.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
+            mode:
+              record.manualIssue?.selections?.mode ??
+              live.manifest.github?.notifications?.issueAssignment?.mode ??
+              'auto',
             selection,
             now,
             request,
@@ -196,7 +209,6 @@ export default class OpenClawDispatchIssue {
           'dispatch-turn-cancelled',
           'dispatch-turn-failed',
           'dispatch-turn-input-mismatch',
-          'dispatch-turn-model-mismatch',
         ].includes(code)
       ) {
         record.work.code = code;
@@ -238,7 +250,7 @@ export default class OpenClawDispatchIssue {
         await this.context.validateLocal(manifest, workspace, record, false, true);
       };
       await assertCurrent();
-      const { intake, client } = await this.context.validate(
+      const { intake, client, item } = await this.context.validate(
         manifest,
         workspace,
         record,
@@ -247,6 +259,8 @@ export default class OpenClawDispatchIssue {
         undefined,
         authority.signal,
       );
+      // Consume the entry validation once; later effect boundaries read again.
+      let initialIssue: typeof item | undefined = item;
       const provider = await this.context.dependencies.feedbackConnect?.(
         { manifest, workspaceDir: workspace },
         authority.signal ?? AbortSignal.timeout(60000),
@@ -296,15 +310,22 @@ export default class OpenClawDispatchIssue {
               return live.manifest.github!.notifications!;
             },
             reauthorize: async () => {
-              await this.context.validate(
-                manifest,
-                workspace,
-                record,
-                false,
-                true,
-                client,
-                authority.signal,
-              );
+              if (initialIssue) {
+                const observed = initialIssue;
+                initialIssue = undefined;
+                return observed;
+              }
+              return (
+                await this.context.validate(
+                  manifest,
+                  workspace,
+                  record,
+                  false,
+                  true,
+                  client,
+                  authority.signal,
+                )
+              ).item;
             },
             save,
           };
@@ -495,6 +516,8 @@ export default class OpenClawDispatchIssue {
       input.action === 'implementation-result' ||
       input.action === 'delivery'
     ) {
+      if (input.action === 'implementation-context' && input.scope && !operator)
+        throw new Error('implementation-operator-scope-required');
       const signal = authority.signal
         ? AbortSignal.any([authority.signal, transactionSignal])
         : transactionSignal;
@@ -512,8 +535,10 @@ export default class OpenClawDispatchIssue {
             caller,
             operator,
             mode:
+              record.manualIssue?.selections?.mode ??
               (await this.context.validateLocal(manifest, workspace, record, true)).manifest.github
-                ?.notifications?.issueAssignment?.mode ?? 'auto',
+                ?.notifications?.issueAssignment?.mode ??
+              'auto',
             now,
             request,
             config: this.context.dependencies.config(),
@@ -531,7 +556,7 @@ export default class OpenClawDispatchIssue {
             const selected = (
               await selectWorkflowStage({
                 stage: 'implementation',
-                configuration: configured,
+                configuration: { ...configured, ...record.manualIssue?.selections?.implementation },
                 workspace: current.workspace,
                 observedAt: previous?.observedAt ?? now,
                 resolveSkill: (id) =>
@@ -576,7 +601,10 @@ export default class OpenClawDispatchIssue {
             action: input,
             source,
             base: repo.defaultBranch,
-            recipients: current.policy.policy.issueAssignment?.pullRequest?.recipients,
+            recipients: issuePullRequestRecipients(
+              current.policy.policy,
+              Boolean(record.manualIssue),
+            ),
             feedbackEnabled: openClawFeedbackEnabled(manifest),
             selectAnnouncement: async (retained) =>
               (
@@ -655,14 +683,6 @@ export default class OpenClawDispatchIssue {
             throw new Error('assessment-summary-assessment-turn-required');
           const expected = record.request;
           const recovery = record.resultTurnId !== caller.runId;
-          if (recovery || record.assessmentCaller?.runId !== caller.runId)
-            await openClawResponseAuthority({
-              request,
-              record,
-              caller,
-              config: this.context.dependencies.config(),
-              observeOnly: input.operation === 'reconcile',
-            });
           return assessmentSummary({
             recovery,
             record,
@@ -679,6 +699,17 @@ export default class OpenClawDispatchIssue {
             save,
             redact: redactFeedback,
             authorize: async () => {
+              if (
+                input.operation !== 'hold' &&
+                (recovery || record.assessmentCaller?.runId !== caller.runId)
+              )
+                await openClawResponseAuthority({
+                  request,
+                  record,
+                  caller,
+                  config: this.context.dependencies.config(),
+                  observeOnly: input.operation === 'reconcile',
+                });
               await childAuthority.assertCurrent();
               await this.context.validate(
                 manifest,
@@ -719,7 +750,10 @@ export default class OpenClawDispatchIssue {
                   request,
                   record,
                   workspace: current.workspace,
-                  configuration: current.policy.policy.issueAssignment?.assessment,
+                  configuration: {
+                    ...current.policy.policy.issueAssignment?.assessment,
+                    ...record.manualIssue?.selections?.assessment,
+                  },
                   now,
                 })
               : undefined;
@@ -798,7 +832,7 @@ export default class OpenClawDispatchIssue {
         await authority.assertCurrent?.();
       };
       await assertCurrent();
-      const intake = current.admitted.records.find((entry) => entry.id === record.intakeId);
+      const intake = dispatchAdmission(record, current.admitted.records ?? []);
       if (!intake) throw new Error('dispatch-intake-record-missing');
       await this.context.dependencies.credential.use({ signal, assertCurrent }, async (request) => {
         await describeIssueSession(request, record, this.context.dependencies.config(), true);

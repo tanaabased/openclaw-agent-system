@@ -29,6 +29,7 @@ describe('openclaw api policy', () => {
       "import { issueDeviceBootstrapToken, listDevicePairing, revokeDeviceBootstrapToken } from 'openclaw/plugin-sdk/device-bootstrap';",
       "import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';",
       "import { getGlobalHookRunner } from 'openclaw/plugin-sdk/plugin-runtime';",
+      "import { runCommandWithTimeout } from 'openclaw/plugin-sdk/process-runtime';",
       "import { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';",
       "import { createAccountStatusSink } from 'openclaw/plugin-sdk/channel-outbound';",
       "import { redactSensitiveText } from 'openclaw/plugin-sdk/logging-core';",
