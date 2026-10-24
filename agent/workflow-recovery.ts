@@ -23,6 +23,10 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'The new assessment is missing its complete source; the result was not recorded.',
       'Include the complete assessment, evidence, plan or questions in fullAssessment and resubmit the result in this chat. Keep the previous saved result; do not substitute a summary for the source.',
     ],
+    'dispatch-receipt-id-invalid': [
+      'The supplied receipt ID is malformed, so it was not looked up or used to change workflow state.',
+      'Copy the exact receipt ID from verified workflow context and retry. Do not guess, correct, reset, or recreate the workflow.',
+    ],
     'launch-open-issue-required': [
       'Manual launch requires an accessible open GitHub issue.',
       'Choose an open issue, not a pull request or comment. Preserve any existing preparation; changing the target is not recovery of that attempt.',

@@ -202,11 +202,18 @@ printf '%s\n' '{"action":"inspect"}' | node "$runtime" dispatch --plugin-data "$
   | jq -e '.version == 1 and .records == []'
 if output=$(printf '%s\n' '{"action":"next","projects":[],"threads":{"schemaVersion":4,"pinnedThreads":[],"unavailableHosts":[],"unavailableSources":[]}}' | CODEX_THREAD_ID=fixture-intake node "$runtime" dispatch --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required" and .notice.severity == "warning" and .notice.notify == true and (.notice.message | contains("Next step"))'
-if output=$(printf '%s\n' '{"action":"handoff","id":"missing"}' | CODEX_THREAD_ID=fixture-operator node "$runtime" dispatch --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+if output=$(printf '%s\n' '{"action":"handoff","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' | CODEX_THREAD_ID=fixture-operator node "$runtime" dispatch --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-handoff-unavailable" and .notice.severity == "error"'
 test ! -d "$CODEX_HOME/automations"
 test ! -d "$GITHUB_WORKSPACE/examples/codex-notifications/active/checkouts"
 test ! -d "$GITHUB_WORKSPACE/examples/codex-notifications/active/.agent-system/repositories"
+
+# should reject malformed receipt ids before workflow lookup
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+if output=$(printf '%s\n' '{"action":"summary","operation":"candidate","id":"malformed"}' | node "$runtime" dispatch summary candidate --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-receipt-id-invalid" and (.notice.next | contains("exact receipt ID from verified workflow context"))'
 
 # should keep historical capacity reconciliation behind the owning intake activation
 root="$TMPDIR/agent-system-codex-notifications"

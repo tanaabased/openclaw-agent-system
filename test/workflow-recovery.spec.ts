@@ -10,6 +10,12 @@ describe('agent/workflow-recovery', () => {
     assert.match(recovery.next, /fullAssessment.*resubmit/);
     assert.match(recovery.next, /previous saved result/);
   });
+  it('should explain how to recover from a malformed dispatch receipt id', () => {
+    const recovery = workflowRecovery('dispatch-receipt-id-invalid')!;
+    assert.match(recovery.summary, /not looked up/);
+    assert.match(recovery.next, /exact receipt ID from verified workflow context/);
+    assert.match(recovery.next, /Do not guess/);
+  });
   it('should explain pre-reset restoration without authorizing replay or deletion', () => {
     const recovery = workflowRecovery('notification-state-reset-required')!;
     assert.match(recovery.summary, /no workflow was resumed/);
