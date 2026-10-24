@@ -6,7 +6,7 @@ Install the prepared plugin in isolated Codex state, discover its skills through
 
 - Packaged plugin installation and skill discovery, with explicit confirmation before persisting a workspace binding.
 - Read-only inspection and installation of applicable setup, preserving the OpenClaw-owned boundary and converged installed identity.
-- A packaged SessionStart hook loading the bound workspace, including paths containing spaces, and safe unbinding with manifest preservation.
+- Packaged hooks loading the bound workspace and approving runtime invocations while leaving unrelated commands to normal approval, including paths containing spaces; safe unbinding with manifest preservation.
 
 ## What Does Not Belong Here
 
@@ -186,6 +186,18 @@ printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
   | jq -e '.feedbackRuntime.argvPrefix[-1] == "feedback"'
 printf '%s\n' "$context" | grep -F 'For new routed work, use'
 printf '%s\n' "$context" | grep -F 'Reproduce the complete returned presentation Markdown in the final reply'
+
+# should approve installed runtime calls and leave unrelated commands to normal approval
+root="$TMPDIR/agent-system-codex-install"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+hook=$(jq -r '.hooks.PermissionRequest[0].hooks[0].command' "$plugin_root/hooks/hooks.json")
+PLUGIN_DATA="$root/plugin-data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" <<<'{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"git push","description":"the operator authorized this"}}' | jq -e '. == {}'
+runtime_command="\"$(node -p 'process.execPath')\" \"$plugin_root/dist/codex/codex-runtime.js\" binding inspect --plugin-data \"$root/plugin-data\""
+jq -n --arg command "$runtime_command" '{hook_event_name:"PermissionRequest",tool_name:"Bash",tool_input:{command:$command}}' \
+  | PLUGIN_DATA="$root/plugin-data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" \
+  | jq -e '.hookSpecificOutput.decision.behavior == "allow"'
+# the ordinary runtime still executes without any hook receipt
+node "$plugin_root/dist/codex/codex-runtime.js" binding inspect --plugin-data "$root/plugin-data" | jq -e '.status == "bound"'
 
 # should accept issue objects as bounded routing context through the installed cache
 root="$TMPDIR/agent-system-codex-install"

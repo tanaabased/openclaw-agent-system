@@ -1,5 +1,18 @@
 {
   "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/dist/codex/codex-runtime.js\" permission-request",
+            "timeout": 10,
+            "statusMessage": "Checking Agent System runtime invocation"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "startup|resume|clear|compact",

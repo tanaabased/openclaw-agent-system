@@ -5,6 +5,7 @@ import codexRuntimeRequest from './codex-runtime-request.ts';
 import runCodexContinuation from './codex-continuation.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
 import process from 'node:process';
+import codexPermission from './codex-permission.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
 import { operateInstanceIdentity } from './instance-identity.ts';
 
@@ -244,6 +245,25 @@ async function readWorkflowCommand(route: string, args: string[]) {
 
 export async function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
   const command = args[0];
+  if (command === 'permission-request') {
+    try {
+      writeJson(
+        args.length === 1 && process.env.PLUGIN_ROOT && process.env.PLUGIN_DATA
+          ? await codexPermission(
+              {
+                nodeExecutable: process.execPath,
+                pluginRoot: process.env.PLUGIN_ROOT,
+                pluginData: process.env.PLUGIN_DATA,
+              },
+              JSON.parse(await readStandardInput()),
+            )
+          : {},
+      );
+    } catch {
+      writeJson({});
+    }
+    return;
+  }
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
   if (command === 'instance') {
