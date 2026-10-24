@@ -1,3 +1,5 @@
+import codexIssueLaunch from './codex-issue-launch.ts';
+import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import codexImplementationEntry from './codex-implementation-entry.ts';
 import runCodexContinuation from './codex-continuation.ts';
@@ -41,6 +43,8 @@ export async function runCodexDispatch(
   input: unknown,
   deps: CodexDispatchDependencies = {},
 ) {
+  if (action === 'launch')
+    return codexIssueLaunch(pluginData, { ...(input as Record<string, unknown>), action }, deps);
   if (action === 'implementation') {
     const request = parseDirectImplementationRequest({
       ...(input as Record<string, unknown>),
@@ -146,19 +150,26 @@ async function executeCodexDispatch(
   const operatorAction = operatorRecovery || operatorReset || operatorRetire;
   const childAction = action === 'context' || action === 'result' || action === 'summary';
   const retainedWork = childAction || action === 'reconcile' || action === 'report';
-  if (!retainedWork && !current.policy) throw new Error('dispatch-policy-disabled');
-  const activation = await (deps.activation ?? inspectCodexDispatchActivation)(
-    pluginData,
-    { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-    operatorRecovery,
-    true,
-  );
-  if (operatorAction && caller === activation.sourceThreadId)
+  const manualOwner =
+    (childAction || operatorAction) && 'id' in input
+      ? (await store.read()).records.find((record) => record.id === input.id && record.manualIssue)
+      : undefined;
+  if (!retainedWork && !current.policy && !manualOwner) throw new Error('dispatch-policy-disabled');
+  const activation = manualOwner
+    ? { sourceThreadId: manualOwner.sourceThreadId }
+    : await (deps.activation ?? inspectCodexDispatchActivation)(
+        pluginData,
+        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+        operatorRecovery,
+        true,
+      );
+  if (operatorAction && !manualOwner && caller === activation.sourceThreadId)
     throw new Error('dispatch-operator-caller-required');
   if (!operatorAction && !childAction && caller !== activation.sourceThreadId)
     throw new Error('dispatch-intake-caller-required');
-  const admitted = await current.store.read();
+  const admitted = managedIssueState(await current.store.read(), (await store.read()).records);
   if (!admitted) throw new Error('dispatch-policy-reconciliation-required');
+  current.policy ??= retainedIntakePolicy(current.manifest, admitted, 'codex');
   const now = (deps.now ?? Date.now)();
   const waitForLock = childAction || action === 'report';
   return store
@@ -189,12 +200,14 @@ async function executeCodexDispatch(
       }
       const fresh = async () => {
         const selected = await selectCodexIntake(pluginData, deps);
-        const allowed = await (deps.activation ?? inspectCodexDispatchActivation)(
-          pluginData,
-          { codexHome: selected.codexHome, inspectBinding: deps.inspectBinding },
-          operatorRecovery,
-          true,
-        );
+        const allowed = manualOwner
+          ? { sourceThreadId: manualOwner.sourceThreadId }
+          : await (deps.activation ?? inspectCodexDispatchActivation)(
+              pluginData,
+              { codexHome: selected.codexHome, inspectBinding: deps.inspectBinding },
+              operatorRecovery,
+              true,
+            );
         if (
           selected.store.location.scope !== current.store.location.scope ||
           allowed.sourceThreadId !== activation.sourceThreadId
@@ -249,7 +262,7 @@ async function executeCodexDispatch(
       if (action === 'next') return nextDispatch(input, tx);
       if (typeof input.id !== 'string') throw new Error('dispatch-request-invalid');
       const record = state.records.find((entry) => entry.id === input.id);
-      const intake = record && admitted.records.find((entry) => entry.id === record.intakeId);
+      const intake = record && dispatchAdmission(record, admitted.records ?? []);
       if (!record || !intake) throw new Error('dispatch-receipt-missing');
       if (record.reset) throw new Error('dispatch-assessment-reset');
       if (record.retired && action === 'reconcile') {

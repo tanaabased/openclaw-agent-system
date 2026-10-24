@@ -1,7 +1,7 @@
 import type { AssessmentResult } from './assessment-result.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { RoutingDecision } from './model-routing.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import renderAssessmentResult from '../channels/github/presentation/assessment-result.ts';
 import type { WorkflowInstructionsPresentation } from '../channels/github/presentation/workflow-instructions.ts';
 

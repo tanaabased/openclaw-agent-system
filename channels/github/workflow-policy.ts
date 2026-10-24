@@ -33,7 +33,7 @@ export interface GitHubNotificationPolicy {
     mode: 'plan' | 'work' | 'auto';
     assessment?: AssessmentConfiguration;
     implementation?: AssessmentConfiguration;
-    pullRequest?: { recipients?: GitHubPullRequestRecipient[] };
+    pullRequest?: { recipients?: GitHubPullRequestRecipient[]; defaultAssignmentActor?: boolean };
     feedback?: GitHubFeedbackPolicy;
   };
   reviewRequest?: {

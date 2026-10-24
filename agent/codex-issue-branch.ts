@@ -7,7 +7,7 @@ import type { DispatchRecord } from './codex-dispatch-state.ts';
 export default async function codexIssueBranch(input: {
   record: DispatchRecord;
   records: DispatchRecord[];
-  intake: IntakeRecord;
+  intake: Pick<IntakeRecord, 'repository' | 'issue'>;
   workspace: string;
   agentId: string;
   save(): Promise<void>;

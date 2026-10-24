@@ -657,6 +657,10 @@ export default function registerAgentSystemCli(
       'accept installation, including required session dispatch enrollment, without prompting.',
     )
     .option('--non-interactive', 'run without interactive prompts.')
+    .option(
+      '--manual-session-dispatch',
+      'enroll existing session access for manual issue launch without enabling intake.',
+    )
     .option('--skip-setup', 'skip all setup checks and applies with a warning.')
     .option('--skip-setup-host', 'skip host setup checks and applies with a warning.')
     .option('--skip-setup-agent', 'skip agent setup checks and applies with a warning.')
@@ -672,6 +676,7 @@ export default function registerAgentSystemCli(
         json: install.opts().json === true,
         yes: install.opts().yes === true,
         nonInteractive: install.opts().nonInteractive === true,
+        manualSessionDispatch: install.opts().manualSessionDispatch === true,
         skipSetup: install.opts().skipSetup === true,
         skipSetupHost: install.opts().skipSetupHost === true,
         skipSetupAgent: install.opts().skipSetupAgent === true,

@@ -1,3 +1,4 @@
+import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { nativeObject } from './automation-gateway.ts';
@@ -188,11 +189,12 @@ export default async function runCodexNotificationReset(
   const adapter: NotificationResetAdapter = {
     fence: (run) => current.store.exclusive(() => journal.exclusive(() => run(), true)),
     snapshot: async () => {
-      const state = await current.store.read();
+      const records = (await journal.read()).records;
+      const state = managedIssueState(await current.store.read(), records);
       if (!state) throw new Error('notification-reset-intake-missing');
       if (state.agentId !== current.agentId || state.workspaceDir !== current.workspace)
         throw new Error('notification-reset-scope-changed');
-      const contents = { intake: state, records: (await journal.read()).records };
+      const contents = { intake: state, records };
       const saved = await automation();
       if (saved.definition.kind !== 'heartbeat')
         throw new Error('notification-reset-coordinator-missing');
@@ -310,7 +312,7 @@ export default async function runCodexNotificationReset(
       const inventory = parse(record);
       const entry = inventory.records.find(({ id }) => id === resource.identity);
       if (!entry) throw new Error('notification-reset-resource-identity-missing');
-      const item = inventory.intake.records.find(({ id }) => id === entry.intakeId);
+      const item = dispatchAdmission(entry, inventory.intake.records);
       if (!item) throw new Error('notification-reset-intake-identity-missing');
       if (resource.kind === 'pull-request')
         throw new Error('notification-reset-remote-effect-forbidden');

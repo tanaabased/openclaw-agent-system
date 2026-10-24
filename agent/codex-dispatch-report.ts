@@ -1,3 +1,4 @@
+import { dispatchAdmission, type ManagedIssueState as IntakeState } from './managed-issue.ts';
 import providerErrorMessage from '../utils/provider-error-message.ts';
 import intakeDebug from './intake-debug.ts';
 import retirementNotice from './retirement-notice.ts';
@@ -13,7 +14,6 @@ import codexIssueNotice from './codex-issue-notice.ts';
 import intakeAutomationNotice from '../channels/github/presentation/intake-automation-notice.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
-import type { IntakeState } from '../channels/github/intake/record-store.ts';
 import {
   githubNotificationMarkdownText as text,
   githubNotificationQuote,
@@ -165,7 +165,7 @@ export default function prepareDispatchReport(input: {
     : notices.some((notice) => notice.severity === 'warning')
       ? 'warning'
       : 'info';
-  const issueLabel = (intakeId: string) => {
+  const issueLabel = (intakeId: string | undefined) => {
     const item = intake.records.find((entry) => entry.id === intakeId);
     return item
       ? text(item.repository.owner.login + '/' + item.repository.name + '#' + item.issue.number)
@@ -203,7 +203,7 @@ export default function prepareDispatchReport(input: {
   if (recovered) lines.push('The earlier intake problem has cleared.', '');
   for (const record of started)
     lines.push(
-      `- **Issue:** [${issueLabel(record.intakeId)}](codex://threads/${encodeURIComponent(record.threadId!)})`,
+      `- **Issue:** [${issueLabel(record.intakeId ?? record.manualIssue?.id)}](codex://threads/${encodeURIComponent(record.threadId!)})`,
     );
   if (started.length) lines.push('');
   const sentOwners = new Map<string, { record: (typeof active)[number]; count: number }>();
@@ -214,7 +214,7 @@ export default function prepareDispatchReport(input: {
   }
   for (const { record, count } of sentOwners.values())
     lines.push(
-      `- **Feedback delivered to chat:** [${issueLabel(record.intakeId)}](codex://threads/${encodeURIComponent(record.threadId!)}) · ${count} item${count === 1 ? '' : 's'}`,
+      `- **Feedback delivered to chat:** [${issueLabel(record.intakeId ?? record.manualIssue?.id)}](codex://threads/${encodeURIComponent(record.threadId!)}) · ${count} item${count === 1 ? '' : 's'}`,
     );
   if (sent.length) lines.push('');
   for (const notice of notices.slice(0, 12)) {
@@ -228,7 +228,7 @@ export default function prepareDispatchReport(input: {
       continue;
     }
     lines.push(
-      `- **${record ? 'Issue: ' + issueLabel(record.intakeId) : 'Intake'}:** ${notice.summary}`,
+      `- **${record ? 'Issue: ' + issueLabel(record.intakeId ?? record.manualIssue?.id) : 'Intake'}:** ${notice.summary}`,
       `  **Operation:** ${notice.operation}`,
       `  **${notice.severity === 'info' ? 'Next step' : 'Action'}:** ${record?.denial ? 'This action remains held; unrelated eligible intake can continue.' : notice.operation === 'assignment preparation' && record?.result?.outcome === 'operator-setup-blocker' ? text(record.result.remediation) : notice.next}`,
       ...(record ? [`  **Status:** ${workflowStatus(record)}`] : []),
@@ -245,7 +245,7 @@ export default function prepareDispatchReport(input: {
       notice.code === 'dispatch-project-registration-unavailable' &&
       record?.repositoryPreparation?.checkout
     ) {
-      const item = intake.records.find((entry) => entry.id === record.intakeId);
+      const item = dispatchAdmission(record, intake.records ?? []);
       lines.push(
         `  **Project name:** ${text(item?.repository.name ?? 'Repository')}`,
         `  **Folder path:** ${text(record.repositoryPreparation.checkout)}`,
@@ -262,7 +262,7 @@ export default function prepareDispatchReport(input: {
     for (const record of historical.slice(0, 12)) {
       const code = record.capacityObservation?.code ?? 'dispatch-capacity-observation-required';
       lines.push(
-        `- **Issue:** ${issueLabel(record.intakeId)}`,
+        `- **Issue:** ${issueLabel(record.intakeId ?? record.manualIssue?.id)}`,
         `  **Diagnostic:** \`${code}\``,
         `  **Action:** ${workflowRecovery(code)?.next ?? 'Inspect the native creation receipt and source history. Missing or unreadable evidence does not establish inactivity. The owning intake can retry action:reconcile with this retained id.'}`,
       );
@@ -285,7 +285,7 @@ export default function prepareDispatchReport(input: {
         : 'Intake will continue pending assignments on the next check.',
     );
   const diagnostic = intakeDebug(input.debug, state.records, (record) => {
-    const item = intake.records.find((entry) => entry.id === record.intakeId);
+    const item = dispatchAdmission(record, intake.records ?? []);
     return item
       ? item.repository.owner.login + '/' + item.repository.name + '#' + item.issue.number
       : 'Issue';

@@ -119,6 +119,7 @@ export default function decodeGitHubV3(value: ExternalGitHubV3): GitHubNotificat
               ...decodeAssessmentConfiguration(issue.feedback ?? {}),
             },
             pullRequest: {
+              defaultAssignmentActor: true,
               recipients: [
                 { source: 'assignment-actor' as const, roles: ['assignee' as const] },
                 ...reviewers.map((pin) => ({ ...pin, roles: ['reviewer' as const] })),

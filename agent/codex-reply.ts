@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
 
 import { Value } from 'typebox/value';
@@ -131,7 +132,7 @@ export default async function codexReply(
           state.records.map((record) =>
             replyOwnerContext({
               record,
-              intake: admitted?.records.find((entry) => entry.id === record.intakeId),
+              intake: dispatchAdmission(record, admitted?.records ?? []),
               caller,
               custodyInvalid: !record.request,
               delivery: record.delivery,

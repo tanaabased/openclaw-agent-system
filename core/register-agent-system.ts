@@ -695,7 +695,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService,
     toolRegistry,
     async (manifest, workspace, binding) => {
-      if (!binding.sessionKey || !binding.sessionId || !manifest.github?.notifications) return;
+      if (!binding.sessionKey || !binding.sessionId) return;
       const entry = api.runtime.agent.session.getSessionEntry({
         sessionKey: binding.sessionKey,
         readConsistency: 'latest',
