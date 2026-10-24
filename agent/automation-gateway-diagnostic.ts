@@ -1,4 +1,5 @@
 import gatewayErrorDiagnostic, {
+  retainGatewayErrorDiagnostic,
   type GatewayErrorDiagnostic,
 } from '../utils/gateway-error-diagnostic.ts';
 import type { AutomationGateway } from './automation-gateway.ts';
@@ -11,6 +12,49 @@ export interface AutomationGatewayDiagnostic extends GatewayErrorDiagnostic {
     | 'session-key-malformed'
     | 'agent-retired'
     | 'parameters-invalid';
+}
+
+/** missing method evidence is unknown, never copied from arbitrary upstream text. */
+export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorDiagnostic & {
+  method: AutomationGatewayDiagnostic['method'] | null;
+  reason?: AutomationGatewayDiagnostic['reason'];
+} {
+  const input = value && typeof value === 'object' ? value : {};
+  const method =
+    'method' in input
+      ? ((
+          [
+            'sessions.resolve',
+            'sessions.list',
+            'sessions.create',
+            'sessions.patch',
+            'cron.list',
+            'cron.get',
+            'cron.add',
+            'cron.update',
+            'cron.status',
+            'cron.run',
+            'cron.runs',
+          ] as const
+        ).find((method) => method === input.method) ?? null)
+      : null;
+  const diagnostic = { method, ...retainGatewayErrorDiagnostic(input) };
+  const reason =
+    method === 'sessions.resolve' &&
+    diagnostic.category === 'rejected' &&
+    diagnostic.gatewayCode === 'INVALID_REQUEST' &&
+    'reason' in input
+      ? (
+          [
+            'agent-unknown',
+            'agent-session-mismatch',
+            'session-key-malformed',
+            'agent-retired',
+            'parameters-invalid',
+          ] as const
+        ).find((reason) => reason === input.reason)
+      : undefined;
+  return { ...diagnostic, ...(reason ? { reason } : {}) };
 }
 
 export default function automationGatewayDiagnostic(
