@@ -411,6 +411,31 @@ try {
   });
 
   await check(
+    'ship a permission hook that leaves unrelated requests to native approval',
+    async () => {
+      const hooks = JSON.parse(await readFile(join(packageRoot, 'hooks/hooks.json'), 'utf8'));
+      const command = hooks.hooks.PermissionRequest[0].hooks[0].command;
+      const result = await run('/bin/sh', ['-c', command], {
+        env: {
+          ...environment,
+          PLUGIN_DATA: join(temporaryRoot, 'permission-data'),
+          PLUGIN_ROOT: packageRoot,
+        },
+        input:
+          JSON.stringify({
+            hook_event_name: 'PermissionRequest',
+            tool_name: 'Bash',
+            session_id: 'fixture',
+            turn_id: 'fixture-turn',
+            cwd: temporaryRoot,
+            tool_input: { command: 'git push', description: 'approved by operator' },
+          }) + '\n',
+      });
+      assert.deepEqual(JSON.parse(result.output), {});
+    },
+  );
+
+  await check(
     'resolve routing from packaged codex profiles without an openclaw gateway',
     async () => {
       const runtime = join(packageRoot, 'dist', 'codex', 'codex-runtime.js');

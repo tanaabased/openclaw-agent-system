@@ -1,5 +1,17 @@
 {
   "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/dist/codex/codex-runtime.js\" permission-request",
+            "statusMessage": "AGENT SYSTEM: Checking approvals"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "startup|resume|clear|compact",
@@ -7,7 +19,7 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/dist/codex/codex-runtime.js\" session-start",
-            "statusMessage": "Loading Agent System context",
+            "statusMessage": "AGENT SYSTEM: Loading context",
             "additionalContextLimit": 5000
           }
         ]
