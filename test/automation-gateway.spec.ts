@@ -75,7 +75,7 @@ describe('agent/automation-gateway', () => {
       ].includes(method);
       assert.deepEqual(calls.at(-1), [
         method,
-        { timeout: '10000' },
+        {},
         { id: 'fixture' },
         {
           progress: false,

@@ -9,6 +9,7 @@ import type DispatchStore from './dispatch-state.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { issueKey } from './dispatch-pending.ts';
 import issueLaunchTarget from './issue-launch-target.ts';
+import managedOwner from './managed-owner.ts';
 import type { OperatorIssue } from './managed-issue.ts';
 import type {
   GitHubNotificationIntakeClient,
@@ -132,15 +133,25 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
       requiresRevalidation: true,
     };
     const key = issueKey(manual);
-    const matches = state.records.filter((record) => record.issueKey === key);
-    const own = state.records.find((record) => record.threadId === context.binding.session);
-    if (own && own.issueKey !== key) throw new Error('launch-managed-target-mismatch');
-    const active = matches.filter(
-      (record) => !record.retired && !record.retirement && !record.reset && !record.nativeInactive,
+    const ownership = managedOwner(
+      state.records,
+      context.binding.session,
+      (record) => record.issueKey === key,
     );
-    if (active.length > 1) throw new Error('launch-owner-ambiguous');
-    let record = active[0];
-    if (!record && matches.length) throw new Error('launch-owner-inactive');
+    if (ownership.status === 'ambiguous') throw new Error('launch-owner-ambiguous');
+    const own = ownership.caller;
+    if (own && own.issueKey !== key) throw new Error('launch-managed-target-mismatch');
+    let record = ownership.owner;
+    if (
+      ownership.status === 'historical' ||
+      own?.retired ||
+      own?.reset ||
+      own?.retirement ||
+      own?.nativeInactive ||
+      record?.retirement ||
+      record?.nativeInactive
+    )
+      throw new Error('launch-owner-inactive');
     if (action.id && record?.id !== action.id) throw new Error('launch-receipt-mismatch');
     if (record?.threadId) {
       await input.verifyExisting(record);
