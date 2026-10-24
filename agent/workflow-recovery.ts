@@ -19,6 +19,10 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     };
   }
   const reasons: Record<string, [string, string]> = {
+    'assessment-result-incomplete': [
+      'The new assessment is missing its complete source; the result was not recorded.',
+      'Include the complete assessment, evidence, plan or questions in fullAssessment and resubmit the result in this chat. Keep the previous saved result; do not substitute a summary for the source.',
+    ],
     'launch-open-issue-required': [
       'Manual launch requires an accessible open GitHub issue.',
       'Choose an open issue, not a pull request or comment. Preserve any existing preparation; changing the target is not recovery of that attempt.',

@@ -7,6 +7,7 @@ import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import type { ClaimClient } from '../agent/assignment-claim.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
+import pendingPublicResponse from '../agent/pending-public-response.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import codexLiveTurn from '../agent/codex-live-turn.ts';
 import codexImplementationEntry from '../agent/codex-implementation-entry.ts';
@@ -61,6 +62,7 @@ const result = {
   version: 1,
   outcome: 'plan-ready',
   summary: 'Repair the contained behavior.',
+  fullAssessment: 'Complete private assessment, evidence and plan.',
   assessment: 'The user needs a reliable result.',
   planSummary: 'Repair the owner and cover the missing case.',
   plan: 'Update the owner and test its public boundary.',
@@ -589,6 +591,77 @@ describe('agent/codex-dispatch', () => {
     deps.connect = original;
     now = retained.retryAfter!;
     assert.equal((await next()).status, 'routing-required');
+  });
+
+  it('should reject an incomplete codex assessment before recording and compose its corrected source', async () => {
+    const prepared = await prepare();
+    created();
+    const child = { threadId: 'issue-thread' };
+    await request('context', { id: prepared.id }, child);
+    await assert.rejects(
+      request(
+        'result',
+        { id: prepared.id, result: { ...result, fullAssessment: undefined } },
+        child,
+      ),
+      /assessment-result-incomplete/,
+    );
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const rejected = (await store.read()).records[0]!;
+    assert.equal(rejected.result, undefined);
+    assert.equal(rejected.assessmentRevision, undefined);
+    assert.equal(rejected.stageReceipt, undefined);
+    const complete = {
+      ...result,
+      fullAssessment: 'Complete source, evidence and actionable plan.',
+    };
+    assert.equal(
+      (await request('result', { id: prepared.id, result: complete }, child)).status,
+      'recorded',
+    );
+    const authority = {
+      workflow: 'issue-assignment' as const,
+      automationId: 'native-intake',
+      sourceThreadId: 'intake-thread',
+      policyDigest: automationHash(current.manifest.github!.notifications),
+      definitionDigest: 'd'.repeat(64),
+    };
+    deps.activation = async () => ({
+      sourceThreadId: 'intake-thread',
+      schedule: {
+        current: authority,
+        saved: { ...authority, version: 1, capabilities: ['assessment-summary'] },
+      },
+    });
+    deps.summaryAuthority = async () => {};
+    const composed = await request('summary', { id: prepared.id, operation: 'compose' }, child);
+    assert.equal(composed.status, 'composition-ready');
+    assert.equal(composed.privateResponse, complete.fullAssessment);
+  });
+
+  it('should read an older incomplete codex assessment and expose its blocked summary', async () => {
+    const prepared = await prepare();
+    created();
+    const child = { threadId: 'issue-thread' };
+    await request('context', { id: prepared.id }, child);
+    await request('result', { id: prepared.id, result }, child);
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      const saved = state.records[0]!;
+      delete saved.result!.fullAssessment;
+      saved.stageReceipt!.resultDigest = automationHash(saved.result);
+      await save();
+    });
+    const recovered = await request('context', { id: prepared.id }, child);
+    assert.equal((recovered.previousResult as { plan: string }).plan, result.plan);
+    assert.ok(String(recovered.previousPresentation).includes(result.plan));
+    const pending = pendingPublicResponse((await store.read()).records[0]!);
+    assert.equal(pending?.state, 'blocked');
+    assert.ok(
+      pending && 'code' in pending && pending.code === 'assessment-summary-source-unavailable',
+    );
   });
 
   for (const loseResponse of [false, true]) {
@@ -1328,6 +1401,7 @@ describe('agent/codex-dispatch', () => {
       version: 1,
       outcome: 'clarification-needed',
       summary: 'Need a decision.',
+      fullAssessment: 'Complete assessment and unresolved requirement.',
       assessment: 'Missing requirement.',
       questions: ['Which behavior?'],
       evidence: [],
@@ -2784,6 +2858,7 @@ describe('agent/codex-dispatch', () => {
     const common = {
       version: 1,
       summary: 'Additional input is needed.',
+      fullAssessment: 'Complete partial assessment and next action.',
       evidence: result.evidence,
       progress: result.progress,
     };
@@ -3318,6 +3393,7 @@ describe('agent/codex-dispatch', () => {
           outcome: 'clarification-needed',
           summary: 'Decide retention.',
           assessment: 'A choice is needed.',
+          fullAssessment: 'Complete source for the unresolved choice.',
           questions: ['How long?'],
           evidence: result.evidence,
           progress: result.progress,
@@ -3334,6 +3410,27 @@ describe('agent/codex-dispatch', () => {
       /How long|Plan ready|Decide retention|clarification/i,
     );
   });
+  async function retainConfirmedSummary(id: unknown) {
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      const record = state.records.find((entry) => entry.id === id)!;
+      record.assessmentSummaries = [
+        {
+          revision: record.assessmentRevision!,
+          resultDigest: automationHash(record.result),
+          binding: record.stageReceipt!.binding,
+          turnId: record.resultTurnId!,
+          authorityDigest: 'a'.repeat(64),
+          selection: record.assessment!,
+          publicText: 'Delivered assessment.',
+          receipt: { nodeId: 'SUMMARY', databaseId: 7 },
+        },
+      ];
+      await save();
+    });
+  }
+
   async function workIssue(
     assessment: Record<string, unknown> | null = result,
     guidance: string | { file: string } = 'Follow the plan.',
@@ -4272,6 +4369,7 @@ describe('agent/codex-dispatch', () => {
 
   for (const [invalid, error] of [
     [{ ...autoResult, plan: undefined }, 'assessment-result-invalid'],
+    [{ ...autoResult, fullAssessment: undefined }, 'assessment-result-incomplete'],
     [{ ...autoResult, decision: undefined }, 'assessment-decision-required'],
     [
       {
@@ -4279,6 +4377,7 @@ describe('agent/codex-dispatch', () => {
         outcome: 'clarification-needed',
         summary: 'Requirements are unclear.',
         assessment: 'A choice is needed.',
+        fullAssessment: 'Complete source for the unresolved choice.',
         questions: ['Which behavior is intended?'],
         evidence: result.evidence,
         progress: result.progress,
@@ -4393,6 +4492,7 @@ describe('agent/codex-dispatch', () => {
 
   it('should start an existing actionable plan after a live mode edit without recreating its chat', async () => {
     const work = await workIssue(result, 'Follow the plan.', 'company:implement', 'plan');
+    await retainConfirmedSummary(work.id);
     assert.equal((await work.run('next')).status, 'idle');
     const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
     configured.github['issue-assignment'].mode = 'work';
@@ -4613,6 +4713,7 @@ describe('agent/codex-dispatch', () => {
 
   it('should retain an auto decision denial without sending implementation after a mode edit', async () => {
     const work = await workIssue(result, 'Follow the plan.', undefined, 'plan');
+    await retainConfirmedSummary(work.id);
     const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
     configured.github['issue-assignment'].mode = 'auto';
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
@@ -4983,6 +5084,7 @@ describe('agent/codex-dispatch', () => {
 
   it('should isolate a missing implementation skill and reconsider it after repair', async () => {
     const work = await workIssue();
+    await retainConfirmedSummary(work.id);
     const current = await selectCodexIntake(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     await store.exclusive(async (state, save) => {
@@ -5518,6 +5620,7 @@ describe('agent/codex-dispatch', () => {
 
   it('should recover unfinished delivery despite an obsolete complete phase', async () => {
     const work = await workIssue();
+    await retainConfirmedSummary(work.id);
     await work.run('next');
     work.receive();
     await work.run(
@@ -5727,11 +5830,13 @@ describe('agent/codex-dispatch', () => {
       version: 1,
       outcome: 'clarification-needed',
       summary: 'Choose the required behavior.',
+      fullAssessment: 'Complete assessment of the conflicting requirements.',
       assessment: 'The two requested behaviors conflict.',
       questions: ['Which behavior is required?'],
       evidence: [],
       progress: { completed: [], remaining: ['Resolve requirements.'] },
     });
+    await retainConfirmedSummary(work.id);
     assert.equal((await work.run('next')).status, 'idle');
     const records = (await request('inspect')).records as Array<{
       continuation: { phase: string; policyHeld?: string; attempt?: unknown };

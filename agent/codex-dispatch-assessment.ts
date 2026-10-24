@@ -6,7 +6,7 @@ import assessmentSubmission from './assessment-submission.ts';
 import {
   assessmentDecisionMode,
   assessmentResultContextSchema,
-  parseAssessmentResult,
+  parseAssessmentSubmission,
   type AssessmentResult,
 } from './assessment-result.ts';
 import {
@@ -401,7 +401,7 @@ export async function assessDispatch(
     const continuation = record.issueMode === 'auto' ? record.continuation : undefined;
     let result: AssessmentResult;
     try {
-      result = parseAssessmentResult(input.result);
+      result = parseAssessmentSubmission(input.result);
       if (record.issueMode === 'auto' && !result.decision)
         throw new Error('assessment-decision-required');
       if (
@@ -435,6 +435,7 @@ export async function assessDispatch(
       !continuation.binding &&
       [
         'assessment-result-invalid',
+        'assessment-result-incomplete',
         'assessment-decision-required',
         'assessment-decision-conflict',
       ].includes(continuation.code ?? '')

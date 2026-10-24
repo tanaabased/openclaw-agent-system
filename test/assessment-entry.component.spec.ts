@@ -12,12 +12,13 @@ import type { AssessmentEntry } from '../agent/assessment-entry-state.ts';
 import {
   assessmentResultContextSchema,
   type AssessmentResult,
+  type AssessmentSubmission,
 } from '../agent/assessment-result.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
 const target = 'https://github.com/owner/repo/issues/3';
-const ready: AssessmentResult = {
+const ready = {
   version: 1,
   outcome: 'plan-ready',
   summary: 'Assess only.',
@@ -27,7 +28,7 @@ const ready: AssessmentResult = {
   reviewSummary: 'A concise review.',
   evidence: [],
   progress: { completed: [], remaining: [] },
-};
+} satisfies AssessmentSubmission;
 describe('agent/assessment-entry', () => {
   let root: string, deps: AssessmentEntryDependencies, selections: string[], reads: string[];
   let dirty: boolean, revision: string;
@@ -83,6 +84,24 @@ describe('agent/assessment-entry', () => {
   afterEach(async () => rm(root, { recursive: true, force: true }));
   const call = (operation: string, extra: object = {}) =>
     assessmentEntry({ action: 'assessment', operation, target, path: root, ...extra }, deps);
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should reject incomplete direct ${runtime} results before recording`, async () => {
+      deps.binding.runtime = runtime;
+      const context = await call('context');
+      assert.ok('id' in context);
+      await assert.rejects(
+        call('result', { id: context.id, result: { ...ready, fullAssessment: undefined } }),
+        /assessment-result-incomplete/,
+      );
+      await assert.rejects(
+        call('result', { id: context.id, result: { ...ready, fullAssessment: ' ' } }),
+        /assessment-result-incomplete/,
+      );
+      const unchanged = await call('context');
+      assert.ok('previousResult' in unchanged);
+      assert.equal(unchanged.previousResult, undefined);
+      assert.equal((await call('result', { id: context.id, result: ready })).status, 'recorded');
+    });
   it('should select once and retain complete output without workflow authority or invented routing', async () => {
     const context = await call('context');
     assert.ok('id' in context && 'assessment' in context && 'resultSubmission' in context);
@@ -195,7 +214,7 @@ describe('agent/assessment-entry', () => {
     await call('result', { id: first.id, result: ready });
     await assert.rejects(
       call('result', { id: first.id, result: { ...ready, progress: [] } }),
-      /assessment-request-invalid/,
+      /assessment-result-invalid/,
     );
     const correction = await call('context');
     assert.ok('previousResult' in correction);
@@ -203,7 +222,7 @@ describe('agent/assessment-entry', () => {
     assert.equal((await call('result', { id: first.id, result: ready })).status, 'recorded');
     await assert.rejects(
       call('result', { id: first.id, result: { ...ready, fullAssessment: 'x'.repeat(96001) } }),
-      /assessment-request-invalid/,
+      /assessment-result-invalid/,
     );
     deps.assertCurrent = async () => {
       throw new Error('native-input-changed');

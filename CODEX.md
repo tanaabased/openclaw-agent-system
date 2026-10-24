@@ -195,6 +195,10 @@ The issue chat performs read-only assessment and records one of three outcomes:
 `plan-ready`, `clarification-needed`, or `operator-setup-blocker`, with evidence and
 completed/remaining investigation. A user follow-up may revise the assessment in
 the same chat. A result never authorizes implementation or publication.
+New submissions require the complete source in `fullAssessment`; incomplete results
+are rejected before recording. Older saved assessments remain readable. If an older
+assessment lacks summary source or its revision, recovery reports the summary as
+blocked until the missing evidence is restored through the authorized assessment flow.
 
 Use [assessment selection](./MANIFEST.md#assessment-selection) under
 `github.issue-assignment` to select an active skill and optional inline
