@@ -5,6 +5,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { buildAgentMainSessionKey } from 'openclaw/plugin-sdk/routing';
 
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import sessionSettings from './session-settings.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type { DispatchAuthority, DispatchRequest } from '../credentials/session-dispatch.ts';
 
@@ -68,11 +69,14 @@ export async function describeIssueSession(
   // Retained presentation proves session custody only; it grants no new workflow authority.
   if (retained) return row.sessionId;
   match(typeof cwd === 'string' && (await realpath(cwd)) === (await realpath(expected.cwd)), 'cwd');
-  // creation intent is strict; later operator tuning does not change session custody.
-  if (!record.sessionCreation.verified) {
-    match(model === expected.model, 'model');
-    match(effort === expected.thinkingLevel, 'thinkingLevel');
-  }
+  const settings = sessionSettings({
+    requested: { model: expected.model, effort: expected.thinkingLevel },
+    observed: { model, effort },
+    creationVerified: record.sessionCreation.verified === true,
+    requireInitialReadback: true,
+  });
+  if (settings.mismatch)
+    throw new IssueSessionMismatchError(settings.mismatch === 'effort' ? 'thinkingLevel' : 'model');
   match(
     row.parentSessionKey === undefined || row.parentSessionKey === mainParent,
     'parentSessionKey',
@@ -80,11 +84,7 @@ export async function describeIssueSession(
   match(!row.spawnedBy, 'spawnedBy');
   match(row.spawnDepth === undefined || row.spawnDepth === 0, 'spawnDepth');
   match(row.archived !== true && !row.archivedAt, 'archived');
-  record.effective = {
-    status: model && effort ? 'verified' : 'unverified',
-    ...(model ? { model } : {}),
-    ...(effort ? { effort } : {}),
-  };
+  record.effective = settings.effective;
   return row.sessionId;
 }
 

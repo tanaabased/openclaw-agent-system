@@ -565,6 +565,33 @@ describe('agent/codex-feedback', () => {
     assert.ok('eventId' in result && result.eventId);
     return { id, eventId: result.eventId };
   }
+  for (const setting of ['model', 'effort'] as const)
+    it(`should preserve feedback after operator ${setting} tuning without overriding settings`, async () => {
+      const before = (await store.read()).records[0]!;
+      const find = deps.native!.find;
+      let tuned = setting === 'model' ? 'another-model' : 'low';
+      deps.native!.find = async (input) => ({ ...(await find(input))!, [setting]: tuned });
+      const ref = await prepare();
+      const attempt = (await store.read()).records[0]!.feedback!.events[0]!.attempt!;
+      assert.equal('model' in attempt.request, false);
+      assert.equal('thinking' in attempt.request, false);
+      sent = true;
+      turn = 'feedback';
+      tuned = setting === 'model' ? 'third-model' : 'medium';
+      assert.equal((await call('context', ref, true)).status, 'verified');
+      await feedbackMode('work');
+      assert.equal((await call('implementation-context', ref, true)).status, 'verified');
+      const after = (await store.read()).records[0]!;
+      assert.deepEqual(after.request, before.request);
+      assert.equal(after.routing, before.routing);
+      assert.deepEqual(after.effective, {
+        status: 'verified',
+        model: setting === 'model' ? tuned : 'model',
+        effort: setting === 'effort' ? tuned : 'high',
+      });
+      assert.equal(creates, 0);
+    });
+
   it('should preserve feedback receipt custody when the scheduler moves to another chat', async () => {
     const ref = await prepare();
     const original = structuredClone((await store.read()).records[0]!.feedback!.events[0]!.attempt);

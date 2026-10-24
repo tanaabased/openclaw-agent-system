@@ -178,8 +178,11 @@ its retained source. An unavailable checkout or invalid explicit skill/guidance 
 be corrected before retrying in the same chat.
 
 Bounded issue evidence and structured metadata inform the shared model router.
-The saved model and effort are passed explicitly to native creation and retained
-on continuation. Requested settings and verified effective settings remain distinct.
+The saved model and effort are passed explicitly to native creation. After verified
+creation, operators may tune either through native controls in the same issue chat;
+continuation inherits current settings without resetting them. Original routing,
+current native readback, and historical execution evidence remain distinct. Missing
+readback stays unverified; this does not authorize agents to change settings.
 The issue chat performs read-only assessment and records one of three outcomes:
 `plan-ready`, `clarification-needed`, or `operator-setup-blocker`, with evidence and
 completed/remaining investigation. A user follow-up may revise the assessment in

@@ -11,6 +11,7 @@ import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
 import type { DispatchRecord, DispatchState } from './codex-dispatch-state.ts';
 import codexHostAccess from './codex-host-access.ts';
 import { selectCodexIntake } from './codex-intake.ts';
+import codexSessionSettings from './codex-session-settings.ts';
 import dispatchContext from './dispatch-context.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import { feedbackWorkContext, feedbackWorkStarted } from './feedback-work.ts';
@@ -226,8 +227,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
         !record.stageReceipt ||
         record.stageReceipt.resultDigest !== automationHash(record.result) ||
         record.stageReceipt.binding.selectionDigest !== automationHash(record.assessment) ||
-        record.stageReceipt.binding.routingDigest !==
-          automationHash({ routing: record.routing, effective: record.effective }) ||
+        record.stageReceipt.binding.dispatchDigest !== automationHash(record.request) ||
         record.stageReceipt.binding.evidenceDigest !==
           automationHash(JSON.parse(record.context!)) ||
         record.stageReceipt.binding.turnId !== record.resultTurnId ||
@@ -268,9 +268,8 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     if (
       !found ||
       !found.turnId ||
-      (await realpath(found.cwd)) !== (await realpath(record.worktree)) ||
-      found.model !== record.request.model ||
-      found.effort !== record.request.thinking
+      found.id !== record.threadId ||
+      (await realpath(found.cwd)) !== (await realpath(record.worktree))
     )
       throw new Error('continuation-native-binding-mismatch');
     await verifyDispatchWorktree(
@@ -280,6 +279,8 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       git,
       work.attempt ? 'handoff' : undefined,
     );
+    record.effective = codexSessionSettings(record, found);
+    await save();
     if (input.action === 'cancel') {
       work.phase = 'cancelled';
       await save();
@@ -385,8 +386,6 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
         turnId: found.turnId,
         request: {
           threadId: record.threadId,
-          model: record.request.model,
-          thinking: record.request.thinking,
           prompt:
             'Continue the recorded assessment through implementation and managed PR delivery.',
         },
@@ -422,8 +421,6 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
         beforeTurnId: found.turnId,
         request: {
           threadId: record.threadId,
-          model: record.request.model,
-          thinking: record.request.thinking,
           prompt:
             'Continue this managed issue through implementation and pull-request delivery. Reconcile the latest conversation with the retained plan first; honor newer user instructions, including cancellation, before changing files. The activated workflow authorizes this sequence after its recorded assessment decision; do not request routine stage approval. Before editing, call continuationRuntime from the newest trusted Agent System context with JSON on stdin: ' +
             JSON.stringify({ action: 'context', id: record.id }) +
@@ -655,6 +652,8 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
           (deps.now ?? Date.now)(),
         ),
         assessmentSelection: record.assessment,
+        routing: record.routing && JSON.parse(record.routing),
+        effective: record.effective,
         binding: work.binding,
         feedbackWork: feedbackWorkContext(record),
         pendingPublicResponse: pendingPublicResponse(record),
