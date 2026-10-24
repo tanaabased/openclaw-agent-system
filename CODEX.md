@@ -66,6 +66,7 @@ integrations; it is not a universal GitHub restriction.
 - [Git CLI](./skills/git-cli/SKILL.md) — Guide native host Git operations.
 - [GitHub CLI](./skills/github-cli/SKILL.md) — Guide native host GitHub operations.
 - [Install](./skills/install/SKILL.md) — Apply Codex setup and synchronize declared automations through the native app.
+- [Issue launch](./skills/issue-launch/SKILL.md) — Start or reuse the managed issue workflow without assignment or scheduled intake.
 - [Issue assessment](./skills/issue-assessment/SKILL.md) — Assess an admitted issue in its native worktree and retain a plan, questions, or a setup blocker.
 - [Model routing](./skills/model-routing/SKILL.md) — Select model and effort candidates for new tasks.
 

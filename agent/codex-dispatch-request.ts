@@ -38,19 +38,6 @@ const schemas = {
   }),
 };
 export type DispatchAction = keyof typeof schemas;
-const receiptIdActions = new Set<DispatchAction>([
-  'handoff',
-  'reset',
-  'retire',
-  'retry-denied',
-  'prepare',
-  'reconcile',
-  'context',
-  'present',
-  'summary',
-  'result',
-]);
-const receiptIdPattern = /^[a-f0-9]{64}$/u;
 
 /** Validate the command envelope once; resource and result validation remain with their owners. */
 export default function validateDispatchRequest(
@@ -58,13 +45,13 @@ export default function validateDispatchRequest(
   input: unknown,
 ): asserts input is Record<string, unknown> {
   if (!Object.hasOwn(schemas, action)) throw new Error('dispatch-request-invalid');
+  const schema = schemas[action as DispatchAction];
   const request = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
   if (
-    receiptIdActions.has(action as DispatchAction) &&
+    Object.hasOwn(schema.properties, 'id') &&
     Object.hasOwn(request, 'id') &&
-    (typeof request.id !== 'string' || !receiptIdPattern.test(request.id))
+    !Value.Check(id, request.id)
   )
     throw new Error('dispatch-receipt-id-invalid');
-  if (!Value.Check(schemas[action as DispatchAction], input))
-    throw new Error('dispatch-request-invalid');
+  if (!Value.Check(schema, input)) throw new Error('dispatch-request-invalid');
 }

@@ -46,6 +46,7 @@ export interface InstallAgentSystemOptions extends Pick<
   manifestService: Pick<AgentManifestService, 'loadForCommandDirectory'>;
   output: CliOutput;
   rebuildCodexPath?: boolean;
+  manualSessionDispatch?: boolean;
   setExitCode(code: number): void;
   styles?: CliStyles;
   terminalColumns?: number;
@@ -103,7 +104,10 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
   writeCliDiagnosticNotices(options, manifestNotices(result));
   let sessionDispatchConsent = false;
   try {
-    const plan = await options.installService.sessionDispatchPlan?.(result.manifest);
+    const plan = await options.installService.sessionDispatchPlan?.(
+      result.manifest,
+      options.manualSessionDispatch,
+    );
     if (plan?.enrollmentRequired) {
       sessionDispatchConsent = await confirmSessionDispatch(
         { ...options, runtime: 'openclaw' },
@@ -160,6 +164,7 @@ async function installAgentSystem(options: InstallAgentSystemOptions): Promise<v
     const selection = selectedSetupPhases(options);
     const installed = await options.installService.install({
       runtime: 'openclaw',
+      ...(options.manualSessionDispatch ? { manualSessionDispatch: true } : {}),
       ...(sessionDispatchConsent
         ? {
             sessionDispatchConsent: true,

@@ -429,6 +429,45 @@ describe('agent/session-dispatch-requirements', () => {
     assert.deepEqual(sessionDispatchRequirements(value), []);
   });
 
+  it('should require explicit enrollment consent for manual launch without notification configuration', async () => {
+    const value: AgentManifest = { schemaVersion: 1, agent: { id: 'test' } };
+    assert.deepEqual(sessionDispatchRequirements(value), []);
+    assert.deepEqual(sessionDispatchRequirements(value, true), [
+      { id: 'github-issue-launch', name: 'manual issue launch' },
+    ]);
+    let applied = false;
+    const install = new AgentInstallService({
+      sessionDispatch: { needsEnrollment: async () => true },
+      lifecycleRegistry: {
+        reconcile: async (input) => {
+          applied = true;
+          assert.equal(input.manualSessionDispatch, true);
+          assert.equal(input.sessionDispatchConsent, true);
+          return { outcomes: [], warnings: [] };
+        },
+      },
+    });
+    await assert.rejects(
+      install.install({
+        manifest: value,
+        workspaceDir: '/test',
+        runtime: 'openclaw',
+        manualSessionDispatch: true,
+      }),
+      { code: 'session-dispatch-approval-required' },
+    );
+    assert.equal(applied, false);
+    await install.install({
+      manifest: value,
+      workspaceDir: '/test',
+      runtime: 'openclaw',
+      manualSessionDispatch: true,
+      sessionDispatchConsent: true,
+    });
+    assert.equal(applied, true);
+    assert.equal(value.github, undefined);
+  });
+
   it('should skip storage and enrollment when no consumer requires dispatch', async () => {
     const f = fixture();
     const value: AgentManifest = { schemaVersion: 1, agent: { id: 'test' } };

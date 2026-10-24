@@ -12,7 +12,10 @@ export default function createSessionDispatchLifecycle(
     id: 'session-dispatch',
     isConfigured: () => true,
     async inspect(context: AgentSystemLifecycleExecutionContext) {
-      if (context.runtime !== 'openclaw' || !sessionDispatchRequirements(context.manifest).length)
+      if (
+        context.runtime !== 'openclaw' ||
+        !sessionDispatchRequirements(context.manifest, context.manualSessionDispatch).length
+      )
         return [
           {
             code: 'session-dispatch-not-required',
@@ -24,7 +27,10 @@ export default function createSessionDispatchLifecycle(
       return [await service.inspect()];
     },
     async reconcile(context: AgentSystemLifecycleExecutionContext) {
-      if (context.runtime !== 'openclaw' || !sessionDispatchRequirements(context.manifest).length)
+      if (
+        context.runtime !== 'openclaw' ||
+        !sessionDispatchRequirements(context.manifest, context.manualSessionDispatch).length
+      )
         return {
           outcomes: [
             {

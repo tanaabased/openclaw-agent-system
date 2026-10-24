@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
 import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import assignmentCard from '../channels/github/presentation/assignment-card.ts';
 import { githubNotificationQuote } from '../channels/github/presentation/card.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
@@ -53,6 +53,7 @@ export async function recover(
   save: () => Promise<void>,
   threadId = record.threadId ?? record.receiptThreadId,
   purpose: 'assessment' | 'handoff' = 'assessment',
+  acceptClaim = true,
 ) {
   if (!record.request || !record.project) throw new Error('dispatch-creation-not-prepared');
   const found = await withNative(current, deps, (native) =>
@@ -79,7 +80,13 @@ export async function recover(
     delete record.stageReceipt;
   }
   await save();
-  if (deps.claims && record.claimId && !record.claimAccepted) {
+  if (
+    acceptClaim &&
+    !('initiation' in intake) &&
+    deps.claims &&
+    record.claimId &&
+    !record.claimAccepted
+  ) {
     const { client } = await revalidateDispatchAssignment(
       current,
       intake,
@@ -101,6 +108,7 @@ async function selectClaim(
   client: Awaited<ReturnType<typeof revalidateDispatchAssignment>>['client'],
   tx: CodexDispatchTransaction,
 ) {
+  if ('initiation' in intake) return;
   const { state, deps, current, save } = tx;
   if (!deps.claims) {
     await assertDormantAssignmentUnclaimed(deps.claimStore, intake);
@@ -110,7 +118,7 @@ async function selectClaim(
     intake,
     client,
     threadId: tx.caller,
-    turnId: state.run!.id,
+    turnId: tx.operatorInput?.turnId ?? state.run!.id,
     hasCapacity:
       codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 3).available > 0,
   });
@@ -121,7 +129,7 @@ async function selectClaim(
     await save();
     return;
   }
-  record.claimPass = state.run!.id;
+  record.claimPass = tx.operatorInput?.turnId ?? state.run!.id;
   await save();
   return {
     status: 'claim-waiting' as const,
@@ -141,10 +149,12 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
         label: repository(intake) + '#' + intake.issue.number,
         url: issueUrl(intake),
       },
-      sender: {
-        label: intake.assignment.actor.login,
-        url: 'https://github.com/' + intake.assignment.actor.login,
-      },
+      sender: intake.assignment
+        ? {
+            label: intake.assignment.actor.login,
+            url: 'https://github.com/' + intake.assignment.actor.login,
+          }
+        : undefined,
     },
     'Assess the requested outcome and prepare a plan. After recording and presenting it, handle its host-verified summary and follow the returned handoff in this same turn.',
   );
@@ -194,7 +204,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
   for (const record of observations) {
     try {
       await withNative(current, deps, (native) =>
-        reconcileCodexCapacity(record, native, state.run!.id, now),
+        reconcileCodexCapacity(record, native, tx.operatorInput?.turnId ?? state.run!.id, now),
       );
     } catch (error) {
       // failure to open the native reader neither proves inactivity nor stops unrelated work.
@@ -221,7 +231,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
           record.result.code === 'dispatch-assignment-superseded')) &&
       (record.retryAfter ?? 0) <= now,
   )) {
-    const intake = admitted.records.find((entry) => entry.id === pending.intakeId);
+    const intake = dispatchAdmission(pending, admitted.records);
     if (!intake) return fail(pending, new Error('dispatch-intake-record-missing'));
     try {
       await revalidateDispatchAssignment(current, intake, deps, signal);
@@ -259,7 +269,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
                 turnId: pending.preparationTurnId,
                 prompt: pending.request!.prompt,
               },
-              state.run!.id,
+              tx.operatorInput?.turnId ?? state.run!.id,
             ),
           );
           if (proof) {
@@ -296,7 +306,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
       ({ record, intake }) =>
         !record?.denial &&
         !record?.request &&
-        (!deps.claims || record?.claimPass !== state.run!.id) &&
+        (!deps.claims || record?.claimPass !== (tx.operatorInput?.turnId ?? state.run!.id)) &&
         (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
         (record?.retryAfter ?? 0) <= now,
     )?.intake;
@@ -329,8 +339,19 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     };
     state.records.push(record);
   }
+  return prepareIssueProject(input, record, intake, tx);
+}
+
+export async function prepareIssueProject(
+  input: Record<string, unknown>,
+  record: DispatchRecord,
+  intake: IntakeRecord,
+  tx: CodexDispatchTransaction,
+) {
+  const { current, deps, state, activation, now, signal, save, fresh } = tx;
+  const fail = (record: DispatchRecord, error: unknown) => failDispatch(record, error, tx);
   try {
-    record.intakeId = intake.id;
+    if (!record.manualIssue) record.intakeId = intake.id;
     const { client, repo } = await revalidateDispatchAssignment(current, intake, deps, signal);
     const waiting = await selectClaim(record, intake, client, tx);
     if (waiting) return waiting;
@@ -430,25 +451,29 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     record.context = JSON.stringify(snapshot);
     record.manifestDigest = current.digest;
     record.phase = 'routing';
-    record.preparationObservation = {
-      sourceThreadId: activation.sourceThreadId,
-      turnId: state.run!.id,
-      intakeId: intake.id,
-      at: now,
-      digest: automationHash({
-        context: record.context,
-        project: record.project,
-        manifest: record.manifestDigest,
-      }),
-      runtime: {
-        nodeExecutable: process.execPath,
-        entrypoint: resolve(process.argv[1]!),
-        pluginData: tx.pluginData,
-      },
-      afterItemId: await withNative(current, deps, (native) =>
-        native.intakeBoundary(activation.sourceThreadId, state.run!.id),
-      ),
-    };
+    if (!record.manualIssue)
+      record.preparationObservation = {
+        sourceThreadId: activation.sourceThreadId,
+        turnId: tx.operatorInput?.turnId ?? state.run!.id,
+        intakeId: intake.id,
+        at: now,
+        digest: automationHash({
+          context: record.context,
+          project: record.project,
+          manifest: record.manifestDigest,
+        }),
+        runtime: {
+          nodeExecutable: process.execPath,
+          entrypoint: resolve(process.argv[1]!),
+          pluginData: tx.pluginData,
+        },
+        afterItemId: await withNative(current, deps, (native) =>
+          native.intakeBoundary(
+            activation.sourceThreadId,
+            tx.operatorInput?.turnId ?? state.run!.id,
+          ),
+        ),
+      };
     delete record.result;
     delete record.stageReceipt;
     await fresh();
@@ -483,6 +508,12 @@ export async function prepareDispatch(
 ) {
   const { pluginData, current, deps, state, now, signal, save, fresh } = tx;
   const fail = (record: DispatchRecord, error: unknown) => failDispatch(record, error, tx);
+  if (
+    record.manualIssue &&
+    !record.request &&
+    !codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 3).available
+  )
+    throw new Error('dispatch-at-capacity');
   if (record.denial) throw new Error('dispatch-denial-held');
   if (record.request)
     return { status: 'reconcile-required' as const, changed: false, id: record.id };
@@ -513,6 +544,9 @@ export async function prepareDispatch(
         context:
           record.context.slice(0, 17950) + '\n[Bounded routing snapshot; full evidence retained.]',
         assessment: dispatchRoutingAssessment(input.assessment, metadata),
+        ...(record.manualIssue?.selections?.routing
+          ? { overrides: record.manualIssue.selections.routing }
+          : {}),
         ...(metadata?.status === 'verified'
           ? { evidence: { complexity: metadata.value, source: metadata.source } }
           : {}),
@@ -537,18 +571,25 @@ export async function prepareDispatch(
         withNative(current, deps, (native) => native.assessmentSkill(record.project!.path, id)),
     });
     record.assessment = selected.selection;
-    record.issueMode = current.manifest.github?.notifications?.issueAssignment?.mode ?? 'auto';
+    record.issueMode =
+      record.manualIssue?.selections?.mode ??
+      current.manifest.github?.notifications?.issueAssignment?.mode ??
+      'auto';
     if (record.issueMode === 'work' || record.issueMode === 'auto') {
-      await (deps.activation ?? inspectCodexDispatchActivation)(
-        pluginData,
-        { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-        false,
-        true,
-        'implementation',
-      );
+      if (!record.manualIssue)
+        await (deps.activation ?? inspectCodexDispatchActivation)(
+          pluginData,
+          { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+          false,
+          true,
+          'implementation',
+        );
       const implementation = await selectWorkflowStage({
         stage: 'implementation',
-        configuration: current.policy!.policy.issueAssignment!.implementation,
+        configuration: {
+          ...current.policy?.policy.issueAssignment?.implementation,
+          ...record.manualIssue?.selections?.implementation,
+        },
         workspace: current.workspace,
         observedAt: now,
         resolveSkill: (id) =>
@@ -575,10 +616,10 @@ export async function prepareDispatch(
         ' Requested selection; effective settings await native verification.',
     );
     record.createdAt = now;
-    record.preparationTurnId = state.run!.id;
+    record.preparationTurnId = tx.operatorInput?.turnId ?? state.run!.id;
     record.sourceThreadId = tx.activation.sourceThreadId;
     record.creationAfterItemId = await withNative(current, deps, (native) =>
-      native.intakeBoundary(record.sourceThreadId, state.run!.id),
+      native.intakeBoundary(record.sourceThreadId, tx.operatorInput?.turnId ?? state.run!.id),
     );
     delete record.preparationObservation;
     delete record.retry;

@@ -32,6 +32,24 @@ const skill = {
   digest: 'd'.repeat(64),
 };
 describe('agent/feedback-work', () => {
+  it('should preserve an explicit manual plan mode while using the shared feedback transition', () => {
+    const policy = intakeFixture().policy;
+    const record = { manualIssue: { selections: { mode: 'plan' as const } } };
+    assert.equal(
+      feedbackMode(record, {
+        ...policy,
+        issueAssignment: { ...policy.issueAssignment!, mode: 'work' },
+      }),
+      'plan',
+    );
+    assert.equal(
+      feedbackMode(
+        { ...record, progression: { stage: 'implementation', via: 'operator', enteredAt: 1 } },
+        policy,
+      ),
+      'work',
+    );
+  });
   it('should preserve earlier plan revisions and partial work before interpreting another message', () => {
     const revision = {
       ...eventFixture(),

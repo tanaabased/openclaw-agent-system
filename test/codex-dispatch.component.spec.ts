@@ -308,6 +308,19 @@ describe('agent/codex-dispatch', () => {
       request('context', { id: 'x'.repeat(100) }, child),
       /dispatch-receipt-id-invalid/,
     );
+    await assert.rejects(
+      request(
+        'summary',
+        {
+          id: 'x'.repeat(100),
+          operation: 'candidate',
+          digest: 'a'.repeat(64),
+          publicText: 'A concise public assessment summary.',
+        },
+        child,
+      ),
+      /dispatch-receipt-id-invalid/,
+    );
     assert.deepEqual(await request('inspect'), before);
     await assert.rejects(
       request('context', { id: 'a'.repeat(64) }, child),
@@ -5978,5 +5991,89 @@ describe('agent/codex-dispatch', () => {
       /delivery-invalid/,
     );
     assert.equal(calls, 1);
+  });
+  it('should prepare and reconcile manual issue work without assignment or scheduled activation', async () => {
+    const selected = await selectCodexIntake(pluginData, deps);
+    await rm(selected.store.location.path);
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({ ...manifest, github: { username: 'receiver' } }),
+    );
+    fixture.item.assignees = [];
+    fixture.client.listAssignmentEvents = async () => {
+      throw new Error('unexpected assignment history');
+    };
+    deps.threadId = 'operator';
+    deps.activation = async () => {
+      throw new Error('manual work must not require a schedule');
+    };
+    deps.replyConnection = async () => ({
+      close: async () => {},
+      request: async (method) => {
+        if (method === 'thread/read') return { thread: { id: 'operator' } };
+        if (method === 'thread/turns/list')
+          return { data: [{ id: 'operator-turn', status: 'inProgress' }] };
+        if (method === 'thread/items/list')
+          return {
+            data: [
+              {
+                turnId: 'operator-turn',
+                item: { type: 'userMessage', id: 'manual-input', content: 'Work on owner/repo#3' },
+              },
+            ],
+          };
+        throw new Error('unexpected native method: ' + method);
+      },
+    });
+    const target = 'owner/repo#3';
+    const first = await request('launch', { target, operation: 'context', mode: 'work' });
+    assert.equal(first.status, 'routing-required');
+    const project = await request('launch', {
+      target,
+      operation: 'prepare',
+      id: first.id,
+      projects,
+    });
+    assert.equal(project.status, 'routing-required', JSON.stringify(project));
+    const prepared = await request('launch', {
+      target,
+      operation: 'prepare',
+      id: first.id,
+      projects,
+      digest: project.digest,
+      assessment: { complexity: 'medium', reason: 'Reuse existing issue work.' },
+      title: 'MANUAL ISSUE',
+    });
+    assert.equal(prepared.status, 'prepared', JSON.stringify(prepared));
+    assert.ok(prepared.request);
+    created();
+    const recovered = await request('launch', { target, operation: 'reconcile', id: first.id });
+    assert.equal(recovered.status, 'existing', JSON.stringify(recovered));
+    const state = await new CodexDispatchStore(pluginData, selected.store.location.scope).read();
+    assert.equal(state.records.length, 1);
+    assert.equal(state.records[0]!.intakeId, undefined);
+    assert.equal(state.records[0]!.issueMode, 'work');
+    assert.equal(state.run, undefined);
+    const nativeContext = await request('context', { id: first.id }, { threadId: native!.id });
+    assert.equal(nativeContext.status, 'verified', JSON.stringify(nativeContext));
+    const submitted = await request('result', { id: first.id, result }, { threadId: native!.id });
+    assert.equal(submitted.status, 'recorded', JSON.stringify(submitted));
+    const continuation = await runCodexContinuation(
+      pluginData,
+      { action: 'context', id: String(first.id) },
+      {
+        ...deps,
+        threadId: native!.id,
+        continuationNative: async (_source, attempt) => ({
+          status: 'verified',
+          turnId: attempt.turnId!,
+          ended: false,
+        }),
+      },
+    );
+    assert.equal(continuation.status, 'verified', JSON.stringify(continuation));
+    assert.ok('issueStage' in continuation && continuation.issueStage === 'implementation');
+    const retirement = await request('retire', { id: first.id }, { threadId: 'operator' });
+    assert.equal(retirement.status, 'retire-available', JSON.stringify(retirement));
   });
 });

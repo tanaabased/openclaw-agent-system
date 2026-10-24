@@ -1,4 +1,4 @@
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { automationHash } from './automation-hash.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 
@@ -12,7 +12,7 @@ export default function assessmentOwner<
   target: { repository: string; number: number },
 ) {
   const matching = records.filter((record) => {
-    const item = admitted.find((entry) => entry.id === record.intakeId);
+    const item = dispatchAdmission(record, admitted);
     if (!item) throw new Error('assessment-managed-admission-missing');
     return (
       `${item.repository.owner.login}/${item.repository.name}`.toLowerCase() ===
@@ -43,6 +43,7 @@ export default function assessmentOwner<
     digest: automationHash({
       id: record.id,
       intakeId: record.intakeId,
+      manualIssue: record.manualIssue,
       threadId: record.threadId,
       request: record.request,
       worktree: record.worktree,

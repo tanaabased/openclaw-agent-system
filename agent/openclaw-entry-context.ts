@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import type { ImplementationResult } from './implementation-result.ts';
 import managedImplementationRoute from './managed-implementation-route.ts';
 import { realpath } from 'node:fs/promises';
@@ -93,8 +94,7 @@ export default async function openClawEntryContext<T>(
     );
     if (records.length > 1) throw new Error('assessment-managed-owner-ambiguous');
     const admission =
-      records[0] &&
-      (await current.store.read())?.records.find((record) => record.id === records[0]!.intakeId);
+      records[0] && dispatchAdmission(records[0], (await current.store.read())?.records ?? []);
     if (records.length && !admission) throw new Error('assessment-managed-admission-missing');
     const currentTarget = admission
       ? `https://github.com/${admission.repository.owner.login}/${admission.repository.name}/issues/${admission.issue.number}`

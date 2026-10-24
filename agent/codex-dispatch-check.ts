@@ -1,6 +1,6 @@
 import { automationHash } from './automation-hash.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
-import type { IntakeState } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssueState as IntakeState } from './managed-issue.ts';
 
 /** Reporting and delivery do not change which assignments the last dispatch check covered. */
 export function dispatchCheckDigest(state: DispatchState, intake: IntakeState) {

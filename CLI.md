@@ -619,20 +619,21 @@ Reconcile the workspace agent's identity, models, memory, paths, capabilities, a
 
 ### Options
 
-| Option or argument     | Required | Default | Description                                                                                          |
-| ---------------------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| `--json`               | no       | off     | Write one undecorated structured result to stdout.                                                   |
-| `--non-interactive`    | no       | off     | Run without prompts, implying setup consent.                                                         |
-| `--rebuild-codex-path` | no       | off     | Replace the saved Codex PATH baseline with this process environment; see [Path](./MANIFEST.md#path). |
-| `--skip-setup`         | no       | off     | Skip all setup checks and applies; other components still install.                                   |
-| `--skip-setup-agent`   | no       | off     | Skip agent setup checks and applies; other components still install.                                 |
-| `--skip-setup-host`    | no       | off     | Skip host setup checks and applies; other components still install.                                  |
-| `--yes`                | no       | off     | Accept installation, including required session dispatch enrollment, without prompting.              |
+| Option or argument          | Required | Default | Description                                                                                          |
+| --------------------------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| `--json`                    | no       | off     | Write one undecorated structured result to stdout.                                                   |
+| `--non-interactive`         | no       | off     | Run without prompts, implying setup consent.                                                         |
+| `--rebuild-codex-path`      | no       | off     | Replace the saved Codex PATH baseline with this process environment; see [Path](./MANIFEST.md#path). |
+| `--manual-session-dispatch` | no       | off     | Enroll session access for manual issue launch with explicit consent, without enabling intake.        |
+| `--skip-setup`              | no       | off     | Skip all setup checks and applies; other components still install.                                   |
+| `--skip-setup-agent`        | no       | off     | Skip agent setup checks and applies; other components still install.                                 |
+| `--skip-setup-host`         | no       | off     | Skip host setup checks and applies; other components still install.                                  |
+| `--yes`                     | no       | off     | Accept installation, including required session dispatch enrollment, without prompting.              |
 
 ### Usage
 
 ```text
-openclaw agent-system install [--yes] [--non-interactive] [--skip-setup] [--skip-setup-host] [--skip-setup-agent] [--rebuild-codex-path] [--json]
+openclaw agent-system install [--yes] [--non-interactive] [--manual-session-dispatch] [--skip-setup] [--skip-setup-host] [--skip-setup-agent] [--rebuild-codex-path] [--json]
 ```
 
 ```sh

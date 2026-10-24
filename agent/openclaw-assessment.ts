@@ -22,7 +22,7 @@ import {
   sessionObject,
   type DispatchCaller,
 } from './openclaw-session-create.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { AssessmentConfiguration } from '../manifest/assessment-schema.ts';
 
@@ -43,10 +43,12 @@ export function assessmentTurnMessage(
             label: `${input.intake.repository.owner.login}/${input.intake.repository.name}#${input.intake.issue.number}`,
             url: `https://github.com/${input.intake.repository.owner.login}/${input.intake.repository.name}/issues/${input.intake.issue.number}`,
           },
-          sender: {
-            label: input.intake.assignment.actor.login,
-            url: `https://github.com/${input.intake.assignment.actor.login}`,
-          },
+          sender: input.intake.assignment
+            ? {
+                label: input.intake.assignment.actor.login,
+                url: 'https://github.com/' + input.intake.assignment.actor.login,
+              }
+            : undefined,
         },
         'Assess this issue and prepare a plan, then follow the verified handoff for its configured mode.',
       )
@@ -198,7 +200,7 @@ export async function issueAssessmentAction(input: {
             previousResult: record.result,
             handoff: assessmentHandoff(
               record,
-              input.policy?.issueAssignment?.mode ?? 'auto',
+              record.manualIssue?.selections?.mode ?? input.policy?.issueAssignment?.mode ?? 'auto',
               'openclaw',
             ),
             previousResultDigest: automationHash(record.result),
@@ -218,7 +220,7 @@ export async function issueAssessmentAction(input: {
               : {}),
           }
         : {}),
-      mode: input.policy?.issueAssignment?.mode ?? 'auto',
+      mode: record.manualIssue?.selections?.mode ?? input.policy?.issueAssignment?.mode ?? 'auto',
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
       resultSubmission: assessmentSubmission({
@@ -228,7 +230,8 @@ export async function issueAssessmentAction(input: {
       }),
       instructions:
         'Read feedbackWork; retained history grants no authority. ' +
-        (input.policy?.issueAssignment?.mode === 'auto'
+        ((record.manualIssue?.selections?.mode ?? input.policy?.issueAssignment?.mode ?? 'auto') ===
+        'auto'
           ? 'Auto requires result.decision with mode plan|work and reasons; work requires plan-ready. '
           : '') +
         assessmentInstructions +
@@ -249,7 +252,11 @@ export async function issueAssessmentAction(input: {
   const candidate = sessionObject(input.result);
   if (typeof candidate.fullAssessment !== 'string' || !candidate.fullAssessment.trim())
     throw new Error('assessment-result-incomplete');
-  if (input.policy?.issueAssignment?.mode === 'auto' && !candidate.decision)
+  if (
+    (record.manualIssue?.selections?.mode ?? input.policy?.issueAssignment?.mode ?? 'auto') ===
+      'auto' &&
+    !candidate.decision
+  )
     throw new Error('assessment-decision-required');
   const previous =
     record.result && record.stageReceipt && record.resultTurnId
@@ -301,7 +308,11 @@ export async function issueAssessmentAction(input: {
     id: record.id,
     outcome: result.outcome,
     previousResultDigest: automationHash(result),
-    handoff: assessmentHandoff(record, input.policy?.issueAssignment?.mode ?? 'auto', 'openclaw'),
+    handoff: assessmentHandoff(
+      record,
+      record.manualIssue?.selections?.mode ?? input.policy?.issueAssignment?.mode ?? 'auto',
+      'openclaw',
+    ),
     presentation,
     instruction: assessmentSummaryInstructions('openclaw'),
   };

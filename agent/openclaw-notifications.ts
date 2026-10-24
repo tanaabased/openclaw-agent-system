@@ -14,7 +14,7 @@ import {
   type GitHubNotificationWaitTarget,
   type GitHubNotificationWaitResult,
 } from '../channels/github/cli/contracts.ts';
-import type { IntakeState } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssueState as IntakeState } from './managed-issue.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import workflowStatus from './workflow-status.ts';
 import abortableDelay from '../utils/abortable-delay.ts';

@@ -1,4 +1,4 @@
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { reconcileOpenClawTurn } from './openclaw-turn.ts';
 import { assessmentTurnMessage } from './openclaw-assessment.ts';
 

@@ -3,7 +3,7 @@ import { reconcileAnnouncement } from './delivery-announcement.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import redactFeedback from './feedback-redaction.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
 
 /** identify retained public output without publishing or authorizing another reply. */

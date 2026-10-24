@@ -828,7 +828,10 @@ describe('cli/register', () => {
     const credentials = root.commands.find((command) => command.name() === 'credentials')!;
     const set = credentials.commands.find((command) => command.name() === 'set')!;
     assert.match(install.helpInformation(), /^Usage:/u);
-    assert.match(install.helpInformation(), /including required session dispatch\s+enrollment/u);
+    assert.match(
+      install.helpInformation(),
+      /including\s+required\s+session\s+dispatch\s+enrollment/u,
+    );
     assert.match(doctor.helpInformation(), /inspect agent system agent/u);
     assert.match(
       set.helpInformation(),

@@ -1,0 +1,29 @@
+schema-version: 1
+
+agent:
+  id: issue-launch-tanaabot
+  name: Notification Tanaabot
+  email: tanaabot@tanaab.dev
+
+models:
+  default:
+    model: aimock/gpt-5.5
+    effort: medium
+
+environment:
+  set:
+    GH_TOKEN_TANAABOT: ${GH_TOKEN_TANAABOT}
+  required: [GH_TOKEN_TANAABOT]
+
+git:
+  worktrees: {}
+  ssh:
+    private-keys:
+      path: keys/id_ed25519
+
+github:
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+  ssh-keys:
+    path: keys/id_ed25519.pub
+    title: agent-system-issue-launch-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__

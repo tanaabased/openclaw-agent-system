@@ -1,5 +1,6 @@
 const actions: Record<string, readonly string[]> = {
   dispatch: [
+    'launch',
     'assessment',
     'implementation',
     'inspect',
@@ -55,7 +56,8 @@ export default function codexRuntimeRequest(route: string, args: string[], input
   if (!action) {
     if (
       (route === 'feedback' && request.action === 'reply') ||
-      (route === 'dispatch' && ['assessment', 'implementation'].includes(String(request.action)))
+      (route === 'dispatch' &&
+        ['assessment', 'implementation', 'launch'].includes(String(request.action)))
     )
       throw new Error('workflow-command-operation-required');
     return { pluginData: args[index + 1]!, request };
@@ -93,12 +95,15 @@ export default function codexRuntimeRequest(route: string, args: string[], input
   } else if (operation) {
     if (
       !(
-        (route === 'dispatch' && ['summary', 'assessment', 'implementation'].includes(action)) ||
+        (route === 'dispatch' &&
+          ['summary', 'assessment', 'implementation', 'launch'].includes(action)) ||
         (route === 'feedback' && action === 'reply')
       ) ||
       !(
-        ['assessment', 'implementation'].includes(action)
-          ? ['context', 'result', 'present']
+        ['assessment', 'implementation', 'launch'].includes(action)
+          ? action === 'launch'
+            ? ['context', 'prepare', 'reconcile']
+            : ['context', 'result', 'present']
           : action === 'reply'
             ? ['context', 'compose', 'candidate', 'publish', 'reconcile']
             : ['compose', 'candidate', 'publish', 'reconcile']
@@ -109,7 +114,8 @@ export default function codexRuntimeRequest(route: string, args: string[], input
       throw new Error('workflow-command-action-mismatch');
     request.operation = operation;
   } else if (
-    (route === 'dispatch' && ['summary', 'assessment', 'implementation'].includes(action)) ||
+    (route === 'dispatch' &&
+      ['summary', 'assessment', 'implementation', 'launch'].includes(action)) ||
     (route === 'feedback' && action === 'reply')
   ) {
     throw new Error('workflow-command-operation-required');
