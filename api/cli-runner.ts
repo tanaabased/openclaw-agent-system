@@ -7,10 +7,9 @@ import {
   assertPrivateStateLocksHeld,
   privateStateLockSignal,
 } from '../core/private-state-lock-context.ts';
+import { commandTerminationGraceMs } from './cli-budget.ts';
 import isPathContained from '../utils/is-path-contained.ts';
 import type { AgentSystemCliRunner } from './types.ts';
-
-const forcedTerminationGraceMs = 100;
 
 async function executableCandidate(path: string): Promise<string | undefined> {
   try {
@@ -80,7 +79,7 @@ export default function createToolCliRunner(
       cwd: request.cwd,
       env: request.environment,
       input: request.stdin ?? '',
-      killGraceMs: forcedTerminationGraceMs,
+      killGraceMs: commandTerminationGraceMs,
       killProcessTree: true,
       maxCombinedOutputBytes: request.maxOutputBytes,
       maxOutputBytes: request.maxOutputBytes,

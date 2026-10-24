@@ -2,6 +2,8 @@ import { homedir } from 'node:os';
 import { realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+import gitCommandTimeout from '../tools/git/command-timeout.ts';
+import { commandTerminationGraceMs } from '../api/cli-budget.ts';
 import { nativeObject } from './automation-gateway.ts';
 import type { DispatchProject } from './codex-dispatch-state.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
@@ -24,10 +26,10 @@ export const dispatchGit: DispatchGit = async (cwd, argv, signal) => {
     env: { GIT_TERMINAL_PROMPT: '0' },
     input: '',
     ...(signal ? { signal } : {}),
-    timeoutMs: 60000,
+    timeoutMs: gitCommandTimeout(argv),
     maxOutputBytes: 65536,
     maxCombinedOutputBytes: 131072,
-    killGraceMs: 1000,
+    killGraceMs: commandTerminationGraceMs,
     killProcessTree: true,
     outputCapture: 'head',
   });

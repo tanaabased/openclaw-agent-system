@@ -66,7 +66,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/tanaabot"
 target=$(jq -er .html_url "$TMPDIR/manual-issue.json")
 params=$(jq -nc --arg target "$target" '{sessionKey:"agent:issue-launch-tanaabot:manual-launch",agentId:"issue-launch-tanaabot",message:("Manual issue launch target: " + $target),deliver:false,idempotencyKey:"manual-launch-first"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "manual-launch-first"'
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" manual-launch-first 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" manual-launch-first 600000
 node --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
@@ -95,7 +95,7 @@ assert.equal(record.effective.status, 'verified');
 writeFileSync(process.env.TMPDIR + '/manual-launch-evidence.json', JSON.stringify(record));
 NODE
 child_run=$(jq -er .assessmentTurn.runId "$TMPDIR/manual-launch-evidence.json")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$child_run" 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$child_run" 600000
 number=$(jq -er .number "$TMPDIR/manual-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/emori"
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number" | jq -e '(.assignees | length) == 0'
@@ -107,7 +107,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/tanaabot"
 target=$(jq -er .html_url "$TMPDIR/manual-issue.json")
 params=$(jq -nc --arg target "$target" '{sessionKey:"agent:issue-launch-tanaabot:manual-launch",agentId:"issue-launch-tanaabot",message:("Manual issue launch target: " + $target),deliver:false,idempotencyKey:"manual-launch-reuse"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "manual-launch-reuse"'
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" manual-launch-reuse 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" manual-launch-reuse 600000
 node --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';

@@ -91,16 +91,16 @@ openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bu
 # should retain native bindings for the issue selected for feedback
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for plan-ready --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1 and .observation.items[0].workflow.phase == "plan-ready"'
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
 run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-dispatch-before.json")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 # reconcile native completion before a later run selects feedback for this issue
 reconcile_run=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$reconcile_run" 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$reconcile_run" 600000
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
 
 # should retire externally cleaned work using installation-owned cleanup policy
@@ -120,7 +120,7 @@ openclaw agent-system tool worktree -- remove "$repository_id" "$work_id"
 # allow the bounded lifecycle observation interval to elapse; this fixture has zero cleanup grace.
 sleep 61
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-retired.json"
 jq -e --slurpfile before "$TMPDIR/notification-dispatch-before.json" '.retirement.worktreeRemovalObserved.source == "external-cleanup" and .retirement.worktreeRemovalAttemptedAt == null and .retirement.reason == "issue-closed" and .retired.at != null and .retirement.archivedAt != null and .retirement.worktreeRemovedAt != null and .result == $before[0].result and .threadId == $before[0].threadId' "$TMPDIR/notification-retired.json"
@@ -155,7 +155,7 @@ GitHub issues, PRs, branches, and SSH registrations persist beyond the runner. Q
 
 ```bash
 # should dispose of this run's persistent github fixtures
-openclaw-gateway stop --timeout 30
+openclaw-gateway stop --timeout 340
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/emori"
 if test -s "$TMPDIR/notification-issue.json"; then
   number=$(jq -er .number "$TMPDIR/notification-issue.json")

@@ -71,7 +71,7 @@ openclaw agent-system install --non-interactive --json | jq -e 'any(.outcomes[];
 
 # should retain device-only connectivity across a gateway restart
 export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider:$PATH"
-openclaw-gateway stop
+openclaw-gateway stop --timeout 340
 openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/data"
 openclaw agent-system doctor --json | jq -e 'any(.findings[]; .code == "session-dispatch-ready")'

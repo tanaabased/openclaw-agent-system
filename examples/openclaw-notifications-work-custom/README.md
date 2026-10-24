@@ -92,11 +92,11 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" ass
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --timeout 600 --json > "$TMPDIR/notification-plan.json"
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
 run_id=$(jq -ers --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then .[0].assessmentTurn.runId else error("one conversation required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-delivery.json"
 jq -e --arg run "$run_id" '.progression.stage == "implementation" and .progression.via == "work" and .work.turn.runId == $run and .work.turn.origin == "assessment" and .work.result.outcome == "done" and .work.delivery.reconciled and .work.delivery.pullRequest.pullRequestNodeId != null and .work.delivery.announcement.receipt.nodeId != null and (.work.delivery.presentation | length > 0) and .stageReceipt.binding.worktree == .worktree and .stageReceipt.binding.threadId == .threadId and (.result.fullAssessment | length > 0) and .assessmentSummaries[0].receipt.nodeId != null and (.feedback.events | length) == 0' "$TMPDIR/notification-delivery.json"
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$run_id" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-history.json"
@@ -109,7 +109,7 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- pr view "$pr" --repo tanaabased/big-test-bucket --json assignees,closingIssuesReferences | jq -e --argjson issue "$number" 'any(.assignees[]; .login == "tanaabot") and any(.closingIssuesReferences[]; .number == $issue)'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 300000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 branch=$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state all --json number | jq -e --argjson pr "$pr" 'length == 1 and .[0].number == $pr'
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-comments.json"
@@ -128,7 +128,7 @@ GitHub issues, PRs, branches, and SSH registrations persist beyond the runner. Q
 
 ```bash
 # should dispose of this run's persistent github fixtures
-openclaw-gateway stop --timeout 30
+openclaw-gateway stop --timeout 340
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot"
 if test -s "$TMPDIR/notification-issue.json" && test -d "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2"; then
   issue=$(jq -er .node_id "$TMPDIR/notification-issue.json")

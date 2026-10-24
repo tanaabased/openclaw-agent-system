@@ -710,14 +710,17 @@ the available evidence cannot establish that detail. For connectivity failures,
 check Gateway availability before rerunning Install to resume the retained identity;
 a connection failure alone does not authorize replacement. Gateway rejection or
 pending pairing still requires its specific recovery action, including approval
-of the exact device request when present. Each Install enrollment connection allows
-up to 30 seconds for Gateway startup, plugin reload, and device authentication,
-followed by bounded connection cleanup. It waits only for startup/reload activity,
-not unrelated channel health, and lets the native client reconnect transient
-transport failures within that budget. Authentication rejection is not retried.
+of the exact device request when present. Each Install enrollment connection reserves
+30 seconds for Gateway startup/reload plus the SDK's handshake and request
+allowances in one fixed connection budget (75 seconds with the pinned SDK).
+Doctor and workflow connections reserve those native connection allowances without
+an Install readiness wait (45 seconds). Connection cleanup uses the SDK's own
+bounded stop. Install waits only for startup/reload activity, not unrelated channel
+health, and lets the native client reconnect transient transport failures within
+its fixed budget. Authentication rejection is not retried. Ordinary workflow RPCs
+use the SDK's native request timeout; uncertain writes are never automatically replayed.
 `gateway-readiness-deadline` identifies an exhausted readiness wait;
-`gateway-reload-failed` identifies terminal plugin replacement failure. Doctor and
-ordinary workflow connections keep their existing timeout behavior.
+`gateway-reload-failed` identifies terminal plugin replacement failure.
 
 If reconciliation fails, install exits nonzero and reports completed outcomes,
 the blocking component, and unattempted work. Earlier changes remain applied;
@@ -902,6 +905,15 @@ When an active agent supplies command authority, its identity takes precedence
 and cannot change through directory changes. Host fallback applies when no agent
 manifest is found or a valid active-agent command leaves its admitted directories.
 Another known agent's workspace remains denied for that active agent.
+
+Managed setup and command automations pass their remaining configured execution
+budget to CLI descendants, including time already spent preparing the request.
+Direct Git metadata probes have a 30-second allowance, local repository work two
+minutes, and transfers ten minutes. Direct GitHub and Google data commands use
+the existing ten-minute command allowance; identity preflights remain bounded to
+30 seconds. Process termination allows five seconds for cleanup. A timeout does
+not prove that a remote write was rejected; reconcile the original operation
+before attempting another write.
 
 Host fallback removes agent credentials, authority, and configuration overrides;
 host tools may use their normal configuration files. Invalid authority, invalid

@@ -1,3 +1,4 @@
+import { managedCommandTimeoutMs, metadataCommandTimeoutMs } from '../../api/cli-budget.ts';
 import AgentSystemToolError from '../../api/error.ts';
 import type { AgentSystemCliResult, AgentSystemCliRunner } from '../../api/types.ts';
 
@@ -128,7 +129,10 @@ export default class GoogleClient {
         excludedExecutableDirectories: [...this.excludedDirectories, cwd + '/bin'],
         ...(this.signal ? { signal: this.signal } : {}),
         maxOutputBytes: 65536,
-        timeoutMs: 30000,
+        timeoutMs:
+          argv[0] === '--version' || (argv[0] === 'auth' && argv[1] === 'status')
+            ? metadataCommandTimeoutMs
+            : managedCommandTimeoutMs,
         ...(stdin === undefined ? {} : { stdin }),
       });
     } catch {

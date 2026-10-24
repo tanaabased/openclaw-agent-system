@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
 import {
+  DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS,
+  DEFAULT_PREAUTH_HANDSHAKE_TIMEOUT_MS,
   GatewayClientRequestError,
   GatewayClientRequestTimeoutError,
   type EventLoopReadyOptions,
@@ -58,6 +60,7 @@ function connectionFixture(
           waitForGateway: (_port, _authority, options) => waitForGateway(options),
           createClient(options) {
             assert.deepEqual(options.env, {});
+            assert.equal(options.requestTimeoutMs, undefined);
             assert.equal(options.deviceToken, record.token);
             assert.equal(options.deviceIdentity, record.device);
             return {
@@ -78,7 +81,12 @@ function connectionFixture(
             };
           },
           scheduleDeadline(callback, milliseconds) {
-            assert.equal(milliseconds, authority.waitForGateway ? 30_000 : 12_000);
+            assert.equal(
+              milliseconds,
+              DEFAULT_PREAUTH_HANDSHAKE_TIMEOUT_MS +
+                DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS +
+                (authority.waitForGateway ? 30_000 : 0),
+            );
             deadline = callback;
             return () => {
               calls.push('clear-deadline');

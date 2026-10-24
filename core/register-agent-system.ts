@@ -1,3 +1,4 @@
+import { commandTerminationGraceMs } from '../api/cli-budget.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import createGitHubStatusChannel from '../channels/github/channel.ts';
 import createGitHubChannelLifecycle from '../agent/github-channel-lifecycle.ts';
@@ -427,7 +428,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         return api.runtime.system.runCommandWithTimeout([...openClawCommand, ...args], {
           cwd,
           timeoutMs: 120_000,
-          killGraceMs: 100,
+          killGraceMs: commandTerminationGraceMs,
           killProcessTree: true,
           maxCombinedOutputBytes: 1_048_576,
           outputCapture: 'head',

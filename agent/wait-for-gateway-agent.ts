@@ -68,7 +68,7 @@ export default async function waitForGatewayAgent(
       if (requestBudget > 0) await sleep(requestBudget);
       break;
     }
-    const timeoutMs = Math.min(10_000, Math.floor(requestBudget));
+    const timeoutMs = Math.floor(requestBudget);
     const requestStarted = now();
     method = target === 'absent' && reapply === 'not-needed' ? 'config.get' : 'agents.list';
     attempts += 1;
@@ -115,9 +115,28 @@ export default async function waitForGatewayAgent(
               retryable: error.retryable,
             }
           : { kind: 'unknown' };
-      if (!observedGateway && gatewayUnavailable(error)) {
+      if (
+        !observedGateway &&
+        isGatewayTransportError(error) &&
+        error.kind === 'closed' &&
+        error.code === undefined &&
+        error.requestDispatched === undefined &&
+        gatewayUnavailable(error)
+      ) {
         finish('verification-skipped', failure);
         return;
+      }
+      const retryableRead =
+        method !== 'config.apply' &&
+        ((isGatewayTransportError(error) &&
+          (error.kind === 'timeout' || [1006, 1012].includes(error.code ?? 0))) ||
+          (isGatewayClientRequestError(error) &&
+            error.gatewayCode === ErrorCodes.UNAVAILABLE &&
+            error.retryable === true));
+      if (retryableRead) {
+        const remaining = deadline - now();
+        if (remaining > 0) await sleep(Math.min(1000, remaining));
+        continue;
       }
       const details = finish('verification-failed', failure);
       throw new AgentSystemLifecycleError(
@@ -128,6 +147,7 @@ export default async function waitForGatewayAgent(
       );
     }
     requestMs = Math.round(now() - requestStarted);
+    if (now() >= deadline) break;
     observedGateway = true;
     const agents = (response as { agents?: unknown } | null)?.agents;
     if (!Array.isArray(agents) || agents.some((agent) => !agent || typeof agent.id !== 'string')) {
@@ -151,6 +171,6 @@ export default async function waitForGatewayAgent(
   throw new AgentSystemLifecycleError(
     'agent',
     'agent-gateway-registration-pending',
-    `Agent registration is saved but is still absent from the running Gateway after 30 seconds; check Gateway configuration reload, then rerun install. Registration evidence: ${details}`,
+    `Agent registration is saved but could not be confirmed in the running Gateway within 30 seconds; check Gateway configuration reload, then rerun install. Registration evidence: ${details}`,
   );
 }

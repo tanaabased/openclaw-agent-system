@@ -1,6 +1,8 @@
 import { createPublicKey, sign } from 'node:crypto';
 
 import {
+  DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS,
+  DEFAULT_PREAUTH_HANDSHAKE_TIMEOUT_MS,
   GatewayClient,
   GatewayClientRequestError,
   GatewayClientRequestTimeoutError,
@@ -103,7 +105,6 @@ export async function useSessionDispatchClient<T>(
     maxProtocol: PROTOCOL_VERSION,
     deviceIdentity: record.device,
     ...(bootstrap ? { bootstrapToken: record.bootstrap?.token } : { deviceToken: record.token }),
-    requestTimeoutMs: 10_000,
     hostDeps: {
       beforeConnect: assertCurrent,
       signDevicePayload: (pem, payload) =>
@@ -153,7 +154,9 @@ export async function useSessionDispatchClient<T>(
       );
       startup.abort();
     },
-    authority.waitForGateway ? 30_000 : 12_000,
+    DEFAULT_PREAUTH_HANDSHAKE_TIMEOUT_MS +
+      DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS +
+      (authority.waitForGateway ? 30_000 : 0),
   );
   let failed = false;
   try {
@@ -195,7 +198,7 @@ export async function useSessionDispatchClient<T>(
     startup.abort();
     clearDeadline();
     authority.signal?.removeEventListener('abort', abort);
-    await client.stopAndWait({ timeoutMs: 1500 }).catch(() => {
+    await client.stopAndWait().catch(() => {
       // cleanup must not hide the original failure or expose unrestricted sdk errors.
       if (!failed) {
         assertCurrent();
