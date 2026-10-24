@@ -107,7 +107,7 @@ channel_diagnostics() {
 }
 trap channel_diagnostics EXIT
 for attempt in $(seq 1 30); do
-  openclaw gateway call channels.status --json > "$TMPDIR/intake-channel-status.json" 2> "$TMPDIR/intake-channel-status.stderr"
+  openclaw gateway call channels.status --params '{"probe":true}' --json > "$TMPDIR/intake-channel-status.json" 2> "$TMPDIR/intake-channel-status.stderr"
   if jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot")' "$TMPDIR/intake-channel-status.json" > /dev/null; then
     break
   fi

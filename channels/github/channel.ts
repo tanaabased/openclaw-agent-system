@@ -147,6 +147,15 @@ export default function createGitHubStatusChannel(
     config: {
       listAccountIds: (config) => Object.keys(githubChannelAccounts(config)),
       resolveAccount,
+      inspectAccount: (config, accountId) => {
+        const account = resolveAccount(config, accountId);
+        return {
+          ...account,
+          name: account.accountId,
+          configured: Boolean(githubChannelAccounts(config)[account.accountId]),
+          mode: 'readiness',
+        };
+      },
       defaultAccountId: (config) => resolveAccount(config).accountId,
       isEnabled: (account) => account.enabled,
       isConfigured: (account, config) => Boolean(githubChannelAccounts(config)[account.accountId]),
