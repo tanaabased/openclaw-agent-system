@@ -3,7 +3,7 @@ import { Value } from 'typebox/value';
 import { assessmentSummaryRequestProperties } from './assessment-summary-state.ts';
 import { assessmentSchema } from './model-routing.ts';
 
-const id = Type.String();
+const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const digest = Type.Optional(Type.String());
 const object = (properties: Parameters<typeof Type.Object>[0]) =>
   Type.Object(properties, { additionalProperties: false });
@@ -44,6 +44,14 @@ export default function validateDispatchRequest(
   action: string,
   input: unknown,
 ): asserts input is Record<string, unknown> {
-  if (!Object.hasOwn(schemas, action) || !Value.Check(schemas[action as DispatchAction], input))
-    throw new Error('dispatch-request-invalid');
+  if (!Object.hasOwn(schemas, action)) throw new Error('dispatch-request-invalid');
+  const schema = schemas[action as DispatchAction];
+  const request = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+  if (
+    Object.hasOwn(schema.properties, 'id') &&
+    Object.hasOwn(request, 'id') &&
+    !Value.Check(id, request.id)
+  )
+    throw new Error('dispatch-receipt-id-invalid');
+  if (!Value.Check(schema, input)) throw new Error('dispatch-request-invalid');
 }
