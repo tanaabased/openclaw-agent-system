@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import implementationContext from './implementation-context.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import workflowRecovery from './workflow-recovery.ts';
@@ -276,7 +277,9 @@ export default async function runCodexFeedback(
         ({ record }) => !record?.request && (record?.retryAfter ?? 0) <= now,
       );
       const assignmentAt = Math.min(
-        ...queued.map(({ intake: item }) => Date.parse(item.assignment.createdAt)),
+        ...queued.map(({ intake: item }) =>
+          item.assignment ? Date.parse(item.assignment.createdAt) : item.admittedAt,
+        ),
       );
       const queuedEvent = (record: (typeof records)[number]) =>
         record.feedback?.events
@@ -287,7 +290,7 @@ export default async function runCodexFeedback(
       records.sort((a, b) => readyAt(a) - readyAt(b));
       for (const record of records) {
         if (input.action !== 'next' && record.id !== input.id) continue;
-        const admitted = intake.records.find((item) => item.id === record.intakeId);
+        const admitted = dispatchAdmission(record, intake.records ?? []);
         if (!admitted) throw new Error('feedback-admission-missing');
         const owner = admitted.repository.owner.login,
           name = admitted.repository.name;

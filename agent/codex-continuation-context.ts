@@ -1,3 +1,4 @@
+import type { ManagedIssueState } from './managed-issue.ts';
 import { type Static, Type } from 'typebox';
 
 import type { inspectCodexDispatchActivation } from './codex-automations.ts';
@@ -53,7 +54,7 @@ export interface CodexWorkContext {
   current: CodexDispatchSelection;
   caller: string;
   activation: Awaited<ReturnType<typeof inspectCodexDispatchActivation>>;
-  schedule: NonNullable<Awaited<ReturnType<typeof inspectCodexDispatchActivation>>['schedule']>;
+  schedule: Awaited<ReturnType<typeof inspectCodexDispatchActivation>>['schedule'];
   native: ReturnType<typeof codexDispatchNative>;
   continuationNative: ReturnType<typeof codexContinuationNative>;
   observeTurn?: ReturnType<typeof codexLiveTurn>;
@@ -61,7 +62,7 @@ export interface CodexWorkContext {
   preparedSelections?: Set<string>;
   operatorInput?: { turnId: string; inputId: string };
   occurrence: Awaited<ReturnType<ReturnType<typeof codexDispatchNative>['occurrence']>> | undefined;
-  admissions: Awaited<ReturnType<CodexDispatchSelection['store']['read']>>;
+  admissions: ManagedIssueState | undefined;
   save: () => Promise<void>;
   signal: AbortSignal;
 }

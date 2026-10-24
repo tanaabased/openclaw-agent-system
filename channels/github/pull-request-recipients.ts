@@ -1,4 +1,8 @@
-import type { GitHubIdentityPin, GitHubPullRequestRecipient } from './workflow-policy.ts';
+import type {
+  GitHubIdentityPin,
+  GitHubPullRequestRecipient,
+  GitHubNotificationPolicy,
+} from './workflow-policy.ts';
 import { githubIdentitySet } from './provider/work-item.ts';
 
 export default function resolvePullRequestRecipients(
@@ -28,4 +32,23 @@ export default function resolvePullRequestRecipients(
       .filter((entry) => entry.roles.includes('reviewer'))
       .map(({ login, nodeId }) => ({ login, nodeId })),
   };
+}
+
+/** Preserve named recipients; a decoded default is not an explicit assignment-actor request. */
+export function issuePullRequestRecipients(
+  policy: GitHubNotificationPolicy | undefined,
+  operatorInitiated: boolean,
+) {
+  const configuration = policy?.issueAssignment?.pullRequest;
+  const entries = configuration?.recipients;
+  if (!operatorInitiated) return entries;
+  return (entries ?? []).filter(
+    (entry) =>
+      !(
+        configuration?.defaultAssignmentActor &&
+        'source' in entry &&
+        entry.roles.length === 1 &&
+        entry.roles[0] === 'assignee'
+      ),
+  );
 }

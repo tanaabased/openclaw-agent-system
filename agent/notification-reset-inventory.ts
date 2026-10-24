@@ -1,4 +1,4 @@
-import type { IntakeState } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssueState as IntakeState } from './managed-issue.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import type { NotificationResetResource } from './notification-reset-state.ts';

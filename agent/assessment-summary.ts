@@ -7,7 +7,7 @@ import { automationHash } from './automation-hash.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { AssessmentSummaryRequest, AssessmentSummary } from './assessment-summary-state.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import GitHubNotificationCommentPublisher, {
   type GitHubNotificationCommentPublicationConnection,
 } from '../channels/github/publication/comment-publisher.ts';

@@ -6917,4 +6917,199 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).feedback?.startedAt, baseline);
     assert.deepEqual((await record()).feedback?.events, []);
   });
+  it('should launch unassigned manual work through the enrolled session owner without intake', async () => {
+    fixture.item.assignees = [];
+    fixture.client.listAssignmentEvents = async () => {
+      throw new Error('manual work must not depend on assignment history');
+    };
+    const selected = await service.dependencies.intake.select(manifest, root);
+    await rm(selected.store.location.path);
+    delete manifest.github!.notifications;
+    multiple = true;
+    const who = {
+      sessionKey: 'agent:receiver:manual-source',
+      sessionId: 'manual-source-id',
+      runId: 'manual-turn',
+      toolCallId: 'manual-launch',
+    };
+    sessions.set(who.sessionKey, { sessionId: who.sessionId });
+    histories.set(who.sessionKey, {
+      active: true,
+      inputReceipts: [],
+      messages: [
+        {
+          role: 'user',
+          content: 'Work on owner/repo#3',
+          __openclaw: {
+            id: 'manual-input',
+            runId: who.runId,
+            idempotencyKey: 'manual-turn:user',
+            senderIsOwner: true,
+          },
+        },
+      ],
+    });
+    const target = 'owner/repo#3';
+    const first = await service.run(
+      manifest,
+      root,
+      who,
+      {
+        action: 'launch',
+        operation: 'context',
+        target,
+        mode: 'plan',
+        routing: { model: 'openai/gpt-6-luna', effort: 'medium' },
+        stages: {
+          assessment: { skill: 'ordinary-assessment', guidance: 'Use the manual launch guidance.' },
+        },
+      },
+      true,
+    );
+    assert.ok('id' in first && typeof first.id === 'string', JSON.stringify(first));
+    assert.ok('digest' in first && typeof first.digest === 'string');
+    const launched = await service.run(
+      manifest,
+      root,
+      who,
+      {
+        action: 'launch',
+        operation: 'prepare',
+        target,
+        id: first.id,
+        digest: first.digest,
+        assessment: { complexity: 'medium', reason: 'Use existing workflow pieces.' },
+        title: 'MANUAL ISSUE',
+      },
+      true,
+    );
+    assert.equal(launched.status, 'assessment-pending', JSON.stringify(launched));
+    const state = await (await service.scope(manifest, root)).journal.read();
+    assert.equal(state.records.length, 1);
+    assert.equal(state.records[0]!.intakeId, undefined);
+    assert.equal(state.openclawOccurrence, undefined);
+    assert.equal(state.records[0]!.manualIssue?.selections?.mode, 'plan');
+    const retained = state.records[0]!;
+    assert.ok(
+      (
+        await service.promptContext(manifest, root, {
+          agentId: manifest.agent.id,
+          sessionKey: retained.threadId,
+          sessionId: retained.sessionCreation?.sessionId,
+          runId: retained.assessmentTurn?.runId,
+        })
+      )?.appendContext.includes('Agent System model-only current-turn facts'),
+    );
+    assert.equal(state.records[0]!.request?.model, 'openai/gpt-6-luna');
+    assert.equal(state.records[0]!.request?.thinkingLevel, 'medium');
+    assert.equal(state.records[0]!.assessment?.skill.name, 'ordinary-assessment');
+    assert.equal(
+      state.records[0]!.assessment?.guidance?.content,
+      'Use the manual launch guidance.',
+    );
+    assert.equal(preparedWorktrees, 1);
+    assert.equal(calls.filter((call) => call.method === 'sessions.create').length, 1);
+    assert.equal(calls.filter((call) => call.method === 'chat.send').length, 1);
+    const reused = await service.run(
+      manifest,
+      root,
+      who,
+      { action: 'launch', operation: 'context', target },
+      true,
+    );
+    assert.equal(reused.status, 'existing');
+    assert.equal(calls.filter((call) => call.method === 'sessions.create').length, 1);
+    assert.equal((await context(first.id)).status, 'verified');
+    assert.equal((await submit(first.id, plan)).status, 'recorded');
+    assert.equal(
+      (await (await service.scope(manifest, root)).journal.read()).records[0]!.result
+        ?.fullAssessment,
+      plan.fullAssessment,
+    );
+  });
+
+  for (const failure of ['creation', 'send'] as const) {
+    it(`should reconcile manual ${failure} uncertainty through the original session owner`, async () => {
+      fixture.item.assignees = [];
+      manifest.models = { default: manifest.models!.default };
+      const selected = await service.dependencies.intake.select(manifest, root);
+      await rm(selected.store.location.path);
+      delete manifest.github!.notifications;
+      multiple = true;
+      const who = {
+        sessionKey: 'agent:receiver:manual-source',
+        sessionId: 'manual-source-id',
+        runId: 'manual-turn',
+        toolCallId: 'manual-launch',
+      };
+      sessions.set(who.sessionKey, { sessionId: who.sessionId });
+      histories.set(who.sessionKey, {
+        active: true,
+        inputReceipts: [],
+        messages: [
+          {
+            role: 'user',
+            content: 'Work on owner/repo#3',
+            __openclaw: {
+              id: 'manual-input',
+              runId: who.runId,
+              idempotencyKey: 'manual-turn:user',
+              senderIsOwner: true,
+            },
+          },
+        ],
+      });
+      const target = 'owner/repo#3';
+      const first = await service.run(
+        manifest,
+        root,
+        who,
+        { action: 'launch', operation: 'context', target, mode: 'plan' },
+        true,
+      );
+      assert.ok('id' in first && typeof first.id === 'string');
+      assert.ok('digest' in first && typeof first.digest === 'string');
+      if (failure === 'creation') lost = true;
+      else loseSend = true;
+      await service.run(
+        manifest,
+        root,
+        who,
+        {
+          action: 'launch',
+          operation: 'prepare',
+          target,
+          id: first.id,
+          digest: first.digest,
+          assessment: { complexity: 'low', reason: 'A bounded manual issue.' },
+          fallback: 'default',
+          title: 'MANUAL ISSUE',
+        },
+        true,
+      );
+      lost = false;
+      loseSend = false;
+      const recovered = await service.run(
+        manifest,
+        root,
+        who,
+        { action: 'launch', operation: 'reconcile', target, id: first.id },
+        true,
+      );
+      assert.equal(recovered.status, 'assessment-pending', JSON.stringify(recovered));
+      assert.equal(calls.filter((call) => call.method === 'sessions.create').length, 1);
+      assert.equal(calls.filter((call) => call.method === 'chat.send').length, 1);
+      service.dependencies.coordinator = async () => {
+        throw new Error('manual retirement must not require intake');
+      };
+      const retirement = await service.run(
+        manifest,
+        root,
+        who,
+        { action: 'retire', id: first.id },
+        true,
+      );
+      assert.equal(retirement.status, 'retire-available', JSON.stringify(retirement));
+    });
+  }
 });

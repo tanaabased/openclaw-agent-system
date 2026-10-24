@@ -44,9 +44,14 @@ export default class OpenClawDispatchAdmission {
     } = tx;
     const { client, intake, worktreeInput } = verified;
     const claims = this.context.dependencies.claims;
-    if (!claims && !record.sessionCreation?.attempted && !record.sessionCreation?.verified)
+    if (
+      !('initiation' in intake) &&
+      !claims &&
+      !record.sessionCreation?.attempted &&
+      !record.sessionCreation?.verified
+    )
       await assertDormantAssignmentUnclaimed(this.context.dependencies.claimStore, intake);
-    if (claims && !record.sessionCreation?.verified) {
+    if (!('initiation' in intake) && claims && !record.sessionCreation?.verified) {
       const claim = await claims.select({
         intake,
         client,
@@ -69,7 +74,8 @@ export default class OpenClawDispatchAdmission {
     }
     if (input.action === 'prepare') {
       const pass = state.openclawPasses?.find((entry) => sameIntakeRun(entry, caller));
-      if (!pass?.selected.includes(record.id)) throw new Error('dispatch-pass-selection-required');
+      if (!record.manualIssue && !pass?.selected.includes(record.id))
+        throw new Error('dispatch-pass-selection-required');
       if (record.request) return { status: 'reconcile-required' as const, id: record.id };
       if (!dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems).available)
         return { status: 'at-capacity' as const, id: record.id };
@@ -85,6 +91,9 @@ export default class OpenClawDispatchAdmission {
           manifestDigest: current.manifestDigest,
           context: record.context.slice(0, 17950) + '\n[Bounded routing snapshot.]',
           assessment: dispatchRoutingAssessment(input.assessment, metadata),
+          ...(record.manualIssue?.selections?.routing
+            ? { overrides: record.manualIssue.selections.routing }
+            : {}),
           ...(metadata?.status === 'verified'
             ? { evidence: { complexity: metadata.value, source: metadata.source } }
             : {}),
@@ -159,8 +168,9 @@ export default class OpenClawDispatchAdmission {
           signal.throwIfAborted();
           await authority.assertCurrent?.();
           if (
+            !record.manualIssue &&
             (await this.context.dependencies.coordinator(manifest, current.workspace)) !==
-            sourceThreadId
+              sourceThreadId
           )
             throw new Error('dispatch-coordinator-binding-changed');
           await this.context.validateLocal(manifest, workspace, record);
@@ -174,7 +184,10 @@ export default class OpenClawDispatchAdmission {
             request,
             record,
             workspace: current.workspace,
-            configuration: current.policy.policy.issueAssignment?.assessment,
+            configuration: {
+              ...current.policy.policy.issueAssignment?.assessment,
+              ...record.manualIssue?.selections?.assessment,
+            },
             now,
           });
           await turnAuthority.assertCurrent();
@@ -192,7 +205,13 @@ export default class OpenClawDispatchAdmission {
         assessment,
         presentation: { intake, workspace: current.workspace, debug: manifest.debug },
       });
-      if (claims && record.claimId && !record.claimAccepted && record.sessionCreation?.verified) {
+      if (
+        !('initiation' in intake) &&
+        claims &&
+        record.claimId &&
+        !record.claimAccepted &&
+        record.sessionCreation?.verified
+      ) {
         await claims.accept(intake, client, record);
         record.claimAccepted = true;
         await save();

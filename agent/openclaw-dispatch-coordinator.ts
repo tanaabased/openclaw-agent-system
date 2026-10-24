@@ -1,9 +1,9 @@
+import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import { openClawResponseEligible } from './openclaw-response-continuation.ts';
 import { randomUUID } from 'node:crypto';
 
 import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
-import { type IntakeRecord } from '../channels/github/intake/record-store.ts';
 import {
   githubNotificationItemMatchesSelector,
   type GitHubNotificationItemSelector,
@@ -90,7 +90,7 @@ export default class OpenClawDispatchCoordinator {
         await reporting.journal.exclusive(async (state, save) => {
           let changed = false;
           for (const record of state.records) {
-            const source = admitted.find((item) => item.id === record.intakeId);
+            const source = dispatchAdmission(record, admitted);
             if (!source || record.retired || record.reset) continue;
             const repository = `${source.repository.owner.login}/${source.repository.name}`;
             const pr = record.work?.delivery?.pullRequest;
@@ -222,11 +222,15 @@ export default class OpenClawDispatchCoordinator {
       (record) =>
         (openClawDecisionPending(
           record,
-          manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
+          record.manualIssue?.selections?.mode ??
+            manifest.github?.notifications?.issueAssignment?.mode ??
+            'auto',
         ) ||
           openClawWorkSlot(
             record,
-            manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
+            record.manualIssue?.selections?.mode ??
+              manifest.github?.notifications?.issueAssignment?.mode ??
+              'auto',
           )) &&
         (openClawItemOccupied(record) || capacity.available > 0),
     );
@@ -515,11 +519,15 @@ export default class OpenClawDispatchCoordinator {
       .flatMap((record) => {
         const slot = openClawWorkSlot(
           record,
-          manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
+          record.manualIssue?.selections?.mode ??
+            manifest.github?.notifications?.issueAssignment?.mode ??
+            'auto',
         );
         const decision = openClawDecisionPending(
           record,
-          manifest.github?.notifications?.issueAssignment?.mode ?? 'auto',
+          record.manualIssue?.selections?.mode ??
+            manifest.github?.notifications?.issueAssignment?.mode ??
+            'auto',
         );
         return slot || decision || openClawResponseEligible(record)
           ? [
@@ -615,7 +623,8 @@ export default class OpenClawDispatchCoordinator {
             record.id === id &&
             ((record.work &&
               pass.candidates.includes(automationHash({ implementation: record.id }))) ||
-              (record.request && pass.candidates.includes(record.intakeId)) ||
+              (record.request &&
+                pass.candidates.includes(record.intakeId ?? record.manualIssue!.id)) ||
               record.feedback?.events.some(
                 (event) => pass.candidates.includes(event.id) && event.turn,
               )),
@@ -706,6 +715,7 @@ export default class OpenClawDispatchCoordinator {
     delete record.failureStage;
     try {
       const { client, repo, intake } = await this.context.validate(manifest, workspace, record);
+      if ('initiation' in intake) throw new Error('dispatch-assignment-required');
       if (!this.context.dependencies.claims)
         await assertDormantAssignmentUnclaimed(this.context.dependencies.claimStore, intake);
       const claim = await this.context.dependencies.claims?.select({

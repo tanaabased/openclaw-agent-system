@@ -1,3 +1,4 @@
+import { issueKey } from '../agent/dispatch-pending.ts';
 import { beginFeedbackWork } from '../agent/feedback-work.ts';
 import { discoverFeedback } from '../agent/feedback-source.ts';
 import { notificationAuthorityDigest } from '../agent/notification-authority.ts';
@@ -545,6 +546,66 @@ describe('agent/codex-delivery', () => {
       assert.ok(assigned && requested);
       assert.equal(creates, 1);
     });
+
+  for (const named of [false, true]) {
+    it(`should publish operator-origin work with ${named ? 'explicit named recipients' : 'no fabricated assigner default'}`, async () => {
+      const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+      const { assignment, evidence, ...identity } = (await current.store.read())!.records[0]!;
+      assert.ok(assignment);
+      await store.exclusive(async (state, save) => {
+        const record = state.records[0]!;
+        record.manualIssue = {
+          ...identity,
+          id: record.id,
+          initiation: {
+            kind: 'operator',
+            session: record.sourceThreadId,
+            incarnation: record.sourceThreadId,
+            turn: 'operator-turn',
+            input: 'operator-input',
+          },
+          evidence: {
+            policyDigest: evidence.policyDigest,
+            mode: 'work',
+            open: true,
+            repositoryReadable: true,
+          },
+          selections: { mode: 'work' },
+        };
+        delete record.intakeId;
+        record.issueKey = issueKey(record.manualIssue);
+        await save();
+      });
+      await rm(current.store.location.path);
+      fixture.item.assignees = [];
+      fixture.client.listAssignmentEvents = async () => {
+        throw new Error('operator delivery must not fabricate assignment history');
+      };
+      if (named) {
+        const declaration = structuredClone(manifest);
+        declaration.github['issue-assignment'].reviewers = [
+          { login: account.login, 'node-id': account.nodeId },
+        ];
+        await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(declaration));
+      } else
+        await writeFile(
+          join(workspace, 'agent.yaml'),
+          JSON.stringify({
+            'schema-version': 1,
+            agent: { id: 'receiver' },
+            github: { username: 'receiver' },
+          }),
+        );
+      const delivered = await publish();
+      assert.equal(delivered.status, 'published');
+      assert.equal(creates, 1);
+      assert.deepEqual(assignedRecipients, []);
+      assert.deepEqual(requestedReviewers, named ? [account.login] : []);
+      assert.deepEqual(fixture.item.assignees, []);
+      assert.equal((await request('reconcile')).status, 'ready');
+      assert.equal(creates, 1);
+    });
+  }
 
   it('should display the retained pr and reconcile only attachment after head and authority change', async () => {
     await publish();

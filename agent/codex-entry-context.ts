@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import type { ImplementationResult } from './implementation-result.ts';
 import { replyLocator } from './reply-target.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
@@ -90,8 +91,7 @@ export default async function codexEntryContext<T>(
     const records = (await journal.read()).records.filter((record) => record.threadId === caller);
     if (records.length > 1) throw new Error('assessment-managed-owner-ambiguous');
     const admission =
-      records[0] &&
-      (await current.store.read())?.records.find((record) => record.id === records[0]!.intakeId);
+      records[0] && dispatchAdmission(records[0], (await current.store.read())?.records ?? []);
     if (records.length && !admission) throw new Error('assessment-managed-admission-missing');
     const currentTarget = admission
       ? `https://github.com/${admission.repository.owner.login}/${admission.repository.name}/issues/${admission.issue.number}`
@@ -131,6 +131,7 @@ export default async function codexEntryContext<T>(
         throw new Error('assessment-native-input-changed');
     };
     return await collect({
+      operator: true,
       root: pluginData,
       currentTarget,
       binding: {

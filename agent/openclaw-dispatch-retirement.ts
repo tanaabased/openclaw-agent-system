@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import assignmentRetirement from './assignment-retirement.ts';
 import { automationHash } from './automation-hash.ts';
 import cleanupConfiguration from './cleanup-configuration.ts';
@@ -22,8 +23,16 @@ export default async function retireOpenClawTask(options: {
   if (!options.operator) throw new Error('dispatch-operator-required');
   await authority.assertCurrent?.();
   const current = await service.scope(manifest, workspace);
-  const owner = await service.dependencies.coordinator(manifest, workspace);
-  if (caller.sessionKey === owner) throw new Error('dispatch-operator-caller-required');
+  const snapshot = await current.journal.read();
+  const manualTarget = snapshot.records.find(
+    (record) =>
+      record.manualIssue &&
+      (record.id === input.id || (!input.id && record.threadId === caller.sessionKey)),
+  );
+  const owner =
+    manualTarget?.sourceThreadId ?? (await service.dependencies.coordinator(manifest, workspace));
+  if (!manualTarget && caller.sessionKey === owner)
+    throw new Error('dispatch-operator-caller-required');
   const selected = await current.journal.exclusive(async (state, save) => {
     const managedCaller = state.records.find((record) => record.threadId === caller.sessionKey);
     if (
@@ -35,7 +44,7 @@ export default async function retireOpenClawTask(options: {
     const id = input.id ?? managedCaller?.id;
     if (!id) throw new Error('dispatch-retire-selection-required');
     const record = state.records.find((entry) => entry.id === id);
-    const intake = record && current.admitted.records.find((entry) => entry.id === record.intakeId);
+    const intake = record && dispatchAdmission(record, current.admitted.records ?? []);
     if (!record || !intake || record.sourceThreadId !== owner || record.reset)
       throw new Error('dispatch-retire-target-mismatch');
     if (record.retired)
@@ -90,7 +99,7 @@ export default async function retireOpenClawTask(options: {
     record.retirement = assignmentRetirement({
       previous: record.retirement,
       reason: 'operator-requested',
-      intakeId: record.intakeId,
+      intakeId: record.intakeId ?? record.manualIssue!.id,
       now,
       operatorRequest: {
         caller: caller.sessionKey,

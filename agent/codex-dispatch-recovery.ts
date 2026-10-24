@@ -3,7 +3,7 @@ import { automationHash } from './automation-hash.ts';
 import assignmentRetirement from './assignment-retirement.ts';
 import type { codexDispatchNative } from './codex-dispatch-native.ts';
 import type { DispatchState, DispatchRecord } from './codex-dispatch-state.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 
@@ -131,7 +131,7 @@ export default async function recoverDispatch(
         targetId: record.id,
         at: now,
       },
-      intakeId: record.intakeId,
+      intakeId: record.intakeId ?? record.manualIssue!.id,
       now,
       ...(configuration.status === 'ready' ? { graceMinutes: configuration.graceMinutes } : {}),
     });

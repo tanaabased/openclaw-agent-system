@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
 
 import { Value } from 'typebox/value';
@@ -129,7 +130,7 @@ export default async function codexReply(
         }
         return replyOwner(
           state.records.map((record) => {
-            const item = admitted?.records.find((entry) => entry.id === record.intakeId);
+            const item = dispatchAdmission(record, admitted?.records ?? []);
             if (!item && record.threadId === caller)
               throw new Error('reply-managed-context-invalid');
             const pending = pendingPublicResponse(record);

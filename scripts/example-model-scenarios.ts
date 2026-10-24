@@ -10,6 +10,7 @@ import { runtimeBoundaryScenario } from '../examples/openclaw-runtimes/model-fix
 import { memoryExampleScenario } from '../examples/openclaw-memory-embeddings/model-fixture.ts';
 import { issueExampleScenario } from '../examples/openclaw-notifications-issue-journey/model-fixture.ts';
 import { githubReplyExampleScenario } from '../examples/openclaw-github-reply/model-fixture.ts';
+import { issueLaunchExampleScenario } from '../examples/openclaw-issue-launch/model-fixture.ts';
 import { issueAssessmentExampleScenario } from '../examples/openclaw-issue-assessment/model-fixture.ts';
 import { conversationExampleScenario } from '../examples/openclaw-notifications-conversation/model-fixture.ts';
 import { intakeExampleScenario } from '../examples/openclaw-notifications-intake/model-fixture.ts';
@@ -63,6 +64,7 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [issueExampleScenario.id, issueExampleScenario],
   [githubReplyExampleScenario.id, githubReplyExampleScenario],
   [issueAssessmentExampleScenario.id, issueAssessmentExampleScenario],
+  [issueLaunchExampleScenario.id, issueLaunchExampleScenario],
   [conversationExampleScenario.id, conversationExampleScenario],
   [intakeExampleScenario.id, intakeExampleScenario],
   [assessmentRecoveryExampleScenario.id, assessmentRecoveryExampleScenario],

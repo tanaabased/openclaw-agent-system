@@ -6,7 +6,7 @@ import type { AssessmentSelection } from './assessment-selection.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { validateWorkflowResult } from './workflow-result.ts';
 import { defaultAssessmentSkill } from '../manifest/assessment-schema.ts';
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 
 /** Both runtimes bind the same result contract after verifying their native caller. */
 export default function recordDispatchResult(input: {

@@ -14,6 +14,7 @@ export interface AgentSystemLifecycleContext {
   manifest: AgentManifest;
   /** Replace the accumulated Codex baseline with the invoking environment during install. */
   rebuildCodexPath?: boolean;
+  manualSessionDispatch?: boolean;
   workspaceDir: string;
 }
 

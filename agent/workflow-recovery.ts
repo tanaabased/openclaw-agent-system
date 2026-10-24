@@ -19,6 +19,34 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     };
   }
   const reasons: Record<string, [string, string]> = {
+    'launch-open-issue-required': [
+      'Manual launch requires an accessible open GitHub issue.',
+      'Choose an open issue, not a pull request or comment. Preserve any existing preparation; changing the target is not recovery of that attempt.',
+    ],
+    'launch-owner-inactive': [
+      'This issue already has an inactive managed owner.',
+      'Inspect that owner and recover or retire it through its existing lifecycle. Do not create a replacement chat or delete its record.',
+    ],
+    'launch-owner-ambiguous': [
+      'More than one retained owner matches this issue.',
+      'Reconcile the original native owners before launching; no new chat or checkout was authorized.',
+    ],
+    'launch-preparation-owner-required': [
+      'The issue is already being prepared by another managed source.',
+      'Return to the original launching or intake conversation to reconcile the same attempt. Do not repeat repository or chat creation here.',
+    ],
+    'launch-selections-conflict': [
+      'Explicit launch choices differ from the retained preparation.',
+      'Retry the original receipt with its saved choices. Use the existing stage owner for subsequent policy or direction changes, not a new launch.',
+    ],
+    'launch-assignment-actor-recipient-unavailable': [
+      'An explicit delivery recipient requires an assignment actor, but this work was requested manually.',
+      'Replace that explicit recipient requirement with a named recipient or omit it, then retry the same launch. Do not invent an assigner or assign the issue as a workaround.',
+    ],
+    'launch-receipt-mismatch': [
+      'The launch receipt does not match this issue owner.',
+      'Use the original target and receipt together; inspect existing work before requesting another launch.',
+    ],
     'git-worktree-branch-exists': [
       'This attempt already has a branch, but its owned checkout is absent.',
       'Preserve the branch and reconcile the retained preparation before retrying. Do not reset it or create another attempt to bypass an uncertain Git effect.',

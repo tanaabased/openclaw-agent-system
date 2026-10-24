@@ -1,5 +1,5 @@
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
-import type { IntakeState } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssueState as IntakeState } from './managed-issue.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
 /** retained identity and presentation defaults never admit new work. */
@@ -29,7 +29,9 @@ export default function retainedIntakePolicy(
             allowed:
               manifest.github?.notifications?.issueAssignment?.allowed ??
               (state.records.length
-                ? state.records.map((record) => record.assignment.actor)
+                ? state.records.flatMap((record) =>
+                    record.assignment ? [record.assignment.actor] : [],
+                  )
                 : [state.account]),
           },
           allowedRepositoryOwners:

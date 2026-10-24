@@ -1,4 +1,4 @@
-import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import {
   githubIdentityMatches,
@@ -16,6 +16,7 @@ export async function inspectAssignmentRemoval(
   allowed: readonly Pick<GitHubIdentity, 'login' | 'nodeId'>[],
   now: number,
 ): Promise<AssignmentObservation | undefined> {
+  if ('initiation' in record) return;
   if (item.assignees.some((identity) => githubIdentityMatches(identity, client.identity))) return;
   const observation: AssignmentObservation = {
     missing: true,
@@ -140,6 +141,7 @@ export async function inspectActiveIssue(
     throw new Error('dispatch-issue-identity-changed');
   if (item.state !== 'open') throw new Error('dispatch-issue-closed');
   if (
+    !('initiation' in record) &&
     !feedbackOnly &&
     !item.assignees.some((identity) => githubIdentityMatches(identity, client.identity))
   )
@@ -153,6 +155,7 @@ export async function inspectAdmittedIssue(
   client: GitHubNotificationIntakeClient,
 ) {
   const current = await inspectActiveIssue(record, client);
+  if ('initiation' in record) return current;
   const events = await client.listAssignmentEvents(
     record.repository.owner.login,
     record.repository.name,

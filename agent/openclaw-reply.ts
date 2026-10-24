@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import feedbackReply from './feedback-reply.ts';
 import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
@@ -90,7 +91,7 @@ export default async function openClawReply(input: {
         }
         return replyOwner(
           state.records.map((record) => {
-            const item = admitted?.records.find((entry) => entry.id === record.intakeId);
+            const item = dispatchAdmission(record, admitted?.records ?? []);
             if (!item && record.threadId === caller.sessionKey)
               throw new Error('reply-managed-context-invalid');
             const pending = pendingPublicResponse(record);

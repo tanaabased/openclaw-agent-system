@@ -555,3 +555,10 @@ keeps its retained custody. An assignment with a saved pilot claim is held befor
 new native work is prepared; preserve its receipts and inspect the original owner
 before resolving it. The claim engine remains internal groundwork for a later
 dispatcher integration.
+
+## Manual Issue Launch
+
+[Issue Dispatch](../../tools/dispatch/README.md#manual-issue-launch) starts the same managed
+issue workflow by explicit operator request, without assignment or schedule activation.
+The [installed launch scenario](../../examples/openclaw-issue-launch/README.md) owns its
+OpenClaw CI journey; scheduled intake and direct assessment remain separate surfaces.

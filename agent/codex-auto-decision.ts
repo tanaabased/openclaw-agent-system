@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
 
 import { autoDecisionInstructions, needsAutoDecision } from './auto-decision.ts';
@@ -30,10 +31,13 @@ export default async function advanceCodexAutoDecision(
     save,
     signal,
   } = context;
-  const liveMode = current.manifest.github?.notifications?.issueAssignment?.mode;
   let decisionPending: { status: 'pending' | 'blocked'; id: string; code?: string } | undefined;
   if (occurrence) {
     for (const record of state.records) {
+      const liveMode =
+        record.manualIssue?.selections?.mode ??
+        current.manifest.github?.notifications?.issueAssignment?.mode ??
+        'auto';
       if (input.id && input.id !== record.id) continue;
       const pending = record.autoDecision && !record.autoDecision.ended;
       if (!pending && !needsAutoDecision(record, liveMode)) continue;
@@ -45,7 +49,7 @@ export default async function advanceCodexAutoDecision(
         record.reset
       )
         continue;
-      const admitted = admissions?.records.find((entry) => entry.id === record.intakeId);
+      const admitted = dispatchAdmission(record, admissions?.records ?? []);
       if (!admitted || !record.request || !record.project || !record.threadId || !record.worktree)
         continue;
       if (
@@ -120,7 +124,14 @@ export default async function advanceCodexAutoDecision(
           git,
         );
         const live = await selectCodexIntake(pluginData, deps);
-        if (!needsAutoDecision(record, live.manifest.github?.notifications?.issueAssignment?.mode))
+        if (
+          !needsAutoDecision(
+            record,
+            record.manualIssue?.selections?.mode ??
+              live.manifest.github?.notifications?.issueAssignment?.mode ??
+              'auto',
+          )
+        )
           continue;
         record.autoDecision = {
           previousAttempts: record.autoDecision

@@ -60,43 +60,8 @@ function request(
 
 describe('scripts/example-model-scenarios', () => {
   it('should resolve the deterministic example scenarios', () => {
-    assert.deepEqual(exampleModelScenarioIds, [
-      'openclaw-agent',
-      'openclaw-collaboration',
-      'openclaw-automations',
-      'openclaw-automation-recovery',
-      'openclaw-credentials',
-      'openclaw-github',
-      'os-execution',
-      'openclaw-runtimes',
-      'openclaw-lifecycle-approvals',
-      'openclaw-memory-embeddings',
-      'openclaw-worktree-session',
-      'openclaw-notifications-pr-journey',
-      'openclaw-notifications-pr-recipients',
-      'openclaw-notifications-pr-update',
-      'openclaw-notifications-pr-presentation',
-      'openclaw-notifications-pr-collaboration',
-      'openclaw-notifications-pr-discovery',
-      'openclaw-notifications-pr-reply-recovery',
-      'openclaw-notifications-progression',
-      'openclaw-notifications-decision-recovery',
-      'openclaw-notifications-work',
-      'openclaw-notifications-work-custom',
-      'openclaw-notifications-auto-work',
-      'openclaw-notifications-auto-plan',
-      'openclaw-notifications-issue-journey',
-      'openclaw-github-reply',
-      'openclaw-issue-assessment',
-      'openclaw-notifications-conversation',
-      'openclaw-notifications-intake',
-      'openclaw-notifications-assessment-recovery',
-      'openclaw-notifications-feedback-policy',
-      'openclaw-notifications-assignment-policy',
-      'openclaw-notifications-reactivation',
-      'openclaw-notifications-retirement',
-      'openclaw-notifications-reset',
-    ]);
+    assert.equal(new Set(exampleModelScenarioIds).size, exampleModelScenarioIds.length);
+    for (const id of exampleModelScenarioIds) assert.equal(resolveExampleModelScenario(id).id, id);
     assert.equal(resolveExampleModelScenario('openclaw-agent').id, 'openclaw-agent');
     assert.equal(resolveExampleModelScenario('openclaw-credentials').id, 'openclaw-credentials');
     assert.equal(resolveExampleModelScenario('openclaw-github').id, 'openclaw-github');

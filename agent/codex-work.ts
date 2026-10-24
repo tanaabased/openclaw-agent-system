@@ -1,3 +1,4 @@
+import { dispatchAdmission } from './managed-issue.ts';
 import implementationContext from './implementation-context.ts';
 import pendingPublicResponse from './pending-public-response.ts';
 import { realpath } from 'node:fs/promises';
@@ -27,16 +28,16 @@ import workflowRecovery from './workflow-recovery.ts';
 
 export async function prepareCodexWork(state: DispatchState, context: CodexWorkContext) {
   const { input, deps, current, caller, native, admissions, save } = context;
-  const liveMode = current.manifest.github?.notifications?.issueAssignment?.mode;
-  if (
-    (input.action === 'next' || input.action === 'context') &&
-    (liveMode === 'work' || liveMode === 'auto' || context.operatorInput)
-  )
+  if (input.action === 'next' || input.action === 'context')
     for (const record of state.records) {
+      const liveMode =
+        record.manualIssue?.selections?.mode ??
+        current.manifest.github?.notifications?.issueAssignment?.mode ??
+        'auto';
       if (input.action === 'context' && record.id !== input.id) continue;
       if (input.action === 'context' && caller !== record.threadId)
         throw new Error('continuation-issue-caller-required');
-      const admitted = admissions?.records.find((entry) => entry.id === record.intakeId);
+      const admitted = dispatchAdmission(record, admissions?.records ?? []);
       if (
         record.continuation ||
         (!context.operatorInput && needsAutoDecision(record, liveMode)) ||
@@ -63,7 +64,10 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
       try {
         const selected = await selectWorkflowStage({
           stage: 'implementation',
-          configuration: current.manifest.github?.notifications?.issueAssignment?.implementation,
+          configuration: {
+            ...current.manifest.github?.notifications?.issueAssignment?.implementation,
+            ...record.manualIssue?.selections?.implementation,
+          },
           workspace: current.workspace,
           observedAt: (deps.now ?? Date.now)(),
           resolveSkill: (id) => native.assessmentSkill(record.worktree!, id),
@@ -104,7 +108,10 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     save,
     signal,
   } = context;
-  const liveMode = current.manifest.github?.notifications?.issueAssignment?.mode;
+  const liveMode =
+    record.manualIssue?.selections?.mode ??
+    current.manifest.github?.notifications?.issueAssignment?.mode ??
+    'auto';
   const retryDenied = input.action === 'retry-denied';
   const retry = input.action === 'retry' || retryDenied;
   try {
@@ -181,7 +188,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
         return { status: progress.status, id: record.id, code: work.code };
     }
     if (!record.result) return undefined;
-    const admitted = admissions?.records.find((entry) => entry.id === record.intakeId);
+    const admitted = dispatchAdmission(record, admissions?.records ?? []);
     if (!admitted) throw new Error('continuation-admission-missing');
     const enteringImplementation = !retainedIssueProgression(record);
     const authorizeLive = async () => {
@@ -195,7 +202,9 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       if (held) throw new WorkflowPolicyHeld(held);
       if (
         enteringImplementation &&
-        live.manifest.github?.notifications?.issueAssignment?.mode !== liveMode
+        (record.manualIssue?.selections?.mode ??
+          live.manifest.github?.notifications?.issueAssignment?.mode ??
+          'auto') !== liveMode
       )
         throw new WorkflowPolicyHeld('workflow-mode-updated');
       return live;
@@ -212,7 +221,10 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       const live = await authorizeLive();
       const selected = await selectWorkflowStage({
         stage: 'implementation',
-        configuration: live.manifest.github!.notifications!.issueAssignment!.implementation,
+        configuration: {
+          ...live.manifest.github?.notifications?.issueAssignment?.implementation,
+          ...record.manualIssue?.selections?.implementation,
+        },
         workspace: current.workspace,
         observedAt: work.selection.observedAt,
         resolveSkill: (id) => native.assessmentSkill(record.worktree!, id),
@@ -289,7 +301,10 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     if (input.action === 'context' && work.result?.outcome !== 'done' && !context.operatorInput) {
       const currentSelection = await selectWorkflowStage({
         stage: 'implementation',
-        configuration: current.manifest.github?.notifications?.issueAssignment?.implementation,
+        configuration: {
+          ...current.manifest.github?.notifications?.issueAssignment?.implementation,
+          ...record.manualIssue?.selections?.implementation,
+        },
         workspace: current.workspace,
         observedAt: (deps.now ?? Date.now)(),
         resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
@@ -297,13 +312,15 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       selection = currentSelection.selection;
     }
     // recheck the saved native activation after provider and skill reads, before side effects.
-    const fresh = await (deps.activation ?? inspectCodexDispatchActivation)(
-      pluginData,
-      { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-      false,
-      true,
-      input.action === 'delivery' ? 'publication' : 'implementation',
-    );
+    const fresh = record.manualIssue
+      ? { sourceThreadId: record.sourceThreadId }
+      : await (deps.activation ?? inspectCodexDispatchActivation)(
+          pluginData,
+          { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+          false,
+          true,
+          input.action === 'delivery' ? 'publication' : 'implementation',
+        );
     if (fresh.sourceThreadId !== activation.sourceThreadId)
       throw new Error('continuation-schedule-binding-mismatch');
     if (input.action !== 'reconcile' && input.action !== 'result') await authorizeLive();
@@ -470,7 +487,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
         admitted.repository.owner.login + '/' + admitted.repository.name,
         git,
       );
-      const digest = automationHash({ record, schedule: schedule.current, receipt });
+      const digest = automationHash({ record, schedule: schedule?.current, receipt });
       if (input.digest === undefined)
         return {
           status: 'retry-available' as const,
@@ -569,7 +586,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
         throw new Error('continuation-retry-chat-active');
       const digest = automationHash({
         record,
-        schedule: schedule.current,
+        schedule: schedule?.current,
         turnId: receipt.turnId,
         ...(receipt.status === 'mismatch' ? { receipt, resumeAfterTurnId: found.turnId } : {}),
       });

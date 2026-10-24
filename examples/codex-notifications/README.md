@@ -38,6 +38,7 @@ Load notification declarations through the packaged Codex runtime, plan an intak
 - **Retirement:** observe automatic archival/reclamation after [shared installation grace](../../CONFIG.md#shared-cleanup), preserving assessment/routing evidence. Include more than twelve helpers and an inactive verified Guardian with empty native history; running, unrelated, pinned, or automation-owned chats still protect the checkout. Blockers report once and recover without manual resource removal to manufacture success.
 - **Explicit retirement:** preview/apply retirement of a second open assigned task, skip grace, and redeem only the prepared native archive request. Own-active-turn requests stay pending. Reconciliation after native cleanup must retain history with one archive and no duplicate admission. Lookup/host errors keep their actual diagnostic; uncertain writes or denials never trigger blind retries.
 - **Direct reply:** a fresh task selects the configured reply skill/guidance for a disposable source and retains an unpublished draft without intake activation. Later explicit publication verifies the exact destination, author, and permalink. Managed sources reuse their owner, inputs, results, and receipts; invalid managed context cannot become manual authority.
+- **Manual launch:** with intake absent, launch one disposable unassigned issue through `$agent-system-issue-launch`, execute its prepared native creation once, and reconcile the same destination. Verify its checkout, effective settings, full assessment and configured Plan/Work/Auto handoff. Reinvoke after a desktop restart and retain the same owner, results and PR; issue assignment and schedules remain unchanged. Capture actual native receipts separately from the headless refusal and component evidence; these executable checks do not prove desktop creation or rendering.
 
 - **Status update:** in the same native chat, request an issue update after verified progress. Inspect one exact quoted body, posting author and confirmed permalink alongside the complete private answer. Repeat on a later turn and verify already-current means no comment; recover an uncertain original post without another create. Preserve managed owner/mode and reject stale input without manual fallback. This remains separate native acceptance work, not an outcome of the headless checks below.
 
@@ -155,6 +156,17 @@ plugin_data="$root/notification-data"
 if output=$(printf '%s\n' '{"action":"reply","operation":"compose","target":"https://github.com/tanaabased/big-test-bucket/issues/1","privateText":"A supplied response."}' | env -u CODEX_THREAD_ID node "$runtime" feedback reply compose --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "reply-native-caller-required"'
 if output=$(printf '%s\n' '{"action":"reply","operation":"publish"}' | node "$runtime" feedback reply compose --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "workflow-command-action-mismatch"'
+test ! -d "$CODEX_HOME/automations"
+
+# should expose manual launch without granting authority to a headless caller
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/notification-data"
+if output=$(printf '%s\n' '{"action":"launch","operation":"context","target":"tanaabased/big-test-bucket#1"}' | env -u CODEX_THREAD_ID node "$runtime" dispatch launch context --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-native-caller-required"'
+if output=$(printf '%s\n' '{"action":"launch","operation":"prepare","target":"tanaabased/big-test-bucket#1"}' | node "$runtime" dispatch launch context --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "workflow-command-action-mismatch"'
 test ! -d "$CODEX_HOME/automations"
 
