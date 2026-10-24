@@ -31,6 +31,7 @@ import {
 } from './codex-dispatch-context.ts';
 
 import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
+import codexIssueBranch from './codex-issue-branch.ts';
 import { notice } from './codex-dispatch-reporting.ts';
 import { type default as CodexDispatchStore, type DispatchRecord } from './codex-dispatch-state.ts';
 
@@ -146,6 +147,7 @@ export async function handoffDispatch(
         changed: false,
         id: record.id,
         threadId: record.threadId,
+        issueBranch: record.issueBranch?.name,
         ...retainedAssessment,
       };
     if (record.continuation?.phase === 'cancelled') throw new Error('implementation-cancelled');
@@ -194,10 +196,20 @@ export async function handoffDispatch(
     if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
     if (transition.status === 'ready')
       record.progression = { ...transition.progression, workOwner: 'issue' };
+    await codexIssueBranch({
+      record,
+      records: state.records,
+      intake,
+      workspace: current.workspace,
+      agentId: current.manifest.agent.id,
+      git: deps.git,
+      save,
+      prepare: true,
+    });
     record.handoff = { at: (deps.now ?? Date.now)(), by: caller, turnId: native.turnId };
     const response = notice(record, intake);
     await save();
-    return { ...response, ...retainedAssessment };
+    return { ...response, issueBranch: record.issueBranch?.name, ...retainedAssessment };
   }, true);
 }
 export async function assessDispatch(

@@ -15,6 +15,7 @@ import {
 
 import type { codexDispatchNative } from './codex-dispatch-native.ts';
 import type { dispatchGit } from './codex-dispatch-project.ts';
+import type { DispatchRecord } from './codex-dispatch-state.ts';
 import { implementationResultSchema } from './implementation-result.ts';
 
 export const requestSchema = Type.Object(
@@ -47,6 +48,7 @@ export interface CodexContinuationDependencies extends CodexDispatchDependencies
 }
 
 export interface CodexWorkContext {
+  records: DispatchRecord[];
   pluginData: string;
   input: Static<typeof requestSchema>;
   deps: CodexContinuationDependencies;
