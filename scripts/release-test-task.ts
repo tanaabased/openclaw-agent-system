@@ -124,10 +124,12 @@ try {
         assert.match(archivePath, /\.tgz$/);
         const inspected = await run(
           'npm',
-          ['pack', archivePath, '--dry-run', '--ignore-scripts', '--json', '--offline'],
+          ['pack', archivePath, '--dry-run', '--ignore-scripts', '--json', '--silent', '--offline'],
           { env: environment },
         );
-        const result = (JSON.parse(inspected.output) as PackResult[])[0];
+        const result = Object.values(
+          JSON.parse(inspected.output) as PackResult[] | Record<string, PackResult>,
+        )[0];
         if (!result?.filename) throw new Error('npm pack did not inspect the supplied archive');
         return { archivePath, packageResult: result };
       }
@@ -137,7 +139,9 @@ try {
         ['pack', '--ignore-scripts', '--json', '--silent', '--pack-destination', temporaryRoot],
         { env: environment },
       );
-      const result = (JSON.parse(packed.output) as PackResult[])[0];
+      const result = Object.values(
+        JSON.parse(packed.output) as PackResult[] | Record<string, PackResult>,
+      )[0];
       if (!result?.filename) throw new Error('npm pack did not report an archive');
       assert.match(result.filename, /\.tgz$/);
       const path = join(temporaryRoot, result.filename);
@@ -308,7 +312,7 @@ try {
     assert.equal(packageMetadata.dependencies?.['@1password/sdk'], '0.5.0');
     assert.equal(packageMetadata.dependencies?.['@clack/prompts'], '1.6.0');
     assert.equal(packageMetadata.optionalDependencies?.['@napi-rs/keyring'], '1.3.0');
-    assert.equal(packageMetadata.openclaw?.agentSystem?.codexPlugin, '@openclaw/codex@2026.9.8');
+    assert.equal(packageMetadata.openclaw?.agentSystem?.codexPlugin, '@openclaw/codex@2026.10.6');
     assert.equal(packageMetadata.dependencies?.['@openclaw/codex'], undefined);
     assert.equal(packageMetadata.optionalDependencies?.['@openclaw/codex'], undefined);
     assert.equal(packageMetadata.version, manifest.version);

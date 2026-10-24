@@ -527,6 +527,10 @@ activates workflow intake. Install adopts an old account only when its matching
 Agent System-managed binding establishes ownership; conflicting accounts require
 operator resolution. Historical receipts and grants remain untouched.
 
+On OpenClaw 2026.10.6, plain channel status reports saved account configuration.
+Use `openclaw gateway call channels.status --params '{"probe":true}' --json` for
+the full readiness snapshot described below.
+
 Install manages each agent's channel account from its declared OpenClaw notification
 workflows. Removing or disabling those workflows requires another Install to disable
 that account. Other agents and operator-owned entries are preserved. With no declared

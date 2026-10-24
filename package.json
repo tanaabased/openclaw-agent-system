@@ -6,7 +6,7 @@
   "type": "module",
   "packageManager": "bun@1.4.2",
   "engines": {
-    "node": ">=24.16.0 <25 || >=26.1.0"
+    "node": ">=24.22.1 <25 || >=26.12.1"
   },
   "os": [
     "darwin",
@@ -69,15 +69,15 @@
       "./dist/index.js"
     ],
     "compat": {
-      "pluginApi": ">=2026.9.8",
-      "minGatewayVersion": "2026.9.8"
+      "pluginApi": ">=2026.10.6",
+      "minGatewayVersion": "2026.10.6"
     },
     "build": {
-      "openclawVersion": "2026.9.8",
-      "pluginSdkVersion": "2026.9.8"
+      "openclawVersion": "2026.10.6",
+      "pluginSdkVersion": "2026.10.6"
     },
     "agentSystem": {
-      "codexPlugin": "@openclaw/codex@2026.9.8"
+      "codexPlugin": "@openclaw/codex@2026.10.6"
     },
     "channel": {
       "id": "agent-system-github",
@@ -136,7 +136,7 @@
     ]
   },
   "peerDependencies": {
-    "openclaw": ">=2026.9.8"
+    "openclaw": ">=2026.10.6"
   },
   "dependencies": {
     "@1password/sdk": "0.5.0",
@@ -176,7 +176,7 @@
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.7.0",
     "mocha": "^11.7.6",
-    "openclaw": "2026.9.8",
+    "openclaw": "2026.10.6",
     "prettier": "^3.9.6",
     "shellcheck": "^4.1.0",
     "tsx": "^4.22.4",

@@ -789,11 +789,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         async (agentId) => {
           const config = await readConfig();
           const agentDir = api.runtime.agent.resolveAgentDir(config, agentId);
-          const agentIds = new Set([
-            'main',
-            agentId,
-            ...(config.agents?.list ?? []).map(({ id }) => id),
-          ]);
+          const agentIds = new Set(['main', agentId, ...listAgentIds(config)]);
           return {
             paths: [agentDir],
             livePaths: [

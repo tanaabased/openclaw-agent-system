@@ -27,10 +27,14 @@ describe('core/configured-agents', () => {
   });
 
   it('should retain mutable values from the validated list projection', () => {
-    const projected: OpenClawConfig = {
-      agents: { list: [{ id: 'EMORI', workspace: '/workspace/emori' }] },
+    const projected = {
+      agents: { defaults: {}, list: [{ id: 'EMORI', workspace: '/workspace/emori' }] },
     };
 
-    assert.equal(configuredAgentValue(projected, 'emori')?.workspace, '/workspace/emori');
+    assert.deepEqual(configuredAgentEntries(projected), projected.agents.list);
+    const value = configuredAgentValue(projected, 'emori');
+    assert.ok(value);
+    value.workspace = '/workspace/updated';
+    assert.equal(projected.agents.list[0]?.workspace, '/workspace/updated');
   });
 });

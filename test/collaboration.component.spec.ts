@@ -274,7 +274,9 @@ describe('collaboration lifecycle', () => {
   });
 
   it('should use canonical keyed registrations and preserve unmanaged participants', async () => {
-    config.agents!.list = [{ id: 'unregistered', workspace: '/unused' }];
+    Object.defineProperty(config.agents!, 'list', {
+      value: [{ id: 'unregistered', workspace: '/unused' }],
+    });
     await mkdir(join(root, 'external'));
     config.agents!.entries!.external = { workspace: join(root, 'external') };
     config.tools = { agentToAgent: { allow: ['external', 'alpha'] } };

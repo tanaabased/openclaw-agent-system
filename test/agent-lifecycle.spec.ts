@@ -24,7 +24,7 @@ describe('agent/lifecycle', () => {
       manifest: { schemaVersion: 1, agent: { id: 'main', name: 'Main' } } as AgentManifest,
       workspaceDir: '/workspace/main',
     };
-    for (const config of [{}, { agents: { entries: {} } }, { agents: { list: [] } }]) {
+    for (const config of [{}, { agents: { entries: {} } }]) {
       const contribution = createAgentLifecycleContribution({
         readConfig: () => config,
         resolveAgentWorkspaceDir: () => mainContext.workspaceDir,
@@ -108,13 +108,12 @@ describe('agent/lifecycle', () => {
     const contribution = createAgentLifecycleContribution({
       readConfig: () => ({
         agents: {
-          list: [
-            {
-              id: 'data',
+          entries: {
+            data: {
               identity: { avatar: 'avatar.png', emoji: '📊', name: 'Data' },
               workspace: '/workspace/data',
             },
-          ],
+          },
         },
       }),
       async runOpenClawCommand() {
@@ -153,13 +152,12 @@ describe('agent/lifecycle', () => {
     assert.equal((await contribution.inspect?.(context))?.[0]?.code, 'agent-registration-drift');
     config = {
       agents: {
-        list: [
-          {
-            id: 'data',
+        entries: {
+          data: {
             identity: { avatar: 'avatar.png', emoji: '📊', name: 'Other' },
             workspace: '/workspace/data',
           },
-        ],
+        },
       },
     };
     assert.equal((await contribution.inspect?.(context))?.[0]?.code, 'agent-identity-drift');
@@ -168,7 +166,7 @@ describe('agent/lifecycle', () => {
   it('should block a workspace conflict without mutation', async () => {
     const contribution = createAgentLifecycleContribution({
       readConfig: () => ({
-        agents: { list: [{ id: 'data', workspace: '/workspace/other' }] },
+        agents: { entries: { data: { workspace: '/workspace/other' } } },
       }),
       async runOpenClawCommand() {
         throw new Error('command should not run');
@@ -221,16 +219,10 @@ describe('agent/lifecycle', () => {
         events.push(`command:${args[1]}`);
         config =
           args[1] === 'add'
-            ? { agents: { list: [{ id: 'data', workspace: '/workspace/data' }] } }
+            ? { agents: { entries: { data: { workspace: '/workspace/data' } } } }
             : {
                 agents: {
-                  list: [
-                    {
-                      id: 'data',
-                      identity: { name: 'Data' },
-                      workspace: '/workspace/data',
-                    },
-                  ],
+                  entries: { data: { identity: { name: 'Data' }, workspace: '/workspace/data' } },
                 },
               };
         return successfulResult();
