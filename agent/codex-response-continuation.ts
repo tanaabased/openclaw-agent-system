@@ -73,7 +73,7 @@ export default async function continueCodexResponse(
     await save();
     if (!pending || recovery.revision === pending.revision) return;
   }
-  if (!pending) return;
+  if (!pending || !pending.revision) return;
   if (!['idle', 'notLoaded'].includes(found.status) || !found.turnEnded) return;
   const source = await continuationNative(record.threadId, {
     origin: 'assessment',

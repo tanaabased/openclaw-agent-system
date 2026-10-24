@@ -4,6 +4,12 @@ import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { intakeRemediation } from '../channels/github/intake/record-store.ts';
 
 describe('agent/workflow-recovery', () => {
+  it('should explain how to correct an incomplete assessment without replacing its saved result', () => {
+    const recovery = workflowRecovery('assessment-result-incomplete')!;
+    assert.match(recovery.summary, /not recorded/);
+    assert.match(recovery.next, /fullAssessment.*resubmit/);
+    assert.match(recovery.next, /previous saved result/);
+  });
   it('should explain how to recover from a malformed dispatch receipt id', () => {
     const recovery = workflowRecovery('dispatch-receipt-id-invalid')!;
     assert.match(recovery.summary, /not looked up/);

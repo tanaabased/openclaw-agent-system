@@ -58,6 +58,7 @@ export default async function continueOpenClawResponse(input: {
 }) {
   const { record, request } = input;
   const pending = pendingPublicResponse(record);
+  if (pending?.state === 'blocked') return;
   const expected = record.request;
   if (!expected || !('key' in expected)) return;
   if (record.summaryRecovery) {
@@ -83,7 +84,7 @@ export default async function continueOpenClawResponse(input: {
         id: record.id,
       };
   }
-  if (!pending) return;
+  if (!pending || !pending.revision) return;
   if (input.reconcileOnly) return { status: 'assessment-pending' as const, id: record.id };
   const session = await feedbackSession(request, record, input.config);
   if (session.busy) return { status: 'assessment-pending' as const, id: record.id };

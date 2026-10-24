@@ -4,6 +4,9 @@ import { Value } from 'typebox/value';
 
 import {
   assessmentResultContextSchema,
+  assessmentResultSchema,
+  assessmentSubmissionSchema,
+  parseAssessmentSubmission,
   assessmentDecisionMode,
   parseAssessmentResult,
 } from '../agent/assessment-result.ts';
@@ -12,6 +15,7 @@ describe('agent/assessment-result', () => {
   const common = {
     version: 1,
     summary: 'A bounded result.',
+    fullAssessment: 'Complete assessment, evidence, plan and limitations.',
     evidence: [{ source: 'issue and repository', status: 'observed', detail: 'Verified context.' }],
     progress: { completed: ['Read the owning code.'], remaining: [] },
   };
@@ -163,6 +167,32 @@ describe('agent/assessment-result', () => {
         true,
       );
       assert.deepEqual(parseAssessmentResult(input), input);
+    }
+  });
+  it('should require full source for every new outcome while retaining legacy read compatibility', () => {
+    for (const outcome of [
+      { outcome: 'plan-ready', assessment: 'Observed.', plan: 'Complete plan.' },
+      { outcome: 'clarification-needed', assessment: 'Unknown.', questions: ['Which option?'] },
+      { outcome: 'operator-setup-blocker', code: 'setup-missing', remediation: 'Restore setup.' },
+    ]) {
+      const complete = { ...common, ...outcome };
+      assert.deepEqual(parseAssessmentSubmission(complete), complete);
+      for (const fullAssessment of [undefined, '', ' ', 42, null]) {
+        const incomplete = { ...complete, fullAssessment };
+        assert.equal(Value.Check(assessmentSubmissionSchema, incomplete), false);
+        assert.equal(
+          Value.Check(JSON.parse(JSON.stringify(assessmentResultContextSchema)), incomplete),
+          false,
+        );
+        assert.throws(
+          () => parseAssessmentSubmission(incomplete),
+          /assessment-result-(incomplete|invalid)/,
+        );
+      }
+      const legacy: Record<string, unknown> = { ...complete };
+      delete legacy.fullAssessment;
+      assert.equal(Value.Check(assessmentResultSchema, legacy), true);
+      assert.deepEqual(parseAssessmentResult(legacy), legacy);
     }
   });
 });

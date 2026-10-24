@@ -1,4 +1,5 @@
 import { realpath } from 'node:fs/promises';
+import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { directAssessmentRequestSchema } from '../tools/dispatch/assessment-schema.ts';
@@ -10,7 +11,7 @@ import assessmentCheckout from './assessment-checkout.ts';
 import { assessmentInstructions } from './assessment-instructions.ts';
 import {
   assessmentResultContextSchema,
-  parseAssessmentResult,
+  parseAssessmentSubmission,
   type AssessmentResult,
 } from './assessment-result.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
@@ -59,10 +60,15 @@ export interface AssessmentEntryDependencies {
   >;
 }
 
+// validate source completeness at submission so callers receive the shared actionable diagnostic.
+const assessmentRequestSchema = Type.Object(
+  { ...directAssessmentRequestSchema.properties, result: Type.Optional(Type.Unknown()) },
+  { additionalProperties: false },
+);
+
 /** bootstrap one assessment, then reuse the existing method, adaptation, and renderer. */
 export default async function assessmentEntry(input: unknown, deps: AssessmentEntryDependencies) {
-  if (!Value.Check(directAssessmentRequestSchema, input))
-    throw new Error('assessment-request-invalid');
+  if (!Value.Check(assessmentRequestSchema, input)) throw new Error('assessment-request-invalid');
   if (
     (input.result !== undefined && input.operation !== 'result') ||
     (input.revise && input.operation !== 'context')
@@ -339,8 +345,7 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
         automationHash(entry.selection.skill)
     )
       throw new Error('assessment-selection-changed');
-    const result = parseAssessmentResult(input.result);
-    if (!result.fullAssessment?.trim()) throw new Error('assessment-result-incomplete');
+    const result = parseAssessmentSubmission(input.result);
     const previous = entry.result ?? managed?.result;
     if (
       previous &&

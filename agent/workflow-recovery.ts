@@ -19,6 +19,10 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     };
   }
   const reasons: Record<string, [string, string]> = {
+    'assessment-result-incomplete': [
+      'The new assessment is missing its complete source; the result was not recorded.',
+      'Include the complete assessment, evidence, plan or questions in fullAssessment and resubmit the result in this chat. Keep the previous saved result; do not substitute a summary for the source.',
+    ],
     'dispatch-receipt-id-invalid': [
       'The supplied receipt ID is malformed, so it was not looked up or used to change workflow state.',
       'Copy the exact receipt ID from verified workflow context and retry. Do not guess, correct, reset, or recreate the workflow.',
