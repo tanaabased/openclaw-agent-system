@@ -220,9 +220,7 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
             (!record.sessionCreation.verified ||
               (record.sessionCreation.sessionId &&
                 record.threadId === record.request.key &&
-                record.effective?.status === 'verified' &&
-                record.effective.model === record.request.model &&
-                record.effective.effort === record.request.thinkingLevel)) &&
+                record.effective)) &&
             (!record.effective || record.sessionCreation.verified) &&
             (!record.firstTurn ||
               (record.sessionCreation.verified &&

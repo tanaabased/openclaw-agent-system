@@ -327,7 +327,12 @@ function respond(
       }
       const work = result('feedback-work-context');
       if (!work)
-        return dispatch('feedback-work-context', { ...args, operation: 'implementation-context' });
+        return dispatch('feedback-work-context', {
+          action: 'implementation',
+          operation: 'context',
+          id,
+          scope: 'local',
+        });
       const implementation = work.implementation as { skill?: { path?: string } } | undefined;
       if (
         work.status !== 'verified' ||

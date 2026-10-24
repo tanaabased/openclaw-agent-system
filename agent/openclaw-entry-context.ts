@@ -1,6 +1,6 @@
 import { dispatchAdmission } from './managed-issue.ts';
 import type { ImplementationResult } from './implementation-result.ts';
-import { replyLocator } from './reply-target.ts';
+import managedImplementationRoute from './managed-implementation-route.ts';
 import { realpath } from 'node:fs/promises';
 
 import type { AssessmentEntryDependencies } from './assessment-entry.ts';
@@ -100,33 +100,13 @@ export default async function openClawEntryContext<T>(
       ? `https://github.com/${admission.repository.owner.login}/${admission.repository.name}/issues/${admission.issue.number}`
       : undefined;
     if (routeManaged) {
-      const action = input.action as {
-        target?: string;
-        id?: string;
-        path?: string;
-        scope?: string;
-      };
-      const target = action.target ?? currentTarget;
-      if (target) {
-        const locator = replyLocator(target);
-        if (locator.itemType !== 'issue' || locator.kind)
-          throw new Error('implementation-issue-url-required');
-        const owner = await managed({
-          repository: `${locator.owner}/${locator.name}`,
-          number: locator.number,
-        });
-        if (owner) {
-          if (
-            !owner.owner ||
-            (action.id && action.id !== owner.owner.id) ||
-            (action.path && (await realpath(action.path)) !== owner.path)
-          )
-            throw new Error('implementation-managed-context-mismatch');
-          if (owner.owner.eventId && action.scope)
-            throw new Error('implementation-feedback-scope-owner-required');
-          return await routeManaged(owner.owner, owner.implementationResult);
-        }
-      }
+      const routed = await managedImplementationRoute({
+        action: input.action,
+        currentTarget,
+        managed,
+        route: routeManaged,
+      });
+      if (routed) return routed.result;
     }
     const nativeInput = () =>
       (input.operator ? operatorInputEvent : nativeInputEvent)({

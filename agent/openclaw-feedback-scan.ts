@@ -282,17 +282,4 @@ export async function scanOpenClawFeedback(input: {
   return scans;
 }
 
-export function applyOpenClawFeedbackScans(
-  records: OpenClawDispatchRecord[],
-  scans: OpenClawFeedbackScan[],
-) {
-  let changed = false;
-  for (const scan of scans) {
-    const record = records.find((record) => record.id === scan.id);
-    if (record && automationHash(record) === scan.before) {
-      record.feedback = scan.feedback;
-      changed = true;
-    }
-  }
-  return changed;
-}
+export { default as applyOpenClawFeedbackScans } from './apply-feedback-scans.ts';

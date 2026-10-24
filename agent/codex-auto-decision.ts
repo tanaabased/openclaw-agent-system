@@ -10,6 +10,7 @@ import { verifyDispatchWorktree } from './codex-dispatch-project.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import codexHostAccess from './codex-host-access.ts';
 import { selectCodexIntake } from './codex-intake.ts';
+import codexSessionSettings from './codex-session-settings.ts';
 import { dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import workflowFailure from './workflow-failure.ts';
 
@@ -110,9 +111,7 @@ export default async function advanceCodexAutoDecision(
           !found ||
           !found.turnId ||
           found.id !== record.threadId ||
-          (await realpath(found.cwd)) !== (await realpath(record.worktree)) ||
-          found.model !== record.request.model ||
-          found.effort !== record.request.thinking
+          (await realpath(found.cwd)) !== (await realpath(record.worktree))
         )
           throw new Error('continuation-native-binding-mismatch');
         if (found.turnStatus !== 'completed' || !['idle', 'notLoaded'].includes(found.status))
@@ -123,6 +122,8 @@ export default async function advanceCodexAutoDecision(
           admitted.repository.owner.login + '/' + admitted.repository.name,
           git,
         );
+        record.effective = codexSessionSettings(record, found);
+        await save();
         const live = await selectCodexIntake(pluginData, deps);
         if (
           !needsAutoDecision(
@@ -148,8 +149,6 @@ export default async function advanceCodexAutoDecision(
             beforeTurnId: found.turnId,
             request: {
               threadId: record.threadId,
-              model: record.request.model,
-              thinking: record.request.thinking,
               prompt:
                 autoDecisionInstructions +
                 ' Refresh dispatchRuntime assessment context with JSON on stdin: ' +

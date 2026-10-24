@@ -5,6 +5,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { buildAgentMainSessionKey } from 'openclaw/plugin-sdk/routing';
 
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import sessionSettings from './session-settings.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type { DispatchAuthority, DispatchRequest } from '../credentials/session-dispatch.ts';
 
@@ -40,9 +41,15 @@ export async function describeIssueSession(
   if (!described.session) throw new Error('dispatch-session-reconcile-required');
   const row = sessionObject(described.session);
   const model =
-    typeof row.model === 'string' && row.model.includes('/')
-      ? row.model
-      : `${String(row.modelProvider)}/${String(row.model)}`;
+    typeof row.model === 'string' && row.model
+      ? row.model.includes('/')
+        ? row.model
+        : typeof row.modelProvider === 'string' && row.modelProvider
+          ? `${row.modelProvider}/${row.model}`
+          : undefined
+      : undefined;
+  const effort =
+    typeof row.thinkingLevel === 'string' && row.thinkingLevel ? row.thinkingLevel : undefined;
   const cwd = row.spawnedCwd ?? row.workspaceDir;
   const mainParent =
     (config.session?.dmScope ?? 'main') === 'main' && config.session?.scope !== 'global'
@@ -63,14 +70,21 @@ export async function describeIssueSession(
   // Retained presentation proves session custody only; it grants no new workflow authority.
   if (retained) return row.sessionId;
   match(typeof cwd === 'string' && (await realpath(cwd)) === (await realpath(expected.cwd)), 'cwd');
-  match(model === expected.model, 'model');
-  match(row.thinkingLevel === expected.thinkingLevel, 'thinkingLevel');
+  const settings = sessionSettings({
+    requested: { model: expected.model, effort: expected.thinkingLevel },
+    observed: { model, effort },
+    creationVerified: record.sessionCreation.verified === true,
+    requireInitialReadback: true,
+  });
+  if (settings.mismatch)
+    throw new IssueSessionMismatchError(settings.mismatch === 'effort' ? 'thinkingLevel' : 'model');
   match(
     row.parentSessionKey === undefined || row.parentSessionKey === mainParent,
     'parentSessionKey',
   );
   match(!row.spawnedBy, 'spawnedBy');
   match(row.spawnDepth === undefined || row.spawnDepth === 0, 'spawnDepth');
+  record.effective = settings.effective;
   return row.sessionId;
 }
 
@@ -146,7 +160,6 @@ export default async function createIssueSession(input: {
     await guard();
     creation.verified = true;
     record.threadId = params.key;
-    record.effective = { status: 'verified', model: params.model, effort: params.thinkingLevel };
     record.phase = 'created';
     delete record.blocker;
     delete record.failureStage;
@@ -160,8 +173,8 @@ export default async function createIssueSession(input: {
       label: params.label,
       group: params.category,
       workspace: params.cwd,
-      model: params.model,
-      effort: params.thinkingLevel,
+      model: record.effective?.model,
+      effort: record.effective?.effort,
       runStarted: false,
     };
   });

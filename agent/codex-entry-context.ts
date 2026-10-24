@@ -1,6 +1,6 @@
 import { dispatchAdmission } from './managed-issue.ts';
 import type { ImplementationResult } from './implementation-result.ts';
-import { replyLocator } from './reply-target.ts';
+import managedImplementationRoute from './managed-implementation-route.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
 import { realpath } from 'node:fs/promises';
 
@@ -97,26 +97,13 @@ export default async function codexEntryContext<T>(
       ? `https://github.com/${admission.repository.owner.login}/${admission.repository.name}/issues/${admission.issue.number}`
       : undefined;
     if (routeManaged) {
-      const action = input as { target?: string; id?: string; path?: string };
-      const target = action.target ?? currentTarget;
-      if (target) {
-        const locator = replyLocator(target);
-        if (locator.itemType !== 'issue' || locator.kind)
-          throw new Error('implementation-issue-url-required');
-        const owner = await managed({
-          repository: `${locator.owner}/${locator.name}`,
-          number: locator.number,
-        });
-        if (owner) {
-          if (
-            !owner.owner ||
-            (action.id && action.id !== owner.owner.id) ||
-            (action.path && (await realpath(action.path)) !== owner.path)
-          )
-            throw new Error('implementation-managed-context-mismatch');
-          return await routeManaged(owner.owner, owner.implementationResult);
-        }
-      }
+      const routed = await managedImplementationRoute({
+        action: input,
+        currentTarget,
+        managed,
+        route: routeManaged,
+      });
+      if (routed) return routed.result;
     }
     const turn = await codexDirectInput(connection.request, caller);
     const assertCurrent = async () => {

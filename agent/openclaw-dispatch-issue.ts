@@ -209,7 +209,6 @@ export default class OpenClawDispatchIssue {
           'dispatch-turn-cancelled',
           'dispatch-turn-failed',
           'dispatch-turn-input-mismatch',
-          'dispatch-turn-model-mismatch',
         ].includes(code)
       ) {
         record.work.code = code;

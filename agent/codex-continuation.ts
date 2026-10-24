@@ -113,6 +113,7 @@ export default async function runCodexContinuation(
       }
       const admissions = managedIssueState(await current.store.read(), state.records);
       const context: CodexWorkContext = {
+        records: state.records,
         pluginData,
         input,
         deps,

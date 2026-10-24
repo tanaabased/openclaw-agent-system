@@ -62,6 +62,7 @@ describe('agent/codex-delivery', () => {
   let providerLink: boolean | undefined;
   let bindingOverride: Record<string, unknown>;
   let gitCalls: string[][];
+  let branch: string;
   let linkReads: number, delayedLinkReads: number, bodyWrites: number;
   let failPatch: 'before' | 'after' | false;
   async function request(
@@ -317,6 +318,7 @@ describe('agent/codex-delivery', () => {
         routingNote: 'note',
         threadId: 'child',
         worktree,
+        issueBranch: { attemptId: id, name: 'pirog-work', phase: 'ready' },
         request: {
           title: 'issue',
           prompt: 'assessment',
@@ -337,6 +339,7 @@ describe('agent/codex-delivery', () => {
     });
     announcement = announcementFixture(account);
     head = firstHead;
+    branch = 'pirog-work';
     remote = '';
     dirty = false;
     attached = false;
@@ -377,7 +380,7 @@ describe('agent/codex-delivery', () => {
         gitCalls.push(argv);
         if (argv[0] === 'remote') return 'https://github.com/owner/repo.git';
         if (argv.includes('--git-common-dir')) return commonDir;
-        if (argv[0] === 'branch') return 'pirog-work';
+        if (argv[0] === 'branch') return branch;
         if (argv[0] === 'status') return dirty ? ' M source.ts' : '';
         if (argv[0] === 'rev-parse') return head;
         if (argv[0] === 'rev-list') return '2';
@@ -498,6 +501,51 @@ describe('agent/codex-delivery', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+  it('should reject a retired or same-issue branch before pushing or creating a pr', async () => {
+    branch = '3-retired-attempt';
+    await assert.rejects(publish(), /codex-branch-owner-mismatch/);
+    assert.equal(creates, 0);
+    assert.equal(remote, '');
+    assert.equal(
+      gitCalls.some((args) => args.includes('push')),
+      false,
+    );
+    branch = 'pirog-work';
+    await publish();
+    assert.equal(creates, 1);
+  });
+
+  it('should reject a branch switch after the publication preview', async () => {
+    const preview = await request('prepare');
+    branch = '3-retired-attempt';
+    await assert.rejects(
+      request('publish', { digest: requiredDigest(preview) }),
+      /codex-branch-owner-mismatch/,
+    );
+    assert.equal(remote, '');
+    assert.equal(creates, 0);
+  });
+
+  it('should require attempt ownership before the first delivery and retain an existing delivery binding', async () => {
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.issueBranch;
+      await save();
+    });
+    await assert.rejects(publish(), /codex-branch-owner-required/);
+    assert.equal(creates, 0);
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.issueBranch = { attemptId: id, name: branch, phase: 'ready' };
+      await save();
+    });
+    await publish();
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.issueBranch;
+      await save();
+    });
+    await publish();
+    assert.equal((await store.read()).records[0]!.issueBranch?.name, branch);
+    assert.equal(creates, 1);
   });
 
   for (const deny of [false, true])

@@ -47,6 +47,26 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'The launch receipt does not match this issue owner.',
       'Use the original target and receipt together; inspect existing work before requesting another launch.',
     ],
+    'codex-branch-owner-required': [
+      'This assignment has no verified ownership record for its current branch.',
+      'Preserve all files and commits. Resume a clean detached checkout at the retained starting commit through implementation context, or reconcile an existing delivery receipt with its original issue chat. A same-issue branch name or historical comment cannot establish ownership.',
+    ],
+    'codex-branch-owner-mismatch': [
+      'The current branch does not belong to this assignment attempt.',
+      'Preserve local work and switch back to this attempt’s retained branch before resuming. Do not reset or adopt a retired attempt’s branch.',
+    ],
+    'codex-branch-preparation-required': [
+      'This attempt’s branch preparation has not completed.',
+      'Resume implementation context in the retained chat to reconcile the saved Git operation before delivery. Do not create another branch or pull request.',
+    ],
+    'codex-branch-start-changed': [
+      'The checkout changed before this attempt’s branch preparation completed.',
+      'Preserve the changed files and commits and inspect the retained preparation before resuming. Do not reset the checkout or move another attempt’s commits onto this branch.',
+    ],
+    'codex-branch-ref-occupied': [
+      'The selected branch already exists without matching preparation evidence.',
+      'Preserve the branch and reconcile its owner before retrying in the same chat. Do not force-create, reset, or rename it to bypass the conflict.',
+    ],
     'git-worktree-branch-exists': [
       'This attempt already has a branch, but its owned checkout is absent.',
       'Preserve the branch and reconcile the retained preparation before retrying. Do not reset it or create another attempt to bypass an uncertain Git effect.',
