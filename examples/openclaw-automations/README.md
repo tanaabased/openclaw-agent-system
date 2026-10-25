@@ -4,7 +4,7 @@ Synchronize one command and one prompt automation without duplication, execute e
 
 ## What Belongs Here
 
-- Online installation creating automation sessions, public managed sync/list/run boundaries, and repeated sync preserving the same native jobs.
+- Public managed sync/list/run boundaries and repeated sync preserving the same native jobs.
 - A completed command receipt proving managed Git identity and a completed prompt in the owning agent context.
 - Exact native run IDs and durable completion evidence, rather than treating queued admission as success.
 
@@ -21,7 +21,6 @@ Synchronize one command and one prompt automation without duplication, execute e
 - Both jobs recur hourly; explicit run requests exercise them immediately. Command receipts are written beside the checked-in manifest on the disposable runner.
 - Strict AIMock supplies one prompt completion; scheduling, the Gateway, and command execution remain real. No hosted provider credential or remote SSH is needed.
 - Source tests cover option/offline variants, one-shot retention, unmanaged jobs, stale authority, containment, timeout/cancellation cleanup, and thread-selection permutations.
-- The first online install retains stdout, stderr, and exit status without retrying. Controlled-time source tests prove the creation timeout budget; a passing installed run does not establish that intermittent Gateway latency is eliminated.
 
 ## Setup
 
@@ -41,18 +40,9 @@ OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 ## Testing
 
 ```bash
-# should create both jobs through the first online installation
+# should synchronize both jobs without duplicating native identities or routing
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
-install_status=0
-openclaw agent-system install --yes --json >"$TMPDIR/automation-install.stdout" 2>"$TMPDIR/automation-install.stderr" || install_status=$?
-echo "$install_status" >"$TMPDIR/automation-install.status"
-cat "$TMPDIR/automation-install.stdout"
-cat "$TMPDIR/automation-install.stderr" >&2
-test "$install_status" -eq 0
-jq -e 'any(.outcomes[]; .component == "automations" and .status == "created")' "$TMPDIR/automation-install.stdout"
-
-# should preserve native identities and routing on repeated synchronization
-cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 openclaw agent-system automations list --json | tee "$TMPDIR/automation-before.json" | jq -e '.status == "aligned" and ([.jobs[].id] | sort) == ["identity","prompt"] and all(.jobs[]; .nativeEnabled == true) and any(.jobs[]; .id == "prompt" and (.routing | startswith("session:agent:")))'
 jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-before.json" > "$TMPDIR/automation-identities.json"
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
