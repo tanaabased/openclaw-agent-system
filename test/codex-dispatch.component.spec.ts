@@ -6097,7 +6097,7 @@ describe('agent/codex-dispatch', () => {
     );
     assert.equal(calls, 1);
   });
-  it('should prepare and reconcile manual issue work without assignment or scheduled activation', async () => {
+  it('should preserve manual issue preparation across scheduled observation and recover its false hold', async () => {
     const selected = await selectCodexIntake(pluginData, deps);
     await rm(selected.store.location.path);
     await writeFile(
@@ -6140,12 +6140,66 @@ describe('agent/codex-dispatch', () => {
       projects,
     });
     assert.equal(project.status, 'routing-required', JSON.stringify(project));
+    const store = new CodexDispatchStore(pluginData, selected.store.location.scope);
+    assert.equal((await store.read()).run, undefined);
+    const scheduled = {
+      threadId: 'intake-thread',
+      activation: async () => ({ sourceThreadId: 'intake-thread' }),
+    };
+    const observe = () => request('observe-denials', {}, scheduled);
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+    await runCodexIntake(pluginData, true, deps);
+    assert.equal((await observe()).status, 'ready');
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.phase = 'waiting';
+      record.retryAfter = now + 60000;
+      record.result = {
+        version: 1,
+        outcome: 'operator-setup-blocker',
+        code: 'dispatch-denial-history-unavailable',
+        summary: 'Manual preparation was mistaken for missing scheduled history.',
+        remediation: 'Recover the original launch through its owner.',
+        evidence: [],
+        progress: { completed: [], remaining: ['Recover the original launch.'] },
+      };
+      await save();
+    });
+    assert.equal((await observe()).status, 'ready');
+    const repaired = (await store.read()).records[0]!;
+    assert.equal(repaired.id, first.id);
+    assert.equal(repaired.phase, 'routing');
+    assert.equal(repaired.result, undefined);
+    assert.equal(repaired.retryAfter, undefined);
+    assert.equal(repaired.preparationObservation, undefined);
+    assert.equal(repaired.request, undefined);
+    assert.equal((await request('next', { projects }, scheduled)).status, 'idle');
+    assert.equal(
+      (
+        await request(
+          'report',
+          {
+            automationId: 'native-intake',
+            currentTimeIso: new Date(now).toISOString(),
+          },
+          scheduled,
+        )
+      ).status,
+      'report',
+    );
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({ ...manifest, github: { username: 'receiver' } }),
+    );
+    const resumed = await request('launch', { target, operation: 'context' });
+    assert.equal(resumed.id, first.id);
+    assert.equal(resumed.digest, project.digest);
     const prepared = await request('launch', {
       target,
       operation: 'prepare',
       id: first.id,
       projects,
-      digest: project.digest,
+      digest: resumed.digest,
       assessment: { complexity: 'medium', reason: 'Reuse existing issue work.' },
       title: 'MANUAL ISSUE',
     });
@@ -6158,7 +6212,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(state.records.length, 1);
     assert.equal(state.records[0]!.intakeId, undefined);
     assert.equal(state.records[0]!.issueMode, 'work');
-    assert.equal(state.run, undefined);
+    assert.equal(state.run?.automationId, 'native-intake');
     const nativeContext = await request('context', { id: first.id }, { threadId: native!.id });
     assert.equal(nativeContext.status, 'verified', JSON.stringify(nativeContext));
     const submitted = await request('result', { id: first.id, result }, { threadId: native!.id });
