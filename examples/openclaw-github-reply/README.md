@@ -61,7 +61,8 @@ openclaw agent-system automations list --json | jq -e '.status == "aligned" and 
 
 # should create one unassigned issue for the direct operation
 cd "$GITHUB_WORKSPACE/examples/openclaw-github-reply/emori"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System openclaw-github-reply $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -f 'body=Disposable direct operation target; do not assign.' | tee "$TMPDIR/notification-manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
+node --import tsx "$GITHUB_WORKSPACE/scripts/test-resources-task.ts" create-issue --title "Agent System openclaw-github-reply $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --body 'Disposable direct operation target; do not assign.' --output "$TMPDIR/notification-manual-issue.json"
+jq -e '.state == "open" and (.assignees | length) == 0' "$TMPDIR/notification-manual-issue.json"
 ```
 
 ## Testing
@@ -158,14 +159,6 @@ Cleanup stops the Gateway before changing external fixtures; only this job's iss
 # should stop the isolated gateway before changing external fixture state
 openclaw-gateway stop --timeout 340
 touch "$TMPDIR/notification-gateway-stopped"
-
-# should close only the unassigned direct-operation fixture
-test -f "$TMPDIR/notification-gateway-stopped"
-cd "$GITHUB_WORKSPACE/examples/openclaw-github-reply/emori"
-if test -s "$TMPDIR/notification-manual-issue.json"; then
-  number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
-  openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
-fi
 
 # should report strict mock failures and stop the provider
 set -o pipefail

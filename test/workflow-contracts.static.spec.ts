@@ -6,6 +6,8 @@ import { parse } from 'yaml';
 interface Step {
   run?: string;
   env?: Record<string, string>;
+  uses?: string;
+  with?: Record<string, unknown>;
 }
 
 describe('workflow safety and coverage', () => {
@@ -34,15 +36,33 @@ describe('workflow safety and coverage', () => {
       const job = workflow.jobs.examples;
       const steps = job.steps as Step[];
       const examples = steps.filter(({ run }) => /^leia\s/m.test(run ?? ''));
+      const collectors = steps.filter(
+        (step) =>
+          step.uses === './.github/actions/test-resource-cleanup' &&
+          step.with?.operation === 'finish',
+      );
       assert.ok(examples.length > 0);
       for (const example of examples) {
         assert.equal(example.env?.AGENT_SYSTEM_PACKAGE, '${{ steps.pack.outputs.tarball-path }}');
       }
-      // hosted credentials belong only to runtime execution, never shared setup.
+      // hosted credentials belong only to runtime execution and receipt collection.
+      for (const collector of collectors) {
+        for (const [name, value] of Object.entries(collector.env ?? {})) {
+          if (value.includes('secrets.')) {
+            assert.ok(['GH_TOKEN_TANAABOT', 'GH_TOKEN_EMORI'].includes(name));
+            assert.equal(value, '${{ secrets.' + name + ' }}');
+            assert.ok(kind === 'openclaw' || kind === 'notifications');
+          }
+        }
+      }
       for (const env of [
         workflow.env,
         job.env,
-        ...steps.filter((step) => kind === 'os' || !examples.includes(step)).map(({ env }) => env),
+        ...steps
+          .filter(
+            (step) => kind === 'os' || (!examples.includes(step) && !collectors.includes(step)),
+          )
+          .map(({ env }) => env),
       ]) {
         assert.ok(!JSON.stringify(env ?? {}).includes('secrets.'));
       }
@@ -54,6 +74,19 @@ describe('workflow safety and coverage', () => {
       }
     });
   }
+
+  it('should execute cleanup from the default branch without checking out source artifacts or writable actions tokens', async () => {
+    const workflow = parse(await readFile('.github/workflows/test-resource-cleanup.yml', 'utf8'));
+    assert.ok(Object.values(workflow.permissions).every((value) => value === 'read'));
+    const steps = workflow.jobs.cleanup.steps as Step[];
+    const checkout = steps.find(({ uses }) => uses?.startsWith('actions/checkout@'));
+    assert.equal(checkout?.with?.ref, '${{ github.event.repository.default_branch }}');
+    assert.equal(checkout?.with?.['persist-credentials'], false);
+    assert.equal(
+      steps.some(({ uses }) => uses?.startsWith('actions/download-artifact@')),
+      false,
+    );
+  });
 
   it('should enumerate distinct existing examples in their owning workflows', async () => {
     const selected = new Set<string>();

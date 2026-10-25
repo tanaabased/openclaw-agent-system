@@ -1,0 +1,17 @@
+name: Test resource cleanup
+description: Record disposable test resources or clean a completed example run.
+inputs:
+  operation:
+    description: prepare, finish, or cleanup
+    required: true
+  scenario:
+    description: Source matrix scenario for prepare
+  os:
+    description: Source runner label for prepare
+  run-id:
+    description: Completed source workflow run for cleanup
+  attempt:
+    description: Exact completed source attempt for cleanup
+runs:
+  using: node24
+  main: dist/index.js

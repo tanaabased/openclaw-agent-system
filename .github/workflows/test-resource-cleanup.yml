@@ -1,0 +1,52 @@
+name: Test resource cleanup
+
+on:
+  workflow_run:
+    workflows: [OS tests, Codex tests, OpenClaw tests, Notification tests]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run-id:
+        description: Completed source run ID to reconcile
+        required: true
+        type: string
+      attempt:
+        description: Exact source run attempt
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: test-resource-cleanup-${{ github.event.workflow_run.id || inputs.run-id }}-${{ github.event.workflow_run.run_attempt || inputs.attempt }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.head_repository.id == github.repository_id
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout trusted cleanup code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Install Bun
+        uses: tanaabased/actions/setup-bun@v1
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Build cleanup action
+        run: bun build scripts/test-resources-task.ts --target node --outfile .github/actions/test-resource-cleanup/dist/index.js
+      - name: Reconcile completed source attempt
+        uses: ./.github/actions/test-resource-cleanup
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
+          GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
+        with:
+          operation: cleanup
+          run-id: ${{ github.event.workflow_run.id || inputs.run-id }}
+          attempt: ${{ github.event.workflow_run.run_attempt || inputs.attempt }}

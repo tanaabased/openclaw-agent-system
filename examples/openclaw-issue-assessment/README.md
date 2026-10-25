@@ -37,6 +37,7 @@ mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-issue-
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/keys/id_ed25519"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/keys/id_ed25519.pub"
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
+node --import tsx "$GITHUB_WORKSPACE/scripts/test-resources-task.ts" keys --manifest "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/agent.yaml"
 chmod 600 "$HOME/.ssh/known_hosts"
 
 # should start the isolated gateway
@@ -71,7 +72,8 @@ openclaw agent-system automations list --json | jq -e '.status == "aligned" and 
 
 # should create one unassigned issue for the direct operation
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/emori"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System openclaw-issue-assessment $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -f 'body=Disposable direct operation target; do not assign.' | tee "$TMPDIR/notification-manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
+node --import tsx "$GITHUB_WORKSPACE/scripts/test-resources-task.ts" create-issue --title "Agent System openclaw-issue-assessment $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --body 'Disposable direct operation target; do not assign.' --output "$TMPDIR/notification-manual-issue.json"
+jq -e '.state == "open" and (.assignees | length) == 0' "$TMPDIR/notification-manual-issue.json"
 
 # should prepare an independent checkout for the explicit assessment
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot"
@@ -115,23 +117,6 @@ test -f "$TMPDIR/notification-gateway-stopped"
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot"
 if test -s "$TMPDIR/direct-assessment-worktree.json"; then
   openclaw agent-system tool worktree -- remove remote 381-direct-assessment | jq -e '.status == "removed"'
-fi
-
-# should close only the unassigned direct-operation fixture
-test -f "$TMPDIR/notification-gateway-stopped"
-cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/emori"
-if test -s "$TMPDIR/notification-manual-issue.json"; then
-  number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
-  openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
-fi
-
-# should remove only this run's ssh authentication key
-test -f "$TMPDIR/notification-gateway-stopped"
-cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot"
-key_material=$(awk '{print $2}' keys/id_ed25519.pub)
-key_id=$(openclaw agent-system tool gh -- api --paginate /user/keys --jq ".[] | select((.key | split(\" \")) | index(\"$key_material\")) | .id")
-if test -n "$key_id"; then
-  openclaw agent-system tool gh -- api --method DELETE "/user/keys/$key_id"
 fi
 
 # should report strict mock failures and stop the provider

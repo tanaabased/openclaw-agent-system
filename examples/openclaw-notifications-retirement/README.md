@@ -47,6 +47,7 @@ mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-notifi
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot/keys/id_ed25519"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot/keys/id_ed25519.pub"
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
+node --import tsx "$GITHUB_WORKSPACE/scripts/test-resources-task.ts" keys --manifest "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot/agent.yaml"
 
 # should boot the isolated gateway
 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
@@ -91,7 +92,8 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 # should assign one disposable issue from emori to tanaabot after the safe intake baseline
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/emori"
 openclaw agent-system tool gh -- api repos/tanaabased/big-test-bucket | jq '{id,node_id,default_branch}' > "$TMPDIR/notification-repository.json"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System retirement flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
+node --import tsx "$GITHUB_WORKSPACE/scripts/test-resources-task.ts" create-issue --title "Agent System retirement flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --body-file "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/issue.md" --output "$TMPDIR/notification-issue.json"
+jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0' "$TMPDIR/notification-issue.json"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
 
@@ -183,7 +185,7 @@ test "$(git --git-dir="$(cat "$TMPDIR/notification-git-dir")" rev-parse "$(cat "
 
 # should admit another disposable issue for unavailable-session retirement
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/emori"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System unavailable session $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/issue.md" > "$TMPDIR/notification-unavailable-issue.json"
+node --import tsx "$GITHUB_WORKSPACE/scripts/test-resources-task.ts" create-issue --title "Agent System unavailable session $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --body-file "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/issue.md" --output "$TMPDIR/notification-unavailable-issue.json"
 number=$(jq -er .number "$TMPDIR/notification-unavailable-issue.json")
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
@@ -234,21 +236,8 @@ openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(
 GitHub issues, PRs, branches, and SSH registrations persist beyond the runner. Quiesce the Gateway once before disposing of those resources; the runner owns local files and the mock process.
 
 ```bash
-# should dispose of this run's persistent github fixtures
+# should stop the isolated gateway
 openclaw-gateway stop --timeout 340
-cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/emori"
-for fixture in "$TMPDIR/notification-issue.json" "$TMPDIR/notification-unavailable-issue.json"; do
-  if test -s "$fixture"; then
-    number=$(jq -er .number "$fixture")
-    openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
-  fi
-done
-cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
-key_material=$(awk '{print $2}' keys/id_ed25519.pub)
-key_id=$(openclaw agent-system tool gh -- api --paginate /user/keys --jq ".[] | select((.key | split(\" \")) | index(\"$key_material\")) | .id")
-if test -n "$key_id"; then
-  openclaw agent-system tool gh -- api --method DELETE "/user/keys/$key_id"
-fi
 
 # should report strict model failures after the final native turn
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics

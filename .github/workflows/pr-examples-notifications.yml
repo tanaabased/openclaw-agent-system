@@ -84,6 +84,15 @@ jobs:
       - name: Pack prepared plugin
         id: pack
         uses: tanaabased/actions/npm-pack@v1
+      - name: Build test resource action
+        run: bun build scripts/test-resources-task.ts --target node --outfile .github/actions/test-resource-cleanup/dist/index.js
+      - name: Prepare test resource receipts
+        id: resources
+        uses: ./.github/actions/test-resource-cleanup
+        with:
+          operation: prepare
+          scenario: ${{ matrix.example }}
+          os: ubuntu-24.04
       - name: Run Leia-backed example
         shell: bash
         env:
@@ -105,3 +114,12 @@ jobs:
           else
             echo "No OpenClaw workspace was created; see the scenario failure output above."
           fi
+      - name: Finish test resource receipts
+        if: always() && steps.resources.outcome == 'success'
+        uses: ./.github/actions/test-resource-cleanup
+        env:
+          XDG_CONFIG_HOME: ${{ runner.temp }}/agent-system-config
+          GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
+          GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
+        with:
+          operation: finish

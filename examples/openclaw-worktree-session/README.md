@@ -29,6 +29,7 @@ mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/keys" "$HOME/.ssh
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/keys/id_ed25519"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/keys/id_ed25519.pub"
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
+node --import tsx "$GITHUB_WORKSPACE/scripts/test-resources-task.ts" keys --manifest "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/agent.yaml"
 chmod 600 "$HOME/.ssh/known_hosts"
 cd "$GITHUB_WORKSPACE/examples/openclaw-worktree-session"
 openclaw agent-system install --yes --json | jq -e '.agentId == "worktree-tanaabot" and (.outcomes | any(.code == "add-github-ssh-keys") and any(.code == "add-github-ssh-signing-keys"))'
@@ -78,18 +79,6 @@ jq -e '.strictMissCount == 0 and .finalResponseCount == 2 and any(.tools[]; .nam
 ## Cleanup
 
 ```bash
-# should remove only the generated account keys
-cd "$GITHUB_WORKSPACE/examples/openclaw-worktree-session"
-key_material=$(awk '{print $2}' keys/id_ed25519.pub)
-for collection in keys ssh_signing_keys; do
-  key_id=$(openclaw agent-system tool gh -- api --paginate "/user/$collection" --jq ".[] | select((.key | split(\" \") | index(\"$key_material\")) != null) | .id")
-  if test -n "$key_id"; then
-    openclaw agent-system tool gh -- api --method DELETE "/user/$collection/$key_id"
-  fi
-  remaining=$(openclaw agent-system tool gh -- api --paginate "/user/$collection" --jq ".[] | select((.key | split(\" \") | index(\"$key_material\")) != null) | .id")
-  test -z "$remaining"
-done
-
 # should remove the clean remote worktree
 cd "$GITHUB_WORKSPACE/examples/openclaw-worktree-session"
 openclaw agent-system tool worktree -- remove remote 306-runtime-context | jq -e '.status == "removed"'

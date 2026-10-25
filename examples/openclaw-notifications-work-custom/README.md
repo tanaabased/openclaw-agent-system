@@ -38,6 +38,7 @@ mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-notifi
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot/keys/id_ed25519"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot/keys/id_ed25519.pub"
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
+node --import tsx "$GITHUB_WORKSPACE/scripts/test-resources-task.ts" keys --manifest "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot/agent.yaml"
 
 # should start the isolated gateway
 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
@@ -83,7 +84,8 @@ Fixture assignments use the native GitHub tool; lost responses are reconciled wi
 ```bash
 # should create an issue as emori and assign it as tanaabot after the safe intake baseline
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/emori"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System work-custom flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
+node --import tsx "$GITHUB_WORKSPACE/scripts/test-resources-task.ts" create-issue --title "Agent System work-custom flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --body-file "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/issue.md" --output "$TMPDIR/notification-issue.json"
+jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0' "$TMPDIR/notification-issue.json"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot"
 node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" assign --number "$number" | jq -e 'any(.assignees[]; .login == "tanaabot")'
@@ -127,31 +129,8 @@ jq -e 'all(.[] | select(.user.login == "tanaabot"); (.body | contains("Evidence 
 GitHub issues, PRs, branches, and SSH registrations persist beyond the runner. Quiesce the Gateway once before disposing of those resources; the runner owns local files and the mock process.
 
 ```bash
-# should dispose of this run's persistent github fixtures
+# should stop the isolated gateway
 openclaw-gateway stop --timeout 340
-cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot"
-if test -s "$TMPDIR/notification-issue.json" && test -d "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2"; then
-  issue=$(jq -er .node_id "$TMPDIR/notification-issue.json")
-  branch=$(jq -sr --arg issue "$issue" '[.[].records[] | select(.stageReceipt.binding.subjectId == $issue)] | .[0].work.delivery.binding.branch // empty' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
-  if test -n "$branch"; then
-    node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" pulls --branch "$branch" | jq -r 'if length <= 1 then .[].number else error("ambiguous fixture PR") end' > "$TMPDIR/notification-cleanup-pr"
-    if test -s "$TMPDIR/notification-cleanup-pr"; then
-      openclaw agent-system tool gh -- pr close "$(cat "$TMPDIR/notification-cleanup-pr")" --repo tanaabased/big-test-bucket
-    fi
-    openclaw agent-system tool gh -- api --method DELETE "repos/tanaabased/big-test-bucket/git/refs/heads/$branch"
-  fi
-fi
-cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/emori"
-if test -s "$TMPDIR/notification-issue.json"; then
-  number=$(jq -er .number "$TMPDIR/notification-issue.json")
-  openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
-fi
-cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot"
-key_material=$(awk '{print $2}' keys/id_ed25519.pub)
-key_id=$(openclaw agent-system tool gh -- api --paginate /user/keys --jq ".[] | select((.key | split(\" \")) | index(\"$key_material\")) | .id")
-if test -n "$key_id"; then
-  openclaw agent-system tool gh -- api --method DELETE "/user/keys/$key_id"
-fi
 
 # should report strict model failures after the final native turn
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics
