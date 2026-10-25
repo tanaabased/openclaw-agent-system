@@ -117,7 +117,7 @@ export default async function reconcileOpenClawLifecycle(input: {
             : undefined,
         });
       },
-      cleanup: async (record, intake, recheck, shared) => {
+      cleanup: async (record, intake, recheck, shared, _observed, issueClosed) => {
         if (!record.request) return { archived: true, worktreeRemoved: true };
         const cleanup = service.dependencies.worktrees.cleanupGitHub;
         if (!cleanup)
@@ -181,6 +181,7 @@ export default async function reconcileOpenClawLifecycle(input: {
             itemDatabaseId: intake.issue.databaseId,
             itemNumber: intake.issue.number,
             itemType: 'issue' as const,
+            ...(issueClosed ? { closedIssueWorktree: record.worktree } : {}),
           };
           const worktree = await service.dependencies.worktrees.inspectGitHub(worktreeInput);
           if (worktree && worktree.path !== record.worktree)
@@ -190,6 +191,7 @@ export default async function reconcileOpenClawLifecycle(input: {
               ...worktreeInput,
               worktree,
               verifyOnly: true,
+              purge: issueClosed,
             });
             if (proof.status !== 'preserved')
               throw new Error('retirement-worktree-' + proof.status);
@@ -260,6 +262,7 @@ export default async function reconcileOpenClawLifecycle(input: {
             const result = await cleanup.call(service.dependencies.worktrees, {
               ...worktreeInput,
               worktree,
+              purge: issueClosed,
             });
             if (result.status !== 'removed')
               throw new Error('retirement-worktree-' + result.status);

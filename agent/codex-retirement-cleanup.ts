@@ -16,6 +16,7 @@ export default async function codexRetirementCleanup(input: {
   codexHome: string;
   repository: string;
   archived: boolean;
+  issueClosed?: boolean;
   inventory: unknown;
   now: number;
   turnId: string;
@@ -107,7 +108,10 @@ export default async function codexRetirementCleanup(input: {
     return pending('retirement-native-resource-protected');
   const git = input.git ?? dispatchGit;
   await verifyDispatchWorktree(record.project, record.worktree, input.repository, git, 'handoff');
-  if (await git(record.worktree, ['status', '--porcelain=v1', '--untracked-files=all']))
+  if (
+    !input.issueClosed &&
+    (await git(record.worktree, ['status', '--porcelain=v1', '--untracked-files=all']))
+  )
     return pending('retirement-worktree-dirty');
   const head = await git(record.worktree, ['rev-parse', 'HEAD']);
   if (

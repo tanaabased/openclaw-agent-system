@@ -36,6 +36,7 @@ export interface TrustedGitHubWorktreePrepareInput extends TrustedGitHubWorktree
 }
 
 export interface TrustedGitHubWorktreeCleanupInput extends TrustedGitHubWorktreeInput {
+  closedIssueWorktree?: string;
   verifyOnly?: boolean;
   purge?: boolean;
   worktree: { branch: string; path: string };
@@ -93,7 +94,7 @@ export default class TrustedGitWorktreeService {
   }
 
   public async inspectGitHub(
-    input: TrustedGitHubWorktreeInput,
+    input: TrustedGitHubWorktreeInput & { closedIssueWorktree?: string },
   ): Promise<TrustedGitHubWorktreeResult | undefined> {
     const attemptId = attemptIdentity(input);
     const agentId = requiredText(input.agentId, 'The notification agent id');
@@ -133,7 +134,21 @@ export default class TrustedGitWorktreeService {
         basename(worktree.path) === stableName &&
         basename(dirname(worktree.path)) === repositoryDirectory,
     );
-    if (match && (match.branch !== stableName || attemptId !== undefined)) {
+    if (
+      match &&
+      input.closedIssueWorktree !== undefined &&
+      match.path !== input.closedIssueWorktree
+    ) {
+      throw new GitWorktreeConflict(
+        'owner-mismatch',
+        'The closed GitHub task does not own the inspected worktree path.',
+      );
+    }
+    if (
+      match &&
+      input.closedIssueWorktree === undefined &&
+      (match.branch !== stableName || attemptId !== undefined)
+    ) {
       const suffix = gitHubIssueBranchSuffix(
         agentId,
         workspaceDir,
@@ -274,7 +289,7 @@ export default class TrustedGitWorktreeService {
         { type: 'git-worktree', id: workId },
       ],
       summary: purge
-        ? 'Purge an operator-selected GitHub worktree'
+        ? 'Remove an owned GitHub worktree and discard local files'
         : 'Remove a clean retired GitHub worktree',
     };
     const authorization = await this.#dependencies.definition.authorization?.authorize?.(

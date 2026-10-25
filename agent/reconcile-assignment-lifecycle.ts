@@ -43,6 +43,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
     fresh: () => Promise<void>,
     shared: readonly R[],
     native: RetirementNativeObservation | undefined,
+    issueClosed: boolean,
   ): Promise<RetirementCleanupResult>;
   reactivate?(record: R, intake: IntakeRecord): Promise<boolean>;
   fresh(): Promise<void>;
@@ -333,6 +334,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         const currentReason = await provider();
         const currentNative = await input.observe(record);
         if (
+          (reason === 'issue-closed' && currentReason !== 'issue-closed') ||
           (record.retirement?.reason === 'assignment-removed' &&
             (currentReason !== 'assignment-removed' ||
               eventId !== record.assignmentObservation?.event?.nodeId)) ||
@@ -350,6 +352,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         fresh,
         shared.filter((other) => !other.retired),
         native,
+        reason === 'issue-closed',
       );
       if (result.archived) record.retirement.archivedAt ??= now;
       if (result.worktreeRemoved) record.retirement.worktreeRemovedAt ??= now;

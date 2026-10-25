@@ -922,6 +922,57 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 2);
   });
 
+  for (const leftover of ['renamed', 'modified', 'untracked'] as const) {
+    it(`should archive and retire a closed checkout with ${leftover} leftovers`, async () => {
+      const { items } = await assignments(1, 1);
+      const first = await next();
+      await prepare(first);
+      await assess(first.id);
+      await completeAssessment(first.id);
+      const before = structuredClone(await record());
+      const inspect = service.dependencies.worktrees.inspectGitHub;
+      let removed = false;
+      service.dependencies.worktrees.inspectGitHub = async (input) => {
+        if (removed) return undefined;
+        if (leftover === 'renamed' && input.closedIssueWorktree !== before.worktree)
+          throw new GitWorktreeConflict('owner-mismatch', 'changed branch');
+        const tree = await inspect(input);
+        return tree && { ...tree, branch: leftover === 'renamed' ? 'renamed' : tree.branch };
+      };
+      service.dependencies.worktrees.cleanupGitHub = async (input) => {
+        if (leftover !== 'renamed' && !input.purge)
+          return {
+            ...input.worktree,
+            repositoryId: 'github-10',
+            workId: 'issue-20',
+            status: 'dirty',
+          };
+        if (!input.verifyOnly) {
+          assert.equal(session!.archived, true);
+          removed = true;
+          await rm(input.worktree.path, { recursive: true });
+        }
+        return {
+          ...input.worktree,
+          repositoryId: 'github-10',
+          workId: 'issue-20',
+          status: input.verifyOnly ? 'preserved' : 'removed',
+        };
+      };
+      items[0]!.state = 'closed';
+      service.dependencies.now = () => baseline + 180_001;
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      service.dependencies.now = () => before.createdAt + 24 * 60 * 60_000;
+      await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
+      const after = await record();
+      assert.ok(after.retired, after.retirement?.code ?? 'retirement did not finish');
+      assert.ok(after.retirement?.archivedAt);
+      assert.ok(after.retirement?.worktreeRemovedAt);
+      assert.deepEqual(after.result, before.result);
+      assert.equal(removed, true);
+    });
+  }
+
   it('should reconcile interrupted worktree removal without repeating native archival or removal', async () => {
     await prepare(await next());
     const inspect = service.dependencies.worktrees.inspectGitHub;

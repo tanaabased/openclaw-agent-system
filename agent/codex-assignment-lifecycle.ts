@@ -178,7 +178,7 @@ export default async function reconcileCodexLifecycle(
               : undefined,
           });
         },
-        cleanup: async (record, intake, fresh, shared, observed) => {
+        cleanup: async (record, intake, fresh, shared, observed, issueClosed) => {
           if (!record.request && !record.worktree) return { archived: true, worktreeRemoved: true };
           if (prepared) return { archived: false, worktreeRemoved: false };
           if (!manual && state.run?.id === occurrence.id && state.run.actions >= 12)
@@ -193,6 +193,7 @@ export default async function reconcileCodexLifecycle(
             codexHome: current.codexHome,
             repository: intake.repository.owner.login + '/' + intake.repository.name,
             archived: observed?.archived === true,
+            issueClosed,
             inventory,
             now,
             turnId: occurrence.id,
