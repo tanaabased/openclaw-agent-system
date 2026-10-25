@@ -36,10 +36,6 @@ jobs:
           persist-credentials: false
       - name: Install Bun
         uses: tanaabased/actions/setup-bun@v1
-      - name: Install dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
-      - name: Build cleanup action
-        run: bun build scripts/test-resources-task.ts --target node --outfile .github/actions/test-resource-cleanup/dist/index.js
       - name: Reconcile completed source attempt
         uses: ./.github/actions/test-resource-cleanup
         env:
@@ -47,6 +43,5 @@ jobs:
           GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
           GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
         with:
-          operation: cleanup
           run-id: ${{ github.event.workflow_run.id || inputs.run-id }}
           attempt: ${{ github.event.workflow_run.run_attempt || inputs.attempt }}

@@ -1,17 +1,17 @@
 name: Test resource cleanup
-description: Record disposable test resources or clean a completed example run.
+description: Clean resources tagged for one completed example run and attempt.
 inputs:
-  operation:
-    description: prepare, finish, or cleanup
-    required: true
-  scenario:
-    description: Source matrix scenario for prepare
-  os:
-    description: Source runner label for prepare
   run-id:
-    description: Completed source workflow run for cleanup
+    description: Completed source workflow run
+    required: true
   attempt:
-    description: Exact completed source attempt for cleanup
+    description: Exact source run attempt
+    required: true
 runs:
-  using: node24
-  main: dist/index.js
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        TEST_SOURCE_RUN: ${{ inputs.run-id }}
+        TEST_SOURCE_ATTEMPT: ${{ inputs.attempt }}
+      run: bun "$GITHUB_ACTION_PATH/../../../scripts/test-resource-cleanup.ts"

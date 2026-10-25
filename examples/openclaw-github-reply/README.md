@@ -61,8 +61,7 @@ openclaw agent-system automations list --json | jq -e '.status == "aligned" and 
 
 # should create one unassigned issue for the direct operation
 cd "$GITHUB_WORKSPACE/examples/openclaw-github-reply/emori"
-node --import tsx "$GITHUB_WORKSPACE/scripts/test-resources-task.ts" create-issue --title "Agent System openclaw-github-reply $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --body 'Disposable direct operation target; do not assign.' --output "$TMPDIR/notification-manual-issue.json"
-jq -e '.state == "open" and (.assignees | length) == 0' "$TMPDIR/notification-manual-issue.json"
+openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=$TEST_RESOURCE_PREFIX Agent System openclaw-github-reply $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -f 'body=Disposable direct operation target; do not assign.' | tee "$TMPDIR/notification-manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
 ```
 
 ## Testing

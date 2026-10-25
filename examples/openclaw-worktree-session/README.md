@@ -23,13 +23,12 @@ Enroll disposable SSH keys, prepare a remote managed checkout, execute a native 
 # should enroll disposable ssh keys for the managed remote workspace
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-ssh-key --yolo
 openclaw-aimock prepare --scenario openclaw-worktree-session
-sed -e "s/__GITHUB_RUN_ID__/$GITHUB_RUN_ID/g" -e "s/__GITHUB_RUN_ATTEMPT__/$GITHUB_RUN_ATTEMPT/g" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/agent.yaml" > "$TMPDIR/worktree-agent.yaml"
+sed -e "s|__TEST_RESOURCE_PREFIX__|$TEST_RESOURCE_PREFIX|g" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/agent.yaml" > "$TMPDIR/worktree-agent.yaml"
 mv "$TMPDIR/worktree-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/agent.yaml"
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/keys" "$HOME/.ssh"
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/keys/id_ed25519"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/keys/id_ed25519.pub"
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
-node --import tsx "$GITHUB_WORKSPACE/scripts/test-resources-task.ts" keys --manifest "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/agent.yaml"
 chmod 600 "$HOME/.ssh/known_hosts"
 cd "$GITHUB_WORKSPACE/examples/openclaw-worktree-session"
 openclaw agent-system install --yes --json | jq -e '.agentId == "worktree-tanaabot" and (.outcomes | any(.code == "add-github-ssh-keys") and any(.code == "add-github-ssh-signing-keys"))'

@@ -33,12 +33,11 @@ openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot/keys" "$HOME/.ssh"
 owner_node=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id)
 actor_node=$(GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id')
-sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
+sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__TEST_RESOURCE_PREFIX__|$TEST_RESOURCE_PREFIX|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
 mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot/agent.yaml"
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot/keys/id_ed25519"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot/keys/id_ed25519.pub"
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
-node --import tsx "$GITHUB_WORKSPACE/scripts/test-resources-task.ts" keys --manifest "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot/agent.yaml"
 
 # should start the isolated gateway
 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
@@ -84,8 +83,7 @@ Fixture assignments use the native GitHub tool; lost responses are reconciled wi
 ```bash
 # should create an issue as emori and assign it as tanaabot after the safe intake baseline
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/emori"
-node --import tsx "$GITHUB_WORKSPACE/scripts/test-resources-task.ts" create-issue --title "Agent System work-custom flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --body-file "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/issue.md" --output "$TMPDIR/notification-issue.json"
-jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0' "$TMPDIR/notification-issue.json"
+openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=$TEST_RESOURCE_PREFIX Agent System work-custom flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-work-custom/tanaabot"
 node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" assign --number "$number" | jq -e 'any(.assignees[]; .login == "tanaabot")'

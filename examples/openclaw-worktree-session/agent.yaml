@@ -27,7 +27,7 @@ github:
   token: GH_TOKEN_TANAABOT
   ssh-keys:
     path: keys/id_ed25519.pub
-    title: agent-system-worktree-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__-authentication
+    title: __TEST_RESOURCE_PREFIX__worktree-authentication
   ssh-signing-keys:
     path: keys/id_ed25519.pub
-    title: agent-system-worktree-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__-signing
+    title: __TEST_RESOURCE_PREFIX__worktree-signing
