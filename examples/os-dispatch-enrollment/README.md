@@ -49,6 +49,7 @@ export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-dispatch
 cd "$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/data"
 if openclaw agent-system install --yes --json >"$TMPDIR/enrollment-failed.json"; then exit 1; fi
 jq -e '.status == "failed" and .blocked.code == "session-dispatch-enrollment-unverified" and (.blocked.sessionDispatchDiagnostic | (.category == "transport" or .category == "timeout") and (.phase == "connection" or .phase == "unknown") and (.reasonCode | type == "string"))' "$TMPDIR/enrollment-failed.json"
+jq -e 'if .blocked.sessionDispatchDiagnostic.reasonCode == "gateway-readiness-deadline" then .blocked.sessionDispatchDiagnostic.readinessEvidence | .state == "observed" and .maxWaitMs == 30000 and .elapsedMs >= .maxWaitMs and .totalObservations > 0 and (.observations | length > 0 and length <= 16) and .droppedObservations == (.totalObservations - (.observations | length)) and all(.observations[]; .path == "/startupz" and .statusCode == null and .transport != "none") else false end' "$TMPDIR/enrollment-failed.json"
 
 # should start the gateway for owner-consented device enrollment
 export OPENCLAW_PATH_BOOTSTRAPPED=1 PATH="$GITHUB_WORKSPACE/examples/os-dispatch-enrollment/provider:$PATH"

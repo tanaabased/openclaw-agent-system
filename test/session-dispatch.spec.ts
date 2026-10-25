@@ -12,6 +12,8 @@ import sessionDispatchRequirements, {
   sessionDispatchScopes,
 } from '../agent/session-dispatch-requirements.ts';
 import confirmSessionDispatch from '../cli/session-dispatch-consent.ts';
+import { SessionDispatchConnectionError } from '../credentials/session-dispatch-diagnostic.ts';
+import { observeReadiness } from '../credentials/session-dispatch-readiness-evidence.ts';
 import SessionDispatchCredential, {
   type DispatchCredential,
   type DispatchCredentialDependencies,
@@ -196,6 +198,49 @@ describe('credentials/session-dispatch', () => {
       assert.ok(!f.calls.includes('remove'));
     });
   }
+
+  it('should preserve readiness history while retaining the enrollment identity and recovery', async () => {
+    const f = fixture();
+    const connect = f.dependencies.connect;
+    const readinessEvidence = {
+      state: 'observed' as const,
+      elapsedMs: 30_000,
+      maxWaitMs: 30_000,
+      totalObservations: 1,
+      droppedObservations: 0,
+      observations: [
+        observeReadiness('/startupz', 0, {
+          statusCode: 503,
+          body: { ok: false, status: 'starting', token: 'private-token' },
+        }),
+      ],
+    };
+    f.dependencies.connect = async () => {
+      throw new SessionDispatchConnectionError({
+        category: 'timeout',
+        phase: 'connection',
+        reasonCode: 'gateway-readiness-deadline',
+        readinessEvidence,
+      });
+    };
+    await assert.rejects(f.service.enroll({ sessionDispatchConsent: true }), (error: unknown) => {
+      assert.ok(error instanceof Error && 'sessionDispatchDiagnostic' in error);
+      assert.deepEqual(error.sessionDispatchDiagnostic, {
+        category: 'timeout',
+        phase: 'connection',
+        reasonCode: 'gateway-readiness-deadline',
+        readinessEvidence,
+      });
+      assert.match(error.message, /rerun Install to resume this identity/);
+      assert.ok(!JSON.stringify(error).includes('private-token'));
+      return true;
+    });
+    const retained = f.record()!;
+    f.dependencies.connect = connect;
+    await f.service.enroll({ sessionDispatchConsent: true });
+    assert.equal(f.record()!.device.deviceId, retained.device.deviceId);
+    assert.equal(f.calls.filter((call) => call === 'issue').length, 1);
+  });
 
   it('should inspect missing enrollment without issuing or persisting credentials', async () => {
     const f = fixture();

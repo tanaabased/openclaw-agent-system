@@ -3,10 +3,16 @@ import {
   GatewayClientRequestTimeoutError,
 } from '@openclaw/gateway-client';
 
+import {
+  retainReadinessEvidence,
+  type ReadinessEvidence,
+} from './session-dispatch-readiness-evidence.ts';
+
 export interface SessionDispatchDiagnostic {
   category: 'timeout' | 'transport' | 'gateway-rejected' | 'unknown';
   phase: 'connection' | 'handshake' | 'unknown';
   reasonCode: keyof typeof diagnostics;
+  readinessEvidence?: ReadinessEvidence;
 }
 
 const diagnostics = {
@@ -44,7 +50,17 @@ export function retainSessionDispatchDiagnostic(value: unknown): SessionDispatch
       'phase' in value &&
       value.phase === expected.phase
     )
-      return { ...expected, reasonCode };
+      return {
+        ...expected,
+        reasonCode,
+        ...(reasonCode === 'gateway-readiness-deadline' || reasonCode === 'gateway-reload-failed'
+          ? {
+              readinessEvidence: retainReadinessEvidence(
+                'readinessEvidence' in value ? value.readinessEvidence : undefined,
+              ),
+            }
+          : {}),
+      };
   }
   return { ...diagnostics.unknown, reasonCode: 'unknown' };
 }
@@ -98,7 +114,26 @@ export function classifySessionDispatchFailure(error: unknown): SessionDispatchD
 
 export function sessionDispatchDiagnosticMessage(value: SessionDispatchDiagnostic): string {
   const safe = retainSessionDispatchDiagnostic(value);
-  return `Session dispatch connection: category=${safe.category}; phase=${safe.phase}; reason=${safe.reasonCode}.`;
+  const evidence = safe.readinessEvidence;
+  const history =
+    evidence?.state === 'observed'
+      ? `readiness evidence: elapsed=${evidence.elapsedMs}ms; budget=${evidence.maxWaitMs}ms; observations=${evidence.totalObservations}; dropped=${evidence.droppedObservations}.` +
+        evidence.observations
+          .map(
+            (observation) =>
+              `\n${observation.path} @${observation.elapsedMs}ms: http=${observation.statusCode ?? 'absent'}; transport=${observation.transport}; body=${observation.body}; ` +
+              (observation.path === '/startupz'
+                ? `ok=${observation.startupOk}; status=${observation.startupStatus}.`
+                : `ready=${observation.ready}; plugin-reload=${observation.pluginReloadFailing}; phase=${observation.pluginReloadPhase}.`),
+          )
+          .join('')
+      : evidence
+        ? `readiness evidence: ${evidence.state}.`
+        : '';
+  return (
+    `Session dispatch connection: category=${safe.category}; phase=${safe.phase}; reason=${safe.reasonCode}.` +
+    (history ? ` ${history}` : '')
+  );
 }
 
 export class SessionDispatchConnectionError extends Error {

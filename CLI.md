@@ -721,6 +721,14 @@ its fixed budget. Authentication rejection is not retried. Ordinary workflow RPC
 use the SDK's native request timeout; uncertain writes are never automatically replayed.
 `gateway-readiness-deadline` identifies an exhausted readiness wait;
 `gateway-reload-failed` identifies terminal plugin replacement failure.
+These failures include `blocked.sessionDispatchDiagnostic.readinessEvidence` in
+JSON and the same evidence in the human diagnostic: elapsed time and wait budget,
+probe paths, HTTP status or safe transport category, and allowlisted startup/reload
+state. The history keeps at most 16 observations (the first and recent tail), with
+total and dropped counts. Missing or malformed evidence is marked explicitly;
+no completed probes is an empty history. Evidence observes the existing probes
+without extra requests or longer waits and excludes raw responses, errors, and
+credentials. It supports investigation, not a conclusion about the timeout's cause.
 
 If reconciliation fails, install exits nonzero and reports completed outcomes,
 the blocking component, and unattempted work. Earlier changes remain applied;

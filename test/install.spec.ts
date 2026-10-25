@@ -17,6 +17,7 @@ import AgentSystemLifecycleRegistry, {
   AgentSystemLifecycleError,
 } from '../core/lifecycle-registry.ts';
 import { dispatchCredentialError } from '../credentials/session-dispatch.ts';
+import { observeReadiness } from '../credentials/session-dispatch-readiness-evidence.ts';
 import { installOutcomes } from './lifecycle-presentation-fixtures.ts';
 
 const validResult: Extract<AgentManifestLoadResult, { status: 'loaded' }> = {
@@ -317,9 +318,22 @@ describe('cli/install', () => {
 
   it('should carry safe enrollment evidence through registry, install service and both cli projections', async () => {
     const diagnostic = {
-      category: 'transport' as const,
+      category: 'timeout' as const,
       phase: 'connection' as const,
-      reasonCode: 'connection-refused' as const,
+      reasonCode: 'gateway-readiness-deadline' as const,
+      readinessEvidence: {
+        state: 'observed' as const,
+        elapsedMs: 30_000,
+        maxWaitMs: 30_000,
+        totalObservations: 60,
+        droppedObservations: 59,
+        observations: [
+          observeReadiness('/startupz', 29_500, undefined, {
+            code: 'ECONNREFUSED',
+            token: 'private-token',
+          }),
+        ],
+      },
     };
     const registry = new AgentSystemLifecycleRegistry(
       [
@@ -380,9 +394,15 @@ describe('cli/install', () => {
       const output = harness.output.join('');
       const diagnostics = harness.diagnostics.join('');
       assert.ok(!harness.events.join('').includes('private-token'));
-      assert.match(diagnostics, /category=transport; phase=connection; reason=connection-refused/);
+      assert.match(diagnostics, /category=timeout/);
+      assert.match(diagnostics, /phase=connection/);
+      assert.match(diagnostics, /reason=gateway-readiness-deadline/);
+      assert.match(diagnostics, /readiness evidence/);
+      assert.match(diagnostics, /connection-refused/);
+      assert.match(diagnostics, /29500/);
       if (json) {
         const result = JSON.parse(output);
+        assert.equal(result.status, 'failed');
         assert.deepEqual(result.blocked.sessionDispatchDiagnostic, diagnostic);
         assert.equal(result.blocked.code, 'session-dispatch-enrollment-unverified');
         assert.equal(result.outcomes[0].component, 'setup');

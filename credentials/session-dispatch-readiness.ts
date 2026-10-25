@@ -4,9 +4,18 @@ import { setTimeout } from 'node:timers/promises';
 import type { EventLoopReadyOptions, EventLoopReadyResult } from '@openclaw/gateway-client';
 
 import { SessionDispatchConnectionError } from './session-dispatch-diagnostic.ts';
+import {
+  observeReadiness,
+  readinessObservationLimit,
+  type ReadinessEvidence,
+  type ReadinessObservation,
+} from './session-dispatch-readiness-evidence.ts';
 import type { DispatchAuthority } from './session-dispatch.ts';
 
-type Probe = { statusCode: number; body: unknown };
+type Probe = { statusCode: number; body: unknown; malformed?: boolean };
+export interface ReadinessOptions extends EventLoopReadyOptions {
+  onEvidence?(evidence: ReadinessEvidence): void;
+}
 interface Dependencies {
   request(port: number, path: string, timeoutMs: number, signal?: AbortSignal): Promise<Probe>;
   now(): number;
@@ -23,7 +32,12 @@ const nativeDependencies: Dependencies = {
           let size = 0;
           response.on('data', (chunk: Buffer) => {
             size += chunk.length;
-            if (size > 16_384) request.destroy(new Error('probe-response-too-large'));
+            if (size > 16_384)
+              request.destroy(
+                Object.assign(new Error('probe-response-too-large'), {
+                  code: 'PROBE_RESPONSE_TOO_LARGE',
+                }),
+              );
             else chunks.push(chunk);
           });
           response.on('error', reject);
@@ -34,13 +48,13 @@ const nativeDependencies: Dependencies = {
                 body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown,
               });
             } catch {
-              resolve({ statusCode: response.statusCode ?? 0, body: undefined });
+              resolve({ statusCode: response.statusCode ?? 0, body: undefined, malformed: true });
             }
           });
         },
       );
       const timer = globalThis.setTimeout(
-        () => request.destroy(new Error('probe-timeout')),
+        () => request.destroy(Object.assign(new Error('probe-timeout'), { code: 'PROBE_TIMEOUT' })),
         timeoutMs,
       );
       request.once('error', reject);
@@ -60,12 +74,27 @@ function object(value: unknown): Record<string, unknown> | undefined {
 export default async function waitForSessionDispatchGateway(
   port: number,
   authority: DispatchAuthority,
-  options: EventLoopReadyOptions,
+  options: ReadinessOptions,
   dependencies: Dependencies = nativeDependencies,
 ): Promise<EventLoopReadyResult> {
   const started = dependencies.now();
   const deadline = started + (options.maxWaitMs ?? 30_000);
   let checks = 0;
+  const observations: ReadinessObservation[] = [];
+  const evidence = (): ReadinessEvidence => ({
+    state: 'observed',
+    elapsedMs: dependencies.now() - started,
+    maxWaitMs: options.maxWaitMs ?? 30_000,
+    totalObservations: checks,
+    droppedObservations: checks - observations.length,
+    observations: [...observations],
+  });
+  const observe = (path: ReadinessObservation['path'], probe?: Probe, error?: unknown) => {
+    observations.push(observeReadiness(path, dependencies.now() - started, probe, error));
+    // retain the first observation and recent tail, in chronological order.
+    if (observations.length > readinessObservationLimit) observations.splice(1, 1);
+    options.onEvidence?.(evidence());
+  };
   const guard = async () => {
     options.signal?.throwIfAborted();
     authority.signal?.throwIfAborted();
@@ -78,7 +107,7 @@ export default async function waitForSessionDispatchGateway(
   while (dependencies.now() < deadline) {
     await guard();
     let waiting = false;
-    for (const path of ['/startupz', '/readyz']) {
+    for (const path of ['/startupz', '/readyz'] as const) {
       const remaining = Math.floor(deadline - dependencies.now());
       if (remaining <= 0) {
         waiting = true;
@@ -88,12 +117,14 @@ export default async function waitForSessionDispatchGateway(
       let probe: Probe;
       try {
         probe = await dependencies.request(port, path, Math.min(2_000, remaining), options.signal);
-      } catch {
+      } catch (error) {
         await guard();
+        observe(path, undefined, error);
         waiting = true;
         break;
       }
       await guard();
+      observe(path, probe);
       const body = object(probe.body);
       // unsupported probes fall through to authenticated hello, never to enrollment success.
       if (![200, 503].includes(probe.statusCode) || !body) break;
@@ -114,6 +145,7 @@ export default async function waitForSessionDispatchGateway(
             category: 'gateway-rejected',
             phase: 'connection',
             reasonCode: 'gateway-reload-failed',
+            readinessEvidence: evidence(),
           });
         if (phase === 'reloading' || phase === 'recovering') waiting = true;
       }
@@ -135,5 +167,6 @@ export default async function waitForSessionDispatchGateway(
     category: 'timeout',
     phase: 'connection',
     reasonCode: 'gateway-readiness-deadline',
+    readinessEvidence: evidence(),
   });
 }
