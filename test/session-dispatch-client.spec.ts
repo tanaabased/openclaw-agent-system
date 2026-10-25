@@ -5,6 +5,7 @@ import {
   DEFAULT_PREAUTH_HANDSHAKE_TIMEOUT_MS,
   GatewayClientRequestError,
   GatewayClientRequestTimeoutError,
+  type GatewayClient,
   type EventLoopReadyResult,
   type GatewayClientOptions,
 } from '@openclaw/gateway-client';
@@ -15,6 +16,7 @@ import {
 } from '../credentials/session-dispatch-client.ts';
 import type { ReadinessOptions } from '../credentials/session-dispatch-readiness.ts';
 import { observeReadiness } from '../credentials/session-dispatch-readiness-evidence.ts';
+import gatewayRequestFixture from './gateway-request-fixture.ts';
 import type {
   DispatchCredential,
   DispatchRequest,
@@ -99,6 +101,81 @@ function connectionFixture(
 }
 
 describe('credentials/session-dispatch-client', () => {
+  for (const ending of ['success', 'timeout', 'cancel', 'shorter-deadline'] as const) {
+    it(`should apply the creation budget at the device sdk call for ${ending}`, async () => {
+      const rpc = gatewayRequestFixture();
+      const controller = new AbortController();
+      if (ending === 'shorter-deadline')
+        rpc.deadline(10_000, () => controller.abort(new Error(ending)));
+      const pending = useSessionDispatchClient(
+        {},
+        { version: 1, device: { deviceId: 'fixture', privateKeyPem: '', publicKeyPem: '' } },
+        false,
+        { signal: controller.signal },
+        async (request) => {
+          await request('sessions.describe', {});
+          return request('sessions.create', {});
+        },
+        {
+          scheduleDeadline: () => () => {},
+          createClient(options) {
+            assert.equal(options.requestTimeoutMs, undefined);
+            return {
+              start() {
+                options.onHelloOk!({ auth: { scopes: [] } } as unknown as Parameters<
+                  NonNullable<GatewayClientOptions['onHelloOk']>
+                >[0]);
+              },
+              stop() {},
+              async stopAndWait() {},
+              async request<T>(...args: Parameters<GatewayClient['request']>) {
+                const [method, , requestOptions] = args;
+                if (method !== 'sessions.create') {
+                  assert.equal(requestOptions, undefined);
+                  return {} as T;
+                }
+                assert.equal(requestOptions?.timeoutMs, 120_000);
+                assert.equal(requestOptions?.signal, controller.signal);
+                return rpc.request(
+                  requestOptions?.timeoutMs ?? undefined,
+                  requestOptions?.signal,
+                ) as Promise<T>;
+              },
+            };
+          },
+        },
+      );
+      const outcome = pending.then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      await Promise.race([
+        rpc.dispatched,
+        outcome.then(() => assert.fail('sdk request was not dispatched')),
+      ]);
+      rpc.advance(ending === 'shorter-deadline' ? 5_000 : 30_001);
+      assert.equal(rpc.settled(), false);
+      if (ending === 'success') {
+        rpc.advance(14_999);
+        rpc.complete();
+        assert.deepEqual(await outcome, { value: { key: 'created' } });
+      } else {
+        if (ending === 'timeout') rpc.advance(90_000);
+        else {
+          if (ending === 'shorter-deadline') rpc.advance(5_000);
+          else controller.abort(new Error(ending));
+        }
+        const result = await outcome;
+        assert.ok('error' in result && result.error instanceof Error);
+        assert.equal(
+          result.error.message,
+          ending === 'timeout' ? 'session-dispatch-create-timeout-unverified' : ending,
+        );
+      }
+      assert.equal(rpc.calls(), 1);
+    });
+  }
+
   it('should leave retryable install transport recovery to the sdk without ignoring gateway rejection', async () => {
     for (const install of [false, true]) {
       for (const rejection of [false, true]) {

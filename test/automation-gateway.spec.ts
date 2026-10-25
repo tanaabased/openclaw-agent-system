@@ -11,6 +11,7 @@ import {
 import { privateStateFileLockLostErrorCode } from '../core/private-state-file-lock.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 import { controlledFileLock } from './private-state-file-lock-fixture.ts';
+import gatewayRequestFixture from './gateway-request-fixture.ts';
 
 const job = (id: string) => ({
   id,
@@ -23,6 +24,56 @@ const job = (id: string) => ({
   state: {},
 });
 describe('agent/automation-gateway', () => {
+  for (const ending of ['success', 'timeout', 'cancel', 'shorter-deadline'] as const) {
+    it(`should apply the creation budget at the cli sdk call for ${ending}`, async () => {
+      const rpc = gatewayRequestFixture(
+        Object.assign(new Error('timeout'), {
+          name: 'GatewayTransportError',
+          kind: 'timeout',
+          connectionDetails: {},
+          requestDispatched: true,
+        }),
+      );
+      const controller = new AbortController();
+      if (ending === 'shorter-deadline')
+        rpc.deadline(10_000, () => controller.abort(new Error(ending)));
+      const request = createAutomationGateway(async (method, options, _params, extra) => {
+        assert.equal(method, 'sessions.create');
+        assert.equal(options.timeout, '120000');
+        assert.equal(extra?.signal, controller.signal);
+        return rpc.request(Number(options.timeout), extra?.signal);
+      });
+      const pending = withPrivateStateLock({ assertHeld() {}, signal: controller.signal }, () =>
+        request('sessions.create', {}),
+      );
+      const outcome = pending.then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      await Promise.race([
+        rpc.dispatched,
+        outcome.then(() => assert.fail('sdk request was not dispatched')),
+      ]);
+      rpc.advance(ending === 'shorter-deadline' ? 5_000 : 30_001);
+      assert.equal(rpc.settled(), false);
+      if (ending === 'success') {
+        rpc.advance(14_999);
+        rpc.complete();
+        assert.deepEqual(await outcome, { value: { key: 'created' } });
+      } else {
+        if (ending === 'timeout') rpc.advance(90_000);
+        else {
+          if (ending === 'shorter-deadline') rpc.advance(5_000);
+          else controller.abort(new Error(ending));
+        }
+        const result = await outcome;
+        assert.ok('error' in result && result.error instanceof AutomationError);
+        if (ending === 'timeout') assert.equal(result.error.diagnostic?.category, 'timeout');
+      }
+      assert.equal(rpc.calls(), 1);
+    });
+  }
+
   it('should stop session rpc before dispatch after lock loss without relabeling it as transport failure', async () => {
     const fixture = await controlledFileLock();
     let calls = 0;
@@ -75,7 +126,7 @@ describe('agent/automation-gateway', () => {
       ].includes(method);
       assert.deepEqual(calls.at(-1), [
         method,
-        {},
+        method === 'sessions.create' ? { timeout: '120000' } : {},
         { id: 'fixture' },
         {
           progress: false,

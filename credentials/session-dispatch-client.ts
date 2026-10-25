@@ -29,6 +29,7 @@ import {
   type DispatchRequest,
 } from './session-dispatch.ts';
 import { sessionDispatchScopes } from '../agent/session-dispatch-requirements.ts';
+import { openclawSessionCreateTimeoutMs } from '../agent/openclaw-session-timeout.ts';
 
 interface SessionDispatchClientDependencies {
   createClient(
@@ -193,7 +194,16 @@ export async function useSessionDispatchClient<T>(
     clearDeadline();
     assertCurrent();
     return await operation(
-      sessionDispatchRequest((method, params) => client.request(method, params), authority),
+      sessionDispatchRequest(
+        (method, params) =>
+          method === 'sessions.create'
+            ? client.request(method, params, {
+                timeoutMs: openclawSessionCreateTimeoutMs,
+                signal: authority.signal,
+              })
+            : client.request(method, params),
+        authority,
+      ),
       hello,
     );
   } catch (error) {

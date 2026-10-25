@@ -1,7 +1,11 @@
 import type { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
 
-import { assertPrivateStateLocksHeld } from '../core/private-state-lock-context.ts';
+import {
+  assertPrivateStateLocksHeld,
+  privateStateLockSignal,
+} from '../core/private-state-lock-context.ts';
 import type { AutomationGatewayDiagnostic } from './automation-gateway-diagnostic.ts';
+import { openclawSessionCreateTimeoutMs } from './openclaw-session-timeout.ts';
 
 export type AutomationGateway = (
   method:
@@ -131,12 +135,19 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
       'sessions.create',
       'sessions.patch',
     ].includes(method);
+    const signal = method === 'sessions.create' ? privateStateLockSignal() : undefined;
     try {
-      return await call(method, {}, params, {
-        progress: false,
-        scopes: [readOnly ? 'operator.read' : 'operator.admin'],
-        ...(readOnly ? { sharedStateMode: 'read-only' as const } : {}),
-      });
+      return await call(
+        method,
+        method === 'sessions.create' ? { timeout: String(openclawSessionCreateTimeoutMs) } : {},
+        params,
+        {
+          progress: false,
+          ...(signal ? { signal } : {}),
+          scopes: [readOnly ? 'operator.read' : 'operator.admin'],
+          ...(readOnly ? { sharedStateMode: 'read-only' as const } : {}),
+        },
+      );
     } catch (error) {
       const { default: automationGatewayDiagnostic } =
         await import('./automation-gateway-diagnostic.ts');
