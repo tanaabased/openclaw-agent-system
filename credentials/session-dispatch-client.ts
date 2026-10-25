@@ -7,7 +7,6 @@ import {
   GatewayClientRequestError,
   GatewayClientRequestTimeoutError,
   startGatewayClientWithReadinessWait,
-  type EventLoopReadyOptions,
   type EventLoopReadyResult,
   type GatewayClientOptions,
 } from '@openclaw/gateway-client';
@@ -19,7 +18,10 @@ import {
   SessionDispatchConnectionError,
   sessionDispatchDeadlineError,
 } from './session-dispatch-diagnostic.ts';
-import waitForSessionDispatchGateway from './session-dispatch-readiness.ts';
+import waitForSessionDispatchGateway, {
+  type ReadinessOptions,
+} from './session-dispatch-readiness.ts';
+import type { ReadinessEvidence } from './session-dispatch-readiness-evidence.ts';
 import {
   dispatchCredentialError,
   type DispatchAuthority,
@@ -36,7 +38,7 @@ interface SessionDispatchClientDependencies {
   waitForGateway?(
     port: number,
     authority: DispatchAuthority,
-    options: EventLoopReadyOptions,
+    options: ReadinessOptions,
   ): Promise<EventLoopReadyResult>;
 }
 
@@ -91,6 +93,7 @@ export async function useSessionDispatchClient<T>(
   assertCurrent();
   const startup = new AbortController();
   let awaitingReadiness = !!authority.waitForGateway;
+  let readinessEvidence: ReadinessEvidence | undefined;
   const ready = Promise.withResolvers<{ token?: string; scopes: string[] }>();
   const client = dependencies.createClient({
     url: `ws://127.0.0.1:${port}`,
@@ -149,6 +152,7 @@ export async function useSessionDispatchClient<T>(
               category: 'timeout',
               phase: 'connection',
               reasonCode: 'gateway-readiness-deadline',
+              ...(readinessEvidence ? { readinessEvidence } : {}),
             })
           : sessionDispatchDeadlineError(),
       );
@@ -164,11 +168,12 @@ export async function useSessionDispatchClient<T>(
     const start = authority.waitForGateway
       ? startGatewayClientWithReadinessWait(
           (options) =>
-            (dependencies.waitForGateway ?? waitForSessionDispatchGateway)(
-              port,
-              authority,
-              options ?? {},
-            ),
+            (dependencies.waitForGateway ?? waitForSessionDispatchGateway)(port, authority, {
+              ...options,
+              onEvidence: (evidence) => {
+                readinessEvidence = evidence;
+              },
+            }),
           {
             start() {
               assertCurrent();

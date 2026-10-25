@@ -5,7 +5,6 @@ import {
   DEFAULT_PREAUTH_HANDSHAKE_TIMEOUT_MS,
   GatewayClientRequestError,
   GatewayClientRequestTimeoutError,
-  type EventLoopReadyOptions,
   type EventLoopReadyResult,
   type GatewayClientOptions,
 } from '@openclaw/gateway-client';
@@ -14,6 +13,8 @@ import {
   sessionDispatchRequest,
   useSessionDispatchClient,
 } from '../credentials/session-dispatch-client.ts';
+import type { ReadinessOptions } from '../credentials/session-dispatch-readiness.ts';
+import { observeReadiness } from '../credentials/session-dispatch-readiness-evidence.ts';
 import type {
   DispatchCredential,
   DispatchRequest,
@@ -24,7 +25,7 @@ function connectionFixture(
   start: (options: GatewayClientOptions, deadline: () => void) => void,
   authority: DispatchAuthority = {},
   shutdownFails = false,
-  waitForGateway: (options: EventLoopReadyOptions) => Promise<EventLoopReadyResult> = async () => ({
+  waitForGateway: (options: ReadinessOptions) => Promise<EventLoopReadyResult> = async () => ({
     ready: true,
     elapsedMs: 0,
     maxDriftMs: 0,
@@ -153,6 +154,14 @@ describe('credentials/session-dispatch-client', () => {
           category: 'timeout',
           phase: 'connection',
           reasonCode: 'gateway-readiness-deadline',
+          readinessEvidence: {
+            state: 'absent',
+            elapsedMs: null,
+            maxWaitMs: null,
+            totalObservations: 0,
+            droppedObservations: 0,
+            observations: [],
+          },
         });
         return true;
       });
@@ -161,6 +170,52 @@ describe('credentials/session-dispatch-client', () => {
       assert.ok(!f.calls.includes('operation'));
       assert.equal(f.calls.at(-1), 'shutdown');
     }
+  });
+
+  it('should preserve the last completed readiness evidence when the outer deadline aborts an outstanding probe', async () => {
+    const entered = Promise.withResolvers<void>();
+    const evidence = {
+      state: 'observed' as const,
+      elapsedMs: 500,
+      maxWaitMs: 30_000,
+      totalObservations: 1,
+      droppedObservations: 0,
+      observations: [
+        observeReadiness('/startupz', 500, {
+          statusCode: 503,
+          body: { ok: false, status: 'starting' },
+        }),
+      ],
+    };
+    const f = connectionFixture(
+      () => assert.fail('authentication must not start'),
+      { waitForGateway: true },
+      false,
+      (options) =>
+        new Promise((_resolve, reject) => {
+          options.onEvidence!(evidence);
+          options.signal!.addEventListener('abort', () => reject(new Error('private-token')), {
+            once: true,
+          });
+          entered.resolve();
+        }),
+    );
+    const pending = f.run();
+    await entered.promise;
+    f.expire();
+    await assert.rejects(pending, (error: unknown) => {
+      assert.ok(error instanceof Error && 'sessionDispatchDiagnostic' in error);
+      assert.deepEqual(error.sessionDispatchDiagnostic, {
+        category: 'timeout',
+        phase: 'connection',
+        reasonCode: 'gateway-readiness-deadline',
+        readinessEvidence: evidence,
+      });
+      assert.ok(!JSON.stringify(error).includes('private-token'));
+      return true;
+    });
+    assert.ok(!f.calls.includes('start'));
+    assert.equal(f.calls.at(-1), 'shutdown');
   });
 
   it('should allow install verification to finish when a reload delays hello past twelve seconds', async () => {
