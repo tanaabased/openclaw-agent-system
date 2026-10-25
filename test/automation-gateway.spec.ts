@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import {
   AutomationError,
+  isOperatorAutomationGateway,
   createAutomationGateway,
   listNativeAutomations,
   nativeAutomation,
@@ -160,6 +161,63 @@ describe('agent/automation-gateway', () => {
     });
     assert.equal(result.length, 201);
     assert.deepEqual(offsets, [0, 200]);
+  });
+  it('should distinguish operator inspection from an arbitrary restricted reader', () => {
+    const restricted = async () => ({ jobs: [], hasMore: false });
+    assert.equal(isOperatorAutomationGateway(restricted), false);
+    assert.equal(isOperatorAutomationGateway(createAutomationGateway(restricted)), true);
+  });
+
+  it('should reject inconsistent native pagination evidence', async () => {
+    const first = Array.from({ length: 200 }, (_, n) => job(String(n)));
+    for (const invalid of [
+      { offset: 1 },
+      { limit: 10 },
+      { total: -1 },
+      { total: 2.5 },
+      { total: 1 },
+      { nextOffset: 1 },
+    ]) {
+      await assert.rejects(
+        listNativeAutomations(async () => ({ jobs: [], hasMore: false, ...invalid })),
+        /snapshot-diverged/u,
+      );
+    }
+    for (const changed of [{ total: 202 }, { nextOffset: 201 }, { offset: 0 }]) {
+      await assert.rejects(
+        listNativeAutomations(async (_method, params) =>
+          params.offset === 0
+            ? { jobs: first, hasMore: true, total: 201, offset: 0, limit: 200, nextOffset: 200 }
+            : {
+                jobs: [job('last')],
+                hasMore: false,
+                total: 201,
+                offset: 200,
+                limit: 200,
+                nextOffset: null,
+                ...changed,
+              },
+        ),
+        /snapshot-diverged/u,
+      );
+    }
+    assert.equal(
+      (
+        await listNativeAutomations(async (_method, params) =>
+          params.offset === 0
+            ? { jobs: first, hasMore: true, total: 201, offset: 0, limit: 200, nextOffset: 200 }
+            : {
+                jobs: [job('last')],
+                hasMore: false,
+                total: 201,
+                offset: 200,
+                limit: 200,
+                nextOffset: null,
+              },
+        )
+      ).length,
+      201,
+    );
   });
   it('should reject malformed partial duplicate and unversioned native snapshots', async () => {
     await assert.rejects(
