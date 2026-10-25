@@ -37,6 +37,7 @@ function setup() {
   };
   let now = baseline;
   let cleanups = 0;
+  const closedInputs: boolean[] = [];
   let archived = false;
   let idle = true;
   let activityId = 'turn-1';
@@ -72,7 +73,8 @@ function setup() {
         if (failure) throw new Error('native-unavailable');
         return { archived, idle, activityId };
       },
-      cleanup: async (_record, _admitted, fresh) => {
+      cleanup: async (_record, _admitted, fresh, _shared, _native, issueClosed) => {
+        closedInputs.push(issueClosed);
         beforeRecheck();
         await fresh();
         cleanups++;
@@ -103,6 +105,7 @@ function setup() {
       failure = true;
     },
     cleanups: () => cleanups,
+    closedInputs,
     beforeRecheck: (callback: () => void) => {
       beforeRecheck = callback;
     },
@@ -841,5 +844,33 @@ describe('assignment retirement', () => {
     await h.run();
     assert.equal(h.cleanups(), 0);
     assert.equal(h.record.retirement?.code, 'retirement-awaiting-reactivation');
+  });
+  for (const closed of [false, true]) {
+    it(`should pass fresh closure rather than the archived chat reason when closed is ${closed}`, async () => {
+      const h = setup();
+      h.setArchived();
+      h.fixture.item.state = closed ? 'closed' : 'open';
+      await h.run();
+      h.advance(60);
+      await h.run();
+      assert.equal(h.record.retirement?.reason, 'chat-archived');
+      assert.deepEqual(h.closedInputs, [closed]);
+      assert.equal(h.cleanups(), 1);
+    });
+  }
+  it('should stop closed-issue disposal when an archived issue reopens at the effect recheck', async () => {
+    const h = setup();
+    h.fixture.item.state = 'closed';
+    h.setArchived();
+    await h.run();
+    h.advance(60);
+    h.beforeRecheck(() => {
+      h.fixture.item.state = 'open';
+    });
+    await h.run();
+    assert.deepEqual(h.closedInputs, [true]);
+    assert.equal(h.cleanups(), 0);
+    assert.equal(h.record.retired, undefined);
+    assert.equal(h.record.retirement?.code, 'retirement-observation-changed');
   });
 });

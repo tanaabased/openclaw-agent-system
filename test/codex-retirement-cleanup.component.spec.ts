@@ -39,6 +39,7 @@ describe('codex retirement cleanup', () => {
       codexHome: root,
       repository: 'owner/repo',
       archived: false,
+      issueClosed: true,
       now: 30,
       turnId: 'turn',
       inventory: {
@@ -82,6 +83,30 @@ describe('codex retirement cleanup', () => {
     await rm(h.input.record.worktree!, { recursive: true });
     assert.deepEqual(await h.run(), { archived: true, worktreeRemoved: true });
   });
+  for (const [kind, status] of [
+    ['modified', ' M tracked.ts'],
+    ['untracked', '?? notes.md'],
+  ] as const) {
+    it(`should prepare closed dirty checkout archival for ${kind} files and observe native reclamation`, async () => {
+      const h = await fixture();
+      const git = h.input.git!;
+      h.input.git = async (path, args) => (args[0] === 'status' ? status : git(path, args));
+      assert.deepEqual((await h.run()).request, {
+        threadId: 'child',
+        hostId: 'local',
+        archived: true,
+      });
+      assert.equal((await h.run()).code, 'retirement-native-archive-unverified');
+      h.input.archived = true;
+      assert.equal((await h.run()).code, 'retirement-native-reclamation-pending');
+      await rm(h.input.record.worktree!, { recursive: true });
+      assert.deepEqual(await h.run(), { archived: true, worktreeRemoved: true });
+      assert.equal(
+        h.calls.some((args) => args.includes('remove')),
+        false,
+      );
+    });
+  }
   it('should reconcile a manual archive from its retained operator thread during scheduled cleanup', async () => {
     const h = await fixture();
     h.input.sourceThreadId = 'operator';
@@ -182,9 +207,11 @@ describe('codex retirement cleanup', () => {
       if (kind === 'pinned')
         h.input.inventory = { ...(h.input.inventory as object), pinnedThreads: [{ id: 'child' }] };
       if (kind === 'shared') h.input.native.worktreeUsers = async () => ['child', 'other'];
-      if (kind === 'dirty')
+      if (kind === 'dirty') {
+        h.input.issueClosed = false;
         h.input.git = async (path, args) =>
           args[0] === 'status' ? '?? notes.md' : git(path, args);
+      }
       if (kind === 'unpreserved')
         h.input.git = async (path, args) => (args[0] === 'for-each-ref' ? '' : git(path, args));
       if (kind === 'inventory') h.input.inventory = {};

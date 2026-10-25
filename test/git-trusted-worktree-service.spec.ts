@@ -338,6 +338,38 @@ describe('tools/git/trusted-worktree-service', () => {
     );
   });
 
+  it('should inspect and clean a closed task at its retained path despite a renamed branch', async () => {
+    const { service } = fixture({ listed: true, listedBranch: 'implementation-renamed' });
+    const input = {
+      agentId: 'data',
+      attemptId: 'a'.repeat(64),
+      cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
+      defaultBranch: 'main',
+      itemDatabaseId: 3,
+      itemNumber: 42,
+      itemType: 'issue' as const,
+      repositoryDatabaseId: 7,
+      closedIssueWorktree: ownedPath,
+    };
+    const worktree = await service.inspectGitHub(input);
+    assert.equal(worktree?.branch, 'implementation-renamed');
+    assert.ok(worktree);
+    assert.equal(
+      (await service.cleanupGitHub({ ...input, worktree, purge: true })).status,
+      'removed',
+    );
+    await assert.rejects(service.inspectGitHub({ ...input, closedIssueWorktree: '/other' }), {
+      code: 'git-worktree-owner-mismatch',
+    });
+    assert.equal(
+      (await service.cleanupGitHub({ ...input, worktree: { ...worktree, path: '/other' } })).status,
+      'unsafe',
+    );
+    await assert.rejects(service.inspectGitHub({ ...input, closedIssueWorktree: undefined }), {
+      code: 'git-worktree-owner-mismatch',
+    });
+  });
+
   it('should re-inspect the exact checkpoint before trusted cleanup', async () => {
     const { events, service } = fixture({ listed: true });
     const expected = {

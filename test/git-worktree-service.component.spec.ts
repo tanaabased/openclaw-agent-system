@@ -697,7 +697,7 @@ describe('tools/git/worktree-service', () => {
     }
   });
 
-  it('should purge an explicitly selected dirty checkout while retaining its branch', async () => {
+  it('should purge a selected renamed dirty checkout while retaining its branches and commits', async () => {
     const { context, git, service, workspaceDir } = await fixture();
     try {
       const input = {
@@ -708,21 +708,29 @@ describe('tools/git/worktree-service', () => {
       };
       const created = await service.prepare(context, input);
       git.dirty = true;
+      git.worktrees.get(created.path)!.branch = 'renamed';
+      git.branches.add('renamed');
+      git.preserved = false;
       assert.equal(
-        (
-          await service.cleanup(
-            context,
-            input.repositoryId,
-            input.workId,
-            created.branch,
-            false,
-            true,
-          )
-        ).status,
+        (await service.cleanup(context, input.repositoryId, input.workId, 'renamed', true, true))
+          .status,
+        'unpreserved',
+      );
+      assert.equal(git.worktrees.size, 1);
+      git.preserved = true;
+      assert.equal(
+        (await service.cleanup(context, input.repositoryId, input.workId, 'renamed', true, true))
+          .status,
+        'preserved',
+      );
+      assert.equal(
+        (await service.cleanup(context, input.repositoryId, input.workId, 'renamed', false, true))
+          .status,
         'removed',
       );
       assert.equal(git.worktrees.size, 0);
       assert.ok(git.branches.has(created.branch));
+      assert.ok(git.branches.has('renamed'));
       assert.ok(
         git.calls.some(({ argv }) => argv.join(' ') === `worktree remove --force ${created.path}`),
       );

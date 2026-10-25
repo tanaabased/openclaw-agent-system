@@ -132,8 +132,12 @@ not implementation or a mode change. Reopening alone, incidental comments, and t
 agent's own published replies do not reactivate work.
 
 OpenClaw archives the exact idle session and removes its managed worktree after
-verifying a clean checkout and retained branch or tag. It protects pinned sessions,
-automation owners, shared worktrees, unresolved activity, and unpreserved changes.
+verifying ownership and a retained branch or tag. For a freshly verified closed
+issue, a changed checkout branch name does not block cleanup, and modified or
+untracked files in that task's owned checkout may be discarded. Other retirement
+triggers still require a clean checkout and the expected branch. Pinned sessions,
+automation owners, shared worktrees, unresolved activity, and unreferenced commits
+remain protected.
 Each successful cleanup step is retained so interrupted cleanup can reconcile on a
 later poll. Branches, issue content, and assessment history are preserved. Older native creation receipts can establish session identity without replacing
 them. If the managed inventory and recorded path both confirm an already-removed
@@ -150,7 +154,9 @@ remain blockers. Retirement retains the record and history; it does not reassign
 the issue automatically.
 
 Codex prepares archival through the desktop's native tools after checking pins,
-automation ownership, shared use, and preserved work. The desktop owns worktree
+automation ownership, shared use, and preserved commits. A freshly verified closed
+issue's modified or untracked files do not block that preparation; other retirement
+triggers still require a clean checkout. The desktop owns worktree
 snapshotting and reclamation; intake marks work retired only after observing both
 archival and removal. If desktop settings retain the checkout, cleanup stays pending
 without blocking other intake. Unresolved cleanup remains pending, never complete.

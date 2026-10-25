@@ -1,18 +1,19 @@
 # OpenClaw Notification Retirement Example
 
-Reconcile retirement after external worktree cleanup, admit a fresh attempt without resetting the retired branch, and retire a second task whose completed native session is already missing while preserving its original evidence.
+Reconcile retirement after external worktree cleanup, reclaim a fresh attempt with a changed branch and dirty files without losing its commits, and retire a second task whose completed native session is already missing while preserving its original evidence.
 
 ## What Belongs Here
 
 - Closed-issue retirement observing external cleanup and archiving the retained native owner without losing its assessment.
 - A fresh assignment creating a distinct owner/branch from the repository base while preserving the retired branch's local commit.
+- Closed-issue archival and automatic removal of that fresh checkout despite a changed branch and modified/untracked files, preserving its commits and assessment.
 - Explicit retirement from an active turn remaining pending, followed by verified missing-session reconciliation and safe checkout removal without invented archival.
 
 ## What Does Not Belong Here
 
 - Generic worktree removal mechanics: [worktree](../openclaw-worktree/README.md). Coordinator/tracking replacement: [reset](../openclaw-notifications-reset/README.md).
 - Author policy and unassignment reactivation: [feedback policy](../openclaw-notifications-feedback-policy/README.md), [assignment policy](../openclaw-notifications-assignment-policy/README.md), and [reactivation](../openclaw-notifications-reactivation/README.md).
-- Automatic worktree reclamation in the closed-issue case; its checkout is deliberately removed through the public worktree command.
+- Automatic reclamation of the first closed checkout, which is deliberately removed through the public worktree command. The fresh attempt covers automatic removal.
 
 ## Notes
 
@@ -157,18 +158,28 @@ test "$(git -C "$worktree" rev-parse HEAD)" = "$(git -C "$worktree" rev-parse "o
 run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-fresh.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 
-# should retire the fresh fixture before the missing-session case
+# should leave modified and untracked files on a changed checkout branch
+worktree=$(jq -er .worktree "$TMPDIR/notification-fresh.json")
+git -C "$worktree" switch -c "retirement-leftovers-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+printf 'committed\n' > "$worktree/retirement-tracked.txt"
+git -C "$worktree" add retirement-tracked.txt
+git -C "$worktree" -c user.name=Fixture -c user.email=fixture@example.test -c commit.gpgsign=false commit -m 'preserve dirty attempt'
+git -C "$worktree" rev-parse HEAD > "$TMPDIR/notification-dirty-tip"
+git -C "$worktree" branch --show-current > "$TMPDIR/notification-dirty-branch"
+printf 'modified\n' > "$worktree/retirement-tracked.txt"
+printf 'untracked\n' > "$worktree/retirement-untracked.txt"
+
+# should retire the closed dirty fixture automatically before the missing-session case
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
-repository_id=$(jq -er '.[0].repositoryId' "$TMPDIR/notification-worktrees-before.json")
-work_id="issue-$(jq -er .id "$TMPDIR/notification-issue.json")"
-openclaw agent-system tool worktree -- remove "$repository_id" "$work_id"
 sleep 61
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es --arg id "$(jq -er .id "$TMPDIR/notification-fresh.json")" '[.[].records[] | select(.id == $id)] | length == 1 and .[0].retired.at != null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --slurpfile before "$TMPDIR/notification-fresh.json" '[.[].records[] | select(.id == $before[0].id)] | length == 1 and .[0].retired.at != null and .[0].retirement.archivedAt != null and .[0].retirement.worktreeRemovalAttemptedAt != null and .[0].retirement.worktreeRemovedAt != null and .[0].result == $before[0].result and .[0].threadId == $before[0].threadId' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+test ! -e "$(jq -er .worktree "$TMPDIR/notification-fresh.json")"
+test "$(git --git-dir="$(cat "$TMPDIR/notification-git-dir")" rev-parse "$(cat "$TMPDIR/notification-dirty-branch")")" = "$(cat "$TMPDIR/notification-dirty-tip")"
 
 # should admit another disposable issue for unavailable-session retirement
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/emori"
