@@ -153,10 +153,6 @@ use a new manifest ID for a new automation. A failed sync exits 1 and retains
 verified progress and pending recovery. This command does not run unrelated install
 or setup steps.
 
-Successful retirement confirmations remain in routine Doctor and Install output for
-24 hours from the original retirement, then are omitted. The ownership record remains
-available through the automation inventory; omission does not delete its history.
-
 ### Repository examples
 
 A prompt review can apply to both runtimes where the schedule is supported:
