@@ -37,6 +37,7 @@ import type OpenClawDispatchIssue from './openclaw-dispatch-issue.ts';
 import { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { applyOpenClawFeedbackScans, scanOpenClawFeedback } from './openclaw-feedback-scan.ts';
 import { sameIntakeRun } from './openclaw-intake-pass.ts';
+import intakePassStarted from './intake-pass-started.ts';
 import intakeDebug from './intake-debug.ts';
 import openclawIntakeReport, { type IntakeObservation } from './openclaw-intake-report.ts';
 import { verifyEmptyIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
@@ -550,6 +551,7 @@ export default class OpenClawDispatchCoordinator {
           a.record.createdAt - b.record.createdAt || a.candidateId.localeCompare(b.candidateId),
       );
     let pass = state.openclawPasses?.find((entry) => sameIntakeRun(entry, caller));
+    if (pass?.completed) return { status: 'pass-completed' as const };
     if (!pass) {
       pass = {
         sessionKey: caller.sessionKey,
@@ -615,21 +617,7 @@ export default class OpenClawDispatchCoordinator {
       .sort(
         (a, b) => pass.candidates.indexOf(a.intake.id) - pass.candidates.indexOf(b.intake.id),
       )[0];
-    const started = pass.selected.filter(
-      (id) =>
-        !pass.recovery.includes(id) &&
-        state.records.some(
-          (record) =>
-            record.id === id &&
-            ((record.work &&
-              pass.candidates.includes(automationHash({ implementation: record.id }))) ||
-              (record.request &&
-                pass.candidates.includes(record.intakeId ?? record.manualIssue!.id)) ||
-              record.feedback?.events.some(
-                (event) => pass.candidates.includes(event.id) && event.turn,
-              )),
-        ),
-    ).length;
+    const started = intakePassStarted(pass, state.records).length;
     if (started >= pass.allowance)
       return { status: pass.selected.length ? 'pass-completed' : 'at-capacity' };
     const feedback = queued.find(

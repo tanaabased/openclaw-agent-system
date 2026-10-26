@@ -1,5 +1,6 @@
 import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
+import readRetainedHistory from './read-retained-history.ts';
 
 import assessmentHandoff from './assessment-handoff.ts';
 import assessmentSubmission from './assessment-submission.ts';
@@ -59,6 +60,15 @@ export async function presentDispatch(
 ) {
   const record = (await store.read()).records.find((entry) => entry.id === input.id);
   const intake = record && dispatchAdmission(record, (await current.store.read())?.records ?? []);
+  if (record?.retainedHistory?.terminal) {
+    if (record.threadId !== caller || !intake)
+      throw new Error('dispatch-assessment-caller-mismatch');
+    return {
+      status: 'historical' as const,
+      id: record.id,
+      history: await readRetainedHistory(record, store.history, (deps.now ?? Date.now)()),
+    };
+  }
   if (
     !record?.request ||
     !record.result ||
@@ -79,6 +89,11 @@ export async function presentDispatch(
       status: 'presented' as const,
       retained: true,
       id: record.id,
+      ...(input.includeDetails === true && record.retainedHistory
+        ? {
+            history: await readRetainedHistory(record, store.history, (deps.now ?? Date.now)()),
+          }
+        : {}),
       presentation: assessmentPresentation(
         record.result!,
         { ...record, effective: codexSessionSettings(record, found) },

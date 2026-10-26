@@ -1,4 +1,6 @@
 import { providerDiagnosticSchema } from '../../../utils/provider-diagnostic.ts';
+import { historySoftBytes } from '../../../agent/history-state.ts';
+import { refreshStateSnapshot } from '../../../core/merge-state-snapshot.ts';
 import { assertNotificationManagement } from '../../../agent/notification-reset-state.ts';
 import { join, resolve } from 'node:path';
 
@@ -132,6 +134,8 @@ export class IntakeError extends Error {
 }
 
 export function intakeRemediation(code: string): string {
+  if (code === 'intake-state-capacity' || code === 'dispatch-state-capacity')
+    return 'The working journal exceeds its byte budget. Normal saves offload only settled detail; unfinished work and replay identities cannot be evicted. Preserve the journal, resolve pending work or inspect irreducible identity growth; do not reset the assignment baseline to reclaim space.';
   if (code === 'intake-automation-paused')
     return 'Intake scheduling is paused. Resume the native job, or set `paused: false` and run Install. Accepted runs and existing issue work retain their authority.';
   if (code === 'intake-manifest-unavailable')
@@ -264,10 +268,18 @@ export default class IntakeRecordStore {
             );
             if (!Value.Check(stateSchema, state) || state.scope !== this.location.scope)
               throw new IntakeError('intake-state-invalid');
-            const contents = JSON.stringify(state);
+            const retained = structuredClone(state);
+            if (Buffer.byteLength(JSON.stringify(retained)) > historySoftBytes) {
+              const admitted = new Set(retained.records.map((record) => record.id));
+              retained.observedAssignments = retained.observedAssignments?.filter(
+                (record) => !admitted.has(record.id),
+              );
+            }
+            const contents = JSON.stringify(retained);
             if (Buffer.byteLength(contents) > 4 * 1024 * 1024)
               throw new IntakeError('intake-state-capacity');
             await this.file.write(contents);
+            refreshStateSnapshot(state, retained);
           },
           lock.signal,
         ),
