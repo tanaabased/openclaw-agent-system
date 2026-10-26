@@ -71,6 +71,8 @@ const executionFailureReasons = new Set([
   'unknown',
 ]);
 
+const retirementConfirmationWindowMs = 24 * 60 * 60 * 1000;
+
 /** native failure reasons are bounded protocol values; never copy raw lastError or diagnostics. */
 function executionEvidence(state: NativeAutomation['state']): string {
   const at = state.lastRunAtMs;
@@ -519,17 +521,23 @@ export default class AutomationService {
             isOperatorAutomationGateway(this.dependencies.request) &&
             Number.isSafeInteger(status.jobs) &&
             status.jobs === observed.length;
-          findings.push(
-            finding(
-              record.id,
-              authoritative ? (record.retired ? 'healthy' : 'drift') : 'blocked',
-              authoritative
-                ? record.retired
-                  ? 'automation-retired'
-                  : 'automation-retirement-pending'
-                : 'automation-inspection-incomplete',
-            ),
-          );
+          const code = authoritative
+            ? record.retired
+              ? 'automation-retired'
+              : 'automation-retirement-pending'
+            : 'automation-inspection-incomplete';
+          if (
+            code !== 'automation-retired' ||
+            !record.retired ||
+            !this.retirementConfirmationExpired(record.retired.atMs)
+          )
+            findings.push(
+              finding(
+                record.id,
+                authoritative ? (record.retired ? 'healthy' : 'drift') : 'blocked',
+                code,
+              ),
+            );
           continue;
         }
         findings.push(
@@ -846,7 +854,10 @@ export default class AutomationService {
         )) {
           await assertCurrent();
           if (record.retired) {
-            if (!outcomes.some(({ stepId }) => stepId === record.id))
+            if (
+              !this.retirementConfirmationExpired(record.retired.atMs) &&
+              !outcomes.some(({ stepId }) => stepId === record.id)
+            )
               outcomes.push({
                 component: 'automations',
                 stepId: record.id,
@@ -900,6 +911,10 @@ export default class AutomationService {
         { outcomes, warnings: [], unattempted: [{ component: 'automations' }] },
       );
     }
+  }
+
+  private retirementConfirmationExpired(atMs: number): boolean {
+    return (this.dependencies.now ?? Date.now)() - atMs >= retirementConfirmationWindowMs;
   }
 
   private async update(
