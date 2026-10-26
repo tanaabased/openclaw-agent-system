@@ -1,3 +1,4 @@
+import { implementationRevisionProperties } from './implementation-revision.ts';
 import { Type } from 'typebox';
 
 import { issueTurnSchema } from './openclaw-turn-state.ts';
@@ -32,6 +33,7 @@ export const openclawWorkStateSchema = Type.Object(
     caller: Type.Optional(input),
     clarificationInput: Type.Optional(input),
     operatorInput: Type.Optional(input),
+    ...implementationRevisionProperties,
     result: Type.Optional(implementationResultSchema),
     delivery: Type.Optional(
       Type.Object(

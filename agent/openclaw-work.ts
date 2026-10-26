@@ -1,3 +1,4 @@
+import implementationRevision from './implementation-revision.ts';
 import implementationContext from './implementation-context.ts';
 import pendingPublicResponse from './pending-public-response.ts';
 import workflowRecovery from './workflow-recovery.ts';
@@ -51,6 +52,13 @@ export async function verifyOpenClawWork(input: {
     caller.runId !== record.firstTurn?.runId &&
     caller.runId !== record.assessmentTurn?.runId &&
     caller.runId !== record.decisionTurn?.runId &&
+    caller.runId !== record.summaryRecovery?.turn.runId &&
+    !record.previousSummaryTurns?.some(({ turn }) => turn.runId === caller.runId) &&
+    !record.previousDecisionTurns?.some((turn) => turn.runId === caller.runId) &&
+    caller.runId !== record.work?.implementation?.runId &&
+    caller.runId !== record.work?.turn?.runId &&
+    caller.runId !== record.work?.deliveryTurn?.runId &&
+    !record.work?.previousTurns?.some(({ turn }) => turn.runId === caller.runId) &&
     !record.feedback?.events.some((event) => event.turn?.runId === caller.runId);
   const automatic = issueProgression(record, { mode: input.mode, now: input.now });
   const transition =
@@ -73,7 +81,7 @@ export async function verifyOpenClawWork(input: {
     retained,
   };
   const verifiedInput =
-    automatic.status !== 'ready'
+    automatic.status !== 'ready' || (operator && record.work?.result?.outcome === 'done')
       ? await operatorInputEvent({ ...context, senderIsOwner: operator })
       : await nativeInputEvent(context);
   const { runId, inputEventId } = verifiedInput;
@@ -81,7 +89,12 @@ export async function verifyOpenClawWork(input: {
     'message' in verifiedInput && typeof verifiedInput.message === 'string'
       ? verifiedInput.message
       : undefined;
-  return { source: { runId, inputEventId }, message, progression: transition.progression };
+  return {
+    source: { runId, inputEventId },
+    message,
+    progression: transition.progression,
+    revisionAuthorized: operator,
+  };
 }
 
 export default async function openClawWorkAction(input: {
@@ -89,6 +102,7 @@ export default async function openClawWorkAction(input: {
   caller: DispatchCaller;
   source: { runId: string; inputEventId: string };
   message?: string;
+  revisionAuthorized?: boolean;
   progression: IssueProgression;
   action: Exclude<OpenClawWorkAction, { action: 'delivery' }>;
   now: number;
@@ -134,7 +148,24 @@ export default async function openClawWorkAction(input: {
         'Call implementation-context before changing files, or delivery prepare for already implemented work. Preserve the complete assessment, worktree, and selected model/effort. Continue within the verified task scope; implementation includes ordinary PR delivery. Honor explicit user restrictions without requiring another stage approval.',
     };
   }
+  const completedTurnId = record.work?.resultSource?.turnId ?? record.work?.caller?.runId;
+  const resultSource = { turnId: source.runId, inputId: source.inputEventId };
   if (action.action === 'implementation-context') {
+    const revision =
+      record.work &&
+      implementationRevision(
+        record.work,
+        resultSource,
+        input.revisionAuthorized === true,
+        completedTurnId,
+      );
+    if (revision) {
+      const work = record.work!;
+      (work.resultHistory ??= []).push({ source: work.resultSource, result: work.result! });
+      work.revisionSource = resultSource;
+      delete work.result;
+      delete work.resultSource;
+    }
     if (
       record.work?.result?.outcome === 'clarification-needed' &&
       record.work.clarificationInput?.runId === source.runId
@@ -167,8 +198,11 @@ export default async function openClawWorkAction(input: {
         path: record.worktree!,
         assessment: record.result,
         implementation: record.work.selection,
-        previousResult: record.work.result,
+        previousResult:
+          record.work.result ??
+          (record.work.revisionSource ? record.work.resultHistory?.at(-1)?.result : undefined),
         scope: record.work.scope,
+        revision: Boolean(record.work.revisionSource),
       }),
       issueStage: record.progression?.stage ?? 'planning',
       assignmentObservation: record.assignmentObservation,
@@ -181,7 +215,7 @@ export default async function openClawWorkAction(input: {
       instructions:
         'If pendingPublicResponse is present, follow its instruction: blocked publication is a retained hold, not ordinary pending-summary recovery. Keep this implementation stage and do not repeat assessment. ' +
         'Historical feedbackWork responses supply context, not fresh authorization. Honor publicationAuthorized; local scope forbids push and PR publication. ' +
-        'When deliveryOnly is true, follow the recorded scope-aware handoff without repeating implementation. A complete handoff is local completion, not a PR request. Otherwise use the returned implementation skill and guidance in the existing worktree. Read feedbackWork for later resolved plans and partial implementation; it supplements the preserved original assessment. Preserve routing and prior work. Follow the current conversation and authorized plan; stop on cancellation or a denial affecting implementation. A retained summary-only publication hold is not an implementation grant or denial; preserve it without retrying publication. Commit validated work and retain the complete outcome with implementation-result. For unanswered consequential requirements, submit clarification-needed with questions and fullResult, show its returned presentation, and wait for an answer. On a new input refresh this context, reconcile partial work, and resume without renewed approval. Follow the recorded result’s host-owned handoff immediately; it owns PR delivery for built-in and custom implementation skills without a separate publication grant. Honor explicit user restrictions. Do not use Codex runtime commands.',
+        'When deliveryOnly is true, follow the recorded scope-aware handoff without repeating implementation. A complete handoff is local completion, not a PR request. Otherwise reconcile the current authorized request with the historical previousResult and use the returned implementation skill and guidance in the existing worktree. Read feedbackWork for later resolved plans and partial implementation; it supplements the preserved original assessment. Preserve routing and prior work. Follow the current conversation and authorized plan; stop on cancellation or a denial affecting implementation. A retained summary-only publication hold is not an implementation grant or denial; preserve it without retrying publication. Commit validated work and retain the complete outcome with implementation-result. For unanswered consequential requirements, submit clarification-needed with questions and fullResult, show its returned presentation, and wait for an answer. On a new input refresh this context, reconcile partial work, and resume without renewed approval. Follow the recorded result’s host-owned handoff immediately; it owns PR delivery for built-in and custom implementation skills without a separate publication grant. Honor explicit user restrictions. Do not use Codex runtime commands.',
     };
   }
   if (!record.work?.caller || automationHash(record.work.caller) !== automationHash(source))
@@ -192,8 +226,21 @@ export default async function openClawWorkAction(input: {
     automationHash(record.work.result) !== automationHash(action.implementationResult)
   )
     throw new Error('implementation-answer-required');
+  const changed =
+    record.work.result &&
+    automationHash(record.work.result) !== automationHash(action.implementationResult);
+  if (changed && record.work.result?.outcome === 'done')
+    throw new Error('implementation-answer-required');
+  if (record.work.result?.outcome !== 'done' || changed)
+    record.work.resultSource = record.work.revisionSource ?? resultSource;
+  const firstResult = !record.work.result;
   record.work.result = action.implementationResult;
-  if (action.implementationResult.outcome === 'done' && record.work.delivery)
+  delete record.work.revisionSource;
+  if (
+    action.implementationResult.outcome === 'done' &&
+    record.work.delivery &&
+    (firstResult || changed)
+  )
     record.work.delivery.reconciled = false;
   if (record.work.code === 'implementation-result-missing') delete record.work.code;
   if (action.implementationResult.outcome === 'clarification-needed')
