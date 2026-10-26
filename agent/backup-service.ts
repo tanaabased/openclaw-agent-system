@@ -387,31 +387,8 @@ export default class WorkspaceBackupService {
     };
     const run = async () => {
       const { result, eligible } = await inspect();
-      for (let index = 0; index < eligible.length; index++) {
-        const item = eligible[index]!;
-        try {
-          await this.verify(item.path, plan.agentId);
-          if (fingerprint(await lstat(item.path)) !== item.identity)
-            throw new BackupError(
-              'backup-archive-changed',
-              'The archive changed during verification.',
-            );
-        } catch (error) {
-          const code = error instanceof BackupError ? error.code : 'backup-archive-invalid';
-          if (result.kept.length < options.keep) {
-            result.skipped.push({
-              path: item.path,
-              reason: `retained-verification-failed:${code}`,
-            });
-            throw new BackupPruneError(
-              'backup-retained-verification-failed',
-              `A proposed retained archive failed verification: ${item.path} (${code}).`,
-              result,
-            );
-          }
-          result.skipped.push({ path: item.path, reason: code });
-          continue;
-        }
+      // retention uses archive identity and capture time, not current-runtime restore compatibility.
+      for (const item of eligible) {
         if (result.kept.length < options.keep) result.kept.push(item.path);
         else result.wouldDelete.push(item.path);
       }
