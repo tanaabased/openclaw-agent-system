@@ -352,8 +352,8 @@ no native writes. Removal disables a job while retaining its mapping and native
 history; reintroducing its ID reuses that job while it exists. After the declaration
 and native job are both gone, authorized synchronization retires ownership only
 with complete operator inspection and no unresolved write. Doctor then treats the
-bounded retirement receipt as history, not an active failure. Re-declaring a retired ID
-requires explicit operator recovery; use a new ID for a new automation rather
+bounded retirement receipt as history, not an active failure. Re-declaring a retired
+ID requires explicit operator recovery; use a new ID for a new automation rather
 than silently recreating the old identity. Relative one-shot anchors persist
 across payload edits, pause/resume, and removal. Completed one-shots stay consumed;
 only changing the manifest trigger rearms scheduling. Native safety auto-disable
