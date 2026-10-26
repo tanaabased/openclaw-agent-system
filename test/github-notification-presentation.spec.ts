@@ -1,11 +1,27 @@
 import assert from 'node:assert/strict';
 
 import githubNotificationMessage, {
+  githubNotificationMarkdownCode,
   githubNotificationMarkdownText,
   githubNotificationQuote,
 } from '../channels/github/presentation/card.ts';
 
 describe('channels/github/presentation', () => {
+  it('should delimit literal machine values without escaping their contents', () => {
+    for (const [value, expected] of [
+      ['openai/model', '`openai/model`'],
+      ['high', '`high`'],
+      ['  path/[a]*_b\\c  ', '`path/[a]*_b\\c`'],
+      ['a`b``c', '```a`b``c```'],
+      ['`value`', '`` `value` ``'],
+      ['``', '``` `` ```'],
+      ['one\n\tline', '`one line`'],
+    ]) {
+      assert.equal(githubNotificationMarkdownCode(value!), expected);
+    }
+    assert.throws(() => githubNotificationMarkdownCode('  '), /must not be empty/);
+  });
+
   it('should preserve nested markdown and whitespace inside one complete quote', () => {
     assert.equal(
       githubNotificationQuote(

@@ -1040,7 +1040,7 @@ describe('agent/codex-feedback', () => {
       assert.equal(completed.status, 'published');
       assert.ok('presentation' in completed && completed.presentation);
       assert.equal(
-        completed.presentation.includes('[custom:latin](</trusted/feedback/SKILL.md>)'),
+        completed.presentation.includes('[`custom:latin`](</trusted/feedback/SKILL.md>)'),
         debug,
       );
       assert.equal(completed.presentation.includes('Use concise phrasing.'), debug);

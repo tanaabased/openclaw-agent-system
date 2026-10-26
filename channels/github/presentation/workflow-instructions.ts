@@ -1,6 +1,6 @@
 import { isAbsolute, relative } from 'node:path';
 
-import { githubNotificationMarkdownText } from './card.ts';
+import { githubNotificationMarkdownCode, githubNotificationMarkdownText } from './card.ts';
 import debugCard from './debug.ts';
 
 export interface WorkflowInstructionsSelection {
@@ -14,8 +14,10 @@ export interface WorkflowInstructionsPresentation {
   manifestPath?: string;
 }
 
-function fileLink(label: string, path?: string): string {
-  const text = githubNotificationMarkdownText(label);
+function fileLink(label: string, path?: string, literal = true): string {
+  const text = literal
+    ? githubNotificationMarkdownCode(label)
+    : githubNotificationMarkdownText(label);
   if (!path || !isAbsolute(path) || /[\r\n\0]/u.test(path)) return text;
   const target = encodeURI(path).replace(/[?#<>]/gu, (value) => encodeURIComponent(value));
   return `[${text}](<${target}>)`;
@@ -41,12 +43,13 @@ export default function workflowInstructions(
             label: 'Guidance',
             value:
               guidance.source === 'inline'
-                ? fileLink('Inline guidance', presentation.manifestPath)
+                ? fileLink('Inline guidance', presentation.manifestPath, false)
                 : fileLink(
                     guidance.path && workspace && isAbsolute(guidance.path)
                       ? relative(workspace, guidance.path)
                       : (guidance.path ?? 'Guidance file'),
                     guidance.path,
+                    !!guidance.path,
                   ),
           },
         ]

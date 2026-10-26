@@ -31,7 +31,7 @@ import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import runCodexFeedback from '../agent/codex-feedback.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import { githubNotificationMarkdownText } from '../channels/github/presentation/card.ts';
+import { githubNotificationMarkdownCode } from '../channels/github/presentation/card.ts';
 import { baseline, intakeFixture, removeFixtureAssignment } from './github-intake-fixture.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
@@ -1425,7 +1425,9 @@ describe('agent/codex-dispatch', () => {
     assert.ok(String(recorded.presentation).includes('Plan ready'));
     assert.match(String(recorded.presentation), /Skill.*company:assess/);
     assert.match(String(recorded.presentation), /Guidance.*guidance.md/);
-    assert.ok(String(recorded.presentation).includes(`[guidance.md](<${workspace}/guidance.md>)`));
+    assert.ok(
+      String(recorded.presentation).includes(`[\`guidance.md\`](<${workspace}/guidance.md>)`),
+    );
     assert.ok(!String(recorded.presentation).includes('Prefer small fixes.'));
     const question = {
       version: 1,
@@ -2400,10 +2402,10 @@ describe('agent/codex-dispatch', () => {
     assert.equal(blocked.code, 'dispatch-project-registration-unavailable');
     assert.equal(blocked.changed, true);
     assert.match(String(blocked.message), /^> ## ⚠️ Add the project to continue\n/u);
-    assert.ok(String(blocked.message).includes('- **Project name:** repo\n'));
+    assert.ok(String(blocked.message).includes('- **Project name:** `repo`\n'));
     assert.ok(
       String(blocked.message).includes(
-        '- **Folder path:** ' + githubNotificationMarkdownText(source) + '\n',
+        '- **Folder path:** ' + githubNotificationMarkdownCode(source) + '\n',
       ),
     );
     assert.match(String(blocked.message), /https:\/\/github.com\/owner\/repo\/issues\/3/u);
@@ -2470,7 +2472,7 @@ describe('agent/codex-dispatch', () => {
     const blocked = await next();
     assert.equal(blocked.code, 'repository-preparation-changed');
     assert.ok(String(blocked.message).includes('git.worktrees.repositories.local.github-10'));
-    assert.ok(String(blocked.message).includes(githubNotificationMarkdownText(source)));
+    assert.ok(String(blocked.message).includes(githubNotificationMarkdownCode(source)));
     assert.match(String(blocked.message), /Verify the retained checkout/u);
     assert.doesNotMatch(String(blocked.message), /Reconcile through Install/u);
     assert.match(String(blocked.message), /do not delete/u);
@@ -2502,7 +2504,7 @@ describe('agent/codex-dispatch', () => {
     };
     const blocked = await next();
     assert.equal(blocked.code, 'dispatch-project-registration-unavailable');
-    assert.ok(String(blocked.message).includes(githubNotificationMarkdownText(path)));
+    assert.ok(String(blocked.message).includes(githubNotificationMarkdownCode(path)));
     assert.equal(preparations, 1);
     assert.ok(!gitCalls.some((argv) => argv[0] === 'fetch'));
   });
@@ -2821,10 +2823,10 @@ describe('agent/codex-dispatch', () => {
     assert.ok(String(recorded.presentation).includes(result.assessment));
     assert.ok(String(recorded.presentation).includes(result.planSummary));
     assert.ok(String(recorded.presentation).includes(result.plan));
-    assert.match(String(recorded.presentation), /Selected.*gpt-6\.1-sol \/ high/);
+    assert.match(String(recorded.presentation), /Selected.*`openai\/gpt-6\.1-sol` \/ `high`/);
     assert.match(
       String(recorded.presentation),
-      /Effective settings.*Verified: gpt-6\.1-sol \/ high/,
+      /Effective settings.*Verified: `gpt-6\.1-sol` \/ `high`/,
     );
     assert.deepEqual(await next(), { status: 'idle', changed: false });
     assert.deepEqual(await request('result', { id: prepared.id, result }, child), recorded);
@@ -2919,7 +2921,7 @@ describe('agent/codex-dispatch', () => {
       );
       assert.equal(recorded.status, 'recorded');
       assert.equal(recorded.outcome, outcome.outcome);
-      assert.match(String(recorded.presentation), /Selected.*gpt-6\.1-sol \/ high/);
+      assert.match(String(recorded.presentation), /Selected.*`openai\/gpt-6\.1-sol` \/ `high`/);
       assert.match(String(recorded.presentation), /Effective settings.*Not independently verified/);
       assert.ok(
         String(recorded.presentation).includes(

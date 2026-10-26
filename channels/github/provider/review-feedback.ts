@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { GitHubWorkEventClientError } from './work-event-api-client.ts';
 import { githubCommentCard } from '../presentation/comment.ts';
-import { githubNotificationMarkdownText } from '../presentation/card.ts';
+import { githubNotificationMarkdownCode as inlineCode } from '../presentation/card.ts';
 import {
   admitGitHubComment,
   type GitHubCanonicalIssueComment,
@@ -264,7 +264,7 @@ export function reviewFeedbackPresentation(comment: GitHubReviewFeedback): strin
     );
   for (const finding of context.findings) {
     lines.push(
-      `${finding.body}\n\n[${githubNotificationMarkdownText(finding.path)} ↗](${finding.url}) · reviewed commit \`${finding.originalCommitId.slice(0, 7)}\`\nCurrent line: ${finding.line ?? 'unavailable or outdated'}; original line: ${finding.originalLine ?? 'unavailable'}; side: ${finding.side ?? 'unavailable'}\n\n${reviewDiffPreview(finding)}`,
+      `${finding.body}\n\n[${inlineCode(finding.path)} ↗](${finding.url}) · reviewed commit ${inlineCode(finding.originalCommitId.slice(0, 7))}\nCurrent line: ${finding.line ?? 'unavailable or outdated'}; original line: ${finding.originalLine ?? 'unavailable'}; side: ${finding.side ? inlineCode(finding.side) : 'unavailable'}\n\n${reviewDiffPreview(finding)}`,
     );
   }
   return githubCommentCard({
