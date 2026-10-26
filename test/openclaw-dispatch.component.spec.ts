@@ -1363,6 +1363,45 @@ describe('agent/openclaw issue dispatch', () => {
       authority,
     );
   }
+  it('should snapshot custom routing and keep prepared settings after guidance edits', async () => {
+    manifest.models!.routing = { skill: 'custom-routing', guidance: { file: 'routing.md' } };
+    ordinarySkills.push({
+      name: 'custom-routing',
+      source: 'workspace',
+      filePath: join(root, 'SKILL.md'),
+      eligible: true,
+      modelVisible: true,
+    });
+    await writeFile(join(root, 'routing.md'), 'Prefer small contained work.');
+    const input = await next();
+    assert.ok('routing' in input && 'instructions' in input.routing);
+    assert.equal(input.routing.instructions.requestedSkill, 'custom-routing');
+    await prepare(input);
+    const saved = await record();
+    assert.equal(saved.routingInstructions?.guidance?.content, 'Prefer small contained work.');
+    await writeFile(join(root, 'routing.md'), 'Prefer complex work.');
+    await service.run(manifest, root, coordinator, { action: 'reconcile', id: input.id });
+    assert.equal((await record()).routing, saved.routing);
+    assert.equal(creates().length, 1);
+  });
+
+  it('should refuse stale routing guidance before creating a session', async () => {
+    manifest.models!.routing = { guidance: { file: 'routing.md' } };
+    await writeFile(join(root, 'routing.md'), 'First instructions.');
+    const input = await next();
+    await writeFile(join(root, 'routing.md'), 'Changed instructions.');
+    const outcome = await prepare(input);
+    assert.equal('code' in outcome && outcome.code, 'model-routing-instructions-changed');
+    assert.equal(creates().length, 0);
+  });
+
+  it('should refuse an unavailable custom routing skill', async () => {
+    manifest.models!.routing = { skill: 'missing-routing' };
+    const outcome = await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal('code' in outcome && outcome.code, 'dispatch-assessment-skill-unavailable');
+    assert.equal(creates().length, 0);
+  });
+
   it('should route with verified complexity despite a conflicting content assessment', async () => {
     service.dependencies.connect = async () => ({
       ...fixture.client,

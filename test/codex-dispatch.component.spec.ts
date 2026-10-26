@@ -265,6 +265,62 @@ describe('agent/codex-dispatch', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it('should consume custom initial routing while verified complexity retains its tier', async () => {
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        models: { ...models, routing: { skill: 'company:route', guidance: 'Prefer cheap work.' } },
+      }),
+    );
+    const selected = await next();
+    const routing = selected.routing as {
+      instructions: { requestedSkill: string; skill?: { name: string } };
+    };
+    assert.equal(routing.instructions.requestedSkill, 'company:route');
+    assert.equal(routing.instructions.skill?.name, 'company:route');
+    const prepared = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'low', reason: 'Custom content judgment.' },
+    });
+    assert.equal(prepared.status, 'prepared');
+    assert.equal((prepared.request as { model: string }).model, 'gpt-6.1-sol');
+  });
+
+  it('should reject changed routing instructions before native creation', async () => {
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        models: { ...models, routing: { guidance: { file: 'routing.md' } } },
+      }),
+    );
+    await writeFile(join(workspace, 'routing.md'), 'First instructions.');
+    const selected = await next();
+    await writeFile(join(workspace, 'routing.md'), 'Changed instructions.');
+    const prepared = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'medium', reason: 'Verified complexity.' },
+    });
+    assert.equal(prepared.code, 'model-routing-instructions-changed');
+    assert.equal(prepared.request, undefined);
+  });
+
+  it('should stop initial routing when native skill discovery rejects the requested method', async () => {
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({ ...manifest, models: { ...models, routing: { skill: 'company:missing' } } }),
+    );
+    deps.native!.assessmentSkill = async () => {
+      throw new Error('dispatch-assessment-skill-unavailable');
+    };
+    assert.equal((await next()).code, 'dispatch-assessment-skill-unavailable');
+  });
+
   async function claiming() {
     const comments: GitHubCanonicalIssueComment[] = [];
     const client: ClaimClient = {

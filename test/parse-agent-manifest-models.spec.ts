@@ -12,6 +12,35 @@ ${models}
 }
 
 describe('manifest/models-schema', () => {
+  it('should decode routing customization without treating it as a profile', () => {
+    for (const routing of [
+      '{}',
+      '{skill: " $company:route "}',
+      '{guidance: prefer established work}',
+      '{guidance: {file: guidance/routing.md}}',
+      '|\n    invalid',
+    ]) {
+      const result = parseModels(
+        `models:\n  default: {model: openai/example, effort: high}\n  routing: ${routing}`,
+      );
+      assert.equal(result.status, routing.startsWith('|') ? 'invalid' : 'valid');
+      if (result.status === 'valid' && routing.includes('company'))
+        assert.equal(result.manifest.models?.routing?.skill, 'company:route');
+    }
+    for (const routing of [
+      '{unknown: true}',
+      '{skill: ../bad}',
+      '{guidance: {file: x, other: y}}',
+      '{guidance: " "}',
+    ])
+      assert.equal(
+        parseModels(
+          `models:\n  default: {model: openai/example, effort: high}\n  routing: ${routing}`,
+        ).status,
+        'invalid',
+      );
+  });
+
   it('should accept an explicit default model profile without work tiers', () => {
     const result = parseModels(`models:
   default:

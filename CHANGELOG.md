@@ -10,6 +10,7 @@
 
 ### New Features
 
+- Added `models.routing` skill and guidance customization for initial model selection in OpenClaw and Codex. [#478](https://github.com/tanaabased/openclaw-agent-system/issues/478)
 - Added Codex issue-assignment intake with one persistent chat, historical baseline exclusion, and explicit recurring consent. [#246](https://github.com/tanaabased/openclaw-agent-system/issues/246)
 - Added `agent.yaml` automations with native OpenClaw scheduling and app-assisted Codex prompt scheduling. [#194](https://github.com/tanaabased/openclaw-agent-system/issues/194) [#195](https://github.com/tanaabased/openclaw-agent-system/issues/195) [#196](https://github.com/tanaabased/openclaw-agent-system/issues/196)
 - Added `github.notifications` V2 policy and native OpenClaw issue assignment, admission, and retained planning. [#245](https://github.com/tanaabased/openclaw-agent-system/issues/245) [#328](https://github.com/tanaabased/openclaw-agent-system/pull/328)

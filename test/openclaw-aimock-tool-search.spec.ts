@@ -851,7 +851,16 @@ describe('scripts/aimock-tool-search', () => {
         content: [
           {
             type: 'text',
-            text: JSON.stringify({ status: 'available', manifestDigest: 'current-digest' }),
+            text: JSON.stringify({
+              status: 'available',
+              manifestDigest: 'current-digest',
+              instructionsDigest: 'a'.repeat(64),
+              instructions: {
+                guidance: {
+                  content: 'Preserve uncertainty and use only an explicit default fallback.',
+                },
+              },
+            }),
           },
         ],
       },
@@ -861,6 +870,7 @@ describe('scripts/aimock-tool-search', () => {
     const call = resolve.toolCalls[0]!;
     assert.equal(call.name, 'tool_call');
     assert.equal(JSON.parse(call.arguments).args.manifestDigest, 'current-digest');
+    assert.equal(JSON.parse(call.arguments).args.instructionsDigest, 'a'.repeat(64));
     append(input, resolve, {
       tool: { id: 'openclaw:agent_system_model_routing', name: 'agent_system_model_routing' },
       result: {

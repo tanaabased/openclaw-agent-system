@@ -1,3 +1,8 @@
+import routingInstructions, {
+  assertRoutingInstructions,
+  routingInstructionsGuidance,
+  routingInstructionsDigest,
+} from './routing-instructions.ts';
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
@@ -451,6 +456,13 @@ export async function prepareIssueProject(
     record.context = JSON.stringify(snapshot);
     record.manifestDigest = current.digest;
     record.phase = 'routing';
+    record.routingInstructions = await routingInstructions({
+      configuration: current.manifest.models?.routing,
+      workspace: current.workspace,
+      observedAt: now,
+      resolveSkill: (id) =>
+        withNative(current, deps, (native) => native.assessmentSkill(current.workspace, id)),
+    });
     if (!record.manualIssue)
       record.preparationObservation = {
         sourceThreadId: activation.sourceThreadId,
@@ -461,6 +473,8 @@ export async function prepareIssueProject(
           context: record.context,
           project: record.project,
           manifest: record.manifestDigest,
+          instructions:
+            record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
         }),
         runtime: {
           nodeExecutable: process.execPath,
@@ -488,13 +502,20 @@ export async function prepareIssueProject(
         context: record.context,
         project: record.project,
         manifest: record.manifestDigest,
+        instructions:
+          record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
       }),
-      routing: resolveModelRoutingRequest(
-        current.manifest.models,
-        current.digest,
-        { action: 'inspect' },
-        'codex',
-      ),
+      routing: {
+        ...resolveModelRoutingRequest(
+          current.manifest.models,
+          current.digest,
+          { action: 'inspect' },
+          'codex',
+        ),
+        instructions: record.routingInstructions,
+        instructionsDigest: routingInstructionsDigest(record.routingInstructions),
+        instructionsGuidance: routingInstructionsGuidance,
+      },
     };
   } catch (error) {
     return fail(record, error);
@@ -526,6 +547,8 @@ export async function prepareDispatch(
         context: record.context,
         project: record.project,
         manifest: record.manifestDigest,
+        instructions:
+          record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
       })
   )
     throw new Error('dispatch-preparation-stale');
@@ -533,6 +556,14 @@ export async function prepareDispatch(
     const { client } = await revalidateDispatchAssignment(current, intake, deps, signal);
     const waiting = await selectClaim(record, intake, client, tx);
     if (waiting) return waiting;
+    const instructions = await routingInstructions({
+      configuration: current.manifest.models?.routing,
+      workspace: current.workspace,
+      observedAt: now,
+      resolveSkill: (id) =>
+        withNative(current, deps, (native) => native.assessmentSkill(current.workspace, id)),
+    });
+    assertRoutingInstructions(instructions, record.routingInstructions);
     const snapshot = JSON.parse(record.context);
     const metadata = snapshot.metadata?.complexity;
     const decision = resolveModelRoutingRequest(
@@ -602,6 +633,7 @@ export async function prepareDispatch(
       };
     }
     record.routing = JSON.stringify(decision);
+    record.routingInstructions = instructions;
     record.routingNote = githubNotificationQuote(
       '## 🧠 Model routing\n\n' +
         decision.candidate.model +

@@ -77,6 +77,9 @@ fixtures.push(
       predicate: (request) =>
         routingRequest(request) &&
         routingResult(request, inspectCall)?.status === 'available' &&
+        (routingResult(request, inspectCall)?.instructions as { guidance?: { content?: string } })
+          ?.guidance?.content ===
+          'Preserve uncertainty and use only an explicit default fallback.' &&
         !routingResult(request, resolveCall),
     },
     response: (request) => ({
@@ -88,6 +91,7 @@ fixtures.push(
           arguments: JSON.stringify({
             action: 'resolve',
             manifestDigest: routingResult(request, inspectCall)!.manifestDigest,
+            instructionsDigest: routingResult(request, inspectCall)!.instructionsDigest,
             context: 'An unspecified task.',
             assessment: { complexity: 'unset', reason: 'No defensible tier.' },
             fallback: 'default',

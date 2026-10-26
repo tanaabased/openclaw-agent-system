@@ -1,3 +1,4 @@
+import { routingInstructionsDigest } from './routing-instructions.ts';
 import { Value } from 'typebox/value';
 
 import { launchRequestSchema } from '../tools/dispatch/launch-schema.ts';
@@ -61,6 +62,8 @@ export default async function codexIssueLaunch(
               context: record.context,
               project: record.project,
               manifest: record.manifestDigest,
+              instructions:
+                record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
             }),
           };
       }

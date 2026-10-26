@@ -69,6 +69,23 @@ describe('agent/issue-launch', () => {
       verifyExisting: async () => {},
     });
 
+  it('should refresh unconsumed routing instructions in the same manual owner', async () => {
+    context.manifest.models = {
+      default: { model: 'openai/example', effort: 'high' },
+      routing: { guidance: 'First instructions.' },
+    };
+    const first = await launch();
+    assert.ok('digest' in first);
+    context.manifest.models.routing = { guidance: 'Changed instructions.' };
+    const second = await launch();
+    assert.ok('digest' in second);
+    assert.equal(first.id, second.id);
+    assert.notEqual(first.digest, second.digest);
+    const records = (await journal.read()).records;
+    assert.equal(records.length, 1);
+    assert.equal(records[0]?.routingInstructions?.guidance?.content, 'Changed instructions.');
+  });
+
   it('should reserve unassigned work once without creating an assignment receipt', async () => {
     fixture.item.assignees = [];
     fixture.client.listAssignmentEvents = async () => {
