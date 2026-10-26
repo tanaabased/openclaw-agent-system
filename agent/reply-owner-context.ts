@@ -40,7 +40,9 @@ export default function replyOwnerContext(input: {
     ),
     repository: intake ? `${intake.repository.owner.login}/${intake.repository.name}` : undefined,
     number: intake?.issue.number,
-    pullRequestNumber: delivery?.pullRequest?.pullRequestNumber,
+    pullRequestNumber:
+      delivery?.pullRequest?.pullRequestNumber ??
+      record.retainedHistory?.pullRequest?.pullRequestNumber,
     events: record.feedback?.events,
     summary: record.result
       ? {

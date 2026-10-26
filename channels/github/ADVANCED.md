@@ -49,8 +49,9 @@ publication requires an explicit request through native approval. Existing manag
 work retains its owner and receipts; invalid context must recover or fail, not
 silently become manual work. See the [reply skill](../../skills/feedback-reply/SKILL.md).
 
-Direct and GitHub follow-ups receive retained plan revisions, private responses,
-and partial work before interpreting the new message; that history supplies context,
+Direct and GitHub follow-ups receive current plans, recent private responses,
+and unfinished work before interpreting the new message. Older settled detail may
+move to [bounded cold history](#working-history-and-limits); history supplies context,
 not new authority.
 No separate repair policy or author list is required.
 
@@ -90,6 +91,35 @@ uncertain send or publication or automatically terminates a running native turn.
 Git and GitHub enforce provider permissions. Managed workflow failures expose safe,
 bounded provider detail and an HTTP status when supplied. Unsupported execution
 capabilities are reported for their stage without disabling discovery.
+
+## Working History and Limits
+
+Normal journal saves offload eligible settled detail once content exceeds **2 MiB**.
+The **4 MiB** working-content limit remains, with a separate **1 MiB** dispatch
+reporting reserve. Before the **400-event** feedback limit, saves also offload settled
+events at 350 retained events. Unfinished work, current plans, publication holds,
+uncertain effects and required recovery evidence stay live. A published reply alone
+does not establish completed implementation or delivery.
+
+Cold snapshots expire **30 days** after settlement (or first offloading when no
+settlement timestamp exists), or sooner under a **64 MiB** budget per native
+agent/workspace journal scope. Repositories sharing that journal share the budget.
+Routine execution does not load snapshots. Expiry and oldest-first eviction run
+on normal saves, without a background job; idle files can remain on disk until the
+next save, but expired detail is unavailable to readback.
+
+Use dispatch `present` with `includeDetails: true` in the owning conversation for
+available historical evidence. Large snapshots return an exact private file path
+for on-demand inspection. Missing, expired or corrupt detail is explicitly unavailable,
+not reconstructed. History cannot resume a task or authorize publication, and is
+not automatically exported to agent memory.
+
+Minimal completion identities and consumed intake allowance remain in working state
+to prevent repeats. They are not deleted by age, and assignment discovery does not
+skip delayed or unevaluated work to reclaim space. Intake removes only duplicate
+observations of already admitted assignments. Required bookkeeping can still fill
+its finite journal; capacity errors preserve the existing file rather than deleting
+protected evidence. Corrupt or already oversized journals are not automatically reset.
 
 ## Assignment lifecycle
 
@@ -139,7 +169,8 @@ triggers still require a clean checkout and the expected branch. Pinned sessions
 automation owners, shared worktrees, unresolved activity, and unreferenced commits
 remain protected.
 Each successful cleanup step is retained so interrupted cleanup can reconcile on a
-later poll. Branches, issue content, and assessment history are preserved. Older native creation receipts can establish session identity without replacing
+later poll. Branches and issue content are preserved; assessment detail follows the
+[history retention limits](#working-history-and-limits). Older native creation receipts can establish session identity without replacing
 them. If the managed inventory and recorded path both confirm an already-removed
 worktree, retirement records observed external cleanup after its ownership checks;
 this does not claim to have removed or preserved the missing checkout. For work
@@ -150,8 +181,8 @@ unavailable-session outcome, not proof of deletion or rejected creation; it is
 recorded separately without inventing archival. Existing worktrees are removed only
 when the normal checks pass; already-absent worktrees are observed, not removed again.
 Timeouts, temporary read failures, conflicting identities, and known active work
-remain blockers. Retirement retains the record and history; it does not reassign
-the issue automatically.
+remain blockers. Retirement retains the operational owner; settled detail may move
+to cold history. It does not reassign the issue automatically.
 
 Codex prepares archival through the desktop's native tools after checking pins,
 automation ownership, shared use, and preserved commits. A freshly verified closed

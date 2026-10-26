@@ -1,4 +1,5 @@
 import type { OperatorIssue } from './managed-issue.ts';
+import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { Type, type Static } from 'typebox';
 
 import { automationHash } from './automation-hash.ts';
@@ -26,7 +27,10 @@ type Issue = Parameters<typeof issueProgression>[0] & {
 
 /** retained conversation context is evidence, not fresh direction or implementation authority. */
 export function feedbackWorkContext(
-  record: { feedback?: { events: FeedbackSourceEvent[] } },
+  record: { feedback?: { events: FeedbackSourceEvent[] } } & Pick<
+    SharedDispatchRecord,
+    'retainedHistory'
+  >,
   currentEventId?: string,
 ) {
   return (record.feedback?.events ?? [])
@@ -39,6 +43,15 @@ export function feedbackWorkContext(
       decision: event.work?.decision,
       result: event.work?.result,
       privateText: event.result?.privateText,
+      ...(record.retainedHistory
+        ? {
+            history: {
+              instruction:
+                'Older detail was offloaded. Use present with includeDetails for available cold history; expired detail is unavailable.',
+              expired: Boolean(record.retainedHistory.expired),
+            },
+          }
+        : {}),
     }));
 }
 export function feedbackMode(record: Issue, policy: GitHubNotificationPolicy) {

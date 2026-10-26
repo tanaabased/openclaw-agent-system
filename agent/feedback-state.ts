@@ -73,6 +73,23 @@ export const feedbackSourceEventSchema = Type.Object(
 );
 export const feedbackSourceStateSchema = Type.Object(
   {
+    completed: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            id: hash,
+            sourceId: text,
+            revision: hash,
+            nodeId: text,
+            receipt: Type.Object(
+              { nodeId: text, databaseId: Type.Integer({ minimum: 1 }) },
+              { additionalProperties: false },
+            ),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
     evaluatedPolicyDigests: Type.Optional(Type.Record(text, hash)),
     admission: Type.Optional(
       Type.Object(

@@ -190,7 +190,10 @@ export async function discoverFeedback(input: {
     if (revisions.has(source.nodeId) && revisions.get(source.nodeId) !== revision)
       throw new Error('feedback-source-incomplete');
     revisions.set(source.nodeId, revision);
-    next[source.nodeId] = JSON.stringify(source);
+    const id = automationHash([input.nodeId, source.nodeId, revision]);
+    if (!isReviewFeedback(source) && state.completed?.some((event) => event.id === id))
+      delete next[source.nodeId];
+    else next[source.nodeId] = JSON.stringify(source);
     if (
       ((!baseline || discovery) &&
         !previous &&
@@ -207,7 +210,8 @@ export async function discoverFeedback(input: {
     // provider receipts, not copied markers or account identity, identify our own replies.
     if (
       ownCommentIds?.includes(source.nodeId) ||
-      state.events.some((event) => event.receipt?.nodeId === source.nodeId)
+      state.events.some((event) => event.receipt?.nodeId === source.nodeId) ||
+      state.completed?.some((event) => event.receipt.nodeId === source.nodeId)
     )
       continue;
     if (!accepting) continue;
@@ -219,8 +223,11 @@ export async function discoverFeedback(input: {
       if (!observedReviewEdit && (!Number.isFinite(updatedAt) || updatedAt <= after)) continue;
     }
     if (admitFeedback(input.policy, client.identity, source).disposition !== 'approved') continue;
-    const id = automationHash([input.nodeId, source.nodeId, revision]);
-    if (state.events.some((event) => event.id === id) || pending.some((event) => event.id === id))
+    if (
+      state.events.some((event) => event.id === id) ||
+      state.completed?.some((event) => event.id === id) ||
+      pending.some((event) => event.id === id)
+    )
       continue;
     pending.push({
       id,

@@ -23,6 +23,57 @@ const comment = (nodeId: string, body = '@receiver explain this') => ({
   updatedAt: '2026-10-13T01:00:00Z',
 });
 describe('agent/codex-feedback-source', () => {
+  it('should reject completed-source replay and own replies after cold history expires while accepting edits', async () => {
+    const policy = intakeFixture().policy;
+    const state: CodexFeedback = {
+      startedAt: Date.parse('2026-10-12T00:00:00Z'),
+      baseline: {},
+      events: [],
+    };
+    let comments = [comment('source')];
+    const scan = () =>
+      discoverCodexFeedback({
+        state,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'I',
+        itemType: 'issue',
+        now: Date.parse('2026-10-14T00:00:00Z'),
+        client: {
+          identity: account,
+          listIssueComments: async () => ({ comments, truncated: false }),
+          getIssueComment: async () => comments[0]!,
+          reviews: reviewClientFixture(reviewFixture({ body: '' }), []),
+        },
+      });
+    await scan();
+    const original = state.events[0]!;
+    state.completed = [
+      {
+        id: original.id,
+        sourceId: original.sourceId,
+        revision: original.revision,
+        nodeId: original.nodeId,
+        receipt: { nodeId: 'own-reply', databaseId: 99 },
+      },
+    ];
+    state.events = [];
+    state.baseline = {};
+    comments.push(comment('own-reply'));
+    await scan();
+    assert.equal(state.events.length, 0);
+    comments = [
+      { ...comment('source', '@receiver revised question'), updatedAt: '2026-10-13T02:00:00Z' },
+    ];
+    await scan();
+    assert.equal(state.events.length, 1);
+    assert.notEqual(state.events[0]!.id, original.id);
+    await scan();
+    assert.equal(state.events.length, 1);
+  });
+
   it('should discover pause-time feedback after resume without a cutoff or duplicate admission', async () => {
     const policy = intakeFixture().policy;
     const state: CodexFeedback = {

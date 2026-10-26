@@ -8,6 +8,7 @@ import openClawResponseAuthority from './openclaw-response-authority.ts';
 import type { Static } from 'typebox';
 
 import feedbackResponse from '../channels/github/presentation/feedback-response.ts';
+import readRetainedHistory from './read-retained-history.ts';
 import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -817,6 +818,14 @@ export default class OpenClawDispatchIssue {
         signal.throwIfAborted();
         const retained = state.records.find((entry) => entry.id === action.id);
         if (!retained) throw new Error('dispatch-receipt-missing');
+        if (retained.retainedHistory?.terminal) {
+          if (
+            caller.sessionKey !== retained.threadId ||
+            caller.sessionId !== retained.retainedHistory.sessionId
+          )
+            throw new Error('dispatch-assessment-caller-mismatch');
+          return structuredClone(retained);
+        }
         if (
           caller.sessionKey !== retained.threadId ||
           caller.sessionId !== retained.sessionCreation?.sessionId ||
@@ -826,6 +835,18 @@ export default class OpenClawDispatchIssue {
         return structuredClone(retained);
       });
       const snapshot = automationHash(record);
+      if (record.retainedHistory?.terminal) {
+        await authority.assertCurrent?.();
+        return {
+          status: 'historical' as const,
+          id: record.id,
+          history: await readRetainedHistory(
+            record,
+            current.journal.history,
+            (this.context.dependencies.now ?? Date.now)(),
+          ),
+        };
+      }
       stage = 'verification';
       const assertCurrent = async () => {
         signal.throwIfAborted();
@@ -855,7 +876,19 @@ export default class OpenClawDispatchIssue {
               };
             })()
           : presentOpenClawDelivery(record, intake, openClawFeedbackEnabled(manifest));
-      if (action.action === 'present') return result;
+      if (action.action === 'present')
+        return {
+          ...result,
+          ...(action.includeDetails && record.retainedHistory
+            ? {
+                history: await readRetainedHistory(
+                  record,
+                  current.journal.history,
+                  (this.context.dependencies.now ?? Date.now)(),
+                ),
+              }
+            : {}),
+        };
       stage = 'commit';
       enteredJournal = false;
       return await current.journal.exclusive(async (state, save, lockSignal) => {

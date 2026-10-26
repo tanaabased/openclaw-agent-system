@@ -14,6 +14,8 @@ export const openclawIntakePassSchema = Type.Object(
     candidates: Type.Array(hash, { uniqueItems: true }),
     recovery: Type.Array(hash, { uniqueItems: true }),
     selected: Type.Array(hash, { uniqueItems: true }),
+    started: Type.Optional(Type.Array(hash, { uniqueItems: true })),
+    completed: Type.Optional(Type.Literal(true)),
   },
   { additionalProperties: false },
 );

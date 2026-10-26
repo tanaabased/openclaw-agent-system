@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { omit } from 'lodash-es';
 
 import IntakeRecordStore, {
   IntakeError,
@@ -47,6 +48,37 @@ describe('channels/github/intake/records', () => {
     };
   }
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should remove only duplicate admitted observations under ${runtime} byte pressure`, async () => {
+      const { input, store, events } = setup(runtime);
+      const assigned = events.splice(0);
+      await scanAssignments({ ...input, activate: true });
+      events.push(...assigned);
+      await scanAssignments({ ...input, now: baseline + 120000 });
+      const admitted = (await store.read())!.records[0]!;
+      const observed = omit(admitted, ['evidence', 'admittedAt', 'status', 'requiresRevalidation']);
+      const unevaluated = { ...observed, id: 'unadmitted-assignment' };
+      await store.exclusive(async (state, save) => {
+        state!.observedAssignments = [
+          ...Array.from(
+            {
+              length:
+                Math.ceil((2 * 1024 * 1024) / Buffer.byteLength(JSON.stringify(observed))) + 1,
+            },
+            () => structuredClone(observed),
+          ),
+          unevaluated,
+        ];
+        assert.ok(Buffer.byteLength(JSON.stringify(state)) > 2 * 1024 * 1024);
+        await save(state!);
+        assert.deepEqual(state!.observedAssignments, [unevaluated]);
+      });
+      const saved = (await new IntakeRecordStore(store.location).read())!;
+      assert.deepEqual(saved.records, [admitted]);
+      assert.deepEqual(saved.observedAssignments, [unevaluated]);
+      assert.equal((await scanAssignments({ ...input, now: baseline + 180000 })).admitted, 0);
+      assert.equal((await store.read())!.baselineAt, saved.baselineAt);
+    });
+
     it(`should resolve compact ${runtime} policy before owner filtering and assignment admission`, async () => {
       const { input, store, policy, client, events, repository } = setup(runtime);
       policy.allowedRepositoryOwners = [

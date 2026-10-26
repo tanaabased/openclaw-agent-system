@@ -1,4 +1,10 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { issueKey } from './dispatch-pending.ts';
+import ColdHistory from './cold-history.ts';
+import intakePassStarted from './intake-pass-started.ts';
+import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import { historyLifetimeMs, historySoftBytes, retainedHistorySchema } from './history-state.ts';
+import retainDispatchHistory, { validTerminalRecord } from './retain-dispatch-history.ts';
 import { operatorIssueSchema } from './managed-issue.ts';
 import { assessmentEntriesSchema } from './assessment-entry-state.ts';
 import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
@@ -18,12 +24,14 @@ import { assignmentObservationSchema, retirementSchema } from './assignment-reti
 import { assessmentResultSchema } from './assessment-result.ts';
 import { assessmentSummarySchema } from './assessment-summary-state.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
-import { openclawIntakePassSchema } from './openclaw-intake-pass.ts';
+import { openclawIntakePassSchema, sameIntakeRun } from './openclaw-intake-pass.ts';
 import { workflowBindingSchema } from './workflow-result.ts';
 import { issueProgressionSchema } from './issue-progression.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
-import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
+import acquirePrivateStateFileLock, {
+  type PrivateStateFileLockHandle,
+} from '../core/private-state-file-lock.ts';
 import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
@@ -37,6 +45,7 @@ export const assessmentStageReceiptSchema = Type.Object(
   { additionalProperties: false },
 );
 export const dispatchRecordProperties = {
+  retainedHistory: Type.Optional(retainedHistorySchema),
   directAssessments: Type.Optional(assessmentEntriesSchema),
   providerDiagnostic: Type.Optional(providerDiagnosticSchema),
   id: hash,
@@ -224,6 +233,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   readonly file: PrivateStateFile;
   readonly schema: ReturnType<typeof dispatchStateSchema<R>>;
   readonly path: string;
+  readonly history: ColdHistory;
   constructor(
     readonly root: string,
     readonly scope: string,
@@ -235,6 +245,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   ) {
     this.schema = dispatchStateSchema<R>(contract.recordSchema);
     this.path = join(root, contract.runtime + '-dispatch-' + scope + '.json');
+    this.history = new ColdHistory(root, contract.runtime + '-' + scope);
     this.file = new PrivateStateFile({
       path: this.path,
       directories: [root],
@@ -259,6 +270,14 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               pass.allowance > pass.limit ||
               pass.recovery.length > pass.limit ||
               pass.candidates.length > 12 ||
+              pass.started?.some(
+                (id) => !pass.selected.includes(id) || pass.recovery.includes(id),
+              ) ||
+              (pass.completed &&
+                (pass.candidates.length > 0 ||
+                  pass.recovery.length > 0 ||
+                  pass.selected.length > 0 ||
+                  (pass.started?.length ?? 0) > 0)) ||
               (pass.allowance === 0 && pass.selected.some((id) => !pass.recovery.includes(id))) ||
               pass.selected.filter((id) => !pass.recovery.includes(id)).length >
                 pass.candidates.length ||
@@ -277,15 +296,21 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               r.manualIssue.scope !== this.scope ||
               r.manualIssue.initiation.session !== r.sourceThreadId ||
               issueKey(r.manualIssue) !== r.issueKey)) ||
-          (r.request && (!r.context || !r.routing || !r.routingNote)) ||
-          (['creating', 'assessing', 'complete'].includes(r.phase) && !r.request) ||
-          (r.phase === 'created' &&
-            (this.contract.runtime !== 'openclaw' || !r.request || !r.threadId || !r.effective)) ||
-          (r.phase === 'complete' && !r.result) ||
-          (r.handoff && (!r.request || !r.threadId || !r.worktree)),
+          (!r.retainedHistory?.terminal &&
+            ((r.request && (!r.context || !r.routing || !r.routingNote)) ||
+              (['creating', 'assessing', 'complete'].includes(r.phase) && !r.request) ||
+              (r.phase === 'created' &&
+                (this.contract.runtime !== 'openclaw' ||
+                  !r.request ||
+                  !r.threadId ||
+                  !r.effective)) ||
+              (r.phase === 'complete' && !r.result) ||
+              (r.handoff && (!r.request || !r.threadId || !r.worktree)))),
       ) ||
       state.records.some((r) => r.reset && (r.phase !== 'complete' || !r.threadId)) ||
-      state.records.some((r) => !this.contract.validRecord(r))
+      state.records.some((r) =>
+        r.retainedHistory?.terminal ? !validTerminalRecord(r) : !this.contract.validRecord(r),
+      )
     )
       throw new Error('dispatch-state-invalid');
   }
@@ -360,6 +385,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
                 'threadId',
                 'worktree',
                 'effective',
+                'retainedHistory',
               ].some((key) => !isDeepStrictEqual(previous[key as keyof R], fresh[key as keyof R]))
             )
               throw Object.assign(new Error(stateSnapshotConflictCode), {
@@ -374,8 +400,8 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
             refreshStateSnapshot(current, merged);
             await save();
           }
-          refreshStateSnapshot(state, merged);
-          before = structuredClone(merged);
+          refreshStateSnapshot(state, current);
+          before = structuredClone(current);
         }, true);
       },
       signal,
@@ -391,29 +417,147 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       currentUid: process.getuid?.(),
       label: this.contract.runtime + ' issue dispatch',
     });
-    const lock = await acquirePrivateStateFileLock(this.path, {
-      staleMs: 30000,
-      retries: waitForLock
-        ? { retries: 40, factor: 1, minTimeout: 250, maxTimeout: 250 }
-        : { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
-    });
+    // capture only enclosing guards; archive io must not inherit this journal's released lease.
+    const outsideJournal = AsyncLocalStorage.snapshot();
+    const acquire = (wait: boolean) =>
+      acquirePrivateStateFileLock(this.path, {
+        staleMs: 30000,
+        retries: wait
+          ? { retries: 40, factor: 1, minTimeout: 250, maxTimeout: 250 }
+          : { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
+      });
+    let lock: PrivateStateFileLockHandle | undefined = await acquire(waitForLock);
+    const controller = new AbortController();
+    let reacquireFailure: unknown;
+    const followLease = () => {
+      const signal = lock!.signal;
+      signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
+    };
+    followLease();
+    const guard = {
+      signal: controller.signal,
+      assertHeld() {
+        if (!lock) throw reacquireFailure ?? new Error('dispatch-journal-lease-suspended');
+        lock.assertHeld();
+      },
+    };
     try {
-      return await withPrivateStateLock(lock, async () => {
+      return await withPrivateStateLock(guard, async () => {
         await assertNotificationManagement(this.root, this.scope);
         const state = await this.read();
+        let committed = structuredClone(state);
         return run(
           state,
           async () => {
-            lock.assertHeld();
+            guard.assertHeld();
             await assertNotificationManagement(this.root, this.scope);
+            const current = await this.read();
+            if (current.resetGeneration !== committed.resetGeneration)
+              throw new Error('notification-reset-stale-operation');
+            if (!isDeepStrictEqual(current, committed)) throw new Error(stateSnapshotConflictCode);
             this.validate(state);
-            await this.file.write(serializeState(state));
+            const retained = structuredClone(state);
+            const pressure =
+              Buffer.byteLength(
+                JSON.stringify({
+                  ...retained,
+                  run: retained.run && { ...retained.run, response: undefined },
+                }),
+              ) > historySoftBytes;
+            const now = Date.now();
+            for (const record of retained.records) {
+              const history = record.retainedHistory;
+              if (!history) continue;
+              const entries = history.entries.filter((entry) => entry.at + historyLifetimeMs > now);
+              if (entries.length !== history.entries.length) history.expired = true;
+              history.entries = entries;
+            }
+            const snapshots: { original: R; projected: R }[] = [];
+            if (this.contract.runtime === 'openclaw') {
+              for (const pass of retained.openclawPasses ?? []) {
+                if (pass.completed) continue;
+                const started = intakePassStarted(
+                  pass,
+                  retained.records as unknown as OpenClawDispatchRecord[],
+                );
+                if (started.length || pass.started) pass.started = started;
+                if (
+                  pressure &&
+                  retained.openclawOccurrence &&
+                  !sameIntakeRun(pass, retained.openclawOccurrence) &&
+                  started.length >= pass.allowance &&
+                  pass.recovery.every((id) => pass.selected.includes(id))
+                ) {
+                  pass.completed = true;
+                  pass.candidates = [];
+                  pass.recovery = [];
+                  pass.selected = [];
+                  pass.started = [];
+                }
+              }
+            }
+            for (let index = 0; index < retained.records.length; index++) {
+              const original = retained.records[index]!;
+              const events = (original as R & { feedback?: { events: unknown[] } }).feedback
+                ?.events;
+              if (!pressure && (events?.length ?? 0) < 350) continue;
+              const projected = retainDispatchHistory(original);
+              if (!projected) continue;
+              // preflight the projected size before performing any archive effects.
+              projected.retainedHistory ??= { entries: [] };
+              snapshots.push({ original, projected });
+              retained.records[index] = projected;
+            }
+            this.validate(retained);
+            serializeState(retained);
+            if (snapshots.length || retained.records.some((record) => record.retainedHistory)) {
+              await lock!.release();
+              lock = undefined;
+              let archiveError: unknown;
+              let archiveFailed = false;
+              try {
+                await outsideJournal(() =>
+                  this.history.exclusive(async () => {
+                    for (const { original, projected } of snapshots) {
+                      const reference = await this.history.retain(
+                        original,
+                        original.retired?.at ?? now,
+                        now,
+                      );
+                      projected.retainedHistory!.entries.push(reference);
+                    }
+                    await this.history.prune(now);
+                  }),
+                );
+              } catch (error) {
+                archiveError = error;
+                archiveFailed = true;
+              }
+              try {
+                lock = await acquire(true);
+                followLease();
+              } catch (error) {
+                reacquireFailure = error;
+                throw error;
+              }
+              await assertNotificationManagement(this.root, this.scope);
+              const fresh = await this.read();
+              if (fresh.resetGeneration !== committed.resetGeneration)
+                throw new Error('notification-reset-stale-operation');
+              if (!isDeepStrictEqual(fresh, committed)) throw new Error(stateSnapshotConflictCode);
+              if (archiveFailed) throw archiveError;
+            }
+            this.validate(retained);
+            const contents = serializeState(retained);
+            await this.file.write(contents);
+            refreshStateSnapshot(state, retained);
+            committed = JSON.parse(contents) as DispatchState<R>;
           },
-          lock.signal,
+          guard.signal,
         );
       });
     } finally {
-      await lock.release();
+      await lock?.release();
     }
   }
 

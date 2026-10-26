@@ -8,6 +8,7 @@ Reconcile retirement after external worktree cleanup, reclaim a fresh attempt wi
 - A fresh assignment creating a distinct owner/branch from the repository base while preserving the retired branch's local commit.
 - Closed-issue archival and automatic removal of that fresh checkout despite a changed branch and modified/untracked files, preserving its commits and assessment.
 - Explicit retirement from an active turn remaining pending, followed by verified missing-session reconciliation and safe checkout removal without invented archival.
+- Offloading settled history above 2 MiB through an installed normal save, then retaining the terminal owner after loss of its cold copy.
 
 ## What Does Not Belong Here
 
@@ -18,6 +19,7 @@ Reconcile retirement after external worktree cleanup, reclaim a fresh attempt wi
 ## Notes
 
 - Strict AIMock reuses assessment judgment and adds the existing digest-bound retirement preview/apply exchange. Real native execution must leave the request pending while its own turn is active.
+- The retention check seeds repeated copies of an already verified assessment only while the Gateway is stopped. It exercises the packed runtime after restart; it neither fabricates cleanup receipts nor runs a performance benchmark.
 - The two native cases share a job but select their exact retained owners. No reset empties the journal between them; earlier retired attempts remain as independent history.
 - The fresh attempt is closed and retired before the missing-session case. Three 61-second waits preserve the existing lifecycle observation coverage with zero shared cleanup grace.
 - CI owns two disposable issues, their workspaces/state, and SSH registration. Only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule bound discovery; cleanup stops the Gateway before external changes.
@@ -227,6 +229,27 @@ jq -e --slurpfile before "$TMPDIR/notification-unavailable-before.json" '.retire
 worktree=$(jq -er .worktree "$TMPDIR/notification-unavailable-after.json")
 test ! -e "$worktree"
 openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(.[]; .path != $path)'
+```
+
+## Retained History
+
+```bash
+# should offload settled history through the installed save path after restart
+openclaw-gateway stop --timeout 340
+node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/history-pressure.ts" seed "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2" "$TMPDIR/notification-unavailable-after.json"
+OPENCLAW_LOG_LEVEL=info openclaw-gateway start
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
+number=$(jq -er .number "$TMPDIR/notification-unavailable-issue.json")
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
+node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/history-pressure.ts" verify-and-remove-cold-copy "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2" "$TMPDIR/notification-unavailable-after.json"
+
+# should keep the retired owner terminal when its cold history is unavailable
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
+number=$(jq -er .number "$TMPDIR/notification-unavailable-issue.json")
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
+node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/history-pressure.ts" verify-terminal "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2" "$TMPDIR/notification-unavailable-after.json"
 ```
 
 ## Cleanup
