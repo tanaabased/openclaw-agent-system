@@ -6044,6 +6044,96 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await work.run('next')).status, 'prepared');
   });
 
+  it('should keep a receipted codex delivery recovery user turn delivery-only', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    work.receive();
+    await work.run('context', {}, true);
+    await work.run(
+      'result',
+      { result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' } },
+      true,
+    );
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    await work.run('next');
+    native!.turnId = 'delivery-turn';
+    native!.followUpUserTurn = true;
+    native!.status = 'active';
+    native!.turnStatus = 'inProgress';
+    work.continuation.native!.operatorInput = async () => {
+      throw new Error('recovery-is-not-operator-input');
+    };
+    const recovered = await work.run('context', {}, true);
+    assert.equal(recovered.status, 'verified');
+    assert.ok('deliveryOnly' in recovered && recovered.deliveryOnly);
+  });
+
+  for (const denied of [false, true])
+    it(`should ${denied ? 'retain native denial for' : 'accept'} a verified codex revision after done`, async () => {
+      const work = await workIssue();
+      await work.run('next');
+      work.receive();
+      await work.run('context', {}, true);
+      const done = { outcome: 'done', summary: 'First pass.', fullResult: 'First pass checked.' };
+      await work.run('result', { result: done }, true);
+      const current = await selectCodexIntake(pluginData, deps);
+      const store = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      const before = (await store.read()).records[0]!;
+      native!.turnId = 'revision-turn';
+      native!.followUpUserTurn = true;
+      work.continuation.directOperator = true;
+      work.continuation.native!.operatorInput = async () => ({
+        turnId: 'revision-turn',
+        inputId: 'revision-input',
+      });
+      work.continuation.continuationNative = async (_source, attempt) =>
+        attempt.origin === 'input' && denied
+          ? {
+              status: 'blocked',
+              code: 'continuation-native-approval-denied',
+              turnId: attempt.turnId!,
+              ended: false,
+            }
+          : { status: 'verified', turnId: attempt.turnId!, ended: false };
+      const context = await work.run('context', {}, true);
+      if (denied) {
+        assert.equal(context.status, 'blocked');
+        assert.deepEqual((await store.read()).records[0]!.continuation!.result, done);
+        assert.equal((await store.read()).records[0]!.continuation!.revisionSource, undefined);
+        return;
+      }
+      for (const response of [context, await work.run('context', {}, true)]) {
+        assert.equal(response.status, 'verified');
+        assert.ok('deliveryOnly' in response && !response.deliveryOnly);
+        assert.deepEqual('previousResult' in response && response.previousResult, done);
+        assert.deepEqual('handoff' in response && response.handoff, { next: 'implementation' });
+        assert.match(
+          'instructions' in response ? response.instructions : '',
+          /When deliveryOnly is true/,
+        );
+      }
+      assert.equal((await store.read()).records[0]!.continuation!.result, undefined);
+      assert.equal(codexItemOccupied((await store.read()).records[0]!), true);
+      const revised = { ...done, summary: 'Revised.', fullResult: 'Revision checked.' };
+      assert.equal((await work.run('result', { result: revised }, true)).status, 'recorded');
+      const after = (await store.read()).records[0]!;
+      assert.deepEqual(after.continuation!.resultHistory?.[0]?.result, done);
+      assert.deepEqual(after.continuation!.result, revised);
+      assert.deepEqual(after.result, before.result);
+      assert.equal(after.worktree, before.worktree);
+      assert.equal(after.issueBranch?.name, before.issueBranch?.name);
+      const recovery = await work.run('context', {}, true);
+      assert.ok('deliveryOnly' in recovery && recovery.deliveryOnly);
+      await assert.rejects(
+        work.run('result', { result: done }, true),
+        /continuation-result-conflict/,
+      );
+    });
+
   it('should stop when the selected implementation skill is unavailable instead of substituting', async () => {
     const work = await workIssue();
     work.continuation.native!.assessmentSkill = async () => {

@@ -660,9 +660,12 @@ function respond(
       return { content: 'Reviewer delivery prepared without publication.' };
     }
 
-    const update = prompt.includes(
-      'Add a follow-up commit and update the existing PR title and body.',
+    const secondUpdate = prompt.includes(
+      'Add another follow-up commit and update the existing PR.',
     );
+    const update =
+      secondUpdate ||
+      prompt.includes('Add a follow-up commit and update the existing PR title and body.');
     const retry = prompt.includes('Show the saved plan and existing PR card again.');
     const title = update
       ? 'Document disposable notification fixture cleanup and verification'
@@ -686,6 +689,9 @@ function respond(
         context.publicationAuthorized !== true
       )
         return;
+      assert.equal(context.deliveryOnly, false);
+      if (secondUpdate)
+        assert.equal((context.previousResult as { outcome?: string })?.outcome, 'done');
       const selected = context.implementation as {
         defaultSkill: boolean;
         skill: { path: string };
@@ -702,9 +708,11 @@ function respond(
         );
       }
       const file = `notification-fixture-${operatorId}.md`;
-      const patch = update
-        ? `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1,2 @@\n Close disposable test issues after capturing their evidence.\n+Verify the same PR and announcement after follow-up commits.\n`
-        : `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1,${customized ? 2 : 1} @@\n+Close disposable test issues after capturing their evidence.\n${customized ? '+Retain sanitized evidence before cleanup.\n' : ''}`;
+      const patch = secondUpdate
+        ? `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1,2 +1,3 @@\n Close disposable test issues after capturing their evidence.\n Verify the same PR and announcement after follow-up commits.\n+Keep completed results as history when accepting another revision.\n`
+        : update
+          ? `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1,2 @@\n Close disposable test issues after capturing their evidence.\n+Verify the same PR and announcement after follow-up commits.\n`
+          : `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1,${customized ? 2 : 1} @@\n+Close disposable test issues after capturing their evidence.\n${customized ? '+Retain sanitized evidence before cleanup.\n' : ''}`;
       const steps = [
         { stage: 'apply', argv: ['apply', '-'], stdin: patch },
         { stage: 'check', argv: ['diff', '--check'] },
