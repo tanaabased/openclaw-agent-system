@@ -64,6 +64,94 @@ describe('gha fixture cleanup', () => {
     );
   });
 
+  it('sweeps completed tagged attempts while preserving active, foreign and unverifiable resources', async () => {
+    const state = fixture();
+    for (const [id, attempt, status] of [
+      [100, 1, 'completed'],
+      [100, 20, 'in_progress'],
+      [200, 1, 'completed'],
+      [300, 1, 'queued'],
+      [400, 1, 'completed'],
+    ] as const)
+      state.runs.set(`${id}/${attempt}`, {
+        ...state.run,
+        id,
+        run_attempt: attempt,
+        status,
+        ...(id === 400 ? { head_repository: { id: 88 } } : {}),
+      });
+    state.keys.push(
+      { id: 7, title: 'agent-system-test-77-200-1-work' },
+      { id: 8, title: 'agent-system-test-77-300-1-work' },
+      { id: 9, title: 'agent-system-test-77-400-1-work' },
+      { id: 10, title: 'agent-system-test-77-500-1-work' },
+      { id: 11, title: 'agent-system-test-88-200-1-work' },
+      { id: 12, title: 'agent-system-test-malformed' },
+    );
+    const report = await cleanupGhaFixtures({ ...state.input, runId: '*', attempt: '*' });
+    assert.equal(report.ok, false);
+    assert.deepEqual(
+      state.keys.map(({ id }) => id),
+      [2, 8, 9, 10, 11, 12],
+    );
+    assert.ok(state.issues.every(({ state }) => state === 'closed'));
+    assert.equal(state.pull.state, 'closed');
+    assert.ok(
+      report.outcomes.some(
+        ({ target, result }) => target === '300/1' && result === 'preserved-active',
+      ),
+    );
+    assert.ok(
+      report.outcomes.some(
+        ({ target, result }) => target === '500/1' && result === 'preserved-unverified',
+      ),
+    );
+    assert.equal(state.calls.filter((call) => call.endsWith('/runs/100/attempts/2')).length, 1);
+    assert.equal(
+      state.calls.some((call) => call.includes('/runs/88/')),
+      false,
+    );
+    state.calls.length = 0;
+    await cleanupGhaFixtures({ ...state.input, runId: '*', attempt: '*' });
+    assert.equal(
+      state.calls.some((call) => call.startsWith('PATCH')),
+      false,
+    );
+  });
+
+  it('combines either wildcard with an exact selector and honors dry-run', async () => {
+    for (const selectors of [
+      { runId: 100, attempt: '*' },
+      { runId: '*', attempt: 2 },
+    ] as const) {
+      const state = fixture();
+      state.keys.splice(1);
+      state.runs.set('100/1', { ...state.run, run_attempt: 1 });
+      state.runs.set('200/2', { ...state.run, id: 200 });
+      state.keys.push({ id: 7, title: 'agent-system-test-77-200-2-work' });
+      const report = await cleanupGhaFixtures({ ...state.input, ...selectors, dryRun: true });
+      assert.equal(report.ok, true);
+      assert.equal(
+        state.calls.some((call) => /^(PATCH|DELETE)/u.test(call)),
+        false,
+      );
+      assert.equal(
+        report.outcomes.some(({ target }) => target === '7'),
+        selectors.runId === '*',
+      );
+      assert.equal(
+        report.outcomes.some(({ resource, target }) => resource === 'issue' && target === '5'),
+        selectors.attempt === '*',
+      );
+    }
+    for (const value of ['10*', '**', '', '0', '-1']) {
+      const state = fixture();
+      const selectors = ghaFixtureCleanupOptions([`--run-id=${value}`, '--attempt', '*'], {});
+      await assert.rejects(cleanupGhaFixtures({ ...state.input, ...selectors }));
+      assert.equal(state.calls.length, 0);
+    }
+  });
+
   it('rejects active, foreign and mismatched attempts before inspecting fixtures', async () => {
     for (const mutate of [
       (run: ReturnType<typeof fixture>['run']) => {
@@ -164,14 +252,12 @@ describe('gha fixture cleanup', () => {
 describe('gha fixture cleanup options', () => {
   it('uses explicit token and selector options before environment defaults', () => {
     const options = ghaFixtureCleanupOptions(
-      ['--token', 'explicit', '--run-id', '100', '--attempt', '2', '--no-dry-run', '--no-json'],
+      ['--token', 'explicit', '--run-id', '100', '--attempt', '2'],
       {
         GH_TOKEN: 'first',
         GITHUB_TOKEN: 'second',
         GHA_FIXTURE_CLEANUP_RUN_ID: '99',
         GHA_FIXTURE_CLEANUP_ATTEMPT: '1',
-        GHA_FIXTURE_CLEANUP_DRY_RUN: 'true',
-        GHA_FIXTURE_CLEANUP_JSON: '1',
       },
     );
     assert.deepEqual(
@@ -194,6 +280,30 @@ describe('gha fixture cleanup options', () => {
       'second',
     );
     assert.equal(ghaFixtureCleanupOptions(['--token', ''], { GH_TOKEN: 'first' }).token, '');
+  });
+
+  it('enables switches by flag or environment presence and rejects negative forms', () => {
+    const unset = ghaFixtureCleanupOptions([], {});
+    assert.equal(unset.dryRun, false);
+    assert.equal(unset.json, false);
+    for (const value of ['', '0', 'false', 'anything']) {
+      const options = ghaFixtureCleanupOptions([], {
+        GHA_FIXTURE_CLEANUP_DRY_RUN: value,
+        GHA_FIXTURE_CLEANUP_JSON: value,
+      });
+      assert.equal(options.dryRun, true);
+      assert.equal(options.json, true);
+    }
+    const flags = ghaFixtureCleanupOptions(
+      ['--dry-run', '--json', '--run-id', '*', '--attempt', '*'],
+      {},
+    );
+    assert.equal(flags.dryRun, true);
+    assert.equal(flags.json, true);
+    assert.equal(flags.runId, '*');
+    assert.equal(flags.attempt, '*');
+    for (const flag of ['--no-dry-run', '--no-json'])
+      assert.throws(() => ghaFixtureCleanupOptions([flag], {}), /invalid-arguments/u);
   });
 
   it('previews all fixture categories without making a provider write', async () => {

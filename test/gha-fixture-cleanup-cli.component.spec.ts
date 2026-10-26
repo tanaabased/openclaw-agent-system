@@ -4,6 +4,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
+import { parse } from 'yaml';
 
 import { ghaFixtureCleanupCli } from '../scripts/gha-fixture-cleanup.ts';
 import fixture from './gha-fixture-cleanup-fixture.ts';
@@ -27,6 +28,45 @@ function capture() {
 const selectors = ['--run-id', '100', '--attempt', '2'];
 
 describe('gha fixture cleanup cli', () => {
+  it('keeps the action exact and passes dry-run only when enabled', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'gha-fixture-action-'));
+    try {
+      const action = parse(
+        await readFile('.github/actions/gha-fixture-cleanup/action.yml', 'utf8'),
+      );
+      await writeFile(join(directory, 'bun'), '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o755 });
+      for (const [runId, attempt, dryRun, expectedStatus] of [
+        ['100', '2', 'false', 0],
+        ['100', '2', 'true', 0],
+        ['*', '2', 'false', 1],
+        ['100', '*', 'false', 1],
+        ['100;touch bad', '2', 'false', 1],
+      ] as const) {
+        const result = spawnSync('bash', ['-e', '-c', action.runs.steps[0].run], {
+          cwd: directory,
+          encoding: 'utf8',
+          env: {
+            PATH: `${directory}:${process.env.PATH}`,
+            GITHUB_ACTION_PATH: '/checkout/.github/actions/gha-fixture-cleanup',
+            GHA_FIXTURE_CLEANUP_RUN_ID: runId,
+            GHA_FIXTURE_CLEANUP_ATTEMPT: attempt,
+            CLEANUP_DRY_RUN: dryRun,
+          },
+        });
+        assert.equal(result.status, expectedStatus, result.stderr);
+        if (expectedStatus === 0) {
+          assert.deepEqual(
+            result.stdout.trim().split('\n').slice(1),
+            dryRun === 'true' ? ['--json', '--dry-run'] : ['--json'],
+          );
+          assert.equal(result.stderr, '');
+        } else assert.equal(result.stdout, '');
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('runs the ci json path without installed packages or the presentation modules', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'gha-fixture-cli-'));
     try {

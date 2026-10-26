@@ -18,6 +18,7 @@ export default function fixture() {
     head_repository: { id: 77 },
     run_started_at: '2026-10-25T10:00:00Z',
   };
+  const runs = new Map([[`${run.id}/${run.run_attempt}`, run]]);
   const keys = [
     { id: 1, title: `${prefix}work` },
     { id: 2, title: 'agent-system-test-77-100-20-work' },
@@ -51,7 +52,13 @@ export default function fixture() {
   const calls: string[] = [];
   const api: GhaFixtureApi = async (method, route) => {
     calls.push(`${method} ${route}`);
-    if (route.includes('/actions/runs/')) return run;
+    if (route.startsWith(`repos/${project}/actions/runs/`)) {
+      const parts = route.split('/');
+      const source = runs.get(`${parts.at(-3)}/${parts.at(-1)}`);
+      if (!source) throw new GhaFixtureProviderError(404);
+      return source;
+    }
+    if (route === `repos/${project}`) return run.repository;
     if (route === 'user') return { login: 'tanaabot' };
     if (route === `repos/${bucket}`)
       return { id: 1329940218, full_name: bucket, default_branch: 'main' };
@@ -79,9 +86,11 @@ export default function fixture() {
       pull.state = 'closed';
       return pull;
     }
-    if (method === 'PATCH' && route.endsWith('/issues/4')) {
-      issues[0]!.state = 'closed';
-      return issues[0];
+    if (method === 'PATCH' && route.includes('/issues/')) {
+      const issue = issues.find(({ number }) => number === Number(route.split('/').at(-1)));
+      assert.ok(issue);
+      issue.state = 'closed';
+      return issue;
     }
     if (method === 'DELETE' && route.includes('/git/refs/heads/')) {
       if (!branch) throw new GhaFixtureProviderError(404);
@@ -91,5 +100,5 @@ export default function fixture() {
     assert.fail(`unexpected fixture request ${method} ${route}`);
   };
   const input = { runId: 100, attempt: 2, api };
-  return { run, keys, signing, issues, pull, calls, api, input };
+  return { run, runs, keys, signing, issues, pull, calls, api, input };
 }

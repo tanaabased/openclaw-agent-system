@@ -16,6 +16,13 @@ runs:
     - shell: bash
       env:
         GHA_FIXTURE_CLEANUP_RUN_ID: ${{ inputs.run-id }}
-        GHA_FIXTURE_CLEANUP_DRY_RUN: ${{ inputs.dry-run }}
+        CLEANUP_DRY_RUN: ${{ inputs.dry-run }}
         GHA_FIXTURE_CLEANUP_ATTEMPT: ${{ inputs.attempt }}
-      run: bun "$GITHUB_ACTION_PATH/../../../scripts/gha-fixture-cleanup.ts" --json
+      run: |
+        if [[ ! "$GHA_FIXTURE_CLEANUP_RUN_ID" =~ ^[1-9][0-9]*$ || ! "$GHA_FIXTURE_CLEANUP_ATTEMPT" =~ ^[1-9][0-9]*$ ]]; then
+          printf '%s\n' 'cleanup action requires an exact run and attempt' >&2
+          exit 1
+        fi
+        args=(--json)
+        if [[ "$CLEANUP_DRY_RUN" == 'true' ]]; then args+=(--dry-run); fi
+        bun "$GITHUB_ACTION_PATH/../../../scripts/gha-fixture-cleanup.ts" "${args[@]}"

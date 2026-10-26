@@ -12,6 +12,7 @@ const workflows = ['os', 'codex', 'openclaw', 'notifications'].map(
   (name) => `.github/workflows/pr-examples-${name}.yml`,
 );
 type ObjectValue = Record<string, unknown>;
+type FixtureSelector = number | '*';
 export type GhaFixtureApi = (
   method: 'GET' | 'PATCH' | 'DELETE' | 'POST',
   route: string,
@@ -36,35 +37,79 @@ export function fixturePrefix(repositoryId: number, runId: number, attempt: numb
 
 /** Re-read provider state on every invocation; no runner-local state is needed for retries. */
 export default async function cleanupGhaFixtures(input: {
-  runId: number;
-  attempt: number;
+  runId: FixtureSelector;
+  attempt: FixtureSelector;
   api: GhaFixtureApi;
   dryRun?: boolean;
 }) {
   const { api, runId, attempt } = input;
   assert.ok(
-    [runId, attempt].every((value) => Number.isSafeInteger(value) && value > 0),
+    [runId, attempt].every((value) => value === '*' || (Number.isSafeInteger(value) && value > 0)),
     'positive-source-identifiers-required',
   );
-  const run = object(
-    await api('GET', `repos/${project}/actions/runs/${runId}/attempts/${attempt}`),
-  );
+  const wildcard = runId === '*' || attempt === '*';
+  const sourceAttempt = async (id: number, number: number) =>
+    object(await api('GET', `repos/${project}/actions/runs/${id}/attempts/${number}`));
+  const ownedAttempt = (run: ObjectValue, id: number, number: number, repositoryId: number) =>
+    run.id === id &&
+    run.run_attempt === number &&
+    workflows.includes(String(run.path)) &&
+    object(run.repository).id === repositoryId &&
+    object(run.repository).full_name === project &&
+    object(run.head_repository).id === repositoryId &&
+    typeof run.run_started_at === 'string' &&
+    Number.isFinite(Date.parse(run.run_started_at));
+  const run = wildcard ? undefined : await sourceAttempt(runId, attempt);
+  const repository = run ? object(run.repository) : object(await api('GET', `repos/${project}`));
+  const repositoryId = Number(repository.id);
   assert.ok(
-    run.id === runId &&
-      run.run_attempt === attempt &&
-      run.status === 'completed' &&
-      workflows.includes(String(run.path)) &&
-      object(run.repository).full_name === project &&
-      object(run.head_repository).id === object(run.repository).id &&
-      typeof run.run_started_at === 'string' &&
-      Number.isFinite(Date.parse(run.run_started_at)),
+    repository.full_name === project && Number.isSafeInteger(repositoryId) && repositoryId > 0,
     'source-attempt-must-be-completed-and-owned',
   );
-  const prefix = fixturePrefix(Number(object(run.repository).id), runId, attempt);
+  if (run)
+    assert.ok(
+      ownedAttempt(run, Number(runId), Number(attempt), repositoryId) && run.status === 'completed',
+      'source-attempt-must-be-completed-and-owned',
+    );
+  const prefix = wildcard
+    ? `agent-system-test-${repositoryId}-${runId}-${attempt}-`
+    : fixturePrefix(repositoryId, Number(runId), Number(attempt));
+  let startedAt = run ? String(run.run_started_at) : undefined;
   assert.equal(object(await api('GET', 'user')).login, 'tanaabot', 'cleanup-account-mismatch');
   const outcomes: Array<{ resource: string; target: string; result: string }> = [];
   const done = (resource: string, target: string, result: string) =>
     outcomes.push({ resource, target, result });
+  const attempts = new Map<string, boolean>();
+  const matches = async (title: unknown) => {
+    if (!wildcard) return String(title).startsWith(prefix);
+    const match = /^agent-system-test-([1-9]\d*)-([1-9]\d*)-([1-9]\d*)-/u.exec(String(title));
+    if (!match || Number(match[1]) !== repositoryId) return false;
+    const id = Number(match[2]);
+    const number = Number(match[3]);
+    if (
+      ![id, number].every(Number.isSafeInteger) ||
+      (runId !== '*' && id !== runId) ||
+      (attempt !== '*' && number !== attempt)
+    )
+      return false;
+    const target = `${id}/${number}`;
+    if (!attempts.has(target)) {
+      attempts.set(target, false);
+      try {
+        const source = await sourceAttempt(id, number);
+        assert.ok(ownedAttempt(source, id, number, repositoryId));
+        if (source.status !== 'completed') done('source-attempt', target, 'preserved-active');
+        else {
+          attempts.set(target, true);
+          const start = String(source.run_started_at);
+          if (!startedAt || start < startedAt) startedAt = start;
+        }
+      } catch {
+        done('source-attempt', target, 'preserved-unverified');
+      }
+    }
+    return attempts.get(target)!;
+  };
   const attemptCleanup = async (resource: string, target: string, action: () => Promise<void>) => {
     try {
       await action();
@@ -101,7 +146,8 @@ export default async function cleanupGhaFixtures(input: {
   for (const collection of ['keys', 'ssh_signing_keys']) {
     await attemptCleanup(collection, 'tanaabot', async () => {
       const keys = await list(`user/${collection}`);
-      for (const key of keys.filter((key) => String(key.title).startsWith(prefix))) {
+      for (const key of keys) {
+        if (!(await matches(key.title))) continue;
         await attemptCleanup(collection, String(key.id), async () => {
           assert.ok(Number.isSafeInteger(key.id), 'invalid-key-id');
           await remove(`user/${collection}/${key.id}`);
@@ -111,7 +157,7 @@ export default async function cleanupGhaFixtures(input: {
     });
   }
 
-  let issues: ObjectValue[] = [];
+  const issues: ObjectValue[] = [];
   let defaultBranch = 'main';
   await attemptCleanup('issues', bucket, async () => {
     const repository = object(await api('GET', `repos/${bucket}`));
@@ -121,27 +167,27 @@ export default async function cleanupGhaFixtures(input: {
     );
     assert.equal(typeof repository.default_branch, 'string', 'missing-default-branch');
     defaultBranch = String(repository.default_branch);
-    issues = (
-      await list(
-        `repos/${bucket}/issues?state=all&since=${encodeURIComponent(String(run.run_started_at))}`,
-      )
-    ).filter(
-      (issue) =>
-        !issue.pull_request &&
-        String(issue.title).startsWith(prefix) &&
-        ['emoriwan', 'tanaabot'].includes(String(object(issue.user).login)),
+    const candidates = await list(
+      `repos/${bucket}/issues?state=all${run ? `&since=${encodeURIComponent(String(run.run_started_at))}` : ''}`,
     );
+    for (const issue of candidates)
+      if (
+        !issue.pull_request &&
+        ['emoriwan', 'tanaabot'].includes(String(object(issue.user).login)) &&
+        (await matches(issue.title))
+      )
+        issues.push(issue);
   });
   if (issues.length) {
     await attemptCleanup('pull-requests', bucket, async () => {
       const pulls = await list(
         `repos/${bucket}/pulls?state=all&sort=created&direction=desc`,
-        String(run.run_started_at),
+        startedAt,
       );
       for (const pull of pulls) {
         const pullHead = object(pull.head);
         if (
-          String(pull.created_at) < String(run.run_started_at) ||
+          (startedAt && String(pull.created_at) < startedAt) ||
           object(pull.user).login !== 'tanaabot' ||
           !pullHead.repo ||
           object(pullHead.repo).id !== 1329940218
@@ -206,7 +252,7 @@ export default async function cleanupGhaFixtures(input: {
     dryRun: input.dryRun ?? false,
     outcomes,
     ok: outcomes.every(({ result }) =>
-      ['removed', 'closed', 'would-remove', 'would-close'].includes(result),
+      ['removed', 'closed', 'would-remove', 'would-close', 'preserved-active'].includes(result),
     ),
   };
 }
@@ -216,7 +262,6 @@ export function ghaFixtureCleanupOptions(args: string[], environment: NodeJS.Pro
   try {
     values = parseArgs({
       args,
-      allowNegative: true,
       options: {
         'run-id': { type: 'string' },
         attempt: { type: 'string' },
@@ -230,18 +275,14 @@ export function ghaFixtureCleanupOptions(args: string[], environment: NodeJS.Pro
   } catch {
     throw new Error('invalid-arguments');
   }
-  const boolean = (option: boolean | undefined, value: string | undefined) => {
-    if (option !== undefined) return option;
-    if (value === undefined) return false;
-    assert.ok(['0', '1', 'false', 'true'].includes(value), 'invalid-boolean-default');
-    return value === '1' || value === 'true';
-  };
+  const selector = (value: string | undefined): FixtureSelector =>
+    value === '*' ? '*' : Number(value);
   return {
-    runId: Number(values['run-id'] ?? environment.GHA_FIXTURE_CLEANUP_RUN_ID),
-    attempt: Number(values.attempt ?? environment.GHA_FIXTURE_CLEANUP_ATTEMPT),
+    runId: selector(values['run-id'] ?? environment.GHA_FIXTURE_CLEANUP_RUN_ID),
+    attempt: selector(values.attempt ?? environment.GHA_FIXTURE_CLEANUP_ATTEMPT),
     token: values.token ?? (environment.GH_TOKEN || environment.GITHUB_TOKEN),
-    dryRun: boolean(values['dry-run'], environment.GHA_FIXTURE_CLEANUP_DRY_RUN),
-    json: boolean(values.json, environment.GHA_FIXTURE_CLEANUP_JSON),
+    dryRun: values['dry-run'] === true || environment.GHA_FIXTURE_CLEANUP_DRY_RUN !== undefined,
+    json: values.json === true || environment.GHA_FIXTURE_CLEANUP_JSON !== undefined,
     help: values.help,
     version: values.version,
   };
@@ -286,8 +327,7 @@ export async function ghaFixtureCleanupCli(
     writeStdout: (value: string) => process.stdout.write(value),
     writeStderr: (value: string) => process.stderr.write(value),
   };
-  let json =
-    args.includes('--json') || ['1', 'true'].includes(environment.GHA_FIXTURE_CLEANUP_JSON ?? '');
+  let json = args.includes('--json') || environment.GHA_FIXTURE_CLEANUP_JSON !== undefined;
   let result: CleanupReport | { ok: false; code: string };
   try {
     const options = ghaFixtureCleanupOptions(args, environment);
@@ -305,26 +345,24 @@ export async function ghaFixtureCleanupCli(
       const styles = createCliStyles(environment);
       output.writeStdout(
         `${styles.bold('usage')}
-  ${styles.action('bun scripts/gha-fixture-cleanup.ts')} --run-id <id> --attempt <n> ${styles.field('[options]')}
+  ${styles.action('bun scripts/gha-fixture-cleanup.ts')} --run-id <id|*> --attempt <n|*> ${styles.field('[options]')}
 
 ${styles.bold('options')}
-  --run-id <id>       completed source workflow run
-  --attempt <n>       exact source attempt
+  --run-id <id|*>     source workflow run selector
+  --attempt <n|*>     source attempt selector
   --token <token>     tanaabot user token
-  --[no-]dry-run      preview without modifying resources
-  --[no-]json         machine-readable result
+  --dry-run          preview without modifying resources
+  --json             machine-readable result
   -h, --help         show help
   -v, --version      report package version
 
 ${styles.bold('environment variables')}
   GHA_FIXTURE_CLEANUP_RUN_ID     same as --run-id
   GHA_FIXTURE_CLEANUP_ATTEMPT    same as --attempt
-  GHA_FIXTURE_CLEANUP_DRY_RUN    same as --dry-run (1/0 or true/false)
-  GHA_FIXTURE_CLEANUP_JSON       same as --json (1/0 or true/false)
+  GHA_FIXTURE_CLEANUP_DRY_RUN    same as --dry-run
+  GHA_FIXTURE_CLEANUP_JSON       same as --json
   GH_TOKEN, GITHUB_TOKEN        defaults for --token, in that order
 
-explicit options override environment defaults. booleans default to false.
-only tagged fixtures in ${bucket} and tanaabot's tagged keys are cleaned.
 `,
       );
       return 0;
@@ -353,7 +391,6 @@ only tagged fixtures in ${bucket} and tanaabot's tagged keys are cleaned.
     const message = error instanceof Error ? error.message.split('\n')[0] : '';
     const codes = [
       'invalid-arguments',
-      'invalid-boolean-default',
       'cleanup-token-missing',
       'positive-source-identifiers-required',
       'source-attempt-must-be-completed-and-owned',
