@@ -257,6 +257,11 @@ try {
   assert.equal(typeof checked.cachePath, 'string');
   const cacheRoot = await realpath(checked.cachePath!);
   assert.equal(cacheRoot.startsWith(`${codexHome}${sep}`), true);
+  await rm(join(cacheRoot, 'tools/dispatch/README.md'));
+  await run(codexTools, ['cache', 'sync', '--repo-root', packageRoot, '--json'], {
+    cwd: home,
+    env: environment,
+  });
   for (const [directory] of expectedSkillNames) {
     assert.equal(
       await readFile(join(cacheRoot, 'skills', directory, 'SKILL.md'), 'utf8'),
@@ -268,6 +273,7 @@ try {
     'hooks/hooks.json',
     'agent/assessment-result.ts',
     'channels/github/PRESENTATION.md',
+    'tools/dispatch/README.md',
   ]) {
     assert.equal(
       await readFile(join(cacheRoot, path), 'utf8'),
