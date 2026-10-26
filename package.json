@@ -132,7 +132,8 @@
       "dist/codex",
       "hooks",
       "package.json",
-      "skills"
+      "skills",
+      "tools/dispatch/README.md"
     ]
   },
   "peerDependencies": {
