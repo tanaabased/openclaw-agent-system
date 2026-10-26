@@ -660,7 +660,9 @@ function respond(
       return { content: 'Reviewer delivery prepared without publication.' };
     }
 
-    const secondUpdate = prompt.includes('Verify the existing PR after another follow-up commit.');
+    const secondUpdate = prompt.includes(
+      'Add another follow-up commit and update the existing PR.',
+    );
     const update =
       secondUpdate ||
       prompt.includes('Add a follow-up commit and update the existing PR title and body.');
