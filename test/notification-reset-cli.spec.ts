@@ -113,8 +113,112 @@ describe('channels/github/cli/reset', () => {
     assert.deepEqual(JSON.parse(f.stdout.join('')), { results: [] });
     assert.deepEqual(f.calls, []);
   });
+
+  it('should use explicit single and repeated targets without asking for target selection', async () => {
+    for (const agents of [['one'], ['two', 'one', 'two']]) {
+      const f = fixture();
+      const originalPreview = f.options.service.preview;
+      f.options.service.preview = async (...args) => ({
+        ...(await originalPreview(...args)),
+        continuing: false,
+      });
+      f.options.agents = agents;
+      f.options.yes = false;
+      f.options.json = false;
+      f.options.input = Object.assign(new Readable({ read() {} }), { isTTY: true });
+      let selections = 0;
+      let confirmations = 0;
+      f.options.prompt = {
+        multiselect: async () => {
+          selections++;
+          return [];
+        },
+        confirm: async () => {
+          confirmations++;
+          return true;
+        },
+      };
+      await reset(f.options);
+      assert.equal(selections, 0);
+      assert.equal(confirmations, 1);
+      assert.deepEqual(
+        f.calls.filter((call) => call.startsWith('preview:')),
+        [...new Set(agents)].map((id) => `preview:${id}`),
+      );
+    }
+  });
+
+  it('should use all available agents without asking for target selection', async () => {
+    const f = fixture();
+    f.options.agents = [];
+    f.options.all = true;
+    const originalPreview = f.options.service.preview;
+    f.options.service.preview = async (...args) => ({
+      ...(await originalPreview(...args)),
+      continuing: false,
+    });
+    f.options.yes = false;
+    f.options.json = false;
+    f.options.input = Object.assign(new Readable({ read() {} }), { isTTY: true });
+    let selections = 0;
+    let confirmations = 0;
+    f.options.prompt = {
+      multiselect: async () => {
+        selections++;
+        return [];
+      },
+      confirm: async () => {
+        confirmations++;
+        return true;
+      },
+    };
+    await reset(f.options);
+    assert.equal(selections, 0);
+    assert.equal(confirmations, 1);
+    assert.deepEqual(
+      f.calls.filter((call) => call.startsWith('preview:')),
+      ['preview:one', 'preview:two'],
+    );
+  });
+
+  it('should offer only individual agents and normalize selecting all to the complete target list', async () => {
+    const f = fixture();
+    f.options.agents = [];
+    f.options.yes = false;
+    f.options.json = false;
+    f.options.input = Object.assign(new Readable({ read() {} }), { isTTY: true });
+    f.options.prompt = {
+      multiselect: async (input) => {
+        assert.deepEqual(input.options, [
+          { value: 'one', label: 'one' },
+          { value: 'two', label: 'two' },
+        ]);
+        return input.options.map(({ value }) => value);
+      },
+      confirm: async () => true,
+    };
+    await reset(f.options);
+    assert.deepEqual(
+      f.calls.filter((call) => call.startsWith('preview:')),
+      ['preview:one', 'preview:two'],
+    );
+  });
+
+  it('should preserve explicit-target conflict and unknown-agent errors', async () => {
+    const conflict = fixture();
+    conflict.options.all = true;
+    await assert.rejects(reset(conflict.options), /notification-reset-target-conflict/u);
+    assert.deepEqual(conflict.calls, []);
+
+    const unknown = fixture();
+    unknown.options.agents = ['missing'];
+    await assert.rejects(reset(unknown.options), /notification-reset-agent-unknown/u);
+    assert.deepEqual(unknown.calls, []);
+  });
+
   it('should offer fresh recovery interactively and pass the selected preview to execution', async () => {
     const f = fixture();
+    f.options.agents = [];
     f.options.json = false;
     f.options.yes = false;
     f.options.input = Object.assign(new Readable({ read() {} }), { isTTY: true });
@@ -155,21 +259,32 @@ describe('channels/github/cli/reset', () => {
     );
     assert.equal(f.code(), 1);
   });
-  it('should prepopulate interactive selection and stop when confirmation is declined', async () => {
+  it('should keep final confirmation separate from explicit target selection', async () => {
     const f = fixture();
+    const originalPreview = f.options.service.preview;
+    f.options.service.preview = async (...args) => ({
+      ...(await originalPreview(...args)),
+      continuing: false,
+    });
     f.options.input = Object.assign(new Readable({ read() {} }), { isTTY: true });
     f.options.json = false;
     f.options.yes = false;
-    f.options.purge = true;
+    let selections = 0;
+    let confirmationMessage = '';
     f.options.prompt = {
-      multiselect: async (input) => {
-        assert.deepEqual(input.initialValues, ['one', 'two']);
-        return input.options.filter(({ value }) => value === 'one').map(({ value }) => value);
+      multiselect: async () => {
+        selections++;
+        return [];
       },
-      confirm: async () => false,
+      confirm: async ({ message }) => {
+        confirmationMessage = message;
+        return false;
+      },
     };
     await reset(f.options);
-    assert.deepEqual(f.calls, ['preview:one', 'preview:one']);
+    assert.equal(selections, 0);
+    assert.equal(confirmationMessage, 'reset notifications for these agents?');
+    assert.deepEqual(f.calls, ['preview:one', 'preview:two']);
   });
   it('should wait for turns and continue without another confirmation', async () => {
     const f = fixture();

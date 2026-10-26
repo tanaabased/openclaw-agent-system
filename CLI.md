@@ -6,6 +6,11 @@ for declarations. `openclaw as` aliases `openclaw agent-system`; either bare
 namespace prints help. Agent System human summaries honor `NO_COLOR` and
 `FORCE_COLOR=0`; failed operations return nonzero.
 
+Interactive prompts fill only unresolved inputs. When a supported command option
+or environment-derived value already determines a value, do not ask the operator
+to choose that same value again; prompts for other decisions, such as confirmation,
+remain separate.
+
 **Core commands**
 
 - [`openclaw agent-system automations list`](#openclaw-agent-system-automations-list)
