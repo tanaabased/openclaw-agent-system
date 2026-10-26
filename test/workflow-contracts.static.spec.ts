@@ -35,13 +35,6 @@ describe('workflow safety and coverage', () => {
       const workflow = parse(await readFile(`.github/workflows/pr-examples-${kind}.yml`, 'utf8'));
       assert.deepEqual(workflow.permissions, { contents: 'read' });
       const job = workflow.jobs.examples;
-      assert.equal(
-        String(workflow.env.TEST_RESOURCE_PREFIX)
-          .replace('${{ github.repository_id }}', '77')
-          .replace('${{ github.run_id }}', '100')
-          .replace('${{ github.run_attempt }}', '2'),
-        testResourcePrefix(77, 100, 2),
-      );
       const steps = job.steps as Step[];
       const examples = steps.filter(({ run }) => /^leia\s/m.test(run ?? ''));
       assert.ok(examples.length > 0);
@@ -74,6 +67,17 @@ describe('workflow safety and coverage', () => {
     assert.equal(checkout?.with?.['persist-credentials'], false);
   });
 
+  it('should keep cleanup triggers aligned with source workflow names after renames', async () => {
+    const cleanup = parse(await readFile('.github/workflows/test-resource-cleanup.yml', 'utf8'));
+    const names = await Promise.all(
+      ['codex', 'os', 'openclaw', 'notifications'].map(
+        async (kind) =>
+          parse(await readFile(`.github/workflows/pr-examples-${kind}.yml`, 'utf8')).name,
+      ),
+    );
+    assert.deepEqual([...cleanup.on.workflow_run.workflows].sort(), names.sort());
+  });
+
   it('should enumerate distinct existing examples in their owning workflows', async () => {
     const selected = new Set<string>();
     for (const kind of ['codex', 'os', 'openclaw', 'notifications']) {
@@ -88,7 +92,20 @@ describe('workflow safety and coverage', () => {
           ? 'notifications'
           : example.split('-')[0];
         assert.equal(owner, kind);
-        await readFile(`examples/${example}/README.md`, 'utf8');
+        const readme = await readFile(`examples/${example}/README.md`, 'utf8');
+        const issueTitles = readme.matchAll(
+          /api --method POST repos\/tanaabased\/big-test-bucket\/issues -f "title=([^"\n]+)"/gu,
+        );
+        for (const [, title] of issueTitles) {
+          assert.ok(
+            title!
+              .replace('$GITHUB_REPOSITORY_ID', '77')
+              .replace('$GITHUB_RUN_ID', '100')
+              .replace('$GITHUB_RUN_ATTEMPT', '2')
+              .startsWith(testResourcePrefix(77, 100, 2)),
+            `${example}: fixture issue must identify its source attempt`,
+          );
+        }
       }
     }
   });

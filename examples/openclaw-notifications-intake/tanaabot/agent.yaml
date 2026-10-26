@@ -27,7 +27,7 @@ github:
   token: GH_TOKEN_TANAABOT
   ssh-keys:
     path: keys/id_ed25519.pub
-    title: __TEST_RESOURCE_PREFIX__intake
+    title: agent-system-test-__GITHUB_REPOSITORY_ID__-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__-intake
   runtimes: [openclaw]
   interval-minutes: 1440
   allowed-repository-owners:

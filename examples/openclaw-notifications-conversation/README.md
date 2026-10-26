@@ -37,7 +37,7 @@ chmod 600 "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
 
 # should prepare the isolated ssh fixture and run-specific key title
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/tanaabot/keys" "$HOME/.ssh"
-sed -e "s|__TEST_RESOURCE_PREFIX__|$TEST_RESOURCE_PREFIX|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
+sed -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
 mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/tanaabot/agent.yaml"
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/tanaabot/keys/id_ed25519"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/tanaabot/keys/id_ed25519.pub"
@@ -81,7 +81,7 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 
 # should assign one disposable issue from emori to tanaabot after the safe intake baseline
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/emori"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=$TEST_RESOURCE_PREFIX Agent System notification flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
+openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System notification flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications-conversation/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" assign --number "$number" | jq -e 'any(.assignees[]; .login == "tanaabot")'
 

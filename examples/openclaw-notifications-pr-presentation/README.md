@@ -35,7 +35,7 @@ openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-presentation/tanaabot/keys" "$HOME/.ssh"
 owner_node=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id)
 actor_node=$(GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id')
-sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__TEST_RESOURCE_PREFIX__|$TEST_RESOURCE_PREFIX|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-presentation/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
+sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-presentation/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
 mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-presentation/tanaabot/agent.yaml"
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-presentation/tanaabot/keys/id_ed25519"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-presentation/tanaabot/keys/id_ed25519.pub"
@@ -79,7 +79,7 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 
 # should create an issue as emori and assign it as tanaabot after the safe intake baseline
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-presentation/emori"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=$TEST_RESOURCE_PREFIX Agent System pr flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-presentation/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
+openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System pr flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-presentation/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-presentation/tanaabot"
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'

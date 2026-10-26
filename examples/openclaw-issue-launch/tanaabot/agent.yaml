@@ -26,4 +26,4 @@ github:
   token: GH_TOKEN_TANAABOT
   ssh-keys:
     path: keys/id_ed25519.pub
-    title: __TEST_RESOURCE_PREFIX__issue-launch
+    title: agent-system-test-__GITHUB_REPOSITORY_ID__-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__-issue-launch

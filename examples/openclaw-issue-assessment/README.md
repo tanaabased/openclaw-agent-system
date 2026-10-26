@@ -32,7 +32,7 @@ openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --
 
 # should prepare the isolated ssh fixture and run-specific key title
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/keys" "$HOME/.ssh"
-sed -e "s|__TEST_RESOURCE_PREFIX__|$TEST_RESOURCE_PREFIX|g" "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
+sed -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
 mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/agent.yaml"
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/keys/id_ed25519"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/keys/id_ed25519.pub"
@@ -71,7 +71,7 @@ openclaw agent-system automations list --json | jq -e '.status == "aligned" and 
 
 # should create one unassigned issue for the direct operation
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/emori"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=$TEST_RESOURCE_PREFIX Agent System openclaw-issue-assessment $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -f 'body=Disposable direct operation target; do not assign.' | tee "$TMPDIR/notification-manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
+openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System openclaw-issue-assessment $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -f 'body=Disposable direct operation target; do not assign.' | tee "$TMPDIR/notification-manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
 
 # should prepare an independent checkout for the explicit assessment
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot"
