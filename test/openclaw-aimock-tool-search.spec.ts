@@ -620,8 +620,10 @@ describe('scripts/aimock-tool-search', () => {
               {
                 type: 'text',
                 text:
-                  (attempt === 1 ? 'os-execution-verified' : 'intermediate command output') +
-                  '\n\nProcess still running.',
+                  attempt === 6 || attempt === 7
+                    ? '(no new output)\n\nNo new output; this session may be waiting for input. Use process write, send-keys, submit, or paste to provide input.'
+                    : (attempt === 1 ? 'os-execution-verified' : 'intermediate command output') +
+                      '\n\nProcess still running.',
               },
             ],
           },
@@ -636,6 +638,19 @@ describe('scripts/aimock-tool-search', () => {
           },
         });
         assert.equal(matchFixture([...scenario.fixtures], failed), null);
+        if (attempt === 6) {
+          for (const text of [
+            'Process timed out.',
+            'Process killed by signal SIGTERM.',
+            'Unknown session.',
+          ]) {
+            failed.messages.at(-1)!.content = JSON.stringify({
+              tool: { id: 'openclaw:process', name: 'process' },
+              result: { content: [{ type: 'text', text }] },
+            });
+            assert.equal(matchFixture([...scenario.fixtures], failed), null);
+          }
+        }
         const completed = structuredClone(input);
         completed.messages.at(-1)!.content = JSON.stringify({
           tool: { id: 'openclaw:process', name: 'process' },

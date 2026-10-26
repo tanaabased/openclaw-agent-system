@@ -69,7 +69,8 @@ const fixtures: Fixture[] = modes.flatMap((mode) => {
             latest?.index === index &&
             (index === 0
               ? latest.text.includes(`Command still running (session ${session},`)
-              : latest.text.includes('Process still running.'))
+              : latest.text.includes('Process still running.') ||
+                latest.text.includes('No new output; this session may be waiting for input.'))
           );
         },
       },
