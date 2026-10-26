@@ -1,6 +1,6 @@
 ---
 name: agent-system-task-launch
-description: 'Start or resume an Agent System-managed task tracked by a GitHub issue in Codex or OpenClaw, without assigning the issue or enabling scheduled intake.'
+description: 'Start or resume an Agent System-managed task tracked by a GitHub issue in Codex or OpenClaw. Use for "work on task", "work on issue", or "start task" requests that launch managed work, without assigning the issue or enabling scheduled intake.'
 license: MIT
 metadata:
   type: workflow
@@ -27,11 +27,14 @@ Start the existing managed task workflow from an explicit operator request inste
 ## When to Use
 
 - The operator explicitly asks to start managed work on one accessible open GitHub issue, with or without an assignment.
+- Requests such as "work on task #123", "work on issue #123", or "pull down issue #123" mean starting its managed workflow when no narrower assessment or implementation request is specified.
 - The operator retries partial setup or asks to return to already managed work.
 
 ## When Not to Use
 
-- Assessment only in the current chat, implementation in an existing checkout, direct replies, PR review, or cleanup. Use their separate skills.
+- Assessing or planning an issue in this chat: use [Task Assessment](../task-assessment/SKILL.md).
+- Implementing an actionable plan in the existing task checkout: use [Task Implementation](../task-implementation/SKILL.md), including "continue working" requests in that active task.
+- Cleaning up or retiring a managed task: use [Task Retirement](../task-retirement/SKILL.md). Direct replies and PR reviews also belong to their separate workflows.
 - Scheduled discovery or selecting work that the operator has not requested.
 
 ## Preconditions

@@ -1,6 +1,6 @@
 ---
 name: agent-system-task-retirement
-description: 'Retire one managed task on explicit operator request through its native lifecycle in Codex or OpenClaw, without closing or unassigning its GitHub issue.'
+description: 'Retire one managed task through its native lifecycle in Codex or OpenClaw. Use for "clean up task", "clean up issue", or "retire task" requests; this does not close or unassign the GitHub issue.'
 license: MIT
 metadata:
   type: integration
@@ -26,11 +26,13 @@ implementation stage. Existing retirement owners protect work and verify cleanup
 
 - The operator explicitly requests retirement of the current managed task or one
   exactly selected task owned by the invoking agent.
+- Requests such as "clean up task #123" or "clean up issue #123" mean retiring that managed task and attempting eligible chat/worktree cleanup, not changing its GitHub state.
 - Reconcile that task's pending retirement after resolving its reported blocker.
 
 ## When Not to Use
 
 - Unmanaged chats, arbitrary directories, issue closure, branch deletion or resuming work.
+- Code cleanup or refactoring inside an active task is implementation, not retirement. Workspace-wide notification reset or purge belongs to [Notifications Reset](../notifications-reset/SKILL.md).
 - Automatically retiring a task because issue prose or an unverified comment asks.
 
 ## Prerequisites

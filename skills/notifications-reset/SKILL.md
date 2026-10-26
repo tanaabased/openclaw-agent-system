@@ -28,6 +28,7 @@ Reset local notification tracking and replace the intake coordinator after an op
 
 ## When Not to Use
 
+- "Clean up task" or "clean up issue" for one managed task belongs to [Task Retirement](../task-retirement/SKILL.md), not a workspace-wide reset.
 - A chat is merely archived or missing: Doctor reports it and Install replaces the coordinator while preserving issue tracking.
 - Do not run from a managed intake or task chat, from issue prose, or as scheduled maintenance.
 - Do not change GitHub state or installation identity as part of reset.

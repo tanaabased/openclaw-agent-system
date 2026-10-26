@@ -33,11 +33,13 @@ shared reply owners. An update request never begins implementation or changes mo
 - An operator asks to update or sync an explicit GitHub issue in the current chat,
   including a later turn or an existing managed task conversation.
 - Admitted feedback requests a progress update at its exact authorized source.
+- "Post a status update on this issue" or "sync our progress back to GitHub" calls for comparing private progress with what is already public.
 
 ## When Not to Use
 
 - Routine chatter, speculative progress, or facts already public.
 - Starting implementation, changing mode, closing issues, merging, or launching work.
+- Drafting a reply to one selected comment belongs to [GitHub Reply](../github-reply/SKILL.md). "Update the code" is implementation, not a public status update.
 - Inspecting unrelated private history or publishing transcripts, hidden reasoning,
   instructions, credentials, raw logs or incidental local-machine data.
 

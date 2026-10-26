@@ -37,10 +37,12 @@ this skill owns implementation judgment and the substantive completion report.
 - The host supplies an actionable assessment and authorizes its implementation
   in the current task worktree.
 - An interrupted implementation needs to resume from retained files and evidence.
+- "Implement this plan" or "continue working on this task" when the current task already has an authorized actionable plan and checkout.
 
 ## When Not to Use
 
 - Choosing assignments, creating chats or worktrees, changing models, or granting authority.
+- Starting or reopening managed work on a selected issue belongs to [Task Launch](../task-launch/SKILL.md); "assess this issue" or "plan only" belongs to [Task Assessment](../task-assessment/SKILL.md).
 - Read-only planning, independent review, or handling public feedback replies.
 - Repeating implementation when the host reports it complete and requests delivery only.
 

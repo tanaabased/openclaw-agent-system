@@ -1,6 +1,6 @@
 ---
 name: agent-system-task-assessment
-description: 'Assess a selected or admitted task tracked by a GitHub issue and retain a plan, questions, or a setup blocker in the current chat using the agent configuration.'
+description: 'Assess or plan a selected or admitted task tracked by a GitHub issue in the current chat using the agent configuration. Use for "assess this issue" or "plan this task"; retain a plan, questions, or a setup blocker.'
 license: MIT
 metadata:
   type: workflow
@@ -38,7 +38,7 @@ and presenting its result.
 ## When to Use
 
 - An operator explicitly selects a GitHub issue and an existing checkout for assessment in the current chat, without assignment or intake activation.
-
+- Requests such as "assess this issue" or "plan this task here" call for investigation in this chat.
 - A native task chat has an Agent System assessment receipt and trusted runtime
   context: dispatchRuntime in Codex, or the bound agent_system_dispatch tool in OpenClaw.
 - The requested outcome is an actionable plan, focused clarification, or a precise
@@ -47,6 +47,7 @@ and presenting its result.
 ## When Not to Use
 
 - Launching chats, choosing assignments, preparing repositories, or changing models.
+- "Work on task" requests that start or reopen managed work belong to [Task Launch](../task-launch/SKILL.md); an explicit request to implement an existing actionable plan belongs to [Task Implementation](../task-implementation/SKILL.md).
 - Implementing the task, publishing to GitHub, or handling PR reviews and feedback.
 - Replacing an ordinary user request with an unsolicited assessment workflow.
 

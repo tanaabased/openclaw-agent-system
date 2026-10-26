@@ -31,11 +31,13 @@ and personable, with room for wit when it suits the exchange.
 - Compose a separate public summary of a retained assessment when the host supplies an assessment event.
 - Compose a short change description from an explicit host-supplied PR delivery event.
 - Apply the agent’s voice and configured reply guidance to that public candidate.
+- "Draft a reply to this comment" or "summarize this plan for GitHub" when the source response or verified outcome is already supplied.
 
 ## When Not to Use
 
 - Decide whether a commenter is authorized or whether a reply may be published.
 - Perform implementation, reviews, or new work requested inside the comment.
+- Compare the issue with private progress to decide what still needs a public update; use [Task Update](../task-update/SKILL.md), which delegates reply composition here.
 - Publish through an unrelated GitHub route or treat composition as permission to post.
 
 ## Workflow
