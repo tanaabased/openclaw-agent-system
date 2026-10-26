@@ -104,13 +104,13 @@ async function backupPrune(
         'Setup checks may preview pruning with --dry-run; deletion requires an apply step.',
       );
     const loaded = await loadBackupManifest(options, binding);
-    const plan = await options.service.plan({
+    const locations = await options.service.locations({
       manifest: loaded.manifest,
       workspaceDir: loaded.scope.workspaceDir,
       overrides: options.destination ? { output: options.destination } : {},
       bound: Boolean(binding),
     });
-    if (binding) await assertBackupLocationOwner(options, binding, plan.settings.output);
+    if (binding) await assertBackupLocationOwner(options, binding, locations.settings.output);
     const result = await options.service.prune({
       manifest: loaded.manifest,
       workspaceDir: loaded.scope.workspaceDir,

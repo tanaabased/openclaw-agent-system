@@ -123,6 +123,20 @@ describe('workspace backup pruning', () => {
     assert.deepEqual((await readdir(output)).length, 3);
   });
 
+  it('should prune existing archives when current backup inputs are missing', async () => {
+    const older = await fixture('older.tar.gz', '2026-09-01T00:00:00.000Z');
+    const newer = await fixture('newer.tar.gz', '2026-09-02T00:00:00.000Z');
+    const manifest = {
+      ...agent,
+      backup: { ...agent.backup, include: ['removed-file.txt'] },
+    };
+    const options = { manifest, workspaceDir: workspace, keep: 1 };
+    assert.deepEqual((await service.prune({ ...options, dryRun: true })).wouldDelete, [older]);
+    const applied = await service.prune({ ...options, dryRun: false });
+    assert.deepEqual(applied.deleted, [older]);
+    assert.deepEqual(applied.kept, [newer]);
+  });
+
   it('should retain and expire mixed database schemas without invoking compatibility checks', async () => {
     const paths: string[] = [];
     for (const [day, userVersion] of [

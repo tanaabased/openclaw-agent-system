@@ -2,7 +2,6 @@ import WorkspaceBackupService, {
   BackupPruneError,
   type BackupPruneResult,
 } from '../agent/backup-service.ts';
-import type { BackupPlan } from '../agent/backup-types.ts';
 import backupPrune from '../cli/backup-prune.ts';
 import { createCliStyles, type CliNotice, writeCliDiagnosticNotices } from '../cli/output.ts';
 import presentCliCommand from '../cli/presentation.ts';
@@ -73,9 +72,8 @@ export async function capturePrunePreview({
     validationChecks: [],
   };
   class FixtureService extends WorkspaceBackupService {
-    override async plan(): Promise<BackupPlan> {
+    override async locations(): Promise<Awaited<ReturnType<WorkspaceBackupService['locations']>>> {
       return {
-        agentId: result.agentId,
         workspaceDir: loaded.scope.workspaceDir,
         settings: {
           output: result.output,
@@ -84,16 +82,8 @@ export async function capturePrunePreview({
           include: [],
           exclude: [],
         },
-        coverage: {
-          stage: 'workspace-only',
-          openclawState: 'off',
-          atomic: false,
-          omittedPaths: [],
-          limitations: [],
-        },
-        files: [],
-        diagnostics: [],
         protectedPaths: [],
+        agentDir: undefined,
       };
     }
     override async prune(input: Parameters<WorkspaceBackupService['prune']>[0]) {
