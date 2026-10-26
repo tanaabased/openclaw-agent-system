@@ -7,6 +7,8 @@ or current repository evidence contradicts it; name that evidence in the finding
 
 ## Audit Requirements
 
+- For pre-release passes, prioritize reproducible defects and small contract corrections before structural refactors or presentation cleanup. Keep code, documentation, and skill findings separately reviewable.
+
 - Audit GitHub permission and workflow gates against [GitHub Workflow Guidance](../channels/github/AGENTS.md), including their runtime owners outside the channel folder. Identify duplicated provider authorization, whole-manifest or retained-policy equality used as permission, historical grants that override live policy, runtime policy edits that require Install, and reversible holds turned into permanent stops, and issue-local failures that stop unrelated work. Recommend removal unless the gate protects a named local invariant or a concrete provider capability gap.
 - Audit every session-facing inbound and outbound path against the lifecycle and publication constraints in `AGENTS.md` and `channels/github/PRESENTATION.md` for visual component grammar. Keep current-behavior claims in `channels/github/README.md` and `channels/github/ADVANCED.md` aligned with the implementation.
 - Audit every machine-readable CLI path and its automation consumers. A successful `--json` command must write exactly one parseable result to standard output; lifecycle, diagnostic, warning, failure, and debug records belong in the appropriate OpenClaw file log, host logger, or standard-error path and must not corrupt the result at any log level.
