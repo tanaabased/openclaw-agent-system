@@ -4,6 +4,7 @@ import presentCliCommand from './presentation.ts';
 import {
   type CliOutput,
   type CliStyles,
+  renderCliSummary,
   writeCliError,
   writeCliJson,
   writeCliLines,
@@ -17,18 +18,48 @@ export default presentCliCommand(
     json: boolean;
     output: CliOutput;
     styles?: CliStyles;
+    terminalColumns?: number;
     setExitCode(code: number): void;
   }) => {
     try {
       if (!options.store) throw new Error('instance-runtime-unavailable');
       const result = await operateInstanceIdentity(options.store, options.action, options.input);
       if (options.json) writeCliJson(options.output, result);
-      else
+      else {
         writeCliLines(options.output, [
-          'instanceId' in result
-            ? `name: ${result.displayName}; id: ***${result.instanceId.slice(-4)}; ${result.status}`
-            : 'installation identity is missing; run install.',
+          '',
+          ...renderCliSummary(
+            [
+              {
+                label: 'status',
+                style: 'field',
+                valueStyle:
+                  result.status === 'missing'
+                    ? 'warning'
+                    : result.status === 'ready'
+                      ? 'status'
+                      : 'action',
+                value: result.status,
+              },
+              ...('instanceId' in result
+                ? [
+                    { label: 'name', style: 'target' as const, value: result.displayName },
+                    {
+                      label: 'id',
+                      style: 'field' as const,
+                      value: `***${result.instanceId.slice(-4)}`,
+                    },
+                  ]
+                : []),
+            ],
+            options.styles,
+            { rowPadding: 0, terminalColumns: options.terminalColumns ?? process.stdout.columns },
+          ),
+          '',
         ]);
+        if (result.status === 'missing')
+          writeCliError(options.output, 'installation identity is missing; run install.', options);
+      }
       if (result.status === 'missing') options.setExitCode(1);
     } catch (error) {
       writeCliError(
