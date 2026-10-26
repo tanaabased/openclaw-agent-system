@@ -6,7 +6,7 @@ Load notification declarations through the packaged Codex runtime, plan an intak
 
 - Active and paused declaration handling without silently activating intake or writing scheduler files.
 - Installed runtime/caller/receipt boundaries before managed workflow effects, including rejection of unowned retained assessments.
-- A native schedule request using the installed runtime and bound plugin data, without global scanner rules.
+- A native schedule request using the installed runtime and bound plugin data, without global scanner rules; its saved launch block survives replacement of the host PATH Node executable.
 
 ## What Does Not Belong Here
 
@@ -325,12 +325,57 @@ await runInNewContext('(async () => {' + block + '})()', {
   } },
 });
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
-const argv = [process.execPath, runtimePath, 'continuation', 'next', '--plugin-data', pluginData];
+const argv = ['node', runtimePath, 'continuation', 'next', '--plugin-data', pluginData];
 assert.equal(calls.length, 1);
 assert.equal(calls[0].cmd, argv.map(quote).join(' ') + " <<'AGENT_SYSTEM_INPUT'\n" + JSON.stringify({ action: 'next' }) + '\nAGENT_SYSTEM_INPUT');
 NODE
 test ! -d "$CODEX_HOME/automations"
 test ! -d "$CODEX_HOME/rules"
+
+# should run the saved scheduled failure formatter after replacing host path node
+root="$TMPDIR/agent-system-codex-notifications"
+node --input-type=module - "$root/work-schedule.json" "$root" <<'NODE'
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
+const [planPath, root] = process.argv.slice(2);
+const saved = JSON.parse(readFileSync(planPath, 'utf8')).actions[0].expected.prompt;
+const block = saved.split('\n\n').find(part => part.startsWith('const runtime = '));
+assert.ok(block);
+const bin = join(root, 'upgrade-bin');
+mkdirSync(bin);
+const previous = join(root, 'previous-node');
+const replacement = join(root, 'replacement-node');
+const node = join(bin, 'node');
+symlinkSync(process.execPath, previous);
+symlinkSync(process.execPath, replacement);
+symlinkSync(previous, node);
+const results = [];
+const context = {
+  runtimeRoute: 'intake', runtimeInput: { action: 'failure-response', automationId: 'disposable', code: 'codex-runtime-failed' },
+  load: () => undefined, store: () => {}, text: value => results.push(value),
+  tools: { exec_command: async ({cmd}) => {
+    const result = spawnSync('/bin/sh', ['-c', cmd], { encoding: 'utf8', env: {...process.env, PATH:bin}, timeout:10000 });
+    assert.ifError(result.error);
+    return {exit_code:result.status, output:result.stdout + result.stderr};
+  } },
+};
+const run = () => runInNewContext('(async () => {' + block + '})()', context);
+await run();
+rmSync(node);
+symlinkSync(replacement, node);
+rmSync(previous);
+await run();
+assert.equal(results.length, 2);
+for (const result of results) {
+  assert.equal(result.exit_code, 0);
+  assert.equal(JSON.parse(result.output).status, 'failure');
+}
+rmSync(node);
+await assert.rejects(run(), /codex-node-unavailable:.*PATH/u);
+NODE
 
 # should update planned cadence without replacing the activated workflow authority
 root="$TMPDIR/agent-system-codex-notifications"

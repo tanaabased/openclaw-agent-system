@@ -769,6 +769,10 @@ describe('agent/codex-intake', () => {
       pluginData: '/plugin-data',
     };
     const before = codexIntakeJobs(manifest, runtime);
+    assert.deepEqual(
+      codexIntakeJobs(manifest, { ...runtime, nodeExecutable: '/upgraded/node' } as typeof runtime),
+      before,
+    );
     policy.issueAssignment!.mode = 'work';
     policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
     policy.issueAssignment!.allowed = [];

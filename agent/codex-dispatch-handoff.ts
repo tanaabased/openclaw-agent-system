@@ -1,12 +1,11 @@
 interface CodexRuntimeIdentity {
-  nodeExecutable: string;
   entrypoint: string;
   pluginData: string;
 }
 
 /** scheduled transport retains exact routing evidence and never performs a native handoff. */
 export default function codexDispatchHandoff(runtime: CodexRuntimeIdentity) {
-  return `const runtime = ${JSON.stringify(runtime)};
+  return `const runtime = ${JSON.stringify({ entrypoint: runtime.entrypoint, pluginData: runtime.pluginData })};
 ${String.raw`const actions = {
   intake: ['scan', 'failure-response'],
   dispatch: ['observe-denials', 'next', 'prepare', 'reconcile', 'report'],
@@ -31,7 +30,7 @@ if (runtimeRoute === 'dispatch' && input.action === 'reconcile' && input.id === 
 if (runtimeRoute === 'dispatch' && input.action === 'prepare') {
   store(key + ':observation', {id: input.id, digest: input.digest, operation: 'prepare'});
 }
-const argv = [runtime.nodeExecutable, runtime.entrypoint, runtimeRoute];
+const argv = ['node', runtime.entrypoint, runtimeRoute];
 argv.push(input.action);
 argv.push('--plugin-data', runtime.pluginData);
 const request = {...input};
@@ -57,6 +56,10 @@ while (true) {
   text({...result, output});
   let response;
   try { response = JSON.parse(output); } catch { /* raw host-access failures may not be json */ }
+  if (result.exit_code === 127 && /\bnode: (?:command )?not found\b|\bcommand not found: node\b/u.test(output)) {
+    throw new Error('codex-node-unavailable: put a Node.js version supported by this plugin package.json#engines.node on the configured host PATH, then retry; no automation rewrite is needed. The runtime failure formatter cannot start until Node is available.');
+  }
+  if (response?.code === 'codex-node-version-unsupported') throw new Error(response.message);
   const accessRequired = response?.code === 'codex-host-access-required' || /^(?:EPERM|EACCES)\b/u.test(output.trim());
   if (result.exit_code !== 0 && accessRequired && !escalated) {
     escalated = true;
