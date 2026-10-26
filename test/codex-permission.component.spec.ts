@@ -72,6 +72,37 @@ describe('agent/codex-permission', () => {
     );
   });
 
+  it('should approve literal node only when host path selects the executing runtime', async () => {
+    const previous = process.env.PATH;
+    try {
+      process.env.PATH = root;
+      const node = join(root, 'node');
+      const input = event(
+        `'node' ${quote(script)} intake scan --plugin-data ${quote(runtime.pluginData)}`,
+      );
+      assert.deepEqual(await codexPermission(runtime, input), {});
+      await symlink(process.execPath, node);
+      assert.deepEqual(await codexPermission(runtime, input), allowed);
+      assert.deepEqual(
+        await codexPermission(
+          runtime,
+          event(String(input.tool_input.command).replace(runtime.pluginData, '/other')),
+        ),
+        {},
+      );
+      assert.deepEqual(
+        await codexPermission(runtime, event(`node ${quote(script + '.other')} intake scan`)),
+        {},
+      );
+      await rm(node);
+      await writeFile(node, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+      assert.deepEqual(await codexPermission(runtime, input), {});
+    } finally {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    }
+  });
+
   it('should treat a final quoted heredoc as runtime data including shell-looking text', async () => {
     for (const delimiter of ["'REQUEST'", '"REQUEST"']) {
       const input =
@@ -92,7 +123,9 @@ describe('agent/codex-permission', () => {
       `${command()} < /tmp/input`,
       `env ${command()}`,
       `NODE_OPTIONS=--inspect ${command()}`,
-      `node ${quote(script)} binding inspect`,
+      `nodejs ${quote(script)} binding inspect`,
+      `env node ${quote(script)} binding inspect`,
+      `node ${quote(script)} binding inspect; /usr/bin/true`,
       `${quote(process.execPath)} --import /tmp/other.js ${quote(script)} binding inspect`,
       `${quote(process.execPath)} ${quote(script + '.other')} binding inspect`,
       `${command()} $(echo extra)`,

@@ -196,6 +196,10 @@ runtime_command="\"$(node -p 'process.execPath')\" \"$plugin_root/dist/codex/cod
 jq -n --arg command "$runtime_command" '{hook_event_name:"PermissionRequest",tool_name:"Bash",tool_input:{command:$command}}' \
   | PLUGIN_DATA="$root/plugin-data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" \
   | jq -e '.hookSpecificOutput.decision.behavior == "allow"'
+runtime_command="node \"$plugin_root/dist/codex/codex-runtime.js\" binding inspect --plugin-data \"$root/plugin-data\""
+jq -n --arg command "$runtime_command" '{hook_event_name:"PermissionRequest",tool_name:"Bash",tool_input:{command:$command}}' \
+  | PLUGIN_DATA="$root/plugin-data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" \
+  | jq -e '.hookSpecificOutput.decision.behavior == "allow"'
 test ! -e "$root/plugin-data/permission-request.jsonl"
 # the ordinary runtime still executes without any hook receipt
 node "$plugin_root/dist/codex/codex-runtime.js" binding inspect --plugin-data "$root/plugin-data" | jq -e '.status == "bound"'

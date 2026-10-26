@@ -22,7 +22,7 @@ export function matchesDeniedPreparation(
   if (typeof command !== 'string') return false;
   const prefix =
     [
-      anchor.runtime.nodeExecutable,
+      anchor.runtime.nodeCommand ?? anchor.runtime.nodeExecutable,
       anchor.runtime.entrypoint,
       'dispatch',
       'prepare',

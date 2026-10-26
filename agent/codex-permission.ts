@@ -4,6 +4,7 @@ import { isAbsolute, join } from 'node:path';
 
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import { nativeObject } from './automation-gateway.ts';
+import { resolveToolExecutable } from '../api/cli-runner.ts';
 
 /** recognize literal shell arguments only; unfamiliar syntax stays with native approval. */
 function literalArguments(command: string): string[] | undefined {
@@ -62,10 +63,20 @@ async function permissionDecision(
     )
       return {};
     const args = literalArguments(event.tool_input.command);
-    if (!args || args.length < 3 || !isAbsolute(args[0]!) || !isAbsolute(args[1]!)) return {};
-    const expected = join(runtime.pluginRoot, 'dist/codex/codex-runtime.js');
     if (
-      (await realpath(args[0]!)) !== (await realpath(runtime.nodeExecutable)) ||
+      !args ||
+      args.length < 3 ||
+      (args[0] !== 'node' && !isAbsolute(args[0]!)) ||
+      !isAbsolute(args[1]!)
+    )
+      return {};
+    const expected = join(runtime.pluginRoot, 'dist/codex/codex-runtime.js');
+    const executable =
+      args[0] === 'node'
+        ? await resolveToolExecutable('node', process.env.PATH ?? '')
+        : await realpath(args[0]!);
+    if (
+      executable !== (await realpath(runtime.nodeExecutable)) ||
       (await realpath(args[1]!)) !== (await realpath(expected))
     )
       return {};

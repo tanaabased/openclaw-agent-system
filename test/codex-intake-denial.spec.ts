@@ -54,6 +54,46 @@ function fixture(items: Record<string, unknown>[], partial = false) {
 }
 
 describe('agent/codex-intake-denial', () => {
+  it('should bind path launches without replacing historical executable evidence', async () => {
+    const pathAnchor: PreparationObservation = {
+      ...anchor,
+      runtime: { ...anchor.runtime, nodeCommand: 'node', nodeVersion: '99.0.0' },
+    };
+    const pathCommand = command.replace("'/node'", "'node'");
+    assert.equal(matchesDeniedPreparation(pathCommand, receiptId, pathAnchor), true);
+    assert.equal(matchesDeniedPreparation(command, receiptId, pathAnchor), false);
+    assert.equal(matchesDeniedPreparation(pathCommand, receiptId, anchor), false);
+    assert.equal(
+      matchesDeniedPreparation(
+        pathCommand.replace('/private/plugin', '/other'),
+        receiptId,
+        pathAnchor,
+      ),
+      false,
+    );
+    assert.equal(
+      matchesDeniedPreparation(pathCommand, receiptId, {
+        ...pathAnchor,
+        runtime: { ...pathAnchor.runtime, nodeExecutable: '/removed/node' },
+      }),
+      true,
+    );
+    const result = await intakeDenial(
+      async (method) =>
+        method === 'thread/turns/list'
+          ? { data: [{ id: 'original' }], nextCursor: null }
+          : {
+              data: [boundary, { ...denied, command: pathCommand }].map((item) => ({
+                turnId: 'original',
+                item,
+              })),
+              nextCursor: null,
+            },
+      { ...record, preparationObservation: pathAnchor },
+    );
+    assert.equal(result?.callId, 'refusal');
+    assert.equal(pathAnchor.runtime.nodeExecutable, '/node');
+  });
   it('should bind only the fixed command and exact assignment routing evidence', () => {
     assert.equal(matchesDeniedPreparation(command, record.id, anchor), true);
     for (const changed of [

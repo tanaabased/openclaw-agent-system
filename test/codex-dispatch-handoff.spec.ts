@@ -79,6 +79,34 @@ function fixture(results: (Record<string, unknown> | Error)[], failCreation = fa
 }
 
 describe('agent/codex-dispatch-handoff', () => {
+  it('should explain missing node in supported host shell diagnostics without retrying', async () => {
+    for (const output of [
+      '/bin/sh: node: not found',
+      'bash: node: command not found',
+      'zsh:1: command not found: node',
+    ]) {
+      const test = fixture([{ exit_code: 127, output }]);
+      await assert.rejects(
+        test.execute({ action: 'failure-response' }, 'intake'),
+        /codex-node-unavailable:.*PATH/u,
+      );
+      assert.equal(test.commands.length, 1);
+    }
+  });
+  it('should stop on unsupported node without retrying effects or the failure formatter', async () => {
+    const test = fixture([
+      {
+        exit_code: 1,
+        output: JSON.stringify({
+          code: 'codex-node-version-unsupported',
+          message: 'Select compatible Node on PATH.',
+        }),
+      },
+    ]);
+    await assert.rejects(test.execute({ action: 'scan' }, 'intake'), /compatible Node on PATH/u);
+    assert.equal(test.commands.length, 1);
+    assert.equal(test.creations.length, 0);
+  });
   it('should carry distinct routing identifiers into preparation without transcription', async () => {
     const test = fixture([success(routing), success(prepared)]);
     await test.execute();

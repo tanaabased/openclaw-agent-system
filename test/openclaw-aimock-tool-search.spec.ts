@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 
 import { matchFixture, type ChatCompletionRequest, type FixtureResponse } from '@copilotkit/aimock';
@@ -572,20 +571,134 @@ describe('scripts/aimock-tool-search', () => {
         });
         return response;
       };
-      append(input, await respond(), searchResult(['exec']));
+      append(input, await respond(), searchResult(['exec', 'process']));
       const call = await respond();
       assert.ok('toolCalls' in call);
       assert.equal(call.toolCalls?.[0]?.name, 'exec');
       append(input, call, 'os-execution-verified');
       await respond();
     }
-    const expected = JSON.parse(
-      await readFile(
-        new URL('../examples/os-execution/expected-evidence.json', import.meta.url),
-        'utf8',
-      ),
-    );
-    assert.deepEqual(openClawAIMockEvidence(scenario, entries), expected);
+    const evidence = openClawAIMockEvidence(scenario, entries);
+    assert.equal(evidence.strictMissCount, 0);
+    assert.equal(evidence.finalResponseCount, 2);
+    assert.equal(evidence.tools.find(({ name }) => name === 'exec')?.callResponseCount, 2);
+    assert.equal(evidence.tools.find(({ name }) => name === 'process')?.callResponseCount, 0);
+  });
+
+  it('should collect yielded native probes without rerunning them or accepting incomplete output', async () => {
+    const scenario = withToolSearch(resolveScenario('os-execution'));
+    for (const mode of ['pipe', 'pty']) {
+      const input = request(`Run the native execution ${mode} probe through OpenClaw exec.`);
+      append(input, (await reply(scenario, input)).response, searchResult(['exec', 'process']));
+      const call = (await reply(scenario, input)).response;
+      assert.ok('toolCalls' in call);
+      assert.equal(JSON.parse(call.toolCalls![0]!.arguments).args.timeoutSeconds, 120);
+      append(input, call, {
+        tool: { id: 'openclaw:exec', name: 'exec' },
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: 'Command still running (session kind-cloud, pid 123). Use process for follow-up.',
+            },
+          ],
+        },
+      });
+      for (let attempt = 1; attempt <= 12; attempt += 1) {
+        const poll = (await reply(scenario, input)).response;
+        assert.ok('toolCalls' in poll);
+        const args = JSON.parse(poll.toolCalls![0]!.arguments);
+        assert.equal(poll.toolCalls![0]!.id, `call_os_execution_${mode}_poll_${attempt}`);
+        assert.deepEqual(args, {
+          id: 'openclaw:process',
+          args: { action: 'poll', sessionId: 'kind-cloud', timeout: 30000 },
+        });
+        append(input, poll, {
+          tool: { id: 'openclaw:process', name: 'process' },
+          result: {
+            content: [
+              {
+                type: 'text',
+                text:
+                  attempt === 6 || attempt === 7
+                    ? '(no new output)\n\nNo new output; this session may be waiting for input. Use process write, send-keys, submit, or paste to provide input.'
+                    : (attempt === 1 ? 'os-execution-verified' : 'intermediate command output') +
+                      '\n\nProcess still running.',
+              },
+            ],
+          },
+        });
+        const failed = structuredClone(input);
+        failed.messages.at(-1)!.content = JSON.stringify({
+          tool: { id: 'openclaw:process', name: 'process' },
+          result: {
+            content: [
+              { type: 'text', text: 'os-execution-verified\n\nProcess exited with code 1.' },
+            ],
+          },
+        });
+        assert.equal(matchFixture([...scenario.fixtures], failed), null);
+        if (attempt === 6) {
+          for (const text of [
+            'Process timed out.',
+            'Process killed by signal SIGTERM.',
+            'Unknown session.',
+          ]) {
+            failed.messages.at(-1)!.content = JSON.stringify({
+              tool: { id: 'openclaw:process', name: 'process' },
+              result: { content: [{ type: 'text', text }] },
+            });
+            assert.equal(matchFixture([...scenario.fixtures], failed), null);
+          }
+        }
+        const completed = structuredClone(input);
+        completed.messages.at(-1)!.content = JSON.stringify({
+          tool: { id: 'openclaw:process', name: 'process' },
+          result: {
+            content: [
+              {
+                type: 'text',
+                text:
+                  (attempt === 1 ? 'os-execution-verified\n\n' : '') +
+                  'Process exited with code 0.',
+              },
+            ],
+          },
+        });
+        const final = (await reply(scenario, completed)).response;
+        assert.ok('content' in final);
+        assert.equal(final.content, 'os-execution-ready');
+        if (attempt === 1) {
+          completed.messages.at(-1)!.content = JSON.stringify({
+            tool: { id: 'openclaw:process', name: 'process' },
+            result: { content: [{ type: 'text', text: 'Process exited with code 0.' }] },
+          });
+          assert.equal(matchFixture([...scenario.fixtures], completed), null);
+        }
+      }
+      for (let attempt = 13; attempt <= 64; attempt += 1) {
+        append(
+          input,
+          {
+            toolCalls: [
+              {
+                id: `call_os_execution_${mode}_poll_${attempt}`,
+                name: 'tool_call',
+                arguments: JSON.stringify({
+                  id: 'openclaw:process',
+                  args: { action: 'poll', sessionId: 'kind-cloud', timeout: 30000 },
+                }),
+              },
+            ],
+          },
+          {
+            tool: { id: 'openclaw:process', name: 'process' },
+            result: { content: [{ type: 'text', text: 'Process still running.' }] },
+          },
+        );
+      }
+      assert.equal(matchFixture([...scenario.fixtures], input), null);
+    }
   });
 
   it('should discover and call the real catalog id before accepting the github result', async () => {
