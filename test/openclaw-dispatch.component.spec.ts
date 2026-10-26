@@ -290,21 +290,21 @@ describe('agent/openclaw issue dispatch', () => {
                   skills: [
                     ...ordinarySkills,
                     {
-                      name: 'agent-system-feedback-reply',
+                      name: 'agent-system-github-reply',
                       source: 'openclaw-plugins',
                       filePath: join(root, 'SKILL.md'),
                       eligible: true,
                       modelVisible: true,
                     },
                     {
-                      name: 'agent-system-issue-assessment',
+                      name: 'agent-system-task-assessment',
                       source: 'openclaw-plugins',
                       filePath: join(root, 'SKILL.md'),
                       eligible: true,
                       modelVisible: true,
                     },
                     {
-                      name: 'agent-system-issue-implementation',
+                      name: 'agent-system-task-implementation',
                       source: 'openclaw-plugins',
                       filePath: join(root, 'SKILL.md'),
                       eligible: true,
@@ -3501,7 +3501,7 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(verified.status, 'verified', JSON.stringify(verified));
       assert.equal(
         (await record()).work?.selection?.requestedSkill,
-        'agent-system:agent-system-issue-implementation',
+        'agent-system:agent-system-task-implementation',
       );
       await service.run(manifest, root, who, {
         action: 'implementation-result',
@@ -4002,7 +4002,7 @@ describe('agent/openclaw issue dispatch', () => {
       const selected = composed.selection as AssessmentSelection;
       assert.equal(
         selected.skill.name,
-        variant.includes('skill') ? 'ordinary-reply' : 'agent-system-feedback-reply',
+        variant.includes('skill') ? 'ordinary-reply' : 'agent-system-github-reply',
       );
       assert.equal(selected.guidance?.content, /inline|file/u.test(variant) ? guidance : undefined);
       assert.equal(
@@ -5174,7 +5174,7 @@ describe('agent/openclaw issue dispatch', () => {
       const selection = verified.assessment as AssessmentSelection;
       assert.equal(
         selection.skill.name,
-        variant.includes('skill') ? 'ordinary-assessment' : 'agent-system-issue-assessment',
+        variant.includes('skill') ? 'ordinary-assessment' : 'agent-system-task-assessment',
       );
       assert.equal(
         selection.guidance?.content,
@@ -5259,7 +5259,7 @@ describe('agent/openclaw issue dispatch', () => {
       const selection = verified.implementation as AssessmentSelection;
       assert.equal(
         selection.skill.name,
-        variant.includes('skill') ? 'ordinary-implementation' : 'agent-system-issue-implementation',
+        variant.includes('skill') ? 'ordinary-implementation' : 'agent-system-task-implementation',
       );
       assert.equal(
         selection.skill.path,

@@ -118,7 +118,7 @@ describe('agent/assessment-entry', () => {
       id: context.id,
       target,
     });
-    assert.equal(context.assessment!.requestedSkill, 'agent-system:agent-system-issue-assessment');
+    assert.equal(context.assessment!.requestedSkill, 'agent-system:agent-system-task-assessment');
     assert.equal((await call('context')).status, 'verified');
     assert.equal(selections.length, 1);
     const result = await assessmentEntry(
@@ -312,7 +312,7 @@ describe('agent/assessment-entry', () => {
       { guidance: { file: 'guidance.md' } },
       { skill: 'custom', guidance: 'Inline guidance.' },
       { skill: 'custom', guidance: { file: 'guidance.md' } },
-      { skill: 'agent-system:agent-system-issue-assessment' },
+      { skill: 'agent-system:agent-system-task-assessment' },
     ];
     for (const [index, configuration] of variants.entries()) {
       deps.binding.session = `configuration-${index}`;
@@ -332,7 +332,7 @@ describe('agent/assessment-entry', () => {
       assert.ok('assessment' in selected);
       assert.equal(
         selected.assessment!.requestedSkill,
-        configuration?.skill ?? 'agent-system:agent-system-issue-assessment',
+        configuration?.skill ?? 'agent-system:agent-system-task-assessment',
       );
       assert.equal(
         selected.assessment!.guidance?.content,
@@ -463,7 +463,7 @@ describe('agent/native-assessment-entry', () => {
                   errors: [],
                   skills: [
                     {
-                      name: 'agent-system:agent-system-issue-assessment',
+                      name: 'agent-system:agent-system-task-assessment',
                       path: join(root, 'SKILL.md'),
                       scope: 'user',
                       enabled: true,
@@ -581,7 +581,7 @@ describe('agent/native-assessment-entry', () => {
               return {
                 skills: [
                   {
-                    name: 'agent-system-issue-assessment',
+                    name: 'agent-system-task-assessment',
                     filePath: join(root, 'SKILL.md'),
                     source: 'user',
                     eligible: true,

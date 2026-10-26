@@ -36,7 +36,7 @@ rewriting whole cards or searching arbitrary prose. Reuse the shared Markdown
 code-span helper: choose delimiters longer than embedded backtick runs and pad
 boundary backticks. Do not backslash-escape literal contents as Markdown text.
 Retain clickable links, including code-formatted technical labels such as
-[`agent-system-issue-assessment`](../../skills/issue-assessment/SKILL.md); leave
+[`agent-system-task-assessment`](../../skills/task-assessment/SKILL.md); leave
 actors and issue/PR links readable in their existing form. Preserve raw incoming
 and outgoing comment bodies and literal guidance/diff blocks without rewriting.
 

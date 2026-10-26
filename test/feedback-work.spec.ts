@@ -26,7 +26,7 @@ const eventFixture = (): FeedbackSourceEvent => ({
   phase: 'running',
 });
 const skill = {
-  name: 'agent-system:agent-system-issue-implementation',
+  name: 'agent-system:agent-system-task-implementation',
   path: '/trusted/SKILL.md',
   scope: 'user',
   digest: 'd'.repeat(64),

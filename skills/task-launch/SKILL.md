@@ -1,6 +1,6 @@
 ---
-name: agent-system-issue-launch
-description: Start or reuse managed GitHub issue work manually in Codex or OpenClaw without assigning the issue or enabling intake.
+name: agent-system-task-launch
+description: 'Start or resume an Agent System-managed task tracked by a GitHub issue in Codex or OpenClaw, without assigning the issue or enabling scheduled intake.'
 license: MIT
 metadata:
   type: workflow
@@ -8,17 +8,17 @@ metadata:
   tags:
     - tanaab
     - workflow
-    - integration
+    - task-management
   openclaw:
     emoji: '🚀'
-    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/issue-launch'
+    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/task-launch'
 ---
 
-# Agent System Issue Launch
+# Agent System Task Launch
 
 ## Overview
 
-Start the existing managed issue workflow from an explicit operator request instead of a GitHub assignment. Reuse its issue chat, contained checkout, assessment, Plan/Work/Auto progression, and normal PR delivery.
+Start the existing managed task workflow from an explicit operator request instead of a GitHub assignment. Reuse its task chat, contained checkout, assessment, Plan/Work/Auto progression, and normal PR delivery.
 
 ## Required Reading
 
@@ -45,9 +45,9 @@ Use the trusted invoking agent and host context. An issue need not be assigned, 
 3. Supply supported explicit mode, routing model/effort, and assessment/implementation stages only when requested. Omitted fields inherit current agent.yaml defaults independently. Preserve the returned receipt; do not silently replace invalid explicit selections.
 4. For an existing destination, open or report it and continue its current stage through its owning context when this is that conversation. If dispatch is pending, reconcile the original launch as instructed; do not repeat completed setup or assessment. Invalid, inactive, wrong-target or ambiguous ownership must recover through its owner, never become a new manual launch.
 5. For routing-required, inspect the returned current profiles and assess the bounded context. If only the configured default profile exists, select it explicitly with fallback: default; do not invent a tier or use a fallback after an invalid explicit choice. Call launch prepare with the same target/id, digest, assessment and concise title. Codex also needs the native saved-project inventory; project preparation may return another routing-required result with its new digest. Use that response rather than repeating completed preparation.
-6. In OpenClaw prepare creates/reconciles the native issue session and starts its ordinary assessment turn. For an uncertain result, call launch reconcile with the same target/id. In Codex a prepared result returns the existing native create_thread request: execute it unchanged once, then launch reconcile. Never repeat uncertain creation; reconcile the original attempt without a receipt when its outcome is unknown.
+6. In OpenClaw prepare creates/reconciles the native task session and starts its ordinary assessment turn. For an uncertain result, call launch reconcile with the same target/id. In Codex a prepared result returns the existing native create_thread request: execute it unchanged once, then launch reconcile. Never repeat uncertain creation; reconcile the original attempt without a receipt when its outcome is unknown.
 7. Report the verified destination and actual ready/pending/setup state. Missing Codex project registration names the exact folder to register. Missing OpenClaw session enrollment requires an explicitly approved Install with manualSessionDispatch: true (CLI: --manual-session-dispatch), not automatic enrollment or a notification declaration. Keep partial resources and retry their original receipt after setup.
-8. The issue conversation owns the remaining assessment and configured Plan/Work/Auto journey. Follow its normal result, implementation and PR-delivery handoffs. The launching conversation must not run a parallel implementation or claim that requested native settings were verified when readback is unavailable.
+8. The task conversation owns the remaining assessment and configured Plan/Work/Auto journey. Follow its normal result, implementation and PR-delivery handoffs. The launching conversation must not run a parallel implementation or claim that requested native settings were verified when readback is unavailable.
 
 ## Checkpoints
 
@@ -58,7 +58,7 @@ Use the trusted invoking agent and host context. An issue need not be assigned, 
 
 ## Completion Criteria
 
-Return the existing or newly verified issue destination, or an actionable pending/setup result preserving the original attempt. Launch is not evidence that implementation or PR delivery has finished.
+Return the existing or newly verified task chat, or an actionable pending/setup result preserving the original attempt. Launch is not evidence that implementation or PR delivery has finished.
 
 ## Bundled Resources
 

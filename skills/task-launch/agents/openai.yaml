@@ -1,0 +1,7 @@
+interface:
+  display_name: 'Agent System Task Launch'
+  short_description: 'Start or resume managed task work'
+  icon_small: './assets/icon-small.svg'
+  icon_large: './assets/icon-large.svg'
+  brand_color: '#00c88a'
+  default_prompt: 'Use $agent-system-task-launch to start or resume managed work on the selected task tracked by a GitHub issue, without assigning it or enabling intake.'

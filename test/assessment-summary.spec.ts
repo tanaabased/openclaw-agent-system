@@ -80,10 +80,10 @@ function fixture() {
     });
   const selection = {
     version: 1 as const,
-    requestedSkill: 'agent-system-feedback-reply',
+    requestedSkill: 'agent-system-github-reply',
     defaultSkill: true,
     skill: {
-      name: 'agent-system-feedback-reply',
+      name: 'agent-system-github-reply',
       path: '/skill',
       scope: 'user',
       digest: 'd'.repeat(64),

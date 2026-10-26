@@ -1,7 +1,0 @@
-interface:
-  display_name: 'Agent System Issue Implementation'
-  short_description: 'Implement an authorized issue plan directly or resume managed work'
-  icon_small: './assets/icon-small.svg'
-  icon_large: './assets/icon-large.svg'
-  brand_color: '#00c88a'
-  default_prompt: 'Use $agent-system-issue-implementation to implement this authorized issue plan in the current chat and existing checkout using my agent configuration, preserving retained work and publication restrictions.'

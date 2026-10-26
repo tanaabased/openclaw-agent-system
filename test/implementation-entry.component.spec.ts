@@ -296,7 +296,7 @@ describe('agent/implementation-entry', () => {
     { skill: 'custom' },
     { guidance: 'Inline rule.' },
     { guidance: { file: 'guide.md' } },
-    { skill: 'agent-system:agent-system-issue-implementation', guidance: 'Combined rule.' },
+    { skill: 'agent-system:agent-system-task-implementation', guidance: 'Combined rule.' },
   ]) {
     it(`should use existing selector semantics for ${configuration ? JSON.stringify(configuration).toLowerCase() : 'defaults'}`, async () => {
       await writeFile(join(root, 'guide.md'), 'Contained rule.');
@@ -307,7 +307,7 @@ describe('agent/implementation-entry', () => {
       assert.ok('implementation' in first && first.implementation);
       assert.equal(
         first.implementation.requestedSkill,
-        configuration?.skill ?? 'agent-system:agent-system-issue-implementation',
+        configuration?.skill ?? 'agent-system:agent-system-task-implementation',
       );
       if (configuration?.guidance) assert.ok(first.implementation.guidance?.content);
       await call('context', { id: first.id });
@@ -537,7 +537,7 @@ describe('agent/native-implementation-entry', () => {
                   errors: [],
                   skills: [
                     {
-                      name: 'agent-system:agent-system-issue-implementation',
+                      name: 'agent-system:agent-system-task-implementation',
                       path: join(root, 'SKILL.md'),
                       scope: 'user',
                       enabled: true,
@@ -655,7 +655,7 @@ describe('agent/native-implementation-entry', () => {
               return {
                 skills: [
                   {
-                    name: 'agent-system-issue-implementation',
+                    name: 'agent-system-task-implementation',
                     filePath: join(root, 'SKILL.md'),
                     source: 'user',
                     eligible: true,

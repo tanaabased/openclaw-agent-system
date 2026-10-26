@@ -1,6 +1,6 @@
 ---
 name: agent-system-task-retirement
-description: Retire one managed task on explicit operator request using the existing native retirement lifecycle in Codex or OpenClaw.
+description: 'Retire one managed task on explicit operator request through its native lifecycle in Codex or OpenClaw, without closing or unassigning its GitHub issue.'
 license: MIT
 metadata:
   type: integration
@@ -11,7 +11,7 @@ metadata:
     - task-management
   openclaw:
     emoji: '📦'
-    homepage: https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/task-retirement
+    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/task-retirement'
 ---
 
 # Agent System Task Retirement
@@ -73,7 +73,7 @@ target and inspection against existing operator direction; it is not a new grant
 
 1. Resolve the one requested managed task using trusted runtime context.
 2. In OpenClaw call `agent_system_dispatch` with `{"action":"retire","id":"<task-id>"}`.
-   The id may be omitted only inside its matching managed issue session. The host
+   The id may be omitted only inside its matching managed task session. The host
    verifies native owner input, task/session incarnation and agent ownership.
 3. In standalone Codex, invoke the exact `dispatchRuntime` executable/argvPrefix
    with `--plugin-data` and its trusted pluginData, sending

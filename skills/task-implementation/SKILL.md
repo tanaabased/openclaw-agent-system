@@ -1,6 +1,6 @@
 ---
-name: agent-system-issue-implementation
-description: Implement an explicitly authorized GitHub issue plan in the current Codex or OpenClaw chat using agent configuration and an existing checkout, or resume managed work.
+name: agent-system-task-implementation
+description: 'Implement an authorized plan for a task tracked by a GitHub issue in the existing checkout, or resume managed work in the current Codex or OpenClaw chat.'
 license: MIT
 metadata:
   type: workflow
@@ -11,10 +11,10 @@ metadata:
     - task-management
   openclaw:
     emoji: '🔧'
-    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/issue-implementation'
+    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/task-implementation'
 ---
 
-# Agent System Issue Implementation
+# Agent System Task Implementation
 
 ## Overview
 
@@ -35,7 +35,7 @@ this skill owns implementation judgment and the substantive completion report.
 - An operator directly requests implementation of a supplied or retained actionable
   plan in this chat, with a GitHub issue and existing checkout.
 - The host supplies an actionable assessment and authorizes its implementation
-  in the current issue worktree.
+  in the current task worktree.
 - An interrupted implementation needs to resume from retained files and evidence.
 
 ## When Not to Use
@@ -169,4 +169,4 @@ transition and any remaining PR delivery.
 
 Check the result against the plan, acceptance criteria, final diff, and actual
 validation output. Report remaining work plainly. Skill structure checks and native
-behavioral trials are maintenance activities, not steps for ordinary issue work.
+behavioral trials are maintenance activities, not steps for ordinary task work.

@@ -34,7 +34,7 @@ describe('agent/feedback-stage', () => {
           observedAt: 1,
           resolveSkill: async (name) => ({ ...skill, name }),
         });
-        assert.equal(initial.selection.requestedSkill, 'agent-system:agent-system-feedback-reply');
+        assert.equal(initial.selection.requestedSkill, 'agent-system:agent-system-github-reply');
         assert.equal(initial.resultContract, 'feedback-result/v1');
         for (const configuration of [
           { skill: 'custom:reply' },
@@ -55,7 +55,7 @@ describe('agent/feedback-stage', () => {
           });
           assert.equal(
             selected.selection.requestedSkill,
-            configuration.skill ?? 'agent-system:agent-system-feedback-reply',
+            configuration.skill ?? 'agent-system:agent-system-github-reply',
           );
           assert.equal(
             selected.selection.guidance?.content,

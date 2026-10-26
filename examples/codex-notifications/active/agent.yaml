@@ -25,7 +25,7 @@ github:
       - name: example-reviewer
         node-id: U_reviewer
     assessment:
-      skill: $agent-system:agent-system-issue-assessment
+      skill: $agent-system:agent-system-task-assessment
       guidance:
         file: assessment-guidance.md
   review-request:

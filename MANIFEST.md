@@ -617,7 +617,7 @@ The identity-deduplicated union of `issue-assignment.allowed` and
 Omitted `feedback` and `feedback: {}` both retain that author set. `feedback`
 accepts only optional `skill` and `guidance`, using the
 [assessment selection](#assessment-selection) forms. The default skill is
-`agent-system:agent-system-feedback-reply`. Missing or changed selected skills
+`agent-system:agent-system-github-reply`. Missing or changed selected skills
 stop composition rather than silently falling back.
 
 There is no independent feedback-off switch or replacement author list in V3.
@@ -633,10 +633,10 @@ skill and optionally supplement it with trusted profile guidance. Neither field 
 implementation or publication authority. Applicable repository instructions and runtime
 boundaries remain controlling.
 
-| Field      | Type               | Required | Default                                      | Description                                                                |
-| ---------- | ------------------ | -------- | -------------------------------------------- | -------------------------------------------------------------------------- |
-| `guidance` | string or `{file}` | no       | none                                         | Nonempty single-line or multiline text, or one UTF-8 file; at most 32 KiB. |
-| `skill`    | string             | no       | `agent-system:agent-system-issue-assessment` | ID of one enabled, host-discoverable skill.                                |
+| Field      | Type               | Required | Default                                     | Description                                                                |
+| ---------- | ------------------ | -------- | ------------------------------------------- | -------------------------------------------------------------------------- |
+| `guidance` | string or `{file}` | no       | none                                        | Nonempty single-line or multiline text, or one UTF-8 file; at most 32 KiB. |
+| `skill`    | string             | no       | `agent-system:agent-system-task-assessment` | ID of one enabled, host-discoverable skill.                                |
 
 Skill IDs accept `skill-name`, `$skill-name`, `plugin:skill-name`, and
 `$plugin:skill-name`. Surrounding spaces and the optional `$` are removed; case is
@@ -649,7 +649,7 @@ host discovers them; a skill file path is not a manifest selection mechanism.
 issue-assignment:
   mode: plan
   assessment:
-    skill: $agent-system:agent-system-issue-assessment
+    skill: $agent-system:agent-system-task-assessment
     guidance: |
       Challenge unnecessary scope.
       Prefer small, independently reviewable changes.
@@ -688,7 +688,7 @@ aliases; qualified IDs must be exposed by that catalog, never inferred from path
 `issue-assignment.implementation` and `review-request.review` accept the same
 optional `skill` and `guidance` fields and contained guidance forms as
 [assessment selection](#assessment-selection). Implementation defaults to
-`agent-system:agent-system-issue-implementation`; review has no executable default
+`agent-system:agent-system-task-implementation`; review has no executable default
 yet. Omit `skill` to retain the stage default, including when supplying only guidance. These declarations alone do not enable
 execution. In standalone Codex, activating Work mode through Install authorizes
 assessment, implementation with the selected skill, and managed PR publication

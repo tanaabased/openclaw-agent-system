@@ -41,13 +41,13 @@ Each feedback attempt retains its own outcome and commit without replacing the
 original assessment or implementation. Finished work updates the existing PR;
 uncertain pushes are reconciled, and the original announcement is reused. A
 clarification request preserves implementation authority for the next admitted answer.
-Direct invocation of `agent-system-feedback-reply` can draft for a selected GitHub
+Direct invocation of `agent-system-github-reply` can draft for a selected GitHub
 comment/review or a response with an exact issue/PR destination in the current
 OpenClaw chat, without enabling scheduled intake. It resolves the invoking agent's
 applicable `agent.yaml` reply skill/guidance and voice. Drafting does not post;
 publication requires an explicit request through native approval. Existing managed
 work retains its owner and receipts; invalid context must recover or fail, not
-silently become manual work. See the [reply skill](../../skills/feedback-reply/SKILL.md).
+silently become manual work. See the [reply skill](../../skills/github-reply/SKILL.md).
 
 Direct and GitHub follow-ups receive current plans, recent private responses,
 and unfinished work before interpreting the new message. Older settled detail may
@@ -55,7 +55,7 @@ move to [bounded cold history](#working-history-and-limits); history supplies co
 not new authority.
 No separate repair policy or author list is required.
 
-For an explicitly requested issue progress update, use [GitHub Update](../../skills/github-update/SKILL.md). It compares public facts with verified progress in this chat, uses the configured shared reply composer, and returns the full private answer plus the exact confirmed public quote. Already-current issues get no comment; unfinished original publications recover first. This does not start implementation or change mode.
+For an explicitly requested issue progress update, use [Task Update](../../skills/task-update/SKILL.md). It compares public facts with verified progress in this chat, uses the configured shared reply composer, and returns the full private answer plus the exact confirmed public quote. Already-current issues get no comment; unfinished original publications recover first. This does not start implementation or change mode.
 
 Discovery retains bounded observations independently of reply eligibility.
 Feedback authors are the union of configured allowed actors and reviewers. Activity observed while no authors are
@@ -470,7 +470,7 @@ returns nonzero.
 ## Issue Implementation and PR Delivery
 
 For assessment without assignment or intake activation, invoke
-`agent-system-issue-assessment` in the current chat with an explicit GitHub issue URL
+`agent-system-task-assessment` in the current chat with an explicit GitHub issue URL
 and an existing checkout root allowed by the agent's Git containment. It uses the
 current [assessment selection](../../MANIFEST.md#assessment-selection), retains the
 complete plan/questions/blocker, and stops without implementation or publication,
@@ -481,7 +481,7 @@ A later answer can revise the saved direct assessment; ask for the full assessme
 for source readback. This does not launch the full issue workflow.
 
 For direct implementation in the current chat, invoke
-`$agent-system-issue-implementation` with an explicitly authorized actionable plan,
+`$agent-system-task-implementation` with an explicitly authorized actionable plan,
 issue URL and existing checkout, or reuse matching retained work. The collector
 uses the same configured implementation context as managed execution; no new
 assessment, chat or notification setup is required. Manual entry defaults to local

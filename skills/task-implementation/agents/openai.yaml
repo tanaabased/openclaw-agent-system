@@ -1,0 +1,7 @@
+interface:
+  display_name: 'Agent System Task Implementation'
+  short_description: 'Implement an authorized task plan or resume work'
+  icon_small: './assets/icon-small.svg'
+  icon_large: './assets/icon-large.svg'
+  brand_color: '#00c88a'
+  default_prompt: 'Use $agent-system-task-implementation to implement this authorized task plan in the current chat and existing checkout, preserving retained work and publication restrictions.'

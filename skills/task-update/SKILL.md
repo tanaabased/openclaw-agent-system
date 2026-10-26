@@ -1,6 +1,6 @@
 ---
-name: agent-system-github-update
-description: Reconcile verified private progress with a GitHub issue in the current Codex or OpenClaw chat, then use shared replies to publish and display only material missing facts when requested.
+name: agent-system-task-update
+description: 'Compare verified task progress with its GitHub issue and publish only material missing facts when requested, using the configured reply skill and voice.'
 license: MIT
 metadata:
   type: workflow
@@ -8,30 +8,30 @@ metadata:
   tags:
     - tanaab
     - workflow
-    - github
+    - task-management
   openclaw:
     emoji: '📣'
-    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/github-update'
+    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/task-update'
 ---
 
-# Agent System GitHub Update
+# Agent System Task Update
 
 ## Overview
 
-Compare the owning issue's public facts with verified progress available in the
+Compare the task's GitHub issue and its public facts with verified progress available in the
 current chat. Delegate composition, publication and exact-comment display to the
 shared reply owners. An update request never begins implementation or changes mode.
 
 ## Required Reading
 
-- **Before composition or publication:** [Feedback Reply](../feedback-reply/SKILL.md).
+- **Before composition or publication:** [GitHub Reply](../github-reply/SKILL.md).
   Follow its selected composition body once, not its bootstrap when native inputs
   are already verified. Custom composers need no notification commands.
 
 ## When to Use
 
 - An operator asks to update or sync an explicit GitHub issue in the current chat,
-  including a later turn or an existing managed issue conversation.
+  including a later turn or an existing managed task conversation.
 - Admitted feedback requests a progress update at its exact authorized source.
 
 ## When Not to Use
@@ -113,7 +113,7 @@ requests and uncertain-write reconciliation do not create duplicate comments.
 
 ## Bundled Resources
 
-- [Feedback Reply](../feedback-reply/SKILL.md): selected composer and shared publication journey.
+- [GitHub Reply](../github-reply/SKILL.md): selected composer and shared publication journey.
 - `agents/openai.yaml`: native skill presentation.
 
 ## Validation

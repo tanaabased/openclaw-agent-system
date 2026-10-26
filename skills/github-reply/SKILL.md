@@ -1,6 +1,6 @@
 ---
-name: agent-system-feedback-reply
-description: Draft a public GitHub reply using the invoking agent’s configured reply skill, guidance, and voice. Use directly for a selected comment or response, or compose from verified managed feedback, assessment, and PR delivery context.
+name: agent-system-github-reply
+description: "Compose a public GitHub reply, assessment summary, or PR announcement using the invoking agent's configured skill, guidance, and voice. Drafting alone does not authorize publication."
 license: MIT
 metadata:
   type: generic
@@ -11,10 +11,10 @@ metadata:
     - communication
   openclaw:
     emoji: '💬'
-    homepage: https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/feedback-reply
+    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/github-reply'
 ---
 
-# Agent System Feedback Reply
+# Agent System GitHub Reply
 
 ## Overview
 

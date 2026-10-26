@@ -43,10 +43,7 @@
 
 - Keep the npm identity `@tanaab/openclaw-agent-system`, OpenClaw plugin id `agent-system`, and display name `Agent System` as separate contracts.
 - Keep `openclaw agent-system` canonical and `openclaw as` as its tested alias.
-- Use `agent-system` as the public namespace for Canon-shaped skills in this repository and `openclaw-plugin` as their container. Pass `--namespace agent-system --container openclaw-plugin` explicitly to Canon Skill Author scripts. Name each folder for its unprefixed kebab-case surface (`skills/<surface>/`), use `agent-system-<surface>` for frontmatter names and prompt invocations, and use `Agent System <Surface>` for OpenAI display names.
-- Give every skill a surface-specific `metadata.openclaw.emoji` and HTTPS homepage in `SKILL.md`; keep OpenClaw metadata there instead of duplicating it in `agents/openai.yaml`.
-- Give every skill complete OpenAI interface metadata in `agents/openai.yaml`, including a display name, short description, default prompt, brand color, and valid local small and large icon assets that reflect the owned surface.
-- Keep skill icons transparent SVGs in `#00c88a`, with consistent visual weight and padding. Use capability or provider marks rather than Tanaab wordmarks or framed tiles.
+- Follow [Skill Authoring](./skills/AGENTS.md) for skill terminology, naming, metadata, presentation assets, and identity changes.
 - Keep `package.json#codexTools.managedPaths` limited to the Codex runtime and skill paths owned by cache reconciliation; it does not control what native Codex copies during installation. After changing one of those paths in an installed source checkout, run `bun run codex:sync` and then `bun run codex:check`; use a fresh Codex task to verify skill discovery. Do not sync before the one-time Codex Tools install or after unrelated OpenClaw runtime changes.
 - Use kebab-case for schema-owned YAML keys and camelCase inside TypeScript.
 - Keep `utils/encode.ts` and `utils/decode.ts` faithful to their Core Next behavior. Apply them through schema-aware callers; never deep-convert literal data maps such as environment-variable names or user-defined identifiers.

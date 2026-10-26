@@ -313,7 +313,7 @@ describe('channels/github/presentation/assessment-result', () => {
         const output = renderAssessmentResult(result, {
           ...context,
           debug,
-          assessment: { defaultSkill: true, skill: { name: 'agent-system-issue-assessment' } },
+          assessment: { defaultSkill: true, skill: { name: 'agent-system-task-assessment' } },
         });
         const routing = output.indexOf('> ## 🧠 Model routing');
         const instructions = output.indexOf('> ## 🔬 Debug');

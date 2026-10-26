@@ -32,13 +32,13 @@ pwd -P
 
 Open the checkout as a local project in the Codex app, or run `codex` there.
 In Codex CLI with the same profile, use `/hooks` to [review and trust](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)
-the Agent System SessionStart and PermissionRequest hooks, then start a fresh task.
+the Agent System SessionStart and PermissionRequest hooks, then open a new chat.
 
 ```text
 Use $agent-system-codex-binding to bind this plugin to /absolute/path/to/tanaab/me.
 ```
 
-Confirm the binding, then start a fresh task and run:
+Confirm the binding, then open a new chat and run:
 
 ```text
 Use $agent-system-install to initialize this installation and apply declared setup.
@@ -100,8 +100,8 @@ integrations; it is not a universal GitHub restriction.
 - [Git CLI](./skills/git-cli/SKILL.md) — Guide native host Git operations.
 - [GitHub CLI](./skills/github-cli/SKILL.md) — Guide native host GitHub operations.
 - [Install](./skills/install/SKILL.md) — Apply Codex setup and synchronize declared automations through the native app.
-- [Issue launch](./skills/issue-launch/SKILL.md) — Start or reuse the managed issue workflow without assignment or scheduled intake.
-- [Issue assessment](./skills/issue-assessment/SKILL.md) — Assess an admitted issue in its native worktree and retain a plan, questions, or a setup blocker.
+- [Task launch](./skills/task-launch/SKILL.md) — Start or reuse the managed task workflow without assignment or scheduled intake.
+- [Task assessment](./skills/task-assessment/SKILL.md) — Assess an admitted task in its native worktree and retain a plan, questions, or a setup blocker.
 - [Model routing](./skills/model-routing/SKILL.md) — Select model and effort candidates for new tasks.
 
 ## Model Routing
@@ -208,7 +208,7 @@ completes, a new assignment uses a distinct branch; earlier branches, commits an
 pull requests remain preserved. Reassignment before retirement completes follows
 the existing reactivation rules and may continue the same attempt.
 
-For assessment without assignment, invoke `$agent-system-issue-assessment` with an
+For assessment without assignment, invoke `$agent-system-task-assessment` with an
 explicit GitHub issue URL and an existing local checkout root in the current chat.
 It uses the bound agent's [assessment selection](./MANIFEST.md#assessment-selection)
 and returns a saved plan, questions or a setup blocker. No intake activation, new
@@ -255,7 +255,7 @@ The complete assessment is shown inline and returned on same-chat revisions; it
 remains the source of truth rather than its summaries. Guidance cannot widen the
 assessment's authority.
 For implementation without another assessment or chat, invoke
-`$agent-system-issue-implementation` with the issue URL, existing checkout and an
+`$agent-system-task-implementation` with the issue URL, existing checkout and an
 authorized actionable plan, or reuse matching retained work. The thin direct collector
 supplies the same implementation payload as managed execution and uses your current
 [implementation selection](./MANIFEST.md#implementation-and-review-selection).
@@ -266,7 +266,7 @@ Stale managed work must recover through its original owner, never manual fallbac
 
 [Implementation and review selections](./MANIFEST.md#implementation-and-review-selection)
 use the same trusted selection contract. Work uses the bundled
-[issue implementation skill](./skills/issue-implementation/SKILL.md) by default;
+[task implementation skill](./skills/task-implementation/SKILL.md) by default;
 review execution remains unavailable.
 [Feedback permissions](./MANIFEST.md#feedback-permissions) are now separate for issue
 assignment and review requests; the removed global setting requires an explicit choice.
@@ -281,15 +281,15 @@ Approved comments must address the configured GitHub account outside quoted text
 The initial read establishes a baseline without replaying historical comments.
 Subsequent issue comments, submitted PR reviews and inline replies route to the
 original issue chat with their exact source and review context retained.
-You can also invoke `agent-system-feedback-reply` directly in the current chat
+You can also invoke `agent-system-github-reply` directly in the current chat
 with a selected GitHub comment/review URL, or a response and exact issue/PR
 destination. It uses your bound `agent.yaml` reply skill/guidance and voice without
 activating intake. It returns a draft; posting requires an explicit request and
 native approval. Matching managed work reuses its existing owner and receipts;
 invalid managed context never becomes a manual bypass. See the
-[reply skill](./skills/feedback-reply/SKILL.md) for selection and recovery.
+[reply skill](./skills/github-reply/SKILL.md) for selection and recovery.
 
-For an explicitly requested issue progress update, use [GitHub Update](./skills/github-update/SKILL.md). It compares public facts with verified progress in this chat, uses the configured shared reply composer, and returns the full private answer plus the exact confirmed public quote. Already-current issues get no comment; unfinished original publications recover first. This does not start implementation or change mode.
+For an explicitly requested issue progress update, use [Task Update](./skills/task-update/SKILL.md). It compares public facts with verified progress in this chat, uses the configured shared reply composer, and returns the full private answer plus the exact confirmed public quote. Already-current issues get no comment; unfinished original publications recover first. This does not start implementation or change mode.
 
 Public replies to inline feedback stay in the original review thread. Replies to
 submitted reviews and ordinary PR comments appear in the PR conversation.
@@ -312,7 +312,7 @@ and implementation. Delivery updates the same PR and reuses its announcement.
 Publication rechecks the exact source and active assignment, and reconciles uncertain
 writes before another action.
 The chat displays the complete retained private response. The configured
-`feedback.skill` (default `agent-system:agent-system-feedback-reply`) then composes
+`feedback.skill` (default `agent-system:agent-system-github-reply`) then composes
 a separate public candidate, applying optional `feedback.guidance` and applicable
 voice skills. It summarizes for the audience rather than truncating the private
 answer. Runtime `result` saves the private response, `compose` returns the verified
@@ -736,7 +736,7 @@ If a development build writes a changed persistent format, verify that any runti
 restored during cleanup can read the retained state. Cache equality alone does not
 verify dispatch recovery.
 
-Start a fresh task to verify skill discovery. `package.json#codexTools.managedPaths`
+Open a new chat to verify skill discovery. `package.json#codexTools.managedPaths`
 selects the paths owned by cache synchronization and checks; it does not control
 what native Codex copies during installation.
 

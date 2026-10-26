@@ -5,7 +5,7 @@ or implementation in the current chat, use their separate skills.
 
 ## Manual Issue Launch
 
-Use `$agent-system-issue-launch` with an issue URL, `owner/repo#number`, repository
+Use `$agent-system-task-launch` with an issue URL, `owner/repo#number`, repository
 plus number, or a number with an explicit or independently verified repository context.
 The issue may be unassigned or assigned to somebody else. Existing repository access,
 agent eligibility, native authorization, and lifecycle checks still apply.

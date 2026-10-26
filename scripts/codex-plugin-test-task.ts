@@ -285,16 +285,16 @@ try {
     .map((name) => `${manifest.name}:${name}`)
     .filter((name) => !discovered.has(name));
   assert.deepEqual(missing, [], `fresh Codex task omitted skills: ${missing.join(', ')}`);
-  const implementation = discovered.get('agent-system:agent-system-issue-implementation');
+  const implementation = discovered.get('agent-system:agent-system-task-implementation');
   assert.ok(implementation, 'the bundled implementation default must be discoverable');
   assert.equal(
     await realpath(implementation.path),
-    join(cacheRoot, 'skills/issue-implementation/SKILL.md'),
+    join(cacheRoot, 'skills/task-implementation/SKILL.md'),
   );
-  const assessment = discovered.get('agent-system:agent-system-issue-assessment');
+  const assessment = discovered.get('agent-system:agent-system-task-assessment');
   assert.equal(
     await realpath(assessment!.path),
-    join(cacheRoot, 'skills/issue-assessment/SKILL.md'),
+    join(cacheRoot, 'skills/task-assessment/SKILL.md'),
   );
   const fixtureWorkspace = join(temporaryRoot, 'assessment-workspace');
   const fixtures = [

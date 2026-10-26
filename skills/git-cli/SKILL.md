@@ -1,6 +1,6 @@
 ---
 name: agent-system-git-cli
-description: Agent System Git guidance for using the active agent's managed identity, SSH signing, contained workspace, and operation policy.
+description: "Run Git operations with the active agent's managed identity, SSH signing, workspace containment, and operation policy in OpenClaw; use native Git authorization in standalone Codex."
 license: MIT
 metadata:
   type: integration
@@ -11,7 +11,7 @@ metadata:
     - git
   openclaw:
     emoji: '🌿'
-    homepage: https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/git-cli
+    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/git-cli'
     requires:
       bins:
         - git
@@ -24,7 +24,7 @@ metadata:
         label: Install Git (brew)
 ---
 
-# Agent System Git
+# Agent System Git CLI
 
 ## Overview
 

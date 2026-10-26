@@ -1,6 +1,6 @@
 ---
 name: agent-system-git-worktree
-description: Agent System guidance for preparing, using, finding, or removing deterministic Git worktrees for an agent task.
+description: 'Prepare, reuse, find, or remove a managed Git worktree for a task through the owning runtime.'
 license: MIT
 metadata:
   type: integration
@@ -11,7 +11,7 @@ metadata:
     - git
   openclaw:
     emoji: '🌳'
-    homepage: https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/git-worktree
+    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/git-worktree'
     requires:
       bins:
         - git

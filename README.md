@@ -82,7 +82,7 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 - [Git CLI](./skills/git-cli/SKILL.md) — Work with the agent's Git identity and policy.
 - [Git worktree](./skills/git-worktree/SKILL.md) — Prepare, reuse, and remove managed worktrees.
 - [GitHub CLI](./skills/github-cli/SKILL.md) — Work through the agent's GitHub account.
-- [GitHub Update](./skills/github-update/SKILL.md) — Publish missing progress from a private notification session.
+- [Task Update](./skills/task-update/SKILL.md) — Publish missing progress from a private notification session.
 - [Google CLI](./skills/google-cli/SKILL.md) — Work through the agent's Google account.
 - [Install](./skills/install/SKILL.md) — Install the active workspace through its owning runtime.
 - [Model routing](./skills/model-routing/SKILL.md) — Select model and effort candidates for new tasks.

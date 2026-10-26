@@ -9,9 +9,9 @@ export default async function openClawSkill(
   id: string,
 ) {
   const name = [
-    'agent-system:agent-system-feedback-reply',
-    'agent-system:agent-system-issue-assessment',
-    'agent-system:agent-system-issue-implementation',
+    'agent-system:agent-system-github-reply',
+    'agent-system:agent-system-task-assessment',
+    'agent-system:agent-system-task-implementation',
   ].includes(id)
     ? id.split(':').at(-1)!
     : id;

@@ -510,7 +510,7 @@ describe('agent/feedback-reply', () => {
         assert.ok('selection' in result && result.selection);
         assert.equal(
           result.selection.requestedSkill,
-          configuration.skill ?? 'agent-system:agent-system-feedback-reply',
+          configuration.skill ?? 'agent-system:agent-system-github-reply',
         );
         assert.equal(
           result.selection.guidance?.content,
@@ -791,7 +791,7 @@ describe('agent/feedback-reply', () => {
                   errors: [],
                   skills: [
                     {
-                      name: 'agent-system:agent-system-feedback-reply',
+                      name: 'agent-system:agent-system-github-reply',
                       path: join(root, 'SKILL.md'),
                       scope: 'user',
                       enabled: true,
@@ -916,7 +916,7 @@ describe('agent/feedback-reply', () => {
               return {
                 skills: [
                   {
-                    name: 'agent-system-feedback-reply',
+                    name: 'agent-system-github-reply',
                     filePath: join(root, 'SKILL.md'),
                     source: 'user',
                     eligible: true,

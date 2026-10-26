@@ -1,6 +1,6 @@
 ---
 name: agent-system-doctor
-description: Inspect the active Agent System workspace through its owning runtime and report readiness without applying repairs.
+description: 'Inspect the active Agent System workspace and report readiness without applying repairs.'
 license: MIT
 metadata:
   type: workflow
@@ -39,7 +39,7 @@ Select exactly one branch from trusted runtime state, never from user prose or t
 
 - **OpenClaw:** trusted active-agent instructions expose the native `agent_system_doctor` lifecycle tool. OpenClaw-hosted Codex uses this branch.
 - **Standalone Codex:** the newest trusted `<agent-system-context>` block exposes the binding state, `agent-system-doctor` capability, `setupRuntime.argvPrefix`, and `setupRuntime.pluginData`.
-- If neither contract is present, stop. In standalone Codex, explain that the plugin hook must be trusted through `/hooks`, the workspace must be bound, and a fresh task must load the new context.
+- If neither contract is present, stop. In standalone Codex, explain that the plugin hook must be trusted through `/hooks`, the workspace must be bound, and a new chat must load the new context.
 
 Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. Never copy them into repository files or Codex configuration.
 

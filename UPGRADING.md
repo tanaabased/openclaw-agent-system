@@ -3,6 +3,26 @@
 See the [version compatibility matrix](./README.md#version-compatibility) for supported
 OpenClaw versions.
 
+## Skill names
+
+task workflow skills now use task terminology. update explicit skill selections in
+`agent.yaml`, saved prompts, and operator instructions using this mapping:
+
+| Previous skill                      | Replacement                        |
+| ----------------------------------- | ---------------------------------- |
+| `agent-system-feedback-reply`       | `agent-system-github-reply`        |
+| `agent-system-github-update`        | `agent-system-task-update`         |
+| `agent-system-issue-assessment`     | `agent-system-task-assessment`     |
+| `agent-system-issue-implementation` | `agent-system-task-implementation` |
+| `agent-system-issue-launch`         | `agent-system-task-launch`         |
+
+preserve the `agent-system:` qualifier where the host requires it. omitted skill
+selections use the new defaults; old explicit IDs have no alias. do not edit task
+journals or retained source snapshots to replace historical names. skill renaming
+does not change provider configuration keys such as `issue-assignment` or grant a
+new workflow stage. refresh the installed plugin and open a new Codex chat to load
+its current skills.
+
 ## Minimum-Version Changes
 
 Upgrade OpenClaw before installing an Agent System release that requires a newer

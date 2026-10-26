@@ -1,9 +1,0 @@
-interface:
-  display_name: 'Agent System GitHub Update'
-  short_description: 'Publish missing verified progress through shared replies'
-  icon_small: './assets/icon-small.svg'
-  icon_large: './assets/icon-large.svg'
-  brand_color: '#00c88a'
-  default_prompt: 'Use $agent-system-github-update in this chat to reconcile verified progress with the selected GitHub issue, publish only material missing facts through the configured shared reply workflow, and show the complete private answer and exact confirmed public quote. If already current, do not post.'
-policy:
-  allow_implicit_invocation: true

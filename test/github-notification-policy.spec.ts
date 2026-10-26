@@ -72,8 +72,8 @@ describe('channels/github/notification-policy', () => {
       ),
     );
     for (const skill of [
-      'agent-system-issue-assessment',
-      'agent-system:agent-system-issue-assessment',
+      'agent-system-task-assessment',
+      'agent-system:agent-system-task-assessment',
     ]) {
       assert.equal(
         githubNotificationRuntimeBlocker(

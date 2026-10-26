@@ -1,7 +1,7 @@
 interface:
   display_name: 'Agent System GitHub CLI'
-  short_description: 'Agent-scoped GitHub CLI operations'
+  short_description: 'Run GitHub CLI operations with the appropriate identity'
   icon_small: './assets/icon-small.svg'
   icon_large: './assets/icon-large.svg'
   brand_color: '#00c88a'
-  default_prompt: 'Use $agent-system-github-cli for GitHub work with the appropriate execution route and identity.'
+  default_prompt: 'Use $agent-system-github-cli to perform this GitHub CLI operation with the appropriate execution route and identity.'

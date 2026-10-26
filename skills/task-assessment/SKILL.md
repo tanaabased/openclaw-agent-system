@@ -1,6 +1,6 @@
 ---
-name: agent-system-issue-assessment
-description: Assess an explicitly selected or admitted GitHub issue using the invoking agent configuration and retain a plan, questions, or a setup blocker in the current chat.
+name: agent-system-task-assessment
+description: 'Assess a selected or admitted task tracked by a GitHub issue and retain a plan, questions, or a setup blocker in the current chat using the agent configuration.'
 license: MIT
 metadata:
   type: workflow
@@ -11,14 +11,14 @@ metadata:
     - task-management
   openclaw:
     emoji: '🧭'
-    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/issue-assessment'
+    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/task-assessment'
 ---
 
-# Agent System Issue Assessment
+# Agent System Task Assessment
 
 ## Overview
 
-Turn one explicitly selected or admitted issue into a useful assessment and initial plan. The runtime owns
+Turn one explicitly selected or admitted task tracked by a GitHub issue into a useful assessment and initial plan. The runtime owns
 assignment authority, native chat identity, routing, persistence, and scheduling.
 This skill owns investigation and judgment. Direct assessment stops before implementation
 or publication; managed assessment follows the runtime's verified handoff after recording
@@ -39,7 +39,7 @@ and presenting its result.
 
 - An operator explicitly selects a GitHub issue and an existing checkout for assessment in the current chat, without assignment or intake activation.
 
-- A native issue chat has an Agent System assessment receipt and trusted runtime
+- A native task chat has an Agent System assessment receipt and trusted runtime
   context: dispatchRuntime in Codex, or the bound agent_system_dispatch tool in OpenClaw.
 - The requested outcome is an actionable plan, focused clarification, or a precise
   setup blocker with retained investigation.
@@ -47,7 +47,7 @@ and presenting its result.
 ## When Not to Use
 
 - Launching chats, choosing assignments, preparing repositories, or changing models.
-- Implementing the issue, publishing to GitHub, or handling PR reviews and feedback.
+- Implementing the task, publishing to GitHub, or handling PR reviews and feedback.
 - Replacing an ordinary user request with an unsolicited assessment workflow.
 
 ## Preconditions
@@ -340,7 +340,7 @@ current skill and guidance while preserving prior results, chat, worktree, and r
 Respect cancellation, inactive lifecycle, broader or implementation-specific native denials,
 and a host-terminated turn. A summary-only denial does not waive these checks or grant implementation;
 follow the retained handoff through fresh implementation context in the same permitted turn. Reconcile
-uncertain effects using their saved receipts; never reset the issue or create a
+uncertain effects using their saved receipts; never reset the task or create a
 replacement chat or PR to get past a failed operation.
 
 ## Checkpoints
@@ -365,7 +365,7 @@ replacement chat or PR to get past a failed operation.
 ## Completion Criteria
 
 The runtime has retained a valid result, and the user can read the complete assessment
-and plan, focused questions, or actionable blocker in the original issue chat.
+and plan, focused questions, or actionable blocker in the original task chat.
 
 ## Bundled Resources
 
