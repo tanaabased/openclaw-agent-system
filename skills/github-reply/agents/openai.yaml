@@ -3,5 +3,5 @@ interface:
   short_description: 'Compose GitHub replies, summaries, and announcements'
   icon_small: './assets/icon-small.svg'
   icon_large: './assets/icon-large.svg'
-  brand_color: '#00c88a'
+  brand_color: '#387fb5'
   default_prompt: 'Use $agent-system-github-reply to draft the requested GitHub reply, summary, or announcement using my configured guidance and voice. Do not post unless publication is authorized.'

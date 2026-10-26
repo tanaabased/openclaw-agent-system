@@ -28,7 +28,17 @@
 
 - give every skill a surface-specific `metadata.openclaw.emoji` and HTTPS source homepage in `SKILL.md`. keep OpenClaw metadata there rather than duplicating it in `agents/openai.yaml`.
 - give every skill complete OpenAI interface metadata: display name, short description, default prompt, brand color, and valid local small and large icon assets.
-- keep icons transparent SVGs in `#00c88a`, with consistent visual weight and padding. use capability or provider marks rather than Tanaab wordmarks or framed tiles.
+- keep icons single-color transparent SVGs, with consistent visual weight and padding. use capability or provider marks rather than Tanaab wordmarks or framed tiles; do not add background circles, gradients, shadows, or separate theme variants.
+- color skills by their primary role using the three groups below. use the same exact color in both icon sizes and `interface.brand_color`. these are presentation groups, independent of `metadata.type`, tags, and runtime authority.
+
+| Group           | Color           | Skills                                                                                    |
+| --------------- | --------------- | ----------------------------------------------------------------------------------------- |
+| tools           | green `#00c88a` | `git-cli`, `github-cli`, `google-cli`, `git-worktree`, `install`, `doctor`                |
+| task management | pink `#db2777`  | `task-launch`, `task-assessment`, `task-implementation`, `task-update`, `task-retirement` |
+| support         | blue `#387fb5`  | `codex-binding`, `model-routing`, `github-reply`, `notifications-reset`                   |
+
+- place CLI and native tool operation skills in tools, skills that own an individual task's lifecycle in task management, and reusable configuration, routing, composition, or workspace maintenance skills in support. add future skills to the matching group rather than introducing a color for each workflow stage.
+- keep plugin-level icons and branding separate from this skill palette. a color-only change preserves existing icon geometry, sizing, and transparency.
 
 ## Identity Changes and Verification
 
