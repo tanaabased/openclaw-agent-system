@@ -39,7 +39,6 @@ jobs:
           - openclaw-memory
           - openclaw-memory-embeddings
           - openclaw-backup
-          - openclaw-backup-prune
           - openclaw-backup-cleanup
           - openclaw-credentials
           - openclaw-automations

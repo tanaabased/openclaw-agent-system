@@ -1,8 +1,0 @@
-schema-version: 1
-
-agent:
-  id: backup-prune-tanaabot
-  name: Backup Prune Tanaabot
-
-backup:
-  openclaw-state: off

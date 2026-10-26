@@ -19,8 +19,8 @@ for await (const entry of parser) {
   entries.push({ header: entry.header, bytes: Buffer.concat(chunks) });
 }
 const source = JSON.parse(entries[0].bytes.toString('utf8'));
-assert.equal(source.agentId, 'backup-prune-tanaabot');
-assert.equal(source.coverage.openclawState, 'off');
+assert.equal(source.agentId, 'backup-tanaabot');
+assert.equal(source.coverage.openclawState, 'captured');
 const databasePath = join(process.env.TMPDIR, 'prune-historical.sqlite');
 const database = new DatabaseSync(databasePath);
 database.exec(`
@@ -68,7 +68,11 @@ for (const year of [2000, 2001]) {
     return Buffer.concat(chunks);
   })();
   stream.entry({ name: 'manifest.json', type: 'file', mode: 0o600 }, JSON.stringify(manifest));
-  for (const entry of entries.slice(1)) stream.entry(entry.header, entry.bytes);
+  for (const entry of entries.slice(1)) {
+    if (!entry.header.name.startsWith('openclaw-state/')) {
+      stream.entry(entry.header, entry.bytes);
+    }
+  }
   stream.entry({ name: 'openclaw-state/', type: 'directory', mode: 0o700 });
   stream.entry(
     { name: 'openclaw-state/manifest.json', type: 'file', mode: 0o600 },
