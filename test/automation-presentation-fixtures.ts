@@ -38,6 +38,7 @@ function job(id: string, overrides: Partial<Job> = {}): Job {
     execution: 'ok',
     delivery: 'not-requested',
     removed: false,
+    retired: false,
     findings: [finding(id, 'healthy', 'automation-healthy')],
     ...overrides,
   };

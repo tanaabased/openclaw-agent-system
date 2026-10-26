@@ -4,6 +4,7 @@ import openclawIntakeJobs from './openclaw-intake-policy.ts';
 
 import {
   AutomationError,
+  isOperatorAutomationGateway,
   listNativeAutomations,
   nativeAutomation,
   nativeAutomationHistory,
@@ -170,6 +171,7 @@ export default class AutomationService {
             ? native!.state.lastDeliveryStatus
             : 'unavailable',
           removed: record?.removed ?? false,
+          retired: Boolean(record?.retired),
           findings: findings.filter(({ stepId }) => stepId === id),
         };
       }),
@@ -183,7 +185,7 @@ export default class AutomationService {
     const { context, store } = await this.scope(manifest, workspaceDir);
     const ledger = await store.read();
     const record = ledger.records.find((entry) => entry.id === id);
-    if (!record?.nativeId || record.pending)
+    if (!record?.nativeId || record.pending || record.retired)
       throw new AutomationError('automation-owned-job-missing');
     const native = nativeAutomation(
       await this.dependencies.request('cron.get', { id: record.nativeId }),
@@ -409,11 +411,13 @@ export default class AutomationService {
         ? {}
         : {
             remediation:
-              code === 'automation-execution-failed' ||
-              code === 'automation-delivery-failed' ||
-              code === 'automation-delivery-unavailable'
-                ? `inspect owned run history: openclaw agent-system automations runs ${id} --agent ${context.agentId} --json. no job was executed.`
-                : 'Run operator install after resolving the reported condition; no job was executed.',
+              code === 'automation-retired-id'
+                ? 'Choose a new manifest ID for a new automation; install will not recreate a retired identity. Preserve its historical receipt for explicit operator recovery.'
+                : code === 'automation-execution-failed' ||
+                    code === 'automation-delivery-failed' ||
+                    code === 'automation-delivery-unavailable'
+                  ? `inspect owned run history: openclaw agent-system automations runs ${id} --agent ${context.agentId} --json. no job was executed.`
+                  : 'Run operator install after resolving the reported condition; no job was executed.',
           }),
     });
     if (!this.dependencies.request)
@@ -453,6 +457,10 @@ export default class AutomationService {
           continue;
         }
         const native = this.owned(record, observed, context.agentId);
+        if (record.retired) {
+          findings.push(finding(job.id, 'blocked', 'automation-retired-id'));
+          continue;
+        }
         if (!native || record.pending) {
           findings.push(finding(job.id, 'blocked', 'automation-recovery-required'));
           continue;
@@ -504,22 +512,50 @@ export default class AutomationService {
     for (const record of ledger.records.filter(
       (record) => !declarations.some(({ id }) => id === record.id),
     )) {
-      const native = this.owned(record, observed, context.agentId);
-      findings.push(
-        finding(
-          record.id,
-          !native || record.pending
-            ? 'blocked'
-            : native.enabled || !record.removed
-              ? 'drift'
-              : 'healthy',
-          !native || record.pending
-            ? 'automation-recovery-required'
-            : native.enabled || !record.removed
-              ? 'automation-removal-pending'
-              : 'automation-disabled',
-        ),
-      );
+      try {
+        const native = this.owned(record, observed, context.agentId);
+        if (!native && !record.pending && record.nativeId) {
+          const authoritative =
+            isOperatorAutomationGateway(this.dependencies.request) &&
+            Number.isSafeInteger(status.jobs) &&
+            status.jobs === observed.length;
+          findings.push(
+            finding(
+              record.id,
+              authoritative ? (record.retired ? 'healthy' : 'drift') : 'blocked',
+              authoritative
+                ? record.retired
+                  ? 'automation-retired'
+                  : 'automation-retirement-pending'
+                : 'automation-inspection-incomplete',
+            ),
+          );
+          continue;
+        }
+        findings.push(
+          finding(
+            record.id,
+            !native || record.pending
+              ? 'blocked'
+              : native.enabled || !record.removed
+                ? 'drift'
+                : 'healthy',
+            !native || record.pending
+              ? 'automation-recovery-required'
+              : native.enabled || !record.removed
+                ? 'automation-removal-pending'
+                : 'automation-disabled',
+          ),
+        );
+      } catch (error) {
+        findings.push(
+          finding(
+            record.id,
+            'blocked',
+            error instanceof AutomationError ? error.code : 'automation-inspection-failed',
+          ),
+        );
+      }
     }
     return findings;
   }
@@ -533,6 +569,7 @@ export default class AutomationService {
       (job) => job.declarationKey === record.marker || job.id === record.nativeId,
     );
     if (
+      (record.retired && matches.length > 0) ||
       matches.length > 1 ||
       matches.some(
         (job) =>
@@ -574,6 +611,7 @@ export default class AutomationService {
       return await store.withLock(async () => {
         const ledger = await store.read();
         const initialHash = automationHash(ledger);
+        const currentManifestHash = automationHash(openclawIntakeJobs(manifest));
         // validate the complete plan before changing any native job.
         for (const job of declarations) effectiveAutomation(job, context);
         automationThreadNames(declarations, 'openclaw');
@@ -600,9 +638,16 @@ export default class AutomationService {
         }
         for (const record of ledger.records) {
           const native = this.owned(record, observed, context.agentId);
-          if (!native && record.nativeId)
-            throw new AutomationError('automation-native-job-missing');
           const declaration = declarations.find(({ id }) => id === record.id);
+          if (declaration && record.retired) throw new AutomationError('automation-retired-id');
+          if (!native && record.nativeId && (declaration || record.pending))
+            throw new AutomationError('automation-native-job-missing');
+          if (!native && !declaration) {
+            if (record.pending || !record.nativeId)
+              throw new AutomationError('automation-recovery-required');
+            if (!isOperatorAutomationGateway(request))
+              throw new AutomationError('automation-inspection-incomplete');
+          }
           if (declaration && native) {
             const effective = effectiveAutomation(declaration, context);
             if (record.pending && record.hash !== effective.hash)
@@ -634,7 +679,17 @@ export default class AutomationService {
           if (!ledger.records.some((record) => record.marker === native.declarationKey))
             throw new AutomationError('automation-ownership-missing');
         }
-        const currentManifestHash = automationHash(openclawIntakeJobs(manifest));
+        const absent = ledger.records.filter(
+          (record) =>
+            !declarations.some(({ id }) => id === record.id) &&
+            !this.owned(record, observed, context.agentId),
+        );
+        if (absent.length) {
+          const complete = await listNativeAutomations(request, { requireComplete: true });
+          for (const record of absent)
+            if (this.owned(record, complete, context.agentId))
+              throw new AutomationError('automation-native-snapshot-diverged');
+        }
         const assertCurrent = async () => {
           const loaded = await this.dependencies.manifestService.loadForAgentId(
             context.agentId,
@@ -651,6 +706,31 @@ export default class AutomationService {
         await assertCurrent();
         context.threads = await this.threads(context, store).resolve(declarations, true);
         await assertCurrent();
+        // absence is re-observed at the retirement boundary, never inferred from not-found.
+        for (const record of ledger.records.filter(
+          (entry) =>
+            !entry.retired &&
+            !declarations.some(({ id }) => id === entry.id) &&
+            !this.owned(entry, observed, context.agentId),
+        )) {
+          const fresh = await listNativeAutomations(request, { requireComplete: true });
+          if (this.owned(record, fresh, context.agentId))
+            throw new AutomationError('automation-native-snapshot-diverged');
+          await assertCurrent();
+          record.removed = true;
+          record.retired = {
+            atMs: (this.dependencies.now ?? Date.now)(),
+            reason: 'native-job-absent',
+          };
+          await store.write(ledger);
+          outcomes.push({
+            component: 'automations',
+            stepId: record.id,
+            code: 'automation-retired',
+            status: 'updated',
+            message: `Automation ${record.id} is retired; historical ownership evidence is retained.`,
+          });
+        }
         for (const job of declarations) {
           const effective = effectiveAutomation(job, context);
           let record = ledger.records.find(({ id }) => id === job.id);
@@ -765,6 +845,17 @@ export default class AutomationService {
           (entry) => !declarations.some(({ id }) => id === entry.id),
         )) {
           await assertCurrent();
+          if (record.retired) {
+            if (!outcomes.some(({ stepId }) => stepId === record.id))
+              outcomes.push({
+                component: 'automations',
+                stepId: record.id,
+                code: 'automation-retired',
+                status: 'unchanged',
+                message: `Automation ${record.id} remains retired.`,
+              });
+            continue;
+          }
           const native = this.owned(record, observed, context.agentId);
           if (!native) throw new AutomationError('automation-recovery-required');
           const before = nativeAutomation(await request('cron.get', { id: native.id }));
@@ -845,6 +936,7 @@ export default class AutomationService {
       !record ||
       !job ||
       record.pending ||
+      record.retired ||
       record.removed ||
       !record.nativeId ||
       !job.enabled ||

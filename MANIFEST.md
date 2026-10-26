@@ -349,13 +349,18 @@ termination cannot guarantee synchronous filesystem cleanup.
 Private ownership records live outside the repository, scoped by OpenClaw
 profile, canonical workspace, agent ID, and manifest ID. Unchanged jobs receive
 no native writes. Removal disables a job while retaining its mapping and native
-history; reintroducing its ID reuses that job. Relative one-shot anchors persist
+history; reintroducing its ID reuses that job while it exists. After the declaration
+and native job are both gone, authorized synchronization retires ownership only
+with complete operator inspection and no unresolved write. Doctor then treats the
+bounded retirement receipt as history, not an active failure. Re-declaring a retired
+ID requires explicit operator recovery; use a new ID for a new automation rather
+than silently recreating the old identity. Relative one-shot anchors persist
 across payload edits, pause/resume, and removal. Completed one-shots stay consumed;
 only changing the manifest trigger rearms scheduling. Native safety auto-disable
 requires operator recovery.
 
 Native UI edits are drift. Explicit Install restores owned settings using native
-revision checks. Missing jobs, missing ownership, ambiguous recovery, or concurrent
+revision checks. Missing still-declared jobs, missing ownership, ambiguous recovery, or concurrent
 changes stop reconciliation with bounded diagnostics and partial results. A name
 match never permits adoption or recreation. Doctor distinguishes execution and
 delivery failures without replaying a payload; absent native telemetry is not

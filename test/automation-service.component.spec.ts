@@ -64,7 +64,7 @@ describe('agent/automation-service', () => {
       )
         throw new Error('secret provider text must not escape');
       if (method === 'sessions.resolve') return { ok: false };
-      if (method === 'cron.status') return { enabled: true };
+      if (method === 'cron.status') return { enabled: true, jobs: native.length };
       if (method === 'cron.list') return { jobs: structuredClone(native), hasMore: false };
       if (method === 'cron.get') {
         const job = native.find(({ id }) => id === params.id);
@@ -144,7 +144,9 @@ describe('agent/automation-service', () => {
       environment: { OPENCLAW_STATE_DIR: root },
       now: () => now,
       timezone: 'UTC',
-      request,
+      request: createAutomationGateway(async (method, _options, params) =>
+        request(method as Parameters<AutomationGateway>[0], params as Record<string, unknown>),
+      ),
       manifestService: {
         async loadForAgentId() {
           return loaded
@@ -872,6 +874,243 @@ describe('agent/automation-service', () => {
     assert.equal(native.length, 1);
     assert.equal(calls.filter(({ method }) => method === 'cron.add').length, 1);
   });
+  for (const disableFirst of [true, false]) {
+    it(`should retire deleted undeclared jobs ${disableFirst ? 'after' : 'before'} removal sync`, async () => {
+      manifest.automations!.push(
+        ...jobs([{ id: 'unrelated', schedule: 'every 2 hours', run: ['true'] }]),
+      );
+      await service.reconcile(manifest, root);
+      const unrelated = structuredClone(native[1]!);
+      if (!disableFirst) {
+        const { store } = await service.scope(manifest, root);
+        const legacy = await store.read();
+        delete legacy.records.find(({ id }) => id === 'check')!.nativeHash;
+        await store.write(legacy);
+      }
+      manifest.automations = manifest.automations!.filter(({ id }) => id !== 'check');
+      if (disableFirst) await service.reconcile(manifest, root);
+      native = native.filter(({ id }) => id !== 'native-0');
+      calls = [];
+      assert.equal(
+        (await service.inspect(manifest, root)).find(({ stepId }) => stepId === 'check')!.code,
+        'automation-retirement-pending',
+      );
+      assert.equal(mutations().length, 0);
+      await service.reconcile(manifest, root);
+      const { store } = await service.scope(manifest, root);
+      const ledger = await store.read();
+      const record = ledger.records.find(({ id }) => id === 'check')!;
+      assert.equal(record.removed, true);
+      assert.deepEqual(record.retired, { atMs: now, reason: 'native-job-absent' });
+      assert.equal(record.nativeId, 'native-0');
+      assert.equal(Boolean(record.nativeHash), disableFirst);
+      assert.equal(
+        (await service.inspect(manifest, root)).some(({ status }) => status === 'blocked'),
+        false,
+      );
+      assert.deepEqual(native, [unrelated]);
+      assert.equal(mutations().length, 0);
+      const bytes = await store.file.read();
+      await service.reconcile(manifest, root);
+      assert.deepEqual(await store.read(), ledger);
+      assert.equal(await store.file.read(), bytes);
+      assert.equal(mutations().length, 0);
+    });
+  }
+
+  it('should refuse retired identity reuse and native reappearance without executing historical jobs', async () => {
+    await service.reconcile(manifest, root);
+    const declarations = manifest.automations;
+    const saved = structuredClone(native[0]!);
+    delete manifest.automations;
+    native = [];
+    await service.reconcile(manifest, root);
+    const { store } = await service.scope(manifest, root);
+    const ledger = await store.read();
+    calls = [];
+    manifest.automations = declarations;
+    await assert.rejects(service.reconcile(manifest, root), /automation-retired-id/u);
+    assert.equal((await service.inspect(manifest, root))[0]!.code, 'automation-retired-id');
+    await assert.rejects(
+      service.admit(manifest, root, 'check', ledger.records[0]!.hash),
+      /execution-stale/u,
+    );
+    await assert.rejects(
+      service.runs(manifest, root, 'check', { limit: 1, offset: 0 }),
+      /owned-job-missing/u,
+    );
+    await assert.rejects(
+      service.notificationResetSnapshot(manifest, root, 'check'),
+      /owned-job-missing/u,
+    );
+    delete manifest.automations;
+    for (const job of [
+      saved,
+      { ...saved, id: 'replacement' },
+      { ...saved, declarationKey: 'other-marker' },
+    ]) {
+      native = [job];
+      await assert.rejects(service.reconcile(manifest, root), /ownership-conflict/u);
+      assert.equal(
+        (await service.inspect(manifest, root))[0]!.code,
+        'automation-ownership-conflict',
+      );
+    }
+    assert.deepEqual(await store.read(), ledger);
+    assert.equal(
+      calls.some(({ method }) =>
+        ['cron.add', 'cron.update', 'cron.run', 'cron.runs', 'cron.get'].includes(method),
+      ),
+      false,
+    );
+  });
+
+  for (const pending of ['create', 'update'] as const) {
+    it(`should preserve unresolved ${pending} evidence after native deletion and declaration removal`, async () => {
+      await service.reconcile(manifest, root);
+      const { store } = await service.scope(manifest, root);
+      const ledger = await store.read();
+      ledger.records[0]!.pending = { kind: pending, nativeHash: 'a'.repeat(64) };
+      if (pending === 'create') delete ledger.records[0]!.nativeId;
+      await store.write(ledger);
+      delete manifest.automations;
+      native = [];
+      calls = [];
+      await assert.rejects(
+        service.reconcile(manifest, root),
+        /automation-(?:native-job-missing|recovery-required)/u,
+      );
+      assert.deepEqual(await store.read(), ledger);
+      assert.equal(
+        (await service.inspect(manifest, root))[0]!.code,
+        'automation-recovery-required',
+      );
+      assert.equal(mutations().length, 0);
+    });
+  }
+
+  for (const failure of [
+    'restricted',
+    'filtered-operator',
+    'unknown-count',
+    'changed-count',
+    'failed',
+    'incomplete',
+    'reappeared',
+    'conflicted',
+    'manifest-changed',
+    'redeclaration-during-inspection',
+  ] as const) {
+    it(`should retain undeclared ownership when inspection is ${failure}`, async () => {
+      await service.reconcile(manifest, root);
+      const saved = structuredClone(native[0]!);
+      const { store } = await service.scope(manifest, root);
+      const before = await store.read();
+      const declarations = manifest.automations;
+      delete manifest.automations;
+      native = [];
+      if (failure === 'reappeared' || failure === 'conflicted')
+        native = [{ ...saved, id: 'external', declarationKey: 'external' }];
+      calls = [];
+      const original = service.dependencies.request!;
+      let lists = 0;
+      let statuses = 0;
+      const inspect: AutomationGateway = async (method, params) => {
+        if (method === 'cron.status') {
+          statuses += 1;
+          if (failure === 'filtered-operator') return { enabled: true, jobs: 1 };
+          if (failure === 'changed-count') return { enabled: true, jobs: statuses === 1 ? 0 : 1 };
+          if (failure === 'unknown-count') return { enabled: true };
+        }
+        if (method === 'cron.list') {
+          lists += 1;
+          if (failure === 'failed') throw new Error('inspection failed');
+          if (failure === 'incomplete') return { jobs: [], hasMore: true };
+          if (failure === 'redeclaration-during-inspection' && lists === 2)
+            manifest.automations = declarations;
+          if (lists === 3) {
+            if (failure === 'reappeared') native = [saved];
+            if (failure === 'conflicted') native = [{ ...saved, agentId: 'other' }];
+            if (failure === 'manifest-changed') loaded = false;
+          }
+        }
+        return original(method, params);
+      };
+      service.dependencies.request =
+        failure === 'restricted'
+          ? inspect
+          : createAutomationGateway(async (method, _options, params) =>
+              inspect(
+                method as Parameters<AutomationGateway>[0],
+                params as Record<string, unknown>,
+              ),
+            );
+      await assert.rejects(
+        service.reconcile(manifest, root),
+        new RegExp(
+          ['restricted', 'filtered-operator', 'unknown-count', 'changed-count'].includes(failure)
+            ? 'inspection-incomplete'
+            : failure === 'conflicted'
+              ? 'ownership-conflict'
+              : failure === 'manifest-changed' || failure === 'redeclaration-during-inspection'
+                ? 'manifest-changed'
+                : failure === 'failed'
+                  ? 'gateway-failed'
+                  : 'snapshot-diverged',
+          'u',
+        ),
+      );
+      if (failure === 'restricted') {
+        assert.equal(
+          (await service.inspect(manifest, root))[0]!.code,
+          'automation-inspection-incomplete',
+        );
+      }
+      assert.deepEqual(await store.read(), before);
+      assert.equal(mutations().length, 0);
+    });
+  }
+
+  it('should retain the old receipt when retirement cannot be persisted and recover on retry', async () => {
+    await service.reconcile(manifest, root);
+    delete manifest.automations;
+    native = [];
+    const scope = await service.scope(manifest, root);
+    const before = await scope.store.read();
+    const write = scope.store.write.bind(scope.store);
+    scope.store.write = async () => {
+      throw new Error('unavailable storage');
+    };
+    service.scope = async () => scope;
+    await assert.rejects(service.reconcile(manifest, root), /automation-reconcile-failed/u);
+    assert.deepEqual(await scope.store.read(), before);
+    scope.store.write = write;
+    await service.reconcile(manifest, root);
+    assert.ok((await scope.store.read()).records[0]!.retired);
+  });
+
+  it('should reject incompatible retirement records without upgrading legacy removed state', async () => {
+    await service.reconcile(manifest, root);
+    const { store } = await service.scope(manifest, root);
+    const legacy = await store.read();
+    legacy.records[0]!.removed = true;
+    await store.write(legacy);
+    assert.equal((await store.read()).records[0]!.retired, undefined);
+    for (const malformed of [
+      { ...legacy.records[0], removed: false },
+      { ...legacy.records[0], nativeId: undefined },
+      { ...legacy.records[0], pending: { kind: 'create', nativeHash: 'a'.repeat(64) } },
+    ]) {
+      await store.file.write(
+        JSON.stringify({
+          ...legacy,
+          records: [{ ...malformed, retired: { atMs: now, reason: 'native-job-absent' } }],
+        }),
+      );
+      await assert.rejects(store.read(), /ownership-invalid/u);
+    }
+  });
+
   it('should reject missing native jobs missing ownership and cross-agent marker collisions', async () => {
     await service.reconcile(manifest, root);
     const saved = native[0]!;

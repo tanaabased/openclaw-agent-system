@@ -124,9 +124,16 @@ export function nativeAutomationHistory(
 
 export type AutomationGatewayCaller = typeof callGatewayFromCli;
 
+const operatorGateways = new WeakSet<AutomationGateway>();
+
+/** operator origin alone does not prove completeness; also compare native aggregate counts. */
+export function isOperatorAutomationGateway(request: AutomationGateway): boolean {
+  return operatorGateways.has(request);
+}
+
 /** operator transport; only the admitted cli composition supplies this dependency. */
 export function createAutomationGateway(call: AutomationGatewayCaller): AutomationGateway {
-  return async (method, params) => {
+  const request: AutomationGateway = async (method, params) => {
     assertPrivateStateLocksHeld();
     const readOnly = ![
       'cron.add',
@@ -164,12 +171,15 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
       );
     }
   };
+  operatorGateways.add(request);
+  return request;
 }
 
 export const requestAutomationGateway: AutomationGateway = async (method, params) => {
   const { callGatewayFromCli } = await import('openclaw/plugin-sdk/gateway-runtime');
   return createAutomationGateway(callGatewayFromCli)(method, params);
 };
+operatorGateways.add(requestAutomationGateway);
 
 export interface NativeAutomation extends Record<string, unknown> {
   id: string;
@@ -204,8 +214,13 @@ export function nativeAutomation(value: unknown): NativeAutomation {
 /** bounded pagination includes retained disabled jobs; never interpret a bad response as empty. */
 export async function listNativeAutomations(
   request: AutomationGateway,
+  options: { requireComplete?: boolean } = {},
 ): Promise<NativeAutomation[]> {
+  if (options.requireComplete && !isOperatorAutomationGateway(request))
+    throw new AutomationError('automation-inspection-incomplete');
+  const before = options.requireComplete ? await request('cron.status', {}) : undefined;
   const jobs: NativeAutomation[] = [];
+  let total: number | undefined;
   for (let offset = 0; offset < 10_000; offset += 200) {
     const page = await request('cron.list', {
       includeDisabled: true,
@@ -213,13 +228,42 @@ export async function listNativeAutomations(
       offset,
       includeDeliveryPreviews: false,
     });
-    if (!nativeObject(page) || !Array.isArray(page.jobs) || typeof page.hasMore !== 'boolean') {
+    if (
+      !nativeObject(page) ||
+      !Array.isArray(page.jobs) ||
+      page.jobs.length > 200 ||
+      typeof page.hasMore !== 'boolean'
+    ) {
       throw new AutomationError('automation-native-response-invalid');
     }
+    if (
+      (page.offset !== undefined && page.offset !== offset) ||
+      (page.limit !== undefined && page.limit !== 200) ||
+      (page.total !== undefined &&
+        (!Number.isSafeInteger(page.total) ||
+          Number(page.total) < 0 ||
+          (total !== undefined && page.total !== total))) ||
+      (page.nextOffset !== undefined &&
+        page.nextOffset !== (page.hasMore ? offset + page.jobs.length : null))
+    )
+      throw new AutomationError('automation-native-snapshot-diverged');
+    if (page.total !== undefined) total = Number(page.total);
     jobs.push(...page.jobs.map(nativeAutomation));
+    if (total !== undefined && (page.hasMore ? jobs.length >= total : jobs.length !== total))
+      throw new AutomationError('automation-native-snapshot-diverged');
     if (!page.hasMore) {
       if (new Set(jobs.map(({ id }) => id)).size !== jobs.length) {
         throw new AutomationError('automation-native-snapshot-diverged');
+      }
+      if (options.requireComplete) {
+        // native status counts all retained jobs, independently of list visibility filters.
+        const after = await request('cron.status', {});
+        if (
+          !Number.isSafeInteger(before?.jobs) ||
+          before?.jobs !== jobs.length ||
+          after.jobs !== before.jobs
+        )
+          throw new AutomationError('automation-inspection-incomplete');
       }
       return jobs;
     }

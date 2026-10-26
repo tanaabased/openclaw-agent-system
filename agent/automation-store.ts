@@ -24,6 +24,15 @@ const recordSchema = Type.Object(
     generation: Type.Integer({ minimum: 1 }),
     anchorMs: Type.Number(),
     removed: Type.Boolean(),
+    retired: Type.Optional(
+      Type.Object(
+        {
+          atMs: Type.Integer({ minimum: 0, maximum: 8.64e15 }),
+          reason: Type.Literal('native-job-absent'),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     completion: Type.Optional(Type.String()),
     pending: Type.Optional(
       Type.Object(
@@ -83,7 +92,11 @@ export default class AutomationStore {
         !Value.Check(ledgerSchema, parsed) ||
         parsed.scope !== this.scope ||
         new Set(parsed.records.map(({ id }) => id)).size !== parsed.records.length ||
-        parsed.records.some(({ id, marker }) => marker !== this.marker(id))
+        parsed.records.some(
+          (record) =>
+            record.marker !== this.marker(record.id) ||
+            (record.retired && (!record.removed || record.pending || !record.nativeId)),
+        )
       ) {
         throw new Error('invalid ledger');
       }
@@ -93,7 +106,13 @@ export default class AutomationStore {
     }
   }
   async write(ledger: AutomationLedger): Promise<void> {
-    if (!Value.Check(ledgerSchema, ledger) || ledger.scope !== this.scope) {
+    if (
+      !Value.Check(ledgerSchema, ledger) ||
+      ledger.scope !== this.scope ||
+      ledger.records.some(
+        (record) => record.retired && (!record.removed || record.pending || !record.nativeId),
+      )
+    ) {
       throw new AutomationError('automation-ownership-invalid');
     }
     await this.file.write(`${JSON.stringify(ledger)}\n`);
