@@ -9,7 +9,7 @@ export default function retirementNotice(code: string, diagnostic?: string) {
       summary: 'Cleanup remains pending; no default is substituted for broken configuration.',
       next:
         diagnostic ??
-        'Inspect the installation config.yaml selected by host XDG_CONFIG_HOME or HOME. Restore a readable private file with schema-version: 1 and cleanup.grace-minutes, or deliberately remove it to use the 60-minute default.',
+        'Inspect the installation `config.yaml` selected by host `XDG_CONFIG_HOME` or `HOME`. Restore a readable private file with `schema-version: 1` and `cleanup.grace-minutes`, or deliberately remove it to use the 60-minute default.',
     };
   if (code === 'retirement-configuration-changed')
     return {

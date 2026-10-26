@@ -36,6 +36,17 @@ export function githubNotificationMarkdownText(value: string): string {
     .replace(/[\\[\]`*_]/gu, '\\$&');
 }
 
+/** format a one-line literal without interpreting its markdown or embedded backticks. */
+export function githubNotificationMarkdownCode(value: string): string {
+  const literal = value.replace(/\s+/gu, ' ').trim();
+  if (!literal) throw new Error('GitHub notification literal must not be empty.');
+  const delimiter = '`'.repeat(
+    (literal.match(/`+/gu) ?? []).reduce((size, run) => Math.max(size, run.length + 1), 1),
+  );
+  const padding = literal.startsWith('`') || literal.endsWith('`') ? ' ' : '';
+  return delimiter + padding + literal + padding + delimiter;
+}
+
 export function githubNotificationQuote(text: string): string {
   return text
     .split(/\r\n|\r|\n/u)

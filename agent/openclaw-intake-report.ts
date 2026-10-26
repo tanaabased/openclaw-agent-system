@@ -9,6 +9,7 @@ import intakeAutomationNotice from '../channels/github/presentation/intake-autom
 import type { OpenClawDispatchState, OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { intakeRemediation, type IntakeState } from '../channels/github/intake/record-store.ts';
 import {
+  githubNotificationMarkdownCode as inlineCode,
   githubNotificationMarkdownText as text,
   githubNotificationQuote,
 } from '../channels/github/presentation/card.ts';
@@ -158,7 +159,7 @@ export default function openclawIntakeReport(input: {
       lines.push(
         `- **What happened:** ${notice.summary}`,
         `- **Next step:** ${notice.next}`,
-        `- **Technical detail:** \`${failure.code}\``,
+        `- **Technical detail:** ${inlineCode(failure.code)}`,
       );
       continue;
     }
@@ -169,7 +170,7 @@ export default function openclawIntakeReport(input: {
         `  **Operation:** retirement cleanup`,
         `  **What happened:** ${retiring.notice.summary}`,
         `  **Action:** ${retiring.notice.next}`,
-        `  **Diagnostic:** \`${text(failure.code)}\``,
+        `  **Diagnostic:** ${inlineCode(failure.code)}`,
       );
       continue;
     }
@@ -180,7 +181,7 @@ export default function openclawIntakeReport(input: {
             ?.providerDiagnostic;
     if (provider)
       lines.push(
-        `- **Provider:** ${text(provider.provider)} · ${text(provider.operation)}${provider.httpStatus ? ' · HTTP ' + provider.httpStatus : ''}`,
+        `- **Provider:** ${text(provider.provider)} · ${inlineCode(provider.operation)}${provider.httpStatus ? ' · HTTP ' + provider.httpStatus : ''}`,
         `  **Detail:** ${text(provider.providerMessage ?? provider.explanation)}`,
       );
     const deferred = intake?.deferred?.find((entry) => 'deferred-' + entry.key === failure.id);
@@ -191,7 +192,7 @@ export default function openclawIntakeReport(input: {
       };
       lines.push(
         `- **Issue:** ${text(candidate.repositoryPath.replace('/repos/', '') + '#' + candidate.number)}`,
-        `  **Diagnostic:** \`${text(deferred.code)}\``,
+        `  **Diagnostic:** ${inlineCode(deferred.code)}`,
         '  **Action:** This assignment will be checked again on a later scan. Unrelated intake continues.',
       );
       continue;
@@ -214,11 +215,11 @@ export default function openclawIntakeReport(input: {
             : undefined;
         lines.push(
           `  **Source:** ${url ? `[${kind === 'pull' ? 'PR' : 'Issue'} #${number}](${url})` : text(label(record))}`,
-          `  **Operation:** \`${text(stall.operation)}\``,
+          `  **Operation:** ${inlineCode(stall.operation)}`,
         );
       }
       lines.push(
-        `  **Diagnostic:** \`${text(failure.code)}\``,
+        `  **Diagnostic:** ${inlineCode(failure.code)}`,
         '  **Action:** Later bounded checks retry automatically. If this persists, inspect the named operation and provider access or latency. Preserve the saved checkpoint; do not reset or replay.',
       );
       continue;
@@ -233,7 +234,7 @@ export default function openclawIntakeReport(input: {
             `  **Status:** ${workflowStatus(record)}`,
           ]
         : ['- **Operation:** assignment scan']),
-      `- **Diagnostic:** \`${text(failure.code)}\``,
+      `- **Diagnostic:** ${inlineCode(failure.code)}`,
       '  **Action:** ' +
         (retry
           ? 'Automatic recovery will retry at or after ' +

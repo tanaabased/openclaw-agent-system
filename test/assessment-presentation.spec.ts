@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import type { AssessmentResult } from '../agent/assessment-result.ts';
 import renderAssessmentResult from '../channels/github/presentation/assessment-result.ts';
+import modelRoutingCard from '../channels/github/presentation/model-routing.ts';
 
 const context = {
   includeDetails: true,
@@ -29,6 +30,28 @@ const common = {
 };
 
 describe('channels/github/presentation/assessment-result', () => {
+  it('should distinguish routing literals from prose and keep execution separate from settings', () => {
+    const output = modelRoutingCard({
+      routing: {
+        ...context.routing,
+        model: 'provider/model`preview',
+        reason: 'high confidence [source]',
+      },
+      effective: { status: 'verified', model: 'provider/actual', effort: 'medium' },
+      executionModel: 'provider/executed',
+    });
+    assert.ok(output.includes('**Selected:** ``provider/model`preview`` / `high`'));
+    assert.ok(output.includes('**Basis:** `high` complexity. high confidence \\[source\\]'));
+    assert.ok(output.includes('**Source:** `high` profile; native'));
+    assert.ok(output.includes('**Effective settings:** Verified: `provider/actual` / `medium`'));
+    assert.ok(output.includes('**Execution:** `provider/executed`; effort unverified.'));
+    assert.ok(
+      modelRoutingCard({ routing: { ...context.routing, profile: null } }).includes(
+        'Explicit selection; native',
+      ),
+    );
+  });
+
   it('should show one recommendation and the complete plan without supporting notes by default', () => {
     const recommendation = 'Keep the result so the operator can resume safely.';
     const plan =
@@ -253,7 +276,7 @@ describe('channels/github/presentation/assessment-result', () => {
             );
           }
           if (guidance?.source === 'file') {
-            assert.ok(output.includes('**Guidance:** .agent-system/cats.md'));
+            assert.ok(output.includes('**Guidance:** `.agent-system/cats.md`'));
             assert.ok(!output.includes(guidance.content));
           }
         }
@@ -388,9 +411,9 @@ describe('channels/github/presentation/assessment-result', () => {
     assert.ok(output.includes('## Plan summary\n\n' + planSummary));
     assert.ok(output.indexOf(planSummary) < output.indexOf('## Full plan\n'));
     assert.ok(output.includes('## Full plan\n\n' + plan));
-    assert.match(output, /Selected.*gpt-6-astra \/ high/);
-    assert.match(output, /Source.*high profile; native/);
-    assert.match(output, /Effective settings.*Verified: gpt-6-astra \/ high/);
+    assert.match(output, /Selected.*`gpt-6-astra` \/ `high`/);
+    assert.match(output, /Source.*`high` profile; native/);
+    assert.match(output, /Effective settings.*Verified: `gpt-6-astra` \/ `high`/);
     assert.ok(output.includes(common.evidence[0]!.source));
     assert.match(output, /\*\*conflicting:\*\*/);
     assert.ok(output.includes('  > The implementation does another.'));
@@ -473,7 +496,7 @@ describe('channels/github/presentation/assessment-result', () => {
       { status: 'verified' as const, model: context.routing.model },
     ]) {
       const output = renderAssessmentResult(result, { ...context, effective });
-      assert.match(output, /Selected.*gpt-6-astra \/ high/);
+      assert.match(output, /Selected.*`gpt-6-astra` \/ `high`/);
       assert.match(output, /Effective settings.*Not independently verified/);
       assert.ok(!output.includes('Verified:'));
     }
@@ -520,7 +543,7 @@ describe('channels/github/presentation/assessment-result', () => {
     );
     assert.ok(output.startsWith('> ## 🧭 Plan ready\n>\n'));
     assert.ok(output.includes(plan));
-    assert.match(output, /Selected.*gpt-6-astra \/ high/);
+    assert.match(output, /Selected.*`gpt-6-astra` \/ `high`/);
     assert.ok(output.includes('Review \\[literal\\] \\*metadata\\*.'));
     assert.ok(!output.includes('## Reference material\n'));
     assert.ok(!output.includes('### Evidence\n'));

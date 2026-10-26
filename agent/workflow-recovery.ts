@@ -21,7 +21,7 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
   const reasons: Record<string, [string, string]> = {
     'assessment-result-incomplete': [
       'The new assessment is missing its complete source; the result was not recorded.',
-      'Include the complete assessment, evidence, plan or questions in fullAssessment and resubmit the result in this chat. Keep the previous saved result; do not substitute a summary for the source.',
+      'Include the complete assessment, evidence, plan or questions in `fullAssessment` and resubmit the result in this chat. Keep the previous saved result; do not substitute a summary for the source.',
     ],
     'dispatch-receipt-id-invalid': [
       'The supplied receipt ID is malformed, so it was not looked up or used to change workflow state.',
@@ -117,11 +117,11 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     ],
     'dispatch-capacity-observation-required': [
       'The historical creation has no native inactivity observation.',
-      'The next owning intake run will inspect native receipts. Its action:reconcile can also observe this retired record. Preserve the request; do not create another chat for this issue.',
+      'The next owning intake run will inspect native receipts. Its `action:reconcile` can also observe this retired record. Preserve the request; do not create another chat for this issue.',
     ],
     'dispatch-capacity-creation-unresolved': [
       'No native child or proof of non-submission was found.',
-      'Inspect the original intake preparation turn and its create_thread receipt. The owning intake can retry action:reconcile with this id after native history is readable. Missing history cannot establish that creation never happened.',
+      'Inspect the original intake preparation turn and its `create_thread` receipt. The owning intake can retry `action:reconcile` with this id after native history is readable. Missing history cannot establish that creation never happened.',
     ],
     'dispatch-capacity-native-missing': [
       'The retained native chat is unavailable.',
@@ -157,7 +157,7 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     ],
     'dispatch-repository-owner-not-allowed': [
       'The repository owner is outside the configured intake scope.',
-      'Review the repository owner scope in agent.yaml, then retry the retained assignment. Live policy changes apply without Install.',
+      'Review the repository owner scope in `agent.yaml`, then retry the retained assignment. Live policy changes apply without Install.',
     ],
     'dispatch-repository-archived': [
       'The repository is archived.',
@@ -193,11 +193,11 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     ],
     'dispatch-assignment-actor-not-allowed': [
       'The assignment actor is outside the configured assigners.',
-      'Review the assigner policy in agent.yaml or await an eligible assignment, then retry. Live policy changes apply without Install.',
+      'Review the assigner policy in `agent.yaml` or await an eligible assignment, then retry. Live policy changes apply without Install.',
     ],
     'assignment-removal-unapproved': [
       'GitHub assignment is missing; its removal actor is not approved. Prior admitted work remains eligible in its existing mode and stage unless another lifecycle or native stop applies.',
-      'Verified reassignment or a relevant live issue-assignment.allowed change can resolve removal authority. No automatic reassignment occurs.',
+      'Verified reassignment or a relevant live `issue-assignment.allowed` change can resolve removal authority. No automatic reassignment occurs.',
     ],
     'assignment-removal-evidence-unavailable': [
       'GitHub assignment is missing; removal authority could not be verified. Prior admitted work remains eligible in its existing mode and stage unless another lifecycle or native stop applies.',

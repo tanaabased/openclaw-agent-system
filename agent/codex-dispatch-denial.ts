@@ -2,7 +2,7 @@ import { withNative, type CodexDispatchTransaction } from './codex-dispatch-cont
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 
 export const denialRecovery =
-  'Ask an operator chat to retry this issue through dispatch retry-denied: preview with its retained id, then apply the returned digest. Renew authorization for the exact denied call when required. Waiting, reassignment, or restarting does not clear this hold.';
+  'Ask an operator chat to retry this issue through `dispatch retry-denied`: preview with its retained id, then apply the returned digest. Renew authorization for the exact denied call when required. Waiting, reassignment, or restarting does not clear this hold.';
 
 export default async function reconcileIntakeDenial(
   record: DispatchRecord,

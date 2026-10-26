@@ -22,6 +22,47 @@ notification workflows. It describes their appearance and composition only. The
 - Use GitHub-flavored Markdown, including headings, lists, tables, blockquotes,
   code formatting, and links, only when it materially improves clarity.
 
+### Literal Machine Values
+
+Use inline code for literal model IDs, efforts, profile/tier names, modes,
+diagnostic codes, configuration keys, commands/flags, paths, and exposed technical
+IDs. Format the value, not its explanatory label: `medium` profile, `work` mode,
+and `issue-assignment.mode`. Lowercase words alone are not machine values; keep
+ordinary statuses, provenance descriptions, reasons, and product names as prose.
+Counts and line numbers do not need code merely because they are numeric.
+
+Apply this at the shared presentation owner using structured values, never by
+rewriting whole cards or searching arbitrary prose. Reuse the shared Markdown
+code-span helper: choose delimiters longer than embedded backtick runs and pad
+boundary backticks. Do not backslash-escape literal contents as Markdown text.
+Retain clickable links, including code-formatted technical labels such as
+[`agent-system-issue-assessment`](../../skills/issue-assessment/SKILL.md); leave
+actors and issue/PR links readable in their existing form. Preserve raw incoming
+and outgoing comment bodies and literal guidance/diff blocks without rewriting.
+
+Representative facts (the Auto decision value is already aligned):
+
+```markdown
+> ## 🧠 Model routing
+>
+> - **Selected:** `openai/gpt-6.1-sol` / `high`
+> - **Basis:** `medium` complexity. The change affects shared cards.
+> - **Source:** `medium` profile; native
+> - **Effective settings:** Verified: `openai/gpt-6.1-sol` / `high`
+> - **Execution:** Model and effort not independently verified.
+
+> ## ▶️ Auto mode decision
+>
+> - **Decision:** `work`
+> - **Next:** Continue automatically once runtime checks pass.
+> - **Reason:** Requirements are clear and the repair is bounded.
+
+> ## ⚠️ Add the project to continue
+>
+> - **Folder path:** `/work/example`
+> - **Diagnostic:** `dispatch-project-registration-unavailable`
+```
+
 ## Card
 
 ```markdown
@@ -227,7 +268,7 @@ tables when they make the complete result easier to review.
 
 > ## 🧠 Model routing
 >
-> - **Selected:** <saved model> / <saved effort>
+> - **Selected:** `<saved model>` / `<saved effort>`
 > - **Basis:** <complexity and concise selection rationale>
 > - **Source:** <saved profile and evidence source>
 > - **Effective settings:** <verified native settings or not independently verified>
