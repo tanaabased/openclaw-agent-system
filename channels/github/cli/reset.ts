@@ -57,16 +57,12 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
     throw new Error('notification-reset-agent-unknown');
   let agents = options.all ? available : [...new Set(options.agents)];
   const prompt = options.prompt ?? createClackPrompter(process.stderr);
-  if (!options.yes && !options.preview) {
+  if (!options.yes && !options.preview && !options.all && !options.agents.length) {
     const selected = await prompt.multiselect({
       message: 'reset notifications for which agents?',
-      options: [
-        { value: '*', label: 'all agents' },
-        ...available.map((id) => ({ value: id, label: id })),
-      ],
-      initialValues: options.all ? ['*'] : agents,
+      options: available.map((id) => ({ value: id, label: id })),
     });
-    agents = selected.includes('*') ? available : selected;
+    agents = available.filter((id) => selected.includes(id));
   }
   if (!agents.length) {
     if (options.json) writeCliJson(options.output, { results: [] });
