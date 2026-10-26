@@ -5,6 +5,7 @@ import codexRuntimeRequest from './codex-runtime-request.ts';
 import runCodexContinuation from './codex-continuation.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
 import process from 'node:process';
+import assertCodexNodeVersion, { CodexNodeVersionError } from './codex-node-version.ts';
 import codexPermission from './codex-permission.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
 import { operateInstanceIdentity } from './instance-identity.ts';
@@ -247,6 +248,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   const command = args[0];
   if (command === 'permission-request') {
     try {
+      assertCodexNodeVersion();
       writeJson(
         args.length === 1 && process.env.PLUGIN_ROOT && process.env.PLUGIN_DATA
           ? await codexPermission(
@@ -264,6 +266,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     }
     return;
   }
+  assertCodexNodeVersion();
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
   if (command === 'instance') {
@@ -472,7 +475,8 @@ runCodexRuntime().catch((error: unknown) => {
             code: error.code,
             ...(error.stepId === undefined ? {} : { stepId: error.stepId }),
           }
-        : error instanceof IntakeError ||
+        : error instanceof CodexNodeVersionError ||
+            error instanceof IntakeError ||
             error instanceof CodexSetupError ||
             error instanceof RoutingError ||
             error instanceof CodexAutomationError

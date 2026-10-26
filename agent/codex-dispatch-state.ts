@@ -56,7 +56,13 @@ export const preparationObservationSchema = Type.Object(
     afterItemId: text,
     at: Type.Integer({ minimum: 0 }),
     runtime: Type.Object(
-      { nodeExecutable: text, entrypoint: text, pluginData: text },
+      {
+        nodeExecutable: text,
+        nodeVersion: Type.Optional(text),
+        nodeCommand: Type.Optional(Type.Literal('node')),
+        entrypoint: text,
+        pluginData: text,
+      },
       { additionalProperties: false },
     ),
   },
