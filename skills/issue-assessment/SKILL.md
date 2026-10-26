@@ -20,7 +20,9 @@ metadata:
 
 Turn one explicitly selected or admitted issue into a useful assessment and initial plan. The runtime owns
 assignment authority, native chat identity, routing, persistence, and scheduling.
-This skill owns investigation and judgment. It stops before implementation.
+This skill owns investigation and judgment. Direct assessment stops before implementation
+or publication; managed assessment follows the runtime's verified handoff after recording
+and presenting its result.
 
 ## Required Reading
 
