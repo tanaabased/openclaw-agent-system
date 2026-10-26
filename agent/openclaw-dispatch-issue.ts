@@ -531,7 +531,7 @@ export default class OpenClawDispatchIssue {
       return this.context.dependencies.credential.use(
         { signal, assertCurrent },
         async (request) => {
-          const { source, message, progression } = await verifyOpenClawWork({
+          const { source, message, progression, revisionAuthorized } = await verifyOpenClawWork({
             record,
             caller,
             operator,
@@ -547,7 +547,9 @@ export default class OpenClawDispatchIssue {
           await assertCurrent();
           if (
             input.action === 'implementation-context' &&
-            record.work?.result?.outcome !== 'done'
+            (record.work?.result?.outcome !== 'done' ||
+              revisionAuthorized ||
+              record.work?.revisionSource?.turnId === source.runId)
           ) {
             if (!record.request || !('key' in record.request))
               throw new Error('dispatch-work-context-mismatch');
@@ -570,6 +572,7 @@ export default class OpenClawDispatchIssue {
               caller,
               source,
               progression,
+              revisionAuthorized,
               action: input,
               message,
               now,
@@ -592,6 +595,8 @@ export default class OpenClawDispatchIssue {
               source,
               progression,
               action: input,
+              message,
+              revisionAuthorized,
               now,
               assertCurrent,
               save,

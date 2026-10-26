@@ -16,6 +16,7 @@ export default function implementationContext(input: {
   previousResult?: Static<typeof implementationResultSchema>;
   scope?: 'local' | 'pull-request';
   direct?: boolean;
+  revision?: boolean;
 }) {
   return {
     status: 'verified' as const,
@@ -32,11 +33,11 @@ export default function implementationContext(input: {
     resultSchema: implementationResultSchema,
     previousResult: input.previousResult,
     previousImplementationResult: input.previousResult,
-    deliveryOnly: input.previousResult?.outcome === 'done',
+    deliveryOnly: input.previousResult?.outcome === 'done' && !input.revision,
     publicationAuthorized: input.scope !== 'local',
     handoff: implementationHandoff(
       input.id,
-      input.previousResult?.outcome,
+      input.revision ? undefined : input.previousResult?.outcome,
       input.runtime,
       input.direct || input.scope === 'local'
         ? { publication: input.scope === 'pull-request' }
