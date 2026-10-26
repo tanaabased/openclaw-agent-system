@@ -6,6 +6,9 @@ agent:
   email: tanaabot@tanaab.dev
 
 models:
+  routing:
+    skill: intake-routing
+    guidance: { file: routing.md }
   default:
     model: aimock/gpt-5.5
     effort: medium

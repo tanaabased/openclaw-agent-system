@@ -1,4 +1,5 @@
 import { issueKey } from './dispatch-pending.ts';
+import { routingInstructionsSchema } from './routing-instructions.ts';
 import { operatorIssueSchema } from './managed-issue.ts';
 import { assessmentEntriesSchema } from './assessment-entry-state.ts';
 import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
@@ -60,6 +61,7 @@ export const dispatchRecordProperties = {
   assessment: Type.Optional(assessmentSelectionSchema),
   context: Type.Optional(Type.String({ maxLength: 96000 })),
   routing: Type.Optional(Type.String({ maxLength: 32000 })),
+  routingInstructions: Type.Optional(routingInstructionsSchema),
   routingNote: Type.Optional(text),
   threadId: Type.Optional(text),
   worktree: Type.Optional(text),

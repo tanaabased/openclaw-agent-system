@@ -16,7 +16,7 @@ Install the prepared plugin in isolated Codex state, discover its skills through
 ## Notes
 
 - Direct checks need no model or provider credentials. Workspaces run in place; independent snapshots verify that shared manifests stay unchanged. Run only in GitHub Actions.
-- Session context includes the model-routing projection; one packaged resolution accepts an issue object. Source tests cover routing input, fallback, and override permutations.
+- Session context includes the model-routing projection; one packaged resolution accepts an issue object and custom routing guidance. Source tests cover routing input, fallback, and override permutations.
 - Pending relocation: direct-assessment caller guards, quiet/debug setup diagnostics, missing-identity inspection and rename/rotation, inherited-pipe timeout, local-settings refresh, and inactive/replacement binding checks remain below.
 
 ## Setup
@@ -224,7 +224,8 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/plugin-data"
 inspection=$(printf '%s\n' '{"action":"inspect"}' | node "$runtime" model-routing --plugin-data "$plugin_data")
 digest=$(printf '%s\n' "$inspection" | jq -r .manifestDigest)
-jq -n --arg digest "$digest" '{action:"resolve",manifestDigest:$digest,context:{title:"Notification settings",body:"Add workflow enable controls."},assessment:{complexity:"medium",reason:"Extend existing configuration and scheduling."}}' \
+instructions=$(printf '%s\n' "$inspection" | jq -er 'select(.instructions.defaultSkill == true and (.instructions.guidance.content | contains("Preserve verified complexity."))) | .instructionsDigest')
+jq -n --arg digest "$digest" --arg instructions "$instructions" '{action:"resolve",manifestDigest:$digest,instructionsDigest:$instructions,context:{title:"Notification settings",body:"Add workflow enable controls."},assessment:{complexity:"medium",reason:"Extend existing configuration and scheduling."}}' \
   | node "$runtime" model-routing --plugin-data "$plugin_data" \
   | jq -e '.status == "resolved" and .profile == "medium" and .candidate.model == "gpt-5.6-sol" and .candidate.thinking == "high" and .execution == "unverified"'
 
