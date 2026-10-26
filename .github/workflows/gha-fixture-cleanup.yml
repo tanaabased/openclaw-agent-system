@@ -1,4 +1,4 @@
-name: Test resource cleanup
+name: GHA fixture cleanup
 
 on:
   workflow_run:
@@ -14,13 +14,16 @@ on:
         description: Exact source run attempt
         required: true
         type: string
+      dry-run:
+        description: Preview matching fixtures without changing them
+        type: boolean
+        default: false
 
 permissions:
   contents: read
-  actions: read
 
 concurrency:
-  group: test-resource-cleanup-${{ github.event.workflow_run.id || inputs.run-id }}-${{ github.event.workflow_run.run_attempt || inputs.attempt }}
+  group: gha-fixture-cleanup-${{ github.event.workflow_run.id || inputs.run-id }}-${{ github.event.workflow_run.run_attempt || inputs.attempt }}
   cancel-in-progress: false
 
 jobs:
@@ -37,11 +40,10 @@ jobs:
       - name: Install Bun
         uses: tanaabased/actions/setup-bun@v1
       - name: Reconcile completed source attempt
-        uses: ./.github/actions/test-resource-cleanup
+        uses: ./.github/actions/gha-fixture-cleanup
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
-          GH_TOKEN_EMORI: ${{ secrets.GH_TOKEN_EMORI }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN_TANAABOT }}
         with:
           run-id: ${{ github.event.workflow_run.id || inputs.run-id }}
           attempt: ${{ github.event.workflow_run.run_attempt || inputs.attempt }}
+          dry-run: ${{ inputs.dry-run || false }}

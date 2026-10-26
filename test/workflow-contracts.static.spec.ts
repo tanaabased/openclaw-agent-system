@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 import { parse } from 'yaml';
-import { testResourcePrefix } from '../scripts/test-resource-cleanup.ts';
+import { fixturePrefix } from '../scripts/gha-fixture-cleanup.ts';
 
 interface Step {
   run?: string;
@@ -59,16 +59,20 @@ describe('workflow safety and coverage', () => {
   }
 
   it('should execute cleanup from the default branch with read-only workflow permissions', async () => {
-    const workflow = parse(await readFile('.github/workflows/test-resource-cleanup.yml', 'utf8'));
+    const workflow = parse(await readFile('.github/workflows/gha-fixture-cleanup.yml', 'utf8'));
     assert.ok(Object.values(workflow.permissions).every((value) => value === 'read'));
     const steps = workflow.jobs.cleanup.steps as Step[];
     const checkout = steps.find(({ uses }) => uses?.startsWith('actions/checkout@'));
     assert.equal(checkout?.with?.ref, '${{ github.event.repository.default_branch }}');
     assert.equal(checkout?.with?.['persist-credentials'], false);
+    assert.deepEqual(
+      steps.find(({ uses }) => uses === './.github/actions/gha-fixture-cleanup')?.env,
+      { GH_TOKEN: '${{ secrets.GH_TOKEN_TANAABOT }}' },
+    );
   });
 
   it('should keep cleanup triggers aligned with source workflow names after renames', async () => {
-    const cleanup = parse(await readFile('.github/workflows/test-resource-cleanup.yml', 'utf8'));
+    const cleanup = parse(await readFile('.github/workflows/gha-fixture-cleanup.yml', 'utf8'));
     const names = await Promise.all(
       ['codex', 'os', 'openclaw', 'notifications'].map(
         async (kind) =>
@@ -102,7 +106,7 @@ describe('workflow safety and coverage', () => {
               .replace('$GITHUB_REPOSITORY_ID', '77')
               .replace('$GITHUB_RUN_ID', '100')
               .replace('$GITHUB_RUN_ATTEMPT', '2')
-              .startsWith(testResourcePrefix(77, 100, 2)),
+              .startsWith(fixturePrefix(77, 100, 2)),
             `${example}: fixture issue must identify its source attempt`,
           );
         }
