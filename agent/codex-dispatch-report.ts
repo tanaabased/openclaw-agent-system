@@ -166,7 +166,11 @@ export default function prepareDispatchReport(input: {
       ? 'warning'
       : 'info';
   const issueLabel = (intakeId: string | undefined) => {
-    const item = intake.records.find((entry) => entry.id === intakeId);
+    const item =
+      intake.records.find((entry) => entry.id === intakeId) ??
+      (intakeId
+        ? state.records.find((entry) => entry.manualIssue?.id === intakeId)?.manualIssue
+        : undefined);
     return item
       ? text(item.repository.owner.login + '/' + item.repository.name + '#' + item.issue.number)
       : 'Issue';

@@ -1,5 +1,6 @@
 import {
   dispatchAdmission,
+  managedIssueState,
   type ManagedIssue as IntakeRecord,
   type ManagedIssueState as IntakeState,
 } from './managed-issue.ts';
@@ -81,7 +82,7 @@ export default async function reportDispatch(
     throw new Error('dispatch-scan-required');
   if (run.actions < 12 && !run.stopped && !scan.blocker) {
     try {
-      requireDispatchCheck(state, scan, occurrence);
+      requireDispatchCheck(state, managedIssueState(scan, state.records)!, occurrence);
     } catch {
       return {
         status: 'continue',

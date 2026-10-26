@@ -1,6 +1,7 @@
 import { Value } from 'typebox/value';
 
 import { launchRequestSchema } from '../tools/dispatch/launch-schema.ts';
+import { automationHash } from './automation-hash.ts';
 import codexEntryContext from './codex-entry-context.ts';
 import { prepareDispatch, prepareIssueProject, recover } from './codex-dispatch-admission.ts';
 import { connectCodexGitHub, selectCodexIntake } from './codex-intake.ts';
@@ -50,8 +51,21 @@ export default async function codexIssueLaunch(
         );
       },
     });
-    if (input.operation === 'context' || admitted.status === 'clarification-needed')
+    if (input.operation === 'context' || admitted.status === 'clarification-needed') {
+      if (admitted.status === 'routing-required') {
+        const record = (await journal.read()).records.find((entry) => entry.id === admitted.id);
+        if (record?.project)
+          return {
+            ...admitted,
+            digest: automationHash({
+              context: record.context,
+              project: record.project,
+              manifest: record.manifestDigest,
+            }),
+          };
+      }
       return admitted;
+    }
     if (!input.id || !('id' in admitted) || input.id !== admitted.id)
       throw new Error('launch-receipt-required');
     return journal.exclusive(async (state, save, lockSignal) => {
