@@ -143,8 +143,10 @@ inactive lifecycle, cancellation, and actual native denial.
    concrete next action. For unanswered consequential requirements, retain
    `clarification-needed`, the questions, and partial work through the host's result
    route. Resume on a new answer through the owning context without another approval.
-   Follow the host's result handoff and managed delivery instructions. Do not invent a separate publication route, reopen a completed stage,
-   or create a replacement PR after an uncertain publication.
+   Follow the host's result handoff and managed delivery instructions. Do not invent a separate
+   publication route, replay completed work, or create a replacement PR after an uncertain
+   publication. A newly authorized revision may continue through fresh host context;
+   a `deliveryOnly` context still forbids edits.
 
 ## Checkpoints
 
