@@ -2,7 +2,7 @@ import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { reconcileOpenClawTurn } from './openclaw-turn.ts';
 import { assessmentTurnMessage } from './openclaw-assessment.ts';
 
-import { validateChatSendParams } from '@openclaw/gateway-protocol';
+import sendOpenClawTurn from './openclaw-send-turn.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import {
@@ -87,26 +87,25 @@ export default async function advanceIssueTurn(input: {
         ? assessmentTurnMessage(record, input.presentation)
         : firstTurnMessage(record);
       const runId = `${record.id}:${input.assessment ? 'assessment' : 'first-turn'}`;
-      const params = {
-        sessionKey: expected.key,
-        agentId: expected.agentId,
-        sessionId,
-        message,
-        queueMode: 'followup',
-        deliver: false,
-        expectedLeafEntryId: leaf,
-        idempotencyKey: runId,
-      };
-      if (!validateChatSendParams(params)) throw new Error('dispatch-turn-request-invalid');
-      await guard();
-      record[slot] = { runId, message, status: 'attempted' };
-      await save();
-      await guard();
-      const sent = sessionObject(await request('chat.send', params));
-      if (sent.runId !== runId || !['started', 'queued', 'ok'].includes(String(sent.status)))
-        throw new Error('dispatch-turn-send-unverified');
-      record[slot]!.status = 'accepted';
-      await save();
+      await sendOpenClawTurn({
+        request,
+        params: {
+          sessionKey: expected.key,
+          agentId: expected.agentId,
+          sessionId,
+          message,
+          expectedLeafEntryId: leaf,
+          idempotencyKey: runId,
+        },
+        assertCurrent: guard,
+        recordAttempt() {
+          record[slot] = { runId, message, status: 'attempted' };
+        },
+        recordAcceptance() {
+          record[slot]!.status = 'accepted';
+        },
+        save,
+      });
     }
     const turn = record[slot]!;
     await describeIssueSession(request, record, input.config);

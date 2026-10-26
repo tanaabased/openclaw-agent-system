@@ -1,13 +1,13 @@
 import { nativeInputEvent } from './openclaw-session-input.ts';
 import issueWorkflowProgress from './issue-workflow-progress.ts';
 import { feedbackWorkStarted } from './feedback-work.ts';
-import { validateChatSendParams } from '@openclaw/gateway-protocol';
+import sendOpenClawTurn from './openclaw-send-turn.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { automationHash } from './automation-hash.ts';
 import issueProgression from './issue-progression.ts';
 import { feedbackSession } from './openclaw-feedback.ts';
 import { reconcileOpenClawTurn } from './openclaw-turn.ts';
-import { describeIssueSession, sessionObject } from './openclaw-session-create.ts';
+import { describeIssueSession } from './openclaw-session-create.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 
@@ -124,31 +124,30 @@ export default async function advanceOpenClawWork(input: {
       'Reconcile the latest conversation and retained work first. Honor current user restrictions, cancellation and native denial. Work is already authorized; do not ask for routine stage approval. Keep the selected model and effort.',
       'After implementation submit implementation-result with done, blocked, or clarification-needed and its questions. Show clarification questions in this chat and wait for an answer. For done, use delivery prepare and publish with the returned digest, then compose, candidate, announce, and present. Preserve uncertain operations and use their existing receipts; never recreate a PR or resend a continuation.',
     ].join('\n\n');
-    const params = {
-      sessionKey: expected.key,
-      agentId: expected.agentId,
-      sessionId: record.sessionCreation!.sessionId!,
-      message,
-      queueMode: 'followup',
-      deliver: false,
-      expectedLeafEntryId: session.leaf,
-      idempotencyKey: runId,
-    };
-    if (!validateChatSendParams(params)) throw new Error('dispatch-turn-request-invalid');
-    await input.assertCurrent();
-    record.progression = transition.progression;
-    record.handoff ??= { at: input.now, by: record.sourceThreadId, turnId: runId };
-    record.work ??= { assessmentDigest: automationHash(record.result) };
-    record.work.selection ??= input.selection;
-    delete record.work.code;
-    record.work[slot] = { runId, message, status: 'attempted' };
-    await save();
-    await input.assertCurrent();
-    const sent = sessionObject(await request('chat.send', params));
-    if (sent.runId !== runId || !['started', 'queued', 'ok'].includes(String(sent.status)))
-      throw new Error('dispatch-turn-send-unverified');
-    record.work[slot]!.status = 'accepted';
-    await save();
+    await sendOpenClawTurn({
+      request,
+      params: {
+        sessionKey: expected.key,
+        agentId: expected.agentId,
+        sessionId: record.sessionCreation!.sessionId!,
+        message,
+        expectedLeafEntryId: session.leaf,
+        idempotencyKey: runId,
+      },
+      assertCurrent: input.assertCurrent,
+      recordAttempt() {
+        record.progression = transition.progression;
+        record.handoff ??= { at: input.now, by: record.sourceThreadId, turnId: runId };
+        record.work ??= { assessmentDigest: automationHash(record.result) };
+        record.work.selection ??= input.selection;
+        delete record.work.code;
+        record.work[slot] = { runId, message, status: 'attempted' };
+      },
+      recordAcceptance() {
+        record.work![slot]!.status = 'accepted';
+      },
+      save,
+    });
   }
   await describeIssueSession(request, record, input.config);
   const turn = record.work![slot]!;
