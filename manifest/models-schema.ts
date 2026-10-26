@@ -1,5 +1,11 @@
 import { Type, type Static } from 'typebox';
 
+import {
+  assessmentConfigurationSchema,
+  decodeAssessmentConfiguration,
+  type AssessmentConfiguration,
+} from './assessment-schema.ts';
+
 export type AgentModelEffort = 'high' | 'medium' | 'xhigh';
 
 export interface AgentModelProfile {
@@ -12,6 +18,7 @@ export interface AgentModelsConfiguration {
   high?: AgentModelProfile;
   low?: AgentModelProfile;
   medium?: AgentModelProfile;
+  routing?: AssessmentConfiguration;
 }
 
 const externalAgentModelProfileSchema = Type.Object(
@@ -28,6 +35,7 @@ export const externalAgentModelsSchema = Type.Object(
     low: Type.Optional(externalAgentModelProfileSchema),
     medium: Type.Optional(externalAgentModelProfileSchema),
     high: Type.Optional(externalAgentModelProfileSchema),
+    routing: Type.Optional(assessmentConfigurationSchema),
   },
   { additionalProperties: false },
 );
@@ -44,5 +52,8 @@ export function decodeAgentModels(models: ExternalAgentModels): AgentModelsConfi
     ...(models.low === undefined ? {} : { low: decodeProfile(models.low) }),
     ...(models.medium === undefined ? {} : { medium: decodeProfile(models.medium) }),
     ...(models.high === undefined ? {} : { high: decodeProfile(models.high) }),
+    ...(models.routing === undefined
+      ? {}
+      : { routing: decodeAssessmentConfiguration(models.routing) }),
   };
 }

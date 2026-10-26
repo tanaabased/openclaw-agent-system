@@ -5,7 +5,7 @@ Install an agent in the real Gateway, load its manifest passively during native 
 ## What Belongs Here
 
 - Installed registration and a completed strict agent/tool exchange using passive manifest discovery.
-- Read-only model-routing resolution and refusal of dispatch before intake activation.
+- Custom initial-routing guidance and read-only model-routing resolution and refusal of dispatch before intake activation.
 - Value-free lifecycle/Gateway logging and explicit inactive-intake results through public commands.
 
 ## What Does Not Belong Here
@@ -16,6 +16,7 @@ Install an agent in the real Gateway, load its manifest passively during native 
 
 ## Notes
 
+- The routing exchange checks custom guidance without dispatch enrollment; it proves instruction plumbing, not model interpretation.
 - Strict AIMock supplies fixed responses; the Gateway and tools run normally without a live model or hosted secrets.
 - After installation, the fixture appends V3 declarations with paused schedules and uses a GitHub-shaped session key. Intake has not been installed; successful loading must not create notification work.
 - The routing turn requests issue-session dispatch and must be rejected before credential access or creation. It does not prove successful dispatch or recovery.

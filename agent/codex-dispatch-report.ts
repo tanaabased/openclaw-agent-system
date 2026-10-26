@@ -15,6 +15,7 @@ import intakeAutomationNotice from '../channels/github/presentation/intake-autom
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import {
+  githubNotificationMarkdownCode as inlineCode,
   githubNotificationMarkdownText as text,
   githubNotificationQuote,
 } from '../channels/github/presentation/card.ts';
@@ -166,7 +167,11 @@ export default function prepareDispatchReport(input: {
       ? 'warning'
       : 'info';
   const issueLabel = (intakeId: string | undefined) => {
-    const item = intake.records.find((entry) => entry.id === intakeId);
+    const item =
+      intake.records.find((entry) => entry.id === intakeId) ??
+      (intakeId
+        ? state.records.find((entry) => entry.manualIssue?.id === intakeId)?.manualIssue
+        : undefined);
     return item
       ? text(item.repository.owner.login + '/' + item.repository.name + '#' + item.issue.number)
       : 'Issue';
@@ -223,23 +228,23 @@ export default function prepareDispatchReport(input: {
       lines.push(
         `- **What happened:** ${notice.summary}`,
         `- **Next step:** ${notice.next}`,
-        `- **Technical detail:** \`${notice.code}\``,
+        `- **Technical detail:** ${inlineCode(notice.code)}`,
       );
       continue;
     }
     lines.push(
       `- **${record ? 'Issue: ' + issueLabel(record.intakeId ?? record.manualIssue?.id) : 'Intake'}:** ${notice.summary}`,
       `  **Operation:** ${notice.operation}`,
-      `  **${notice.severity === 'info' ? 'Next step' : 'Action'}:** ${record?.denial ? 'This action remains held; unrelated eligible intake can continue.' : notice.operation === 'assignment preparation' && record?.result?.outcome === 'operator-setup-blocker' ? text(record.result.remediation) : notice.next}`,
+      `  **${notice.severity === 'info' ? 'Next step' : 'Action'}:** ${record?.denial ? 'This action remains held; unrelated eligible intake can continue.' : notice.operation === 'assignment preparation' && record?.result?.outcome === 'operator-setup-blocker' ? record.result.remediation : notice.next}`,
       ...(record ? [`  **Status:** ${workflowStatus(record)}`] : []),
       ...(record?.denial
         ? [
-            `  **Denied action:** ${record.denial.operation === 'prepare' ? 'dispatch:prepare' : 'create_thread'}`,
+            `  **Denied action:** ${inlineCode(record.denial.operation === 'prepare' ? 'dispatch:prepare' : 'create_thread')}`,
             `  **Reason:** ${text(providerErrorMessage(record.denial.reason) ?? 'Unavailable in native evidence.')}`,
-            `  **Recovery:** ${denialRecovery} Retained id: ${text(notice.id)}; denied call: ${text(record.denial.callId)}.`,
+            `  **Recovery:** ${denialRecovery} Retained id: ${inlineCode(notice.id)}; denied call: ${inlineCode(record.denial.callId)}.`,
           ]
         : []),
-      `  **Diagnostic:** \`${notice.code}\``,
+      `  **Diagnostic:** ${inlineCode(notice.code)}`,
     );
     if (
       notice.code === 'dispatch-project-registration-unavailable' &&
@@ -247,8 +252,8 @@ export default function prepareDispatchReport(input: {
     ) {
       const item = dispatchAdmission(record, intake.records ?? []);
       lines.push(
-        `  **Project name:** ${text(item?.repository.name ?? 'Repository')}`,
-        `  **Folder path:** ${text(record.repositoryPreparation.checkout)}`,
+        `  **Project name:** ${item ? inlineCode(item.repository.name) : 'Repository'}`,
+        `  **Folder path:** ${inlineCode(record.repositoryPreparation.checkout)}`,
       );
     }
   }
@@ -263,8 +268,8 @@ export default function prepareDispatchReport(input: {
       const code = record.capacityObservation?.code ?? 'dispatch-capacity-observation-required';
       lines.push(
         `- **Issue:** ${issueLabel(record.intakeId ?? record.manualIssue?.id)}`,
-        `  **Diagnostic:** \`${code}\``,
-        `  **Action:** ${workflowRecovery(code)?.next ?? 'Inspect the native creation receipt and source history. Missing or unreadable evidence does not establish inactivity. The owning intake can retry action:reconcile with this retained id.'}`,
+        `  **Diagnostic:** ${inlineCode(code)}`,
+        `  **Action:** ${workflowRecovery(code)?.next ?? 'Inspect the native creation receipt and source history. Missing or unreadable evidence does not establish inactivity. The owning intake can retry `action:reconcile` with this retained id.'}`,
       );
     }
     lines.push('');

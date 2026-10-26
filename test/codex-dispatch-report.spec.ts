@@ -23,6 +23,30 @@ const input = {
   currentTimeIso: '2026-10-12T12:00:00.000Z',
 };
 describe('agent/codex-dispatch-report', () => {
+  it('should identify a manual launch blocker without an assignment record', () => {
+    const record = {
+      id: 'manual',
+      phase: 'waiting',
+      manualIssue: {
+        id: 'manual',
+        repository: { owner: { login: 'owner' }, name: 'repo' },
+        issue: { number: 123 },
+      },
+      result: {
+        outcome: 'operator-setup-blocker',
+        code: 'dispatch-denial-history-unavailable',
+        remediation: 'Inspect the original launch.',
+      },
+    } as DispatchRecord;
+    const report = prepareDispatchReport({
+      ...input,
+      state: { ...state, records: [record] },
+    });
+    assert.match(report.response, /owner\/repo#123/);
+    assert.match(report.response, /dispatch-denial-history-unavailable/);
+    assert.doesNotMatch(report.response, /Issue: Issue/);
+  });
+
   it('should keep native retirement progress healthy through completion without a recovery alert', () => {
     const record = {
       id: 'retiring',

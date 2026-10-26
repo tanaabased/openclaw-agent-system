@@ -133,9 +133,9 @@ export class IntakeError extends Error {
 
 export function intakeRemediation(code: string): string {
   if (code === 'intake-automation-paused')
-    return 'Intake scheduling is paused. Resume the native job, or set paused: false and run Install. Accepted runs and existing issue work retain their authority.';
+    return 'Intake scheduling is paused. Resume the native job, or set `paused: false` and run Install. Accepted runs and existing issue work retain their authority.';
   if (code === 'intake-manifest-unavailable')
-    return 'Restore a readable, valid agent.yaml in the bound workspace, then retry. No rebind or Install is required for a policy-only repair.';
+    return 'Restore a readable, valid `agent.yaml` in the bound workspace, then retry. No rebind or Install is required for a policy-only repair.';
   if (code === 'intake-automation-update-required')
     return 'Run Agent System Install to apply the update and resume intake. Existing chats and work are retained.';
   if (code === 'intake-activation-required') return 'Run Agent System Install to activate intake.';
@@ -163,7 +163,7 @@ export function intakeRemediation(code: string): string {
   if (code.includes('disabled') || code.includes('binding'))
     return 'Check the current workspace binding and live policy. Use Install only if the saved automation must be paused or changed.';
   if (code.includes('policy') || code.includes('activation') || code.includes('reserved'))
-    return 'Review the current issue-assignment policy in agent.yaml, then retry the scan. Policy-only changes apply without Install.';
+    return 'Review the current `issue-assignment` policy in `agent.yaml`, then retry the scan. Policy-only changes apply without Install.';
   return 'Inspect the diagnostic for the affected operation before retrying. Retained evidence and the last successful checkpoint remain available; no credential failure has been established.';
 }
 

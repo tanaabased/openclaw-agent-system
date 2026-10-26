@@ -3,6 +3,10 @@ agent:
   id: codex-example
   name: Codex Example
 models:
+  routing:
+    guidance: |
+      Prefer established configuration patterns.
+      Preserve verified complexity.
   default: { model: openai/gpt-6-astra, effort: high }
   low: { model: openai/gpt-5.6-terra, effort: medium }
   medium: { model: openai/gpt-5.6-sol, effort: high }

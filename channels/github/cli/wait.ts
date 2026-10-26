@@ -9,7 +9,8 @@ import {
   writeCliDiagnosticNotices,
   writeCliError,
   writeCliJson,
-  writeCliSummary,
+  renderCliSummary,
+  writeCliLines,
 } from '../../../cli/output.ts';
 import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
 import { githubNotificationWaitTargets, type GitHubNotificationWaitTarget } from './contracts.ts';
@@ -35,6 +36,7 @@ export interface WaitNotificationsAgentSystemOptions {
   styles?: CliStyles;
   target?: unknown;
   timeoutSeconds?: unknown;
+  terminalColumns?: number;
   workspaceDir: string;
 }
 
@@ -131,8 +133,7 @@ async function waitNotificationsAgentSystem(
             ]
           : []),
     ].join(' ');
-    writeCliSummary(
-      options.output,
+    const summary = renderCliSummary(
       [
         { label: 'agent', style: 'target', value: result.agentId },
         { label: 'checkpoint', style: 'action', value: result.target },
@@ -163,8 +164,9 @@ async function waitNotificationsAgentSystem(
         { label: 'last observed', style: 'field', value: observed },
       ],
       options.styles,
-      { rowPadding: 0 },
+      { rowPadding: 0, terminalColumns: options.terminalColumns ?? process.stdout.columns },
     );
+    writeCliLines(options.output, ['', ...summary, '']);
   }
   const remediation = nativeNotificationDiagnostic(result.code);
   if (remediation)

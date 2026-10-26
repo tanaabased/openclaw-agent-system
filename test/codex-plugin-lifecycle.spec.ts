@@ -102,7 +102,10 @@ describe('agent/codex-plugin-lifecycle', () => {
       manifest: {
         ...context.manifest,
         agent: { id: 'first' },
-        models: { default: { model: 'openai/gpt-6-sol', effort: 'high' as const } },
+        models: {
+          default: { model: 'openai/gpt-6-sol', effort: 'high' as const },
+          routing: { guidance: 'Prefer established work without changing runtime bindings.' },
+        },
       },
     };
     assert.deepEqual(await f.contribution().inspect!(native), []);

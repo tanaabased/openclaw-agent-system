@@ -31,7 +31,7 @@ import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import runCodexFeedback from '../agent/codex-feedback.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import { githubNotificationMarkdownText } from '../channels/github/presentation/card.ts';
+import { githubNotificationMarkdownCode } from '../channels/github/presentation/card.ts';
 import { baseline, intakeFixture, removeFixtureAssignment } from './github-intake-fixture.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
@@ -263,6 +263,62 @@ describe('agent/codex-dispatch', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should consume custom initial routing while verified complexity retains its tier', async () => {
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        models: { ...models, routing: { skill: 'company:route', guidance: 'Prefer cheap work.' } },
+      }),
+    );
+    const selected = await next();
+    const routing = selected.routing as {
+      instructions: { requestedSkill: string; skill?: { name: string } };
+    };
+    assert.equal(routing.instructions.requestedSkill, 'company:route');
+    assert.equal(routing.instructions.skill?.name, 'company:route');
+    const prepared = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'low', reason: 'Custom content judgment.' },
+    });
+    assert.equal(prepared.status, 'prepared');
+    assert.equal((prepared.request as { model: string }).model, 'gpt-6.1-sol');
+  });
+
+  it('should reject changed routing instructions before native creation', async () => {
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        models: { ...models, routing: { guidance: { file: 'routing.md' } } },
+      }),
+    );
+    await writeFile(join(workspace, 'routing.md'), 'First instructions.');
+    const selected = await next();
+    await writeFile(join(workspace, 'routing.md'), 'Changed instructions.');
+    const prepared = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'medium', reason: 'Verified complexity.' },
+    });
+    assert.equal(prepared.code, 'model-routing-instructions-changed');
+    assert.equal(prepared.request, undefined);
+  });
+
+  it('should stop initial routing when native skill discovery rejects the requested method', async () => {
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({ ...manifest, models: { ...models, routing: { skill: 'company:missing' } } }),
+    );
+    deps.native!.assessmentSkill = async () => {
+      throw new Error('dispatch-assessment-skill-unavailable');
+    };
+    assert.equal((await next()).code, 'dispatch-assessment-skill-unavailable');
   });
 
   async function claiming() {
@@ -1425,7 +1481,9 @@ describe('agent/codex-dispatch', () => {
     assert.ok(String(recorded.presentation).includes('Plan ready'));
     assert.match(String(recorded.presentation), /Skill.*company:assess/);
     assert.match(String(recorded.presentation), /Guidance.*guidance.md/);
-    assert.ok(String(recorded.presentation).includes(`[guidance.md](<${workspace}/guidance.md>)`));
+    assert.ok(
+      String(recorded.presentation).includes(`[\`guidance.md\`](<${workspace}/guidance.md>)`),
+    );
     assert.ok(!String(recorded.presentation).includes('Prefer small fixes.'));
     const question = {
       version: 1,
@@ -2400,10 +2458,10 @@ describe('agent/codex-dispatch', () => {
     assert.equal(blocked.code, 'dispatch-project-registration-unavailable');
     assert.equal(blocked.changed, true);
     assert.match(String(blocked.message), /^> ## ⚠️ Add the project to continue\n/u);
-    assert.ok(String(blocked.message).includes('- **Project name:** repo\n'));
+    assert.ok(String(blocked.message).includes('- **Project name:** `repo`\n'));
     assert.ok(
       String(blocked.message).includes(
-        '- **Folder path:** ' + githubNotificationMarkdownText(source) + '\n',
+        '- **Folder path:** ' + githubNotificationMarkdownCode(source) + '\n',
       ),
     );
     assert.match(String(blocked.message), /https:\/\/github.com\/owner\/repo\/issues\/3/u);
@@ -2470,7 +2528,7 @@ describe('agent/codex-dispatch', () => {
     const blocked = await next();
     assert.equal(blocked.code, 'repository-preparation-changed');
     assert.ok(String(blocked.message).includes('git.worktrees.repositories.local.github-10'));
-    assert.ok(String(blocked.message).includes(githubNotificationMarkdownText(source)));
+    assert.ok(String(blocked.message).includes(githubNotificationMarkdownCode(source)));
     assert.match(String(blocked.message), /Verify the retained checkout/u);
     assert.doesNotMatch(String(blocked.message), /Reconcile through Install/u);
     assert.match(String(blocked.message), /do not delete/u);
@@ -2502,7 +2560,7 @@ describe('agent/codex-dispatch', () => {
     };
     const blocked = await next();
     assert.equal(blocked.code, 'dispatch-project-registration-unavailable');
-    assert.ok(String(blocked.message).includes(githubNotificationMarkdownText(path)));
+    assert.ok(String(blocked.message).includes(githubNotificationMarkdownCode(path)));
     assert.equal(preparations, 1);
     assert.ok(!gitCalls.some((argv) => argv[0] === 'fetch'));
   });
@@ -2821,10 +2879,10 @@ describe('agent/codex-dispatch', () => {
     assert.ok(String(recorded.presentation).includes(result.assessment));
     assert.ok(String(recorded.presentation).includes(result.planSummary));
     assert.ok(String(recorded.presentation).includes(result.plan));
-    assert.match(String(recorded.presentation), /Selected.*gpt-6\.1-sol \/ high/);
+    assert.match(String(recorded.presentation), /Selected.*`openai\/gpt-6\.1-sol` \/ `high`/);
     assert.match(
       String(recorded.presentation),
-      /Effective settings.*Verified: gpt-6\.1-sol \/ high/,
+      /Effective settings.*Verified: `gpt-6\.1-sol` \/ `high`/,
     );
     assert.deepEqual(await next(), { status: 'idle', changed: false });
     assert.deepEqual(await request('result', { id: prepared.id, result }, child), recorded);
@@ -2919,7 +2977,7 @@ describe('agent/codex-dispatch', () => {
       );
       assert.equal(recorded.status, 'recorded');
       assert.equal(recorded.outcome, outcome.outcome);
-      assert.match(String(recorded.presentation), /Selected.*gpt-6\.1-sol \/ high/);
+      assert.match(String(recorded.presentation), /Selected.*`openai\/gpt-6\.1-sol` \/ `high`/);
       assert.match(String(recorded.presentation), /Effective settings.*Not independently verified/);
       assert.ok(
         String(recorded.presentation).includes(
@@ -6097,7 +6155,7 @@ describe('agent/codex-dispatch', () => {
     );
     assert.equal(calls, 1);
   });
-  it('should prepare and reconcile manual issue work without assignment or scheduled activation', async () => {
+  it('should preserve manual issue preparation across scheduled observation and recover its false hold', async () => {
     const selected = await selectCodexIntake(pluginData, deps);
     await rm(selected.store.location.path);
     await writeFile(
@@ -6140,12 +6198,66 @@ describe('agent/codex-dispatch', () => {
       projects,
     });
     assert.equal(project.status, 'routing-required', JSON.stringify(project));
+    const store = new CodexDispatchStore(pluginData, selected.store.location.scope);
+    assert.equal((await store.read()).run, undefined);
+    const scheduled = {
+      threadId: 'intake-thread',
+      activation: async () => ({ sourceThreadId: 'intake-thread' }),
+    };
+    const observe = () => request('observe-denials', {}, scheduled);
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+    await runCodexIntake(pluginData, true, deps);
+    assert.equal((await observe()).status, 'ready');
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.phase = 'waiting';
+      record.retryAfter = now + 60000;
+      record.result = {
+        version: 1,
+        outcome: 'operator-setup-blocker',
+        code: 'dispatch-denial-history-unavailable',
+        summary: 'Manual preparation was mistaken for missing scheduled history.',
+        remediation: 'Recover the original launch through its owner.',
+        evidence: [],
+        progress: { completed: [], remaining: ['Recover the original launch.'] },
+      };
+      await save();
+    });
+    assert.equal((await observe()).status, 'ready');
+    const repaired = (await store.read()).records[0]!;
+    assert.equal(repaired.id, first.id);
+    assert.equal(repaired.phase, 'routing');
+    assert.equal(repaired.result, undefined);
+    assert.equal(repaired.retryAfter, undefined);
+    assert.equal(repaired.preparationObservation, undefined);
+    assert.equal(repaired.request, undefined);
+    assert.equal((await request('next', { projects }, scheduled)).status, 'idle');
+    assert.equal(
+      (
+        await request(
+          'report',
+          {
+            automationId: 'native-intake',
+            currentTimeIso: new Date(now).toISOString(),
+          },
+          scheduled,
+        )
+      ).status,
+      'report',
+    );
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({ ...manifest, github: { username: 'receiver' } }),
+    );
+    const resumed = await request('launch', { target, operation: 'context' });
+    assert.equal(resumed.id, first.id);
+    assert.equal(resumed.digest, project.digest);
     const prepared = await request('launch', {
       target,
       operation: 'prepare',
       id: first.id,
       projects,
-      digest: project.digest,
+      digest: resumed.digest,
       assessment: { complexity: 'medium', reason: 'Reuse existing issue work.' },
       title: 'MANUAL ISSUE',
     });
@@ -6158,7 +6270,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(state.records.length, 1);
     assert.equal(state.records[0]!.intakeId, undefined);
     assert.equal(state.records[0]!.issueMode, 'work');
-    assert.equal(state.run, undefined);
+    assert.equal(state.run?.automationId, 'native-intake');
     const nativeContext = await request('context', { id: first.id }, { threadId: native!.id });
     assert.equal(nativeContext.status, 'verified', JSON.stringify(nativeContext));
     const submitted = await request('result', { id: first.id, result }, { threadId: native!.id });

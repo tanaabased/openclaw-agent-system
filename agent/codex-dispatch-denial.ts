@@ -2,7 +2,7 @@ import { withNative, type CodexDispatchTransaction } from './codex-dispatch-cont
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 
 export const denialRecovery =
-  'Ask an operator chat to retry this issue through dispatch retry-denied: preview with its retained id, then apply the returned digest. Renew authorization for the exact denied call when required. Waiting, reassignment, or restarting does not clear this hold.';
+  'Ask an operator chat to retry this issue through `dispatch retry-denied`: preview with its retained id, then apply the returned digest. Renew authorization for the exact denied call when required. Waiting, reassignment, or restarting does not clear this hold.';
 
 export default async function reconcileIntakeDenial(
   record: DispatchRecord,
@@ -11,6 +11,7 @@ export default async function reconcileIntakeDenial(
 ) {
   if (record.denial) return true;
   if (
+    !record.manualIssue &&
     !record.request &&
     record.project &&
     record.context &&
@@ -20,8 +21,9 @@ export default async function reconcileIntakeDenial(
     !record.unsubmittedCreations?.length
   )
     throw new Error('dispatch-denial-history-unavailable');
+  const anchored = Boolean(record.preparationObservation || record.creationAfterItemId);
   if (
-    (!record.preparationObservation && !record.creationAfterItemId) ||
+    (!anchored && (!record.manualIssue || record.request)) ||
     record.threadId ||
     record.receiptThreadId ||
     record.clientThreadId ||
@@ -29,19 +31,21 @@ export default async function reconcileIntakeDenial(
     record.handoff
   )
     return false;
-  const evidence = await withNative(tx.current, tx.deps, async (native) => {
-    const denial = await native.intakeDenial(record, observingPreparation);
-    if (denial && record.request) {
-      const found = await native.find({
-        sourceThreadId: record.sourceThreadId,
-        prompt: record.request.prompt,
-        createdAfter: record.createdAt,
-        observationOnly: true,
-      });
-      if (found) throw new Error('dispatch-denial-execution-unresolved');
-    }
-    return denial;
-  });
+  const evidence = anchored
+    ? await withNative(tx.current, tx.deps, async (native) => {
+        const denial = await native.intakeDenial(record, observingPreparation);
+        if (denial && record.request) {
+          const found = await native.find({
+            sourceThreadId: record.sourceThreadId,
+            prompt: record.request.prompt,
+            createdAfter: record.createdAt,
+            observationOnly: true,
+          });
+          if (found) throw new Error('dispatch-denial-execution-unresolved');
+        }
+        return denial;
+      })
+    : undefined;
   if (!evidence) {
     if (
       record.result?.outcome === 'operator-setup-blocker' &&

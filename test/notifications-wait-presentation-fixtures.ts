@@ -90,6 +90,7 @@ export async function captureWaitPreview(
     styles: createCliStyles(options.color ? { FORCE_COLOR: '3' } : { NO_COLOR: '1' }),
     target: preview === 'invalid-options' ? 'invalid' : result.target,
     timeoutSeconds: '12',
+    terminalColumns: options.columns,
     workspaceDir: '/workspace',
   });
   return { events, exitCode, columns: options.columns ?? 100, waitInput };

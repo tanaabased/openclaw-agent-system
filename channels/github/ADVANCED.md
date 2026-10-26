@@ -260,18 +260,21 @@ as described above. An uncertain native enqueue is reported rather than retried.
 
 ### `openclaw agent-system notifications reset`
 
-Reset notification management for selected agents. The operator sees the scope,
-confirms once, and the command pauses intake, waits for managed turns, clears
-routing and feedback records, establishes a fresh assignment baseline, archives
-the old intake chat, creates a fresh coordinator, and restores the previous intake setting. Existing assignments and comments do not
-replay; a new approved assignment after the baseline can start new work.
+Reset notification management for selected agents. Explicit `--agent` or `--all`
+supplies the target scope without opening the target picker; otherwise, the picker
+lists individual agents only. The operator confirms the reset separately. The
+command pauses intake, waits for managed turns, clears routing and feedback records,
+establishes a fresh assignment baseline, archives the old intake chat, creates a
+fresh coordinator, and restores the previous intake setting. Existing assignments
+and comments do not replay; a new approved assignment after the baseline can start
+new work.
 
 **Options:**
 
 | Option or argument        | Required | Default | Description                                                                                                        |
 | ------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
-| `--agent <id>`            | no       | none    | Repeat to preselect multiple agents.                                                                               |
-| `--all`                   | no       | false   | Select all configured agents with managed manifests; conflicts with `--agent`.                                     |
+| `--agent <id>`            | no       | none    | Select this agent; repeat to select multiple agents without reopening target selection.                            |
+| `--all`                   | no       | false   | Select all configured agents with managed manifests without target selection; conflicts with `--agent`.            |
 | `--confirmation <digest>` | no       | none    | Require the read-only preview to remain unchanged before starting.                                                 |
 | `--fresh`                 | no       | false   | Start fresh reset checks while retaining the interrupted operation's cleanup inventory and native action receipts. |
 | `--json`                  | no       | false   | Emit structured results; requires explicit targets and `--preview` or `--yes`.                                     |
@@ -287,7 +290,7 @@ openclaw agent-system notifications reset [--agent <id> ... | --all] [--purge] [
 # select agents interactively and confirm the reset
 openclaw agent-system notifications reset
 
-# preselect two agents while retaining the selection and confirmation prompts
+# select two agents explicitly and confirm the reset
 openclaw agent-system notifications reset --agent agent-one --agent agent-two
 
 # preview one agent without changing state
@@ -462,7 +465,8 @@ operator may change the model or reasoning effort through native controls withou
 recreating the task. Original routing stays recorded separately from current
 session settings; continuation respects the operator's choice. This does not
 authorize the agent to change settings, and initial creation still verifies the
-requested configuration.
+requested configuration. [Routing skill and guidance customization](../../MANIFEST.md#models)
+applies to initial admission in both runtimes, not automatic planning-to-implementation switching.
 
 Work policy or an Auto Work decision lets the next intake pass continue an
 actionable plan in the same issue chat, using shared capacity and its saved native

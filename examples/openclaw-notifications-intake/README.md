@@ -5,7 +5,7 @@ Activate notification intake, start three independent issue assessments before a
 ## What Belongs Here
 
 - Native channel readiness and a safe intake baseline before fixture assignment.
-- Concurrent admission with distinct verified native owners and complete retained assessments.
+- Custom routing skill/guidance selection during concurrent admission with distinct verified native owners and complete retained assessments.
 - One repeat scan proving that admission does not duplicate chats, checkouts, or turns.
 
 ## What Does Not Belong Here
@@ -16,6 +16,7 @@ Activate notification intake, start three independent issue assessments before a
 
 ## Notes
 
+- Native skill discovery and retained guidance are asserted during admission; the fixed mock judgment does not prove interpretation of the custom skill. No additional live-model turn is required.
 - Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases all three only after verifying their native starts; model judgment is not under test.
 - V3 object identities preserve supplied names and node IDs through installation and intake. Only Tanaabot receives the three disposable assignments.
 - Scoped refreshes and a 24-hour schedule bound discovery. The job owns its workspaces, issues, native state, and SSH registration; cleanup stops the Gateway before changing external fixtures.
@@ -127,6 +128,7 @@ if ! jq -es '[.[].records[]] | length == 3 and ([.[].threadId] | unique | length
   exit 1
 fi
 jq -es '[.[].records[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-started.json"
+jq -e 'all(.[]; .routingInstructions.requestedSkill == "intake-routing" and .routingInstructions.skill.name == "intake-routing" and (.routingInstructions.skill.digest | length) == 64 and .routingInstructions.guidance.source == "file" and (.routingInstructions.guidance.content | contains("Keep disposable cleanup plans bounded.")))' "$TMPDIR/notification-started.json"
 for conversation in $(jq -r '.[].threadId' "$TMPDIR/notification-started.json"); do
   openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.parentSessionKey == "agent:intake-tanaabot:main" and .session.spawnDepth == 0 and .session.spawnedBy == null'
 done

@@ -1,6 +1,9 @@
 import type { Retirement } from './assignment-retirement.ts';
 import debugCard from '../channels/github/presentation/debug.ts';
-import { githubNotificationMarkdownText as text } from '../channels/github/presentation/card.ts';
+import {
+  githubNotificationMarkdownCode as inlineCode,
+  githubNotificationMarkdownText as text,
+} from '../channels/github/presentation/card.ts';
 
 /** missing stored evidence is diagnostic, never proof of remaining resources or cleanup. */
 export default function intakeDebug<
@@ -29,7 +32,9 @@ export default function intakeDebug<
           detail:
             'Stored archive or removal evidence is absent for ' +
             historical.length +
-            ' historical record(s) (retirement-legacy-unverified). This establishes neither remaining live resources nor successful cleanup.',
+            ' historical record(s) (' +
+            inlineCode('retirement-legacy-unverified') +
+            '). This establishes neither remaining live resources nor successful cleanup.',
         }
       : {}),
   });

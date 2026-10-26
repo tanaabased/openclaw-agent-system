@@ -8,6 +8,8 @@ import loadCommandManifest from '../../../cli/load-command-manifest.ts';
 import presentCliCommand from '../../../cli/presentation.ts';
 import {
   createCliStyles,
+  renderCliSummary,
+  renderCliTableRows,
   writeCliDiagnosticNotices,
   writeCliJson,
   writeCliLines,
@@ -31,6 +33,7 @@ export interface ResetNotificationsOptions {
   workspaceDir: string;
   output: CliOutput;
   styles?: CliStyles;
+  terminalColumns?: number;
   input?: Readable;
   environment?: Readonly<NodeJS.ProcessEnv>;
   prompt?: Pick<ReturnType<typeof createClackPrompter>, 'confirm' | 'multiselect'>;
@@ -39,6 +42,11 @@ export interface ResetNotificationsOptions {
 }
 
 async function resetNotificationsCommand(options: ResetNotificationsOptions) {
+  const styles = options.styles ?? createCliStyles();
+  const tableOptions = {
+    rowPadding: 0 as const,
+    terminalColumns: options.terminalColumns ?? process.stdout.columns,
+  };
   if (options.all && options.agents.length) throw new Error('notification-reset-target-conflict');
   const environment = options.environment ?? process.env;
   const unattended =
@@ -57,23 +65,27 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
     throw new Error('notification-reset-agent-unknown');
   let agents = options.all ? available : [...new Set(options.agents)];
   const prompt = options.prompt ?? createClackPrompter(process.stderr);
-  if (!options.yes && !options.preview) {
+  if (!options.yes && !options.preview && !options.all && !options.agents.length) {
     const selected = await prompt.multiselect({
       message: 'reset notifications for which agents?',
-      options: [
-        { value: '*', label: 'all agents' },
-        ...available.map((id) => ({ value: id, label: id })),
-      ],
-      initialValues: options.all ? ['*'] : agents,
+      options: available.map((id) => ({ value: id, label: id })),
     });
-    agents = selected.includes('*') ? available : selected;
+    agents = available.filter((id) => selected.includes(id));
   }
   if (!agents.length) {
     if (options.json) writeCliJson(options.output, { results: [] });
-    else writeCliLines(options.output, ['no agents selected']);
+    else
+      writeCliLines(options.output, [
+        '',
+        ...renderCliSummary(
+          [{ label: 'result', style: 'field', value: 'no agents selected' }],
+          styles,
+          tableOptions,
+        ),
+        '',
+      ]);
     return;
   }
-  const styles = options.styles ?? createCliStyles();
   const targets = [];
   for (const agentId of agents) {
     const loaded = await loadCommandManifest({ ...options, agentId });
@@ -112,12 +124,60 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
     writeCliLines(options.output, [
       '',
       styles.bold(options.purge ? 'notification reset and purge' : 'notification reset'),
-      'pause intake, wait for managed turns, clear routing and feedback state, establish a fresh assignment baseline, replace the intake chat, then restore its prior schedule state',
+      '',
+      ...renderCliSummary(
+        [
+          {
+            label: 'action',
+            style: 'action',
+            value:
+              'pause intake, wait for managed turns, clear routing and feedback state, establish a fresh assignment baseline, replace the intake chat, then restore its prior schedule state',
+          },
+        ],
+        styles,
+        tableOptions,
+      ),
       ...targets.flatMap(({ preview }) => [
-        `${preview.agentId}: ${preview.workspace}${preview.fresh ? ' (fresh reset; retain cleanup inventory and unverified actions)' : preview.continuing ? ' (finish interrupted reset)' : ''}`,
+        '',
+        ...renderCliSummary(
+          [
+            { label: 'agent', style: 'target', value: preview.agentId },
+            { label: 'workspace', style: 'field', value: preview.workspace },
+            ...(preview.fresh || preview.continuing
+              ? [
+                  {
+                    label: 'reset',
+                    style: 'field' as const,
+                    value: preview.fresh
+                      ? 'fresh reset; retain cleanup inventory and unverified actions'
+                      : 'finish interrupted reset',
+                  },
+                ]
+              : []),
+          ],
+          styles,
+          tableOptions,
+        ),
         ...preview.resources.flatMap((resource) => [
-          `  ${resource.kind}: ${['chat', 'coordinator'].includes(resource.kind) ? `***${resource.description.slice(-4)}` : resource.description}`,
-          ...resource.details.map((detail) => `    ${detail}`),
+          '',
+          ...renderCliSummary(
+            [
+              {
+                label: resource.kind,
+                style: 'target',
+                value: ['chat', 'coordinator'].includes(resource.kind)
+                  ? `***${resource.description.slice(-4)}`
+                  : resource.description,
+              },
+              ...resource.details.map((detail) => ({
+                label: 'detail',
+                style: 'field' as const,
+                value: detail,
+              })),
+            ],
+            styles,
+            tableOptions,
+          ),
         ]),
       ]),
       '',
@@ -171,7 +231,19 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
         }
         if (announced !== result.code && !options.json) {
           writeCliLines(options.output, [
-            styles.notice(result.instruction ?? 'waiting for managed turns to finish'),
+            '',
+            ...renderCliSummary(
+              [
+                {
+                  label: 'waiting',
+                  style: 'notice',
+                  value: result.instruction ?? 'waiting for managed turns to finish',
+                },
+              ],
+              styles,
+              tableOptions,
+            ),
+            '',
           ]);
           announced = result.code ?? '';
         }
@@ -208,10 +280,26 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
   }
   if (options.json) writeCliJson(options.output, { results });
   else
-    writeCliLines(
-      options.output,
-      results.map((result) => `${result.agentId}: ${result.status}`),
-    );
+    writeCliLines(options.output, [
+      '',
+      ...renderCliTableRows(
+        [
+          { cells: [{ value: 'agent' }, { value: 'status' }] },
+          ...results.map((result) => ({
+            cells: [
+              { value: result.agentId, style: 'target' as const },
+              {
+                value: result.status,
+                style: result.status === 'complete' ? ('status' as const) : ('error' as const),
+              },
+            ],
+          })),
+        ],
+        styles,
+        tableOptions,
+      ),
+      '',
+    ]);
 }
 
 export default presentCliCommand(resetNotificationsCommand);

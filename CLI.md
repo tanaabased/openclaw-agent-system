@@ -6,6 +6,11 @@ for declarations. `openclaw as` aliases `openclaw agent-system`; either bare
 namespace prints help. Agent System human summaries honor `NO_COLOR` and
 `FORCE_COLOR=0`; failed operations return nonzero.
 
+Interactive prompts fill only unresolved inputs. When a supported command option
+or environment-derived value already determines a value, do not ask the operator
+to choose that same value again; prompts for other decisions, such as confirmation,
+remain separate.
+
 **Core commands**
 
 - [`openclaw agent-system automations list`](#openclaw-agent-system-automations-list)
@@ -139,7 +144,14 @@ openclaw agent-system automations sync [--agent <id>] [--json]
 openclaw agent-system automations sync --json
 ```
 
-Unchanged jobs receive no mutation. Pause/removal retains ownership and history; reintroduction reuses the native ID. A failed sync exits 1 and retains verified progress and pending recovery. This command does not run unrelated install or setup steps.
+Unchanged jobs receive no mutation. Pause/removal retains ownership and history;
+reintroduction reuses the native ID while that job exists. If an undeclared job
+has also been deleted, complete operator inspection can retire ownership while
+retaining bounded historical evidence. Restricted or inconclusive inspection and
+unresolved writes prevent retirement. A retired ID is not automatically recreated;
+use a new manifest ID for a new automation. A failed sync exits 1 and retains
+verified progress and pending recovery. This command does not run unrelated install
+or setup steps.
 
 ### Repository examples
 

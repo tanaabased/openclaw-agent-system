@@ -775,8 +775,8 @@ describe('agent/codex-delivery', () => {
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: true }));
     const shown = String((await request('present')).presentation);
     assert.ok(shown.indexOf('Implementation instructions') > shown.indexOf('Comment flow'));
-    assert.ok(shown.includes('[custom:work](</skills/work/SKILL.md>)'));
-    assert.ok(shown.includes('[work.md](<'));
+    assert.ok(shown.includes('[`custom:work`](</skills/work/SKILL.md>)'));
+    assert.ok(shown.includes('[`work.md`](<'));
     assert.ok(!shown.includes('Private instructions'));
   });
   it('should show feedback under a verified replacement scheduler without changing the issue owner', async () => {

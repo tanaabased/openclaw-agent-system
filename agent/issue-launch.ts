@@ -1,4 +1,5 @@
-import resolveModelRoutingRequest from './model-routing-request.ts';
+import initialModelRouting from './initial-model-routing.ts';
+import { routingInstructionsDigest } from './routing-instructions.ts';
 import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
 import { githubOrigin } from './codex-dispatch-project.ts';
 import type { LaunchRequest } from '../tools/dispatch/launch-schema.ts';
@@ -202,20 +203,33 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
       });
       state.records.push(record);
     }
+    const routing = record.request
+      ? JSON.parse(record.routing!)
+      : await initialModelRouting({
+          models: context.manifest.models,
+          manifestDigest: automationHash(context.manifest),
+          request: { action: 'inspect' },
+          runtime: context.binding.runtime,
+          workspace: context.binding.workspace,
+          observedAt: context.now,
+          resolveSkill: context.resolveSkill,
+        });
+    if (!record.request && 'instructions' in routing)
+      record.routingInstructions = routing.instructions;
     await context.assertCurrent();
     await save();
     return {
       status: 'routing-required' as const,
       id: record.id,
       context: JSON.parse(record.context!),
-      digest: automationHash({ context: record.context, manifest: record.manifestDigest }),
+      digest: automationHash({
+        context: record.context,
+        manifest: record.manifestDigest,
+        instructions:
+          record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
+      }),
       issue: canonical,
-      routing: resolveModelRoutingRequest(
-        context.manifest.models,
-        record.manifestDigest,
-        { action: 'inspect' },
-        context.binding.runtime,
-      ),
+      routing,
       origin: record.manualIssue!.initiation,
       instruction:
         'Use the current model-routing profiles to assess this bounded issue, then call launch prepare with the same target/id, digest, assessment, and a concise title. Preserve the original attempt on retry.',

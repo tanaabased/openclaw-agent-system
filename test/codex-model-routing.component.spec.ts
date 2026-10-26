@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -49,6 +49,59 @@ describe('codex model routing binding', () => {
         fallback: 'default',
       }),
       /profiles changed/,
+    );
+  });
+
+  it('should load routing guidance from the bound workspace and reject changed content', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'codex-routing-')));
+    roots.push(root);
+    const data = join(root, 'data');
+    await writeFile(
+      join(root, 'agent.yaml'),
+      'schema-version: 1\nagent: {id: bound}\nmodels:\n  default: {model: openai/example, effort: high}\n  routing: {skill: company:route, guidance: {file: routing.md}}\n',
+    );
+    await writeFile(join(root, 'routing.md'), 'Prefer localized work.');
+    await bindCodexWorkspace(data, root);
+    await writeFile(join(root, 'SKILL.md'), '# Custom routing\nAssess bounded work.');
+    let enabled = true;
+    const dependencies = {
+      connect: async () => ({
+        request: async (method: string) => {
+          assert.equal(method, 'skills/list');
+          return {
+            data: [
+              {
+                cwd: root,
+                errors: [],
+                skills: [
+                  { name: 'company:route', path: join(root, 'SKILL.md'), scope: 'user', enabled },
+                ],
+              },
+            ],
+          };
+        },
+        close: async () => {},
+      }),
+    };
+    const inspected = await codexModelRouting(data, { action: 'inspect' }, dependencies);
+    assert.ok('instructions' in inspected && inspected.instructions);
+    assert.equal(inspected.instructions.guidance?.content, 'Prefer localized work.');
+    assert.equal(inspected.instructions.skill?.name, 'company:route');
+    const request = {
+      action: 'resolve',
+      manifestDigest: inspected.manifestDigest,
+      instructionsDigest: inspected.instructionsDigest,
+      context: 'task',
+      assessment: { complexity: 'unset', reason: 'Uncertain.' },
+      fallback: 'default',
+    };
+    assert.equal((await codexModelRouting(data, request, dependencies)).status, 'unresolved');
+    await writeFile(join(root, 'routing.md'), 'Changed instructions.');
+    await assert.rejects(codexModelRouting(data, request, dependencies), /instructions/);
+    enabled = false;
+    await assert.rejects(
+      codexModelRouting(data, { action: 'inspect' }, dependencies),
+      /skill-unavailable/,
     );
   });
 

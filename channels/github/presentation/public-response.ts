@@ -1,7 +1,7 @@
 import publicResponseState, {
   type PublicResponseState,
 } from '../../../agent/public-response-state.ts';
-import { githubNotificationQuote } from './card.ts';
+import { githubNotificationMarkdownCode, githubNotificationQuote } from './card.ts';
 
 /** successful publication uses the existing linked attribution, not another success card. */
 export default function publicResponsePresentation(
@@ -45,7 +45,7 @@ export default function publicResponsePresentation(
       ...(input.destination ? ['', `**Destination:** [GitHub ↗](${input.destination})`] : []),
       '',
       `**Next:** ${next}`,
-      ...(input.code ? ['', `**Diagnostic:** \`${input.code}\``] : []),
+      ...(input.code ? ['', '**Diagnostic:** ' + githubNotificationMarkdownCode(input.code)] : []),
     ].join('\n'),
   );
 }

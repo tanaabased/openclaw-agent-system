@@ -24,6 +24,17 @@ const admit = (comment: ReturnType<typeof reviewFeedback>) =>
   admitReviewFeedback({ account: notificationAccount, configuration, comment });
 
 describe('channels/github/provider/review-feedback', () => {
+  it('should code review metadata without rewriting linked finding bodies', () => {
+    const body = 'Check `work`, [a link](https://example.com), and *literal prose*.';
+    const finding = reviewCommentFixture({ body, path: 'api/[edge]`case`.ts', side: 'RIGHT' });
+    const card = reviewFeedbackPresentation(reviewFeedback(reviewFixture(), [finding]));
+    assert.ok(card.includes('> ' + body));
+    assert.ok(card.includes('[``api/[edge]`case`.ts`` ↗](' + finding.url + ')'));
+    assert.ok(card.includes('reviewed commit `' + finding.originalCommitId.slice(0, 7) + '`'));
+    assert.ok(card.includes('side: `RIGHT`'));
+    assert.equal(finding.body, body);
+  });
+
   it('should quote complete review and inline cards with exact source links and historical locations', () => {
     const review = reviewFixture({ body: 'Review summary.\n\n> Quoted context.' });
     const finding = reviewCommentFixture({

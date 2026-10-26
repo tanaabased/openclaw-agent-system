@@ -1,11 +1,12 @@
 import {
   dispatchAdmission,
+  managedIssueState,
   type ManagedIssue as IntakeRecord,
   type ManagedIssueState as IntakeState,
 } from './managed-issue.ts';
 import { type default as IntakeRecordStore } from '../channels/github/intake/record-store.ts';
 
-import { githubNotificationMarkdownText } from '../channels/github/presentation/card.ts';
+import { githubNotificationMarkdownCode as inlineCode } from '../channels/github/presentation/card.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 import { type AssessmentResult } from './assessment-result.ts';
 import requireDispatchCheck from './codex-dispatch-check.ts';
@@ -81,7 +82,7 @@ export default async function reportDispatch(
     throw new Error('dispatch-scan-required');
   if (run.actions < 12 && !run.stopped && !scan.blocker) {
     try {
-      requireDispatchCheck(state, scan, occurrence);
+      requireDispatchCheck(state, managedIssueState(scan, state.records)!, occurrence);
     } catch {
       return {
         status: 'continue',
@@ -139,19 +140,19 @@ function remediation(value: string) {
   const recovery = workflowRecovery(value);
   if (recovery) return recovery.next;
   if (value === 'dispatch-native-receipt-reused')
-    return "This native receipt belongs to another assessment, including a retired attempt. Reconcile only the receipt returned by this prepared request's create_thread call, or omit receipt to recover its actual creation. Do not create again or reuse history.";
+    return "This native receipt belongs to another assessment, including a retired attempt. Reconcile only the receipt returned by this prepared request's `create_thread` call, or omit `receipt` to recover its actual creation. Do not create again or reuse history.";
   if (value.startsWith('dispatch-assessment-skill-'))
-    return 'Check issue-assignment.assessment.skill against the enabled Codex skills. Use a qualified plugin:skill id to resolve ambiguity, and restore the selected skill if it changed. Retry this retained assignment or resume its existing chat; do not create a replacement chat.';
+    return 'Check `issue-assignment.assessment.skill` against the enabled Codex skills. Use a qualified `plugin:skill` id to resolve ambiguity, and restore the selected skill if it changed. Retry this retained assignment or resume its existing chat; do not create a replacement chat.';
   if (value.startsWith('dispatch-assessment-guidance-'))
-    return 'Correct issue-assignment.assessment.guidance: use nonempty text or a readable UTF-8 file within the bound agent workspace, without symlinks, up to 32 KiB. Retry the retained assignment after restoring the guidance; live edits apply without Install.';
+    return 'Correct `issue-assignment.assessment.guidance`: use nonempty text or a readable UTF-8 file within the bound agent workspace, without symlinks, up to 32 KiB. Retry the retained assignment after restoring the guidance; live edits apply without Install.';
   if (value === 'dispatch-configured-project-missing')
-    return 'The explicitly configured local repository path is missing. Correct or remove its git.worktrees.repositories.local override, keep the repository registered as a saved Codex project, and let the next scheduled occurrence retry this retained assignment.';
+    return 'The explicitly configured local repository path is missing. Correct or remove its `git.worktrees.repositories.local` override, keep the repository registered as a saved Codex project, and let the next scheduled occurrence retry this retained assignment.';
   if (value.includes('project'))
     return 'Add the exact repository checkout as one saved Git-backed Codex project, resolve any path or origin conflict, then let the next scheduled occurrence retry this retained assignment.';
   if (value.includes('activation'))
     return 'Authorize Install to reconcile the updated assignment schedule, then verify its saved state. Existing intake consent alone does not authorize dispatch.';
   if (value === 'dispatch-mode-unsupported')
-    return 'Set issue-assignment mode to plan, work, or auto, then retry with the live manifest. Other modes cannot dispatch issue assessments.';
+    return 'Set `issue-assignment` mode to `plan`, `work`, or `auto`, then retry with the live manifest. Other modes cannot dispatch issue assessments.';
   if (value.includes('routing') || value.includes('model'))
     return 'Inspect the retained routing evidence and configured profiles. Repair the selection or native model access; do not substitute a model or recreate the chat.';
   if (value.includes('authority') || value.includes('policy') || value.includes('binding'))
@@ -171,26 +172,28 @@ function blocker(
     error instanceof RepositoryPreparationError
       ? error.path
       : (preparation?.checkout ?? preparation?.path);
+  const identity =
+    preparation?.identity ??
+    (error instanceof RepositoryPreparationError ? error.identity : undefined);
   const detail = path
-    ? ' Repository: ' +
-      githubNotificationMarkdownText(
-        preparation?.identity ??
-          (error instanceof RepositoryPreparationError ? (error.identity ?? '') : ''),
-      ) +
-      '. Path: ' +
-      githubNotificationMarkdownText(path) +
+    ? (identity ? ' Repository: ' + inlineCode(identity) + '.' : '') +
+      ' Path: ' +
+      inlineCode(path) +
       '.'
     : '';
   const action =
     value === 'dispatch-project-registration-unavailable'
       ? 'No supported native project registration action is available. Add this exact checkout as the primary folder of one saved local Codex project, then let the next scheduled occurrence verify it and resume the retained assignment.'
       : value === 'repository-preparation-changed'
-        ? 'This assignment or interrupted clone is pinned to its retained repository location. Restore the previous working-directory and roots. For a normal checkout outside the managed roots, you can instead set git.worktrees.repositories.local.' +
-          (repositoryId === undefined
-            ? 'github-<repository-database-id>'
-            : 'github-' + repositoryId) +
+        ? 'This assignment or interrupted clone is pinned to its retained repository location. Restore the previous working-directory and roots. For a normal checkout outside the managed roots, you can instead set ' +
+          inlineCode(
+            'git.worktrees.repositories.local.' +
+              (repositoryId === undefined
+                ? 'github-<repository-database-id>'
+                : 'github-' + repositoryId),
+          ) +
           ' to ' +
-          githubNotificationMarkdownText(JSON.stringify(preparation?.path ?? path)) +
+          inlineCode(JSON.stringify(preparation?.path ?? path)) +
           '. If the base checkout location changed, restore the previous worktree root too. Verify the retained checkout, then let the next scheduled occurrence resume this assignment. New assignments may use a different configured location; do not delete the retained journal or checkout.'
         : value === 'repository-clone-interrupted'
           ? 'Inspect this retained temporary clone. Repair it, or remove only this confirmed preparation-owned temporary directory, then retry; the runtime will not clone over it.'
@@ -249,13 +252,11 @@ export function notice(record: DispatchRecord, intake?: IntakeRecord) {
                 ? [
                     {
                       label: 'Project name',
-                      value: intake
-                        ? githubNotificationMarkdownText(intake.repository.name)
-                        : 'Repository',
+                      value: intake ? inlineCode(intake.repository.name) : 'Repository',
                     },
                     {
                       label: 'Folder path',
-                      value: githubNotificationMarkdownText(record.repositoryPreparation.checkout),
+                      value: inlineCode(record.repositoryPreparation.checkout),
                     },
                   ]
                 : [],

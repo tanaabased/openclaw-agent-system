@@ -7,6 +7,7 @@ import workflowInstructions, {
   type WorkflowInstructionsPresentation,
 } from './workflow-instructions.ts';
 import githubNotificationCard, {
+  githubNotificationMarkdownCode,
   githubNotificationMarkdownText,
   githubNotificationQuote,
 } from './card.ts';
@@ -56,7 +57,11 @@ export default function renderAssessmentResult(
         : []),
       '**Issue:** [' + text(context.issue.label) + '](' + context.issue.url + ')',
       ...(result.outcome === 'operator-setup-blocker'
-        ? ['## Action', result.remediation, '**Diagnostic:** `' + result.code + '`']
+        ? [
+            '## Action',
+            result.remediation,
+            '**Diagnostic:** ' + githubNotificationMarkdownCode(result.code),
+          ]
         : []),
     ].join('\n\n'),
   );
@@ -79,7 +84,7 @@ export default function renderAssessmentResult(
             facts: [
               {
                 label: 'Decision',
-                value: '`' + assessmentDecisionMode(result.decision) + '`',
+                value: githubNotificationMarkdownCode(result.decision.mode),
               },
               {
                 label: 'Next',

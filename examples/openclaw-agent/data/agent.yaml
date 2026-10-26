@@ -7,6 +7,8 @@ agent:
   avatar: avatar.png
 
 models:
+  routing:
+    guidance: Preserve uncertainty and use only an explicit default fallback.
   default:
     model: aimock/gpt-5.5
     effort: medium

@@ -5,6 +5,7 @@ Install the declared agent on macOS and Ubuntu, repeat without foundational chan
 ## What Belongs Here
 
 - Real native installation, convergence, and read-only readiness on both operating systems.
+- Read-only instance inspection with a readable name and human-only identifier masking.
 - Unsupported review declarations remain warnings without activating issue intake or enrolling dispatch credentials.
 
 ## What Does Not Belong Here
@@ -40,6 +41,20 @@ cd "$GITHUB_WORKSPACE/examples/os-install/data"
 output=$(openclaw agent-system install --json)
 printf '%s\n' "$output" | jq -e '.outcomes | (any(.component == "agent" and .status == "unchanged") and any(.component == "path" and .status == "unchanged"))'
 openclaw agent-system doctor --json | jq -e '.status == "healthy"'
+
+# should inspect the installed identity with human-only id masking
+cd "$GITHUB_WORKSPACE/examples/os-install/data"
+identity=$(openclaw agent-system instance inspect --json)
+name=$(printf '%s\n' "$identity" | jq -er .displayName)
+full_id=$(printf '%s\n' "$identity" | jq -er .instanceId)
+masked_id=$(printf '%s\n' "$identity" | jq -er '"***" + .instanceId[-4:]')
+human=$(NO_COLOR=1 openclaw agent-system instance inspect)
+printf '%s\n' "$human" | grep -F 'status' | grep -F 'ready'
+printf '%s\n' "$human" | grep -F 'name' | grep -F "$name"
+printf '%s\n' "$human" | grep -F 'id' | grep -F "$masked_id"
+if printf '%s\n' "$human" | grep -F "$full_id"; then
+  exit 1
+fi
 ```
 
 ```bash

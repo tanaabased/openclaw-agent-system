@@ -7,6 +7,7 @@ import {
   writeCliLines,
 } from '../../../cli/output.ts';
 import type { CommandLike } from '../../../cli/register.ts';
+import presentCliCommand from '../../../cli/presentation.ts';
 import { formatRedactedErrorDiagnostic } from '../../../core/logger.ts';
 import refreshNotificationsAgentSystem from './refresh.ts';
 import statusNotificationsAgentSystem from './status.ts';
@@ -21,6 +22,7 @@ export interface RegisterGitHubNotificationsCliOptions {
   output: CliOutput;
   setExitCode(code: number): void;
   styles?: CliStyles;
+  terminalColumns?: number;
   reset?: Pick<ResetNotificationsOptions, 'service' | 'listAgents' | 'input' | 'environment'>;
   allowOperatorCommand?(json: boolean): Promise<boolean>;
 }
@@ -31,42 +33,46 @@ function writeHelp(command: CommandLike, output: CliOutput): void {
 }
 
 async function runOneShot(
-  run: (setExitCode: (code: number) => void) => Promise<void>,
   options: Pick<
     RegisterGitHubNotificationsCliOptions,
-    'completeOneShot' | 'output' | 'setExitCode' | 'styles'
+    'completeOneShot' | 'output' | 'setExitCode' | 'styles' | 'terminalColumns'
   > & { json?: boolean },
+  run: (setExitCode: (code: number) => void, output: CliOutput) => Promise<void>,
   failureCode: string,
 ): Promise<void> {
   let exitCode = 0;
-  const setExitCode = (code: number) => {
-    exitCode = Math.max(exitCode, code);
-    options.setExitCode(exitCode);
-  };
   try {
-    await run(setExitCode);
-  } catch (error) {
-    const resetCode =
-      failureCode === 'notification-reset-failed' &&
-      error instanceof Error &&
-      /^notification-reset-[a-z-]+$/u.test(error.message)
-        ? error.message
-        : undefined;
-    const invalid =
-      resetCode &&
-      [
-        'notification-reset-target-conflict',
-        'notification-reset-agent-unknown',
-        'notification-reset-requires-explicit-target-and-yes',
-      ].includes(resetCode);
-    writeCliError(
-      options.output,
-      resetCode
-        ? `${resetCode}: ${invalid ? 'select agents with repeated --agent or --all; unattended reset also requires --yes' : 'inspect the reset scope and retry the same command; preserve any recovery record'}`
-        : formatRedactedErrorDiagnostic('github-notifications', error, failureCode),
-      options,
-    );
-    setExitCode(invalid ? 2 : 1);
+    await presentCliCommand(async (presented: typeof options) => {
+      const setExitCode = (code: number) => {
+        exitCode = Math.max(exitCode, code);
+        presented.setExitCode(exitCode);
+      };
+      try {
+        await run(setExitCode, presented.output);
+      } catch (error) {
+        const resetCode =
+          failureCode === 'notification-reset-failed' &&
+          error instanceof Error &&
+          /^notification-reset-[a-z-]+$/u.test(error.message)
+            ? error.message
+            : undefined;
+        const invalid =
+          resetCode &&
+          [
+            'notification-reset-target-conflict',
+            'notification-reset-agent-unknown',
+            'notification-reset-requires-explicit-target-and-yes',
+          ].includes(resetCode);
+        writeCliError(
+          presented.output,
+          resetCode
+            ? `${resetCode}: ${invalid ? 'select agents with repeated --agent or --all; unattended reset also requires --yes' : 'inspect the reset scope and retry the same command; preserve any recovery record'}`
+            : formatRedactedErrorDiagnostic('github-notifications', error, failureCode),
+          presented,
+        );
+        setExitCode(invalid ? 2 : 1);
+      }
+    })(options);
   } finally {
     await options.completeOneShot(exitCode);
   }
@@ -113,7 +119,8 @@ export default function registerGitHubNotificationsCli(
       const json = values.json === true;
       if (!options.allowOperatorCommand || !(await options.allowOperatorCommand(json))) return;
       await runOneShot(
-        async (setExitCode) => {
+        { ...options, json },
+        async (setExitCode, output) => {
           if (!options.reset) throw new Error('notification-reset-unavailable');
           await resetNotificationsCommand({
             ...options.reset,
@@ -127,12 +134,12 @@ export default function registerGitHubNotificationsCli(
             json,
             manifestService: options.manifestService,
             workspaceDir: options.cwd(),
-            output: options.output,
+            output,
             styles: options.styles,
+            terminalColumns: options.terminalColumns,
             setExitCode,
           });
         },
-        { ...options, json },
         'notification-reset-failed',
       );
     });
@@ -149,7 +156,8 @@ export default function registerGitHubNotificationsCli(
       const commandOptions = refresh.opts();
       const agentId = commandOptions.agent;
       await runOneShot(
-        (setExitCode) =>
+        { ...options, json: commandOptions.json === true },
+        (setExitCode, output) =>
           refreshNotificationsAgentSystem({
             ...(typeof agentId === 'string' ? { agentId } : {}),
             itemKind: commandOptions.kind,
@@ -157,14 +165,13 @@ export default function registerGitHubNotificationsCli(
             json: commandOptions.json === true,
             manifestService: options.manifestService,
             nativeService: options.nativeService,
-            output: options.output,
+            output,
             repository: commandOptions.repository,
             setExitCode,
             styles: options.styles,
             timeoutSeconds: commandOptions.timeout,
             workspaceDir: options.cwd(),
           }),
-        { ...options, json: commandOptions.json === true },
         'github-notification-refresh-failed',
       );
     });
@@ -208,7 +215,8 @@ export default function registerGitHubNotificationsCli(
       const commandOptions = wait.opts();
       const agentId = commandOptions.agent;
       await runOneShot(
-        (setExitCode) =>
+        { ...options, json: commandOptions.json === true },
+        (setExitCode, output) =>
           waitNotificationsAgentSystem({
             ...(typeof agentId === 'string' ? { agentId } : {}),
             itemKind: commandOptions.kind,
@@ -216,16 +224,16 @@ export default function registerGitHubNotificationsCli(
             json: commandOptions.json === true,
             manifestService: options.manifestService,
             nativeService: options.nativeService,
-            output: options.output,
+            output,
             refresh: commandOptions.refresh === true,
             repository: commandOptions.repository,
             setExitCode,
             styles: options.styles,
             target: commandOptions.for,
             timeoutSeconds: commandOptions.timeout,
+            terminalColumns: options.terminalColumns,
             workspaceDir: options.cwd(),
           }),
-        { ...options, json: commandOptions.json === true },
         'github-notification-wait-failed',
       );
     });

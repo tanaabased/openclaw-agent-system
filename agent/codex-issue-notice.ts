@@ -7,6 +7,7 @@ import {
   type ProviderDiagnostic,
 } from '../utils/provider-diagnostic.ts';
 import githubNotificationCard, {
+  githubNotificationMarkdownCode as inlineCode,
   githubNotificationMarkdownText as text,
 } from '../channels/github/presentation/card.ts';
 
@@ -37,14 +38,14 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       severity: 'error',
       title: 'Cannot read the automation policy',
       summary: 'The bound workspace manifest is missing, unreadable, or invalid.',
-      next: 'Restore a readable, valid agent.yaml, then retry. Policy-only repairs do not require Install or a new workspace binding.',
+      next: 'Restore a readable, valid `agent.yaml`, then retry. Policy-only repairs do not require Install or a new workspace binding.',
     };
   if (code === 'workflow-policy-held')
     return {
       severity: 'info',
       title: 'Waiting on current workflow policy',
       summary:
-        'The live agent.yaml does not currently permit this automatic operation. Saved work and receipts are retained.',
+        'The live `agent.yaml` does not currently permit this automatic operation. Saved work and receipts are retained.',
       next: 'Update the relevant workflow setting to resume eligible work. Policy edits take effect without Install.',
     };
   const automation = intakeAutomationNotice(code);
@@ -131,7 +132,7 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       title: 'Refresh the recovery preview',
       summary:
         'The work or authority changed after the recovery preview. The requested transition was not applied.',
-      next: 'Preview the same recovery action again without a digest, inspect the current result, and apply its new digest only if the existing authorization still covers it. For handoff, use action:handoff with the same id; do not refresh assessment context after implementation. If it becomes stale again, stop and inspect concurrent changes. Preserve the existing chat, branch, and commit.',
+      next: 'Preview the same recovery action again without a digest, inspect the current result, and apply its new digest only if the existing authorization still covers it. For handoff, use `action:handoff` with the same id; do not refresh assessment context after implementation. If it becomes stale again, stop and inspect concurrent changes. Preserve the existing chat, branch, and commit.',
     };
   if (code === 'delivery-attachment-pending')
     return {
@@ -356,7 +357,7 @@ export default function codexIssueNotice(input: {
     ...(diagnostic?.providerMessage
       ? [{ label: 'Provider detail', value: text(diagnostic.providerMessage) }]
       : []),
-    ...(code ? [{ label: 'Technical detail', value: '`' + code + '`' }] : []),
+    ...(code ? [{ label: 'Technical detail', value: inlineCode(code) }] : []),
   ];
   return {
     title: copy.title,
