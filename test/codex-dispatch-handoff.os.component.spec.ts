@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 
 import codexDispatchHandoff from '../agent/codex-dispatch-handoff.ts';
@@ -70,18 +70,6 @@ describe('agent/codex-dispatch-handoff process transport', () => {
         assert.equal(output.at(-1)!.exit_code, 0);
         assert.equal(JSON.parse(output.at(-1)!.output).action, action);
       }
-      // exercise the built failure formatter through the same saved launch contract.
-      const built = codexDispatchHandoff({
-        entrypoint: resolve('dist/codex/codex-runtime.js'),
-        pluginData: identity.pluginData,
-      });
-      context.runtimeInput = {
-        action: 'failure-response',
-        automationId: 'disposable',
-        code: 'codex-runtime-failed',
-      } as typeof context.runtimeInput;
-      await runInNewContext('(async () => {' + built + '})()', context);
-      assert.equal(JSON.parse(output.at(-1)!.output).status, 'failure');
       await rm(node);
       await assert.rejects(run('scan'), /codex-node-unavailable:.*PATH/u);
       await assert.rejects(run('failure-response'), /codex-node-unavailable:.*formatter/u);

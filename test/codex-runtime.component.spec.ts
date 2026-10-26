@@ -2,9 +2,49 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { runInNewContext } from 'node:vm';
+
+import codexDispatchHandoff from '../agent/codex-dispatch-handoff.ts';
 
 describe('agent/codex-runtime', () => {
+  it('should run the built failure formatter through the saved path launcher', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codex-failure-formatter-'));
+    try {
+      const saved = codexDispatchHandoff({
+        entrypoint: resolve('dist/codex/codex-runtime.js'),
+        pluginData: root,
+      });
+      const output: { exit_code: number; output: string }[] = [];
+      await runInNewContext('(async () => {' + saved + '})()', {
+        runtimeRoute: 'intake',
+        runtimeInput: {
+          action: 'failure-response',
+          automationId: 'disposable',
+          code: 'codex-runtime-failed',
+        },
+        load: () => undefined,
+        store: () => {},
+        text: (value: { exit_code: number; output: string }) => output.push(value),
+        tools: {
+          exec_command: async ({ cmd }: { cmd: string }) => {
+            const result = spawnSync('/bin/sh', ['-c', cmd], {
+              env: { ...process.env, PATH: dirname(process.execPath) },
+              encoding: 'utf8',
+              timeout: 10000,
+            });
+            assert.ifError(result.error);
+            return { exit_code: result.status, output: result.stdout + result.stderr };
+          },
+        },
+      });
+      assert.equal(output.at(-1)!.exit_code, 0);
+      assert.equal(JSON.parse(output.at(-1)!.output).status, 'failure');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('should reject unsupported node before accessing workflow state', async () => {
     const root = await mkdtemp(join(tmpdir(), 'codex-node-version-'));
     try {

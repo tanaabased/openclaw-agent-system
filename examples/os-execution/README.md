@@ -6,7 +6,7 @@ Run real shell and PTY commands on macOS and Linux, preserving manifest PATH, ar
 
 - Actual native process/terminal behavior through the installed execution boundary.
 - Workspace paths containing spaces and identity/containment after changing directory.
-- One shell exchange and one PTY exchange, each requiring its probe's completed receipt.
+- One shell command and one PTY command, each requiring its probe's completed receipt.
 
 ## What Does Not Belong Here
 
@@ -17,7 +17,7 @@ Run real shell and PTY commands on macOS and Linux, preserving manifest PATH, ar
 
 - Strict AIMock selects two fixed OpenClaw exec calls; the Gateway, shell, terminal, and managed Git launcher run normally without a live model or provider credentials.
 - Workspaces are copied because paths containing spaces are part of the contract. The probe emits success only after checking the actual child process and rejected cross-agent invocation.
-- Each command has a 120-second limit within a 180-second turn. Cron is disabled so unrelated maintenance cannot consume mock exchanges.
+- Each command has a 120-second limit within a 180-second turn. A yielded command is collected through its native session with at most four 30-second polls; it is never rerun. Cron is disabled so unrelated maintenance cannot consume mock exchanges.
 - Cleanup stops the provider and fails on strict mock misses, retaining bounded probe results for diagnosis.
 
 ## Setup
@@ -63,10 +63,9 @@ openclaw agent \
   --timeout 180
 grep -Fx verified "$TMPDIR/os execution/source/pty.result"
 
-# should complete only the two authored exec exchanges without mock misses
-openclaw-aimock evidence \
-  --scenario os-execution \
-  --expected-evidence "$GITHUB_WORKSPACE/examples/os-execution/expected-evidence.json"
+# should complete both authored commands without mock misses
+curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | tee "$TMPDIR/os-execution-evidence.json"
+jq -e '.scenario == "os-execution" and .strictMissCount == 0 and .finalResponseCount == 2 and any(.tools[]; .name == "exec" and .callResponseCount == 2) and any(.tools[]; .name == "process" and .callResponseCount <= 8)' "$TMPDIR/os-execution-evidence.json"
 ```
 
 ## Cleanup
