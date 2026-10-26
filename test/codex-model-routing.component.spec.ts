@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -53,7 +53,7 @@ describe('codex model routing binding', () => {
   });
 
   it('should load routing guidance from the bound workspace and reject changed content', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'codex-routing-'));
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'codex-routing-')));
     roots.push(root);
     const data = join(root, 'data');
     await writeFile(

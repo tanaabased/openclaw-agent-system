@@ -88,6 +88,7 @@ describe('channels/github/cli/reset', () => {
     async function capture(columns: number, color = false, json = false, decline = false) {
       const f = fixture();
       Object.assign(f.options, {
+        agents: [],
         json,
         yes: false,
         purge: true,
