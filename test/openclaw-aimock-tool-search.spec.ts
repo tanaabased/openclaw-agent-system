@@ -591,6 +591,8 @@ describe('scripts/aimock-tool-search', () => {
       const input = request(`Run the native execution ${mode} probe through OpenClaw exec.`);
       append(input, (await reply(scenario, input)).response, searchResult(['exec', 'process']));
       const call = (await reply(scenario, input)).response;
+      assert.ok('toolCalls' in call);
+      assert.equal(JSON.parse(call.toolCalls![0]!.arguments).args.timeoutSeconds, 120);
       append(input, call, {
         tool: { id: 'openclaw:exec', name: 'exec' },
         result: {
@@ -602,7 +604,7 @@ describe('scripts/aimock-tool-search', () => {
           ],
         },
       });
-      for (let attempt = 1; attempt <= 4; attempt += 1) {
+      for (let attempt = 1; attempt <= 12; attempt += 1) {
         const poll = (await reply(scenario, input)).response;
         assert.ok('toolCalls' in poll);
         const args = JSON.parse(poll.toolCalls![0]!.arguments);
@@ -614,7 +616,14 @@ describe('scripts/aimock-tool-search', () => {
         append(input, poll, {
           tool: { id: 'openclaw:process', name: 'process' },
           result: {
-            content: [{ type: 'text', text: 'os-execution-verified\n\nProcess still running.' }],
+            content: [
+              {
+                type: 'text',
+                text:
+                  (attempt === 1 ? 'os-execution-verified' : 'intermediate command output') +
+                  '\n\nProcess still running.',
+              },
+            ],
           },
         });
         const failed = structuredClone(input);
@@ -627,7 +636,6 @@ describe('scripts/aimock-tool-search', () => {
           },
         });
         assert.equal(matchFixture([...scenario.fixtures], failed), null);
-        if (attempt === 4) assert.equal(matchFixture([...scenario.fixtures], input), null);
         const completed = structuredClone(input);
         completed.messages.at(-1)!.content = JSON.stringify({
           tool: { id: 'openclaw:process', name: 'process' },
@@ -645,7 +653,36 @@ describe('scripts/aimock-tool-search', () => {
         const final = (await reply(scenario, completed)).response;
         assert.ok('content' in final);
         assert.equal(final.content, 'os-execution-ready');
+        if (attempt === 1) {
+          completed.messages.at(-1)!.content = JSON.stringify({
+            tool: { id: 'openclaw:process', name: 'process' },
+            result: { content: [{ type: 'text', text: 'Process exited with code 0.' }] },
+          });
+          assert.equal(matchFixture([...scenario.fixtures], completed), null);
+        }
       }
+      for (let attempt = 13; attempt <= 64; attempt += 1) {
+        append(
+          input,
+          {
+            toolCalls: [
+              {
+                id: `call_os_execution_${mode}_poll_${attempt}`,
+                name: 'tool_call',
+                arguments: JSON.stringify({
+                  id: 'openclaw:process',
+                  args: { action: 'poll', sessionId: 'kind-cloud', timeout: 30000 },
+                }),
+              },
+            ],
+          },
+          {
+            tool: { id: 'openclaw:process', name: 'process' },
+            result: { content: [{ type: 'text', text: 'Process still running.' }] },
+          },
+        );
+      }
+      assert.equal(matchFixture([...scenario.fixtures], input), null);
     }
   });
 

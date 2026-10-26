@@ -5,8 +5,10 @@ import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.t
 
 const model = /^(?:aimock\/)?gpt-5\.5$/u;
 const modes = ['pipe', 'pty'] as const;
+// polls can return as soon as output arrives; native exec owns the elapsed-time limit.
+const maxPolls = 64;
 const pollIds = (mode: string) =>
-  [1, 2, 3, 4].map((attempt) => `call_os_execution_${mode}_poll_${attempt}`);
+  Array.from({ length: maxPolls }, (_, index) => `call_os_execution_${mode}_poll_${index + 1}`);
 
 function latestResult(request: ChatCompletionRequest, mode: string) {
   const ids = [`call_os_execution_${mode}`, ...pollIds(mode)];
