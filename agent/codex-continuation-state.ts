@@ -1,3 +1,4 @@
+import { implementationRevisionProperties } from './implementation-revision.ts';
 import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
 import { Type, type Static } from 'typebox';
 
@@ -105,6 +106,7 @@ export const codexContinuationStateSchema = Type.Object(
     ),
     publicationAttempt: Type.Optional(attemptSchema),
     binding: Type.Optional(workflowBindingSchema),
+    ...implementationRevisionProperties,
     result: Type.Optional(implementationResultSchema),
     head: Type.Optional(Type.String({ pattern: '^[a-f0-9]{40,64}$' })),
     code: Type.Optional(text),

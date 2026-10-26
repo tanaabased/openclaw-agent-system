@@ -749,6 +749,7 @@ for (const scenario of [
         append(followup, 'work-context', {
           status: 'verified',
           runtime: 'openclaw',
+          deliveryOnly: false,
           publicationAuthorized: true,
           project: { path: '/tmp/owned' },
         });
@@ -838,6 +839,7 @@ for (const scenario of [
           append(automatic, 'work-context', {
             status: 'verified',
             runtime: 'openclaw',
+            deliveryOnly: false,
             publicationAuthorized: true,
             pendingPublicResponse: {
               kind: 'assessment-summary',
@@ -872,6 +874,7 @@ for (const scenario of [
           append(answer, 'work-context', {
             status: 'verified',
             runtime: 'openclaw',
+            deliveryOnly: false,
             publicationAuthorized: true,
             project: { path: '/tmp/owned' },
             previousImplementationResult: question.implementationResult,
@@ -944,6 +947,7 @@ for (const scenario of [
           append(input, 'work-context', {
             status: 'verified',
             runtime: 'openclaw',
+            deliveryOnly: false,
             publicationAuthorized: true,
             project: { path: '/tmp/owned' },
             implementation: {
@@ -1041,6 +1045,7 @@ for (const scenario of [
         append(input, 'work-context', {
           status: 'verified',
           runtime: 'openclaw',
+          deliveryOnly: false,
           publicationAuthorized: true,
           project: { path: '/tmp/owned' },
           implementation: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },

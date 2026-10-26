@@ -327,12 +327,24 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       authorizeLive,
       resumeBlocked,
       blockedTurnId,
+      selection,
     });
     if (!turn.ready) return turn.response;
     const { activeAttempt, receipt, currentTurnEnded } = turn;
     if (input.action === 'context')
-      return await codexWorkContext(record, context, { client, repo, admitted, selection });
-    if (input.action === 'result') return await recordCodexWorkResult(record, context, found);
+      return await codexWorkContext(record, context, {
+        client,
+        repo,
+        admitted,
+        selection: turn.selection,
+      });
+    if (input.action === 'result')
+      return await recordCodexWorkResult(
+        record,
+        context,
+        { ...found, turnId: found.turnId },
+        turn.revisionInput,
+      );
     if (input.action === 'delivery') {
       if (work.scope === 'local') throw new Error('implementation-publication-not-authorized');
       if (

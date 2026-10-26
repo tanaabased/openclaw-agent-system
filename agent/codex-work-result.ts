@@ -1,3 +1,4 @@
+import type { ImplementationSource } from './implementation-revision.ts';
 import { automationHash } from './automation-hash.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
 import type { DispatchNativeThread } from './codex-dispatch-native.ts';
@@ -10,7 +11,8 @@ import { validateWorkflowResult } from './workflow-result.ts';
 export default async function recordCodexWorkResult(
   record: DispatchRecord,
   context: Pick<CodexWorkContext, 'input' | 'git' | 'signal' | 'save'>,
-  found: Pick<DispatchNativeThread, 'cwd' | 'turnId'>,
+  found: Pick<DispatchNativeThread, 'cwd'> & { turnId: string },
+  revisionInput?: ImplementationSource,
 ) {
   const { input, git, signal, save } = context;
   const work = record.continuation!;
@@ -40,7 +42,14 @@ export default async function recordCodexWorkResult(
     if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('continuation-head-invalid');
     work.head = head;
   }
+  if (work.result?.outcome !== 'done')
+    work.resultSource = work.revisionSource ??
+      revisionInput ?? {
+        turnId: found.turnId,
+        inputId: work.attempt?.inputId ?? found.turnId,
+      };
   work.result = input.result;
+  delete work.revisionSource;
   delete work.code;
   if (input.result.outcome === 'blocked') work.blockedTurnId = found.turnId;
   else delete work.blockedTurnId;

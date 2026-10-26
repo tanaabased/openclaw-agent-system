@@ -3207,8 +3207,10 @@ describe('agent/openclaw issue dispatch', () => {
       assessmentReply(input.id);
       service = new OpenClawDispatch(service.dependencies);
       await workPass('recover-direct-delivery');
-      assert.equal((await record()).work?.result?.outcome, 'done');
-      assert.equal((await record()).work?.deliveryTurn?.runId, `${input.id}:delivery`);
+      assert.equal((await record()).work?.result, undefined);
+      assert.equal((await record()).work?.resultHistory?.at(-1)?.result.outcome, 'done');
+      assert.equal((await record()).work?.deliveryTurn, undefined);
+      assert.equal((await record()).work?.turn?.runId, `${input.id}:implementation:resume:1`);
       assert.equal(sends().length, 2);
       assert.equal(creates().length, 1);
     });
@@ -5704,6 +5706,141 @@ describe('agent/openclaw issue dispatch', () => {
       true,
     );
     assert.equal('code' in blocked && blocked.code, 'implementation-publication-not-authorized');
+  });
+
+  it('should allow a fresh owner revision after done while retaining completed recovery', async () => {
+    const { id, who } = await operatorFollowup();
+    await service.run(manifest, root, who, { action: 'implementation-context', id }, true);
+    const done = {
+      outcome: 'done' as const,
+      summary: 'First pass.',
+      fullResult: 'First pass checked.',
+    };
+    await service.run(
+      manifest,
+      root,
+      who,
+      {
+        action: 'implementation-result',
+        id,
+        implementationResult: done,
+      },
+      true,
+    );
+    const recovery = await service.run(
+      manifest,
+      root,
+      who,
+      { action: 'implementation-context', id },
+      true,
+    );
+    assert.ok('deliveryOnly' in recovery && recovery.deliveryOnly);
+    const before = await record();
+    const outsider = { ...who, runId: 'untrusted-revision' };
+    messages.push({
+      role: 'user',
+      content: 'Replace completed work.',
+      __openclaw: {
+        id: 'untrusted-input',
+        idempotencyKey: 'untrusted-revision:user',
+        senderIsOwner: false,
+      },
+    });
+    await assert.rejects(
+      service.run(manifest, root, outsider, { action: 'implementation-context', id }, true),
+      /dispatch-operator-input-unverified/,
+    );
+    const unauthorized = await service.run(
+      manifest,
+      root,
+      outsider,
+      { action: 'implementation-context', id },
+      false,
+    );
+    assert.ok('deliveryOnly' in unauthorized && unauthorized.deliveryOnly);
+    await assert.rejects(
+      service.run(
+        manifest,
+        root,
+        outsider,
+        {
+          action: 'implementation-result',
+          id,
+          implementationResult: { ...done, summary: 'Untrusted replacement.' },
+        },
+        false,
+      ),
+      /implementation-answer-required/,
+    );
+    const revise = { ...who, runId: 'owner-revision' };
+    messages.push({
+      role: 'user',
+      content: 'Revise the existing PR.',
+      __openclaw: {
+        id: 'revision-input',
+        idempotencyKey: 'owner-revision:user',
+        senderIsOwner: true,
+      },
+    });
+    for (let repeat = 0; repeat < 2; repeat++) {
+      const context = await service.run(
+        manifest,
+        root,
+        revise,
+        {
+          action: 'implementation',
+          operation: 'context',
+          id,
+        },
+        true,
+      );
+      assert.equal(context.status, 'verified');
+      assert.ok('deliveryOnly' in context && !context.deliveryOnly);
+      assert.ok('previousResult' in context);
+      assert.deepEqual(context.previousResult, done);
+      assert.deepEqual('handoff' in context && context.handoff, { next: 'implementation' });
+    }
+    assert.equal((await record()).work?.result, undefined);
+    const revised = { ...done, summary: 'Revised.', fullResult: 'Revision checked.' };
+    await service.run(
+      manifest,
+      root,
+      revise,
+      {
+        action: 'implementation-result',
+        id,
+        implementationResult: revised,
+      },
+      true,
+    );
+    const after = await record();
+    assert.equal(after.threadId, before.threadId);
+    assert.equal(after.worktree, before.worktree);
+    assert.deepEqual(after.result, before.result);
+    assert.deepEqual(after.work?.result, revised);
+    assert.deepEqual(after.work?.resultHistory?.[0]?.result, done);
+    const resumed = await service.run(
+      manifest,
+      root,
+      revise,
+      { action: 'implementation-context', id },
+      true,
+    );
+    assert.ok('deliveryOnly' in resumed && resumed.deliveryOnly);
+    await assert.rejects(
+      service.run(
+        manifest,
+        root,
+        revise,
+        {
+          action: 'implementation-result',
+          id,
+          implementationResult: { ...revised, summary: 'Conflicting replay.' },
+        },
+        true,
+      ),
+      /implementation-answer-required/,
+    );
   });
 
   it('should retain one implementation transition without replacing the assessment', async () => {
