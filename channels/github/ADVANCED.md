@@ -404,9 +404,9 @@ for same-run replay; it is not proof that the final card was visibly delivered.
 `status` reads the native intake and dispatch records.
 The existing table and JSON envelope report baseline, capacity, item preparation,
 and blockers. An item's optional `workflow` contains its phase and bound
-conversation: queued, routing, uncertain creation, created, assessing, or the
-retained assessment outcome. A created conversation is not a completed plan.
-Only issue selectors and the native OpenClaw Plan workflow are currently supported;
+conversation, including assessment, implementation, and delivery progress.
+A created conversation is not a completed plan.
+Only issue selectors and native OpenClaw Plan, Work, and Auto workflows are supported;
 other runtime/workflow selections fail explicitly. Observation performs no scan,
 credential resolution, scheduler writes, or conversation creation.
 
@@ -499,8 +499,9 @@ authorize the agent to change settings, and initial creation still verifies the
 requested configuration. [Routing skill and guidance customization](../../MANIFEST.md#models)
 applies to initial admission in both runtimes, not automatic planning-to-implementation switching.
 
-Work policy or an Auto Work decision lets the next intake pass continue an
-actionable plan in the same issue chat, using shared capacity and its saved native
+Work policy or an Auto Work decision lets an actionable plan continue in the same
+native turn through verified implementation context. Intake recovers idle or
+interrupted work in the same issue chat, using shared capacity and its saved native
 send receipt. An uncertain send is reconciled without sending again. Existing
 implementation stages survive later default-mode edits.
 
