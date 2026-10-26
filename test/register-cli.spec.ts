@@ -56,6 +56,7 @@ function createProgram(
     commandAuthority?: RegisterAgentSystemCliOptions['commandAuthority'];
     setupPrompt?: RegisterAgentSystemCliOptions['setupPrompt'];
     notificationWaitError?: Error;
+    notificationPreviewError?: Error;
     cacheGatewayRequest?: OpCacheGatewayRequest;
     terminalColumns?: number;
     toolExitCode?: number;
@@ -100,6 +101,7 @@ function createProgram(
     }>,
     notificationWait: [] as Array<GitHubNotificationWaitInput & { agentId: string }>,
     oneShotCompletion: [] as number[],
+    oneShotOutput: [] as (typeof events)[],
     tool: [] as Array<{
       argv: string[];
       command: string;
@@ -114,18 +116,21 @@ function createProgram(
     notificationReset: {
       listAgents: async () => ['tanaabot'],
       service: {
-        preview: async (manifest, workspace, purge) => ({
-          runtime: 'openclaw',
-          agentId: manifest.agent.id,
-          workspace,
-          scope: 'a'.repeat(64),
-          automation: '{}',
-          inventory: '{}',
-          resources: [],
-          purge,
-          continuing: false,
-          fingerprint: 'fixture',
-        }),
+        preview: async (manifest, workspace, purge) => {
+          if (dependencies.notificationPreviewError) throw dependencies.notificationPreviewError;
+          return {
+            runtime: 'openclaw',
+            agentId: manifest.agent.id,
+            workspace,
+            scope: 'a'.repeat(64),
+            automation: '{}',
+            inventory: '{}',
+            resources: [],
+            purge,
+            continuing: false,
+            fingerprint: 'fixture',
+          };
+        },
         run: async (manifest, workspace) => ({
           status: 'complete',
           operationId: 'operation',
@@ -147,6 +152,7 @@ function createProgram(
     cacheGatewayRequest: dependencies.cacheGatewayRequest,
     completeOneShot: async (code) => {
       calls.oneShotCompletion.push(code);
+      calls.oneShotOutput.push([...events]);
     },
     cwd: () => '/current',
     credentialInput: {
@@ -783,6 +789,41 @@ describe('cli/automation-commands', () => {
 });
 
 describe('cli/register', () => {
+  it('should flush one reset failure section with manifest notices before one-shot exit', async () => {
+    for (const json of [false, true]) {
+      const f = createProgram(undefined, {
+        manifestResult: {
+          ...validResult,
+          diagnostics: [
+            { severity: 'warning', code: 'fixture-warning', message: 'MixedCase warning' },
+          ],
+        },
+        notificationPreviewError: new Error('notification-reset-preview-changed'),
+      });
+      await f.program.parseAsync([
+        'node',
+        'openclaw',
+        'as',
+        'notifications',
+        'reset',
+        '--agent',
+        'tanaabot',
+        '--yes',
+        ...(json ? ['--json'] : []),
+      ]);
+      assert.deepEqual(f.exitCodes, [1]);
+      assert.deepEqual(f.calls.oneShotCompletion, [1]);
+      assert.deepEqual(f.calls.oneShotOutput, [f.events]);
+      assert.equal(f.output.join(''), '');
+      assert.equal(f.events.length, 1);
+      const diagnostic = f.events[0]!.text;
+      assert.ok(diagnostic.includes('notification-reset-preview-changed'));
+      assert.ok(diagnostic.includes('MixedCase warning'));
+      assert.equal(diagnostic.match(/\nmessages\n/gu)?.length ?? 0, json ? 0 : 1);
+      if (!json) assert.ok(diagnostic.indexOf('error') < diagnostic.indexOf('warning'));
+      else assert.ok(!diagnostic.includes('\u001b'));
+    }
+  });
   it('should collect repeated reset agents and reject reset from a bound descendant', async () => {
     const selected = createProgram();
     await selected.program.parseAsync([

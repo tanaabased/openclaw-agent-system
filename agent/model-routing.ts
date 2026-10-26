@@ -219,10 +219,9 @@ export function inspectModelRouting(
   return {
     status: 'available' as const,
     profiles: Object.fromEntries(
-      Object.entries(models).map(([name, profile]) => [
-        name,
-        projectRoutingProfile(profile, runtime),
-      ]),
+      (['default', 'low', 'medium', 'high'] as const)
+        .filter((name) => models[name])
+        .map((name) => [name, projectRoutingProfile(models[name]!, runtime)]),
     ),
     rubric: modelRoutingRubric,
     reportGuidance: modelRoutingReportGuidance,

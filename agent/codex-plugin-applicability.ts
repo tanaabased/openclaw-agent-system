@@ -25,7 +25,9 @@ export default function codexPluginApplies(
     ...selectedModels(defaults?.model),
     ...Object.keys(agent?.models ?? {}),
     ...Object.keys(defaults?.models ?? {}),
-    ...(manifest.models ? Object.values(manifest.models).map(({ model }) => model) : []),
+    ...(['default', 'low', 'medium', 'high'] as const).flatMap((name) =>
+      manifest.models?.[name]?.model ? [manifest.models[name]!.model] : [],
+    ),
   ]);
   for (const value of refs) {
     const [provider, model] = value.split('/', 2);

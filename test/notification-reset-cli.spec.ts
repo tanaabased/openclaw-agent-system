@@ -1,6 +1,9 @@
 import { withNotificationResetDiagnostic } from '../agent/notification-reset-diagnostic.ts';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
+import ansis from 'ansis';
+import stringWidth from 'fast-string-width';
+import { createCliStyles } from '../cli/output.ts';
 import reset, { type ResetNotificationsOptions } from '../channels/github/cli/reset.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import type { NotificationResetPreview } from '../agent/notification-reset.ts';
@@ -10,6 +13,7 @@ describe('channels/github/cli/reset', () => {
     const calls: string[] = [];
     const stdout: string[] = [];
     const stderr: string[] = [];
+    const events: Array<{ stream: 'stdout' | 'stderr'; text: string }> = [];
     let code = 0;
     const loaded = (id: string): AgentManifestLoadResult => ({
       status: 'loaded',
@@ -65,15 +69,130 @@ describe('channels/github/cli/reset', () => {
         },
       },
       output: {
-        writeStdout: (text) => stdout.push(text),
-        writeStderr: (text) => stderr.push(text),
+        writeStdout: (text) => {
+          stdout.push(text);
+          events.push({ stream: 'stdout', text });
+        },
+        writeStderr: (text) => {
+          stderr.push(text);
+          events.push({ stream: 'stderr', text });
+        },
       },
       setExitCode: (value) => {
         code = value;
       },
     };
-    return { options, calls, stdout, stderr, code: () => code };
+    return { options, calls, stdout, stderr, events, code: () => code };
   }
+  it('should retain preview consent, masked destinations and recovery across widths and color modes', async () => {
+    async function capture(columns: number, color = false, json = false, decline = false) {
+      const f = fixture();
+      Object.assign(f.options, {
+        json,
+        yes: false,
+        purge: true,
+        terminalColumns: columns,
+        styles: createCliStyles(color ? { FORCE_COLOR: '3' } : { NO_COLOR: '1', FORCE_COLOR: '3' }),
+        input: Object.assign(new Readable({ read() {} }), { isTTY: true }),
+      });
+      const preview = f.options.service.preview;
+      f.options.service.preview = async (...args) => ({
+        ...(await preview(...args)),
+        fresh: true,
+        continuing: false,
+        resources: [
+          {
+            id: 'chat-fixture',
+            identity: 'chat-fixture',
+            state: 'pending',
+            kind: 'chat',
+            description: 'Chat-Private-9c31',
+            details: ['MixedCase retained detail'],
+          },
+          {
+            id: 'worktree-fixture',
+            identity: 'worktree-fixture',
+            state: 'pending',
+            kind: 'worktree',
+            description: '/Workspace/Mixed/Retained',
+            details: [],
+          },
+        ],
+      });
+      f.options.prompt = {
+        multiselect: async (input) =>
+          input.options.filter(({ value }) => value === 'one').map(({ value }) => value),
+        confirm: async () => {
+          if (!json) {
+            const text = ansis.strip(f.stdout.join('')).replace(/\s/gu, '');
+            for (const signal of [
+              'purge',
+              'pauseintake',
+              'baseline',
+              'restore',
+              'one',
+              '/Workspace/Mixed/Retained',
+              '***9c31',
+              'MixedCaseretaineddetail',
+              'freshreset',
+            ])
+              assert.ok(text.includes(signal));
+            assert.ok(!text.includes('Chat-Private-9c31'));
+          }
+          assert.ok(!f.calls.some((call) => call.startsWith('run:')));
+          return !decline;
+        },
+      };
+      f.options.service.run = async (manifest) => {
+        f.calls.push(`run:${manifest.agent.id}`);
+        throw new Error('notification-reset-automation-changed');
+      };
+      if (json) {
+        f.options.yes = true;
+        f.options.agents = ['one'];
+      }
+      await reset(f.options);
+      return f;
+    }
+    const wide = await capture(120);
+    for (const columns of [32, 80]) {
+      const plain = await capture(columns);
+      const colored = await capture(columns, true);
+      assert.deepEqual(
+        colored.events.map((e) => ({ ...e, text: ansis.strip(e.text) })),
+        plain.events,
+      );
+      assert.deepEqual(plain.calls, ['preview:one', 'run:one']);
+      assert.equal(plain.code(), 1);
+      assert.ok(plain.events.slice(0, -1).every((e) => e.stream === 'stdout'));
+      assert.equal(plain.events.at(-1)?.stream, 'stderr');
+      assert.equal(plain.stderr.join('').match(/\nmessages\n/gu)?.length, 1);
+      assert.ok(
+        plain.events.every((e) => e.text.split('\n').every((line) => stringWidth(line) <= columns)),
+      );
+      assert.equal(
+        plain.events
+          .map((e) => e.text)
+          .join('')
+          .replace(/\s/gu, ''),
+        wide.events
+          .map((e) => e.text)
+          .join('')
+          .replace(/\s/gu, ''),
+      );
+    }
+    const declined = await capture(80, false, false, true);
+    assert.deepEqual(declined.calls, ['preview:one']);
+    assert.equal(declined.code(), 0);
+    const machine = await capture(32, true, true);
+    assert.equal(
+      JSON.parse(machine.stdout.join('')).results[0].code,
+      'notification-reset-automation-changed',
+    );
+    assert.ok(
+      !machine.events.some((e) => e.text.includes('messages') || e.text.includes('\u001b')),
+    );
+  });
   it('should require explicit scope and yes for unattended execution before any effect', async () => {
     for (const change of [{ agents: [] }, { yes: false }, { all: true }]) {
       const f = fixture();
@@ -287,34 +406,50 @@ describe('channels/github/cli/reset', () => {
     assert.deepEqual(f.calls, ['preview:one', 'preview:two']);
   });
   it('should wait for turns and continue without another confirmation', async () => {
-    const f = fixture();
-    f.options.agents = ['one'];
-    let running = true;
-    f.options.service.run = async () =>
-      running
-        ? {
-            status: 'waiting',
-            operationId: 'operation',
-            agentId: 'one',
-            workspace: '/workspace/one',
-            phase: 'drain',
-            intakePaused: true,
-            resources: [],
-            code: 'notification-reset-turns-active',
-          }
-        : {
-            status: 'complete',
-            operationId: 'operation',
-            agentId: 'one',
-            workspace: '/workspace/one',
-            resources: [],
-            automationRestored: true,
-          };
-    f.options.sleep = async () => {
-      running = false;
-    };
-    await reset(f.options);
-    assert.equal(JSON.parse(f.stdout.join('')).results[0].status, 'complete');
+    for (const json of [false, true]) {
+      const f = fixture();
+      f.options.json = json;
+      f.options.styles = createCliStyles({ FORCE_COLOR: '3' });
+      f.options.agents = ['one'];
+      const instruction = 'MixedCase managed turn remains active; no turns will be aborted';
+      let running = true;
+      f.options.service.run = async () =>
+        running
+          ? {
+              status: 'waiting',
+              operationId: 'operation',
+              agentId: 'one',
+              workspace: '/workspace/one',
+              phase: 'drain',
+              intakePaused: true,
+              resources: [],
+              code: 'notification-reset-turns-active',
+              instruction,
+            }
+          : {
+              status: 'complete',
+              operationId: 'operation',
+              agentId: 'one',
+              workspace: '/workspace/one',
+              resources: [],
+              automationRestored: true,
+              warnings: ['MixedCase reset warning'],
+            };
+      f.options.sleep = async () => {
+        if (!json) {
+          const text = f.stdout.join('');
+          assert.match(ansis.strip(text), /waiting\s+MixedCase managed turn/u);
+          assert.ok(!text.includes(f.options.styles!.notice(instruction)));
+        }
+        running = false;
+      };
+      await reset(f.options);
+      assert.equal(f.code(), 0);
+      if (json) assert.equal(JSON.parse(f.stdout.join('')).results[0].status, 'complete');
+      else assert.match(ansis.strip(f.stdout.join('')), /one\s+complete/u);
+      assert.equal(f.events.at(-1)?.stream, 'stderr');
+      assert.ok(f.stderr.join('').includes('MixedCase reset warning'));
+    }
   });
 
   it('should not start a fresh reset when another process finishes the pending operation', async () => {

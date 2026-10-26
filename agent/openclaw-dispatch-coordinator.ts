@@ -1,3 +1,5 @@
+import openClawRoutingInstructions from './openclaw-routing-instructions.ts';
+import { routingInstructionsGuidance, routingInstructionsDigest } from './routing-instructions.ts';
 import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import { openClawResponseEligible } from './openclaw-response-continuation.ts';
@@ -47,7 +49,12 @@ function source(intake: IntakeRecord) {
   return `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/issues/${intake.issue.number}`;
 }
 function digest(record: OpenClawDispatchRecord) {
-  return automationHash({ context: record.context, manifest: record.manifestDigest });
+  return automationHash({
+    context: record.context,
+    manifest: record.manifestDigest,
+    instructions:
+      record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
+  });
 }
 function pendingAssignment({
   record,
@@ -724,6 +731,7 @@ export default class OpenClawDispatchCoordinator {
         true,
       );
       record.context = JSON.stringify(dispatchContext(evidence, source(intake), now));
+      record.routingInstructions = await openClawRoutingInstructions(this.context, tx);
       await save();
       return {
         status: 'routing-required' as const,
@@ -731,12 +739,17 @@ export default class OpenClawDispatchCoordinator {
         digest: digest(record),
         context: JSON.parse(record.context),
         assessmentSchema,
-        routing: resolveModelRoutingRequest(
-          manifest.models,
-          current.manifestDigest,
-          { action: 'inspect' },
-          'openclaw',
-        ),
+        routing: {
+          ...resolveModelRoutingRequest(
+            manifest.models,
+            current.manifestDigest,
+            { action: 'inspect' },
+            'openclaw',
+          ),
+          instructions: record.routingInstructions,
+          instructionsDigest: routingInstructionsDigest(record.routingInstructions),
+          instructionsGuidance: routingInstructionsGuidance,
+        },
       };
     } catch (error) {
       if (openClawDispatchFailureCode(error) === stateSnapshotConflictCode) throw error;

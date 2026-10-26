@@ -805,6 +805,47 @@ The [routing helper](./tools/model-routing/README.md) validates assessments and
 explicit selections against these profiles; it has no built-in model or effort
 defaults. Configuration generators can read `profiles.default` from `inspect`.
 
+`models.routing` optionally customizes **initial** routing for direct calls, manual
+issue launch, and scheduled admission in OpenClaw and standalone Codex:
+
+| Field              | Type                       | Required | Default                                   | Behavior                                                                                           |
+| ------------------ | -------------------------- | -------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `routing.guidance` | string or `{file: string}` | no       | none                                      | Additional inline/multiline guidance or a UTF-8 file relative to the stable bound agent workspace. |
+| `routing.skill`    | skill ID                   | no       | `agent-system:agent-system-model-routing` | Replacement judgment method, discovered through the calling runtime.                               |
+
+```yaml
+models:
+  default: { model: openai/example-default, effort: high }
+  low: { model: openai/example-small, effort: medium }
+  medium: { model: openai/example-medium, effort: high }
+  high: { model: openai/example-large, effort: high }
+  routing:
+    skill: company:task-routing
+    guidance:
+      file: guidance/model-routing.md
+```
+
+Model identifiers above are placeholders. Omission or `routing: {}` preserves the
+default rubric; guidance alone supplements it. The selected skill runs once, not
+as another classifier. Routing uses the same [skill and guidance rules](#assessment-selection)
+as assessment, including normalization, the 32 KiB limit, and contained-file checks.
+Missing or unusable instructions stop selection. No Install is needed for instruction
+edits; passive discovery validates shape without reading guidance files.
+
+Precedence is independent by dimension: explicit operator model and effort choices
+win for the supplied fields; explicit user or verified structured Complexity fixes
+the tier. Otherwise the selected method and guidance assess `low`, `medium`, `high`,
+or `unset`. Configured profiles supply model and effort; native availability and
+application checks remain final. Guidance cannot relabel verified Complexity,
+manufacture operator overrides, or select arbitrary models. Default fallback remains
+explicit and preserves unresolved status.
+
+Edits affect new initial selections. Changed unconsumed instructions require fresh
+inspection and assessment; a retained creation attempt keeps its exact selection.
+Ordinary follow-ups, resume, compaction, and implementation keep saved choices while
+respecting operator changes through native controls. This does **not** automatically
+switch an expensive planning model to a cheaper implementation model.
+
 Model refs cannot select an authentication profile. Credential configuration
 remains outside the manifest.
 

@@ -1,9 +1,21 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+import codexAssessmentSkill from './codex-assessment-skill.ts';
+import { connectCodexThreads } from './codex-thread-client.ts';
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import { RoutingError } from './model-routing.ts';
-import resolveModelRoutingRequest from './model-routing-request.ts';
+import initialModelRouting from './initial-model-routing.ts';
 
-/** inspect only the persisted codex binding and non-secret manifest profiles. */
-export default async function codexModelRouting(pluginData: string, request: unknown) {
+/** use portable binding, guidance, and native skill discovery without OpenClaw credentials. */
+export default async function codexModelRouting(
+  pluginData: string,
+  request: unknown,
+  dependencies: {
+    connect?: typeof connectCodexThreads;
+    codexHome?: string;
+  } = {},
+) {
   const inspection = await inspectCodexWorkspaceBinding(pluginData);
   if (inspection.status === 'unbound')
     return { status: 'unavailable' as const, code: 'codex-workspace-unbound' };
@@ -15,5 +27,22 @@ export default async function codexModelRouting(pluginData: string, request: unk
     return { status: 'unavailable' as const, code: 'manifest-missing' };
   if (loaded.status !== 'loaded')
     throw new RoutingError('manifest-invalid', 'The bound workspace manifest is invalid.');
-  return resolveModelRoutingRequest(loaded.manifest.models, loaded.digest, request, 'codex');
+  return initialModelRouting({
+    models: loaded.manifest.models,
+    manifestDigest: loaded.digest,
+    request,
+    runtime: 'codex',
+    workspace: inspection.preview.workspaceDir,
+    resolveSkill: async (id) => {
+      const connection = await (dependencies.connect ?? connectCodexThreads)(
+        inspection.preview.workspaceDir,
+        dependencies.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'),
+      );
+      try {
+        return await codexAssessmentSkill(connection.request, inspection.preview.workspaceDir, id);
+      } finally {
+        await connection.close();
+      }
+    },
+  });
 }

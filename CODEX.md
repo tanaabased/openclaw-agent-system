@@ -117,7 +117,7 @@ models:
   high: { model: openai/gpt-6-astra, effort: xhigh }
 ```
 
-See [profile configuration](./MANIFEST.md#models) for field rules and
+See [profile and initial-routing customization](./MANIFEST.md#models) for field rules and
 [model routing](./tools/model-routing/README.md) for selection and overrides.
 Standalone Codex reads these profiles without changing OpenClaw configuration.
 A mapped selection still needs native Codex support and application; it is not

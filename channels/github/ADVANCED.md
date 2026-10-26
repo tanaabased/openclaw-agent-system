@@ -496,7 +496,8 @@ operator may change the model or reasoning effort through native controls withou
 recreating the task. Original routing stays recorded separately from current
 session settings; continuation respects the operator's choice. This does not
 authorize the agent to change settings, and initial creation still verifies the
-requested configuration.
+requested configuration. [Routing skill and guidance customization](../../MANIFEST.md#models)
+applies to initial admission in both runtimes, not automatic planning-to-implementation switching.
 
 Work policy or an Auto Work decision lets the next intake pass continue an
 actionable plan in the same issue chat, using shared capacity and its saved native

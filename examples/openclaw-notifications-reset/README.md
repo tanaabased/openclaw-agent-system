@@ -4,7 +4,7 @@ Preview and confirm a fresh notification-management reset, replace the coordinat
 
 ## What Belongs Here
 
-- An operator preview and its exact confirmation token for the bound agent.
+- An operator preview with readable targets and masked chat identifiers, and its exact confirmation token for the bound agent.
 - Native coordinator archival, cleared tracking, a new reset generation, and a ready empty baseline.
 - Restoration of the installed intake automation's enabled state after reset.
 
@@ -136,10 +136,21 @@ jq -es '[.[].records[]] | length == 1 and .[0].retired.at != null' "$XDG_CONFIG_
 ## Testing
 
 ```bash
-# should reset local management with a fresh coordinator and restore the installed intake setting
+# should preview the selected agent with a masked coordinator before confirmation
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/tanaabot"
 openclaw agent-system notifications reset --agent reset-tanaabot --fresh --preview --json > "$TMPDIR/reset-preview.json"
 jq -e '.status == "confirmation-required" and .targets[0].fresh == true and any(.targets[0].resources[]; .kind == "coordinator")' "$TMPDIR/reset-preview.json"
+old_coordinator=$(jq -er '.targets[0].resources[] | select(.kind == "coordinator") | .description' "$TMPDIR/reset-preview.json")
+human_preview=$(NO_COLOR=1 openclaw agent-system notifications reset --agent reset-tanaabot --fresh --preview)
+printf '%s\n' "$human_preview" | grep -F 'agent' | grep -F 'reset-tanaabot'
+masked_coordinator=$(jq -er '.targets[0].resources[] | select(.kind == "coordinator") | "***" + .description[-4:]' "$TMPDIR/reset-preview.json")
+printf '%s\n' "$human_preview" | grep -F 'coordinator' | grep -F "$masked_coordinator"
+if printf '%s\n' "$human_preview" | grep -F "$old_coordinator"; then
+  exit 1
+fi
+
+# should reset local management with a fresh coordinator and restore the installed intake setting
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/tanaabot"
 old_coordinator=$(jq -er '.targets[0].resources[] | select(.kind == "coordinator") | .description' "$TMPDIR/reset-preview.json")
 confirmation=$(jq -er .confirmation "$TMPDIR/reset-preview.json")
 openclaw agent-system notifications reset --agent reset-tanaabot --fresh --confirmation "$confirmation" --yes --json | jq -e '.results | length == 1 and .[0].status == "complete" and .[0].automationRestored == true'

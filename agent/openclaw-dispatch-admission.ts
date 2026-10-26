@@ -1,3 +1,5 @@
+import openClawRoutingInstructions from './openclaw-routing-instructions.ts';
+import { assertRoutingInstructions, routingInstructionsDigest } from './routing-instructions.ts';
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import type { Static } from 'typebox';
 
@@ -19,7 +21,12 @@ import createIssueSession from './openclaw-session-create.ts';
 import advanceIssueTurn from './openclaw-session-turn.ts';
 
 function digest(record: OpenClawDispatchRecord) {
-  return automationHash({ context: record.context, manifest: record.manifestDigest });
+  return automationHash({
+    context: record.context,
+    manifest: record.manifestDigest,
+    instructions:
+      record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
+  });
 }
 export default class OpenClawDispatchAdmission {
   constructor(readonly context: OpenClawDispatchContext) {}
@@ -82,6 +89,8 @@ export default class OpenClawDispatchAdmission {
       if (record.phase !== 'routing' || input.digest !== digest(record) || !record.context)
         throw new Error('dispatch-preparation-stale');
       setStage('routing');
+      const instructions = await openClawRoutingInstructions(this.context, tx);
+      assertRoutingInstructions(instructions, record.routingInstructions);
       const metadata = JSON.parse(record.context).metadata?.complexity;
       const routing = resolveModelRoutingRequest(
         manifest.models,
@@ -116,6 +125,7 @@ export default class OpenClawDispatchAdmission {
       });
       record.worktree = worktree.path;
       record.routing = JSON.stringify(routing);
+      record.routingInstructions = instructions;
       record.routingNote = `Requested ${routing.candidate.model} / ${routing.candidate.thinking}; session settings are verified at creation, not model execution.`;
       delete record.retry;
       delete record.retryAfter;

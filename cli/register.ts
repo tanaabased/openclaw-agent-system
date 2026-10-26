@@ -461,6 +461,7 @@ export default function registerAgentSystemCli(
         json: opts.json === true,
         output,
         styles: options.styles,
+        terminalColumns: options.terminalColumns ?? process.stdout.columns,
         setExitCode,
       });
     });
@@ -498,6 +499,7 @@ export default function registerAgentSystemCli(
     output,
     setExitCode,
     styles: options.styles,
+    terminalColumns: options.terminalColumns ?? process.stdout.columns,
   });
   const tool = agentSystem
     .command('tool <command> [args...]')
