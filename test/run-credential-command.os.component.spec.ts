@@ -31,4 +31,22 @@ describe('credentials/run-command', () => {
 
     assert.equal(result.status, 'timed-out');
   });
+  for (const reason of ['timed-out', 'output-too-large'] as const) {
+    it(`should stop descendants retaining output pipes after ${reason}`, async () => {
+      const descendant = `${reason === 'output-too-large' ? 'process.stdout.write("x".repeat(2048));' : ''}
+        setTimeout(() => process.stdout.write('survived'), 1500)`;
+      const result = await runCredentialCommand({
+        command: process.execPath,
+        args: [
+          '-e',
+          `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: ['ignore', 1, 2] }).unref(); process.exit(0)`,
+        ],
+        maximumOutputBytes: 1024,
+        timeoutMs: 500,
+      });
+      assert.equal(result.status, reason);
+      assert.equal(result.stdout.includes('survived'), false);
+      assert.ok(result.stdout.length + result.stderr.length <= 1024);
+    });
+  }
 });

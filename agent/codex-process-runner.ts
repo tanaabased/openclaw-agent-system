@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 
+import signalProcessTree from '../utils/signal-process-tree.ts';
 import type {
   SetupProcessOptions,
   SetupProcessResult,
@@ -29,24 +30,6 @@ function capture(
   state.truncated += chunk.byteLength - kept;
 }
 
-function signalProcess(
-  child: { kill(signal?: NodeJS.Signals): boolean; pid?: number },
-  signal: NodeJS.Signals,
-): void {
-  if (child.pid === undefined) return;
-  try {
-    process.kill(-child.pid, signal);
-    return;
-  } catch {
-    // Fall back to the direct child if process-group signaling is unavailable.
-  }
-  try {
-    child.kill(signal);
-  } catch {
-    // The process may already have exited between the lifecycle event and the signal.
-  }
-}
-
 /** Provide the standalone Codex adapter with the bounded process contract used by setup. */
 const runCodexSetupProcess: SetupProcessRunner = async (argv, options) =>
   new Promise<SetupProcessResult>((resolve, reject) => {
@@ -68,8 +51,8 @@ const runCodexSetupProcess: SetupProcessRunner = async (argv, options) =>
       // Descendants can keep inherited pipes open after the direct child exits.
       if (settled || termination !== 'exit') return;
       termination = reason;
-      signalProcess(child, 'SIGTERM');
-      forceTimer = setTimeout(() => signalProcess(child, 'SIGKILL'), options.killGraceMs);
+      signalProcessTree(child, 'SIGTERM');
+      forceTimer = setTimeout(() => signalProcessTree(child, 'SIGKILL'), options.killGraceMs);
       forceTimer.unref();
     };
     const timeout = setTimeout(() => stop('timeout'), options.timeoutMs);
