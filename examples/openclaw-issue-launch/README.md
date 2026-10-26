@@ -34,7 +34,7 @@ openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --
 
 # should prepare the isolated ssh fixture and run-specific key title
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/tanaabot/keys" "$HOME/.ssh"
-sed -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/tanaabot/agent.yaml" > "$TMPDIR/manual-agent.yaml"
+sed -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/tanaabot/agent.yaml" > "$TMPDIR/manual-agent.yaml"
 mv "$TMPDIR/manual-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/tanaabot/agent.yaml"
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/tanaabot/keys/id_ed25519"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/tanaabot/keys/id_ed25519.pub"
@@ -55,7 +55,7 @@ openclaw agent-system automations list --json | jq -e '.status == "aligned" and 
 
 # should create one unassigned manual-launch target
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/emori"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System openclaw-issue-launch $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -f 'body=Disposable manual launch target; notification-hidden-initial-fact. Document closing disposable issues after evidence capture; do not assign.' | tee "$TMPDIR/manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
+openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System openclaw-issue-launch $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -f 'body=Disposable manual launch target; notification-hidden-initial-fact. Document closing disposable issues after evidence capture; do not assign.' | tee "$TMPDIR/manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
 ```
 
 ## Testing
@@ -127,23 +127,6 @@ openclaw agent-system automations list --json | jq -e '.status == "aligned" and 
 # should stop the gateway before changing external fixtures
 openclaw-gateway stop --timeout 340
 touch "$TMPDIR/manual-gateway-stopped"
-
-# should close only this run's disposable issue
-test -f "$TMPDIR/manual-gateway-stopped"
-cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/emori"
-if test -s "$TMPDIR/manual-issue.json"; then
-  number=$(jq -er .number "$TMPDIR/manual-issue.json")
-  openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
-fi
-
-# should remove only this run's ssh authentication key
-test -f "$TMPDIR/manual-gateway-stopped"
-cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/tanaabot"
-key_material=$(awk '{print $2}' keys/id_ed25519.pub)
-key_id=$(openclaw agent-system tool gh -- api --paginate /user/keys --jq ".[] | select((.key | split(\" \")) | index(\"$key_material\")) | .id")
-if test -n "$key_id"; then
-  openclaw agent-system tool gh -- api --method DELETE "/user/keys/$key_id"
-fi
 
 # should report strict mock failures and stop the provider
 set -o pipefail

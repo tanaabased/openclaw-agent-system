@@ -32,7 +32,7 @@ openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --
 
 # should prepare the isolated ssh fixture and run-specific key title
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/keys" "$HOME/.ssh"
-sed -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
+sed -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
 mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/agent.yaml"
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/keys/id_ed25519"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot/keys/id_ed25519.pub"
@@ -71,7 +71,7 @@ openclaw agent-system automations list --json | jq -e '.status == "aligned" and 
 
 # should create one unassigned issue for the direct operation
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/emori"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=Agent System openclaw-issue-assessment $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -f 'body=Disposable direct operation target; do not assign.' | tee "$TMPDIR/notification-manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
+openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System openclaw-issue-assessment $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -f 'body=Disposable direct operation target; do not assign.' | tee "$TMPDIR/notification-manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
 
 # should prepare an independent checkout for the explicit assessment
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot"
@@ -115,23 +115,6 @@ test -f "$TMPDIR/notification-gateway-stopped"
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot"
 if test -s "$TMPDIR/direct-assessment-worktree.json"; then
   openclaw agent-system tool worktree -- remove remote 381-direct-assessment | jq -e '.status == "removed"'
-fi
-
-# should close only the unassigned direct-operation fixture
-test -f "$TMPDIR/notification-gateway-stopped"
-cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/emori"
-if test -s "$TMPDIR/notification-manual-issue.json"; then
-  number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
-  openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
-fi
-
-# should remove only this run's ssh authentication key
-test -f "$TMPDIR/notification-gateway-stopped"
-cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/tanaabot"
-key_material=$(awk '{print $2}' keys/id_ed25519.pub)
-key_id=$(openclaw agent-system tool gh -- api --paginate /user/keys --jq ".[] | select((.key | split(\" \")) | index(\"$key_material\")) | .id")
-if test -n "$key_id"; then
-  openclaw agent-system tool gh -- api --method DELETE "/user/keys/$key_id"
 fi
 
 # should report strict mock failures and stop the provider

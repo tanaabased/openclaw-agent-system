@@ -1,0 +1,28 @@
+name: GHA fixture cleanup
+description: Clean resources tagged for one completed example run and attempt.
+inputs:
+  run-id:
+    description: Completed source workflow run
+    required: true
+  attempt:
+    description: Exact source run attempt
+    required: true
+  dry-run:
+    description: Preview matching fixtures without changing them
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GHA_FIXTURE_CLEANUP_RUN_ID: ${{ inputs.run-id }}
+        CLEANUP_DRY_RUN: ${{ inputs.dry-run }}
+        GHA_FIXTURE_CLEANUP_ATTEMPT: ${{ inputs.attempt }}
+      run: |
+        if [[ ! "$GHA_FIXTURE_CLEANUP_RUN_ID" =~ ^[1-9][0-9]*$ || ! "$GHA_FIXTURE_CLEANUP_ATTEMPT" =~ ^[1-9][0-9]*$ ]]; then
+          printf '%s\n' 'cleanup action requires an exact run and attempt' >&2
+          exit 1
+        fi
+        args=(--json)
+        if [[ "$CLEANUP_DRY_RUN" == 'true' ]]; then args+=(--dry-run); fi
+        bun "$GITHUB_ACTION_PATH/../../../scripts/gha-fixture-cleanup.ts" "${args[@]}"

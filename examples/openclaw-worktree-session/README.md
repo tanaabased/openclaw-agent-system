@@ -23,7 +23,7 @@ Enroll disposable SSH keys, prepare a remote managed checkout, execute a native 
 # should enroll disposable ssh keys for the managed remote workspace
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-ssh-key --yolo
 openclaw-aimock prepare --scenario openclaw-worktree-session
-sed -e "s/__GITHUB_RUN_ID__/$GITHUB_RUN_ID/g" -e "s/__GITHUB_RUN_ATTEMPT__/$GITHUB_RUN_ATTEMPT/g" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/agent.yaml" > "$TMPDIR/worktree-agent.yaml"
+sed -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/agent.yaml" > "$TMPDIR/worktree-agent.yaml"
 mv "$TMPDIR/worktree-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/agent.yaml"
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/keys" "$HOME/.ssh"
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-worktree-session/keys/id_ed25519"
@@ -78,18 +78,6 @@ jq -e '.strictMissCount == 0 and .finalResponseCount == 2 and any(.tools[]; .nam
 ## Cleanup
 
 ```bash
-# should remove only the generated account keys
-cd "$GITHUB_WORKSPACE/examples/openclaw-worktree-session"
-key_material=$(awk '{print $2}' keys/id_ed25519.pub)
-for collection in keys ssh_signing_keys; do
-  key_id=$(openclaw agent-system tool gh -- api --paginate "/user/$collection" --jq ".[] | select((.key | split(\" \") | index(\"$key_material\")) != null) | .id")
-  if test -n "$key_id"; then
-    openclaw agent-system tool gh -- api --method DELETE "/user/$collection/$key_id"
-  fi
-  remaining=$(openclaw agent-system tool gh -- api --paginate "/user/$collection" --jq ".[] | select((.key | split(\" \") | index(\"$key_material\")) != null) | .id")
-  test -z "$remaining"
-done
-
 # should remove the clean remote worktree
 cd "$GITHUB_WORKSPACE/examples/openclaw-worktree-session"
 openclaw agent-system tool worktree -- remove remote 306-runtime-context | jq -e '.status == "removed"'
