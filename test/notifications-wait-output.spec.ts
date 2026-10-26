@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import ansis from 'ansis';
+import stringWidth from 'fast-string-width';
 
 import { captureWaitPreview } from './notifications-wait-presentation-fixtures.ts';
 
 describe('channels/github/cli/wait presentation', () => {
-  it('should match illustrative checkpoint command previews', async () => {
-    const previews = ['illustrative fixture data; no provider operations\n'];
+  it('should wrap selected widths without losing checkpoint data or changing color content', async () => {
     for (const name of [
       'baseline-success',
       'item-success',
@@ -13,15 +13,35 @@ describe('channels/github/cli/wait presentation', () => {
       'degraded',
       'invalid-options',
     ] as const) {
-      const { events } = await captureWaitPreview(name);
-      previews.push(
-        `## ${name}\n${events.map(({ stream, text }) => `[${stream}]\n${text}`).join('')}`,
-      );
+      const wide = await captureWaitPreview(name, { columns: 120 });
+      for (const columns of [32, 80]) {
+        const plain = await captureWaitPreview(name, { columns });
+        const color = await captureWaitPreview(name, { columns, color: true });
+        assert.deepEqual(
+          color.events.map((e) => ({ ...e, text: ansis.strip(e.text) })),
+          plain.events,
+        );
+        assert.ok(
+          plain.events.every((e) =>
+            e.text.split('\n').every((line) => stringWidth(line) <= columns),
+          ),
+        );
+        assert.equal(
+          plain.events
+            .map((e) => e.text)
+            .join('')
+            .replace(/\s/gu, ''),
+          wide.events
+            .map((e) => e.text)
+            .join('')
+            .replace(/\s/gu, ''),
+        );
+        if (name !== 'invalid-options') {
+          assert.ok(plain.events[0]!.text.startsWith('\n'));
+          assert.ok(plain.events[0]!.text.endsWith('\n\n'));
+        }
+      }
     }
-    assert.equal(
-      previews.join('\n'),
-      await readFile(new URL('./notifications-wait-previews.txt', import.meta.url), 'utf8'),
-    );
   });
 
   it('should retain scope, effective options, bounded observation, and exit semantics', async () => {

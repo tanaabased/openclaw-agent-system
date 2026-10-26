@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import ansis from 'ansis';
+import stringWidth from 'fast-string-width';
 
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import instanceIdentity, { operateInstanceIdentity } from '../agent/instance-identity.ts';
@@ -10,6 +12,7 @@ import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import instanceCommand from '../cli/instance.ts';
+import { createCliStyles } from '../cli/output.ts';
 
 describe('agent/instance-identity', () => {
   let root: string;
@@ -137,5 +140,73 @@ describe('agent/instance-identity', () => {
     await instanceCommand({ ...options, json: true });
     assert.equal(JSON.parse(stdout).instanceId, identity.instanceId);
     assert.equal(stderr, '');
+  });
+
+  it('should preserve identity actions, missing recovery and json while wrapping human summaries', async () => {
+    const store = new AssignmentClaimStore(join(root, 'instance'));
+    async function capture(action: string, input = {}, json = false, columns = 32, color = false) {
+      const events: Array<{ stream: string; text: string }> = [];
+      let exitCode = 0;
+      await instanceCommand({
+        store,
+        action,
+        input,
+        json,
+        terminalColumns: columns,
+        styles: createCliStyles(color ? { FORCE_COLOR: '3' } : { NO_COLOR: '1', FORCE_COLOR: '3' }),
+        output: {
+          writeStdout: (text) => events.push({ stream: 'stdout', text }),
+          writeStderr: (text) => events.push({ stream: 'stderr', text }),
+        },
+        setExitCode: (code) => {
+          exitCode = code;
+        },
+      });
+      return { events, exitCode };
+    }
+    const missing = await capture('inspect');
+    assert.equal(missing.exitCode, 1);
+    assert.deepEqual(
+      missing.events.map((e) => e.stream),
+      ['stdout', 'stderr'],
+    );
+    assert.match(missing.events[0]!.text, /status\s+missing/u);
+    assert.match(missing.events[1]!.text, /run install/u);
+    const machineMissing = await capture('inspect', {}, true);
+    assert.deepEqual(JSON.parse(machineMissing.events[0]!.text), { status: 'missing' });
+    assert.equal(machineMissing.events.length, 1);
+    assert.equal(machineMissing.exitCode, 1);
+    assert.equal(await store.inspect(), undefined);
+    await store.identity();
+    const renamed = await capture('rename', { name: 'a-long-readable-installation-name' });
+    assert.match(renamed.events[0]!.text, /renamed/u);
+    const identity = (await store.inspect())!;
+    const wide = await capture('inspect', {}, false, 120);
+    for (const columns of [16, 32, 80]) {
+      const plain = await capture('inspect', {}, false, columns);
+      const colored = await capture('inspect', {}, false, columns, true);
+      assert.ok(
+        colored.events[0]!.text.includes(createCliStyles({ FORCE_COLOR: '3' }).status('ready')),
+      );
+      assert.deepEqual(
+        colored.events.map((e) => ({ ...e, text: ansis.strip(e.text) })),
+        plain.events,
+      );
+      const text = plain.events[0]!.text;
+      assert.ok(text.startsWith('\n') && text.endsWith('\n\n'));
+      assert.ok(text.split('\n').every((line) => stringWidth(line) <= columns));
+      assert.equal(text.replace(/\s/gu, ''), wide.events[0]!.text.replace(/\s/gu, ''));
+      assert.ok(text.replace(/\s/gu, '').includes(identity.displayName));
+      assert.ok(!text.includes(identity.instanceId));
+    }
+    const rotated = await capture('rotate', { expectedInstanceId: identity.instanceId });
+    assert.match(rotated.events[0]!.text, /rotated/u);
+    const saved = (await store.inspect())!;
+    assert.notEqual(saved.instanceId, identity.instanceId);
+    assert.equal(saved.displayName, identity.displayName);
+    const machine = await capture('inspect', {}, true, 16, true);
+    assert.deepEqual(JSON.parse(machine.events[0]!.text), { status: 'ready', ...saved });
+    assert.equal(machine.events.length, 1);
+    assert.equal(machine.exitCode, 0);
   });
 });
