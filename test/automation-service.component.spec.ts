@@ -900,10 +900,15 @@ describe('agent/automation-service', () => {
       const { store } = await service.scope(manifest, root);
       const ledger = await store.read();
       const record = ledger.records.find(({ id }) => id === 'check')!;
+      const retiredAtMs = record.retired!.atMs;
       assert.equal(record.removed, true);
       assert.deepEqual(record.retired, { atMs: now, reason: 'native-job-absent' });
       assert.equal(record.nativeId, 'native-0');
       assert.equal(Boolean(record.nativeHash), disableFirst);
+      assert.equal(
+        (await service.inspect(manifest, root)).find(({ stepId }) => stepId === 'check')!.code,
+        'automation-retired',
+      );
       assert.equal(
         (await service.inspect(manifest, root)).some(({ status }) => status === 'blocked'),
         false,
@@ -911,6 +916,44 @@ describe('agent/automation-service', () => {
       assert.deepEqual(native, [unrelated]);
       assert.equal(mutations().length, 0);
       const bytes = await store.file.read();
+
+      now += 24 * 60 * 60 * 1000 - 1;
+      assert.equal(
+        (await service.inspect(manifest, root)).some(({ code }) => code === 'automation-retired'),
+        true,
+      );
+      assert.equal(
+        (await service.reconcile(manifest, root)).outcomes.some(
+          ({ code, stepId }) => code === 'automation-retired' && stepId === 'check',
+        ),
+        true,
+      );
+
+      now += 1;
+      assert.equal(
+        (await service.inspect(manifest, root)).some(({ code }) => code === 'automation-retired'),
+        false,
+      );
+      assert.equal(
+        (await service.reconcile(manifest, root)).outcomes.some(
+          ({ code, stepId }) => code === 'automation-retired' && stepId === 'check',
+        ),
+        false,
+      );
+
+      now += 1;
+      assert.equal(
+        (await service.inspect(manifest, root)).some(({ code }) => code === 'automation-retired'),
+        false,
+      );
+      assert.equal(
+        (await service.list(manifest, root)).jobs.find(({ id }) => id === 'check')!.retired,
+        true,
+      );
+      assert.deepEqual(await store.read(), ledger);
+      assert.equal(await store.file.read(), bytes);
+      assert.deepEqual(record.retired, { atMs: retiredAtMs, reason: 'native-job-absent' });
+      assert.equal(record.nativeId, 'native-0');
       await service.reconcile(manifest, root);
       assert.deepEqual(await store.read(), ledger);
       assert.equal(await store.file.read(), bytes);
@@ -927,6 +970,7 @@ describe('agent/automation-service', () => {
     await service.reconcile(manifest, root);
     const { store } = await service.scope(manifest, root);
     const ledger = await store.read();
+    now += 24 * 60 * 60 * 1000 + 1;
     calls = [];
     manifest.automations = declarations;
     await assert.rejects(service.reconcile(manifest, root), /automation-retired-id/u);
