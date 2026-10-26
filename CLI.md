@@ -328,9 +328,14 @@ openclaw as backup prune --keep 3 --json
 Only immediate regular `.tar.gz` files with valid embedded v1/v2 metadata for
 the selected agent are eligible. Ties use filename order. Unreadable or unrelated
 entries, subdirectories, links, and pending writes are skipped with reasons.
-Every retained archive is fully verified before any deletion; a failure aborts
-without deleting. Apply coordinates with creation and stops if the candidate set
-changes. JSON reports `kept`, `deleted`, `wouldDelete`, and `skipped`; failures
+Retention checks archive identity and capture metadata, not payload integrity or
+compatibility with the installed OpenClaw database schema. A `kept` archive is not
+certified intact or restorable; even a damaged payload with valid metadata can
+count toward retention. Use explicit `backup verify` and `backup restore` for their
+respective integrity and recovery checks. Historical database schemas alone do
+not block pruning, and archived databases are never migrated. Apply coordinates
+with creation and stops if the candidate set changes.
+JSON reports `kept`, `deleted`, `wouldDelete`, and `skipped`; failures
 return nonzero and include any deletions already completed. Bound callers keep
 the same destination and agent restrictions as creation. Setup checks allow only
 `--dry-run`.

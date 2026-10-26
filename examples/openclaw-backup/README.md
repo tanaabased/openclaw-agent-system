@@ -1,22 +1,24 @@
 # OpenClaw Backup Example
 
-Create and verify an archive containing explicitly included private memory and agent database state, restore it into fresh staging without changing the source, and refuse live-agent and populated recovery targets.
+Create and verify an archive containing explicitly included private memory and agent database state, restore it into fresh staging without changing the source, refuse live-agent and populated recovery targets, and prune historical archives without weakening explicit verification.
 
 ## What Belongs Here
 
 - Actual archived/restored data despite workspace Git-ignore rules, including committed SQLite WAL content.
 - Preserved safe links, executable modes, manifest identity, and source checksums.
 - Refusal to restore into another registered agent’s live workspace or a populated recovery target.
+- Retention preview/apply agreement and retained archive integrity when an older snapshot fails explicit verification.
 
 ## What Does Not Belong Here
 
 - Incomplete-artifact cleanup preview/apply/repeat: [backup cleanup](../openclaw-backup-cleanup/README.md).
-- Retention policy, adversarial archive permutations, or general live-agent recovery; exhaustive variants remain in source tests.
+- Exhaustive retention-policy and adversarial archive permutations, or general live-agent recovery; these remain in source tests.
 
 ## Notes
 
 - Direct Ubuntu commands need no Gateway, model, or provider credential. The checked-in workspace runs in place with an independent checksum baseline and separate restore target.
 - The database fixture keeps real committed WAL content present during capture; restoration verifies the recovered database, not just archive membership.
+- After the restore checks, the historical fixture replaces snapshot entries in disposable copies of the created archive with a schema-24 marker and matching artifact metadata. It is not a complete historical OpenClaw schema. The current archive remains unchanged.
 
 ## Setup
 
@@ -84,4 +86,23 @@ if openclaw agent-system backup restore "$archive" --target "$TMPDIR/backup-reco
 jq -e '.status == "failed" and any(.diagnostics[]; .code == "backup-target-nonempty")' "$TMPDIR/backup-refused.json"
 cmp "$GITHUB_WORKSPACE/examples/openclaw-backup/data/MEMORY.md" "$TMPDIR/backup-recovered/workspace/MEMORY.md"
 cmp "$GITHUB_WORKSPACE/examples/openclaw-backup/data/memory/day.md" "$TMPDIR/backup-recovered/workspace/memory/day.md"
+
+# should keep explicit snapshot compatibility verification separate from retention
+cd "$GITHUB_WORKSPACE/examples/openclaw-backup/data"
+node "$GITHUB_WORKSPACE/examples/openclaw-backup/historical-fixture.mjs" "$TMPDIR/backup-created.json"
+if openclaw agent-system backup verify .agent-system/backups/historical-2001.tar.gz --json > "$TMPDIR/prune-incompatible.json"; then exit 1; fi
+jq -e '.status == "failed" and any(.diagnostics[]; .code == "backup-snapshot-failed")' "$TMPDIR/prune-incompatible.json"
+
+# should preview capture-date retention without changing archive bytes
+cd "$GITHUB_WORKSPACE/examples/openclaw-backup/data"
+sha256sum .agent-system/backups/*.tar.gz > "$TMPDIR/prune-before.sha256"
+openclaw agent-system backup prune --keep 2 --dry-run --json | tee "$TMPDIR/prune-preview.json" | jq -e '.status == "preview" and (.kept | length) == 2 and (.wouldDelete | length) == 1 and (.wouldDelete[0] | endswith("/historical-2000.tar.gz")) and (.skipped | length) == 0'
+sha256sum -c "$TMPDIR/prune-before.sha256"
+
+# should apply the previewed selection while preserving retained archives
+cd "$GITHUB_WORKSPACE/examples/openclaw-backup/data"
+openclaw agent-system backup prune --keep 2 --json | tee "$TMPDIR/prune-applied.json" | jq -e '.status == "pruned" and (.deleted | length) == 1 and (.wouldDelete | length) == 0'
+jq -e --slurp '.[0].kept == .[1].kept and .[0].wouldDelete == .[1].deleted' "$TMPDIR/prune-preview.json" "$TMPDIR/prune-applied.json"
+grep -v 'historical-2000.tar.gz' "$TMPDIR/prune-before.sha256" | sha256sum -c -
+test ! -e .agent-system/backups/historical-2000.tar.gz
 ```
