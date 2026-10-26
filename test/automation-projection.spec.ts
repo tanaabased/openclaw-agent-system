@@ -46,6 +46,34 @@ describe('agent/automation-projection', () => {
       assert.equal(projectAutomation(scheduled, record, context).schedule.tz, timezone);
     }
   });
+  it('should preserve stepped days and their wildcard semantics in native cron schedules', () => {
+    const record = {
+      id: 'review',
+      marker: 'fixture',
+      hash: '',
+      triggerHash: '',
+      generation: 1,
+      anchorMs: 0,
+      removed: false,
+    };
+    for (const expression of [
+      '0 8 */2 * *',
+      '0 8 * * */2',
+      '0 8 */2 * 1',
+      '0 8 1 * */2',
+      '0 8 */2,2 * 1',
+      '0 8 1-31/2 * 1',
+    ]) {
+      const schedule = normalizeSchedule(expression);
+      const native = projectAutomation(
+        { ...job({ prompt: 'Review activity.' }), schedule },
+        record,
+        context,
+      );
+      assert.deepEqual(normalizeSchedule(native.schedule.expr), schedule, expression);
+    }
+  });
+
   it('should keep prompt fingerprints stable across cli and gateway launcher contexts', () => {
     const prompt = job({ prompt: 'Review activity.' });
     const original = structuredClone(context);

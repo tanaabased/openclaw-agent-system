@@ -68,9 +68,11 @@ export function projectAutomation(
               expr: [
                 schedule.fields.minutes.join(','),
                 schedule.fields.hours.join(','),
-                schedule.fields.dayWildcard ? '*' : schedule.fields.days.join(','),
+                schedule.fields.dayWildcardExpression ??
+                  (schedule.fields.dayWildcard ? '*' : schedule.fields.days.join(',')),
                 schedule.fields.months.join(','),
-                schedule.fields.weekdayWildcard ? '*' : schedule.fields.weekdays.join(','),
+                schedule.fields.weekdayWildcardExpression ??
+                  (schedule.fields.weekdayWildcard ? '*' : schedule.fields.weekdays.join(',')),
               ].join(' '),
               tz: schedule.timezone ?? context.timezone,
               staggerMs: 0,
