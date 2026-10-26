@@ -1,3 +1,8 @@
+import {
+  deliveryContentUpdateSchema,
+  deliveryPendingPushSchema,
+  deliveryPullRequestSchema,
+} from './delivery-state.ts';
 import { Type } from 'typebox';
 
 import { issueTurnSchema } from './openclaw-turn-state.ts';
@@ -55,34 +60,10 @@ export const openclawWorkStateSchema = Type.Object(
           title: Type.String({ minLength: 1, maxLength: 512 }),
           body: Type.String({ minLength: 1, maxLength: 65536 }),
           creationAttempted: Type.Boolean(),
-          contentUpdate: Type.Optional(
-            Type.Object(
-              {
-                title: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
-                body: Type.Optional(Type.String({ maxLength: 65536 })),
-              },
-              { additionalProperties: false },
-            ),
-          ),
+          contentUpdate: Type.Optional(deliveryContentUpdateSchema),
           pushedHead: Type.Optional(text),
-          pendingPush: Type.Optional(
-            Type.Object(
-              {
-                previousHead: Type.String({ pattern: '^[a-f0-9]{40,64}$' }),
-                head: Type.String({ pattern: '^[a-f0-9]{40,64}$' }),
-              },
-              { additionalProperties: false },
-            ),
-          ),
-          pullRequest: Type.Optional(
-            Type.Object(
-              {
-                pullRequestNodeId: text,
-                pullRequestNumber: Type.Integer({ minimum: 1 }),
-              },
-              { additionalProperties: false },
-            ),
-          ),
+          pendingPush: Type.Optional(deliveryPendingPushSchema),
+          pullRequest: Type.Optional(deliveryPullRequestSchema),
           reconciled: Type.Boolean(),
           announcement: Type.Optional(deliveryAnnouncementStateSchema),
           presentation: Type.Optional(Type.String({ maxLength: 32000 })),

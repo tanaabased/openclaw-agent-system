@@ -1,3 +1,8 @@
+import {
+  deliveryContentUpdateSchema,
+  deliveryPendingPushSchema,
+  deliveryPullRequestSchema,
+} from './delivery-state.ts';
 import { Type, type Static } from 'typebox';
 import { deliveryAnnouncementStateSchema } from './delivery-announcement-state.ts';
 
@@ -23,34 +28,10 @@ export const codexDeliveryStateSchema = Type.Object(
     title: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
     body: Type.Optional(Type.String({ maxLength: 65536 })),
     creationAttempted: Type.Boolean(),
-    contentUpdate: Type.Optional(
-      Type.Object(
-        {
-          title: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
-          body: Type.Optional(Type.String({ maxLength: 65536 })),
-        },
-        { additionalProperties: false },
-      ),
-    ),
+    contentUpdate: Type.Optional(deliveryContentUpdateSchema),
     pushedHead: Type.Optional(Type.String({ pattern: '^[a-f0-9]{40,64}$' })),
-    pendingPush: Type.Optional(
-      Type.Object(
-        {
-          previousHead: Type.String({ pattern: '^[a-f0-9]{40,64}$' }),
-          head: Type.String({ pattern: '^[a-f0-9]{40,64}$' }),
-        },
-        { additionalProperties: false },
-      ),
-    ),
-    pullRequest: Type.Optional(
-      Type.Object(
-        {
-          pullRequestNodeId: text,
-          pullRequestNumber: Type.Integer({ minimum: 1 }),
-        },
-        { additionalProperties: false },
-      ),
-    ),
+    pendingPush: Type.Optional(deliveryPendingPushSchema),
+    pullRequest: Type.Optional(deliveryPullRequestSchema),
     reconciled: Type.Boolean(),
     attached: Type.Boolean(),
     cardAttempts: Type.Integer({ minimum: 0 }),
