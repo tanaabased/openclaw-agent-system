@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path';
 import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
 import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import assignmentCard from '../channels/github/presentation/assignment-card.ts';
-import { githubNotificationQuote } from '../channels/github/presentation/card.ts';
+import modelRoutingCard from '../channels/github/presentation/model-routing.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 import resolveGitWorktreeLayout from '../tools/git/worktree-layout.ts';
 import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
@@ -636,19 +636,18 @@ export async function prepareDispatch(
     }
     record.routing = JSON.stringify(decision);
     record.routingInstructions = instructions;
-    record.routingNote = githubNotificationQuote(
-      '## 🧠 Model routing\n\n' +
-        decision.candidate.model +
-        ' / ' +
-        decision.candidate.thinking +
-        ' — ' +
-        decision.complexity +
-        ' complexity (' +
-        decision.source +
-        '). ' +
-        decision.reason +
-        ' Requested selection; effective settings await native verification.',
-    );
+    record.routingNote = modelRoutingCard({
+      routing: {
+        ...decision,
+        model: decision.candidate.model,
+        effort: decision.candidate.thinking,
+      },
+      instructions: record.routingInstructions,
+      workspace: current.workspace,
+      debug: current.manifest.debug,
+      manifestPath:
+        current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
+    });
     record.createdAt = now;
     record.preparationTurnId = tx.operatorInput?.turnId ?? state.run!.id;
     record.sourceThreadId = tx.activation.sourceThreadId;

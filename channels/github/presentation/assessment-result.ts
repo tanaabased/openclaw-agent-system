@@ -2,6 +2,7 @@ import { assessmentDecisionMode, type AssessmentResult } from '../../../agent/as
 import modelRoutingCard from './model-routing.ts';
 import redactCodexFeedback from '../../../agent/codex-feedback-redaction.ts';
 import type { RoutingDecision } from '../../../agent/model-routing.ts';
+import type { RoutingInstructions } from '../../../agent/routing-instructions.ts';
 import workflowInstructions, {
   type WorkflowInstructionsSelection,
   type WorkflowInstructionsPresentation,
@@ -23,6 +24,8 @@ interface AssessmentPresentationContext extends WorkflowInstructionsPresentation
   effective?: { status: 'verified' | 'unverified'; model?: string; effort?: string };
   workspace?: string;
   assessment?: WorkflowInstructionsSelection;
+  routingInstructions?: RoutingInstructions;
+  routingManifestPath?: string;
 }
 
 function item(markdown: string): string {
@@ -41,7 +44,16 @@ export default function renderAssessmentResult(
   };
   const { routing, effective, assessment } = context;
   const text = githubNotificationMarkdownText;
-  const routingCard = routing ? modelRoutingCard({ routing, effective }) : undefined;
+  const routingCard = routing
+    ? modelRoutingCard({
+        routing,
+        effective,
+        instructions: context.routingInstructions,
+        workspace: context.workspace,
+        debug: context.debug,
+        manifestPath: context.routingManifestPath,
+      })
+    : undefined;
   const instructionsCard = workflowInstructions(
     'Assessment',
     assessment,
