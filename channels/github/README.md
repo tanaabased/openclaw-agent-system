@@ -1,9 +1,9 @@
 # GitHub Notifications
 
-Agent System turns approved GitHub issue assignments into runtime-owned work.
-OpenClaw and standalone Codex support Plan, Work, and Auto issue workflows,
-including implementation and linked PR delivery. OpenClaw keeps that work and
-authorized feedback on the issue and its linked PR in the same issue chat.
+Agent System starts work from approved GitHub issue assignments. OpenClaw and standalone
+Codex support native Plan, Work, and Auto issue workflows, including implementation and
+linked PR delivery. OpenClaw keeps that work and authorized feedback on the issue and
+its linked PR in the same issue chat.
 
 ## Configuration
 
@@ -44,11 +44,12 @@ same chat instead of creating a replacement.
 
 ## Install and Verify
 
-Install derives the native `github-issue-assignment` automation from the workflow
-configuration; do not add a second job under `automations`. The runtime's native
-scheduler runs intake in a retained conversation for each agent. Repeated Install
-reuses that job and conversation. See [activation](./ADVANCED.md#activation) for
-runtime model requirements and first-activation behavior.
+Install creates the native `github-issue-assignment` automation from your workflow
+configuration. You do not need a second job under `automations`; that ID is reserved.
+The runtime's native scheduler runs intake in a retained conversation for each agent.
+Repeated Install reuses that job and conversation. See
+[activation](./ADVANCED.md#activation) for runtime model requirements and
+first-activation behavior.
 
 For OpenClaw, run these operator commands from the configured workspace:
 
@@ -82,8 +83,8 @@ running Install deactivates that agent's channel account. See
 
 ### Verify a run
 
-For OpenClaw, inspect the saved schedule, request an occurrence, then inspect its
-native history and durable notification state:
+For OpenClaw, inspect the saved schedule, request a run, then check its native history
+and saved notification state:
 
 ```sh
 # inspect the saved automation and any drift.
@@ -112,14 +113,14 @@ Doctor's saved-definition check does not prove unattended execution. See
 [Codex automation limitations](../../CODEX.md#repository-automations) for the native
 history and execution evidence available through the adapter.
 
-Healthy, unchanged intake checks do not notify. Silence alone does not prove
-success: a missing or paused automation cannot report from its own run. Use Doctor
-and the saved schedule to distinguish that condition from an unchanged scan. For
-reported setup or schedule drift, follow the diagnostic and reconcile through
-Install. For task-work obstacles, continue in the existing issue chat using the
+Healthy, unchanged intake checks do not notify. Silence alone does not prove success: a
+missing or paused automation cannot report from its own run. Use Doctor and the saved
+schedule to distinguish that condition from an unchanged scan. For reported setup or
+schedule drift, follow the diagnostic and reconcile through Install. If work on an issue
+is blocked, continue in its existing chat using the
 [recovery guidance](./ADVANCED.md#interrupted-publication) or
-[Codex recovery controls](../../CODEX.md#workflow-recovery); preserve retained work
-and uncertain attempts.
+[Codex recovery controls](../../CODEX.md#workflow-recovery); preserve retained work and
+uncertain attempts.
 
 To pause future occurrences, set `github.issue-assignment.paused: true` and run
 Install. Set it to `false` and run Install to resume the same job and chat. Running

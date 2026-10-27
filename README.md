@@ -50,17 +50,17 @@ uses the [shared skills](#skills) through its native host interfaces.
 
 - [`agent_system_dispatch`](./tools/dispatch/README.md) — Coordinate managed issue work, direct assessment, implementation, replies, and retirement.
 - [`agent_system_doctor`](./tools/doctor/README.md) — Inspect the active agent’s readiness and run declared checks after chat approval.
-- [`agent_system_git`](./tools/git/README.md) — Runs ordinary Git commands with the agent's identity, SSH configuration, signing, and operation policy.
-- [`agent_system_git_worktree`](./tools/git/README.md#agent_system_git_worktree) — Prepares, lists, and removes durable managed worktrees.
-- [`agent_system_github`](./tools/github/README.md) — Runs ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
-- [`agent_system_google`](./tools/google/README.md) — Runs Google data commands with the agent's verified account and isolated OAuth credentials.
+- [`agent_system_git`](./tools/git/README.md) — Run ordinary Git commands with the agent's identity, SSH configuration, signing, and operation policy.
+- [`agent_system_git_worktree`](./tools/git/README.md#agent_system_git_worktree) — Prepare, list, and remove durable managed worktrees.
+- [`agent_system_github`](./tools/github/README.md) — Run ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
+- [`agent_system_google`](./tools/google/README.md) — Run Google data commands with the agent's verified account and isolated OAuth credentials.
 - [`agent_system_install`](./tools/install/README.md) — Apply the active agent’s configuration and setup after chat approval.
 - [`agent_system_intake`](./tools/intake/README.md) — Inspect or scan GitHub assignments without creating task sessions.
 - [`agent_system_model_routing`](./tools/model-routing/README.md) — Resolve model and effort candidates from the agent's profiles.
 
 ### GitHub Workflows
 
-- [GitHub notifications](./channels/github/README.md) — Admit approved assignments through runtime-owned automations and retain issue conversation and assessment evidence.
+- [GitHub notifications](./channels/github/README.md) — Start approved assignments through native automations and keep each issue’s conversation and assessment.
 
 ### CLI
 
@@ -217,8 +217,8 @@ openclaw agent-system tool gh -- api user --jq .login
 
 `install` runs host setup, prepares managed tools, then runs agent setup. It asks
 for consent interactively; CI or `--yes` runs unattended. Doctor runs setup
-checks without repairs. Make applies safe to repeat: earlier effects are not
-rolled back on failure. See [Setup](./MANIFEST.md#setup) for syntax and runtime filters.
+checks without repairs. Write setup commands so they are safe to repeat: a failure does not undo earlier
+changes. See [Setup](./MANIFEST.md#setup) for syntax and runtime filters.
 
 Add recurring work to the same manifest, then rerun Install:
 

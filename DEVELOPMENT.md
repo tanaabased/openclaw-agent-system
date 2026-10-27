@@ -1,6 +1,9 @@
 # Development
 
-This guide covers installing, developing, logging, and testing Agent System. Start with the [README](./README.md) for the current product surface and use the [manifest](./MANIFEST.md), [CLI](./CLI.md), and [global configuration](./CONFIG.md) references for product behavior.
+This guide covers installing, developing, logging, and testing Agent System. Start with
+the [README](./README.md) for installation and everyday use. Use the
+[manifest](./MANIFEST.md), [CLI](./CLI.md), and [global configuration](./CONFIG.md)
+references for product behavior.
 
 ## Requirements
 
@@ -90,7 +93,7 @@ workflow and security guidance.
 
 ## Logging
 
-Set `OPENCLAW_LOG_LEVEL=debug` when additional runtime diagnostics are needed.
+Set `OPENCLAW_LOG_LEVEL=debug` when you need more runtime diagnostics.
 Agent System records value-free events through OpenClaw's logger with an
 `[agent-system]` prefix and stable `code=<code>` identities. It never logs
 manifest values, resolved environment values, or credentials. `devguard tail`
@@ -108,7 +111,11 @@ Classify each assertion by what it proves, not its filename or test runner:
 - **Component tests** exercise cooperating units through real process, filesystem, or platform boundaries. Installed OpenClaw journeys belong in the GitHub Actions-only Leia examples.
 - **Static checks** inspect source, configuration, documentation, or artifacts without exercising the behavior they describe. They establish an invariant, not successful runtime execution.
 
-Keep a static check only when its invariant has a concrete correctness, compatibility, safety, or maintenance consequence and existing validation does not already establish it. Examples include credential isolation in workflows, forbidden private SDK imports, package metadata consistency, and stale configured paths. Prefer existing parsers and the owning lint, plugin, package, or fixture validator.
+Keep a static check only when breaking its rule would affect correctness, compatibility,
+safety, or maintenance, and existing validation does not already cover it. Examples
+include credential isolation in workflows, forbidden private SDK imports, package
+metadata consistency, and stale configured paths. Prefer existing parsers and the owning
+lint, plugin, package, or fixture validator.
 
 Do not preserve prose, file layout, current runner matrices, command spelling, or occurrence counts merely because they are present today. Exact details belong in checks only when independently required by a supported contract. Finding a command in Markdown does not prove that it works. Delete checks with no distinct invariant rather than moving them to another suite.
 

@@ -1,7 +1,7 @@
 # Assignment Intake
 
 `agent_system_intake` inspects or scans GitHub issue assignments for the active
-OpenClaw agent. It records discovery and admission evidence; it does not create
+OpenClaw agent. It saves discovered assignments and their admission results. It does not create
 task sessions, implement issues, or publish replies. [Issue Dispatch](../dispatch/README.md)
 owns the managed task workflow. Start with [GitHub setup](../../channels/github/README.md)
 to enable scheduled intake.
@@ -42,9 +42,9 @@ Run a bounded assignment scan after activation:
 { "action": "scan" }
 ```
 
-Results distinguish readiness and blockers from admitted assignment records.
-Admission does not prove that a task chat exists or that an assessment is complete.
-Do not use scanning as a substitute for Install or for dispatch recovery.
+Results report readiness, blockers, and admitted assignments separately. Admission does
+not prove that a task chat exists or that an assessment is complete. Do not use scanning
+as a substitute for Install or for dispatch recovery.
 
 For operator commands that inspect or advance the complete workflow, use the
 [notification command reference](../../channels/github/ADVANCED.md#cli).

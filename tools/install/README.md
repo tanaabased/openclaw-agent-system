@@ -8,8 +8,9 @@ Install applies the active agent's configuration and setup after native chat
 approval, using the same service as the operator CLI.
 
 Approval also covers provisioning or enabling the release-pinned shared Codex
-prerequisite in this OpenClaw profile. Conflicting shared versions require explicit
-operator reconciliation; see [Install behavior](../../CLI.md#openclaw-agent-system-install).
+prerequisite in this OpenClaw profile. If an existing shared version conflicts, an
+operator must resolve it explicitly; see
+[Install behavior](../../CLI.md#openclaw-agent-system-install).
 
 ## Overview
 
@@ -41,8 +42,9 @@ cannot select another agent, workspace, manifest, or approval policy.
 
 ## `agent_system_install`
 
-Request approval, then reconcile the active workspace. See [chat approval](../../CLI.md#chat-approval)
-for consent lifetime, cancellation, and supported chat surfaces.
+Request approval, then apply the active workspace's configuration and setup. See
+[chat approval](../../CLI.md#chat-approval) for consent lifetime, cancellation, and
+supported chat surfaces.
 
 ### Parameters
 
@@ -99,11 +101,11 @@ Codex). This argument does not extend the two-minute approval window or
 [setup-command timeouts](../../MANIFEST.md#setup). Other harnesses retain their
 own execution limits.
 
-The tool returns structured installation outcomes and warnings. Installation may
-resolve declared credentials, change configuration, and run setup commands.
-Cancellation stops subsequent lifecycle steps and cancellable setup commands;
-completed external effects are not rolled back. An approved setup script remains
-operator-authored code, including the files or external services it reads.
+The tool returns structured installation outcomes and warnings. Installation may resolve
+declared credentials, change configuration, and run setup commands. Cancellation stops
+subsequent lifecycle steps and cancellable setup commands; completed external changes
+remain in place. An approved setup script remains operator-authored code, including the
+files or external services it reads.
 
 See [Install behavior](../../CLI.md#openclaw-agent-system-install) and
 [setup retry rules](../../MANIFEST.md#checks-installation-and-retries) for the

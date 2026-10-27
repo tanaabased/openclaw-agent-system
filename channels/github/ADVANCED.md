@@ -145,17 +145,18 @@ github:
 
 ### Activation
 
-A supported workflow declaration plus runtime selection determines required
-machinery. Empty `allowed` controls admission, not channel, session, or scheduler
-provisioning. Adding approved actors later is a live-policy change. Omitted
-workflows and reserved review requests activate no machinery.
+The declared workflow and selected runtime determine what Install needs to set up. An
+empty `allowed` list stops new assignments from being admitted, but Install still sets
+up the channel, conversation, and schedule required by that runtime. Adding approved
+actors later is a live-policy change. Omitted workflows and reserved review requests
+activate no machinery.
 
-Install reconciles the selected runtime's channel/session/scheduler prerequisites
-and establishes the first-activation baseline. Passive discovery never activates
+Install reconciles the selected runtime's channel/session/scheduler prerequisites and
+establishes the first-activation baseline. Reading the manifest alone never activates
 work. `paused: true` is Install-reconciled desired state for future schedule
-occurrences; accepted runs, existing issue work, and feedback authority retain their
-own rules. Repeated Install reuses retained jobs, channels, and baseline evidence.
-See [Codex intake](../../CODEX.md#github-notification-policy).
+occurrences; accepted runs, existing issue work, and feedback authority retain their own
+rules. Repeated Install reuses retained jobs, channels, and baseline evidence. See
+[Codex intake](../../CODEX.md#github-notification-policy).
 
 OpenClaw uses the native automation reconciler and the owning agent's `models.default`;
 standalone Codex uses `models.low`. Both reserve the derived job ID
@@ -170,8 +171,8 @@ assignment conversation and readiness channel.
 ### Live policy and modes
 
 The current bound `agent.yaml` governs the next automatic operation. Mode, approved
-author, reviewer, guidance, and capacity changes apply without Install. Install is
-required for changes to installed scheduling machinery, including cadence and pause.
+author, reviewer, guidance, and capacity changes apply without Install. Run Install when
+changing the installed schedule, including its cadence or pause setting.
 
 - **Plan** produces an assessment and waits for direction before implementation.
 - **Work** continues an actionable plan through implementation and PR delivery.
@@ -202,13 +203,13 @@ independent feedback-off switch or replacement author list. Author and instructi
 edits apply live; scheduler pause does not revoke feedback authority. Empty actor
 and reviewer lists approve nobody while retaining the installed machinery.
 
-Approved mentions in issue comments, linked PR conversation comments, submitted
-reviews, and inline replies return to the original issue chat. Busy chats queue
-feedback within shared capacity. Inline replies return to their review thread;
-other replies return to the source issue or PR. Edited or removed sources, removed
-mentions, and changed authority stop pending publication without erasing retained
-answers. Moving review code coordinates alone does not create new feedback.
-Uncertain sends and publications are reconciled without repeating them.
+Approved mentions in issue comments, linked PR conversation comments, submitted reviews,
+and inline replies return to the original issue chat. Busy chats queue feedback within
+shared capacity. Inline replies return to their review thread; other replies return to
+the source issue or PR. Edited or removed sources, removed mentions, and changed
+authority stop pending publication without erasing retained answers. Moving review code
+coordinates alone does not create new feedback. When a send or publication has an
+uncertain outcome, the workflow checks what happened before trying again.
 
 The issue chat shows the complete private response; the configured reply skill
 composes a separate public answer with its confirmed link. Feedback authored by
@@ -265,9 +266,9 @@ Ask for the full assessment or historical evidence in the owning chat. Dispatch
 path for large snapshots. Missing, expired, or corrupt detail is reported as
 unavailable. History does not authorize work or automatically become agent memory.
 
-Completion identities and duplicate-prevention records do not expire with history.
-If required records fill the journal, the operation reports a capacity error and
-preserves the file. Corrupt or oversized journals are not automatically reset.
+Records used to identify completed work and prevent duplicates do not expire with
+history. If required records fill the journal, the operation reports a capacity error
+and preserves the file. Corrupt or oversized journals are not automatically reset.
 
 ## Assignment lifecycle
 
@@ -366,7 +367,7 @@ bounded by the slots available when it begins. Already-started assessments keep
 running; quick completions do not refill that run’s allowance. Excess assignments
 wait for a later run. Item-specific failures do not stop unrelated eligible work.
 
-Uncertain creation and send attempts are reconciled before another attempt.
+The workflow checks uncertain creation and send attempts before trying again.
 Capacity is released only after native inactivity is verified. Dispatch reports
 `waiting` for unresolved evidence or setup, `retrying` for transient recovery, and
 `blocked` for explicit stops such as denial, cancellation, or lost authority.
@@ -503,11 +504,11 @@ and `partially-delivered` work whose PR exists but still needs linkage or presen
 Only issue selectors and native OpenClaw Plan, Work, and Auto workflows are supported.
 Observation performs no scan, credential resolution, scheduler writes, or chat creation.
 
-Scheduled intake reports started issues and capacity, with new or changed blockers
-and verified recovery. Healthy, unchanged checks stay silent. Automation drift directs
-the operator to Install; checks do not repair schedules. An absent or disabled job
-cannot report from its own run, so use Doctor to inspect it explicitly. Incomplete
-observations are not successful empty scans.
+Scheduled intake reports started issues and capacity, with new or changed blockers and
+verified recovery. Healthy, unchanged checks stay silent. Automation drift directs the
+operator to Install; checks do not repair schedules. A missing or disabled job cannot
+report from its own run, so use Doctor to inspect it. An incomplete check does not
+establish that a scan succeeded or found no work.
 
 ### `openclaw agent-system notifications wait`
 

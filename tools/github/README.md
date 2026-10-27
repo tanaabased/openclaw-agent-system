@@ -9,7 +9,7 @@ credential, isolated configuration, and policy. Enable it through the workspace'
 `github` declaration.
 
 > [!IMPORTANT]
-> GitHub authorization and server-side protections are authoritative. Agent
+> GitHub permissions and server-side protections decide what is allowed. Agent
 > System adds the narrow release control documented under
 > [`github.policy`](#githubpolicy) and fixed [self-unassignment protection](#assignment-protection).
 
@@ -191,11 +191,11 @@ projects that identity into OpenClaw for the same agent. Agent System remains
 the source of truth, and `doctor` treats a system-level OpenClaw identity as
 missing rather than adopting it.
 
-The token is duplicated only into OpenClaw's owner-readable PAT profile store,
-never `openclaw.json`. Each agent receives a separately verified profile and
-binding; conflicts or unsupported layouts fail closed. Agents that share an OS
-account still share process-level access, so this provides identity separation,
-not hostile-process secret isolation.
+The token is copied only into OpenClaw's owner-readable PAT profile store, never
+`openclaw.json`. Each agent receives a separately verified profile and binding;
+conflicts or unsupported layouts fail closed. Agents that share an OS account still
+share process-level access, so this provides identity separation, not hostile-process
+secret isolation.
 
 ### `github.username`
 
@@ -287,14 +287,15 @@ openclaw agent-system tool gh -- repo view owner/repo --json name --jq .name
 openclaw agent-system tool gh --agent tanaabot -- api user --jq .login
 ```
 
-Arguments after `--` select the GitHub request; inspected external API payloads
-are forwarded from their immutable snapshot. The runtime blocks token display,
-authentication or generated-config mutation, aliases, extensions, and browser
-or editor launch paths. These are non-configurable invariants, not operation policy.
+Arguments after `--` select the GitHub request; inspected external API payloads are
+forwarded from their immutable snapshot. The runtime blocks token display,
+authentication or generated-config mutation, aliases, extensions, and browser or editor
+launch paths. These safeguards always apply; manifest operation policy cannot disable
+them.
 
 ## Shim
 
-Installation projects the packaged `gh` shim onto supported agent command paths:
+Install adds the packaged `gh` shim to supported agent command paths:
 
 ```sh
 # confirm that this gh belongs to agent system.

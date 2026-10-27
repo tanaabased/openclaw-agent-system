@@ -1,7 +1,8 @@
 # Issue Dispatch
 
-Managed issue operations share the existing native workflow owners. For assessment-only
-or implementation in the current chat, use their separate skills.
+Use the task skills to start, assess, implement, or retire issue work through its native
+workflow. For assessment or implementation in the current chat, choose the corresponding
+skill below.
 
 ## `agent_system_dispatch`
 
@@ -98,10 +99,10 @@ before final native creation. A prepared Codex creation request is executed unch
 once through native `create_thread`; then reconcile the original launch. OpenClaw
 uses the existing enrolled session adapter directly and starts its assessment turn.
 
-An existing destination retains its current stage; revisiting does not rerun setup
-or a completed assessment. Partial/uncertain creation and sends are reconciled from
-the original attempt, never repeated blindly. Inactive or ambiguous owners must
-recover through their lifecycle rather than being recreated.
+An existing destination retains its current stage; revisiting does not rerun setup or a
+completed assessment. If creation or a send is incomplete or uncertain, the workflow
+checks the original attempt before trying again. If its owner is inactive or unclear,
+recover that workflow rather than creating a replacement.
 
 ### Setup and Recovery
 

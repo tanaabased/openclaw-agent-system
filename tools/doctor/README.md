@@ -4,9 +4,9 @@
   <img src="../../skills/doctor/assets/icon-large.svg" alt="Agent System Doctor" width="180" />
 </p>
 
-Doctor inspects the active agent's configuration and runs declared setup checks
-without applying repairs. It calls the same service as the operator CLI after
-OpenClaw grants one native chat approval.
+Doctor inspects the active agent's configuration and runs declared setup checks without
+applying repairs. It uses the same service as the operator CLI and requires native chat
+approval through OpenClaw.
 
 ## Overview
 
@@ -26,8 +26,8 @@ The native OpenClaw harness and OpenClaw-hosted Codex use this tool. Standalone
 Codex uses the [standalone adapter](../../CODEX.md#skills).
 If an existing agent lacks the tool grant, run the operator CLI Install once.
 
-Automation scheduler inspection requires operator CLI Doctor. This model tool
-reports `automation-requires-operator-sync` without opening an operator transport.
+Use operator CLI Doctor to inspect the automation scheduler. This model tool reports
+`automation-requires-operator-sync`; it does not connect with operator permissions.
 
 ## Configuration
 
@@ -54,12 +54,12 @@ Inspect the active agent and run its applicable setup checks:
 { "timeoutMs": 600000 }
 ```
 
-The tool returns the aggregate status, findings, and remediation. It may resolve
-credentials needed for inspection; it never calls Install or repairs prerequisites.
-For configured tools, missing host executables produce one blocked finding per
-tool with the missing names and runtime PATH guidance.
-For setup, it reports unchecked steps as manual and other-runtime steps as skipped.
-A check's read-only behavior remains its author's responsibility.
+The tool returns an overall status, findings, and suggested fixes. It may resolve
+credentials needed for inspection; it never calls Install or repairs prerequisites. For
+configured tools, missing host executables produce one blocked finding per tool with the
+missing names and runtime PATH guidance. For setup, it reports unchecked steps as manual
+and other-runtime steps as skipped. A check's read-only behavior remains its author's
+responsibility.
 
 Omitting `timeoutMs` retains the host's default (90 seconds in OpenClaw-hosted
 Codex). This argument does not extend the two-minute approval window or

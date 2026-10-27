@@ -31,11 +31,11 @@ Agent System discovers one manifest from an agent workspace:
 agent.yaml                 # shorthand
 ```
 
-The preferred base file wins when both exist; the two base files never merge. Passive loading
-validates the manifest but does not resolve environment values or mutate state.
-The strict loader rejects unknown or incorrectly cased keys, unsafe symlinks,
-files larger than 1 MiB, invalid UTF-8, duplicate keys, and unsupported YAML
-features such as anchors, aliases, and explicit tags.
+The preferred base file wins when both exist; the two base files never merge. Passive
+loading validates the manifest without resolving environment values or changing state.
+The strict loader rejects unknown or incorrectly cased keys, unsafe symlinks, files
+larger than 1 MiB, invalid UTF-8, duplicate keys, and unsupported YAML features such as
+anchors, aliases, and explicit tags.
 
 A minimal manifest binds one workspace to one agent:
 
@@ -92,20 +92,20 @@ admission authority. Command vectors still need an
 executable. `null` is not deletion: it is accepted only where the field's schema
 allows it, such as an automation's `thread`.
 
-Both documents must be mappings and meet the same file and YAML protections.
-The merged document must pass the complete schema, including unknown-key checks
-and the active runtime's agent-ID and workspace-binding checks. Referenced files
-remain relative to the selected manifest directory; workspace-relative settings
-retain their existing anchors.
+Both documents must be mappings and follow the same file and YAML rules. The merged
+document must pass the complete schema, including unknown-key checks and the active
+runtime's agent-ID and workspace-binding checks. Referenced files still resolve from the
+selected manifest directory; settings defined as workspace-relative still resolve from
+the workspace.
 
 Shared-loader results retain effective declarations' source files and YAML field
 paths; validation diagnostics attribute field errors to those sources. Overlay
 presence and contents affect the manifest digest and cache freshness, including
 addition, edits, and removal. A change requires fresh lifecycle approval.
 
-Codex and OpenClaw consume the same effective manifest within their existing runtime
-ownership. Loading it does not read secrets, run setup, or reconcile installed
-state. Use the owning runtime's explicit lifecycle operation to apply changes.
+Codex and OpenClaw read the same merged manifest, each applying only the settings it
+supports. Loading it does not read secrets, run setup, or change installed state. Apply
+changes through the runtime that owns them.
 
 ## Component Configuration
 
@@ -117,8 +117,8 @@ state. Use the owning runtime's explicit lifecycle operation to apply changes.
 | tool     | `agent_system_github`       | `github`        | [Configuration reference](./tools/github/README.md#configuration-reference)      |
 | tool     | `agent_system_google`       | `google`        | [Configuration reference](./tools/google/README.md#configuration)                |
 
-Declare a component's manifest key to request it, then use `install` to reconcile
-supported runtime behavior. See the [V3 workflow contract](#githubnotifications)
+Declare a component's manifest key to request it, then run `install` to apply the
+settings supported by your runtime. See the [V3 workflow contract](#githubnotifications)
 for each runtime's supported workflows and limitations.
 
 ## Configuration
@@ -258,10 +258,11 @@ automations:
   run: [gh, api, user, --jq, .login]
 ```
 
-Files resolve relative to their containing file; execution cwd remains the
-workspace root. References stay within the workspace and follow the [loader's
-size and encoding rules](#discovery). External YAML contains a list, without recursive inclusion.
-Missing or invalid references fail validation rather than declaring no jobs.
+File references resolve relative to the file that contains them. Commands still run from
+the workspace root. References stay within the workspace and follow the
+[loader's size and encoding rules](#discovery). External YAML contains a list, without
+recursive inclusion. Missing or invalid references fail validation rather than declaring
+no jobs.
 
 #### Persistent conversations
 
@@ -307,10 +308,11 @@ runtime. `independent` stays independent; `{ thread: existing-native-id }` requi
 an exact existing target and never creates a replacement. Multiple active Codex jobs
 explicitly targeting the same native conversation fail with a conflict.
 
-Conversation creation is journaled before native writes. An interrupted OpenClaw
-creation can recover by its persisted session key. Codex saves the returned ID before
-materialization; loss of that response leaves an ambiguous-create recovery barrier,
-not another create. Keep the journal and resolve the native identity before retrying.
+Agent System records the creation attempt before asking the runtime to create a
+conversation. OpenClaw can recover an interrupted attempt using its saved session key.
+Codex saves the returned ID before completing setup. If that response is lost, creation
+remains uncertain and another attempt is blocked. Keep the journal and resolve the
+native identity before retrying.
 
 OpenClaw changes routing on its existing native job. Codex changes between independent
 and persistent routing by first pausing and retaining the old native schedule, then
@@ -646,7 +648,8 @@ Identifies the manifest schema. Version `1` is the only accepted value.
 
 Omission or `{}` uses the consumer's default skill without extra guidance. Guidance
 alone supplements that default; a replacement skill runs alone, with guidance when
-supplied. These fields select instructions, not execution or publication authority.
+supplied. These fields select instructions; they do not authorize execution or
+publication.
 
 Skill IDs accept `skill-name`, `$skill-name`, `plugin:skill-name`, and
 `$plugin:skill-name`. Surrounding spaces and the optional `$` are removed; case is
@@ -682,7 +685,7 @@ only when `setup-agent` is absent. If both are present, `setup-agent` wins;
 the unused `setup` declaration is still schema-validated.
 Omit setup declarations when first-party configuration already handles the
 work. Setup scripts can change files or external services; their authors must
-make checks read-only and applies safe to repeat.
+keep checks read-only and make apply commands safe to repeat.
 
 | Top-level key | Type              | Required | Default | Behavior                                                                  |
 | ------------- | ----------------- | -------- | ------- | ------------------------------------------------------------------------- |
@@ -921,15 +924,16 @@ A plain `op://` string stays literal. `environment.op` takes opaque
 [1Password Environment IDs](https://www.1password.dev/sdks/environments#appendix-get-an-environments-id),
 not display names, and loads them in order through the SDK.
 
-Only explicit consumers load dotenv or 1Password values; passive discovery never
-does. `environment.required` applies to complete environment resolution, not
-unrelated actions. [Credential storage](./CLI.md#credential-storage)
-defines lookup order. Install requires a persistent credential; the bootstrap
-token is never exported, required, or interpolated by the manifest.
+Dotenv and 1Password values load only when an operation needs them; passive discovery
+never loads them. `environment.required` applies to complete environment resolution, not
+unrelated actions. [Credential storage](./CLI.md#credential-storage) defines lookup
+order. Install requires a persistent credential; the bootstrap token is never exported,
+required, or interpolated by the manifest.
 
 Agent System tools resolve declared values after trusted binding and authorization.
-The consolidated environment is not injected into generic OpenClaw, Codex, ACP,
-MCP, or third-party tools. PATH projection is the separate contract below.
+Generic OpenClaw, Codex, ACP, MCP, and third-party tools do not receive the completed
+Agent System environment. The separate [Path](#path) settings below control executable
+lookup.
 
 ## Path
 

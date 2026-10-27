@@ -102,11 +102,11 @@ effective value fails the operation.
 | ---------------------------------------- | -------- | ------- |
 | exact command-to-policy-decision mapping | no       | none    |
 
-Assigns `allow` or `deny` to exact external helpers such as `git-town`.
-The helper must be executable on `PATH`; aliases do not satisfy the declaration,
-and built-in protection classification takes precedence. An allowed extension
-is trusted for its private argument surface. Undeclared and unsupported
-commands are denied; a declared helper that is missing is also denied.
+Assigns `allow` or `deny` to exact external helpers such as `git-town`. The helper must
+be executable on `PATH`; aliases do not satisfy the declaration, and built-in protection
+classification takes precedence. Allowing an extension trusts the helper to handle its
+own arguments. Undeclared and unsupported commands are denied; a declared helper that is
+missing is also denied.
 
 ### `git.name`
 
@@ -166,7 +166,7 @@ untrusted checkout safe. Raw `git worktree` access permits only read-only
 | `allowed-signers-file` | workspace-relative path | no       | none    |
 | `key`                  | environment binding     | yes      | none    |
 
-The presence of `git.signing` SSH-signs every commit and tag. `key` names one
+Declaring `git.signing` enables SSH signing for every commit and tag. `key` names one
 variable in the completed Agent System environment; it is never private-key
 material itself and does not accept a literal value, path, array, or nested
 `from-environment` object. Any declared environment source may populate the
@@ -442,7 +442,7 @@ openclaw agent-system tool worktree -- prepare agent-system 123-fix-agent-path-r
   --clone-url https://github.com/tanaabased/openclaw-agent-system.git
 ```
 
-Preparation is idempotent.
+Repeating preparation reuses the existing worktree.
 
 For ordinary managed work, Agent System names both the branch and directory
 `<work-id-slug>-<digest>`. Prefer `<task-id>-<brief-kebab-case-description>` for
@@ -476,8 +476,7 @@ Dirty worktrees, branches, and refs remain intact.
 
 ## Shim
 
-Installation projects the packaged `git` shim onto supported agent command
-paths:
+Install adds the packaged `git` shim to supported agent command paths:
 
 ```sh
 # confirm that this git belongs to agent system.

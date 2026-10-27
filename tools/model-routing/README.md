@@ -1,6 +1,10 @@
 # Model Routing
 
-[Agent System Model Routing](../../skills/model-routing/SKILL.md) assesses bounded task evidence and validates model and effort selections from the active workspace's [model profiles](../../MANIFEST.md#models). The calling model supplies judgment; the helper neither calls a classifier nor creates tasks or changes sessions.
+[Agent System Model Routing](../../skills/model-routing/SKILL.md) assesses bounded task
+evidence and validates model and effort selections from the active workspace's
+[model profiles](../../MANIFEST.md#models). The calling model assesses the task. The
+helper validates that assessment without calling another classifier, creating tasks, or
+changing sessions.
 
 ## `agent_system_model_routing`
 
@@ -44,7 +48,11 @@ Inspection returns `status`, `manifestDigest`, `profiles`, `rubric`, `instructio
 
 Resolution returns `status` (`resolved` or `unresolved`), `profile`, `complexity`, `source`, `reason`, optional `xhighReason`, `recommendation`, `selection`, and `overrides`. An unresolved result has a null profile and no recommendation or selection unless the caller explicitly requests default fallback or supplies both override values. Partial overrides remain in the result for the caller to complete. The result retains unresolved status and reasoning even when default is selected.
 
-Mapped selections include a native `candidate`. `application: "not-requested"` and `execution: "unverified"` make the evidence boundary explicit. The caller must apply and verify the candidate through supported native controls. Unknown models or unsupported model/effort combinations can still be rejected there; profile mapping is not runtime discovery.
+Mapped selections include a native `candidate`. `application: "not-requested"` and
+`execution: "unverified"` make the evidence boundary explicit. Use the runtime's
+supported controls to apply the candidate and verify the result. Unknown models or
+unsupported model/effort combinations can still be rejected there; profile mapping is
+not runtime discovery.
 
 Missing profiles or binding report unavailable. Invalid profiles, malformed requests, changed manifests, evidence conflicts, unsupported mappings/selections, and unjustified xhigh report errors without substitution. These outcomes never grant permission to launch work or change an existing session.
 

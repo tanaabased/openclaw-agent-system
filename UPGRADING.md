@@ -5,7 +5,7 @@ OpenClaw versions.
 
 ## Skill names
 
-task workflow skills now use task terminology. update explicit skill selections in
+Task workflow skills now use task terminology. Update explicit skill selections in
 `agent.yaml`, saved prompts, and operator instructions using this mapping:
 
 | Previous skill                      | Replacement                        |
@@ -16,12 +16,12 @@ task workflow skills now use task terminology. update explicit skill selections 
 | `agent-system-issue-implementation` | `agent-system-task-implementation` |
 | `agent-system-issue-launch`         | `agent-system-task-launch`         |
 
-preserve the `agent-system:` qualifier where the host requires it. omitted skill
-selections use the new defaults; old explicit IDs have no alias. do not edit task
-journals or retained source snapshots to replace historical names. skill renaming
-does not change provider configuration keys such as `issue-assignment` or grant a
-new workflow stage. refresh the installed plugin and open a new Codex chat to load
-its current skills.
+Preserve the `agent-system:` qualifier where the host requires it. Omitted skill
+selections use the new defaults; old explicit IDs have no alias. Do not edit task
+journals or retained source snapshots to replace historical names. Renaming a skill does
+not change provider configuration keys such as `issue-assignment` or grant a new
+workflow stage. Refresh the installed plugin and open a new Codex chat to load its
+current skills.
 
 ## Minimum-Version Changes
 
@@ -47,8 +47,8 @@ If a shared Codex plugin is already installed, review its version and follow the
 [shared prerequisite instructions](./CLI.md#openclaw-agent-system-install) to
 explicitly upgrade an existing `@openclaw/codex@2026.9.8` installation to
 `@openclaw/codex@2026.10.6` before workspace reconciliation. Agent installation
-provisions a missing applicable plugin but leaves conflicting existing versions
-for explicit operator reconciliation.
+installs the plugin if it is required and missing. If an existing version conflicts,
+you must resolve the conflict explicitly before retrying.
 Start the upgraded Gateway and verify RPC readiness before reconciling workspaces;
 OpenClaw automation reconciliation and inspection require a running Gateway:
 
@@ -71,8 +71,9 @@ and service-runtime details.
 
 Legacy workflow decoding and repair are removed after the accepted reset rollout in
 [#426](https://github.com/tanaabased/openclaw-agent-system/issues/426). Current work
-keeps its explicit stage and native execution/publication receipts. Retained pre-reset
-history is inert; it is not scanned, repaired, or resumed as active workflow state.
+keeps its explicit stage and native execution/publication receipts. Saved history from
+before the reset is inactive. The runtime does not scan, repair, or resume it as active
+workflow state.
 
 Restore backups into staging. Do not copy pre-reset notification tracking into the
 active state directory: a nonempty store without a reset generation stops with

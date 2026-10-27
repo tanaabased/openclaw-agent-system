@@ -44,6 +44,47 @@ in the channel guide; Git, GitHub CLI, and Google fields belong in their tool gu
 automation support, and limitations. Link shared workflow behavior to the channel
 guide rather than maintaining a second reference in `CODEX.md`.
 
+## Documentation Voice
+
+Use one project voice across the README, companion guides, and tool/channel docs: clear,
+warm, direct, and practical. Take Emori's unfamiliar-reader style as the reference:
+respect the reader, question inflated claims, and give a useful next step. This house
+style takes precedence over an individual agent's conversational voice. It stands on its
+own; authors do not need another agent's configuration.
+
+- Lead with what the reader can do or needs to know. Follow with the reason,
+  consequence, or next step. Address the reader as “you” when it makes an instruction
+  clearer; name the tool or runtime when it performs the action.
+- Use familiar words and active verbs. Prefer “Install updates the saved schedule”
+  to “schedule reconciliation is performed.” Keep terms such as reconciliation,
+  binding, and receipt when the distinction matters, and explain the practical effect.
+- Use normal sentence capitalization, exact product and identifier casing, and
+  natural contractions. Keep established headings and anchors stable; code comments
+  follow the lowercase convention below.
+- Be personable without assuming familiarity. Skip teasing, profanity, catchphrases,
+  sales language, and performative enthusiasm. Setup, security, failure, and recovery
+  guidance should be calm and specific.
+- Keep paragraphs focused. Use lists for steps or parallel choices and tables for
+  lookup details. Cut repetition rather than making the reader assemble a sentence
+  from fragments or a string of slash-separated terms.
+- State limits directly and pair failures with the next supported action. Preserve
+  every consequential condition, default, warning, and permission boundary. Never
+  trade accuracy for a smoother sentence or turn an unverified outcome into success.
+- Keep configured state, an accepted request, execution, and verified completion
+  distinct. Voice edits do not change commands, schemas, examples, or runtime behavior.
+  Leave already-clear passages alone and respect the README marketing gate.
+
+For example:
+
+| Before                                      | House style                                                                                  |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| “Unchanged jobs receive no mutation.”       | “Install leaves unchanged jobs alone.”                                                       |
+| “A queued refresh is an admission receipt.” | “A `queued` refresh means the scheduler accepted the request; the run may still be pending.” |
+
+Before handing off a voice edit, read it as someone setting up or recovering the product
+for the first time. They should be able to identify the action, its limits, and the next
+step without knowing the implementation history.
+
 ## README Marketing
 
 - Keep the README opening and Overview as stable marketing copy. Change their wording or emphasis only when the user explicitly requests positioning changes or verified product behavior makes a claim false; documentation cleanup, reference splitting, and skill/tool inventory changes are not sufficient reasons. Mechanical link repairs are allowed without rewriting the copy.

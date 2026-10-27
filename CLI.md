@@ -6,10 +6,9 @@ for declarations. `openclaw as` aliases `openclaw agent-system`; either bare
 namespace prints help. Agent System human summaries honor `NO_COLOR` and
 `FORCE_COLOR=0`; failed operations return nonzero.
 
-Interactive prompts fill only unresolved inputs. When a supported command option
-or environment-derived value already determines a value, do not ask the operator
-to choose that same value again; prompts for other decisions, such as confirmation,
-remain separate.
+Interactive prompts ask only for missing inputs. If a supported command option or
+environment value already supplies an answer, the command uses it without asking again.
+Separate decisions, such as confirmation, may still require a prompt.
 
 **Core commands**
 
@@ -57,7 +56,8 @@ remain separate.
 
 ## `openclaw agent-system automations list`
 
-Inspect declared/native state, retained disabled jobs, and actionable drift without writes.
+Compare declared and saved native settings, including disabled jobs, and report drift
+without changing anything.
 
 ### Options
 
@@ -131,7 +131,7 @@ Each entry reports execution and delivery independently. Missing telemetry is `u
 
 ## `openclaw agent-system automations sync`
 
-Reconcile only owned automations through the same owner used by operator install.
+Update Agent System-owned automations through the same service as operator Install.
 
 ### Options
 
@@ -150,14 +150,14 @@ openclaw agent-system automations sync [--agent <id>] [--json]
 openclaw agent-system automations sync --json
 ```
 
-Unchanged jobs receive no mutation. Pause/removal retains ownership and history;
-reintroduction reuses the native ID while that job exists. If an undeclared job
-has also been deleted, complete operator inspection can retire ownership while
+Sync leaves unchanged jobs alone. Pausing or removing a declaration keeps ownership and
+history; adding it again reuses the native ID while that job exists. If an undeclared
+job has also been deleted, complete operator inspection can retire ownership while
 retaining bounded historical evidence. Restricted or inconclusive inspection and
-unresolved writes prevent retirement. A retired ID is not automatically recreated;
-use a new manifest ID for a new automation. A failed sync exits 1 and retains
-verified progress and pending recovery. This command does not run unrelated install
-or setup steps.
+unresolved writes prevent retirement. A retired ID is not automatically recreated; use a
+new manifest ID for a new automation. A failed sync exits 1 and retains verified
+progress and pending recovery. This command does not run unrelated install or setup
+steps.
 
 ### Repository examples
 
@@ -186,8 +186,9 @@ retention. For Codex automation support, see the [supported fields](./CODEX.md#r
 
 ## `openclaw agent-system backup cleanup`
 
-Preview abandoned temporary backup artifacts. Only an explicit operator apply removes
-attributable, inactive, demonstrably incomplete artifacts.
+Preview abandoned temporary backup artifacts. Deletion requires an explicit operator
+request and proof that each artifact belongs to the backup process, is inactive, and is
+incomplete.
 
 ### Options
 
@@ -335,9 +336,8 @@ Only immediate regular `.tar.gz` files with valid embedded v1/v2 metadata for
 the selected agent are eligible. Ties use filename order. Unreadable or unrelated
 entries, subdirectories, links, and pending writes are skipped with reasons.
 Retention checks archive identity and capture metadata, not payload integrity or
-compatibility with the installed OpenClaw database schema. A `kept` archive is not
-certified intact or restorable; even a damaged payload with valid metadata can
-count toward retention. Use explicit `backup verify` and `backup restore` for their
+compatibility with the installed OpenClaw database schema. A `kept` result does not prove an archive is intact or restorable. Even a damaged
+payload with valid metadata can count toward retention. Use explicit `backup verify` and `backup restore` for their
 respective integrity and recovery checks. Historical database schemas alone do
 not block pruning, and archived databases are never migrated. Apply coordinates
 with creation and stops if the candidate set changes.
@@ -592,7 +592,8 @@ Ordinary Doctor also inspects collaboration membership, effective entries, and
 configuration drift without repairing state.
 
 Doctor reports all findings and returns nonzero for failing drift. It recommends
-`install` for owned-state repairs; manual state remains the operator's responsibility.
+`install` for settings Agent System owns; you must repair manually managed settings
+separately.
 Tool-specific checks live in the respective guides.
 
 For [setup](./MANIFEST.md#setup), Doctor runs applicable checks without consent or repairs,
@@ -676,9 +677,9 @@ Before setup or agent reconciliation, install checks the actual OpenClaw host an
 the shared Codex prerequisite only when the workspace declares
 [`agent.runtime: codex`](./MANIFEST.md#agent) or this agent has an effective
 Codex runtime binding. The plugin version is pinned in Agent System's
-`package.json#openclaw.agentSystem.codexPlugin`. It provisions a missing plugin,
-enables a matching disabled installation, and reuses a converged installation
-across agents in the same profile. Codex remains a separate OpenClaw-managed
+`package.json#openclaw.agentSystem.codexPlugin`. It installs a missing plugin,
+enables a matching disabled installation, and reuses a matching installation across
+agents in the same profile. Codex remains a separate OpenClaw-managed
 package and owns its app-server dependency. Setup-skip flags do not skip this
 prerequisite. Standalone Codex installation does not provision it.
 
@@ -700,13 +701,13 @@ openclaw plugins install npm:@openclaw/codex@2026.10.6 --force --pin --accept-ca
 flags has the same effect. Other components still reconcile and enforce their
 executable, credential, and identity checks.
 
-Interactive installation previews applicable commands, shells, and timeouts on
-stderr. Declining or cancelling stops before mutation. No applicable setup
-means no setup prompt; required session dispatch enrollment has its own consent preview.
+Interactive installation previews applicable commands, shells, and timeouts on stderr.
+Declining or cancelling stops before any changes. No applicable setup means no setup
+prompt; required session dispatch enrollment has its own consent preview.
 
 Unattended setup consent comes from `--yes`, `--non-interactive`, noninteractive stdin,
-or a truthy `CI` or `NONINTERACTIVE` value. `--json` alone grants no consent;
-prompts and warning diagnostics stay on stderr. Consent is not persisted.
+or a truthy `CI` or `NONINTERACTIVE` value. `--json` alone grants no consent; prompts
+and warning diagnostics stay on stderr. Consent is not saved for later runs.
 
 When enabled OpenClaw issue-assignment or review-request policies require session
 dispatch, Install lists those consumers and discloses `operator.read` and

@@ -66,11 +66,11 @@ operator actions without reading OpenClaw state.
 
 ### Runtime Execution Approval
 
-Trusting the optional PermissionRequest hook delegates native execution approval to
-this installed Agent System runtime, including current and future commands and their
-stdin request data. There is no separate consent store or operation whitelist. The
-runtime continues to own task authorization, operator-only requirements, validation,
-and provider interactions; this hook does not independently assess those decisions.
+Trusting the optional PermissionRequest hook delegates native execution approval to this
+installed Agent System runtime, including current and future commands and their stdin
+request data. There is no separate consent store or operation whitelist. The runtime
+still checks task authorization, operator-only requirements, and request validity, and
+handles provider interactions. The hook does not independently assess those decisions.
 
 Recognized direct runtime calls may be approved by the hook. Other commands,
 including native Git, GitHub CLI, and app-tool calls, retain their native approval
@@ -86,9 +86,9 @@ invocation without changing approval behavior. The log is size-limited, and disa
 debug preserves existing records. Logging failures do not block approval, and a
 logged `allow` does not prove the command succeeded.
 
-Native hook trust includes the installed runtime and its subsequent updates.
-See the [native hook contract](https://learn.chatgpt.com/docs/hooks#permissionrequest)
-and [installed verification example](./examples/codex-install/README.md).
+Approving the hook means trusting the installed runtime and its later updates. See the
+[native hook contract](https://learn.chatgpt.com/docs/hooks#permissionrequest) and
+[installed verification example](./examples/codex-install/README.md).
 
 ## Skills
 
@@ -151,9 +151,11 @@ permissions. The initial activation establishes a historical baseline; reinstall
 and restart retain it.
 
 Mode, author, reviewer, guidance, and capacity changes apply live. Run Install when
-changing installed scheduling machinery, including cadence or pause, or when the
-runtime reports a schedule update is required. See [pause and resume](./channels/github/ADVANCED.md#pause-and-resume).
-Choose which machine runs each workflow; [installation identity](./channels/github/ADVANCED.md#installation-identity-and-assignment-claims)
+changing the installed schedule, including its cadence or pause setting, or when the
+runtime reports that the schedule needs an update. See
+[pause and resume](./channels/github/ADVANCED.md#pause-and-resume). Choose which machine
+runs each workflow;
+[installation identity](./channels/github/ADVANCED.md#installation-identity-and-assignment-claims)
 does not coordinate or deduplicate work across machines.
 
 ### Issue Assessment
@@ -199,9 +201,9 @@ For direct work in an existing checkout without scheduled intake, use the shared
 
 Continue in the existing issue chat with its work and evidence intact. The shared
 [publication recovery guide](./channels/github/ADVANCED.md#interrupted-publication)
-covers missing summaries, replies, PR attachments, and announcements. Native
-creation, send, or publication outcomes that remain uncertain must be reconciled
-before another attempt; unresolved creation can continue occupying capacity.
+covers missing summaries, replies, PR attachments, and announcements. If the outcome of
+a native creation, send, or publication is uncertain, use its recovery controls to check
+what happened before trying again. An unresolved creation can still occupy capacity.
 Never edit tracking files or create a replacement chat to clear a blocker.
 
 Delivery requires the branch retained for the assignment. If another branch is
@@ -380,23 +382,24 @@ task has its own history and does not prove native scheduling.
 
 ### Ownership and Recovery
 
-Agent System owns jobs through markers and a private non-secret ledger. Native
-edits to managed fields are drift; notification preferences remain native-owned.
-Unchanged jobs receive no writes. Removed declarations pause jobs and retain
-history; reintroduced IDs reuse them. Personal and Me jobs are not adopted by name.
-Unknown saved schemas stop inspection.
+Agent System owns jobs through markers and a private non-secret ledger. Native edits to
+managed fields are drift; notification preferences remain native-owned. Unchanged jobs
+receive no writes. Removed declarations pause jobs and retain history; reintroduced IDs
+reuse them. Personal and Me jobs are not adopted by name. Inspection stops if the saved
+data uses an unknown schema.
 
 For `automation-thread-model-drift`, use the existing chat’s native controls to
 apply the requested model and effort, then rerun Install. Settings-only app-server
 updates do not persist across connections; Agent System does not claim success
 from a transient update or replace the chat.
 
-Interrupted writes require saved-state readback before retry; the install skill
-guides recovery. Missing owned jobs or divergent state require investigation.
-Earlier verified actions are not rolled back, and concurrent native UI edits are
-not protected by atomic compare-and-swap. For `automation-journal-busy`, confirm
-no reconciliation is running before removing only the stale Agent System `.lock`
-directory. Never repair native scheduler files or delete the ownership ledger.
+Interrupted writes require saved-state readback before retry; the install skill guides
+recovery. Missing owned jobs or divergent state require investigation. Earlier verified
+changes remain in place. Native UI edits made at the same time can conflict with
+reconciliation; the two changes are not applied atomically. For
+`automation-journal-busy`, confirm no reconciliation is running before removing only
+the stale Agent System `.lock` directory. Never repair native scheduler files or delete
+the ownership ledger.
 
 See the [Codex automations example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/codex-automations/README.md#automation-checks)
 for conversation setup, headless planning, and recovery checks.

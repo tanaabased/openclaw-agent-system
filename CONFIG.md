@@ -10,7 +10,7 @@ declarations belong in the [manifest](./MANIFEST.md).
 
 ## Shared cleanup
 
-Choose automatic retirement grace once in
+Set the grace period for automatic retirement in
 `<XDG_CONFIG_HOME>/tanaab/agent-system/config.yaml`, or
 `<HOME>/.config/tanaab/agent-system/config.yaml` when `XDG_CONFIG_HOME` is unset.
 Roots must be absolute. Both host processes must use the same configuration root;
@@ -33,10 +33,11 @@ A missing file or omitted grace uses 60 minutes. An unreadable, unsafe, malforme
 or unsupported file holds cleanup with a diagnostic instead of using a fallback.
 There is no enable/disable switch or per-agent override.
 
-Both runtimes reread settings each lifecycle pass and before resource effects;
-a change during final verification defers the effect to the next pass. Existing
-deadlines survive settings edits, polls, and restarts. New deadlines and genuine
-activity resets use the current grace. Cleanup still requires the owning runtime's
+Both runtimes reread settings on each lifecycle pass and before changing managed
+resources. If settings change during final verification, the action waits for the next
+pass. Existing deadlines survive settings edits, polls, and restarts. New deadlines and
+genuine activity resets use the current grace. Cleanup still requires the owning
+runtime's
 [ownership and preservation checks](./channels/github/ADVANCED.md#assignment-lifecycle);
 zero grace never bypasses them.
 
@@ -46,11 +47,11 @@ zero grace never bypasses them.
 | --------------------------------------------------------------------- | -------- | -------- |
 | `"auto"`, `"all"`, `false`, or an array of exact registered agent IDs | no       | `"auto"` |
 
-Ordinary install reconciles collaboration. `"auto"` selects registered Agent
-System-managed agents. `"all"` permits every OpenClaw agent, including unmanaged
-agents and future registrations. A list selects exact registered IDs, including
-unmanaged agents; unregistered IDs produce a warning. `false` or `[]` withdraws
-only Agent System-owned grants, not independently configured operator access.
+Install applies collaboration settings on each run. `"auto"` selects registered Agent
+System-managed agents. `"all"` permits every OpenClaw agent, including unmanaged agents
+and future registrations. A list selects exact registered IDs, including unmanaged
+agents; unregistered IDs produce a warning. `false` or `[]` withdraws only Agent
+System-owned grants, not independently configured operator access.
 
 ```sh
 # select registered managed agents, then reconcile from a managed workspace.
@@ -66,21 +67,21 @@ openclaw config set plugins.entries.agent-system.config.collaboration false --st
 openclaw agent-system install
 ```
 
-Fresh `auto` with fewer than two managed agents leaves native settings untouched
-and reports not applicable. A previously configured team still gets ownership
-cleanup. Already sufficient native enablement, visibility, and allow rules stay
-unchanged, including an unrestricted host. Otherwise install unions required IDs
-with existing `tools.agentToAgent.allow` entries, enables agent-to-agent access,
-and sets `tools.sessions.visibility=all` as needed. On a disabled host with no
-allow entries, exact selected IDs are written together with enablement.
+On first setup, `auto` with fewer than two managed agents leaves native settings
+untouched and reports not applicable. If a team was previously configured, Install still
+removes grants that Agent System owns and no longer needs. Already sufficient native
+enablement, visibility, and allow rules stay unchanged, including an unrestricted host.
+Otherwise install unions required IDs with existing `tools.agentToAgent.allow` entries,
+enables agent-to-agent access, and sets `tools.sessions.visibility=all` as needed. On a
+disabled host with no allow entries, exact selected IDs are written together with
+enablement.
 
-These **global** settings grant session reading and messaging, subject to native
-tool and sandbox restrictions. They cannot create isolated teams: retained
-external participants share access with selected agents. Install reports effective
-entries and notices newly connected external IDs or patterns. No extra flag,
-confirmation, or off/on sequence is needed; ordinary Doctor inspects without
-repairing state. Unrelated tool, sandbox, credential, and workspace permissions
-are unchanged.
+These **global** settings grant session reading and messaging, subject to native tool
+and sandbox restrictions. They cannot create isolated teams: retained external
+participants share access with selected agents. Install reports effective entries and
+notices newly connected external IDs or patterns. You do not need an extra flag,
+confirmation, or off/on sequence. Doctor inspects these settings without changing them.
+Unrelated tool, sandbox, credential, and workspace permissions are unchanged.
 
 Pre-existing exact IDs and matching wildcard patterns remain operator-owned.
 `all` adds an owned `*` only when unrestricted access is not already granted.
