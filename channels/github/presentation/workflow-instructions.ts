@@ -14,7 +14,7 @@ export interface WorkflowInstructionsPresentation {
   manifestPath?: string;
 }
 
-function fileLink(label: string, path?: string, literal = true): string {
+export function fileLink(label: string, path?: string, literal = true): string {
   const text = literal
     ? githubNotificationMarkdownCode(label)
     : githubNotificationMarkdownText(label);
@@ -25,7 +25,7 @@ function fileLink(label: string, path?: string, literal = true): string {
 
 /** debug shows retained selections; a notice is not proof of model compliance. */
 export default function workflowInstructions(
-  stage: 'Assessment' | 'Implementation' | 'Feedback reply' | 'Review',
+  stage: 'Model routing' | 'Assessment' | 'Implementation' | 'Feedback reply' | 'Review',
   selection?: WorkflowInstructionsSelection,
   workspace?: string,
   presentation: WorkflowInstructionsPresentation = {},

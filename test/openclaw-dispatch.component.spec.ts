@@ -1364,6 +1364,7 @@ describe('agent/openclaw issue dispatch', () => {
     );
   }
   it('should snapshot custom routing and keep prepared settings after guidance edits', async () => {
+    manifest.debug = true;
     manifest.models!.routing = { skill: 'custom-routing', guidance: { file: 'routing.md' } };
     ordinarySkills.push({
       name: 'custom-routing',
@@ -1383,6 +1384,18 @@ describe('agent/openclaw issue dispatch', () => {
     await service.run(manifest, root, coordinator, { action: 'reconcile', id: input.id });
     assert.equal((await record()).routing, saved.routing);
     assert.equal(creates().length, 1);
+    await assess(input.id);
+    await context(input.id);
+    const recorded = await submit(input.id);
+    assert.ok('presentation' in recorded && typeof recorded.presentation === 'string');
+    assert.match(recorded.presentation, /Routing method.*custom-routing.*custom guidance/);
+    assert.ok(recorded.presentation.includes('Model routing instructions'));
+    assert.ok(recorded.presentation.includes('routing.md'));
+    assert.ok(!recorded.presentation.includes('Prefer complex work.'));
+    manifest.models!.routing = { guidance: 'Later configuration is not this decision.' };
+    const reloaded = await context(input.id);
+    assert.ok('previousPresentation' in reloaded);
+    assert.equal(reloaded.previousPresentation, recorded.presentation);
   });
 
   it('should refuse stale routing guidance before creating a session', async () => {
@@ -4229,20 +4242,27 @@ describe('agent/openclaw issue dispatch', () => {
   for (const debug of [false, true]) {
     it(`should ${debug ? 'include' : 'omit'} debug instructions in recorded and reloaded assessments`, async () => {
       manifest.debug = debug;
+      const result: AssessmentSubmission = {
+        ...plan,
+        planSummary: 'Return the value.',
+        plan: 'Return the discarded value.',
+        fullAssessment: 'The handler discards its result.',
+      };
       const input = await next();
       await prepare(input);
       await assess(input.id);
       await context(input.id);
-      const recorded = await submit(input.id);
+      const recorded = await submit(input.id, result);
       assert.ok('presentation' in recorded && typeof recorded.presentation === 'string');
       assert.equal(recorded.presentation.includes('Assessment instructions'), debug);
+      assert.equal(recorded.presentation.includes('Model routing instructions'), debug);
       assert.ok(recorded.presentation.includes('Model routing'));
       const reloaded = await context(input.id);
       assert.ok('previousPresentation' in reloaded);
       assert.equal(reloaded.previousPresentation, recorded.presentation);
       assert.ok('previousResult' in reloaded && 'resultContract' in reloaded);
-      assert.deepEqual(reloaded.previousResult, plan);
-      assert.equal(Value.Check(assessmentResultSchema, plan), true);
+      assert.deepEqual(reloaded.previousResult, result);
+      assert.equal(Value.Check(assessmentResultSchema, result), true);
       // native tool search includes both content and details in its model-facing envelope.
       const transported = JSON.stringify(
         {

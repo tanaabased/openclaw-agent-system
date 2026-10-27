@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import type { AssessmentResult } from '../agent/assessment-result.ts';
+import type { RoutingInstructions } from '../agent/routing-instructions.ts';
 import renderAssessmentResult from '../channels/github/presentation/assessment-result.ts';
 import modelRoutingCard from '../channels/github/presentation/model-routing.ts';
 
@@ -30,6 +31,136 @@ const common = {
 };
 
 describe('channels/github/presentation/assessment-result', () => {
+  it('should show only customized retained routing methods after the selected model', () => {
+    const retained: RoutingInstructions = {
+      version: 1,
+      requestedSkill: 'company:route',
+      defaultSkill: false,
+      skill: {
+        name: 'company:route',
+        path: '/skills/route #1/SKILL.md',
+        scope: 'workspace',
+        digest: 'a'.repeat(64),
+      },
+      observedAt: 1,
+    };
+    const guidance = {
+      source: 'inline' as const,
+      content: 'Private routing guidance.',
+      digest: 'b'.repeat(64),
+    };
+    const defaults = {
+      ...retained,
+      defaultSkill: true,
+      requestedSkill: 'agent-system-model-routing',
+      skill: undefined,
+    };
+    const cases: [RoutingInstructions | undefined, string | undefined][] = [
+      [retained, '[`company:route`](</skills/route%20%231/SKILL.md>)'],
+      [
+        { ...retained, guidance },
+        '[`company:route`](</skills/route%20%231/SKILL.md>) + custom guidance',
+      ],
+      [
+        { ...retained, guidance: { ...guidance, source: 'file', path: '/workspace/routing.md' } },
+        '[`company:route`](</skills/route%20%231/SKILL.md>) + custom guidance',
+      ],
+      [{ ...retained, skill: undefined }, '`company:route`'],
+      [{ ...defaults, guidance }, 'Default routing + custom guidance'],
+      [defaults, undefined],
+      [undefined, undefined],
+    ];
+    for (const [instructions, method] of cases) {
+      const before = structuredClone(instructions);
+      for (const debug of [false, true]) {
+        const output = modelRoutingCard({
+          routing: context.routing,
+          instructions,
+          debug,
+          workspace: '/workspace',
+        });
+        assert.equal(output.includes('**Routing method:**'), !!method);
+        if (method) {
+          assert.ok(output.includes('**Routing method:** ' + method));
+          assert.ok(output.indexOf('**Selected:**') < output.indexOf('**Routing method:**'));
+          assert.ok(output.indexOf('**Routing method:**') < output.indexOf('**Basis:**'));
+        }
+        assert.ok(output.includes('**Source:** `high` profile; native'));
+        assert.equal(
+          output.includes(guidance.content),
+          debug && instructions?.guidance?.source === 'inline',
+        );
+        assert.equal(output.includes('Model routing instructions'), debug && !!instructions);
+        if (debug && instructions?.guidance?.source === 'file')
+          assert.ok(output.includes('[`routing.md`](</workspace/routing.md>)'));
+      }
+      assert.deepEqual(instructions, before);
+    }
+  });
+
+  it('should keep retained routing details private and distinct from assessment instructions', () => {
+    const instructions: RoutingInstructions = {
+      version: 1,
+      requestedSkill: 'agent-system-model-routing',
+      defaultSkill: true,
+      guidance: {
+        source: 'inline',
+        content: '# Keep literal\n  **private**\n```',
+        digest: 'b'.repeat(64),
+      },
+      observedAt: 1,
+    };
+    const result: AssessmentResult = {
+      ...common,
+      outcome: 'plan-ready',
+      assessment: 'Observed.',
+      plan: 'Keep the existing owners.',
+    };
+    for (const debug of [false, true]) {
+      const output = renderAssessmentResult(result, {
+        ...context,
+        routingInstructions: instructions,
+        debug,
+        routingManifestPath: '/workspace/agent.yaml',
+        assessment: {
+          defaultSkill: true,
+          skill: { name: 'assess', path: '/skills/assess/SKILL.md' },
+        },
+      });
+      assert.ok(output.includes('**Routing method:** Default routing + custom guidance'));
+      assert.equal(output.includes('Model routing instructions'), debug);
+      assert.equal(output.includes('Assessment instructions'), debug);
+      assert.equal(output.includes('> # Keep literal\n>   **private**\n> ```'), debug);
+      assert.equal(output.includes('[Inline guidance](</workspace/agent.yaml>)'), debug);
+      assert.ok(!output.includes('agent-system-model-routing`](<'));
+      if (debug) {
+        assert.ok(output.includes('**Skill:** `agent-system-model-routing` (default)'));
+        assert.ok(
+          output.indexOf('Model routing instructions') < output.indexOf('Assessment instructions'),
+        );
+      }
+    }
+    const legacy = renderAssessmentResult(result, { ...context, debug: true });
+    assert.ok(!legacy.includes('Routing method') && !legacy.includes('Model routing instructions'));
+  });
+
+  it('should safely format retained routing skill names without inventing source links', () => {
+    for (const path of [undefined, 'relative/SKILL.md', '/skills/bad\npath']) {
+      const instructions = {
+        version: 1 as const,
+        requestedSkill: 'route`custom',
+        defaultSkill: false,
+        skill: path
+          ? { name: 'route`custom', path, scope: 'workspace', digest: 'a'.repeat(64) }
+          : undefined,
+        observedAt: 1,
+      };
+      const output = modelRoutingCard({ routing: context.routing, instructions });
+      assert.ok(output.includes('**Routing method:** ``route`custom``'));
+      assert.ok(!output.includes('](<'));
+    }
+  });
+
   it('should distinguish routing literals from prose and keep execution separate from settings', () => {
     const output = modelRoutingCard({
       routing: {
