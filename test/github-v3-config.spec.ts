@@ -45,6 +45,19 @@ describe('channels/github/v3 configuration', () => {
     );
   });
 
+  it('should default omitted workflow versions to v3 with identical normalized output', () => {
+    const explicit = load().manifest;
+    const github = Object.fromEntries(
+      Object.entries(base.github).filter(([key]) => key !== 'schema-version'),
+    );
+    const result = parse(stringify({ ...base, github }));
+    assert.equal(result.status, 'valid', JSON.stringify(result.diagnostics));
+    if (result.status !== 'valid') throw new Error('invalid omitted-version fixture');
+    const omitted = result.manifest;
+    assert.deepEqual(omitted, explicit);
+    assert.equal(omitted.github!.notifications!.schemaVersion, 3);
+  });
+
   it('should normalize name aliases and derive reviewer feedback and original-actor delivery', () => {
     const { manifest } = load({
       'issue-assignment': {
@@ -115,6 +128,8 @@ describe('channels/github/v3 configuration', () => {
       { username: 'agent', notifications: {} },
       { username: 'agent', notifications: { 'schema-version': 2 } },
       { ...base.github, 'schema-version': 2 },
+      { ...base.github, 'schema-version': 1 },
+      { ...base.github, 'schema-version': '3' },
       { ...base.github, notifications: {} },
       {
         ...base.github,
@@ -129,6 +144,9 @@ describe('channels/github/v3 configuration', () => {
     const cli = normalizeAgentManifest({ ...base, github: { username: 'agent' } });
     assert.equal(cli.status, 'valid');
     if (cli.status === 'valid') assert.equal(cli.manifest.github?.notifications, undefined);
+    const absent = normalizeAgentManifest({ 'schema-version': 1, agent: { id: 'v3-test' } });
+    assert.equal(absent.status, 'valid');
+    if (absent.status === 'valid') assert.equal(absent.manifest.github, undefined);
   });
 
   it('should reject invalid selected configuration without fallback', () => {
@@ -146,6 +164,24 @@ describe('channels/github/v3 configuration', () => {
       });
       assert.equal(result.status, 'invalid', JSON.stringify(workflow));
     }
+  });
+
+  it('should validate omitted-version workflow fields instead of falling back to tool settings', () => {
+    const result = normalizeAgentManifest({
+      ...base,
+      github: {
+        username: 'agent',
+        'allowed-repository-owners': [],
+        'issue-assignment': { unknown: true },
+      },
+    });
+    assert.equal(result.status, 'invalid');
+    assert.ok(
+      result.diagnostics.some(({ fieldPath }) => fieldPath === '/github/allowed-repository-owners'),
+    );
+    assert.ok(
+      result.diagnostics.some(({ fieldPath }) => fieldPath === '/github/issue-assignment/unknown'),
+    );
   });
 
   it('should replace overlay lists and keep absent or unsupported workflows inactive', () => {

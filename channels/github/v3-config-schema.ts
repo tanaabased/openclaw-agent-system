@@ -35,7 +35,7 @@ const trigger = {
 };
 
 export const githubV3Properties = {
-  'schema-version': Type.Literal(3),
+  'schema-version': Type.Optional(Type.Literal(3)),
   runtimes: Type.Optional(
     Type.Array(Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]), {
       minItems: 1,

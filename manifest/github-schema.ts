@@ -1,4 +1,7 @@
-import decodeGitHubV3, { githubV3Properties } from '../channels/github/v3-config-schema.ts';
+import decodeGitHubV3, {
+  githubV3Properties,
+  type ExternalGitHubV3,
+} from '../channels/github/v3-config-schema.ts';
 import { Type, type Static } from 'typebox';
 
 import type { GitHubNotificationsDeclaration } from '../channels/github/workflow-policy.ts';
@@ -30,6 +33,26 @@ export const externalGitHubSectionSchema = Type.Union([
 
 type ExternalGitHubSection = Static<typeof externalGitHubSectionSchema>;
 
+const githubWorkflowProperties = new Set([
+  'schema-version',
+  'runtimes',
+  'interval-minutes',
+  'max-concurrent-items',
+  'allowed-repository-owners',
+  'issue-assignment',
+  'review-request',
+]);
+
+/** Identify workflow declarations without mistaking shared GitHub tool settings for one. */
+export function hasGitHubWorkflowConfiguration(value: unknown): value is ExternalGitHubV3 {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).some((key) => githubWorkflowProperties.has(key))
+  );
+}
+
 export interface GitHubManifestConfiguration extends GitHubToolManifestConfiguration {
   host?: 'github.com';
   notifications?: GitHubNotificationsDeclaration;
@@ -42,7 +65,7 @@ export function decodeGitHubSection(value: ExternalGitHubSection): GitHubManifes
   return {
     ...decodeGitHubToolConfiguration(value),
     ...(value.host ? { host: value.host } : {}),
-    ...('schema-version' in value ? { notifications: decodeGitHubV3(value) } : {}),
+    ...(hasGitHubWorkflowConfiguration(value) ? { notifications: decodeGitHubV3(value) } : {}),
     ...(value.token ? { token: value.token } : {}),
     ...(value.username ? { username: decodeResolvableString(value.username) } : {}),
   };
