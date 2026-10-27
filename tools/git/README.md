@@ -1,12 +1,14 @@
-# Agent System Git Tools
+# Agent System Git Tool
+
+<a id="agent-system-git-tools"></a>
 
 <p align="center">
-  <img src="../../assets/git-icon-large.svg" alt="Agent System Git" width="180" />
+  <img src="../../skills/git-cli/assets/icon-large.svg" alt="Agent System Git" width="180" />
 </p>
 
-The Git tools run noninteractive `git` commands and manage durable worktrees
-with the active agent's identity, SSH configuration, and policy. Enable them
-through the workspace's `git` declaration.
+The Git tool runs noninteractive `git` commands with the active agent's identity,
+SSH configuration, and policy. Enable it through the workspace's `git` declaration.
+Use the [Git Worktree tool](./worktree/README.md) to manage durable checkouts.
 
 - [Configuration Reference](#configuration-reference)
   - [`git.email`](#gitemail)
@@ -16,28 +18,21 @@ through the workspace's `git` declaration.
   - [`git.signing`](#gitsigning)
   - [`git.ssh.private-keys`](#gitsshprivate-keys)
   - [`git.worktrees`](#gitworktrees)
-- [Native Tools](#native-tools)
-  - [`agent_system_git`](#agent_system_git)
-  - [`agent_system_git_worktree`](#agent_system_git_worktree)
+- [`agent_system_git`](#agent_system_git)
 - [CLI](#cli)
   - [`openclaw agent-system tool git`](#openclaw-agent-system-tool-git)
-  - [`openclaw agent-system tool worktree -- list`](#openclaw-agent-system-tool-worktree----list)
-  - [`openclaw agent-system tool worktree -- prepare`](#openclaw-agent-system-tool-worktree----prepare)
-  - [`openclaw agent-system tool worktree -- remove`](#openclaw-agent-system-tool-worktree----remove)
 - [Shim](#shim)
 - [Launcher Bindings](#launcher-bindings)
 
 ## Overview
 
-| Interface                             | Purpose                                                      |
-| ------------------------------------- | ------------------------------------------------------------ |
-| `agent_system_git`                    | Model-facing ordinary Git tool                               |
-| `agent_system_git_worktree`           | Model-facing managed-worktree tool                           |
-| `git`                                 | Packaged compatibility shim on supported agent command paths |
-| `openclaw agent-system tool git`      | Explicit operator Git command                                |
-| `openclaw agent-system tool worktree` | Explicit operator managed-worktree command                   |
+| Interface                        | Purpose                                                      |
+| -------------------------------- | ------------------------------------------------------------ |
+| `agent_system_git`               | Model-facing ordinary Git tool                               |
+| `git`                            | Packaged compatibility shim on supported agent command paths |
+| `openclaw agent-system tool git` | Explicit operator Git command                                |
 
-Model-facing tools use the trusted active agent. Direct CLI and shell use are
+The model-facing tool uses the trusted active agent. Direct CLI and shell use are
 operator interfaces unless OpenClaw supplies an active-agent binding. Every
 interface applies the same Git configuration and policy before launching `git`.
 
@@ -221,80 +216,17 @@ readiness.
 
 ### `git.worktrees`
 
-| Field                            | Type                                        | Required | Default                      |
-| -------------------------------- | ------------------------------------------- | -------- | ---------------------------- |
-| `repositories.local`             | repository-id-to-authoritative-path mapping | no       | none                         |
-| `repositories.root`              | path                                        | no       | `.agent-system/repositories` |
-| `repositories.working-directory` | path                                        | no       | none                         |
-| `root`                           | path                                        | no       | `.agent-system/worktrees`    |
+See the [Git Worktree configuration reference](./worktree/README.md#gitworktrees)
+for managed roots, repository locations, preparation, and recovery.
 
-An empty object enables workspace-local managed repositories and worktrees.
-Custom roots and local repository overrides are optional:
+<a id="native-tools"></a>
 
-```yaml
-git:
-  worktrees:
-    root: .agent-system/worktrees
-    repositories:
-      root: .agent-system/repositories
-      local:
-        agent-system: ~/tanaab/openclaw-agent-system
-```
-
-An explicit `repositories.local` mapping wins. Otherwise, setting
-`repositories.working-directory` selects a normal checkout at
-`<directory>/<repository-name>`: preparation verifies and reuses an existing checkout
-or clones it if missing. Relative paths resolve from the workspace, and `~/` resolves
-from the host home. The directory may contain the agent workspace; it cannot be
-inside either managed root. Same-name repositories from different owners require
-explicit local mappings to separate paths. Full remote host, owner, and repository
-identity must match; dirty files are preserved, and failures never fall back to a
-different location or overwrite an existing checkout.
-
-A later configuration change may select another location for the same repository;
-previous checkouts are preserved. An interrupted temporary clone must first be
-recovered at its original location. Codex assignments already preparing a repository
-retain their original path; see [issue assessment recovery](../../CODEX.md#issue-assessment).
-
-Without either setting, managed repositories remain bare clones selected by a
-stable repository id. Agent System accepts supported network remotes but rejects
-local or credential-bearing clone URLs. Ordinary worktree preparation pins a
-repository id to its first source. A declared local override is authoritative: `install` preserves a
-missing path as drift so ordered setup can create it, while non-repositories,
-symlinks, and other unsafe paths fail closed. Managed worktree preparation
-still requires every declared local override to be a ready repository. Use a
-remote base such as `origin/main` to start from the latest fetched branch.
-
-Install creates a missing working directory and inspects existing ownership and
-permissions without changing them. Preparation retains interrupted clone state for
-retry; an incomplete temporary clone requires operator inspection before retrying.
-OpenClaw uses its managed Git runner. [Standalone Codex](../../CODEX.md#issue-assessment)
-uses native host authorization and separately verifies saved project registration.
-
-Preparation is serialized per repository; concurrent callers reuse the same
-worktree, while different repositories can prepare independently. Waiting callers
-honor cancellation and stop after ten minutes if the repository remains busy.
-See the [worktree example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/openclaw-worktree/README.md)
-for preparation, repeated reuse, agent-session execution, and safe removal.
-
-Without `git.ssh`, canonical HTTPS supports public repositories. With `git.ssh`,
-all managed worktree interfaces derive `git@github.com:<owner>/<repository>.git`
-from canonical GitHub HTTPS URLs and use isolated SSH credentials. Configure SSH
-before enabling private-repository notification work.
-
-`install` creates workspace-local roots with owner-only permissions and adds
-them to `.gitignore`; tracked, symlinked, overlapping, or ineffectively ignored
-roots fail installation. Worktrees use deterministic paths and Git's own state,
-while `doctor` checks the configured roots, ignore state, and local overrides.
-
-## Native Tools
-
-### `agent_system_git`
+## `agent_system_git`
 
 Run ordinary Git commands using the trusted active agent. Configuration and
 [policy](#gitpolicy) apply to native and CLI calls alike.
 
-#### Parameters
+### Parameters
 
 | Parameter | Type         | Required | Default                      | Description                                                                            |
 | --------- | ------------ | -------- | ---------------------------- | -------------------------------------------------------------------------------------- |
@@ -302,7 +234,7 @@ Run ordinary Git commands using the trusted active agent. Configuration and
 | `cwd`     | string       | no       | verified execution workspace | Working directory within the workspace or configured worktree root; 1–4096 characters. |
 | `stdin`   | string       | no       | none                         | Ordinary command input, at most 64 KiB; never credentials.                             |
 
-#### Usage
+### Usage
 
 Inspect the active workspace:
 
@@ -319,49 +251,14 @@ Agent configuration and Git identity still come from the canonical agent workspa
 Home-workspace sessions retain the agent workspace default. This binding does not
 admit an issue or expand Git policy.
 
-### `agent_system_git_worktree`
+<a id="agent_system_git_worktree"></a>
 
-Prepare, list, or remove managed worktrees when [`git.worktrees`](#gitworktrees)
-is enabled. The trusted tool context supplies the agent and workspace.
-
-#### Parameters
-
-| Parameter      | Type                        | Required                          | Default                     | Description                                                                                    |
-| -------------- | --------------------------- | --------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------- |
-| `action`       | `list`, `prepare`, `remove` | yes                               | none                        | Worktree operation.                                                                            |
-| `baseRef`      | string                      | for `prepare`                     | none                        | Git base ref, such as `origin/main`.                                                           |
-| `repository`   | object                      | for `prepare`                     | none                        | `{ id, cloneUrl? }`; the URL may be omitted for an already known or declared local repository. |
-| `repositoryId` | string                      | for `remove`; optional for `list` | all repositories for `list` | Stable managed repository ID.                                                                  |
-| `workId`       | string                      | for `prepare` and `remove`        | none                        | Stable work ID; see [naming](#openclaw-agent-system-tool-worktree----prepare).                 |
-
-Identifiers and refs are 1–256 characters, cannot start with `-`, and cannot have
-surrounding whitespace or control characters. `cloneUrl` is at most 4096 characters.
-Each action accepts only its own parameters; unknown fields are rejected.
-
-#### Usage
-
-Prepare a checkout, then use its returned path with `agent_system_git`:
-
-```json
-{
-  "action": "prepare",
-  "repository": {
-    "id": "agent-system",
-    "cloneUrl": "https://github.com/tanaabased/openclaw-agent-system.git"
-  },
-  "workId": "123-fix-agent-path-resolution",
-  "baseRef": "origin/main"
-}
-```
-
-Use `{"action":"list"}` to inspect managed worktrees. Removal requires
-`action: remove`, `repositoryId`, and `workId`; dirty checkouts, branches, and refs
-remain intact.
+For managed checkout operations, use the
+[Git Worktree tool](./worktree/README.md#agent_system_git_worktree).
 
 ## CLI
 
-These are operator commands; agents use `agent_system_git` and
-`agent_system_git_worktree`. See the [shared trust boundary](../../CLI.md#trust-boundary)
+These are operator commands; agents use `agent_system_git`. See the [shared trust boundary](../../CLI.md#trust-boundary)
 for identity binding and host-access limits.
 
 ### `openclaw agent-system tool git`
@@ -394,85 +291,13 @@ remain contained to the workspace and configured worktree root. Trusted
 operator commands may also use declared local repositories; undeclared paths
 remain unavailable.
 
-### `openclaw agent-system tool worktree -- list`
+<a id="openclaw-agent-system-tool-worktree----list"></a>
+<a id="openclaw-agent-system-tool-worktree----prepare"></a>
+<a id="openclaw-agent-system-tool-worktree----remove"></a>
 
-List current agent-owned worktrees from Git without changing them.
-
-#### Options
-
-| Option or argument | Required | Default                   | Description                                                |
-| ------------------ | -------- | ------------------------- | ---------------------------------------------------------- |
-| `--agent <id>`     | no       | workspace discovery       | Use the exact configured workspace for an installed agent. |
-| `[repository-id]`  | no       | all agent-owned worktrees | Limit the listing to one repository.                       |
-
-#### Usage
-
-```text
-openclaw agent-system tool worktree [--agent <id>] -- list [repository-id]
-```
-
-```sh
-# list worktrees for one repository.
-openclaw agent-system tool worktree -- list agent-system
-```
-
-### `openclaw agent-system tool worktree -- prepare`
-
-Prepare or reuse a deterministic managed worktree.
-
-#### Options
-
-| Option or argument  | Required | Default                  | Description                                                                     |
-| ------------------- | -------- | ------------------------ | ------------------------------------------------------------------------------- |
-| `--agent <id>`      | no       | workspace discovery      | Use the exact configured workspace for an installed agent.                      |
-| `--clone-url <url>` | no       | saved or declared source | Provide the source for a new managed repository.                                |
-| `<base-ref>`        | yes      | none                     | Base ref; use a remote ref such as `origin/main` for the latest fetched branch. |
-| `<repository-id>`   | yes      | none                     | Select the managed repository or declared local override.                       |
-| `<work-id>`         | yes      | none                     | Stable work identity; prefer `<task-id>-<brief-kebab-case-description>`.        |
-
-#### Usage
-
-```text
-openclaw agent-system tool worktree [--agent <id>] -- prepare <repository-id> <work-id> <base-ref> [--clone-url <url>]
-```
-
-```sh
-# prepare a checkout from the latest remote branch.
-openclaw agent-system tool worktree -- prepare agent-system 123-fix-agent-path-resolution origin/main \
-  --clone-url https://github.com/tanaabased/openclaw-agent-system.git
-```
-
-Repeating preparation reuses the existing worktree.
-
-For ordinary managed work, Agent System names both the branch and directory
-`<work-id-slug>-<digest>`. Prefer `<task-id>-<brief-kebab-case-description>` for
-the work id when a description is available; otherwise use `<task-id>`.
-Native issue workflows retain their worktree binding in the owning runtime.
-
-### `openclaw agent-system tool worktree -- remove`
-
-Remove one clean managed checkout using non-forced Git removal.
-
-#### Options
-
-| Option or argument | Required | Default             | Description                                                |
-| ------------------ | -------- | ------------------- | ---------------------------------------------------------- |
-| `--agent <id>`     | no       | workspace discovery | Use the exact configured workspace for an installed agent. |
-| `<repository-id>`  | yes      | none                | Select the repository.                                     |
-| `<work-id>`        | yes      | none                | Select the stable work identity.                           |
-
-#### Usage
-
-```text
-openclaw agent-system tool worktree [--agent <id>] -- remove <repository-id> <work-id>
-```
-
-```sh
-# remove the clean checkout without deleting its branch or remote refs.
-openclaw agent-system tool worktree -- remove agent-system 123-fix-agent-path-resolution
-```
-
-Dirty worktrees, branches, and refs remain intact.
+Worktree commands have their own references: [list](./worktree/README.md#openclaw-agent-system-tool-worktree----list),
+[prepare](./worktree/README.md#openclaw-agent-system-tool-worktree----prepare), and
+[remove](./worktree/README.md#openclaw-agent-system-tool-worktree----remove).
 
 ## Shim
 
@@ -492,22 +317,18 @@ sanitized host execution outside it. See the
 
 ## Launcher Bindings
 
-Agent-bound Gateway and setup children receive absolute executable paths:
+Agent-bound Gateway and setup children receive an absolute executable path:
 
-| Variable                    | Available when                | Purpose                             |
-| --------------------------- | ----------------------------- | ----------------------------------- |
-| `AGENT_SYSTEM_GIT`          | Git is configured             | Require managed Git execution.      |
-| `AGENT_SYSTEM_GIT_WORKTREE` | `git.worktrees` is configured | Require managed worktree execution. |
+| Variable           | Available when    | Purpose                        |
+| ------------------ | ----------------- | ------------------------------ |
+| `AGENT_SYSTEM_GIT` | Git is configured | Require managed Git execution. |
 
 ```sh
 # require the bound agent's git identity and policy without host fallback.
 "$AGENT_SYSTEM_GIT" status --short
-
-# list worktrees through the bound managed route.
-"$AGENT_SYSTEM_GIT_WORKTREE" list
 ```
 
-These launchers require active-agent authority under the shared
+This launcher requires active-agent authority under the shared
 [execution boundary](../../CLI.md#trust-boundary). The [shim](#shim) retains
 its contextual host fallback.
 

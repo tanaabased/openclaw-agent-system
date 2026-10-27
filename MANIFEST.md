@@ -113,7 +113,7 @@ changes through the runtime that owns them.
 | -------- | --------------------------- | --------------- | -------------------------------------------------------------------------------- |
 | workflow | GitHub notifications        | `github`        | [Configuration reference](./channels/github/ADVANCED.md#configuration-reference) |
 | tool     | `agent_system_git`          | `git`           | [Configuration reference](./tools/git/README.md#configuration-reference)         |
-| tool     | `agent_system_git_worktree` | `git.worktrees` | [Configuration reference](./tools/git/README.md#gitworktrees)                    |
+| tool     | `agent_system_git_worktree` | `git.worktrees` | [Configuration reference](./tools/git/worktree/README.md#gitworktrees)           |
 | tool     | `agent_system_github`       | `github`        | [Configuration reference](./tools/github/README.md#configuration-reference)      |
 | tool     | `agent_system_google`       | `google`        | [Configuration reference](./tools/google/README.md#configuration)                |
 

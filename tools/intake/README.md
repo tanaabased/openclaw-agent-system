@@ -1,4 +1,10 @@
-# Assignment Intake
+# Agent System Assignment Intake Tool
+
+<a id="assignment-intake"></a>
+
+<p align="center">
+  <img src="./assets/icon-large.svg" alt="Agent System Assignment Intake" width="180" />
+</p>
 
 `agent_system_intake` inspects or scans GitHub issue assignments for the active
 OpenClaw agent. It saves discovered assignments and their admission results. It does not create
@@ -6,14 +12,21 @@ task sessions, implement issues, or publish replies. [Issue Dispatch](../dispatc
 owns the managed task workflow. Start with [GitHub setup](../../channels/github/README.md)
 to enable scheduled intake.
 
+## Requirements
+
+Use a trusted OpenClaw agent binding. Connected scans also require installed GitHub
+workflow readiness and matching GitHub identity. Standalone Codex uses its
+[native intake adapter](../../CODEX.md#github-notification-policy).
+
 ## Configuration
 
 Declare [GitHub workflow configuration](../../channels/github/ADVANCED.md#configuration-reference)
 and use Install to activate the owning automation. The tool uses trusted agent and
 workspace binding; callers cannot select another agent or supply credentials.
-Standalone Codex uses its [native intake adapter](../../CODEX.md#github-notification-policy).
 
 ## `agent_system_intake`
+
+Inspect saved assignment state or run a bounded connected scan.
 
 ### Parameters
 

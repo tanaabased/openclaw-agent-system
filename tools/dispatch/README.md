@@ -1,14 +1,30 @@
-# Issue Dispatch
+# Agent System Issue Dispatch Tool
+
+<a id="issue-dispatch"></a>
+
+<p align="center">
+  <img src="../../skills/task-launch/assets/icon-large.svg" alt="Agent System Issue Dispatch" width="180" />
+</p>
 
 Use the task skills to start, assess, implement, or retire issue work through its native
 workflow. For assessment or implementation in the current chat, choose the corresponding
 skill below.
 
+## Requirements
+
+Use the active OpenClaw agent and native conversation, or the corresponding trusted
+standalone Codex runtime adapter. OpenClaw manual launch uses existing session enrollment;
+see [Setup and Recovery](#setup-and-recovery).
+
+## Configuration
+
+Use the [GitHub workflow configuration](../../channels/github/ADVANCED.md#configuration-reference)
+for modes, stage skills, guidance, and delivery. [Model profiles](../../MANIFEST.md#models)
+select the configured model and effort. There is no separate Dispatch manifest section.
+
 ## `agent_system_dispatch`
 
-This OpenClaw tool binds operations to the active agent and native conversation.
-Standalone Codex uses the corresponding trusted runtime adapters described by the
-same skills. Start with the skill for the requested operation; its returned context
+Start with the skill for the requested operation; its returned context
 supplies the current request, required inputs, and recovery instructions.
 
 | Capability                                           | Action                                | Owning instructions                                                                           |

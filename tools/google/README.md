@@ -1,10 +1,18 @@
-# Google
+# Agent System Google Tool
+
+<a id="google"></a>
+
+<p align="center">
+  <img src="../../skills/google-cli/assets/icon-large.svg" alt="Agent System Google CLI" width="180" />
+</p>
 
 Agent System runs a reviewed set of GoG commands with one ordinary Google user OAuth
 account per OpenClaw agent. The host supplies GoG, optionally through
 [`setup-host`](../../MANIFEST.md#setup); Agent System does not implement OAuth consent.
 Google scopes and resource permissions remain authoritative. No additional ClawHub
 skill, GoG plugin, or MCP server is needed.
+
+## Requirements
 
 GoG **v0.43.0** is reviewed. Stable releases **>=0.42.0 <1.0.0** are accepted; minor and
 patch updates do not require an exact version match. Only the reviewed commands and
@@ -196,9 +204,13 @@ Run supported Google data commands with the active agent account.
 
 ### Usage
 
+Find up to ten unread messages:
+
 ```json
 { "argv": ["gmail", "search", "is:unread", "--max", "10"] }
 ```
+
+Create an event in the configured account's primary calendar:
 
 ```json
 {
@@ -215,6 +227,8 @@ Run supported Google data commands with the active agent account.
   ]
 }
 ```
+
+Upload a file from the allowed workspace:
 
 ```json
 { "argv": ["drive", "upload", "report.pdf"] }
@@ -260,19 +274,21 @@ attachment flags separately. `--values-json` accepts inline JSON; `@file` input 
 not admitted. Plain text file/stdin input works for Docs; Markdown processing is
 excluded because it can introduce additional file and process effects.
 
-## `openclaw agent-system tool gog`
+## CLI
+
+### `openclaw agent-system tool gog`
 
 Run the [supported Google commands](#supported-commands) from an operator terminal
 using the selected agent's account and workspace.
 
-### Options
+#### Options
 
 | Option or argument   | Required | Default             | Description                                 |
 | -------------------- | -------- | ------------------- | ------------------------------------------- |
 | `--agent <id>`       | no       | workspace discovery | Select an installed agent's workspace.      |
 | `-- <GoG arguments>` | yes      | none                | Forward canonical GoG arguments after `--`. |
 
-### Usage
+#### Usage
 
 ```text
 openclaw agent-system tool gog [--agent <id>] -- <GoG arguments>

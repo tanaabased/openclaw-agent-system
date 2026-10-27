@@ -1,7 +1,7 @@
 # Agent System GitHub CLI Tool
 
 <p align="center">
-  <img src="../../assets/github-icon-large.svg" alt="Agent System GitHub CLI" width="180" />
+  <img src="../../skills/github-cli/assets/icon-large.svg" alt="Agent System GitHub CLI" width="180" />
 </p>
 
 The GitHub CLI tool runs noninteractive `gh` commands with the active agent's
@@ -22,8 +22,7 @@ credential, isolated configuration, and policy. Enable it through the workspace'
   - [`github.token`](#githubtoken)
   - [`github.username`](#githubusername)
 - [Assignment Protection](#assignment-protection)
-- [Native Tool](#native-tool)
-  - [`agent_system_github`](#agent_system_github)
+- [`agent_system_github`](#agent_system_github)
 - [CLI](#cli)
   - [`openclaw agent-system tool gh`](#openclaw-agent-system-tool-gh)
 - [Shim](#shim)
@@ -229,15 +228,15 @@ standalone Codex native host commands, absolute host binaries, HTTP/SDKs, unrela
 integrations, and the shim's non-agent host fallback are outside it. See the
 [shared trust boundary](../../CLI.md#trust-boundary).
 
-## Native Tool
+<a id="native-tool"></a>
 
-### `agent_system_github`
+## `agent_system_github`
 
 Run ordinary GitHub CLI commands with the trusted active agent. The same
 [configuration](#configuration-reference) and [policy](#githubpolicy) apply to
 native and operator calls.
 
-#### Parameters
+### Parameters
 
 | Parameter | Type         | Required | Default | Description                                                                         |
 | --------- | ------------ | -------- | ------- | ----------------------------------------------------------------------------------- |
@@ -247,7 +246,7 @@ native and operator calls.
 Callers cannot select an agent, workspace, or credential. Unknown parameters are
 rejected.
 
-#### Usage
+### Usage
 
 Inspect the configured GitHub identity:
 

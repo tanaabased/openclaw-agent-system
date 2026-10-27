@@ -51,7 +51,7 @@ uses the [shared skills](#skills) through its native host interfaces.
 - [`agent_system_dispatch`](./tools/dispatch/README.md) — Coordinate managed issue work, direct assessment, implementation, replies, and retirement.
 - [`agent_system_doctor`](./tools/doctor/README.md) — Inspect the active agent’s readiness and run declared checks after chat approval.
 - [`agent_system_git`](./tools/git/README.md) — Run ordinary Git commands with the agent's identity, SSH configuration, signing, and operation policy.
-- [`agent_system_git_worktree`](./tools/git/README.md#agent_system_git_worktree) — Prepare, list, and remove durable managed worktrees.
+- [`agent_system_git_worktree`](./tools/git/worktree/README.md#agent_system_git_worktree) — Prepare, list, and remove durable managed worktrees.
 - [`agent_system_github`](./tools/github/README.md) — Run ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
 - [`agent_system_google`](./tools/google/README.md) — Run Google data commands with the agent's verified account and isolated OAuth credentials.
 - [`agent_system_install`](./tools/install/README.md) — Apply the active agent’s configuration and setup after chat approval.

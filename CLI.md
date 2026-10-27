@@ -44,9 +44,9 @@ Separate decisions, such as confirmation, may still require a prompt.
 - [`openclaw agent-system notifications status`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-status) — Inspect retained workflow state.
 - [`openclaw agent-system notifications wait`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-wait) — Wait for a workflow checkpoint.
 - [`openclaw agent-system tool gh`](./tools/github/README.md#cli) — GitHub CLI commands.
-- [`openclaw agent-system tool git`](./tools/git/README.md#cli) — Git commands and managed worktrees.
+- [`openclaw agent-system tool git`](./tools/git/README.md#cli) — Run Git commands.
 - [`openclaw agent-system tool gog`](./tools/google/README.md#openclaw-agent-system-tool-gog) — Google commands.
-- [`openclaw agent-system tool worktree`](./tools/git/README.md#openclaw-agent-system-tool-worktree----list) — List, prepare, or remove managed worktrees.
+- [`openclaw agent-system tool worktree`](./tools/git/worktree/README.md#openclaw-agent-system-tool-worktree----list) — List, prepare, or remove managed worktrees.
 
 **Execution reference**
 
@@ -150,14 +150,10 @@ openclaw agent-system automations sync [--agent <id>] [--json]
 openclaw agent-system automations sync --json
 ```
 
-Sync leaves unchanged jobs alone. Pausing or removing a declaration keeps ownership and
-history; adding it again reuses the native ID while that job exists. If an undeclared
-job has also been deleted, complete operator inspection can retire ownership while
-retaining bounded historical evidence. Restricted or inconclusive inspection and
-unresolved writes prevent retirement. A retired ID is not automatically recreated; use a
-new manifest ID for a new automation. A failed sync exits 1 and retains verified
-progress and pending recovery. This command does not run unrelated install or setup
-steps.
+Sync leaves unchanged jobs alone and follows the
+[automation ownership and recovery rules](./MANIFEST.md#openclaw-execution-and-ownership).
+A failed sync exits 1 and retains verified progress and pending recovery. This command
+does not run unrelated install or setup steps.
 
 ### Repository examples
 
@@ -734,25 +730,18 @@ the available evidence cannot establish that detail. For connectivity failures,
 check Gateway availability before rerunning Install to resume the retained identity;
 a connection failure alone does not authorize replacement. Gateway rejection or
 pending pairing still requires its specific recovery action, including approval
-of the exact device request when present. Each Install enrollment connection reserves
-30 seconds for Gateway startup/reload plus the SDK's handshake and request
-allowances in one fixed connection budget (75 seconds with the pinned SDK).
-Doctor and workflow connections reserve those native connection allowances without
-an Install readiness wait (45 seconds). Connection cleanup uses the SDK's own
-bounded stop. Install waits only for startup/reload activity, not unrelated channel
-health, and lets the native client reconnect transient transport failures within
-its fixed budget. Authentication rejection is not retried. Ordinary workflow RPCs
-use the SDK's native request timeout; uncertain writes are never automatically replayed.
+of the exact device request when present. Install waits for Gateway startup or reload,
+not unrelated channel health. Authentication rejection is not retried, and uncertain
+writes are never automatically replayed.
+
 `gateway-readiness-deadline` identifies an exhausted readiness wait;
 `gateway-reload-failed` identifies terminal plugin replacement failure.
-These failures include `blocked.sessionDispatchDiagnostic.readinessEvidence` in
-JSON and the same evidence in the human diagnostic: elapsed time and wait budget,
-probe paths, HTTP status or safe transport category, and allowlisted startup/reload
-state. The history keeps at most 16 observations (the first and recent tail), with
-total and dropped counts. Missing or malformed evidence is marked explicitly;
-no completed probes is an empty history. Evidence observes the existing probes
-without extra requests or longer waits and excludes raw responses, errors, and
-credentials. It supports investigation, not a conclusion about the timeout's cause.
+These failures include bounded startup/reload evidence in the human diagnostic and
+`blocked.sessionDispatchDiagnostic.readinessEvidence` in JSON. Missing evidence is
+marked explicitly; raw responses, errors, and credentials are excluded. Use the evidence
+to investigate, not to infer the timeout's cause. The
+[enrollment verification example](./examples/os-dispatch-enrollment/README.md)
+covers the readiness deadline, retained identity, and diagnostic evidence.
 
 If reconciliation fails, install exits nonzero and reports completed outcomes,
 the blocking component, and unattempted work. Earlier changes remain applied;

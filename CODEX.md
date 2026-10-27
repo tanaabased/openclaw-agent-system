@@ -166,7 +166,7 @@ local project. An explicit
 otherwise, optional `git.worktrees.repositories.working-directory` selects
 `<directory>/<repository-name>`. A matching normal checkout is reused without
 resetting user work; a missing checkout is cloned with native host Git authorization.
-See [Git repository locations](./tools/git/README.md#gitworktrees) for path rules.
+See [Git repository locations](./tools/git/worktree/README.md#gitworktrees) for path rules.
 
 Without either location, dispatch first reuses a matching saved project. If none
 exists, it prepares the managed bare repository and one stable detached base

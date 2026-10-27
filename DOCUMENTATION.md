@@ -85,6 +85,19 @@ Before handing off a voice edit, read it as someone setting up or recovering the
 for the first time. They should be able to identify the action, its limits, and the next
 step without knowing the implementation history.
 
+## Tool Icons
+
+Give each tool README a centered, transparent SVG icon at `width="180"`, immediately
+below its title and any compatibility anchor. Reuse the matching skill's large icon by
+relative path so the tool and skill share one asset. Dispatch uses Task Launch's mark;
+model routing keeps its support color even though it is exposed as a native tool.
+
+For a tool without matching skill artwork, keep its icon in the owning tool's `assets/`
+directory. Match the single-color capability marks and role-based palette in
+[Skill Authoring](./skills/AGENTS.md#presentation-assets): tools are green, task management
+is pink, and support is blue. Assignment Intake uses a green inbox mark. Keep plugin
+branding separate; do not add backgrounds or duplicate shared skill assets.
+
 ## README Marketing
 
 - Keep the README opening and Overview as stable marketing copy. Change their wording or emphasis only when the user explicitly requests positioning changes or verified product behavior makes a claim false; documentation cleanup, reference splitting, and skill/tool inventory changes are not sufficient reasons. Mechanical link repairs are allowed without rewriting the copy.
