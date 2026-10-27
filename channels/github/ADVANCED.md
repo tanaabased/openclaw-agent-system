@@ -210,6 +210,11 @@ mentions, and changed authority stop pending publication without erasing retaine
 answers. Moving review code coordinates alone does not create new feedback.
 Uncertain sends and publications are reconciled without repeating them.
 
+The issue chat shows the complete private response; the configured reply skill
+composes a separate public answer with its confirmed link. Feedback authored by
+the publishing GitHub account receives a private response only. Confirmed runtime
+replies are excluded from intake to prevent reply loops.
+
 Follow-ups receive the current plan, recent responses, and unfinished work. They
 update the existing PR where appropriate without replacing the original assessment.
 Clarification pauses implementation until an answer arrives; it does not require
