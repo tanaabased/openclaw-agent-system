@@ -6,16 +6,21 @@
   <img src="../../skills/model-routing/assets/icon-large.svg" alt="Agent System Model Routing" width="180" />
 </p>
 
-[Agent System Model Routing](../../skills/model-routing/SKILL.md) assesses bounded task
-evidence and validates model and effort selections from the active workspace's
-[model profiles](../../MANIFEST.md#models). The calling model assesses the task. The
-helper validates that assessment without calling another classifier, creating tasks, or
-changing sessions.
+Use [Model Routing](../../skills/model-routing/SKILL.md) to choose a model and reasoning
+effort from the workspace's [profiles](../../MANIFEST.md#models). The calling model
+assesses the task; the helper checks that assessment against the profiles. It does
+not call another classifier, create a task, or change a chat.
+
+- [Requirements](#requirements)
+- [Configuration](#configuration)
+- [`agent_system_model_routing`](#agent_system_model_routing)
+  - [Parameters](#parameters)
+  - [Usage](#usage)
 
 ## Requirements
 
-Use the active OpenClaw agent's trusted tool context, or the
-[standalone Codex adapter](#standalone-codex-adapter) with a trusted workspace binding.
+Use the active OpenClaw agent's trusted tool context. In standalone Codex, use the
+[Model Routing skill](../../skills/model-routing/SKILL.md) with a trusted workspace binding.
 Model availability and supported effort remain subject to the owning runtime.
 
 ## Configuration
@@ -26,7 +31,10 @@ requirement.
 
 ## `agent_system_model_routing`
 
-Inspect the active OpenClaw agent's profiles or resolve an assessment. OpenClaw-hosted Codex uses this native tool too. The active agent and workspace come from trusted tool context; parameters cannot select another workspace. Only non-secret manifest data and configured routing guidance are read.
+Inspect the active agent's profiles or use an assessment to select a model and effort.
+OpenClaw-hosted Codex uses this tool too. The runtime supplies the agent and workspace;
+callers cannot choose another workspace. The tool reads only non-secret manifest data
+and configured routing guidance.
 
 ### Parameters
 
@@ -66,24 +74,15 @@ Resolve an assessment with explicit fallback to the configured default:
 }
 ```
 
-Inspection returns `status`, `manifestDigest`, `profiles`, `rubric`, `instructions`, `instructionsDigest`, `instructionsGuidance`, and `reportGuidance`. The instructions identify the selected method and any loaded guidance. Direct OpenClaw leaves custom skill discovery and reading to the host-native caller; it does not claim server-verified skill source evidence. Standalone Codex and scheduled owners resolve custom skills through their existing native catalogs and retain source digests. See [routing configuration and precedence](../../MANIFEST.md#models). Each profile contains `sourceModel`, native `model`, and `thinking`, or an explicit unsupported diagnostic. Configuration generators consume `profiles.default`; no model or effort values are built in.
+Inspection returns the profiles, routing instructions, and digests identifying their
+current versions. Pass those digests when resolving an assessment. If profiles or
+guidance changed, assess again. Missing profiles or a missing workspace binding report
+unavailable; invalid inputs and unsupported selections return errors without a substitute.
 
-Resolution returns `status` (`resolved` or `unresolved`), `profile`, `complexity`, `source`, `reason`, optional `xhighReason`, `recommendation`, `selection`, and `overrides`. An unresolved result has a null profile and no recommendation or selection unless the caller explicitly requests default fallback or supplies both override values. Partial overrides remain in the result for the caller to complete. The result retains unresolved status and reasoning even when default is selected.
+Resolution returns `resolved` or `unresolved`, the selected profile, reasoning, and
+any native candidate. Unresolved work has no selection unless default fallback or both
+model and effort overrides were explicitly supplied; fallback does not change its
+unresolved status. Partial overrides remain available for the caller to complete.
 
-Mapped selections include a native `candidate`. `application: "not-requested"` and
-`execution: "unverified"` make the evidence boundary explicit. Use the runtime's
-supported controls to apply the candidate and verify the result. Unknown models or
-unsupported model/effort combinations can still be rejected there; profile mapping is
-not runtime discovery.
-
-Missing profiles or binding report unavailable. Invalid profiles, malformed requests, changed manifests, evidence conflicts, unsupported mappings/selections, and unjustified xhigh report errors without substitution. These outcomes never grant permission to launch work or change an existing session.
-
-## Standalone Codex Adapter
-
-Use the newest trusted hook's `routingRuntime.argvPrefix`, append `--plugin-data` and `routingRuntime.pluginData`, and supply the same request JSON on standard input. The packaged entry is `dist/codex/codex-runtime.js model-routing`. It reads the persisted binding, manifest, and configured guidance, and uses native `skills/list` for a custom skill; cwd and `CODEX_HOME` do not select profiles. See [Codex routing](../../CODEX.md#model-routing).
-
-## Reporting and Continuation
-
-Pass the inspection's `reportGuidance` with the saved decision to routed work. Its first assessment includes a short **Model routing** blockquote with model, effort, complexity, evidence source, reason, and overrides. Label unresolved default use. Keep recommendations, requested application, and verified execution separate. Ordinary follow-ups, resume, and compaction preserve the saved selection.
-
-Native issue workflows use the same resolver with bounded routing evidence and durable workflow state. Their routing block remains private; see [Codex routing](../../CODEX.md#model-routing).
+The returned candidate does not change your chat or confirm that the model is available.
+Apply it through your runtime's model controls and verify the resulting settings. See [routing precedence](../../MANIFEST.md#models).

@@ -1,6 +1,8 @@
 # Codex Notifications Example
 
-Load notification declarations through the packaged Codex runtime, plan an intake conversation and schedule bound to that installation, and verify that missing activation or native ownership cannot authorize dispatch, continuation, feedback, or delivery.
+Load notification settings through the packaged Codex runtime and plan the intake
+chat and schedule for that installation. Verify that work cannot start, continue,
+accept feedback, or publish until activation and native ownership are verified.
 
 ## What Belongs Here
 

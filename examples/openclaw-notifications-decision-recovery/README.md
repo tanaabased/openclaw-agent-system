@@ -1,6 +1,8 @@
 # OpenClaw Notification Auto Decision Recovery Example
 
-Interrupt the first Auto-decision turn before it records a result, resume that decision in the same issue owner, and enter implementation exactly once while retaining the original assessment and execution settings.
+Interrupt the first Auto decision before it records a result. Resume it in the same
+issue chat and enter implementation once, preserving the original assessment and
+execution settings.
 
 ## What Belongs Here
 

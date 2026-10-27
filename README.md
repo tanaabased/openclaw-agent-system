@@ -11,15 +11,22 @@
   <img src="https://img.shields.io/badge/Ubuntu-24.04-00c88a" alt="Ubuntu 24.04" />
 </p>
 
-Agent System puts your OpenClaw agent's identity, environment, automations, and credential
-configuration in the repo alongside setup steps for installing dependencies and
-configuring the workspace. Clone the repo and run
-`openclaw agent-system install` to get your agent ready for work.
+Agent System puts your agent's identity, environment, automations, credential bindings,
+and skills in its own repo. Interact with your agents on GitHub like you do with human
+developers. It's agent dotfiles and a workflow runtime in one place.
 
-Enable [GitHub notifications](./channels/github/README.md) and assign an issue
-for native OpenClaw planning or standalone Codex implementation and PR delivery.
+Clone the repo and run `openclaw agent-system install` to get your OpenClaw agent
+ready for work.
 
-Also available as a [minimal standalone Codex plugin](./CODEX.md).
+Built primarily for OpenClaw agents, Agent System can also [bind your Codex profile](./CODEX.md)
+to a workspace. Both runtimes support [GitHub issue-assignment workflows](./channels/github/README.md),
+from assessment through implementation and PR delivery.
+
+See example agents:
+
+- [EMORI](https://github.com/tanaabased/emori) — Co-founder and operating partner running on OpenClaw.
+- [smutlord](https://github.com/tanaabased/smutlord) — Bug-fixing agent running on OpenClaw.
+- [pirog/me](https://github.com/pirog/me) — Mike Pirog's bound Codex profile.
 
 > [!NOTE]
 > The OpenClaw integration requires 2026.10.6 or newer and is developed against 2026.10.6. See
@@ -32,14 +39,14 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 
 ## Overview
 
-- **Configuration travels with the repo:** keep identity, environment, credential bindings, and setup in `agent.yaml`; activate them with `openclaw agent-system install`.
-- **Assign work like you would to a developer:** native GitHub workflows turn issue assignments into OpenClaw plans or Codex work and delivery pull requests.
-- **An identity of its own:** each agent gets its own Git authorship, signing, and GitHub account.
+- **Configuration travels with the repo:** keep identity, environment, credential bindings, automations, setup, and skill selections in `agent.yaml`, alongside your workspace skills and guidance.
+- **Assign work like you would to a developer:** use GitHub issues for assessment, implementation, and pull-request delivery in OpenClaw or Codex.
+- **An identity of its own:** give each OpenClaw agent its own Git authorship, signing, and GitHub account. Standalone Codex uses your native host identity.
 - **SSH keys stay off disk:** 1Password-backed SSH private keys never need to be written to disk.
 - **Policy before credentials:** managed operations enforce workspace boundaries and operation policy before loading secrets.
 - **The right model for the work:** route GitHub issues to declared model tiers by complexity.
 - **Put recurring work on the clock:** schedule repository commands and agent prompts from `agent.yaml`.
-- **Repeatable setup:** rerun Install to reconcile configuration and checked dependency installation; use Doctor to find drift.
+- **Repeatable setup:** rerun Install to apply configuration and repeat dependency setup safely; use Doctor to find drift.
 
 ## Ships With
 
@@ -71,7 +78,7 @@ uses the [shared skills](#skills) through its native host interfaces.
 - [`openclaw agent-system env`](./CLI.md#openclaw-agent-system-env) — Inspect environment sources without exposing values.
 - [`openclaw agent-system install`](./CLI.md#openclaw-agent-system-install) — Apply configuration and dependency setup.
 - [`openclaw agent-system instance`](./CLI.md#openclaw-agent-system-instance-inspect) — Inspect or rename the installation identity, or explicitly rotate its ID.
-- [`openclaw agent-system notifications`](./channels/github/ADVANCED.md#cli) — Refresh, inspect, wait for, or reset GitHub notification management.
+- [`openclaw agent-system notifications`](./channels/github/CLI.md) — Refresh, inspect, wait for, or reset GitHub notification management.
 - [`openclaw agent-system tool`](./CLI.md#openclaw-agent-system-tool) — Run a configured tool as the agent.
 - [`openclaw agent-system validate`](./CLI.md#openclaw-agent-system-validate) — Validate the workspace manifest.
 - [Complete CLI reference](./CLI.md) — All commands, options, and examples.
@@ -101,6 +108,22 @@ uses the [shared skills](#skills) through its native host interfaces.
 
 ## Installation
 
+### Version Compatibility
+
+| Agent System release | Minimum OpenClaw | Development target |
+| -------------------- | ---------------- | ------------------ |
+| 0.9.0                | 2026.10.6        | 2026.10.6          |
+| 0.8.0                | 2026.9.5         | 2026.9.6           |
+| 0.7.0                | 2026.9.5         | 2026.9.6           |
+| 0.6.0                | 2026.9.2         | 2026.9.3           |
+| 0.5.3                | 2026.7.1         | 2026.7.2           |
+
+Compatibility metadata declares the minimum supported OpenClaw version. Build
+metadata and development dependencies pin the newest version tested for the
+release.
+
+For the update order and existing-installation steps, see [upgrading](./UPGRADING.md).
+
 ### OpenClaw
 
 Install the current release from ClawHub:
@@ -118,23 +141,15 @@ openclaw plugins install npm:@tanaab/openclaw-agent-system --accept-capabilities
 Both commands accept the declared capabilities, register the plugin, and enable
 it. GitHub workflows require explicit [configuration and installation](./channels/github/README.md#configuration).
 
-For a development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
+### Codex
 
-### Version Compatibility
+Follow the [Codex installation and workspace setup guide](./CODEX.md#plugin-installation)
+to install the standalone plugin, approve its hooks, and bind your profile to a workspace.
 
-| Agent System release | Minimum OpenClaw | Development target |
-| -------------------- | ---------------- | ------------------ |
-| 0.9.0                | 2026.10.6        | 2026.10.6          |
-| 0.8.0                | 2026.9.5         | 2026.9.6           |
-| 0.7.0                | 2026.9.5         | 2026.9.6           |
-| 0.6.0                | 2026.9.2         | 2026.9.3           |
-| 0.5.3                | 2026.7.1         | 2026.7.2           |
+### From Source
 
-Compatibility metadata declares the minimum supported OpenClaw version. Build
-metadata and development dependencies pin the newest version tested for the
-release.
-
-For the update order and existing-installation steps, see [upgrading](./UPGRADING.md).
+For an OpenClaw development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
+For standalone Codex source installation and cache updates, see [Codex development](./DEVELOPMENT.md#codex).
 
 ## Usage
 
@@ -217,7 +232,7 @@ openclaw agent-system tool gh -- api user --jq .login
 
 `install` runs host setup, prepares managed tools, then runs agent setup. It asks
 for consent interactively; CI or `--yes` runs unattended. Doctor runs setup
-checks without repairs. Write setup commands so they are safe to repeat: a failure does not undo earlier
+checks without repairs. Write setup commands that are safe to repeat: a failure does not undo earlier
 changes. See [Setup](./MANIFEST.md#setup) for syntax and runtime filters.
 
 Add recurring work to the same manifest, then rerun Install:
@@ -235,7 +250,7 @@ automations:
 
 OpenClaw runs command jobs without a model; standalone Codex supports recurring
 prompt jobs through the desktop app. See [automation configuration](./MANIFEST.md#automations)
-and [Codex support](./CODEX.md#repository-automations) for runtime requirements.
+and [Codex support](./MANIFEST.md#codex-execution-and-ownership) for runtime requirements.
 
 Agent System does not provision model credentials, and memory credentials remain
 agent environment bindings rather than `openclaw.json` values. See

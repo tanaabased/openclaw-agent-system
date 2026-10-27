@@ -5,8 +5,8 @@
 </p>
 
 Prepare, list, and remove durable managed worktrees with the active agent's Git
-identity. This guide owns worktree configuration and lifecycle; the
-[Git guide](../README.md) owns shared identity, SSH, signing, and policy.
+identity. Use this guide to configure and manage worktrees. See the
+[Git guide](../README.md) for identity, SSH, signing, and policy.
 
 - [Requirements](#requirements)
 - [Configuration](#configuration)
@@ -45,7 +45,9 @@ git:
         agent-system: ~/tanaab/openclaw-agent-system
 ```
 
-An explicit `repositories.local` mapping wins. Otherwise, setting
+An explicit `repositories.local` mapping wins. Codex issue dispatch uses
+`github-<repository-database-id>` as the mapping key and verifies the full GitHub
+repository identity. Otherwise, setting
 `repositories.working-directory` selects a normal checkout at
 `<directory>/<repository-name>`: preparation verifies and reuses an existing checkout
 or clones it if missing. Relative paths resolve from the workspace, and `~/` resolves
@@ -63,23 +65,14 @@ retain their original path; see [issue assessment recovery](../../../CODEX.md#is
 Without either setting, managed repositories remain bare clones selected by a
 stable repository id. Agent System accepts supported network remotes but rejects
 local or credential-bearing clone URLs. Ordinary worktree preparation pins a
-repository id to its first source. A declared local override is authoritative: `install` preserves a
-missing path as drift so ordered setup can create it, while non-repositories,
-symlinks, and other unsafe paths fail closed. Managed worktree preparation
+repository id to its first source. A declared local override fixes the repository location. Install reports a missing
+path as drift so setup can create it; non-repositories, symlinks, and other unsafe
+paths stop the operation. Managed worktree preparation
 still requires every declared local override to be a ready repository. Use a
 remote base such as `origin/main` to start from the latest fetched branch.
 
-Install creates a missing working directory and inspects existing ownership and
-permissions without changing them. Preparation retains interrupted clone state for
-retry; an incomplete temporary clone requires operator inspection before retrying.
-OpenClaw uses its managed Git runner. [Standalone Codex](../../../CODEX.md#issue-assessment)
-uses native host authorization and separately verifies saved project registration.
-
-Preparation is serialized per repository; concurrent callers reuse the same
-worktree, while different repositories can prepare independently. Waiting callers
-honor cancellation and stop after ten minutes if the repository remains busy.
-See the [worktree example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/openclaw-worktree/README.md)
-for preparation, repeated reuse, agent-session execution, and safe removal.
+Install creates a missing working directory without changing existing ownership or
+permissions. Recover interrupted clones at their original location before retrying.
 
 Without `git.ssh`, canonical HTTPS supports public repositories. With `git.ssh`,
 all managed worktree interfaces derive `git@github.com:<owner>/<repository>.git`
@@ -228,10 +221,3 @@ active-agent authority and has no host fallback.
 ```
 
 See the [execution boundary](../../../CLI.md#trust-boundary).
-
-## Further Reading
-
-- [Git tool](../README.md): shared identity, SSH, signing, and policy
-- [Git worktree skill](../../../skills/git-worktree/SKILL.md): runtime selection and managed lifecycle instructions
-- [Manifest reference](../../../MANIFEST.md): workspace declarations and shared value rules
-- [CLI reference](../../../CLI.md): shared commands and execution boundaries

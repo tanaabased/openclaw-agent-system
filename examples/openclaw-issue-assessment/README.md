@@ -1,6 +1,8 @@
 # OpenClaw Direct Issue Assessment Example
 
-Assess an explicitly selected unassigned issue in an existing checkout through the default assessment wrapper, retain the result in an ordinary chat, and finish without admitting managed issue work, implementation, or publication.
+Assess an unassigned issue in the current checkout using the default assessment
+skill. Keep the result in the existing chat without starting managed issue work,
+implementing changes, or publishing to GitHub.
 
 ## What Belongs Here
 

@@ -13,7 +13,7 @@ references for product behavior.
 - OpenClaw 2026.10.6 for development and minimum package compatibility
 - A configured `tanaabot` agent with usable model authentication only for the recommended live DevGuard workflow
 
-OpenClaw does not support running the Gateway under Bun. Agent System builds as Node-targeted ESM with package dependencies left external.
+OpenClaw does not support running the Gateway under Bun. Agent System builds ESM for Node.js and keeps package dependencies external.
 
 ## Install From Source
 
@@ -53,8 +53,39 @@ or memory secret-provider source:
 Memory credentials remain SecretRefs; linked installs resolve them through the
 built standalone provider.
 
-For standalone Codex installation, cache refresh, and packaged skill checks,
-see [Codex development](./CODEX.md#development).
+### Codex
+
+From a checkout with [locked dependencies installed](#requirements),
+build and install through the pinned development dependency:
+
+```sh
+# build the runtime, then preview and install the local plugin.
+bun run build
+./node_modules/.bin/codex-tools install . --dry-run --json
+./node_modules/.bin/codex-tools install .
+```
+
+Rebuild after changing the Codex runtime or its imports. For changes to
+`.codex-plugin/`, `assets/`, `hooks/`, `package.json`, or `skills/`, sync the
+installed cache directly:
+
+```sh
+bun run codex:sync
+bun run codex:check
+```
+
+If a development build writes a changed persistent format, verify that any runtime
+restored during cleanup can read the retained state. Cache equality alone does not
+verify dispatch recovery.
+
+Open a new chat to verify skill discovery. `package.json#codexTools.managedPaths`
+selects the paths owned by cache synchronization and checks; it does not control
+what native Codex copies during installation.
+
+For packaged installation and discovery checks, run `bun run test:codex-plugin`
+with `AGENT_SYSTEM_PACKAGE` set to a prepared npm tarball. The release-test
+workflow runs this with an isolated Codex home. See [Testing](#testing) for other
+repository checks.
 
 ## Usage
 
@@ -117,7 +148,7 @@ include credential isolation in workflows, forbidden private SDK imports, packag
 metadata consistency, and stale configured paths. Prefer existing parsers and the owning
 lint, plugin, package, or fixture validator.
 
-Do not preserve prose, file layout, current runner matrices, command spelling, or occurrence counts merely because they are present today. Exact details belong in checks only when independently required by a supported contract. Finding a command in Markdown does not prove that it works. Delete checks with no distinct invariant rather than moving them to another suite.
+Do not preserve prose, file layout, current runner matrices, command spelling, or occurrence counts merely because they are present today. Exact details belong in checks only when independently required by a supported contract. Finding a command in Markdown does not prove that it works. Remove checks that protect no distinct requirement instead of moving them to another suite.
 
 For mixed specs, classify assertions separately and preserve useful behavioral coverage. Run retained `*.static.spec.ts` checks with `bun run test:static`. They run in the existing unit workflow as a separate step and are included in `test:all`, but excluded from `test:unit`. Any migration must keep retained checks running in CI and update the documented selection in the same change.
 
@@ -144,7 +175,7 @@ Portable components use `*.component.spec.ts`; native process, permission, symli
 
 ### Recorded CLI Fixtures
 
-The mock delivery tests consume approved CLI captures directly from [`fixtures/`](./fixtures/). The fixture commands are local, explicitly invoked tools; they do not run in CI or as a release prerequisite and need no live model.
+The mock delivery tests consume approved CLI captures directly from [`fixtures/`](./fixtures/). Run the fixture commands explicitly when you need new captures. They need no live model and are not part of CI or release prerequisites.
 
 Use a disposable pull request in `tanaabased/big-test-bucket`. The PR-author case requires a declared author. The review case requires a pending review followed by a completed review from the declared reviewer on a later page. The capture requests one review per page to exercise pagination without creating a large review history; the production command retains GitHub's ordinary page size. Arrange the actor roles before recording, and close the PR and remove its setup branch when finished. The recorder creates no GitHub resources itself.
 
@@ -178,8 +209,9 @@ Run `bun run test:release` when package contents, compatibility metadata, or rel
 
 ### Leia Scenarios
 
-[Leia](https://github.com/lando/leia) suites run **only in GitHub Actions**:
-they install plugins and mutate isolated OpenClaw or provider state.
+> [!IMPORTANT]
+> Run [Leia](https://github.com/lando/leia) scenarios only in GitHub Actions. They
+> install plugins and change OpenClaw or provider state on disposable runners.
 
 - [`examples/`](./examples/) covers installed and runtime contracts. [OS tests](./.github/workflows/pr-examples-os.yml) select native installation, dispatch enrollment, execution, and credentials on macOS and Ubuntu. [Codex tests](./.github/workflows/pr-examples-codex.yml), [OpenClaw tests](./.github/workflows/pr-examples-openclaw.yml), and [Notification tests](./.github/workflows/pr-examples-notifications.yml) select their examples on Ubuntu.
 - Only explicitly selected examples run in CI. Unselected folders remain migration inputs; their presence is not evidence of active coverage.

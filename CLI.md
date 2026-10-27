@@ -12,37 +12,37 @@ Separate decisions, such as confirmation, may still require a prompt.
 
 **Core commands**
 
-- [`openclaw agent-system automations list`](#openclaw-agent-system-automations-list)
-- [`openclaw agent-system automations run`](#openclaw-agent-system-automations-run)
-- [`openclaw agent-system automations runs`](#openclaw-agent-system-automations-runs)
-- [`openclaw agent-system automations sync`](#openclaw-agent-system-automations-sync)
-- [`openclaw agent-system backup cleanup`](#openclaw-agent-system-backup-cleanup)
-- [`openclaw agent-system backup create`](#openclaw-agent-system-backup-create)
-- [`openclaw agent-system backup prune`](#openclaw-agent-system-backup-prune)
-- [`openclaw agent-system backup restore`](#openclaw-agent-system-backup-restore)
-- [`openclaw agent-system backup verify`](#openclaw-agent-system-backup-verify)
-- [`openclaw agent-system credentials cache flush`](#openclaw-agent-system-credentials-cache-flush)
-- [`openclaw agent-system credentials cache status`](#openclaw-agent-system-credentials-cache-status)
-- [`openclaw agent-system credentials set op`](#openclaw-agent-system-credentials-set-op)
-- [`openclaw agent-system credentials unset op`](#openclaw-agent-system-credentials-unset-op)
-- [`openclaw agent-system credentials validate op`](#openclaw-agent-system-credentials-validate-op)
-- [`openclaw agent-system doctor`](#openclaw-agent-system-doctor)
-- [`openclaw agent-system env`](#openclaw-agent-system-env)
-- [`openclaw agent-system install`](#openclaw-agent-system-install)
-- [`openclaw agent-system instance inspect`](#openclaw-agent-system-instance-inspect)
-- [`openclaw agent-system instance rename`](#openclaw-agent-system-instance-rename)
-- [`openclaw agent-system instance rotate`](#openclaw-agent-system-instance-rotate)
-- [`openclaw agent-system tool`](#openclaw-agent-system-tool)
-- [`openclaw agent-system validate`](#openclaw-agent-system-validate)
+- [`openclaw agent-system automations list`](#openclaw-agent-system-automations-list) — Inspect saved automations and configuration drift.
+- [`openclaw agent-system automations run`](#openclaw-agent-system-automations-run) — Queue one synchronized automation through the native scheduler.
+- [`openclaw agent-system automations runs`](#openclaw-agent-system-automations-runs) — Read automation execution and delivery history.
+- [`openclaw agent-system automations sync`](#openclaw-agent-system-automations-sync) — Reconcile declared automations with the native scheduler.
+- [`openclaw agent-system backup cleanup`](#openclaw-agent-system-backup-cleanup) — Preview or remove abandoned temporary backup artifacts.
+- [`openclaw agent-system backup create`](#openclaw-agent-system-backup-create) — Create a verified workspace and agent database archive.
+- [`openclaw agent-system backup prune`](#openclaw-agent-system-backup-prune) — Remove older local archives according to retention settings.
+- [`openclaw agent-system backup restore`](#openclaw-agent-system-backup-restore) — Recover an archive into a fresh directory for inspection.
+- [`openclaw agent-system backup verify`](#openclaw-agent-system-backup-verify) — Verify an archive without extracting it.
+- [`openclaw agent-system credentials cache flush`](#openclaw-agent-system-credentials-cache-flush) — Clear retained 1Password state in the Gateway.
+- [`openclaw agent-system credentials cache status`](#openclaw-agent-system-credentials-cache-status) — Inspect the Gateway’s 1Password cache.
+- [`openclaw agent-system credentials set op`](#openclaw-agent-system-credentials-set-op) — Verify and store the agent’s 1Password bootstrap credential.
+- [`openclaw agent-system credentials unset op`](#openclaw-agent-system-credentials-unset-op) — Remove the agent’s stored 1Password bootstrap credential.
+- [`openclaw agent-system credentials validate op`](#openclaw-agent-system-credentials-validate-op) — Check access to declared 1Password resources.
+- [`openclaw agent-system doctor`](#openclaw-agent-system-doctor) — Inspect readiness and drift without applying repairs.
+- [`openclaw agent-system env`](#openclaw-agent-system-env) — Inspect the resolved environment without printing values.
+- [`openclaw agent-system install`](#openclaw-agent-system-install) — Reconcile the workspace’s declared configuration and setup.
+- [`openclaw agent-system instance inspect`](#openclaw-agent-system-instance-inspect) — Inspect the installation UUID and readable name.
+- [`openclaw agent-system instance rename`](#openclaw-agent-system-instance-rename) — Change the readable name while preserving the UUID.
+- [`openclaw agent-system instance rotate`](#openclaw-agent-system-instance-rotate) — Replace the UUID and detach old assignment claims.
+- [`openclaw agent-system tool`](#openclaw-agent-system-tool) — Run a registered command as the selected agent.
+- [`openclaw agent-system validate`](#openclaw-agent-system-validate) — Validate a manifest without changing installed state.
 
 <a id="openclaw-agent-system-notifications"></a>
 
 **Component commands**
 
-- [`openclaw agent-system notifications refresh`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-refresh) — Request a run of the installed workflow.
-- [`openclaw agent-system notifications reset`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-reset) — Reset tracking, optionally purging managed resources.
-- [`openclaw agent-system notifications status`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-status) — Inspect retained workflow state.
-- [`openclaw agent-system notifications wait`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-wait) — Wait for a workflow checkpoint.
+- [`openclaw agent-system notifications refresh`](./channels/github/CLI.md#openclaw-agent-system-notifications-refresh) — Request a run of the installed workflow.
+- [`openclaw agent-system notifications reset`](./channels/github/CLI.md#openclaw-agent-system-notifications-reset) — Reset tracking, optionally purging managed resources.
+- [`openclaw agent-system notifications status`](./channels/github/CLI.md#openclaw-agent-system-notifications-status) — Inspect retained workflow state.
+- [`openclaw agent-system notifications wait`](./channels/github/CLI.md#openclaw-agent-system-notifications-wait) — Wait for a workflow checkpoint.
 - [`openclaw agent-system tool gh`](./tools/github/README.md#cli) — GitHub CLI commands.
 - [`openclaw agent-system tool git`](./tools/git/README.md#cli) — Run Git commands.
 - [`openclaw agent-system tool gog`](./tools/google/README.md#openclaw-agent-system-tool-gog) — Google commands.
@@ -76,7 +76,7 @@ openclaw agent-system automations list [--agent <id>] [--json]
 openclaw agent-system automations list --json
 ```
 
-An aligned inventory exits zero. Drift, blocked support, or execution/delivery warnings return `attention` and exit 1. Runtime-excluded declarations are listed as inapplicable. Native IDs and enabled state are reported without exposing payloads or provider error text.
+The command exits zero when saved jobs match the manifest. Drift, unsupported settings, or execution and delivery warnings return `attention` and exit 1. Jobs excluded from this runtime appear as inapplicable. Results include native IDs and enabled state, without payloads or provider error text.
 
 ## `openclaw agent-system automations run`
 
@@ -100,11 +100,15 @@ openclaw agent-system automations run <id> [--agent <id>] [--json]
 openclaw agent-system automations run review --json
 ```
 
-`queued` exits zero and returns `runId`; it proves admission, not completion. Inspect that exact occurrence with `runs --run-id`. Missing, disabled, consumed, drifted, or unowned jobs fail before admission; native skips exit 1. Run does not silently sync or retry. Native UI changes can race preflight; there is no atomic definition check on the native occurrence interface.
+`queued` exits zero and returns `runId`: the scheduler accepted the request, but the
+run may still be pending. Inspect it with `runs --run-id`. Missing, disabled, already
+consumed, drifted, or unowned jobs are rejected; native skips exit 1. The command does
+not sync or retry automatically. A native UI edit after the preflight check can still
+change what runs.
 
 ## `openclaw agent-system automations runs`
 
-Read native occurrence history for an owned manifest ID, including retained removed jobs.
+Read execution and delivery history by manifest ID, including saved history for removed jobs.
 
 ### Options
 
@@ -178,7 +182,7 @@ automations:
 
 Configure [backup selection](./MANIFEST.md#backup), then use the
 [backup commands](#openclaw-agent-system-backup-create) for verification and
-retention. For Codex automation support, see the [supported fields](./CODEX.md#repository-automations).
+retention. For Codex automation support, see the [supported fields](./MANIFEST.md#codex-execution-and-ownership).
 
 ## `openclaw agent-system backup cleanup`
 
@@ -209,8 +213,9 @@ openclaw agent-system backup cleanup --agent emori --apply --json
 ```
 
 Results identify `wouldDelete`, `deleted`, and `preserved` paths with refusal reasons.
-Partial failures retain exact completed and remaining actions. Apply shares capture's
-exclusive lease and checks ownership and filesystem identity again before deletion.
+If cleanup partially fails, results identify what was removed and what remains.
+Cleanup and capture cannot run concurrently; cleanup rechecks ownership and file
+identity before deleting anything.
 
 Completed or plausibly complete archives, unknown contents, active or uncertain writers,
 and legacy artifacts without ownership records are preserved. Snapshot-command failures
@@ -227,7 +232,7 @@ backup success. For failed automation execution, inspect its owned history with
 Capture selected workspace files and, by default, the selected agent's OpenClaw
 SQLite database in a private, verified `.tar.gz`.
 
-> [!TIP]
+> [!WARNING]
 > Backups can contain credentials and session data. If the destination is inside
 > your workspace, add it to `.gitignore`—for the default, use `.agent-system/backups/`.
 > Creation adds a local `.git/info/exclude` rule when needed; a committed
@@ -332,10 +337,13 @@ Only immediate regular `.tar.gz` files with valid embedded v1/v2 metadata for
 the selected agent are eligible. Ties use filename order. Unreadable or unrelated
 entries, subdirectories, links, and pending writes are skipped with reasons.
 Retention checks archive identity and capture metadata, not payload integrity or
-compatibility with the installed OpenClaw database schema. A `kept` result does not prove an archive is intact or restorable. Even a damaged
-payload with valid metadata can count toward retention. Use explicit `backup verify` and `backup restore` for their
-respective integrity and recovery checks. Historical database schemas alone do
-not block pruning, and archived databases are never migrated. Apply coordinates
+compatibility with the installed OpenClaw database schema.
+
+> [!WARNING]
+> A `kept` archive can still have a damaged payload. Run `backup verify` to check
+> integrity and `backup restore` to check recovery before relying on it.
+
+Historical database schemas alone do not block pruning, and archived databases are never migrated. Apply coordinates
 with creation and stops if the candidate set changes.
 JSON reports `kept`, `deleted`, `wouldDelete`, and `skipped`; failures
 return nonzero and include any deletions already completed. Bound callers keep
@@ -423,7 +431,7 @@ state. Inspect the root manifest's coverage before relying on the artifact.
 
 ## `openclaw agent-system credentials cache flush`
 
-Invalidate retained 1Password state in the running Gateway.
+Clear the running Gateway's cached 1Password clients and values.
 
 ### Options
 
@@ -522,7 +530,7 @@ openclaw agent-system credentials unset op [--agent <id>] [--store <id>]
 openclaw agent-system credentials unset op
 ```
 
-Removal is idempotent and requests Gateway cache invalidation. It does not
+Removing an already-absent credential is safe. Removal also asks the Gateway to clear its cache. It does not
 change the process-environment fallback. See [cache configuration](./CONFIG.md#opcache)
 for pending invalidation and flush behavior.
 
@@ -554,11 +562,12 @@ then the process fallback. An exact `--store` or `--from-env` disables fallback.
 
 ## `openclaw agent-system doctor`
 
-Automation findings report owned native drift, disabled or completed jobs,
-unsupported targets, and execution/delivery failures without changing or running
-jobs. Scheduler inspection requires the operator's native read permission.
+Inspect registration, identity, models, memory, paths, and configured capabilities
+without applying repairs. `openclaw agent-system status` is an alias.
 
-Inspect registration, identity, models, memory, paths, and configured capabilities for drift without repairs. `openclaw agent-system status` is an alias.
+Doctor also reports automation drift, disabled or completed jobs, unsupported targets,
+and execution or delivery failures. Scheduler inspection requires the operator's
+native read permission; it does not change or run jobs.
 
 When Codex is required, the `codex-plugin` component reports the shared
 prerequisite as ready, missing, disabled, incompatible, or conflicting. It uses
@@ -625,17 +634,14 @@ Output lists variable names, sources, required state, and override counts; value
 
 ## `openclaw agent-system install`
 
-Install reconciles repository [automations](./MANIFEST.md#automations) alongside
-the rest of the workspace. Use [`automations sync`](#openclaw-agent-system-automations-sync)
+Apply the workspace agent's identity, models, memory, paths, capabilities, and setup.
+Install also updates repository [automations](./MANIFEST.md#automations). Use [`automations sync`](#openclaw-agent-system-automations-sync)
 to reconcile automation jobs alone. Automation reconciliation requires a running
 Gateway. If initial scheduler discovery cannot reach it, Install continues with
 an `automation-sync-deferred` warning and skipped outcome; scheduler state remains
-unverified and unchanged. Retry authorized Install or `automations sync` when the
-Gateway is available. Explicit sync, invalid declarations, authorization and
+unverified and unchanged. Rerun Install or `automations sync` when the Gateway is available. Explicit sync, invalid declarations, authorization and
 ownership failures, and failed read-back remain errors. Completed one-shots and
 native safety disable remain protected; failed synchronization reports partial results.
-
-Reconcile the workspace agent's identity, models, memory, paths, capabilities, and setup.
 
 ### Options
 
@@ -669,8 +675,8 @@ operator grants while enabling selected participants as needed. Re-run install
 from a managed workspace after selection or registration changes. See the
 configuration reference for cleanup before deleting the final managed agent.
 
-Before setup or agent reconciliation, install checks the actual OpenClaw host and
-the shared Codex prerequisite only when the workspace declares
+Before applying setup or agent settings, Install checks the OpenClaw host and shared
+Codex prerequisite only when the workspace declares
 [`agent.runtime: codex`](./MANIFEST.md#agent) or this agent has an effective
 Codex runtime binding. The plugin version is pinned in Agent System's
 `package.json#openclaw.agentSystem.codexPlugin`. It installs a missing plugin,
@@ -679,11 +685,11 @@ agents in the same profile. Codex remains a separate OpenClaw-managed
 package and owns its app-server dependency. Setup-skip flags do not skip this
 prerequisite. Standalone Codex installation does not provision it.
 
-Conflicting shared versions or sources block installation with expected and actual
-versions. Review `openclaw plugins inspect codex --json`, then explicitly reconcile
-the shared plugin through OpenClaw before retrying; installing another agent never
-silently upgrades, downgrades, or replaces it. Installation failures retain bounded,
-sanitized exit and failure-category details, without raw upstream output.
+If the shared plugin's version or source conflicts, Install stops and shows the expected
+and actual versions. Inspect it with `openclaw plugins inspect codex --json`, then update
+the shared plugin through OpenClaw before retrying. Installing another agent does not
+silently replace it. Failures report exit details and a failure category without raw
+upstream output.
 
 After reviewing the shared installation, an operator can explicitly select the
 declared release through OpenClaw:
@@ -713,39 +719,34 @@ stdin alone do not. The UI uses the existing Install Allow once approval and
 requires a verified owner. A missing or unusable credential blocks enrollment-
 dependent installation; unsupported review execution remains a separate finding.
 
-One Gateway-wide device identity is retained in macOS Keychain or Linux Secret
-Service; there is no file-store fallback. Enrollment currently supports a local
-non-TLS Gateway. Manual pairing policy still requires approval of the exact
-request in Devices or `openclaw devices approve <requestId>`, then another Install
-to resume. Repeated Install reuses the credential; disabling a consumer retains
-it for other agents. Doctor reports enrollment state without issuing credentials.
+Install saves one device identity for the Gateway in macOS Keychain or Linux Secret
+Service, with no file-store fallback. Enrollment supports a local, non-TLS Gateway.
+If manual pairing is required, approve the exact request in Devices or with
+`openclaw devices approve <requestId>`, then rerun Install. Later installs reuse the
+credential, and disabling one workflow keeps it available to other agents.
+Doctor checks enrollment without issuing credentials.
 For revoked credentials, remove the retained device and any pending request in
 Devices, then rerun Install with enrollment consent to replace the retained
 identity. There is no separate session-dispatch reset command. Credential
 readiness alone does not establish end-to-end issue or review dispatch.
 
-Enrollment connection failures include a bounded category, phase, and reason code;
-with `--json`, these are in `blocked.sessionDispatchDiagnostic`. `unknown` means
-the available evidence cannot establish that detail. For connectivity failures,
-check Gateway availability before rerunning Install to resume the retained identity;
-a connection failure alone does not authorize replacement. Gateway rejection or
-pending pairing still requires its specific recovery action, including approval
-of the exact device request when present. Install waits for Gateway startup or reload,
-not unrelated channel health. Authentication rejection is not retried, and uncertain
-writes are never automatically replayed.
+For enrollment connection failures, check Gateway availability and rerun Install to
+resume with the same device identity. A connection failure does not require replacing
+it. Gateway rejection or pending pairing needs the reported recovery action, including
+approval of the exact device request. Install waits for Gateway startup or reload, not
+unrelated channel health. It does not retry authentication rejection or uncertain writes.
 
-`gateway-readiness-deadline` identifies an exhausted readiness wait;
-`gateway-reload-failed` identifies terminal plugin replacement failure.
-These failures include bounded startup/reload evidence in the human diagnostic and
-`blocked.sessionDispatchDiagnostic.readinessEvidence` in JSON. Missing evidence is
-marked explicitly; raw responses, errors, and credentials are excluded. Use the evidence
-to investigate, not to infer the timeout's cause. The
-[enrollment verification example](./examples/os-dispatch-enrollment/README.md)
-covers the readiness deadline, retained identity, and diagnostic evidence.
+Human diagnostics and `blocked.sessionDispatchDiagnostic` in JSON include the failure
+category, phase, and reason code when known. `unknown` means the evidence is unavailable.
+`gateway-readiness-deadline` means the readiness wait expired; `gateway-reload-failed`
+means plugin replacement failed. Both include available startup or reload details in
+`readinessEvidence`, without raw responses, errors, or credentials. Use that evidence
+to investigate rather than assuming a timeout cause. See the
+[enrollment verification example](./examples/os-dispatch-enrollment/README.md).
 
-If reconciliation fails, install exits nonzero and reports completed outcomes,
-the blocking component, and unattempted work. Earlier changes remain applied;
-rerun install after fixing the blocker. With `--json`, stdout contains one
+If installation fails, the command exits nonzero and reports what completed, what
+blocked it, and what has not been attempted. Earlier changes remain applied. Fix the
+reported blocker, then rerun Install. With `--json`, stdout contains one
 failure object with `status: "failed"`, `outcomes`, `blocked`, and `unattempted`.
 Automation Gateway failures also report allowlisted evidence in
 `blocked.automationGatewayDiagnostic` and the human diagnostic: the failed method,
@@ -850,12 +851,12 @@ openclaw agent-system tool <command> [--agent <id>] -- <arguments...>
 openclaw agent-system tool gh --agent tanaabot -- api user --jq .login
 ```
 
-| ID                          | Command    | CLI                                                   | Shim                                                               |
-| --------------------------- | ---------- | ----------------------------------------------------- | ------------------------------------------------------------------ |
-| `agent_system_git`          | `git`      | [Usage](./tools/git/README.md#cli)                    | [Packaged shim](./tools/git/README.md#shim)                        |
-| `agent_system_git_worktree` | `worktree` | [Usage](./tools/git/README.md#cli)                    | none                                                               |
-| `agent_system_github`       | `gh`       | [Usage](./tools/github/README.md#cli)                 | [Packaged shim](./tools/github/README.md#shim)                     |
-| `agent_system_google`       | `gog`      | [Usage](./tools/google/README.md#agent_system_google) | [Packaged shim](./tools/google/README.md#gog-and-agent_system_gog) |
+| ID                          | Command    | CLI                                                              | Shim                                                               |
+| --------------------------- | ---------- | ---------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `agent_system_git`          | `git`      | [Usage](./tools/git/README.md#cli)                               | [Packaged shim](./tools/git/README.md#shim)                        |
+| `agent_system_git_worktree` | `worktree` | [Usage](./tools/git/worktree/README.md#cli)                      | none                                                               |
+| `agent_system_github`       | `gh`       | [Usage](./tools/github/README.md#cli)                            | [Packaged shim](./tools/github/README.md#shim)                     |
+| `agent_system_google`       | `gog`      | [Usage](./tools/google/README.md#openclaw-agent-system-tool-gog) | [Packaged shim](./tools/google/README.md#gog-and-agent_system_gog) |
 
 ## `openclaw agent-system validate`
 
@@ -925,12 +926,11 @@ active-agent authority. Classification, policy, credential, containment, and aud
 checks still apply. See the [Git](./tools/git/README.md#launcher-bindings) and
 [GitHub](./tools/github/README.md#launcher-bindings) guides for variables and usage.
 
-These are practical same-user guardrails, not process isolation. Absolute
-binaries, replaced `PATH` values, direct HTTP, SDKs, and unrelated host
-processes can bypass them. See OpenClaw's
-[security model](https://docs.openclaw.ai/gateway/security) and
-[sandboxing reference](https://docs.openclaw.ai/gateway/sandboxing) for the host
-boundary beneath Agent System.
+> [!IMPORTANT]
+> Agent System does not isolate processes sharing an OS user. Absolute binaries,
+> replaced `PATH` values, direct HTTP, SDKs, and unrelated host processes can bypass
+> these guardrails. Use OpenClaw's [security model](https://docs.openclaw.ai/gateway/security)
+> and [sandboxing](https://docs.openclaw.ai/gateway/sandboxing) for host-level protection.
 
 ### Chat Approval
 
@@ -944,8 +944,11 @@ scope before inspection, commands, or credential resolution. Select **Allow
 once** or **Deny**. OpenClaw owns approval delivery and approver authorization;
 Agent System adds no operator identity or persistent trust store.
 
-Consent covers one matching call and expires after two minutes. Changed
-operation, options, workspace binding, or manifest requires new approval.
+Consent covers one matching call. The approval window is two minutes for Doctor and
+ordinary Install, or ten minutes when Install includes session enrollment for issue
+assignments or manual issue launch. The tool's `timeoutMs` parameter does not change
+this window. Changed operation, options, workspace binding, or manifest requires
+new approval.
 Denial, timeout, cancellation while waiting, missing hooks, or an unavailable
 approval route execute nothing. Nested lifecycle consumers cannot reload a
 different manifest under the approved operation.

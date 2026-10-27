@@ -2,7 +2,7 @@
 
 ### Compatibility
 
-- Changed omitted `github.issue-assignment.mode` to `auto`; select `plan` explicitly for assessment-only startup. [#386](https://github.com/tanaabased/openclaw-agent-system/pull/386)
+- Changed the default `github.issue-assignment.mode` to `auto`; select `plan` to assess without automatic implementation. [#386](https://github.com/tanaabased/openclaw-agent-system/pull/386)
 - Raised the minimum OpenClaw version and shared `@openclaw/codex` prerequisite to `2026.10.6`. [#474](https://github.com/tanaabased/openclaw-agent-system/pull/474)
 - Removed legacy notification-state decoding and repair; pre-reset history requires the documented reset path before upgrading. [#436](https://github.com/tanaabased/openclaw-agent-system/pull/436)
 - Renamed task and reply skills; explicit old skill IDs have no aliases. See [Upgrading](./UPGRADING.md#skill-names). [#498](https://github.com/tanaabased/openclaw-agent-system/pull/498)
@@ -29,7 +29,7 @@
 
 - Aligned CLI status, progress, and failure presentation while keeping diagnostics on stderr and JSON results intact. [#230](https://github.com/tanaabased/openclaw-agent-system/pull/230) [#243](https://github.com/tanaabased/openclaw-agent-system/pull/243) [#492](https://github.com/tanaabased/openclaw-agent-system/pull/492)
 - Applied live workflow policy to retained tasks and continued authorized implementation without another routine stage approval. [#371](https://github.com/tanaabased/openclaw-agent-system/pull/371) [#410](https://github.com/tanaabased/openclaw-agent-system/pull/410)
-- Bound working journals with expiring historical detail while preserving unfinished work and duplicate-prevention records. [#497](https://github.com/tanaabased/openclaw-agent-system/pull/497)
+- Bound working journal size by expiring historical detail while preserving unfinished work and duplicate-prevention records. [#497](https://github.com/tanaabased/openclaw-agent-system/pull/497)
 - Enabled managed-agent collaboration by default while retaining operator grants. [#220](https://github.com/tanaabased/openclaw-agent-system/issues/220) [#231](https://github.com/tanaabased/openclaw-agent-system/issues/231)
 - Hardened manifest include reads and terminated credential-helper descendants on timeout. [#498](https://github.com/tanaabased/openclaw-agent-system/pull/498)
 - Improved Install diagnostics for partial progress, Gateway failures, and enrollment readiness. [#231](https://github.com/tanaabased/openclaw-agent-system/issues/231) [#442](https://github.com/tanaabased/openclaw-agent-system/pull/442) [#458](https://github.com/tanaabased/openclaw-agent-system/pull/458) [#482](https://github.com/tanaabased/openclaw-agent-system/pull/482)
@@ -38,7 +38,7 @@
 - Preserved installation identities across reinstalls; kept assignment claim election inactive. [#408](https://github.com/tanaabased/openclaw-agent-system/pull/408)
 - Prevented managed GitHub commands from removing the active agent's own issue assignment. [#387](https://github.com/tanaabased/openclaw-agent-system/pull/387)
 - Retired undeclared automation ownership after verified native job deletion, without silently recreating retired IDs. [#490](https://github.com/tanaabased/openclaw-agent-system/pull/490)
-- Rewired notification inspection and refresh commands to native workflow state and automation runs. [#326](https://github.com/tanaabased/openclaw-agent-system/issues/326)
+- Rewired notification commands to inspect saved workflow state and request native automation runs. [#326](https://github.com/tanaabased/openclaw-agent-system/issues/326)
 - Supported stable GoG versions `>=0.42.0 <1.0.0` while retaining the reviewed command and flag surface. [#197](https://github.com/tanaabased/openclaw-agent-system/issues/197)
 
 ### Bug Fixes

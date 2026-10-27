@@ -52,11 +52,11 @@ select the intended release or update the checkout using
 If a shared Codex plugin is already installed, review its version and follow the
 [shared prerequisite instructions](./CLI.md#openclaw-agent-system-install) to
 explicitly upgrade an existing `@openclaw/codex@2026.9.8` installation to
-`@openclaw/codex@2026.10.6` before workspace reconciliation. Agent installation
+`@openclaw/codex@2026.10.6` before running workspace Install. Agent installation
 installs the plugin if it is required and missing. If an existing version conflicts,
 you must resolve the conflict explicitly before retrying.
-Start the upgraded Gateway and verify RPC readiness before reconciling workspaces;
-OpenClaw automation reconciliation and inspection require a running Gateway:
+Start the upgraded Gateway and verify RPC readiness before applying workspace settings.
+Automation setup and inspection need a running Gateway:
 
 ```sh
 openclaw gateway restart
@@ -66,7 +66,7 @@ openclaw gateway status --deep --require-rpc
 Then run `openclaw agent-system install` from each managed workspace. If installation
 reports configuration changes that require a Gateway restart, restart it and verify
 RPC readiness again. Run `openclaw agent-system doctor` from each workspace to
-verify the reconciled state.
+check the resulting configuration.
 
 If Node's executable path changed, also align the managed service's runtime;
 `--no-restart` does not rebind it. See
@@ -76,7 +76,7 @@ and service-runtime details.
 ## GitHub workflow configuration
 
 Replace retired `github.notifications` V1/V2 declarations with the
-[current Version 3 configuration](./channels/github/ADVANCED.md#configuration-reference).
+[current Version 3 configuration](./channels/github/CONFIG.md).
 Set `github.schema-version: 3` and place workflow fields directly under `github`;
 keep the outer workspace `schema-version: 1`. There is no compatibility alias or
 automatic configuration migration.
@@ -94,24 +94,25 @@ issue work. Configuration conversion does not migrate saved workflow state.
 
 ## Notification workflow state
 
-Legacy workflow decoding and repair are removed after the accepted reset rollout in
-[#426](https://github.com/tanaabased/openclaw-agent-system/issues/426). Current work
-keeps its explicit stage and native execution/publication receipts. Saved history from
-before the reset is inactive. The runtime does not scan, repair, or resume it as active
-workflow state.
+Saved history from before the reset in
+[#426](https://github.com/tanaabased/openclaw-agent-system/issues/426) is inactive.
+Agent System no longer reads, repairs, or resumes it as active work. Current tasks
+keep their stage and records of execution and publication.
 
-Restore backups into staging. Do not copy pre-reset notification tracking into the
-active state directory: a nonempty store without a reset generation stops with
-`notification-state-reset-required`, and retired schema fields are rejected. The
-original files are preserved. If old tracking must be restored, perform the supported
-notification reset with its compatible reset-capable release before upgrading; do
-not delete journals or invent assignment events to force intake. Ordinary reset
-preserves issue chats, checkouts, branches, commits, pull requests, and assignments.
-Current interrupted-work recovery and reset-generation fencing remain supported.
+> [!WARNING]
+> Restore backups into staging, not the active state directory. Pre-reset notification
+> tracking stops with `notification-state-reset-required`; retired schema fields are
+> also rejected. Agent System preserves the original files.
+
+If you need to restore old tracking, use the supported notification reset with a
+compatible reset-capable release before upgrading. Do not delete journals or invent
+assignment events to force intake. Ordinary reset preserves issue chats, checkouts,
+branches, commits, pull requests, and assignments. Recovery for current interrupted
+work still checks that it belongs to the current reset generation.
 
 ## Managed task cleanup
 
-Review [cleanup and recovery](./channels/github/ADVANCED.md#cleanup-and-recovery)
+Review [task retirement](./channels/github/README.md#task-retirement)
 before closing an issue with local work you still need. For a verified closed issue,
 OpenClaw retirement may discard modified or untracked checkout files; a changed branch
 name no longer blocks cleanup. Codex uses native desktop archival and preservation.

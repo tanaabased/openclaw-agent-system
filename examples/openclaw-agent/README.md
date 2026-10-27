@@ -1,6 +1,8 @@
 # OpenClaw Agent Example
 
-Install an agent in the real Gateway, load its manifest passively during native turns, and resolve declared routing without activating notification work or exposing manifest values in logs.
+Install an agent in the Gateway and load its manifest during native turns. Verify
+that model routing works without starting notification work or exposing manifest
+values in logs.
 
 ## What Belongs Here
 

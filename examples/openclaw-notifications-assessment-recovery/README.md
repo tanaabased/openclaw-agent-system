@@ -1,6 +1,8 @@
 # OpenClaw Notification Assessment Recovery Example
 
-Restart an admitted issue's Gateway, tune its thinking level through the operator control, refresh the assessment with current issue facts, and recover its pending public summary from the saved revision while retaining the same native chat, checkout, and plan.
+Restart the Gateway for an active issue, change its thinking level through native
+controls, and refresh its assessment with current issue facts. Recover the pending
+public summary from its saved revision while keeping the same chat, checkout, and plan.
 
 ## What Belongs Here
 

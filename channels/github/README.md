@@ -1,16 +1,102 @@
 # GitHub Notifications
 
-Agent System starts work from approved GitHub issue assignments. OpenClaw and standalone
-Codex support native Plan, Work, and Auto issue workflows, including implementation and
-linked PR delivery. OpenClaw keeps that work and authorized feedback on the issue and
-its linked PR in the same issue chat.
+<p align="center">
+  <img src="./assets/icon-large.svg" alt="Agent System GitHub Notifications" width="180" />
+</p>
 
-## Configuration
+Activate Agent System's GitHub Notifications channel to work with your OpenClaw or
+bound Codex agents like human developers. Assign them work on GitHub to start
+planning, implementing, and opening pull requests for you to review. Mention them
+in issue comments, pull request comments, or inline reviews to
+[guide their work](#chatting).
 
-Start with an agent workspace that has working [GitHub credentials](../../tools/github/README.md#configuration-reference)
-and [model profiles](../../MANIFEST.md#models). Merge these workflow fields into
-its existing `github` mapping, retaining the token and other tool settings. Replace
-the account and approved owner/actor names with yours:
+- [Install](#install)
+- [Usage](#usage)
+- [Chatting](#chatting)
+- [Task Retirement](#task-retirement)
+- [Further Reading](#further-reading)
+
+## Install
+
+<a id="configuration"></a>
+
+Start with an agent workspace and [model profiles](../../MANIFEST.md#models).
+OpenClaw needs [managed Git](../../tools/git/README.md#configuration-reference) and
+[GitHub credentials](../../tools/github/README.md#configuration-reference).
+For standalone Codex, complete [workspace binding and hook approval](../../CODEX.md#workspace-setup)
+and use the host's native Git and GitHub authorization.
+
+Merge these fields into your existing `agent.yaml` configuration, retaining other
+`github` settings. Replace the username and approved repository owners and assignment
+actors with yours:
+
+```yaml
+github:
+  schema-version: 3
+  username: tanaabot
+  runtimes: [openclaw]
+  allowed-repository-owners: ['@tanaabased']
+  issue-assignment:
+    mode: auto
+    allowed: ['@pirog']
+```
+
+Auto chooses whether to plan or implement each assignment. For Codex, use
+`runtimes: [codex]`; see the [full configuration reference](./CONFIG.md) for modes,
+permissions, and other options.
+
+<a id="install-and-verify"></a>
+
+For OpenClaw, apply the configuration and check readiness from the workspace:
+
+```sh
+openclaw agent-system install
+openclaw agent-system doctor
+```
+
+For standalone Codex, use `$agent-system-install` in the app, then
+`$agent-system-doctor` to check readiness.
+
+Install creates the native `github-issue-assignment` automation and its intake chat;
+subsequent installs reuse them. You do not need a separate entry under `automations`.
+OpenClaw intake uses `models.default`; Codex uses `models.low`. The initial intake
+baseline excludes existing assignments; assign new work after verifying the first run.
+
+| Runtime  | Schedule                                                                                                           | Intake chat                                |
+| -------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| OpenClaw | `github-issue-assignment`, visible through [automations list](../../CLI.md#openclaw-agent-system-automations-list) | `ISSUE ASSIGNMENTS` in **Agent System**    |
+| Codex    | **📥 ISSUE ASSIGNMENTS** in native automations                                                                     | `ISSUE ASSIGNMENTS` under **AGENT SYSTEM** |
+
+The intake chat reports started issues, pending assignments, capacity, and obstacles.
+Follow its issue links for plans, questions, implementation, and PR delivery.
+
+For OpenClaw, request a run and inspect its status:
+
+```sh
+openclaw agent-system notifications refresh
+openclaw agent-system notifications status --json
+```
+
+`queued` confirms the request, not completion. See the [notification CLI reference](./CLI.md)
+for tracking a run, waiting for a checkpoint, or resetting workflow state.
+
+For Codex, follow a scheduled run in `ISSUE ASSIGNMENTS`, then open the issue chat.
+Doctor checks setup; a completed scheduled run verifies unattended execution.
+
+## Usage
+
+Each example provides a complete notification configuration for an already-set-up
+agent workspace. Choose one, replace the example accounts and repository owners,
+and retain any existing GitHub credential and tool settings. These examples use
+OpenClaw; a bound Codex workspace can use `runtimes: [codex]` instead.
+
+Run Install and verify intake before assigning new work. Existing assignments from
+before the initial baseline do not start automatically.
+
+### Assess assigned issues before making changes
+
+Let `@pirog` assign issues in `@tanaabased` repositories to `@tanaabot`. The agent
+investigates each issue and prepares a plan, then waits for direction:
 
 ```yaml
 github:
@@ -23,113 +109,124 @@ github:
     allowed: ['@pirog']
 ```
 
-This example selects planning for approved assignments. Work continues an actionable
-plan through implementation and PR delivery; Auto chooses Plan or Work and is the
-default when `mode` is omitted. An empty actor list admits no new assignments.
-See the [configuration reference](./ADVANCED.md#configuration-reference) for all
-fields, defaults, identity forms, reviewers, and skill/guidance customization.
-Independent review requests remain unavailable.
+Read the plan in the issue chat. To proceed, ask there or mention `@tanaabot` in an
+issue comment requesting implementation and a PR. The comment must come from an
+[approved feedback author](./CONFIG.md#allowed).
 
-For standalone Codex, use the [Codex setup guide](../../CODEX.md#github-notification-policy)
-and [Codex profile example](./ADVANCED.md#issue-only-profile-example). Codex uses
-native host GitHub authorization rather than the manifest token.
+### Turn assignments into pull requests for review
 
-Plans, questions, implementation, and follow-ups belong in the individual issue
-chat. When planning is complete, ask there to implement the plan and open a PR.
-Approved GitHub feedback also returns to that chat; see
-[feedback and public replies](./ADVANCED.md#feedback-and-public-replies) for author
-selection, supported comment surfaces, and publication behavior. Invalid skill
-selections block the affected operation; correct them and refresh context in the
-same chat instead of creating a replacement.
+Let `@pirog` assign implementation-ready issues to `@tanaabot`. The agent assesses
+the work, implements an actionable plan, and opens a PR requesting `@pirog`'s review:
 
-## Install and Verify
-
-Install creates the native `github-issue-assignment` automation from your workflow
-configuration. You do not need a second job under `automations`; that ID is reserved.
-The runtime's native scheduler runs intake in a retained conversation for each agent.
-Repeated Install reuses that job and conversation. See
-[activation](./ADVANCED.md#activation) for runtime model requirements and
-first-activation behavior.
-
-For OpenClaw, run these operator commands from the configured workspace:
-
-```sh
-# reconcile declared configuration and inspect readiness.
-openclaw agent-system install
-openclaw agent-system doctor
+```yaml
+github:
+  schema-version: 3
+  username: tanaabot
+  runtimes: [openclaw]
+  allowed-repository-owners: ['@tanaabased']
+  issue-assignment:
+    mode: work
+    allowed: ['@pirog']
+    reviewers: ['@pirog']
 ```
 
-For standalone Codex, complete [workspace setup and hook approval](../../CODEX.md#workspace-setup),
-then use `$agent-system-install` in the app and `$agent-system-doctor` to inspect
-readiness. Install reconciles the native automation through the app's controls.
+The agent asks when it needs clarification. Once the PR is ready, mention
+`@tanaabot` in PR comments or inline review replies to request changes to the same
+work. Configured reviewers can direct these follow-ups; merging remains your decision.
 
-### Follow the workflow
+### Let the agent choose whether to plan or implement
 
-| Runtime  | Schedule                                                                                                           | Intake conversation                        |
-| -------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
-| OpenClaw | `github-issue-assignment`, visible through [automations list](../../CLI.md#openclaw-agent-system-automations-list) | `ISSUE ASSIGNMENTS` in **Agent System**    |
-| Codex    | **📥 ISSUE ASSIGNMENTS** in native automations                                                                     | `ISSUE ASSIGNMENTS` under **AGENT SYSTEM** |
+Use Auto for a mix of straightforward fixes and issues that need discussion. Keep
+one item active at a time and give the assessment guidance for that decision:
 
-The intake chat reports newly started issues, pending assignments, occupied
-capacity, and intake obstacles. Follow its issue links for plans, questions,
-implementation progress, and PR delivery. Those updates stay in the individual
-issue chats; the intake chat does not provide a task-progress feed.
-
-OpenClaw Install also manages the **GitHub Notifications** readiness channel.
-It reports setup needs, automation synchronization, and recent intake health;
-the native automation runs the workflow. Removing a workflow declaration and
-running Install deactivates that agent's channel account. See
-[channel readiness](./ADVANCED.md#channel-readiness) for probe and observation limits.
-
-### Verify a run
-
-For OpenClaw, inspect the saved schedule, request a run, then check its native history
-and saved notification state:
-
-```sh
-# inspect the saved automation and any drift.
-openclaw agent-system automations list --json
-
-# request one run of the installed assignment automation.
-openclaw agent-system notifications refresh --json
-
-# replace RUN_ID with the runId returned by refresh.
-openclaw agent-system automations runs github-issue-assignment --run-id RUN_ID --json
-
-# inspect intake and issue workflow evidence without advancing work.
-openclaw agent-system notifications status --json
+```yaml
+github:
+  schema-version: 3
+  username: tanaabot
+  runtimes: [openclaw]
+  allowed-repository-owners: ['@tanaabased']
+  max-concurrent-items: 1
+  issue-assignment:
+    mode: auto
+    allowed: ['@pirog']
+    reviewers: ['@pirog']
+    assessment:
+      guidance: |
+        Prefer Work for well-defined fixes with clear acceptance criteria.
+        Prefer Plan when requirements or the intended behavior need clarification.
 ```
 
-A `queued` refresh proves the scheduler accepted the request. Native history
-reports execution and delivery separately. In notification status, inspect the scan
-completion time and any blockers; a created issue chat still does not prove a
-finished plan. Use [notification wait](./ADVANCED.md#openclaw-agent-system-notifications-wait)
-with `--for plan-ready` and an issue selector when you need the retained assessment
-checkpoint.
+Assign an issue to `@tanaabot` as `@pirog`. Auto records its Plan or Work decision:
+Plan waits for direction, while Work proceeds to implementation and PR delivery.
+Additional assignments wait for capacity. Guidance shapes the decision without
+granting extra permissions.
 
-For Codex, inspect the saved native automation and follow a real scheduled
-occurrence in `ISSUE ASSIGNMENTS`, then open the issue chat to verify its work.
-Doctor's saved-definition check does not prove unattended execution. See
-[Codex automation limitations](../../CODEX.md#repository-automations) for the native
-history and execution evidence available through the adapter.
+## Chatting
 
-Healthy, unchanged intake checks do not notify. Silence alone does not prove success: a
-missing or paused automation cannot report from its own run. Use Doctor and the saved
-schedule to distinguish that condition from an unchanged scan. For reported setup or
-schedule drift, follow the diagnostic and reconcile through Install. If work on an issue
-is blocked, continue in its existing chat using the
-[recovery guidance](./ADVANCED.md#interrupted-publication) or
-[Codex recovery controls](../../CODEX.md#workflow-recovery); preserve retained work and
-uncertain attempts.
+Anyone in `issue-assignment.allowed` or `issue-assignment.reviewers` can direct
+the agent by mentioning its GitHub username on a tracked issue or its linked PR.
+You can also talk directly in the issue's agent chat. Use your agent's username
+in place of `@tanaabot` below.
 
-To pause future occurrences, set `github.issue-assignment.paused: true` and run
-Install. Set it to `false` and run Install to resume the same job and chat. Running
-turns may finish, and a native UI pause can be reversed by the next Install if the
-manifest still requests active intake. See [pause and resume](./ADVANCED.md#pause-and-resume)
-for retained work and feedback behavior.
+On an issue, ask a question about the plan:
+
+> @tanaabot could you explain how this handles existing installations?
+
+When you are ready to proceed from Plan mode:
+
+> @tanaabot implement the plan and open a pull request.
+
+The agent links its PR to the issue. Continue there with a PR comment:
+
+> @tanaabot please add a test for the empty-input case and update this PR.
+
+Or mention the agent in an inline review comment or reply:
+
+> @tanaabot this should preserve the existing value when the option is omitted.
+
+Replies return to the source issue, PR, or review thread, while the agent chat keeps
+the full conversation. Follow-up changes update the same PR. If the agent asks for
+clarification, answer in that chat or mention it in an approved GitHub comment.
+Requests from other authors do not authorize work, and adding a reviewer only in
+GitHub does not add them to the configured author list.
+
+When the commenter and publishing agent use the same GitHub account, the response
+stays in the agent chat rather than posting back to GitHub. If work is interrupted,
+continue in the same chat and ask it to finish the missing step; avoid starting a
+replacement task or reposting an uncertain reply. Native denials still require
+recovery or renewed authorization.
+
+## Task Retirement
+
+Closing an issue, archiving its agent chat, or having an approved assignment actor
+unassign the agent makes the task eligible for retirement. New workflow turns stop,
+and cleanup waits for the agent to be idle and the
+[installation-wide grace period](../../CONFIG.md#cleanup), which defaults to
+**60 minutes**. This setting belongs in global `config.yaml`, not the workspace's
+`github` mapping. New activity can defer cleanup; a restart does not reset the deadline.
+
+Retirement archives the chat and removes its owned checkout while preserving
+branches and GitHub content. Unverified unassignment leaves the resources intact
+and reports a warning. Before cleanup begins, verified reassignment or approved
+feedback can reactivate an unarchived chat; reopening the issue alone does not.
+
+> [!WARNING]
+> For a verified closed issue, OpenClaw cleanup can discard modified or untracked
+> checkout files, even if the branch name changed. Save work you need before closing
+> the issue. Other retirement triggers require a clean checkout and the expected branch.
+
+Codex uses native desktop archival and worktree preservation. If desktop settings
+retain the checkout, retirement remains pending. Both runtimes preserve protected
+or shared resources and unreferenced commits, and hold cleanup when ownership or
+activity cannot be verified.
+
+To retire one task explicitly, use [Task Retirement](../../skills/task-retirement/SKILL.md).
+It skips the scheduled eligibility and grace period but keeps ownership, activity,
+and preservation checks. It does not close or unassign the GitHub issue. A task
+cannot archive its own active turn; intake can finish the pending cleanup later.
 
 ## Further Reading
 
-- [Workflow configuration, commands, and recovery](./ADVANCED.md)
-- [Standalone Codex workflows](../../CODEX.md#github-notification-policy)
-- [Presentation contract](./PRESENTATION.md)
+- [CLI](./CLI.md) — Notification commands and run status.
+- [Configuration](./CONFIG.md) — Workflow fields, defaults, and customization.
+- [Issue Dispatch](../../tools/dispatch/README.md) — Start, assess, implement, or retire work directly.

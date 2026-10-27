@@ -24,18 +24,6 @@ Use the [Git Worktree tool](./worktree/README.md) to manage durable checkouts.
 - [Shim](#shim)
 - [Launcher Bindings](#launcher-bindings)
 
-## Overview
-
-| Interface                        | Purpose                                                      |
-| -------------------------------- | ------------------------------------------------------------ |
-| `agent_system_git`               | Model-facing ordinary Git tool                               |
-| `git`                            | Packaged compatibility shim on supported agent command paths |
-| `openclaw agent-system tool git` | Explicit operator Git command                                |
-
-The model-facing tool uses the trusted active agent. Direct CLI and shell use are
-operator interfaces unless OpenClaw supplies an active-agent binding. Every
-interface applies the same Git configuration and policy before launching `git`.
-
 ## Requirements
 
 - Agent System installed and enabled
@@ -45,14 +33,13 @@ interface applies the same Git configuration and policy before launching `git`.
 - OpenSSH when keys are configured: `ssh` for authentication, `ssh-agent` and `ssh-add` for authentication or signing, and `ssh-keygen` for signing
 
 > [!IMPORTANT]
-> Remote-server authorization and ref protections are authoritative wherever
-> they exist. Agent System adds only the narrow, provider-portable controls
-> documented under [`git.policy`](#gitpolicy).
+> The remote server decides which operations your agent may perform. Agent System
+> adds the specific controls documented under [`git.policy`](#gitpolicy); a local
+> `allow` cannot override a server denial.
 
 ## Configuration Reference
 
-Add `git` to `.agent-system/agent.yaml` or the root `agent.yaml`. The schema is
-strict: unknown and incorrectly cased keys fail validation.
+Declare `git` in the [workspace manifest](../../MANIFEST.md#discovery):
 
 ```yaml
 schema-version: 1
@@ -88,7 +75,7 @@ git:
 | ---------------------------------- | -------- | ------------- |
 | string or `from-environment` value | no       | `agent.email` |
 
-Sets both author and committer email for the Git child. A missing or unresolved
+Sets the author and committer email for Git commands. A missing or unresolved
 effective value fails the operation.
 
 ### `git.extensions`
@@ -109,7 +96,7 @@ missing is also denied.
 | ---------------------------------- | -------- | ------------ |
 | string or `from-environment` value | no       | `agent.name` |
 
-Sets both author and committer name for the Git child. Agent System does not
+Sets the author and committer name for Git commands. Agent System does not
 fall through to repository, global, or system Git identity.
 
 ### `git.policy`
@@ -127,25 +114,20 @@ git:
     force-push: allow
 ```
 
-Supported public reads and recognized ordinary writes are allowed. This includes
-local branch and tag deletion, cleanup, discard, rebase, amend, and reset
-operations. These actions can still lose local work; Git's own state and the
-repository's review workflow remain responsible for recovery and coordination.
+Supported public reads and recognized ordinary writes are allowed, including local
+branch and tag deletion, cleanup, discard, rebase, amend, and reset.
+
+> [!WARNING]
+> These operations can discard local work. Agent System's remote protections do not
+> prevent local data loss; use Git's recovery tools and your repository's review workflow.
 
 Protected remote effects take precedence. `git push --mirror` selects both
 fields, so both must be `allow`.
 
-These fields provide the same narrow safeguards across Git providers because
-equivalent server-side controls are not consistently available. Where the
-provider supports ref protection, configure it as the authoritative boundary.
 For GitHub remotes, use
 [branch and tag rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
-to restrict updates, deletions, and force pushes on important refs. A local
-`allow` cannot override a remote denial.
-
-Undeclared external helpers and unsupported command families remain denied
-independently of `git.policy`; use exact `git.extensions` declarations for
-trusted helpers.
+for server-side protection. A local `allow` cannot override a remote denial.
+External helpers still require an exact [`git.extensions`](#gitextensions) declaration.
 
 Agent System disables operator-global and system Git configuration, prompts,
 hooks, pagers, and editors and rejects configuration, executable, credential,
@@ -167,10 +149,8 @@ material itself and does not accept a literal value, path, array, or nested
 `from-environment` object. Any declared environment source may populate the
 binding.
 
-Signing uses a separate invocation-scoped agent and fixed helpers. Git receives
-no generic SSH socket, and signing-control arguments cannot disable signing or
-select another key. Authentication and signing remain separate even when they
-use the same key.
+Commands cannot disable configured signing or select another key. Signing and
+SSH authentication remain separate even when they use the same key.
 
 The optional allowed-signers file is public trust policy. It must be a regular,
 non-symlinked file inside the agent workspace and use the OpenSSH allowed
@@ -207,9 +187,9 @@ git:
 the agent workspace; absolute and `~/` paths are explicit operator choices.
 `from-environment` reads the named value from the completed Agent System
 environment, so dotenv, 1Password Environments, and direct OP secret references
-can supply the key. Secret acquisition belongs to the shared
-[environment contract](../../MANIFEST.md#environment-resolution), so the Git schema does
-not duplicate `from-op`. Encrypted keys are not yet supported. Agent System
+can supply the key. Use the shared
+[environment settings](../../MANIFEST.md#environment-resolution) for `from-op` bindings;
+`git.ssh.private-keys` does not accept them directly. Encrypted keys are not yet supported. Agent System
 isolates the declared keys from ambient SSH identities and presents them only
 for Git SSH transport. Run `openclaw agent-system doctor` to check OpenSSH
 readiness.
@@ -245,11 +225,9 @@ Inspect the active workspace:
 For a managed checkout, pass its returned canonical path as `cwd`. Results include
 `exitCode`, `stdout`, `stderr`, and `truncated`.
 
-In an ordinary session bound to a registered worktree under the agent's managed
-bare-repository layout, omitted and relative `cwd` values use that worktree.
-Agent configuration and Git identity still come from the canonical agent workspace.
-Home-workspace sessions retain the agent workspace default. This binding does not
-admit an issue or expand Git policy.
+In a session bound to a registered worktree under the managed bare-repository
+layout, omitted and relative `cwd` values use that worktree. Otherwise they use the
+agent workspace. Identity and policy always come from the agent workspace.
 
 <a id="agent_system_git_worktree"></a>
 
@@ -317,11 +295,8 @@ sanitized host execution outside it. See the
 
 ## Launcher Bindings
 
-Agent-bound Gateway and setup children receive an absolute executable path:
-
-| Variable           | Available when    | Purpose                        |
-| ------------------ | ----------------- | ------------------------------ |
-| `AGENT_SYSTEM_GIT` | Git is configured | Require managed Git execution. |
+Agent-bound Gateway and setup children receive `AGENT_SYSTEM_GIT` when Git is
+configured. It is the absolute path to the strict managed launcher:
 
 ```sh
 # require the bound agent's git identity and policy without host fallback.
@@ -331,16 +306,6 @@ Agent-bound Gateway and setup children receive an absolute executable path:
 This launcher requires active-agent authority under the shared
 [execution boundary](../../CLI.md#trust-boundary). The [shim](#shim) retains
 its contextual host fallback.
-
-## Further Reading
-
-- [Agent System README](../../README.md): installation and the common manifest workflow
-- [Manifest reference](../../MANIFEST.md): workspace declarations, environment, and paths
-- [CLI reference](../../CLI.md): shared commands and execution boundaries
-- [Global configuration](../../CONFIG.md): operator-owned plugin settings
-- [Development](../../DEVELOPMENT.md#logging): runtime logging during development
-- [Raw Git skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-cli/SKILL.md): model-facing Git guidance
-- [Git worktree skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/git-worktree/SKILL.md): model-facing worktree guidance
 
 Git logo by [Jason Long](https://git-scm.com/downloads/logos), licensed under
 [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/); recolored for Agent System.

@@ -1,6 +1,8 @@
 # OpenClaw Backup Example
 
-Create and verify an archive containing explicitly included private memory and agent database state, restore it into fresh staging without changing the source, refuse live-agent and populated recovery targets, and prune historical archives without weakening explicit verification.
+Back up private memory and the agent database, verify the archive, and restore it
+into fresh staging without changing the source. Check that live and populated targets
+are refused, and that pruning older archives remains separate from integrity checks.
 
 ## What Belongs Here
 

@@ -12,33 +12,20 @@ prerequisite in this OpenClaw profile. If an existing shared version conflicts, 
 operator must resolve it explicitly; see
 [Install behavior](../../CLI.md#openclaw-agent-system-install).
 
-## Overview
-
-| Interface                                                                     | Purpose                                          |
-| ----------------------------------------------------------------------------- | ------------------------------------------------ |
-| `agent_system_install`                                                        | Native tool for the active OpenClaw agent        |
-| [Install skill](../../skills/install/SKILL.md)                                | Select the owning runtime and guide installation |
-| [`openclaw agent-system install`](../../CLI.md#openclaw-agent-system-install) | Operator command                                 |
+<a id="configuration"></a>
 
 ## Requirements
 
-- Agent System installed and enabled in OpenClaw
-- A registered agent workspace with a valid manifest
-- A chat surface supporting OpenClaw plugin approval
+Use a registered OpenClaw workspace with a valid [manifest](../../MANIFEST.md)
+and a chat surface supporting [native approval](../../CLI.md#chat-approval).
+If the tool is unavailable because its grant is missing, run Install once from an operator terminal. There is no separate
+tool configuration; callers cannot select another agent or workspace.
 
-The native OpenClaw harness and OpenClaw-hosted Codex use this tool. Standalone
-Codex uses the [standalone adapter](../../CODEX.md#skills).
-If an existing agent lacks the tool grant, run the operator CLI Install once.
-
-Automation reconciliation requires the operator CLI Install with a running Gateway.
-This model tool reports `automation-requires-operator-sync`; it does not borrow
-operator authority to manage native jobs.
-
-## Configuration
-
-There is no separate manifest section for this tool. It uses the active agent's
-[manifest](../../MANIFEST.md) and existing OpenClaw tool restrictions. Callers
-cannot select another agent, workspace, manifest, or approval policy.
+Use the [Install skill](../../skills/install/SKILL.md) to select the runtime,
+including standalone Codex. To update OpenClaw automations, run
+[Install from an operator terminal](../../CLI.md#openclaw-agent-system-install) with
+the Gateway running. The chat tool reports `automation-requires-operator-sync`
+when this step is needed.
 
 ## `agent_system_install`
 
@@ -79,40 +66,17 @@ Install other components while skipping setup:
 { "skipSetup": true, "timeoutMs": 600000 }
 ```
 
-Install host dependencies and managed components while deferring agent setup:
+`skipSetup` skips both setup phases; the phase-specific flags can be combined.
+Install still applies other components and checks their requirements. The approval
+prompt shows the setup scope, session enrollment, and any PATH rebuild.
 
-```json
-{ "skipSetupAgent": true, "timeoutMs": 600000 }
-```
+`timeoutMs` sets the hosted Codex call budget, not the
+[approval window](../../CLI.md#chat-approval) or [setup timeout](../../MANIFEST.md#setup).
+Omission retains the host default (90 seconds in OpenClaw-hosted Codex).
 
-Replace the saved Codex PATH baseline:
-
-```json
-{ "rebuildCodexPath": true, "timeoutMs": 600000 }
-```
-
-Combine parameters as needed. `skipSetup` skips both phases; setting both phase
-flags has the same effect. Approval shows the setup scope and any PATH rebuild.
-Skipped phases run no commands; other components still reconcile and enforce
-executable, credential, and identity checks.
-
-Omitting `timeoutMs` retains the host's default (90 seconds in OpenClaw-hosted
-Codex). This argument does not extend the two-minute approval window or
-[setup-command timeouts](../../MANIFEST.md#setup). Other harnesses retain their
-own execution limits.
-
-The tool returns structured installation outcomes and warnings. Installation may resolve
-declared credentials, change configuration, and run setup commands. Cancellation stops
-subsequent lifecycle steps and cancellable setup commands; completed external changes
-remain in place. An approved setup script remains operator-authored code, including the
-files or external services it reads.
+Results include installation outcomes and warnings. Cancellation stops subsequent
+steps and cancellable setup commands; completed external changes remain in place.
 
 See [Install behavior](../../CLI.md#openclaw-agent-system-install) and
 [setup retry rules](../../MANIFEST.md#checks-installation-and-retries) for the
 shared lifecycle contract. Native calls do not accept CLI flags such as `--yes`.
-
-## Further Reading
-
-- [Doctor tool](../doctor/README.md): inspect without repairs
-- [CLI trust boundary](../../CLI.md#trust-boundary): agent and operator execution
-- [Approval validation](../../DEVELOPMENT.md#lifecycle-approval): supported harnesses and installed checks

@@ -1,6 +1,8 @@
 # OpenClaw Notification Reset Example
 
-Preview and confirm a fresh notification-management reset, replace the coordinator, clear retained tracking into a new generation/baseline, and restore the installed intake schedule.
+Preview and confirm a notification reset. Verify that it replaces the intake chat,
+clears saved tracking, establishes a fresh assignment baseline, and restores the
+previous intake schedule.
 
 ## What Belongs Here
 

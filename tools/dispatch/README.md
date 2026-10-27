@@ -10,15 +10,23 @@ Use the task skills to start, assess, implement, or retire issue work through it
 workflow. For assessment or implementation in the current chat, choose the corresponding
 skill below.
 
+- [Requirements](#requirements)
+- [Configuration](#configuration)
+- [`agent_system_dispatch`](#agent_system_dispatch)
+  - [Parameters](#parameters)
+  - [Usage](#usage)
+
 ## Requirements
 
-Use the active OpenClaw agent and native conversation, or the corresponding trusted
-standalone Codex runtime adapter. OpenClaw manual launch uses existing session enrollment;
-see [Setup and Recovery](#setup-and-recovery).
+Use the active OpenClaw agent and native conversation, or a trusted standalone
+Codex workspace binding. OpenClaw manual launch requires session enrollment through
+[Install](../install/README.md#agent_system_install) with `manualSessionDispatch: true`;
+this does not enable scheduled intake. Codex may require
+[registering the prepared project](../../CODEX.md#issue-assessment).
 
 ## Configuration
 
-Use the [GitHub workflow configuration](../../channels/github/ADVANCED.md#configuration-reference)
+Use the [GitHub workflow configuration](../../channels/github/CONFIG.md)
 for modes, stage skills, guidance, and delivery. [Model profiles](../../MANIFEST.md#models)
 select the configured model and effort. There is no separate Dispatch manifest section.
 
@@ -36,42 +44,31 @@ supplies the current request, required inputs, and recovery instructions.
 | Retire one managed task                              | `retire`                              | [Task Retirement](../../skills/task-retirement/SKILL.md)                                      |
 | Update an issue with verified progress               | `reply` with `purpose: status-update` | [Task Update](../../skills/task-update/SKILL.md)                                              |
 
-The same tool supplies operations for the installed workflow:
+The installed workflow also uses this tool internally. Follow the owning skill and
+returned task context rather than assembling an action sequence. Exact variants are
+in the [tool schema](./tool-schema.ts); shared behavior and recovery are in the
+[GitHub workflow guide](../../channels/github/README.md).
 
-| Purpose                                      | Actions                                                                  |
-| -------------------------------------------- | ------------------------------------------------------------------------ |
-| Continue implementation and deliver its PR   | `handoff`, `implementation-context`, `implementation-result`, `delivery` |
-| Coordinate admitted work                     | `check`, `next`, `prepare`, `start`, `assess`, `report`                  |
-| Handle verified issue and linked-PR feedback | `feedback`                                                               |
-| Inspect and recover existing work            | `inspect`, `reconcile`, `retry`, `present`                               |
-| Retain assessment and its summary            | `context`, `result`, `summary`                                           |
-
-These are workflow operations, not an interchangeable command sequence. Use the
-saved task context and the owning skill; a receipt, plan, or tool name alone does
-not authorize implementation or publication. Exact request variants remain in the
-[tool schema](./tool-schema.ts). Shared behavior and operator recovery belong in
-the [GitHub workflow guide](../../channels/github/ADVANCED.md).
-
-## Manual Issue Launch
+<a id="manual-issue-launch"></a>
 
 Use `$agent-system-task-launch` with an issue URL, `owner/repo#number`, repository
 plus number, or a number with an explicit or independently verified repository context.
 The issue may be unassigned or assigned to somebody else. Existing repository access,
 agent eligibility, native authorization, and lifecycle checks still apply.
 
-The launcher creates or returns the normal managed issue conversation and checkout.
-Configured Plan/Work/Auto, stage skills/guidance and native model profiles apply;
+The launcher creates or reuses the managed issue chat and checkout. It uses the
+configured mode, stage skills, guidance, and model profiles;
 explicit supported choices override the corresponding defaults. It changes no issue
 assignment or scheduler. Local recovery records remain, and normal managed assessment
 summaries and PRs may be public. Manual launch alone grants no automatic feedback.
+It has no assigner-derived default PR assignee; explicit named recipients still
+apply. A recipient setting that requires an assignment actor must be corrected
+before manual launch.
 
-### `agent_system_dispatch` — `launch`
+### Parameters
 
-Create/reuse operator-initiated managed issue work in OpenClaw. Standalone Codex
-uses `dispatchRuntime` from trusted context with `launch context|prepare|reconcile`
-before its exact `--plugin-data` argument and JSON on stdin.
-
-#### Parameters
+These parameters cover `launch`. Use the owning skill and
+[tool schema](./tool-schema.ts) for other actions.
 
 | Parameter    | Type   | Required                 | Default                  | Description                                                                                                                  |
 | ------------ | ------ | ------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -89,7 +86,7 @@ before its exact `--plugin-data` argument and JSON on stdin.
 | `target`     | string | yes                      | none                     | Issue URL or supported issue reference.                                                                                      |
 | `title`      | string | for final preparation    | none                     | Concise alphanumeric issue title for native presentation.                                                                    |
 
-#### Usage
+### Usage
 
 Begin a manual launch without assigning the issue:
 
@@ -109,31 +106,6 @@ Begin with explicit planning mode and a repository-qualified number:
 }
 ```
 
-Follow the returned routing/preparation instructions with the same target, receipt
-and current digest. In Codex, project preparation can return a new routing digest
-before final native creation. A prepared Codex creation request is executed unchanged
-once through native `create_thread`; then reconcile the original launch. OpenClaw
-uses the existing enrolled session adapter directly and starts its assessment turn.
-
-An existing destination retains its current stage; revisiting does not rerun setup or a
-completed assessment. If creation or a send is incomplete or uncertain, the workflow
-checks the original attempt before trying again. If its owner is inactive or unclear,
-recover that workflow rather than creating a replacement.
-
-### Setup and Recovery
-
-OpenClaw launch reuses existing session enrollment. A manual-only installation can
-request [Install](../install/README.md#agent_system_install) with
-`manualSessionDispatch: true` and approve the existing session-access disclosure.
-The operator CLI equivalent is `openclaw agent-system install --manual-session-dispatch`.
-This explicit setup option does not declare or activate intake. Launch never enrolls
-or replaces credentials silently; Doctor remains read-only.
-
-A missing Codex saved project returns the exact prepared folder to register. Keep
-that preparation and retry the same launch after registration. Invalid skills,
-explicit settings, absent assignment-actor recipients and native denials identify
-the correction; none authorize a substitute identity, private API, or new attempt.
-
-Manual origin has no assigner-derived default PR assignee. Explicit named recipients
-remain in effect. A configuration explicitly requesting an assignment actor is invalid
-when there was no assignment actor; correct that configuration before launch.
+Follow the returned preparation instructions, then verify that the same launch completed.
+Reused chats keep their stage and completed assessment. Recover an incomplete or
+uncertain attempt before starting another.

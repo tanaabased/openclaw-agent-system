@@ -1,6 +1,8 @@
 # Install Example
 
-Install the declared agent on macOS and Ubuntu, repeat without foundational changes, and inspect it through read-only Doctor while unsupported review declarations leave unrelated readiness intact.
+Install an agent on macOS and Ubuntu, repeat installation without changing its core
+configuration, and inspect it with Doctor. Verify that unsupported review declarations
+do not prevent checks of unrelated components.
 
 ## What Belongs Here
 

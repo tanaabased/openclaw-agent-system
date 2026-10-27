@@ -1,6 +1,8 @@
 # OpenClaw Tools Example
 
-Execute managed Git and GitHub commands through the public route and installed contextual shims, preserving the owning identity, stdin/machine output, and critical configuration and assignment protection boundaries.
+Run managed Git and GitHub commands through the public CLI and installed shims.
+Verify the agent identity, stdin, and machine-readable output, along with configuration
+and assignment protections.
 
 ## What Belongs Here
 

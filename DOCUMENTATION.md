@@ -8,25 +8,26 @@ belongs, when a change is justified, and how references are presented.
 Keep repository-wide companion guides at the repository root. These locations are ownership
 boundaries, not a checklist of files to update; leave aligned documents unchanged.
 
-| Document                                                             | Owns                                                                                                                                                                                                        |
-| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/OPTIMIZATION.md`                                            | Repository-only audit guidance and accepted optimization decisions.                                                                                                                                         |
-| `AGENTS.md`                                                          | Essential repository constraints and required reading for conditional work.                                                                                                                                 |
-| [API.md](./API.md)                                                   | Public planning surface for the future cross-plugin Tool API; explicitly not yet available.                                                                                                                 |
-| [CHANGELOG.md](./CHANGELOG.md)                                       | Implemented changes.                                                                                                                                                                                        |
-| `channels/<provider>/README.md`                                      | Each channel's common setup, configuration example, verification, and essential limitations. Use a sibling `ADVANCED.md` as the first expansion for complete references and less-common operational detail. |
-| [channels/github/ADVANCED.md](./channels/github/ADVANCED.md)         | GitHub workflow fields and defaults, notification commands, shared workflow behavior, and operator recovery.                                                                                                |
-| [channels/github/PRESENTATION.md](./channels/github/PRESENTATION.md) | Reusable human-visible notification components and styling; no lifecycle or feature behavior.                                                                                                               |
-| [cli/PRESENTATION.md](./cli/PRESENTATION.md)                         | Shared CLI palette, spacing, diagnostic placement, and authoring verification.                                                                                                                              |
-| [CLI.md](./CLI.md)                                                   | Complete core command references, a linked index of component commands, and shared execution boundaries.                                                                                                    |
-| [CODEX.md](./CODEX.md)                                               | Standalone Codex installation, binding, context, setup, model routing, and development. Keep OpenClaw-hosted Codex behavior with its owning OpenClaw feature.                                               |
-| [CONFIG.md](./CONFIG.md)                                             | Operator-owned installation settings and OpenClaw plugin options.                                                                                                                                           |
-| [DEVELOPMENT.md](./DEVELOPMENT.md)                                   | OpenClaw source installation, DevGuard, runtime logging, validation, and coding standards.                                                                                                                  |
-| `DOCUMENTATION.md`                                                   | Documentation ownership, change gates, and reference formats.                                                                                                                                               |
-| [MANIFEST.md](./MANIFEST.md)                                         | Workspace discovery, shared fields and value rules, setup, environment resolution, path projection, and links to component configuration owners.                                                            |
-| [README.md](./README.md)                                             | Product positioning, installation, version compatibility, the common manifest workflow, and first verification.                                                                                             |
-| `tools/<capability>/README.md`                                       | Each tool's complete configuration, invocation, policy, lifecycle, and security guide.                                                                                                                      |
-| [UPGRADING.md](./UPGRADING.md)                                       | Release transitions, migration requirements, backup precautions, and cutover warnings.                                                                                                                      |
+| Document                                                             | Owns                                                                                                                                                         |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `.github/OPTIMIZATION.md`                                            | Repository-only audit guidance and accepted optimization decisions.                                                                                          |
+| `AGENTS.md`                                                          | Essential repository constraints and required reading for conditional work.                                                                                  |
+| [API.md](./API.md)                                                   | Public planning surface for the future cross-plugin Tool API; explicitly not yet available.                                                                  |
+| [CHANGELOG.md](./CHANGELOG.md)                                       | Implemented changes.                                                                                                                                         |
+| `channels/<provider>/README.md`                                      | Each channel's setup, usage, conversations, lifecycle, and essential limitations. Link substantial configuration and CLI references to their sibling guides. |
+| [channels/github/CONFIG.md](./channels/github/CONFIG.md)             | GitHub workflow fields, defaults, identity selection, and stage customization.                                                                               |
+| [channels/github/CLI.md](./channels/github/CLI.md)                   | Complete OpenClaw notification command reference.                                                                                                            |
+| [channels/github/PRESENTATION.md](./channels/github/PRESENTATION.md) | Reusable human-visible notification components and styling; no lifecycle or feature behavior.                                                                |
+| [cli/PRESENTATION.md](./cli/PRESENTATION.md)                         | Shared CLI palette, spacing, diagnostic placement, and authoring verification.                                                                               |
+| [CLI.md](./CLI.md)                                                   | Complete core command references, a linked index of component commands, and shared execution boundaries.                                                     |
+| [CODEX.md](./CODEX.md)                                               | Standalone Codex installation, hook trust, workspace binding, and setup differences. Link shared capabilities to their owning guides.                        |
+| [CONFIG.md](./CONFIG.md)                                             | Operator-owned installation settings and OpenClaw plugin options.                                                                                            |
+| [DEVELOPMENT.md](./DEVELOPMENT.md)                                   | OpenClaw source installation, DevGuard, runtime logging, validation, and coding standards.                                                                   |
+| `DOCUMENTATION.md`                                                   | Documentation ownership, change gates, and reference formats.                                                                                                |
+| [MANIFEST.md](./MANIFEST.md)                                         | Workspace discovery, shared fields and value rules, setup, environment resolution, path projection, and links to component configuration owners.             |
+| [README.md](./README.md)                                             | Product positioning, installation, version compatibility, the common manifest workflow, and first verification.                                              |
+| `tools/<capability>/README.md`                                       | Each tool's complete configuration, invocation, policy, lifecycle, and security guide.                                                                       |
+| [UPGRADING.md](./UPGRADING.md)                                       | Release transitions, migration requirements, backup precautions, and cutover warnings.                                                                       |
 
 Keep root summaries short and link to the owning tool or channel guide. Link shared
 manifest rules, such as model routing, instead of reproducing them. Use contextual
@@ -40,8 +41,8 @@ options and examples belong in their tool or channel guide, linked from `CLI.md`
 Keep shared skill/guidance value rules and automation declaration/schedule syntax
 in `MANIFEST.md`. GitHub workflow fields and its derived assignment automation belong
 in the channel guide; Git, GitHub CLI, and Google fields belong in their tool guides.
-`CLI.md` owns operator automation commands; `CODEX.md` owns Codex-specific setup,
-automation support, and limitations. Link shared workflow behavior to the channel
+`CLI.md` owns operator automation commands; `MANIFEST.md` owns runtime-specific
+automation support and limitations. `CODEX.md` owns Codex-specific setup. Link shared workflow behavior to the channel
 guide rather than maintaining a second reference in `CODEX.md`.
 
 ## Documentation Voice
@@ -82,8 +83,26 @@ For example:
 | “A queued refresh is an admission receipt.” | “A `queued` refresh means the scheduler accepted the request; the run may still be pending.” |
 
 Before handing off a voice edit, read it as someone setting up or recovering the product
-for the first time. They should be able to identify the action, its limits, and the next
-step without knowing the implementation history.
+for the first time. Make the action, its limits, and the next step clear without requiring
+knowledge of the implementation history.
+
+### Admonitions
+
+Use GitHub-style admonitions when a prerequisite, consequence, or aside would be easy
+to miss in the surrounding prose. Choose the label for what the reader needs:
+
+- **NOTE:** a relevant clarification or limitation outside the main instruction.
+- **TIP:** an optional shortcut or convenience.
+- **IMPORTANT:** a required step or permission boundary the reader needs to understand
+  before proceeding, such as approving hooks or registering a project.
+- **WARNING:** a concrete risk of data loss, credential exposure, or unintended access,
+  such as discarding checkout changes or leaving collaboration unrestricted.
+
+Place the admonition beside the affected setting or action, before a command when the
+reader needs the warning first. Keep it to one point and a few sentences: explain the
+consequence and the next action when there is one. Move the existing note into the
+admonition rather than repeating it. Keep ordinary steps and explanations in the main
+flow; do not add callouts for decoration or turn whole sections into warnings.
 
 ## Tool Icons
 
@@ -98,10 +117,14 @@ directory. Match the single-color capability marks and role-based palette in
 is pink, and support is blue. Assignment Intake uses a green inbox mark. Keep plugin
 branding separate; do not add backgrounds or duplicate shared skill assets.
 
+The GitHub channel uses the same centered provider mark in Tanaab dark amber
+(`#b67e00`), distinguishing it from the green GitHub tool icon. Keep its recolored
+asset in `channels/github/assets/`.
+
 ## README Marketing
 
 - Keep the README opening and Overview as stable marketing copy. Change their wording or emphasis only when the user explicitly requests positioning changes or verified product behavior makes a claim false; documentation cleanup, reference splitting, and skill/tool inventory changes are not sufficient reasons. Mechanical link repairs are allowed without rewriting the copy.
-- Preserve the opening's three-paragraph message: repository-owned identity, environment, credential configuration, and setup activated by cloning and running `openclaw agent-system install`; GitHub issue-to-pull-request work; then the minimal standalone Codex plugin. Keep repository portability, one-command setup, and assigning agents work through GitHub visible in the Overview.
+- Preserve the opening's message: agent dotfiles and a workflow runtime in one repo; a separate clone-and-install step; OpenClaw as the primary integration with standalone Codex profile binding and GitHub issue-to-pull-request work in both runtimes. Keep the example agents, repository portability, repeatable setup, and assigning work through GitHub visible.
 
 ## Before Editing
 
@@ -111,7 +134,7 @@ shipped behavior, or a broken reference. Name the affected reader and owning
 section in the work summary. If none applies, leave the document alone.
 
 - A feature or bug fix authorizes only the documentation needed to explain its changed contract. It does not authorize a broader rewrite, reorder, new guide, or voice cleanup.
-- Find the existing owner before adding prose. Correct or link it; do not restate it elsewhere. Repeat command option rows where needed for a self-contained reference.
+- Find the existing owner before adding prose. Correct or link it; do not restate it elsewhere. Repeat command option rows when readers need them to use a reference on its own.
 - Preserve examples, defaults, supported values, caveats, and the [README marketing gate](#readme-marketing). Moving content does not authorize rewriting it.
 - Stop expanding a documentation change when it would require a new ownership decision; propose that change separately. Do not edit the conventions merely to make an unrelated diff conform.
 

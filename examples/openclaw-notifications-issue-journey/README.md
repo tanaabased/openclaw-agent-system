@@ -1,6 +1,8 @@
 # OpenClaw Notification Issue Journey Example
 
-Assign one issue, retain its assessment in one native chat and managed worktree, publish the plan summary after the private plan, and answer one approved GitHub question without starting implementation. A repeat scan must preserve the owner and avoid duplicate assessment or publication.
+Assign an issue and save its assessment in one chat and managed worktree. Publish the
+plan summary and answer an approved GitHub question without starting implementation.
+Verify that another scan reuses the same chat without repeating assessment or publication.
 
 ## What Belongs Here
 

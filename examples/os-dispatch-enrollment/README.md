@@ -1,6 +1,8 @@
 # Native Dispatch Enrollment Example
 
-Require owner consent, retain a device after bounded enrollment failure, enroll that same device once the Gateway is available, and reuse its native credential across restart.
+Require owner consent and keep the same device identity after enrollment fails.
+When the Gateway becomes available, enroll that device and verify that its credential
+works after a restart.
 
 ## What Belongs Here
 
