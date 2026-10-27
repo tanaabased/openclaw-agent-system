@@ -105,7 +105,7 @@ inactive lifecycle, cancellation, and actual native denial.
 
 ## Workflow
 
-For an explicit standalone Codex request to select or change this managed task's existing PR, use the trusted `deliveryRuntime` with `bind`, its retained `id`, and exact same-repository `pullRequest` URL. Omit `digest` for preview, inspect it, then apply that digest within the existing operator request. Binding fetches the PR but preserves local files and commits; it records no successful publication or announcement. Incorporate collaborator changes before normal non-force delivery. Resolve uncertain earlier publication before changing destination. This action neither starts implementation nor supersedes another task; it is not an automatic intake operation. Use the [dispatch reference](../../tools/dispatch/README.md#existing-pull-requests-and-recovery) for limits.
+For an explicit standalone Codex request to select or change this managed task's existing PR, use the trusted `deliveryRuntime` with `bind`, its retained `id`, and exact same-repository `pullRequest` URL. Omit `digest` for preview, inspect it, then apply that digest within the existing operator request. Binding fetches the PR but preserves local files and commits; it records no successful publication or announcement. Incorporate collaborator changes before normal non-force delivery. Resolve uncertain earlier publication before changing destination. This action neither starts implementation nor supersedes another task; it is not an automatic intake operation.
 
 1. Read the complete plan and any retained assessment, then inspect the existing files, branch, and relevant
    repository behavior. Preserve prior work; reconcile an interrupted attempt before
