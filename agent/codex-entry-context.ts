@@ -136,7 +136,7 @@ export default async function codexEntryContext<T>(
       git: deps.git ?? dispatchGit,
       connectDelivery: async (path) => {
         await assertCurrent();
-        const connection = await connectCodexGitHubAccount(
+        const connection = await (deps.deliveryConnect ?? connectCodexGitHubAccount)(
           current.workspace,
           AbortSignal.timeout(60000),
         );

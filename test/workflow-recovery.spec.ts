@@ -4,6 +4,19 @@ import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { intakeRemediation } from '../channels/github/intake/record-store.ts';
 
 describe('agent/workflow-recovery', () => {
+  it('should distinguish intentional additional work from stale selection and predecessor replacement', () => {
+    assert.match(workflowRecovery('launch-owner-ambiguous')!.next, /exact task id/);
+    assert.match(workflowRecovery('delivery-binding-stale')!.next, /Refresh.*preview/);
+    assert.match(
+      workflowRecovery('delivery-binding-publication-pending')!.next,
+      /original delivery/,
+    );
+    assert.match(workflowRecovery('dispatch-task-superseded')!.next, /successorId/);
+    assert.match(
+      workflowRecovery('dispatch-recovery-chat-active-or-unverified')!.summary,
+      /ended completed native turn/,
+    );
+  });
   it('should explain how to correct an incomplete assessment without replacing its saved result', () => {
     const recovery = workflowRecovery('assessment-result-incomplete')!;
     assert.match(recovery.summary, /not recorded/);

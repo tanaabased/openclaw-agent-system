@@ -3,7 +3,8 @@ import publicResponseState from './public-response-state.ts';
 
 /** the saved source revision is the durable obligation, including before composition starts. */
 export default function pendingPublicResponse(record: SharedDispatchRecord) {
-  if (record.retired || record.retirement || record.reset || !record.result) return;
+  if (record.supersededBy || record.retired || record.retirement || record.reset || !record.result)
+    return;
   const summary =
     record.assessmentSummaries?.find(
       (entry) => entry.code && /denied|cancelled/.test(entry.code),

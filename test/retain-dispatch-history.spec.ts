@@ -115,6 +115,14 @@ describe('agent/retain-dispatch-history', () => {
       assert.equal(settledFeedback(changed), false);
   });
 
+  it('should preserve replacement links when settled successor history is offloaded', () => {
+    const source = { ...record(), predecessorId: 'b'.repeat(64), supersededBy: 'c'.repeat(64) };
+    const terminal = retainDispatchHistory(source)!;
+    assert.equal(terminal.predecessorId, source.predecessorId);
+    assert.equal(terminal.supersededBy, source.supersededBy);
+    assert.equal(validTerminalRecord(terminal), true);
+  });
+
   it('should keep the latest context, current work owner and unfinished feedback exact', () => {
     const source = { ...record(), retired: undefined, retirement: undefined };
     source.feedback = { baseline: {}, events: [event(1), event(2), event(3), event(4)] };

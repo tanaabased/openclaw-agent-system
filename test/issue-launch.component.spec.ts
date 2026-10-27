@@ -8,6 +8,8 @@ import { inspectAdmittedIssue, inspectContinuedIssue } from '../agent/dispatch-a
 import { dispatchAdmission } from '../agent/managed-issue.ts';
 import assessmentOwner from '../agent/assessment-owner.ts';
 import pendingDispatchAssignments from '../agent/dispatch-pending.ts';
+import managedOwner from '../agent/managed-owner.ts';
+import type { LaunchRequest } from '../tools/dispatch/launch-schema.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/issue-launch', () => {
@@ -58,9 +60,9 @@ describe('agent/issue-launch', () => {
       };
     },
   });
-  const launch = (target = 'owner/repo#3') =>
+  const launch = (target = 'owner/repo#3', options: Partial<LaunchRequest> = {}) =>
     issueLaunch({
-      action: { action: 'launch', operation: 'context', target },
+      action: { action: 'launch', operation: 'context', target, ...options },
       context,
       journal,
       scope: journal.scope,
@@ -68,6 +70,58 @@ describe('agent/issue-launch', () => {
       create: (record) => record,
       verifyExisting: async () => {},
     });
+
+  it('should create an explicitly additional task once while ordinary launch reuses the primary', async () => {
+    const primary = await launch();
+    assert.ok('id' in primary);
+    await journal.exclusive(async (state, save) => {
+      state.records[0]!.threadId = 'primary-chat';
+      await save();
+    });
+    const fresh = await launch(undefined, { fresh: true });
+    assert.ok('id' in fresh);
+    assert.notEqual(fresh.id, primary.id);
+    assert.equal(fresh.status, 'routing-required');
+    const retry = await launch(undefined, { fresh: true });
+    assert.ok('id' in retry);
+    assert.equal(retry.id, fresh.id);
+    const reused = await launch();
+    assert.ok('id' in reused);
+    assert.equal(reused.id, primary.id);
+    await journal.exclusive(async (state, save) => {
+      state.records[1]!.threadId = 'additional-chat';
+      await save();
+    });
+    const state = await journal.read();
+    assert.equal(state.records.length, 2);
+    assert.equal(state.records[1]!.manualIssue?.fresh, true);
+    for (const record of state.records)
+      assert.equal(managedOwner(state.records, record.threadId!, () => true).owner?.id, record.id);
+    assert.equal(managedOwner(state.records, 'operator-chat', () => true).owner?.id, primary.id);
+    const conflicting = structuredClone(state.records[0]!);
+    conflicting.id = 'f'.repeat(64);
+    conflicting.threadId = 'unexpected-owner';
+    assert.equal(
+      managedOwner([...state.records, conflicting], 'primary-chat', () => true).status,
+      'ambiguous',
+    );
+    context.inputId = 'another-explicit-launch';
+    const another = await launch(undefined, { fresh: true });
+    assert.ok('id' in another);
+    assert.notEqual(another.id, fresh.id);
+    assert.equal((await journal.read()).records.length, 3);
+  });
+
+  it('should allow explicit fresh work beside preserved history without reviving that history', async () => {
+    await launch();
+    await journal.exclusive(async (state, save) => {
+      state.records[0]!.retired = { at: baseline, by: 'operator' };
+      await save();
+    });
+    const next = await launch(undefined, { fresh: true });
+    assert.equal(next.status, 'routing-required');
+    assert.equal((await journal.read()).records[0]!.retired?.by, 'operator');
+  });
 
   it('should refresh unconsumed routing instructions in the same manual owner', async () => {
     context.manifest.models = {
@@ -134,6 +188,25 @@ describe('agent/issue-launch', () => {
       requiresRevalidation: true as const,
     };
     assert.deepEqual(pendingDispatchAssignments(state, { records: [assignment] }), []);
+    const automatic = {
+      ...record,
+      id: 'b'.repeat(64),
+      intakeId: assignment.id,
+      manualIssue: undefined,
+    };
+    const additional = {
+      ...record,
+      id: 'c'.repeat(64),
+      manualIssue: { ...manual, id: 'c'.repeat(64), fresh: true as const },
+    };
+    assert.deepEqual(
+      pendingDispatchAssignments({ records: [automatic, additional] }, { records: [assignment] }),
+      [{ intake: assignment, record: automatic }],
+    );
+    assert.deepEqual(
+      pendingDispatchAssignments({ records: [additional] }, { records: [assignment] }),
+      [],
+    );
 
     const admission = dispatchAdmission(record, [])!;
     await inspectAdmittedIssue(admission, fixture.client);
@@ -192,6 +265,7 @@ describe('agent/issue-launch', () => {
     });
     const before = await journal.read();
     await assert.rejects(launch(), /launch-owner-inactive/);
+    await assert.rejects(launch(undefined, { id: before.records[0]!.id }), /launch-owner-inactive/);
     assert.deepEqual(await journal.read(), before);
   });
 

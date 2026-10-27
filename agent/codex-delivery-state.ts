@@ -2,7 +2,10 @@ import {
   deliveryContentUpdateSchema,
   deliveryPendingPushSchema,
   deliveryPullRequestSchema,
+  adoptedPullRequestSchema,
+  type AdoptedPullRequest,
 } from './delivery-state.ts';
+import { automationHash } from './automation-hash.ts';
 import { Type, type Static } from 'typebox';
 import { deliveryAnnouncementStateSchema } from './delivery-announcement-state.ts';
 
@@ -32,6 +35,8 @@ export const codexDeliveryStateSchema = Type.Object(
     pushedHead: Type.Optional(Type.String({ pattern: '^[a-f0-9]{40,64}$' })),
     pendingPush: Type.Optional(deliveryPendingPushSchema),
     pullRequest: Type.Optional(deliveryPullRequestSchema),
+    adopted: Type.Optional(adoptedPullRequestSchema),
+    localBranch: Type.Optional(text),
     reconciled: Type.Boolean(),
     attached: Type.Boolean(),
     cardAttempts: Type.Integer({ minimum: 0 }),
@@ -49,3 +54,44 @@ export const codexDeliveryStateSchema = Type.Object(
   { additionalProperties: false },
 );
 export type CodexDeliveryState = Static<typeof codexDeliveryStateSchema>;
+
+/** selecting a pr records no push, attachment or announcement success. */
+export function adoptedCodexDelivery(input: {
+  id: string;
+  repositoryId: string;
+  issueId: string;
+  threadId: string;
+  worktree: string;
+  localBranch: string;
+  head: string;
+  policyDigest: string;
+  adopted: AdoptedPullRequest;
+}): CodexDeliveryState {
+  const { adopted, localBranch } = input;
+  return {
+    id: automationHash({ id: input.id, adopted }),
+    binding: {
+      repositoryId: input.repositoryId,
+      issueId: input.issueId,
+      threadId: input.threadId,
+      worktree: input.worktree,
+      branch: adopted.branch,
+      base: adopted.base,
+      head: input.head,
+      authorId: adopted.authorId,
+      policyDigest: input.policyDigest,
+    },
+    localBranch,
+    adopted,
+    title: adopted.title,
+    body: adopted.body,
+    pullRequest: {
+      pullRequestNodeId: adopted.pullRequestNodeId,
+      pullRequestNumber: adopted.pullRequestNumber,
+    },
+    creationAttempted: false,
+    reconciled: false,
+    attached: false,
+    cardAttempts: 0,
+  };
+}

@@ -147,12 +147,15 @@ async function executeCodexDispatch(
   const operatorRecovery = action === 'retry-denied';
   const operatorReset = action === 'reset';
   const operatorRetire = action === 'retire';
-  const operatorAction = operatorRecovery || operatorReset || operatorRetire;
+  const operatorAction =
+    operatorRecovery || operatorReset || operatorRetire || action === 'recover';
   const childAction = action === 'context' || action === 'result' || action === 'summary';
   const retainedWork = childAction || action === 'reconcile' || action === 'report';
   const manualOwner =
     (childAction || operatorAction) && 'id' in input
-      ? (await store.read()).records.find((record) => record.id === input.id && record.manualIssue)
+      ? (await store.read()).records.find(
+          (record) => record.id === input.id && (record.manualIssue || action === 'recover'),
+        )
       : undefined;
   if (!retainedWork && !current.policy && !manualOwner) throw new Error('dispatch-policy-disabled');
   const activation = manualOwner
@@ -241,7 +244,7 @@ async function executeCodexDispatch(
       if (action === 'observe-denials') {
         // reconcile anchored refusals before selecting or reclassifying any pending operation.
         for (const record of state.records.filter(
-          (entry) => !entry.retired && !entry.reset && !entry.retirement,
+          (entry) => !entry.supersededBy && !entry.retired && !entry.reset && !entry.retirement,
         )) {
           try {
             await reconcileIntakeDenial(record, tx);
@@ -264,6 +267,7 @@ async function executeCodexDispatch(
       const record = state.records.find((entry) => entry.id === input.id);
       const intake = record && dispatchAdmission(record, admitted.records ?? []);
       if (!record || !intake) throw new Error('dispatch-receipt-missing');
+      if (record.supersededBy && action !== 'recover') throw new Error('dispatch-task-superseded');
       if (record.reset) throw new Error('dispatch-assessment-reset');
       if (record.retired && action === 'reconcile') {
         const observation = await withNative(current, deps, (native) =>
@@ -291,9 +295,14 @@ async function executeCodexDispatch(
           : { status: 'retired', id: record.id, retirement: record.retirement };
       if (record.retired || (record.retirement && !operatorRetire))
         throw new Error('dispatch-assessment-retired');
-      if (record.handoff && !operatorRetire && action !== 'summary')
+      if (record.handoff && !operatorRetire && action !== 'summary' && action !== 'recover')
         throw new Error('dispatch-assessment-handed-off');
-      if (action === 'retire' || action === 'reset' || action === 'retry-denied')
+      if (
+        action === 'recover' ||
+        action === 'retire' ||
+        action === 'reset' ||
+        action === 'retry-denied'
+      )
         return recoverDispatch(input, {
           action,
           state,
@@ -322,10 +331,18 @@ async function executeCodexDispatch(
                 : intake;
             if (action === 'retry-denied' && liveWorkflowPolicy(current.manifest, 'codex', latest))
               throw new Error('dispatch-recovery-policy-held');
-            return revalidateDispatchAssignment(current, latest, deps, signal);
+            return revalidateDispatchAssignment(
+              current,
+              latest,
+              deps,
+              signal,
+              action === 'recover',
+              action === 'recover' ? record : undefined,
+            );
           },
           connect: () => (deps.connect ?? connectCodexGitHub)(current.workspace, signal),
           withNative: (operation) => withNative(current, deps, operation),
+          deliveryConnect: deps.deliveryConnect,
         });
       if (action === 'prepare' || action === 'reconcile') {
         if (
@@ -390,6 +407,8 @@ async function executeCodexDispatch(
             save,
             childAction ? caller : (record.threadId ?? record.receiptThreadId),
             action === 'summary' ? 'handoff' : 'assessment',
+            true,
+            state.records,
           );
           await fresh();
           if (childAction) return assessDispatch(action, input, record, intake, native, tx);

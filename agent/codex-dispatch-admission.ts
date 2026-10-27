@@ -3,6 +3,10 @@ import routingInstructions, {
   routingInstructionsGuidance,
   routingInstructionsDigest,
 } from './routing-instructions.ts';
+import connectCodexGitHubAccount from './codex-github-client.ts';
+import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
+import { adoptedCodexDelivery } from './codex-delivery-state.ts';
+import codexIssueBranch from './codex-issue-branch.ts';
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
@@ -50,6 +54,40 @@ import { notificationAuthorityDigest } from './notification-authority.ts';
 import workflowFailure from './workflow-failure.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 
+async function verifySelectedPullRequest(
+  record: DispatchRecord,
+  intake: IntakeRecord,
+  tx: CodexDispatchTransaction,
+) {
+  const selected = record.adoptedPullRequest;
+  if (!selected) return;
+  const connected = await (tx.deps.deliveryConnect ?? connectCodexGitHubAccount)(
+    tx.current.workspace,
+    tx.signal,
+  );
+  if (connected.account.identity.nodeId !== intake.receiving.nodeId)
+    throw new Error('delivery-adoption-account-changed');
+  const observed = await new IssueDeliveryProvider(connected.account).adopt(
+    {
+      repositoryNodeId: intake.repository.nodeId,
+      item: {
+        number: intake.issue.number,
+        itemDatabaseId: intake.issue.databaseId,
+        itemNodeId: intake.issue.nodeId,
+        repositoryOwner: intake.repository.owner.login,
+        repositoryName: intake.repository.name,
+        repositoryDefaultBranch: selected.base,
+      },
+      signal: tx.signal,
+    },
+    `https://github.com/${repository(intake)}/pull/${selected.pullRequestNumber}`,
+  );
+  if (automationHash(observed) !== automationHash(selected))
+    throw new Error('launch-pr-binding-changed');
+  if (record.project && record.project.commit !== selected.head)
+    throw new Error('launch-pr-head-changed');
+}
+
 export async function recover(
   current: Selection,
   record: DispatchRecord,
@@ -59,7 +97,9 @@ export async function recover(
   threadId = record.threadId ?? record.receiptThreadId,
   purpose: 'assessment' | 'handoff' = 'assessment',
   acceptClaim = true,
+  records?: DispatchRecord[],
 ) {
+  if (record.supersededBy) throw new Error('dispatch-task-superseded');
   if (!record.request || !record.project) throw new Error('dispatch-creation-not-prepared');
   const found = await withNative(current, deps, (native) =>
     native.find({
@@ -79,6 +119,29 @@ export async function recover(
   // native titles may be edited independently of the retained issue identity.
   if (!record.effective) record.dispatchedAt = (deps.now ?? Date.now)();
   record.effective = settings;
+  if (record.adoptedPullRequest && !record.delivery && acceptClaim && records) {
+    const localBranch = await codexIssueBranch({
+      record,
+      records,
+      intake,
+      workspace: current.workspace,
+      agentId: current.agentId,
+      git: deps.git,
+      prepare: true,
+      save,
+    });
+    record.delivery = adoptedCodexDelivery({
+      id: record.id,
+      repositoryId: intake.repository.nodeId,
+      issueId: intake.issue.nodeId,
+      threadId: found.id,
+      worktree: found.cwd,
+      localBranch,
+      head: record.project.commit,
+      adopted: record.adoptedPullRequest,
+      policyDigest: notificationAuthorityDigest(current.manifest.github?.notifications),
+    });
+  }
   record.phase = record.phase === 'complete' ? 'complete' : 'assessing';
   if (record.phase !== 'complete' && record.result?.outcome === 'operator-setup-blocker') {
     delete record.result;
@@ -190,6 +253,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     .filter(
       (entry) =>
         entry.request &&
+        !entry.supersededBy &&
         !entry.denial &&
         !entry.handoff &&
         (codexUnresolvedRetirement(entry) ||
@@ -225,6 +289,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
   for (const pending of state.records.filter(
     (record) =>
       !record.denial &&
+      !record.supersededBy &&
       !record.retired &&
       !record.retirement &&
       !record.handoff &&
@@ -240,7 +305,17 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     if (!intake) return fail(pending, new Error('dispatch-intake-record-missing'));
     try {
       await revalidateDispatchAssignment(current, intake, deps, signal);
-      await recover(current, pending, intake, deps, save);
+      await recover(
+        current,
+        pending,
+        intake,
+        deps,
+        save,
+        undefined,
+        'assessment',
+        true,
+        state.records,
+      );
       delete pending.retry;
       pending.retryAfter = now + 300000;
       await fresh();
@@ -250,7 +325,17 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     } catch (error) {
       if (code(error) === 'dispatch-assignment-superseded') {
         try {
-          await recover(current, pending, intake, deps, save);
+          await recover(
+            current,
+            pending,
+            intake,
+            deps,
+            save,
+            undefined,
+            'assessment',
+            true,
+            state.records,
+          );
         } catch (recoveryError) {
           if (code(recoveryError) !== 'dispatch-creation-unresolved')
             return fail(pending, recoveryError);
@@ -318,7 +403,11 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
   if (!intake) return checked('idle');
   let record = state.records.find(
     (entry) =>
-      !entry.reset && !entry.retired && !entry.retirement && entry.issueKey === issueKey(intake),
+      !entry.reset &&
+      !entry.supersededBy &&
+      !entry.retired &&
+      !entry.retirement &&
+      entry.issueKey === issueKey(intake),
   );
   if (!record) {
     record = {
@@ -376,7 +465,7 @@ export async function prepareIssueProject(
     const projectInput = {
       projects: input.projects,
       repository: repository(intake),
-      defaultBranch: repo.defaultBranch,
+      defaultBranch: record.adoptedPullRequest?.branch ?? repo.defaultBranch,
       workspace: current.workspace,
       explicitPath,
     };
@@ -444,6 +533,19 @@ export async function prepareIssueProject(
         deps.git ?? dispatchGit,
       );
     }
+    if (record.adoptedPullRequest && project.commit !== record.adoptedPullRequest.head)
+      throw new Error('launch-pr-head-changed');
+    await verifySelectedPullRequest(record, intake, tx);
+    if (record.adoptedPullRequest) {
+      const base = record.adoptedPullRequest.base;
+      const git = deps.git ?? dispatchGit;
+      await git(project.path, ['check-ref-format', `refs/heads/${base}`], signal);
+      await git(
+        project.path,
+        ['fetch', '--no-tags', 'origin', `refs/heads/${base}:refs/remotes/origin/${base}`],
+        signal,
+      );
+    }
     const context = await client.getItemContext(
       repo.owner.login,
       repo.name,
@@ -471,6 +573,7 @@ export async function prepareIssueProject(
         at: now,
         digest: automationHash({
           context: record.context,
+          ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),
           project: record.project,
           manifest: record.manifestDigest,
           instructions:
@@ -502,6 +605,7 @@ export async function prepareIssueProject(
       assessmentSchema,
       digest: automationHash({
         context: record.context,
+        ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),
         project: record.project,
         manifest: record.manifestDigest,
         instructions:
@@ -547,6 +651,7 @@ export async function prepareDispatch(
     input.digest !==
       automationHash({
         context: record.context,
+        ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),
         project: record.project,
         manifest: record.manifestDigest,
         instructions:
@@ -556,6 +661,7 @@ export async function prepareDispatch(
     throw new Error('dispatch-preparation-stale');
   try {
     const { client } = await revalidateDispatchAssignment(current, intake, deps, signal);
+    await verifySelectedPullRequest(record, intake, tx);
     const waiting = await selectClaim(record, intake, client, tx);
     if (waiting) return waiting;
     const instructions = await routingInstructions({

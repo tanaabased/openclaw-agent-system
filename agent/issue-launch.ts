@@ -1,4 +1,5 @@
 import initialModelRouting from './initial-model-routing.ts';
+import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
 import { routingInstructionsDigest } from './routing-instructions.ts';
 import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
 import { githubOrigin } from './codex-dispatch-project.ts';
@@ -41,6 +42,8 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
 }) {
   const { action, context, journal, client } = input;
   if (!context.operator) throw new Error('launch-operator-required');
+  if (action.pullRequest && context.binding.runtime !== 'codex')
+    throw new Error('launch-pr-runtime-unsupported');
   await context.assertCurrent();
   const currentTarget = context.currentTarget
     ? issueLaunchTarget(context.currentTarget)
@@ -85,6 +88,30 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
     canonical,
     context.now,
   );
+  const connection = action.pullRequest
+    ? await context.connectDelivery?.(context.binding.workspace)
+    : undefined;
+  if (
+    action.pullRequest &&
+    (!connection || connection.account.identity.nodeId !== client.identity.nodeId)
+  )
+    throw new Error('delivery-adoption-account-changed');
+  const adopted = action.pullRequest
+    ? await new IssueDeliveryProvider(connection!.account).adopt(
+        {
+          repositoryNodeId: repo.nodeId,
+          item: {
+            number: item.number,
+            itemDatabaseId: item.databaseId,
+            itemNodeId: item.nodeId,
+            repositoryOwner: repo.owner.login,
+            repositoryName: repo.name,
+            repositoryDefaultBranch: repo.defaultBranch,
+          },
+        },
+        action.pullRequest,
+      )
+    : undefined;
   await context.assertCurrent();
   return journal.exclusive(async (state, save) => {
     const manual: OperatorIssue = {
@@ -96,6 +123,7 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
         item.nodeId,
         context.binding.session,
         context.inputId,
+        ...(action.fresh ? ['fresh'] : []),
       ]),
       scope: input.scope,
       receiving: { login: client.identity.login, nodeId: client.identity.nodeId },
@@ -116,6 +144,7 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
         turn: context.turnId,
         input: context.inputId,
       },
+      ...(action.fresh ? { fresh: true as const } : {}),
       selections: {
         ...(action.mode ? { mode: action.mode } : {}),
         ...action.stages,
@@ -139,21 +168,40 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
       context.binding.session,
       (record) => record.issueKey === key,
     );
-    if (ownership.status === 'ambiguous') throw new Error('launch-owner-ambiguous');
+    if (!action.fresh && !action.id && ownership.status === 'ambiguous')
+      throw new Error('launch-owner-ambiguous');
     const own = ownership.caller;
     if (own && own.issueKey !== key) throw new Error('launch-managed-target-mismatch');
-    let record = ownership.owner;
+    let record = action.id
+      ? state.records.find((entry) => entry.id === action.id && entry.issueKey === key)
+      : action.fresh
+        ? state.records.find((entry) => entry.id === manual.id && entry.manualIssue?.fresh)
+        : ownership.owner;
     if (
-      ownership.status === 'historical' ||
+      (!action.fresh && !action.id && ownership.status === 'historical') ||
       own?.retired ||
       own?.reset ||
+      own?.supersededBy ||
       own?.retirement ||
       own?.nativeInactive ||
       record?.retirement ||
+      record?.retired ||
+      record?.reset ||
+      record?.supersededBy ||
       record?.nativeInactive
     )
       throw new Error('launch-owner-inactive');
     if (action.id && record?.id !== action.id) throw new Error('launch-receipt-mismatch');
+    if (
+      adopted &&
+      record &&
+      automationHash(record.adoptedPullRequest) !== automationHash(adopted)
+    ) {
+      if (record.request || !record.adoptedPullRequest)
+        throw new Error('launch-pr-binding-changed');
+      record.adoptedPullRequest = adopted;
+      if ('project' in record) delete record.project;
+    }
     if (record?.threadId) {
       await input.verifyExisting(record);
       await context.assertCurrent();
@@ -201,6 +249,7 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
         manifestDigest: automationHash(context.manifest),
         context: JSON.stringify(evidence),
       });
+      if (adopted) record.adoptedPullRequest = adopted;
       state.records.push(record);
     }
     const routing = record.request
@@ -224,6 +273,7 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
       context: JSON.parse(record.context!),
       digest: automationHash({
         context: record.context,
+        ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),
         manifest: record.manifestDigest,
         instructions:
           record.routingInstructions && routingInstructionsDigest(record.routingInstructions),

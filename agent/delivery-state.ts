@@ -1,4 +1,4 @@
-import { Type } from 'typebox';
+import { Type, type Static } from 'typebox';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 
@@ -25,3 +25,17 @@ export const deliveryPullRequestSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+export const adoptedPullRequestSchema = Type.Object(
+  {
+    ...deliveryPullRequestSchema.properties,
+    branch: text,
+    base: text,
+    head: Type.String({ pattern: '^[a-f0-9]{40,64}$' }),
+    authorId: text,
+    title: Type.String({ minLength: 1, maxLength: 512 }),
+    body: Type.String({ maxLength: 65536 }),
+  },
+  { additionalProperties: false },
+);
+export type AdoptedPullRequest = Static<typeof adoptedPullRequestSchema>;

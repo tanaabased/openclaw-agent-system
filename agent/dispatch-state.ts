@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { issueKey } from './dispatch-pending.ts';
+import { adoptedPullRequestSchema } from './delivery-state.ts';
 import ColdHistory from './cold-history.ts';
 import intakePassStarted from './intake-pass-started.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
@@ -52,6 +53,9 @@ export const dispatchRecordProperties = {
   id: hash,
   intakeId: Type.Optional(hash),
   manualIssue: Type.Optional(operatorIssueSchema),
+  adoptedPullRequest: Type.Optional(adoptedPullRequestSchema),
+  supersededBy: Type.Optional(hash),
+  predecessorId: Type.Optional(hash),
   issueKey: hash,
   sourceThreadId: text,
   phase: Type.Union([
@@ -288,10 +292,33 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
           ))) ||
       new Set(state.records.map((r) => r.id)).size !== state.records.length ||
       new Set(
-        state.records.filter((r) => !r.reset && !r.retired && !r.retirement).map((r) => r.issueKey),
-      ).size !== state.records.filter((r) => !r.reset && !r.retired && !r.retirement).length ||
+        state.records
+          .filter(
+            (r) =>
+              !r.reset && !r.retired && !r.retirement && !r.supersededBy && !r.manualIssue?.fresh,
+          )
+          .map((r) => r.issueKey),
+      ).size !==
+        state.records.filter(
+          (r) =>
+            !r.reset && !r.retired && !r.retirement && !r.supersededBy && !r.manualIssue?.fresh,
+        ).length ||
       state.records.some(
         (r) =>
+          (r.supersededBy &&
+            !state.records.some(
+              (successor) =>
+                successor.id === r.supersededBy &&
+                successor.predecessorId === r.id &&
+                successor.issueKey === r.issueKey,
+            )) ||
+          (r.predecessorId &&
+            !state.records.some(
+              (predecessor) =>
+                predecessor.id === r.predecessorId &&
+                predecessor.supersededBy === r.id &&
+                predecessor.issueKey === r.issueKey,
+            )) ||
           Boolean(r.intakeId) === Boolean(r.manualIssue) ||
           (r.manualIssue &&
             (r.manualIssue.id !== r.id ||
@@ -377,6 +404,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
                 'reset',
                 'retired',
                 'retirement',
+                'supersededBy',
                 'feedbackReactivation',
                 'intakeId',
                 'manualIssue',

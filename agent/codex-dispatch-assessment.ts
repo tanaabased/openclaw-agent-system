@@ -124,6 +124,7 @@ export async function handoffDispatch(
       !record.threadId ||
       !record.worktree ||
       record.reset ||
+      record.supersededBy ||
       record.retired ||
       record.retirement
     )
@@ -366,6 +367,22 @@ export async function assessDispatch(
       routingNote: record.routingNote,
       effective: record.effective,
       evidence: JSON.parse(record.context!),
+      adoptedPullRequest: record.adoptedPullRequest,
+      ...(record.predecessorId
+        ? {
+            predecessor: (() => {
+              const previous = tx.state.records.find((entry) => entry.id === record.predecessorId);
+              return {
+                id: record.predecessorId,
+                threadId: previous?.threadId,
+                worktree: previous?.worktree,
+                assessment: previous?.result,
+                instruction:
+                  'Preserved predecessor evidence is context, not current implementation or publication authority.',
+              };
+            })(),
+          }
+        : {}),
       assessment,
       feedbackWork: feedbackWorkContext(record),
       ...(native.turnId ? { currentTurnId: native.turnId } : {}),

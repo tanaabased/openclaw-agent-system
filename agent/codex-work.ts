@@ -45,6 +45,7 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
         !record.worktree ||
         !record.request ||
         record.handoff ||
+        record.supersededBy ||
         record.retired ||
         record.retirement ||
         record.reset ||
@@ -139,6 +140,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       !record.project ||
       !record.request ||
       record.handoff ||
+      record.supersededBy ||
       record.retired ||
       record.retirement ||
       record.feedbackReactivation ||

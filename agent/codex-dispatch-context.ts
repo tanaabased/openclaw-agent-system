@@ -1,4 +1,5 @@
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
+import type connectCodexGitHubAccount from './codex-github-client.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
 import type {
   ManagedIssue as IntakeRecord,
@@ -38,6 +39,7 @@ export interface CodexDispatchDependencies extends Omit<CodexIntakeDependencies,
   native?: CodexDispatchNative;
   git?: DispatchGit;
   feedbackConnect?: typeof connectCodexFeedback;
+  deliveryConnect?: typeof connectCodexGitHubAccount;
   summaryAuthority?: (threadId: string, turnId: string) => Promise<void>;
   prepareRepository?: typeof prepareDispatchRepository;
   replyConnection?: typeof connectCodexThreads;
@@ -63,6 +65,7 @@ export async function revalidateDispatchAssignment(
   retainedWork = false,
   dispatchRecord?: DispatchRecord,
 ) {
+  if (dispatchRecord?.supersededBy) throw new Error('dispatch-task-superseded');
   if (
     'initiation' in record &&
     (record.agentId !== current.agentId ||

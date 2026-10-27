@@ -5,6 +5,19 @@ import issueWorkflowProgress, {
 import workflowStatus from '../agent/workflow-status.ts';
 
 describe('agent/issue-workflow-progress', () => {
+  it('should keep pr selection separate from implementation and publication progress', () => {
+    const issue: IssueWorkflowState = {
+      phase: 'complete',
+      result: { outcome: 'plan-ready' },
+      delivery: { adopted: {}, pullRequest: { pullRequestNumber: 7 }, reconciled: false },
+    };
+    assert.equal(issueWorkflowProgress(issue).action, 'assessment');
+    issue.progression = { stage: 'implementation' };
+    issue.continuation = { phase: 'running' };
+    assert.equal(issueWorkflowProgress(issue).action, 'implementation');
+    issue.supersededBy = 'successor';
+    assert.deepEqual(issueWorkflowProgress(issue), { action: 'stopped', status: 'superseded' });
+  });
   for (const runtime of ['codex', 'openclaw'] as const) {
     const record = (outcome: string): IssueWorkflowState => ({
       phase: 'complete',

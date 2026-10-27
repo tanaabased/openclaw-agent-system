@@ -119,6 +119,70 @@ describe('agent/codex-dispatch', () => {
       turnId: 'first-turn',
     };
   }
+  function operatorLaunch() {
+    deps.threadId = 'operator';
+    deps.replyConnection = async () => ({
+      close: async () => {},
+      request: async (method) => {
+        if (method === 'thread/read') return { thread: { id: 'operator' } };
+        if (method === 'thread/turns/list')
+          return { data: [{ id: 'operator-turn', status: 'inProgress' }] };
+        if (method === 'thread/items/list')
+          return {
+            data: [
+              {
+                turnId: 'operator-turn',
+                item: {
+                  type: 'userMessage',
+                  id: 'operator-input',
+                  content: 'Launch separate work continuing PR 7.',
+                },
+              },
+            ],
+          };
+        throw new Error('unexpected method: ' + method);
+      },
+    });
+  }
+  function selectedPullRequest() {
+    const observed = {
+      nodeId: 'PR_7',
+      number: 7,
+      state: 'open',
+      repositoryId: 'R_repo',
+      headRepositoryId: 'R_repo',
+      head: commit,
+      branch: 'collaborator-work',
+      base: 'release',
+      authorId: 'U_collaborator',
+      title: 'Existing work',
+      body: 'Preserve this body.',
+    };
+    deps.deliveryConnect = async () => ({
+      client: await deps.connect!(workspace, new AbortController().signal),
+      account: {
+        identity: fixture.client.identity,
+        execute: async (argv) => {
+          const value = argv.includes('repos/owner/repo/pulls/7')
+            ? observed
+            : {
+                databaseId: fixture.item.databaseId,
+                nodeId: fixture.item.nodeId,
+                number: fixture.item.number,
+                title: 'Issue',
+              };
+          return {
+            exitCode: 0,
+            stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(value),
+            stderr: '',
+            timedOut: false,
+            truncated: false,
+          };
+        },
+      },
+    });
+    return observed;
+  }
   beforeEach(async () => {
     root = await realpath(await mkdtemp(join(tmpdir(), 'codex_dispatch-')));
     [workspace, pluginData, codexHome, source, worktree, commonDir] = (
@@ -263,6 +327,150 @@ describe('agent/codex-dispatch', () => {
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('should launch explicit collaborator work from the selected pr head without replacing the intake task', async () => {
+    const original = await prepare();
+    created();
+    await request('reconcile', { id: original.id });
+    operatorLaunch();
+    selectedPullRequest();
+    const target = 'owner/repo#3';
+    const launch = await request('launch', {
+      operation: 'context',
+      target,
+      fresh: true,
+      pullRequest: 'https://github.com/owner/repo/pull/7',
+    });
+    const project = await request('launch', {
+      operation: 'prepare',
+      target,
+      id: launch.id,
+      projects,
+    });
+    assert.equal(project.status, 'routing-required', JSON.stringify(project));
+    const prepared = await request('launch', {
+      operation: 'prepare',
+      target,
+      id: launch.id,
+      digest: project.digest,
+      assessment: { complexity: 'medium', reason: 'Collaborate on existing work.' },
+      title: 'COLLABORATE',
+    });
+    assert.equal(prepared.status, 'prepared', JSON.stringify(prepared));
+    const creation = prepared.request as {
+      target: { environment: { startingState: { branchName: string } } };
+    };
+    assert.equal(creation.target.environment.startingState.branchName, commit);
+    const selected = await selectCodexIntake(pluginData, deps);
+    const records = (await new CodexDispatchStore(pluginData, selected.store.location.scope).read())
+      .records;
+    assert.equal(records.length, 2);
+    assert.equal(records[0]!.supersededBy, undefined);
+    assert.equal(records[1]!.adoptedPullRequest?.branch, 'collaborator-work');
+    assert.equal(records[1]!.delivery, undefined);
+    assert.ok(
+      gitCalls.some((argv) =>
+        argv.includes('refs/heads/collaborator-work:refs/remotes/origin/collaborator-work'),
+      ),
+    );
+    const originalNative = native!;
+    const parallelPath = join(root, 'parallel-worktree');
+    await mkdir(parallelPath);
+    const parallel = { ...originalNative, id: 'parallel-thread', cwd: parallelPath };
+    deps.native!.find = async (input) =>
+      input.sourceThreadId === 'intake-thread' ? originalNative : parallel;
+    for (let retry = 0; retry < 2; retry++) {
+      const recovered = await request('launch', { operation: 'reconcile', target, id: launch.id });
+      assert.equal(recovered.destination, parallel.id);
+    }
+    const intake = await request('next', { projects }, { threadId: 'intake-thread' });
+    assert.ok(!['prepared', 'routing-required'].includes(String(intake.status)));
+    assert.equal(
+      (await new CodexDispatchStore(pluginData, selected.store.location.scope).read()).records
+        .length,
+      2,
+    );
+  });
+
+  it('should preview replacement preserve predecessor evidence and converge on one fenced successor', async () => {
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id });
+    await request('context', { id: prepared.id }, { threadId: native!.id });
+    await request('result', { id: prepared.id, result }, { threadId: native!.id });
+    const observed = selectedPullRequest();
+    const selected = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(pluginData, selected.store.location.scope);
+    const before = await store.read();
+    const input = { id: prepared.id, pullRequest: 'https://github.com/owner/repo/pull/7' };
+    await assert.rejects(
+      request('recover', input, { threadId: 'operator' }),
+      /chat-active-or-unverified/,
+    );
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    native!.turnEnded = true;
+    const preview = await request('recover', input, { threadId: 'operator' });
+    assert.equal(preview.status, 'recovery-available');
+    assert.deepEqual(await store.read(), before);
+    observed.head = '2'.repeat(40);
+    await assert.rejects(
+      request('recover', { ...input, digest: preview.digest }, { threadId: 'operator' }),
+      /recovery-stale/,
+    );
+    assert.deepEqual(await store.read(), before);
+    observed.head = commit;
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.denial = {
+        sourceThreadId: 'intake-thread',
+        turnId: 'denied-turn',
+        callId: 'denied-call',
+        operation: 'prepare',
+        automatic: true,
+        observedAt: now,
+      };
+      await save();
+    });
+    const held = await request('recover', input, { threadId: 'operator' });
+    assert.equal(held.status, 'blocked');
+    assert.ok((held.blockers as string[]).includes('nativeDenial'));
+    assert.equal((await store.read()).records.length, 1);
+    assert.ok((await store.read()).records[0]!.denial);
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.denial;
+      await save();
+    });
+    await assert.rejects(
+      request('recover', input, { threadId: native!.id }),
+      /operator-caller-required/,
+    );
+    const applied = await request(
+      'recover',
+      { ...input, digest: preview.digest },
+      { threadId: 'operator' },
+    );
+    assert.equal(applied.status, 'recovery-ready');
+    const after = await store.read();
+    assert.equal(after.records.length, 2);
+    const old = after.records[0]!,
+      successor = after.records[1]!;
+    assert.deepEqual(old, { ...before.records[0], supersededBy: successor.id });
+    assert.equal(successor.predecessorId, old.id);
+    assert.equal(successor.request, undefined);
+    assert.equal(successor.result, undefined);
+    assert.equal(successor.delivery, undefined);
+    assert.equal(successor.adoptedPullRequest?.pullRequestNumber, 7);
+    assert.equal(codexItemOccupied(old), false);
+    assert.equal(
+      (await request('recover', input, { threadId: 'operator' })).successorId,
+      successor.id,
+    );
+    assert.equal((await store.read()).records.length, 2);
+    await assert.rejects(
+      request('context', { id: old.id }, { threadId: native!.id }),
+      /task-superseded/,
+    );
   });
 
   it('should consume custom initial routing while verified complexity retains its tier', async () => {

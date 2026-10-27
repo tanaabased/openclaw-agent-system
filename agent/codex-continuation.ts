@@ -174,6 +174,7 @@ export default async function runCodexContinuation(
                 record.threadId &&
                 record.worktree &&
                 !record.handoff &&
+                !record.supersededBy &&
                 !record.retired &&
                 !record.retirement &&
                 !record.feedbackReactivation &&

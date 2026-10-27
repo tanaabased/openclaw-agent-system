@@ -121,13 +121,13 @@ See the [shared skill inventory](./README.md#skills) for the other skills.
 
 ## Additional Usage
 
-| Use case                                      | Guide                                                                                                                                                                                                                   |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub assignments, feedback, and PR delivery | [GitHub Notifications setup](./channels/github/README.md#install) and [workflow examples](./channels/github/README.md#usage).                                                                                           |
-| Recurring repository work                     | [Automation declarations](./MANIFEST.md#automations) and [Codex support and limitations](./MANIFEST.md#codex-execution-and-ownership).                                                                                  |
-| Model selection for new work                  | [Model profiles](./MANIFEST.md#models) and the [Model Routing tool](./tools/model-routing/README.md#agent_system_model_routing).                                                                                        |
-| Interrupted issue work                        | Continue in the existing issue chat using the [chat guidance](./channels/github/README.md#chatting). Follow its retained recovery instructions; preserve work and uncertain attempts, and never bypass a native denial. |
-| Resetting intake or retiring a task           | Use [Notifications Reset](./skills/notifications-reset/SKILL.md) from an operator chat, or [Task Retirement](./skills/task-retirement/SKILL.md) for one task.                                                           |
+| Use case                                      | Guide                                                                                                                                                                                                                           |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub assignments, feedback, and PR delivery | [GitHub Notifications setup](./channels/github/README.md#install) and [workflow examples](./channels/github/README.md#usage).                                                                                                   |
+| Recurring repository work                     | [Automation declarations](./MANIFEST.md#automations) and [Codex support and limitations](./MANIFEST.md#codex-execution-and-ownership).                                                                                          |
+| Model selection for new work                  | [Model profiles](./MANIFEST.md#models) and the [Model Routing tool](./tools/model-routing/README.md#agent_system_model_routing).                                                                                                |
+| Interrupted issue work                        | Continue the existing task, or explicitly select an [existing PR or preserved replacement](./tools/dispatch/README.md#existing-pull-requests-and-recovery). Preserve work and uncertain attempts; never bypass a native denial. |
+| Resetting intake or retiring a task           | Use [Notifications Reset](./skills/notifications-reset/SKILL.md) from an operator chat, or [Task Retirement](./skills/task-retirement/SKILL.md) for one task.                                                                   |
 
 <a id="issue-assessment"></a>
 

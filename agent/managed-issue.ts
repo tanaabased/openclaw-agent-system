@@ -23,6 +23,7 @@ export const operatorIssueSchema = Type.Object(
       },
       { additionalProperties: false },
     ),
+    fresh: Type.Optional(Type.Literal(true)),
     evidence: Type.Object(
       {
         policyDigest: text,

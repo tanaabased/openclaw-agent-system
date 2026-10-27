@@ -23,6 +23,7 @@ import advanceIssueTurn from './openclaw-session-turn.ts';
 function digest(record: OpenClawDispatchRecord) {
   return automationHash({
     context: record.context,
+    ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),
     manifest: record.manifestDigest,
     instructions:
       record.routingInstructions && routingInstructionsDigest(record.routingInstructions),

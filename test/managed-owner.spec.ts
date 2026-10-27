@@ -123,4 +123,33 @@ describe('agent/managed-owner', () => {
     const reused = { ...retired, threadId: current.threadId };
     assert.equal(managedOwner([reused, current], 'current-chat', () => true).status, 'ambiguous');
   });
+
+  it('should keep intentional parallel tasks and their replies with each native caller', () => {
+    const additional = {
+      ...current,
+      id: 'additional',
+      intakeId: undefined,
+      threadId: 'additional-chat',
+      manualIssue: { ...admission, id: 'additional', fresh: true },
+    } as unknown as SharedDispatchRecord;
+    assert.equal(assess([current, additional])?.record, current);
+    assert.equal(assess([current, additional], 'additional-chat')?.record, additional);
+    for (const owner of [current, additional]) {
+      const result = reply([current, additional], owner.threadId!);
+      assert.ok(result && 'ownerId' in result);
+      assert.equal(result.ownerId, owner.id);
+    }
+    const predecessor = { ...current, supersededBy: additional.id };
+    assert.throws(() => assess([predecessor, additional]), /context-invalid/);
+    assert.throws(() => reply([predecessor, additional]), /context-invalid/);
+    const projection = replyOwnerContext({
+      record: additional,
+      intake: admission as never,
+      caller: additional.threadId!,
+      custodyInvalid: false,
+      delivery: { adopted: {}, pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 } },
+    });
+    assert.equal(projection.announcementPending, false);
+    assert.equal(projection.deliveredPullRequest, undefined);
+  });
 });

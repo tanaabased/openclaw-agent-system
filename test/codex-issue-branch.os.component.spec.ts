@@ -120,6 +120,54 @@ describe('agent/codex-issue-branch', () => {
     assert.equal(record.issueBranch?.phase, 'ready');
   });
 
+  it('should continue a fetched pr head on a distinct local branch while preserving occupied unpublished work', async () => {
+    await git('switch', '-c', 'shared-pr');
+    await writeFile(join(root, 'work.txt'), 'published PR work');
+    await git('commit', '-am', 'published work');
+    const published = await git('rev-parse', 'HEAD');
+    const fetchedRef = 'refs/agent-system/pr/fixture';
+    await git('fetch', '--no-tags', root, `refs/heads/shared-pr:${fetchedRef}`);
+    await git('switch', '--detach', published);
+    const oldPath = join(root, '.git', 'old-checkout');
+    await git('worktree', 'add', oldPath, 'shared-pr');
+    await writeFile(join(oldPath, 'work.txt'), 'unpublished predecessor work');
+    await execute('git', ['commit', '-am', 'unpublished work'], { cwd: oldPath });
+    const oldHead = (await execute('git', ['rev-parse', 'HEAD'], { cwd: oldPath })).stdout.trim();
+    const previous = {
+      ...record,
+      worktree: oldPath,
+      issueBranch: { attemptId: record.id, name: 'shared-pr', phase: 'ready' as const },
+    };
+    record = {
+      ...record,
+      id: 'b'.repeat(64),
+      project: { ...record.project!, commit: await git('rev-parse', fetchedRef) },
+    };
+    records = [previous, record];
+    const local = await prepare();
+    assert.notEqual(local, 'shared-pr');
+    assert.equal(await git('rev-parse', 'HEAD'), published);
+    assert.equal(await git('rev-parse', 'shared-pr'), oldHead);
+    assert.equal(
+      (await execute('git', ['show', 'HEAD:work.txt'], { cwd: oldPath })).stdout,
+      'unpublished predecessor work',
+    );
+    record.delivery = {
+      localBranch: local,
+      pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+      binding: {
+        repositoryId: intake.repository.nodeId,
+        issueId: intake.issue.nodeId,
+        threadId: record.threadId!,
+        worktree: cwd,
+        branch: 'shared-pr',
+      },
+    } as NonNullable<DispatchRecord['delivery']>;
+    delete record.issueBranch;
+    assert.equal(await prepare({ prepare: false }), local);
+    assert.equal(await git('rev-parse', 'shared-pr'), oldHead);
+  });
+
   it('should recover a created ref before checkout from the retained base', async () => {
     await assert.rejects(
       prepare({

@@ -33,11 +33,11 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     ],
     'launch-owner-inactive': [
       'This issue already has an inactive managed owner.',
-      'Inspect that owner and recover or retire it through its existing lifecycle. Do not create a replacement chat or delete its record.',
+      'Preserve that owner. Use explicit recovery for replacement, or request a separate task through Task Launch from an operator chat. Do not revive the inactive chat or delete its record.',
     ],
     'launch-owner-ambiguous': [
       'More than one retained owner matches this issue.',
-      'Reconcile the original native owners before launching; no new chat or checkout was authorized.',
+      'Supply the exact task id to select intentional additional work, or reconcile unexpected competing owners. No new chat or checkout was authorized.',
     ],
     'launch-preparation-owner-required': [
       'The issue is already being prepared by another managed source.',
@@ -57,7 +57,23 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     ],
     'codex-branch-owner-required': [
       'This assignment has no verified ownership record for its current branch.',
-      'Preserve all files and commits. Resume a clean detached checkout at the retained starting commit through implementation context, or reconcile an existing delivery receipt with its original issue chat. A same-issue branch name or historical comment cannot establish ownership.',
+      'Preserve all files and commits. In standalone Codex, an operator may explicitly select a verified existing PR through delivery bind. Otherwise resume the retained starting checkout through implementation context or reconcile the original delivery receipt. A branch name or historical comment alone cannot establish ownership.',
+    ],
+    'dispatch-task-superseded': [
+      'This preserved task was replaced and cannot continue managed work.',
+      'Use the successorId from the retained recovery result with Task Launch. Read the predecessor assessment with present if needed; do not resume its publication or delete its evidence.',
+    ],
+    'dispatch-recovery-chat-active-or-unverified': [
+      'Replacement could not verify an idle predecessor with an ended completed native turn.',
+      'Let the exact predecessor finish and restore native activity readback before previewing again. Idle, missing or interrupted history alone is insufficient; no successor was reserved.',
+    ],
+    'delivery-binding-publication-pending': [
+      'Earlier publication has an uncertain outcome, so its destination was not changed.',
+      'Resume the original delivery or announcement through its retained receipts before selecting a different PR. Do not repeat uncertain writes or discard their tracking.',
+    ],
+    'launch-pr-runtime-unsupported': [
+      'Existing-PR startup is currently available only in standalone Codex.',
+      'Use standalone Codex Task Launch for explicit PR selection. OpenClaw manual fresh launch remains available without pullRequest; do not silently omit a requested PR.',
     ],
     'codex-branch-owner-mismatch': [
       'The current branch does not belong to this assignment attempt.',
@@ -234,6 +250,13 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
   };
   const reason = reasons[code];
   if (reason) return { summary: reason[0], next: reason[1] };
+  if (
+    ['delivery-binding-stale', 'launch-pr-binding-changed', 'launch-pr-head-changed'].includes(code)
+  )
+    return {
+      summary: 'The selected PR or work changed after its preview; the selection was not applied.',
+      next: 'Refresh the same launch or binding preview with its exact target and receipt, inspect the current head and destination, then apply its new digest within the operator request. Preserve local work and any existing creation request; never replay an uncertain creation.',
+    };
   const field =
     /^delivery-(repository|issue|session|thread|worktree|branch|base|account|policy)-changed$/.exec(
       code,

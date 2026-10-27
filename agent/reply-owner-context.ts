@@ -14,12 +14,15 @@ export default function replyOwnerContext(input: {
   incarnation?: string;
   custodyInvalid: boolean;
   delivery?: {
+    adopted?: unknown;
+    pushedHead?: string;
     pullRequest?: { pullRequestNodeId: string; pullRequestNumber: number };
     announcement?: Pick<DeliveryAnnouncementState, 'attempted' | 'receipt' | 'code'>;
   };
   implementation?: ImplementationResult;
 }): ReplyOwner {
   const { record, intake, delivery } = input;
+  const observationOnly = Boolean(delivery?.adopted && !delivery.pushedHead);
   if (!intake && record.threadId === input.caller) throw new Error('reply-managed-context-invalid');
   const pending = pendingPublicResponse(record);
   const summary =
@@ -31,8 +34,11 @@ export default function replyOwnerContext(input: {
     ...(input.incarnation ? { incarnation: input.incarnation } : {}),
     retired: Boolean(record.retired),
     reset: Boolean(record.reset),
+    supersededBy: record.supersededBy,
+    manualIssue: record.manualIssue?.fresh ? { fresh: true } : undefined,
     inactive: Boolean(
       record.retired ||
+      record.supersededBy ||
       record.retirement ||
       record.reset ||
       record.nativeInactive ||
@@ -55,13 +61,15 @@ export default function replyOwnerContext(input: {
     delivery,
     summaryPending: Boolean(pending),
     announcementPending: Boolean(
-      delivery?.pullRequest && (!delivery.announcement?.receipt || delivery.announcement.code),
+      !observationOnly &&
+      delivery?.pullRequest &&
+      (!delivery.announcement?.receipt || delivery.announcement.code),
     ),
     announcementAttempted: Boolean(
       delivery?.announcement?.attempted || delivery?.announcement?.receipt,
     ),
     implementation: input.implementation,
-    deliveredPullRequest: delivery?.pullRequest,
+    deliveredPullRequest: observationOnly ? undefined : delivery?.pullRequest,
     result: record.result,
     publisherLogin: intake?.receiving.login,
   };

@@ -10,6 +10,8 @@ const terminalKeys = new Set([
   'id',
   'intakeId',
   'manualIssue',
+  'supersededBy',
+  'predecessorId',
   'issueKey',
   'sourceThreadId',
   'phase',

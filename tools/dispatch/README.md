@@ -70,21 +70,23 @@ before manual launch.
 These parameters cover `launch`. Use the owning skill and
 [tool schema](./tool-schema.ts) for other actions.
 
-| Parameter    | Type   | Required                 | Default                  | Description                                                                                                                  |
-| ------------ | ------ | ------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `action`     | string | yes                      | none                     | `launch`.                                                                                                                    |
-| `assessment` | object | for final preparation    | none                     | Existing model-routing complexity assessment and reason.                                                                     |
-| `digest`     | string | for final preparation    | none                     | Digest from the latest routing-required result.                                                                              |
-| `fallback`   | string | no                       | none                     | Existing explicit `default` profile selection when a requested work tier is not configured; never a model-failure fallback.  |
-| `id`         | string | after context            | none                     | Retained launch receipt.                                                                                                     |
-| `mode`       | string | no                       | current configuration    | `plan`, `work`, or `auto`; omitted mode defaults to Auto when unconfigured.                                                  |
-| `operation`  | string | yes                      | none                     | `context`, `prepare`, or `reconcile`.                                                                                        |
-| `projects`   | array  | for Codex preparation    | none                     | Native saved-project inventory, independently checked against repository remotes. Can supply unambiguous repository context. |
-| `repository` | string | when otherwise ambiguous | none                     | Explicit `owner/repository` for an issue number.                                                                             |
-| `routing`    | object | no                       | configured model profile | Supported explicit `model` and/or `effort`, resolved through shared model routing.                                           |
-| `stages`     | object | no                       | current configuration    | Assessment/implementation `skill` and/or inline or contained-file `guidance`.                                                |
-| `target`     | string | yes                      | none                     | Issue URL or supported issue reference.                                                                                      |
-| `title`      | string | for final preparation    | none                     | Concise alphanumeric issue title for native presentation.                                                                    |
+| Parameter     | Type    | Required                 | Default                  | Description                                                                                                                          |
+| ------------- | ------- | ------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `action`      | string  | yes                      | none                     | `launch`.                                                                                                                            |
+| `assessment`  | object  | for final preparation    | none                     | Existing model-routing complexity assessment and reason.                                                                             |
+| `digest`      | string  | for final preparation    | none                     | Digest from the latest routing-required result.                                                                                      |
+| `fallback`    | string  | no                       | none                     | Existing explicit `default` profile selection when a requested work tier is not configured; never a model-failure fallback.          |
+| `fresh`       | boolean | no                       | `false`                  | Explicit operator request for an additional task through Task Launch. Leaves existing tasks active; unavailable to automatic intake. |
+| `id`          | string  | after context            | none                     | Retained launch receipt.                                                                                                             |
+| `mode`        | string  | no                       | current configuration    | `plan`, `work`, or `auto`; omitted mode defaults to Auto when unconfigured.                                                          |
+| `operation`   | string  | yes                      | none                     | `context`, `prepare`, or `reconcile`.                                                                                                |
+| `projects`    | array   | for Codex preparation    | none                     | Native saved-project inventory, independently checked against repository remotes. Can supply unambiguous repository context.         |
+| `pullRequest` | string  | no                       | none                     | Standalone Codex only: exact open same-repository PR URL whose verified fetched head starts the new task.                            |
+| `repository`  | string  | when otherwise ambiguous | none                     | Explicit `owner/repository` for an issue number.                                                                                     |
+| `routing`     | object  | no                       | configured model profile | Supported explicit `model` and/or `effort`, resolved through shared model routing.                                                   |
+| `stages`      | object  | no                       | current configuration    | Assessment/implementation `skill` and/or inline or contained-file `guidance`.                                                        |
+| `target`      | string  | yes                      | none                     | Issue URL or supported issue reference.                                                                                              |
+| `title`       | string  | for final preparation    | none                     | Concise alphanumeric issue title for native presentation.                                                                            |
 
 ### Usage
 
@@ -109,3 +111,38 @@ Begin with explicit planning mode and a repository-qualified number:
 Follow the returned preparation instructions, then verify that the same launch completed.
 Reused chats keep their stage and completed assessment. Recover an incomplete or
 uncertain attempt before starting another.
+
+### Existing pull requests and recovery
+
+Ask Task Launch to “launch a separate task for this issue, continuing this PR”
+to combine `fresh: true` with `pullRequest`. Each task gets its own checkout and
+local branch; both may update the same remote PR branch. Without an explicit fresh
+request, launch reuses the primary task, or the supplied `id` selects an existing
+task. Automatic intake never creates additional tasks this way.
+
+In an existing standalone Codex task, ask to “use this PR for delivery.” The
+trusted `deliveryRuntime` action `bind` takes the task `id`, exact `pullRequest`
+URL, and optional `digest`: omit the digest to preview, then apply that preview.
+Binding fetches the selected PR and preserves local work; it neither pushes nor
+records historical publication, attachment, or announcement success. Changing PRs
+retains earlier delivery receipts and refuses uncertain publication. Incorporate
+collaborator commits before a normal non-force push. The selected PR's author,
+base, destination and identity remain pinned; a missing or changed PR cannot fall
+through to replacement-PR creation. Adoption does not add issue-closing text or
+rewrite PR metadata by default.
+
+Replacement is separate from collaboration. From another operator chat, the
+standalone Codex `dispatchRuntime` action `recover` takes the exact predecessor
+`id`, an existing same-repository `pullRequest` URL, and optional `digest`.
+Preview, then apply that digest to preserve the predecessor's chat, checkout,
+commits and assessment while reserving one successor. Follow the returned `launch`
+request with its exact successor id; interrupted retries reuse it. Current native
+evidence must establish an idle chat with a completed turn, and unresolved effects
+or native denials block replacement. The predecessor cannot resume managed work
+in that installation; recovery neither deletes its resources nor disables another
+computer. Assignment-claim receipts stay with their original intake history; this
+operator-created successor does not fabricate another assignment acceptance.
+
+PR selection and replacement currently support standalone Codex only. They grant
+neither extra repository permissions nor implementation authority. No original-machine
+private delivery receipt is required for explicit PR selection.
