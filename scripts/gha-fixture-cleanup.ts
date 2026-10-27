@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import assert from 'node:assert/strict';
 import { appendFile, readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
@@ -12,7 +13,13 @@ const workflows = ['os', 'codex', 'openclaw', 'notifications'].map(
   (name) => `.github/workflows/pr-examples-${name}.yml`,
 );
 type ObjectValue = Record<string, unknown>;
+type DebugLogger = ((message: string) => void) & {
+  enabled: boolean;
+  log: (message: string) => void;
+};
 type FixtureSelector = number | '*';
+const safeId = (value: unknown) =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? String(value) : 'unknown';
 export type GhaFixtureApi = (
   method: 'GET' | 'PATCH' | 'DELETE' | 'POST',
   route: string,
@@ -41,8 +48,30 @@ export default async function cleanupGhaFixtures(input: {
   attempt: FixtureSelector;
   api: GhaFixtureApi;
   dryRun?: boolean;
+  log?: (message: string) => void;
 }) {
-  const { api, runId, attempt } = input;
+  const { api: request, runId, attempt } = input;
+  const debug = input.log ?? (() => {});
+  const api: GhaFixtureApi = async (method, route, body) => {
+    const safeRoute = route
+      .replace(/\/(issues|pulls|keys|ssh_signing_keys)\/[^/?]+/gu, '/$1/:id')
+      .replace(/\/git\/refs\/heads\/[^/?]+/u, '/git/refs/heads/:ref');
+    const startedAt = performance.now();
+    debug(`request ${method} ${safeRoute} started`);
+    try {
+      const result = await request(method, route, body);
+      debug(
+        `request ${method} ${safeRoute} completed duration=${Math.round(performance.now() - startedAt)}ms`,
+      );
+      return result;
+    } catch (error) {
+      const status = error instanceof GhaFixtureProviderError ? ` status=${error.status}` : '';
+      debug(
+        `request ${method} ${safeRoute} failed${status} duration=${Math.round(performance.now() - startedAt)}ms`,
+      );
+      throw error;
+    }
+  };
   assert.ok(
     [runId, attempt].every((value) => value === '*' || (Number.isSafeInteger(value) && value > 0)),
     'positive-source-identifiers-required',
@@ -60,6 +89,9 @@ export default async function cleanupGhaFixtures(input: {
     typeof run.run_started_at === 'string' &&
     Number.isFinite(Date.parse(run.run_started_at));
   const run = wildcard ? undefined : await sourceAttempt(runId, attempt);
+  debug(
+    wildcard ? 'source attempt discovery started' : `source attempt ${runId}/${attempt} fetched`,
+  );
   const repository = run ? object(run.repository) : object(await api('GET', `repos/${project}`));
   const repositoryId = Number(repository.id);
   assert.ok(
@@ -71,14 +103,23 @@ export default async function cleanupGhaFixtures(input: {
       ownedAttempt(run, Number(runId), Number(attempt), repositoryId) && run.status === 'completed',
       'source-attempt-must-be-completed-and-owned',
     );
+  if (run) debug(`source attempt ${runId}/${attempt} owned-completed`);
   const prefix = wildcard
     ? `agent-system-test-${repositoryId}-${runId}-${attempt}-`
     : fixturePrefix(repositoryId, Number(runId), Number(attempt));
   let startedAt = run ? String(run.run_started_at) : undefined;
   assert.equal(object(await api('GET', 'user')).login, 'tanaabot', 'cleanup-account-mismatch');
   const outcomes: Array<{ resource: string; target: string; result: string }> = [];
-  const done = (resource: string, target: string, result: string) =>
+  const done = (resource: string, target: string, result: string) => {
     outcomes.push({ resource, target, result });
+    const safeTarget = resource === 'branch' ? 'ref' : /^\d+$/u.test(target) ? target : 'redacted';
+    const event = result.startsWith('would-')
+      ? 'planned'
+      : result.startsWith('preserved-')
+        ? 'preserved'
+        : 'outcome';
+    debug(`${event} resource=${resource} id=${safeTarget} result=${result}`);
+  };
   const attempts = new Map<string, boolean>();
   const matches = async (title: unknown) => {
     if (!wildcard) return String(title).startsWith(prefix);
@@ -93,6 +134,7 @@ export default async function cleanupGhaFixtures(input: {
     )
       return false;
     const target = `${id}/${number}`;
+    debug(`fixture candidate run=${target} discovered`);
     if (!attempts.has(target)) {
       attempts.set(target, false);
       try {
@@ -120,6 +162,7 @@ export default async function cleanupGhaFixtures(input: {
   const list = async (route: string, before?: string) => {
     const result: ObjectValue[] = [];
     for (let page = 1; ; page++) {
+      debug(`pagination ${route} page=${page} requested`);
       const values = await api(
         'GET',
         `${route}${route.includes('?') ? '&' : '?'}per_page=100&page=${page}`,
@@ -127,11 +170,16 @@ export default async function cleanupGhaFixtures(input: {
       assert.ok(Array.isArray(values), 'invalid-github-list');
       const entries = values.map(object);
       result.push(...entries);
+      debug(`pagination ${route} page=${page} received=${entries.length}`);
       if (
         entries.length < 100 ||
         (before && entries.some((entry) => String(entry.created_at) < before))
-      )
+      ) {
+        debug(
+          `pagination ${route} stopped=${before && entries.some((entry) => String(entry.created_at) < before) ? 'before-cutoff' : 'short-page'}`,
+        );
         return result;
+      }
     }
   };
   const remove = async (route: string) => {
@@ -147,7 +195,11 @@ export default async function cleanupGhaFixtures(input: {
     await attemptCleanup(collection, 'tanaabot', async () => {
       const keys = await list(`user/${collection}`);
       for (const key of keys) {
-        if (!(await matches(key.title))) continue;
+        if (!(await matches(key.title))) {
+          debug(`resource=${collection} id=${safeId(key.id)} skipped=fixture-mismatch`);
+          continue;
+        }
+        debug(`resource=${collection} id=${safeId(key.id)} fixture=matched`);
         await attemptCleanup(collection, String(key.id), async () => {
           assert.ok(Number.isSafeInteger(key.id), 'invalid-key-id');
           await remove(`user/${collection}/${key.id}`);
@@ -175,8 +227,11 @@ export default async function cleanupGhaFixtures(input: {
         !issue.pull_request &&
         ['emoriwan', 'tanaabot'].includes(String(object(issue.user).login)) &&
         (await matches(issue.title))
-      )
+      ) {
+        debug(`resource=issue id=${safeId(issue.number)} matched`);
         issues.push(issue);
+      } else
+        debug(`resource=issue id=${safeId(issue.number)} skipped=ownership-or-fixture-mismatch`);
   });
   if (issues.length) {
     await attemptCleanup('pull-requests', bucket, async () => {
@@ -191,8 +246,12 @@ export default async function cleanupGhaFixtures(input: {
           object(pull.user).login !== 'tanaabot' ||
           !pullHead.repo ||
           object(pullHead.repo).id !== 1329940218
-        )
+        ) {
+          debug(
+            `resource=pull-request id=${safeId(pull.number)} skipped=ownership-or-time-boundary`,
+          );
           continue;
+        }
         await attemptCleanup('pull-request', String(pull.number), async () => {
           const linked = object(
             await api('POST', 'graphql', {
@@ -210,18 +269,26 @@ export default async function cleanupGhaFixtures(input: {
             !references.nodes.some((node) =>
               issues.some((issue) => issue.node_id === object(node).id),
             )
-          )
+          ) {
+            debug(
+              `resource=pull-request id=${safeId(pull.number)} skipped=no-linked-fixture-issue`,
+            );
             return;
+          }
           if (pull.state !== 'closed' && !input.dryRun)
             await api('PATCH', `repos/${bucket}/pulls/${pull.number}`, {
               state: 'closed',
             });
+          else if (pull.state === 'closed')
+            debug(`resource=pull-request id=${safeId(pull.number)} skipped=already-closed`);
           done(
             'pull-request',
             String(pull.number),
             pull.state !== 'closed' && input.dryRun ? 'would-close' : 'closed',
           );
           const head = object(pull.head);
+          if (typeof head.ref === 'string' && [defaultBranch, 'main', 'master'].includes(head.ref))
+            debug('resource=branch id=ref preserved=protected-branch');
           assert.ok(
             typeof head.ref === 'string' && ![defaultBranch, 'main', 'master'].includes(head.ref),
             'protected-branch',
@@ -267,6 +334,7 @@ export function ghaFixtureCleanupOptions(args: string[], environment: NodeJS.Pro
         attempt: { type: 'string' },
         token: { type: 'string' },
         'dry-run': { type: 'boolean' },
+        debug: { type: 'boolean' },
         json: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
         version: { type: 'boolean', short: 'v' },
@@ -282,6 +350,7 @@ export function ghaFixtureCleanupOptions(args: string[], environment: NodeJS.Pro
     attempt: selector(values.attempt ?? environment.GHA_FIXTURE_CLEANUP_ATTEMPT),
     token: values.token ?? (environment.GH_TOKEN || environment.GITHUB_TOKEN),
     dryRun: values['dry-run'] === true || environment.GHA_FIXTURE_CLEANUP_DRY_RUN !== undefined,
+    debug: values.debug === true,
     json: values.json === true || environment.GHA_FIXTURE_CLEANUP_JSON !== undefined,
     help: values.help,
     version: values.version,
@@ -332,6 +401,15 @@ export async function ghaFixtureCleanupCli(
   try {
     const options = ghaFixtureCleanupOptions(args, environment);
     json = options.json;
+    const diagnostics = options.debug
+      ? (createRequire(import.meta.url)('debug') as (namespace: string) => DebugLogger)(
+          'agent-system:gha-fixture-cleanup',
+        )
+      : undefined;
+    if (diagnostics) {
+      diagnostics.enabled = true;
+      diagnostics.log = (message) => output.writeStderr(`${message}\n`);
+    }
     if (options.version) {
       const metadata = JSON.parse(
         await readFile(new URL('../package.json', import.meta.url), 'utf8'),
@@ -352,6 +430,7 @@ ${styles.bold('options')}
   --attempt <n|*>     source attempt selector
   --token <token>     tanaabot user token
   --dry-run          preview without modifying resources
+  --debug            show request and cleanup progress on stderr
   --json             machine-readable result
   -h, --help         show help
   -v, --version      report package version
@@ -373,6 +452,7 @@ ${styles.bold('environment variables')}
       runId: options.runId,
       attempt: options.attempt,
       dryRun: options.dryRun,
+      ...(diagnostics ? { log: (message: string) => diagnostics(message) } : {}),
       api: dependencies.api ?? ghaFixtureApi(token),
     });
     if (environment.GITHUB_STEP_SUMMARY) {

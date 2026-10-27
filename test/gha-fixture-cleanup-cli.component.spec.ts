@@ -140,6 +140,79 @@ describe('gha fixture cleanup cli', () => {
     }
   });
 
+  it('streams opt-in request progress to stderr without exposing credentials or fixture titles', async () => {
+    const state = fixture();
+    const streams = capture();
+    const secret = 'fixture-title-secret-and-token';
+    state.keys[0]!.title = `${state.keys[0]!.title}${secret}`;
+    let releaseRequest!: () => void;
+    let requestEntered!: () => void;
+    const requestGate = new Promise<void>((resolve) => (releaseRequest = resolve));
+    const entered = new Promise<void>((resolve) => (requestEntered = resolve));
+    const running = ghaFixtureCleanupCli(
+      [...selectors, '--dry-run', '--debug', '--json'],
+      { GH_TOKEN: secret },
+      {
+        api: async (...args) => {
+          requestEntered();
+          await requestGate;
+          return state.api(...args);
+        },
+        output: streams.output,
+      },
+    );
+    await entered;
+    assert.match(
+      streams.stderr(),
+      /request GET repos\/tanaabased\/openclaw-agent-system\/actions\/runs\/100\/attempts\/2 started/u,
+    );
+    releaseRequest();
+    assert.equal(await running, 0);
+    assert.equal(JSON.parse(streams.stdout()).dryRun, true);
+    assert.match(streams.stderr(), /duration=\d+ms/u);
+    assert.match(streams.stderr(), /planned resource=keys id=1 result=would-remove/u);
+    assert.equal(streams.stderr().includes(secret), false);
+    assert.equal(streams.stdout().includes(secret), false);
+    assert.equal(
+      state.calls.some((call) => /^(PATCH|DELETE)/u.test(call)),
+      false,
+    );
+  });
+
+  it('reports attempted mutation outcomes in debug mode and withholds raw failures', async () => {
+    const state = fixture();
+    const streams = capture();
+    const code = await ghaFixtureCleanupCli(
+      [...selectors, '--debug', '--json'],
+      { GH_TOKEN: 'credential-must-not-appear' },
+      {
+        api: state.api,
+        output: streams.output,
+      },
+    );
+    assert.equal(code, 0);
+    assert.match(streams.stderr(), /request DELETE user\/keys\/:id started/u);
+    assert.match(streams.stderr(), /outcome resource=keys id=1 result=removed/u);
+    assert.equal(streams.stderr().includes('credential-must-not-appear'), false);
+
+    const failed = capture();
+    const secret = 'provider-error-secret';
+    const failedCode = await ghaFixtureCleanupCli(
+      [...selectors, '--debug', '--json'],
+      { GH_TOKEN: 'token' },
+      {
+        api: async () => {
+          throw new Error(secret);
+        },
+        output: failed.output,
+      },
+    );
+    assert.equal(failedCode, 1);
+    assert.equal(JSON.parse(failed.stdout()).code, 'cleanup-failed');
+    assert.match(failed.stderr(), /request GET .* failed duration=\d+ms/u);
+    assert.equal((failed.stdout() + failed.stderr()).includes(secret), false);
+  });
+
   it('preserves exit status and keeps credentials and raw errors out of both output modes', async () => {
     const secret = 'neverprintthiscredential';
     for (const json of [false, true]) {
