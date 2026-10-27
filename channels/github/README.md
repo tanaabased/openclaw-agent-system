@@ -7,42 +7,44 @@ authorized feedback on the issue and its linked PR in the same issue chat.
 
 ## Configuration
 
-In `agent.yaml`, set `github.schema-version: 3` and declare `issue-assignment`
-directly under `github`. Identity lists accept quoted `@name`, node IDs, and pinned
-objects. Declare repository owners explicitly; an empty actor list admits no new
-assignments. Mode defaults to Auto; Plan stops after assessment, Work continues an
-actionable plan, and Auto chooses Plan or Work. See the
-[manifest reference](../../MANIFEST.md#githubnotifications) for fields, defaults,
-and runtime limitations.
+Start with an agent workspace that has working [GitHub credentials](../../tools/github/README.md#configuration-reference)
+and [model profiles](../../MANIFEST.md#models). Merge these workflow fields into
+its existing `github` mapping, retaining the token and other tool settings. Replace
+the account and approved owner/actor names with yours:
 
-Independent review requests remain unavailable and warn without stopping supported
-assignment intake. Invalid assessment selections block actionably and are never
-silently replaced. Correct them and refresh context in the same issue chat; no
-Install or replacement conversation is needed.
+```yaml
+github:
+  schema-version: 3
+  username: tanaabot
+  runtimes: [openclaw]
+  allowed-repository-owners: ['@tanaabased']
+  issue-assignment:
+    mode: plan
+    allowed: ['@pirog']
+```
 
-When Plan or an Auto Plan decision holds implementation, ask the agent in that issue chat to implement it and
-open a PR, together or separately. The authenticated operator request authorizes
-only the requested work. The agent keeps the same worktree and returns a quoted
-card linking the issue and PR. If publication is interrupted, continue in that chat
-so it can reconcile the existing attempt without creating another PR.
+This example selects planning for approved assignments. Work continues an actionable
+plan through implementation and PR delivery; Auto chooses Plan or Work and is the
+default when `mode` is omitted. An empty actor list admits no new assignments.
+See the [configuration reference](./ADVANCED.md#configuration-reference) for all
+fields, defaults, identity forms, reviewers, and skill/guidance customization.
+Independent review requests remain unavailable.
 
-Once intake is installed, feedback authors are the union of approved assignment actors
-and configured reviewers. Use `feedback` only for skill/guidance customization; see
-[feedback permissions](../../MANIFEST.md#feedback-permissions). Approved mentions
-in issue comments, PR conversation comments, submitted reviews, and inline
-replies return to the original issue chat. The agent retains its complete private
-answer and composes a separate public reply with the configured feedback skill.
-Inline replies return to their original review thread; other replies return to the
-source issue or PR. Feedback follows the issue stage: Plan investigates and plans;
-Work may implement appropriate changes; Auto may choose Plan or Work. Updates stay
-on the existing PR, with the original assessment and implementation preserved.
-Busy chats queue comments in the shared oldest-eligible capacity pool. Edited or
-removed sources and changed authority stop pending replies; uncertain sends or
-publications are reconciled without repeating them.
+For standalone Codex, use the [Codex setup guide](../../CODEX.md#github-notification-policy)
+and [Codex profile example](./ADVANCED.md#issue-only-profile-example). Codex uses
+native host GitHub authorization rather than the manifest token.
+
+Plans, questions, implementation, and follow-ups belong in the individual issue
+chat. When planning is complete, ask there to implement the plan and open a PR.
+Approved GitHub feedback also returns to that chat; see
+[feedback and public replies](./ADVANCED.md#feedback-and-public-replies) for author
+selection, supported comment surfaces, and publication behavior. Invalid skill
+selections block the affected operation; correct them and refresh context in the
+same chat instead of creating a replacement.
 
 ## Install and Verify
 
-From the configured workspace:
+For OpenClaw, run these operator commands from the configured workspace:
 
 ```sh
 # reconcile declared configuration and inspect readiness.
@@ -56,7 +58,14 @@ openclaw agent-system notifications status --json
 openclaw agent-system notifications refresh --json
 ```
 
-Install also manages the **GitHub Notifications** readiness channel. It shows when
+Install derives the native `github-issue-assignment` automation from this workflow;
+do not add a second job under `automations`. Each agent's retained
+`ISSUE ASSIGNMENTS` chat reports intake, capacity, and obstacles. In OpenClaw it
+appears in **Agent System**; in Codex it appears under **AGENT SYSTEM**, with the
+automation named `📥 ISSUE ASSIGNMENTS`. Follow task progress in the individual
+issue chats. See [activation](./ADVANCED.md#activation) for runtime model requirements.
+
+OpenClaw Install also manages the **GitHub Notifications** readiness channel. It shows when
 an agent needs setup or automation synchronization, and reports recent intake
 health. Remove the supported workflow declaration from the manifest and run Install to deactivate that
 agent's account; there is no separate channel setup. See [channel readiness and
@@ -68,6 +77,6 @@ records; `wait --for plan-ready` requires the retained assessment result.
 
 ## Further Reading
 
-- [CLI reference and V1 retirement](./ADVANCED.md)
+- [Workflow configuration, commands, and recovery](./ADVANCED.md)
 - [Standalone Codex workflows](../../CODEX.md#github-notification-policy)
 - [Presentation contract](./PRESENTATION.md)

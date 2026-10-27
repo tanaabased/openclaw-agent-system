@@ -95,14 +95,9 @@ Git and GitHub use native host commands and authorization. The managed GitHub
 intercept standalone Codex's host `gh`, absolute binaries, HTTP/SDKs, or unrelated
 integrations; it is not a universal GitHub restriction.
 
-- [Codex binding](./skills/codex-binding/SKILL.md) — Bind the standalone plugin to one workspace.
-- [Doctor](./skills/doctor/SKILL.md) — Inspect readiness without applying repairs.
-- [Git CLI](./skills/git-cli/SKILL.md) — Guide native host Git operations.
-- [GitHub CLI](./skills/github-cli/SKILL.md) — Guide native host GitHub operations.
-- [Install](./skills/install/SKILL.md) — Apply Codex setup and synchronize declared automations through the native app.
-- [Task launch](./skills/task-launch/SKILL.md) — Start or reuse the managed task workflow without assignment or scheduled intake.
-- [Task assessment](./skills/task-assessment/SKILL.md) — Assess an admitted task in its native worktree and retain a plan, questions, or a setup blocker.
-- [Model routing](./skills/model-routing/SKILL.md) — Select model and effort candidates for new tasks.
+See the [complete shipped skill inventory](./README.md#skills). Each skill selects
+the owning runtime; a shared skill does not enable OpenClaw-managed credentials or
+tools in standalone Codex.
 
 ## Model Routing
 
@@ -125,7 +120,7 @@ proof that the model is available or that a task is using it.
 
 ## GitHub Notification Policy
 
-V3 [notification policy](./MANIFEST.md#githubnotifications) supports issue-assignment
+V3 [notification policy](./channels/github/ADVANCED.md#configuration-reference) supports issue-assignment
 intake through one managed `github-issue-assignment` schedule and one retained chat,
 `ISSUE ASSIGNMENTS`, displayed under `AGENT SYSTEM`. The automation is named
 `📥 ISSUE ASSIGNMENTS` and uses the workspace’s `models.low` profile. Cadence follows
@@ -210,7 +205,7 @@ the existing reactivation rules and may continue the same attempt.
 
 For assessment without assignment, invoke `$agent-system-task-assessment` with an
 explicit GitHub issue URL and an existing local checkout root in the current chat.
-It uses the bound agent's [assessment selection](./MANIFEST.md#assessment-selection)
+It uses the bound agent's [assessment selection](./channels/github/ADVANCED.md#assessment-selection)
 and returns a saved plan, questions or a setup blocker. No intake activation, new
 chat, checkout preparation, implementation or GitHub posting occurs, even with Work
 or Auto defaults. Matching managed work reuses its verified context and results;
@@ -234,7 +229,7 @@ are rejected before recording. Older saved assessments remain readable. If an ol
 assessment lacks summary source or its revision, recovery reports the summary as
 blocked until the missing evidence is restored through the authorized assessment flow.
 
-Use [assessment selection](./MANIFEST.md#assessment-selection) under
+Use [assessment selection](./channels/github/ADVANCED.md#assessment-selection) under
 `github.issue-assignment` to select an active skill and optional inline
 or file guidance. Dispatch resolves the ID through native skill discovery and retains
 the selected name, source path, instruction digest, and guidance snapshot. The child
@@ -258,18 +253,19 @@ For implementation without another assessment or chat, invoke
 `$agent-system-task-implementation` with the issue URL, existing checkout and an
 authorized actionable plan, or reuse matching retained work. The thin direct collector
 supplies the same implementation payload as managed execution and uses your current
-[implementation selection](./MANIFEST.md#implementation-and-review-selection).
+[implementation selection](./channels/github/ADVANCED.md#implementation-and-review-selection).
 Missing plan details produce a focused question. Manual entry is local-only unless
 you explicitly request PR delivery; supplying a plan does not authorize publication.
 Resume through the returned context and result handoff, not a replacement attempt.
 Stale managed work must recover through its original owner, never manual fallback.
 
-[Implementation and review selections](./MANIFEST.md#implementation-and-review-selection)
+[Implementation and review selections](./channels/github/ADVANCED.md#implementation-and-review-selection)
 use the same trusted selection contract. Work uses the bundled
 [task implementation skill](./skills/task-implementation/SKILL.md) by default;
 review execution remains unavailable.
-[Feedback permissions](./MANIFEST.md#feedback-permissions) are now separate for issue
-assignment and review requests; the removed global setting requires an explicit choice.
+[Issue feedback permissions](./channels/github/ADVANCED.md#feedback-permissions)
+come from approved assignment actors and configured reviewers. Feedback configuration
+customizes the reply skill and guidance; it does not supply another author list.
 
 ### Issue Feedback
 
@@ -495,7 +491,7 @@ presentation failures do not create another PR. Announcement failure also preser
 the PR. Retry an uncertain announcement with `announce` to reconcile the saved text
 and provider receipt; it never blindly repeats a comment POST. `present` only shows
 the saved card and outcome and makes no public write.
-See [recipient configuration](./MANIFEST.md#pull-request-recipients) for defaults.
+See [recipient configuration](./channels/github/ADVANCED.md#pull-request-recipients) for defaults.
 Work-mode publication uses the same delivery operation through the trusted
 continuation runtime. Configured issue feedback also covers its verified delivery PR.
 

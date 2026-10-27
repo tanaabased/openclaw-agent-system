@@ -17,6 +17,7 @@ for operator-owned OpenClaw settings and [CLI Reference](./CLI.md) to apply or i
   - [`memory`](#memory)
   - [`models`](#models)
   - [`schema-version`](#schema-version)
+  - [Skill and guidance values](#skill-and-guidance-values)
   - [Setup](#setup)
 - [Environment resolution](#environment-resolution)
 - [Path projection](#path)
@@ -446,9 +447,9 @@ Codex and OpenClaw read the current bound manifest for visibility; omitted or fa
 hides these details, including on repeated reports. Historical detail does not
 trigger notifications by itself or establish that resources remain or cleanup
 succeeded. Unchanged healthy OpenClaw intake stays silent, even with debug enabled.
-Errors, blockers, responses, and publication outcomes remain visible. This controls
-presentation only; it does not enable runtime logging, change permissions, or
-change the skill or guidance applied to a turn.
+Errors, blockers, responses, and publication outcomes remain visible. In standalone
+Codex, `debug` also enables [permission-hook diagnostic logging](./CODEX.md#runtime-execution-approval).
+It does not change permissions or the skill or guidance applied to a turn.
 
 Inline guidance links to its verified manifest source when available. The text
 shown is the retained snapshot, while the linked file may have changed since then.
@@ -471,274 +472,25 @@ identifiers remain literal and are never casing-converted. See
 
 <a id="githubnotifications"></a>
 
+<a id="version-3-fields"></a>
+<a id="pull-request-recipients"></a>
+<a id="issue-modes"></a>
+<a id="feedback-permissions"></a>
+<a id="assessment-selection"></a>
+<a id="implementation-and-review-selection"></a>
+<a id="issue-only-profile-example"></a>
+<a id="activation"></a>
+
 ### GitHub workflows
 
-Declare `github.schema-version: 3` explicitly for workflow configuration. The
-outer workspace manifest remains `schema-version: 1`; GitHub CLI-only configuration
-needs no workflow version. Unsupported keys and workflow versions fail validation.
+Declare `github.schema-version: 3` for workflows; the outer workspace manifest
+remains `schema-version: 1`. GitHub CLI-only configuration needs no workflow version.
 
-**Current support:** V3 parsing, defaults, identity validation, Codex issue-assignment
-intake, and assessment dispatch are implemented. Authorized Install reconciles the
-owned schedule. Work mode continues actionable assessments through implementation
-and managed PR delivery; Plan mode stops after assessment. Explicitly authorized
-manual delivery remains available after implementation handoff. Configured Codex issue
-feedback resumes the owning chat for explanation and bounded replies, including on its
-verified delivery PR. Codex Auto conditionally continues a recorded Work decision
-through the same implementation and delivery stages. Review requests remain unavailable.
-OpenClaw supports default and enabled host-discovered assessment skills in Plan, Work, and Auto modes.
-Eligible Work and Auto assessments continue in the same issue chat through implementation
-and managed PR delivery. Independent review requests remain unavailable and warn
-without stopping supported issue intake. Invalid explicit assessment skills block
-the affected assessment; no replacement is silently selected. Declarations are checked by enrollment, intake, and
-automation lifecycle owners. A Codex-only declaration does not activate OpenClaw
-intake. Binding and passive discovery never activate work.
-OpenClaw also derives an `Agent System: github-issue-assignment`
-automation from declared issue-assignment policy. It uses the existing automation reconciler,
-`models.default`, and a read-only condition before a durable scan. Its retained
-`ISSUE ASSIGNMENTS` conversation belongs in **Agent System**. Intake uses the
-shared admission contract in separate OpenClaw state; it never uses legacy
-notification files or stores assessment/session status. The separate plan-mode
-dispatch adapter retains routing and native receipts in its own journal. It uses
-the retained credential to create one empty ordinary issue session in the managed
-worktree, then verifies its identity, selected model and effort, and empty/idle state.
-The coordinator then starts one journaled assessment turn. The issue session uses
-`agent_system_dispatch` actions `context` and `result` to verify its binding and
-retain a complete plan, clarification, or setup blocker through the shared assessment
-contract. Later answers refresh context and revise the retained result in the same
-session. An authenticated operator can authorize implementation and linked PR delivery
-in that chat. Admitted feedback follows the same issue stage: Plan stays in planning,
-Work may implement, and Auto may choose with a reasoned decision. Uncertain creation or send
-effects are retained, never repeated.
-For blocked creation confirmation, inspect with `agent_system_dispatch` action
-`inspect` (no `id`), then request action `reconcile` with the saved receipt `id`
-in the existing `ISSUE ASSIGNMENTS` coordinator. Reconciliation reads back the
-original session and attempted turn; it does not create a replacement or resend.
-Ordinary polling recovers accepted/consumed turns missing delivery evidence, but
-skips other blockers. A missing structured result requires continuation in the
-owning issue chat. `retry` cannot reset an already prepared creation request.
-The scheduled conversation uses its owning agent's existing tool access without
-an intake-specific narrowing. Automation inspection detects stale allowances;
-installation reconciles them through the existing automation lifecycle.
-Configured issue feedback uses this same installed schedule and a shared oldest-eligible
-capacity pool. Approved mentions in issue and linked PR conversation comments,
-submitted review bodies/findings, and inline replies resume the owning issue session.
-A busy session queues feedback. Private responses are retained separately from replies
-composed with the selected feedback skill and guidance; missing or changed skills stop
-composition. Replies are source-bound and reauthorized before publication. Edited or
-deleted comments, removed mentions, and reassignment revoke pending replies without
-erasing retained answers or attempts. New eligible edits are admitted once. Moving a
-review's code coordinates alone does not create a new feedback revision. Unknown sends
-and publication outcomes are reconciled, never repeated; confirmed receipts suppress
-self-reply loops. This does not activate independent review assignments.
-Operator automation synchronization is required;
-native chat Install/Doctor cannot yet reconcile or inspect the scheduler.
-
-See [Codex intake](./CODEX.md#github-notification-policy) for inspection and recovery.
-
-Cleanup is installation-wide, not a notification declaration. See
-[shared cleanup settings](./CONFIG.md#shared-cleanup).
-
-#### Version 3 fields
-
-All fields below are directly under `github`.
-
-| Field                       | Default             | Contract                                                                      |
-| --------------------------- | ------------------- | ----------------------------------------------------------------------------- |
-| `schema-version`            | required            | Numeric `3`.                                                                  |
-| `allowed-repository-owners` | required            | Nonempty list of explicit user or organization identities.                    |
-| `runtimes`                  | `[openclaw, codex]` | Nonempty unique selection of those runtimes.                                  |
-| `interval-minutes`          | `5`                 | Integer from 1 through 1440; scheduling and overdue detection cadence.        |
-| `max-concurrent-items`      | `3`                 | Integer >= 1 within the owning intake scope, not a distributed account limit. |
-| `issue-assignment`          | absent              | Declares supported workflow machinery, even with an empty actor list.         |
-| `review-request`            | absent              | Reserved shape; warns and activates no independent review machinery.          |
-
-Issue assignment accepts `paused` (default `false`), `allowed` (default `[]`),
-`mode` (`plan`, `work`, or default `auto`), `reviewers` (default `[]`), and optional
-`assessment`, `implementation`, and `feedback` customization. Each customization
-accepts only `skill` and `guidance`; omission and `{}` use the default skill with no
-extra guidance. Review requests reserve `paused`, `allowed`, `review`, and `feedback`.
-
-Identity lists accept quoted `"@name"`, a GitHub node-ID string, or an object with
-`node-id` and exactly one of `login`, `name`, `owner`, or `org`. Object names omit
-`@`; the aliases all describe the same name and grant no organization membership
-or operator authority. Mixed, inline, and block lists are supported. Bare names,
-numeric database IDs, incomplete objects, and conflicting pins are rejected.
-Provider lookup verifies the identity and its type; actors and reviewers must be
-users. Duplicate identities produce one effective grant or recipient.
-
-Parsing and Validate are offline. Authorized connected consumers resolve identity
-references into non-secret caches scoped to the runtime, workspace, agent, and host
-namespace. Each operation refreshes the identities it uses. A previously resolved
-`@name` stays pinned to its immutable node ID; refresh follows that ID through a
-rename, so reuse of the old name cannot grant a different account authority. Use an
-explicit new node ID to deliberately select another account. Object pins require
-the configured name and ID to match; update their names after a rename. Provider
-failures report a diagnostic rather than becoming empty allowlists. Passive hooks
-may read existing metadata but never perform the lookup or resolve credentials.
-
-Workflows require a literal `github.username`; native Codex host authorization
-supplies GitHub access without consuming the manifest token or reconciling managed
-OpenClaw credentials, keys, CLI configuration, or tool policy. Existing account and
-tool configuration remains under its owning runtime.
-
-#### Pull request recipients
-
-V3 always assigns the original assignment actor, not the issue author. Set
-`issue-assignment.reviewers` to request additional reviews. Reviewers also join the
-workflow's feedback author set. GitHub UI changes and CODEOWNERS requests do not
-grant Agent System feedback authority. Delivery adds missing recipients without
-removing existing assignees or review requests; completed reviews are not requested
-again.
-
-#### Issue modes
-
-`issue-assignment.mode` is optional and defaults to `auto`. Assessment includes
-investigation and initial planning; workspace preparation belongs to runtime dispatch.
-
-| Mode   | Authorized journey                                                                                                                                                                                      |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auto` | Assess, then recommend whether to stop for input or proceed through implementation, validation, and PR delivery. The runtime applies that recommendation within the same PR-delivery ceiling as `work`. |
-| `plan` | Assess the issue and produce an actionable plan or focused questions, then stop before implementation.                                                                                                  |
-| `work` | Assess and plan, then continue through implementation, validation, and verified PR delivery unless blocked or clarification is required.                                                                |
-
-No mode grants merge, deployment, expanded repository scope, or authority to
-change its own mode. Verified approved feedback follows the existing work's trusted stage and may explicitly
-request the shared Plan-to-Work transition. `review-request` and nested feedback do not
-accept a separate mode in this contract. Review behavior will be specified with
-its lifecycle, not borrowed from issue Work mode. Codex supports `plan`, `work`, and opt-in [`auto`](./CODEX.md#auto-mode). Auto requires
-explicit saved workflow activation and a recorded Work decision. OpenClaw continues eligible Work/Auto issues in their existing chats on the next
-intake pass, within shared capacity. Clarification pauses implementation without
-revoking its stage; an answer resumes through the owning context without renewed approval.
-
-#### Feedback permissions
-
-The identity-deduplicated union of `issue-assignment.allowed` and
-`issue-assignment.reviewers` controls feedback on the issue and its linked PR.
-Omitted `feedback` and `feedback: {}` both retain that author set. `feedback`
-accepts only optional `skill` and `guidance`, using the
-[assessment selection](#assessment-selection) forms. The default skill is
-`agent-system:agent-system-github-reply`. Missing or changed selected skills
-stop composition rather than silently falling back.
-
-There is no independent feedback-off switch or replacement author list in V3.
-Author and customization edits apply live; scheduler pause does not revoke
-feedback authority. Empty actor and reviewer lists approve nobody while retaining
-the parent machinery. Source verification, stage restrictions, admission cutoffs,
-and duplicate-publication protection still apply.
-
-#### Assessment selection
-
-Configure `github.issue-assignment.assessment` to select one assessment
-skill and optionally supplement it with trusted profile guidance. Neither field grants
-implementation or publication authority. Applicable repository instructions and runtime
-boundaries remain controlling.
-
-| Field      | Type               | Required | Default                                     | Description                                                                |
-| ---------- | ------------------ | -------- | ------------------------------------------- | -------------------------------------------------------------------------- |
-| `guidance` | string or `{file}` | no       | none                                        | Nonempty single-line or multiline text, or one UTF-8 file; at most 32 KiB. |
-| `skill`    | string             | no       | `agent-system:agent-system-task-assessment` | ID of one enabled, host-discoverable skill.                                |
-
-Skill IDs accept `skill-name`, `$skill-name`, `plugin:skill-name`, and
-`$plugin:skill-name`. Surrounding spaces and the optional `$` are removed; case is
-preserved. An unqualified name must identify exactly one enabled skill. Use its
-plugin-qualified name to disambiguate. Paths, URLs, inline workflows, and automatic
-skill installation are unsupported. Repository-owned skills are eligible when the
-host discovers them; a skill file path is not a manifest selection mechanism.
-
-```yaml
-issue-assignment:
-  mode: plan
-  assessment:
-    skill: $agent-system:agent-system-task-assessment
-    guidance: |
-      Challenge unnecessary scope.
-      Prefer small, independently reviewable changes.
-```
-
-Alternatively, use `guidance: {file: guidance/assessment.md}`. Paths resolve from the
-stable bound agent workspace, not the issue worktree or manifest directory. Absolute
-paths, traversal, symlinks, nonregular files, invalid UTF-8, empty text, and NULs are
-rejected. Inline and file forms are mutually exclusive. Guidance files contain
-instructions, not secrets; their contents are retained privately with the assessment.
-
-Omitting both fields uses the default skill. Guidance alone supplements that default;
-a replacement runs alone, with guidance when supplied. Agent System owns generic
-defaults, company skills may live in Canon, and the bound workspace owns selection
-and preferences. A replacement may use the recommended structured result and direct
-submission, as the default skill does, or produce an ordinary assessment without
-Agent System commands, result fields, or required headings. For ordinary output, the
-host supplies verified context, retains the complete assessment, and derives the same
-internal result for saving and display. Integrated results are not adapted a second
-time. The full assessment remains the source of truth for either approach; summaries
-and status must preserve its conditions, uncertainty, and unresolved decisions.
-
-In OpenClaw, each refreshed, unsubmitted assessment context resolves current skill
-content and guidance from the bound workspace without Install or a new issue chat.
-Submitted turns retain their consumed instructions and complete results; recovery
-returns those inputs rather than rewriting history. A later answer can revise the
-assessment in the same conversation. Missing, disabled, ambiguous, or unreadable
-explicit skills and invalid guidance stop the affected
-assessment with an actionable diagnostic instead of silently changing its procedure.
-Currently, skill resolution supports host-discovered local `SKILL.md` sources.
-OpenClaw matches exact catalog names or skill keys, plus built-in Agent System
-aliases; qualified IDs must be exposed by that catalog, never inferred from paths.
-
-#### Implementation and review selection
-
-`issue-assignment.implementation` and `review-request.review` accept the same
-optional `skill` and `guidance` fields and contained guidance forms as
-[assessment selection](#assessment-selection). Implementation defaults to
-`agent-system:agent-system-task-implementation`; review has no executable default
-yet. Omit `skill` to retain the stage default, including when supplying only guidance. These declarations alone do not enable
-execution. In standalone Codex, activating Work mode through Install authorizes
-assessment, implementation with the selected skill, and managed PR publication
-without routine stage approvals; see [Work mode](./CODEX.md#work-mode). Assessment is shared by Plan, Work, and Auto; Work and Auto share
-implementation. Independent PR review has its own review stage. Arbitrary stage
-graphs are unsupported.
-
-The surrounding Agent System workflow owns the internal versioned result contract:
-`assessment-result/v1`, `implementation-result/v1`, or `review-result/v1`. Selected
-implementation and review skills provide substantive analysis; they need not know
-Agent System commands, receipt fields, result payloads, or output headings. The
-workflow must preserve their evidence, plans, questions, and uncertainty when
-adapting output, without inventing missing findings. The runtime binds results to
-admitted work, the native turn/worktree, routing and skill selection, policy, and
-processed evidence. Review results report continue, wait, done, or a blocker;
-the skill owns tests, analysis, findings, and substantive completion criteria.
-Done may occur on the first pass and covers only the evidence processed. New
-head/base revisions, check attempts/results (including same-commit reruns),
-authorized feedback revisions, or request events can warrant another pass.
-Closure or lost authority is a stop reason, not a successful review.
-
-#### Issue-only profile example
-
-```yaml
-schema-version: 1
-agent:
-  id: pirog
-github:
-  schema-version: 3
-  username: pirog
-  runtimes: [codex]
-  allowed-repository-owners: ['@tanaabased', '@pirog', '@lando']
-  issue-assignment:
-    mode: plan
-    allowed: ['@pirog']
-```
-
-#### Activation
-
-A supported workflow declaration plus runtime selection determines required
-machinery. Empty `allowed` controls admission, not channel, session, or scheduler
-provisioning. Adding approved actors later is a live-policy change. Omitted
-workflows and reserved review requests activate no machinery.
-
-Install reconciles the selected runtime's channel/session/scheduler prerequisites
-and establishes the first-activation baseline. Passive discovery never activates
-work. `paused: true` is Install-reconciled desired state for future schedule
-occurrences; accepted runs, existing issue work, and feedback authority retain their
-own rules. Repeated Install reuses retained jobs, channels, and baseline evidence.
-See [Codex intake](./CODEX.md#github-notification-policy).
+The [GitHub configuration reference](./channels/github/ADVANCED.md#configuration-reference)
+owns workflow fields, defaults, identity lists, modes, stage customization, and
+activation. GitHub account, credential, and CLI settings remain in the
+[GitHub tool guide](./tools/github/README.md#configuration-reference).
+Use the [setup guide](./channels/github/README.md) for the common installation path.
 
 ### `memory`
 
@@ -882,6 +634,42 @@ For standalone Codex task selection, see [Codex model routing](./CODEX.md#model-
 | integer | yes      | `1`     |
 
 Identifies the manifest schema. Version `1` is the only accepted value.
+
+### Skill and guidance values
+
+`models.routing` and GitHub workflow stage customizations accept the same object:
+
+| Field      | Type                         | Required | Default                  | Description                                                                |
+| ---------- | ---------------------------- | -------- | ------------------------ | -------------------------------------------------------------------------- |
+| `guidance` | string or `{ file: string }` | no       | none                     | Nonempty single-line or multiline text, or one UTF-8 file; at most 32 KiB. |
+| `skill`    | string                       | no       | consumer's default skill | ID of one enabled, host-discoverable skill.                                |
+
+Omission or `{}` uses the consumer's default skill without extra guidance. Guidance
+alone supplements that default; a replacement skill runs alone, with guidance when
+supplied. These fields select instructions, not execution or publication authority.
+
+Skill IDs accept `skill-name`, `$skill-name`, `plugin:skill-name`, and
+`$plugin:skill-name`. Surrounding spaces and the optional `$` are removed; case is
+preserved. An unqualified name must identify exactly one enabled skill. Use its
+plugin-qualified name to disambiguate. Paths, URLs, inline workflows, and automatic
+skill installation are unsupported. Repository-owned skills are eligible when the
+host discovers them; a skill file path is not a manifest selection mechanism.
+OpenClaw matches exact catalog names or skill keys, plus built-in Agent System
+aliases; qualified IDs must be exposed by that catalog, never inferred from paths.
+Current resolution supports host-discovered local `SKILL.md` sources.
+
+With `guidance: { file: guidance/assessment.md }`, the path resolves from the stable
+bound agent workspace, not the issue worktree or manifest directory. Absolute paths,
+traversal, symlinks, nonregular files, invalid UTF-8, empty text, and NULs are rejected.
+Inline and file forms are mutually exclusive. Guidance files contain instructions,
+not secrets; consumed instructions are retained privately with the operation.
+
+Missing, disabled, ambiguous, or unreadable explicit skills and invalid guidance
+stop the affected operation instead of selecting a replacement. Instruction edits
+apply to new or refreshed, unsubmitted operations without Install; submitted work
+retains its consumed inputs for recovery. See [model routing](#models) and
+[GitHub stage selection](./channels/github/ADVANCED.md#assessment-selection) for
+their defaults, examples, and supported behavior.
 
 ### Setup
 

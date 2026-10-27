@@ -45,12 +45,17 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 
 ### Tools
 
+Native tools run in OpenClaw, including OpenClaw-hosted Codex. Standalone Codex
+uses the [shared skills](#skills) through its native host interfaces.
+
+- [`agent_system_dispatch`](./tools/dispatch/README.md) — Coordinate managed issue work, direct assessment, implementation, replies, and retirement.
 - [`agent_system_doctor`](./tools/doctor/README.md) — Inspect the active agent’s readiness and run declared checks after chat approval.
 - [`agent_system_git`](./tools/git/README.md) — Runs ordinary Git commands with the agent's identity, SSH configuration, signing, and operation policy.
-- [`agent_system_git_worktree`](./tools/git/README.md#gitworktrees) — Prepares, lists, and removes durable managed worktrees.
+- [`agent_system_git_worktree`](./tools/git/README.md#agent_system_git_worktree) — Prepares, lists, and removes durable managed worktrees.
 - [`agent_system_github`](./tools/github/README.md) — Runs ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
 - [`agent_system_google`](./tools/google/README.md) — Runs Google data commands with the agent's verified account and isolated OAuth credentials.
 - [`agent_system_install`](./tools/install/README.md) — Apply the active agent’s configuration and setup after chat approval.
+- [`agent_system_intake`](./tools/intake/README.md) — Inspect or scan GitHub assignments without creating task sessions.
 - [`agent_system_model_routing`](./tools/model-routing/README.md) — Resolve model and effort candidates from the agent's profiles.
 
 ### GitHub Workflows
@@ -60,12 +65,13 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 ### CLI
 
 - [`openclaw agent-system automations`](./CLI.md#openclaw-agent-system-automations-list) — Inspect, sync, and run declared jobs and read their history.
-- [`openclaw agent-system backup`](./CLI.md#openclaw-agent-system-backup-create) — Create, verify, restore, and prune workspace backups.
-- [`openclaw agent-system credentials set op`](./CLI.md#openclaw-agent-system-credentials-set-op) — Store the agent’s 1Password bootstrap credential.
+- [`openclaw agent-system backup`](./CLI.md#openclaw-agent-system-backup-create) — Create, verify, restore, and prune backups; clean up abandoned temporary artifacts.
+- [`openclaw agent-system credentials`](./CLI.md#openclaw-agent-system-credentials-set-op) — Set, validate, and remove the 1Password bootstrap credential; inspect and flush its cache.
 - [`openclaw agent-system doctor`](./CLI.md#openclaw-agent-system-doctor) — Inspect readiness and drift.
 - [`openclaw agent-system env`](./CLI.md#openclaw-agent-system-env) — Inspect environment sources without exposing values.
 - [`openclaw agent-system install`](./CLI.md#openclaw-agent-system-install) — Apply configuration and dependency setup.
-- [`openclaw agent-system notifications`](./CLI.md#openclaw-agent-system-notifications) — Refresh and inspect GitHub assignments.
+- [`openclaw agent-system instance`](./CLI.md#openclaw-agent-system-instance-inspect) — Inspect or rename the installation identity, or explicitly rotate its ID.
+- [`openclaw agent-system notifications`](./channels/github/ADVANCED.md#cli) — Refresh, inspect, wait for, or reset GitHub notification management.
 - [`openclaw agent-system tool`](./CLI.md#openclaw-agent-system-tool) — Run a configured tool as the agent.
 - [`openclaw agent-system validate`](./CLI.md#openclaw-agent-system-validate) — Validate the workspace manifest.
 - [Complete CLI reference](./CLI.md) — All commands, options, and examples.
@@ -82,10 +88,16 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 - [Git CLI](./skills/git-cli/SKILL.md) — Work with the agent's Git identity and policy.
 - [Git worktree](./skills/git-worktree/SKILL.md) — Prepare, reuse, and remove managed worktrees.
 - [GitHub CLI](./skills/github-cli/SKILL.md) — Work through the agent's GitHub account.
-- [Task Update](./skills/task-update/SKILL.md) — Publish missing progress from a private notification session.
+- [GitHub reply](./skills/github-reply/SKILL.md) — Compose a reply using the agent's configured guidance and voice; publish only when authorized.
 - [Google CLI](./skills/google-cli/SKILL.md) — Work through the agent's Google account.
 - [Install](./skills/install/SKILL.md) — Install the active workspace through its owning runtime.
 - [Model routing](./skills/model-routing/SKILL.md) — Select model and effort candidates for new tasks.
+- [Notifications reset](./skills/notifications-reset/SKILL.md) — Reset notification tracking, with optional purge of managed chats and checkouts.
+- [Task assessment](./skills/task-assessment/SKILL.md) — Investigate an issue and retain a plan, questions, or a setup blocker.
+- [Task implementation](./skills/task-implementation/SKILL.md) — Implement an authorized issue plan in the existing checkout.
+- [Task launch](./skills/task-launch/SKILL.md) — Start or reuse managed issue work without assignment or scheduled intake.
+- [Task retirement](./skills/task-retirement/SKILL.md) — Retire one managed task without closing or unassigning its issue.
+- [Task update](./skills/task-update/SKILL.md) — Publish material progress missing from the issue when requested.
 
 ## Installation
 

@@ -36,12 +36,18 @@ remain separate.
 - [`openclaw agent-system tool`](#openclaw-agent-system-tool)
 - [`openclaw agent-system validate`](#openclaw-agent-system-validate)
 
+<a id="openclaw-agent-system-notifications"></a>
+
 **Component commands**
 
-- [`openclaw agent-system notifications`](#openclaw-agent-system-notifications) — GitHub notifications.
+- [`openclaw agent-system notifications refresh`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-refresh) — Request a run of the installed workflow.
+- [`openclaw agent-system notifications reset`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-reset) — Reset tracking, optionally purging managed resources.
+- [`openclaw agent-system notifications status`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-status) — Inspect retained workflow state.
+- [`openclaw agent-system notifications wait`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-wait) — Wait for a workflow checkpoint.
 - [`openclaw agent-system tool gh`](./tools/github/README.md#cli) — GitHub CLI commands.
 - [`openclaw agent-system tool git`](./tools/git/README.md#cli) — Git commands and managed worktrees.
 - [`openclaw agent-system tool gog`](./tools/google/README.md#openclaw-agent-system-tool-gog) — Google commands.
+- [`openclaw agent-system tool worktree`](./tools/git/README.md#openclaw-agent-system-tool-worktree----list) — List, prepare, or remove managed worktrees.
 
 **Execution reference**
 
@@ -882,31 +888,6 @@ openclaw agent-system validate [--agent <id>] [--json]
 # validate the current workspace manifest without changing state.
 openclaw agent-system validate --json
 ```
-
-## `openclaw agent-system notifications`
-
-Show help for the GitHub notification commands.
-
-### Options
-
-No command-specific options.
-
-### Usage
-
-```text
-openclaw agent-system notifications
-```
-
-```sh
-# list the available notification subcommands.
-openclaw agent-system notifications
-```
-
-Subcommands:
-
-- [`openclaw agent-system notifications refresh`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-refresh)
-- [`openclaw agent-system notifications status`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-status)
-- [`openclaw agent-system notifications wait`](./channels/github/ADVANCED.md#openclaw-agent-system-notifications-wait)
 
 ## Credential Storage
 

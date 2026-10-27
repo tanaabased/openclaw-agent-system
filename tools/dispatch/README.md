@@ -3,6 +3,38 @@
 Managed issue operations share the existing native workflow owners. For assessment-only
 or implementation in the current chat, use their separate skills.
 
+## `agent_system_dispatch`
+
+This OpenClaw tool binds operations to the active agent and native conversation.
+Standalone Codex uses the corresponding trusted runtime adapters described by the
+same skills. Start with the skill for the requested operation; its returned context
+supplies the current request, required inputs, and recovery instructions.
+
+| Capability                                           | Action                                | Owning instructions                                                                           |
+| ---------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Assess an issue in the current checkout              | `assessment`                          | [Task Assessment](../../skills/task-assessment/SKILL.md)                                      |
+| Implement an authorized plan in the current checkout | `implementation`                      | [Task Implementation](../../skills/task-implementation/SKILL.md)                              |
+| Launch or reuse managed issue work                   | `launch`                              | [Task Launch](../../skills/task-launch/SKILL.md) and [launch reference](#manual-issue-launch) |
+| Reply to an exact GitHub destination                 | `reply`                               | [GitHub Reply](../../skills/github-reply/SKILL.md)                                            |
+| Retire one managed task                              | `retire`                              | [Task Retirement](../../skills/task-retirement/SKILL.md)                                      |
+| Update an issue with verified progress               | `reply` with `purpose: status-update` | [Task Update](../../skills/task-update/SKILL.md)                                              |
+
+The same tool supplies operations for the installed workflow:
+
+| Purpose                                      | Actions                                                                  |
+| -------------------------------------------- | ------------------------------------------------------------------------ |
+| Continue implementation and deliver its PR   | `handoff`, `implementation-context`, `implementation-result`, `delivery` |
+| Coordinate admitted work                     | `check`, `next`, `prepare`, `start`, `assess`, `report`                  |
+| Handle verified issue and linked-PR feedback | `feedback`                                                               |
+| Inspect and recover existing work            | `inspect`, `reconcile`, `retry`, `present`                               |
+| Retain assessment and its summary            | `context`, `result`, `summary`                                           |
+
+These are workflow operations, not an interchangeable command sequence. Use the
+saved task context and the owning skill; a receipt, plan, or tool name alone does
+not authorize implementation or publication. Exact request variants remain in the
+[tool schema](./tool-schema.ts). Shared behavior and operator recovery belong in
+the [GitHub workflow guide](../../channels/github/ADVANCED.md).
+
 ## Manual Issue Launch
 
 Use `$agent-system-task-launch` with an issue URL, `owner/repo#number`, repository

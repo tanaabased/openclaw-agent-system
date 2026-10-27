@@ -15,21 +15,34 @@ boundaries, not a checklist of files to update; leave aligned documents unchange
 | [API.md](./API.md)                                                   | Public planning surface for the future cross-plugin Tool API; explicitly not yet available.                                                                                                                 |
 | [CHANGELOG.md](./CHANGELOG.md)                                       | Implemented changes.                                                                                                                                                                                        |
 | `channels/<provider>/README.md`                                      | Each channel's common setup, configuration example, verification, and essential limitations. Use a sibling `ADVANCED.md` as the first expansion for complete references and less-common operational detail. |
-| [channels/github/ADVANCED.md](./channels/github/ADVANCED.md)         | Shipped notification configuration and commands, model routing, processing, security, and upgrades.                                                                                                         |
+| [channels/github/ADVANCED.md](./channels/github/ADVANCED.md)         | GitHub workflow fields and defaults, notification commands, shared workflow behavior, and operator recovery.                                                                                                |
 | [channels/github/PRESENTATION.md](./channels/github/PRESENTATION.md) | Reusable human-visible notification components and styling; no lifecycle or feature behavior.                                                                                                               |
 | [cli/PRESENTATION.md](./cli/PRESENTATION.md)                         | Shared CLI palette, spacing, diagnostic placement, and authoring verification.                                                                                                                              |
-| [CLI.md](./CLI.md)                                                   | Common commands and execution boundaries.                                                                                                                                                                   |
+| [CLI.md](./CLI.md)                                                   | Complete core command references, a linked index of component commands, and shared execution boundaries.                                                                                                    |
 | [CODEX.md](./CODEX.md)                                               | Standalone Codex installation, binding, context, setup, model routing, and development. Keep OpenClaw-hosted Codex behavior with its owning OpenClaw feature.                                               |
 | [CONFIG.md](./CONFIG.md)                                             | Operator-owned installation settings and OpenClaw plugin options.                                                                                                                                           |
 | [DEVELOPMENT.md](./DEVELOPMENT.md)                                   | OpenClaw source installation, DevGuard, runtime logging, validation, and coding standards.                                                                                                                  |
 | `DOCUMENTATION.md`                                                   | Documentation ownership, change gates, and reference formats.                                                                                                                                               |
-| [MANIFEST.md](./MANIFEST.md)                                         | Workspace manifest discovery, schema, setup, environment resolution, and path projection.                                                                                                                   |
+| [MANIFEST.md](./MANIFEST.md)                                         | Workspace discovery, shared fields and value rules, setup, environment resolution, path projection, and links to component configuration owners.                                                            |
 | [README.md](./README.md)                                             | Product positioning, installation, version compatibility, the common manifest workflow, and first verification.                                                                                             |
 | `tools/<capability>/README.md`                                       | Each tool's complete configuration, invocation, policy, lifecycle, and security guide.                                                                                                                      |
+| [UPGRADING.md](./UPGRADING.md)                                       | Release transitions, migration requirements, backup precautions, and cutover warnings.                                                                                                                      |
 
 Keep root summaries short and link to the owning tool or channel guide. Link shared
 manifest rules, such as model routing, instead of reproducing them. Use contextual
 links to standalone Codex guidance rather than spreading it across OpenClaw docs.
+
+The README owns the complete shipped skill and tool inventory and a command-family
+index. Skills own agent execution instructions; tool guides explain their public
+interfaces without duplicating runtime protocol choreography. Component command
+options and examples belong in their tool or channel guide, linked from `CLI.md`.
+
+Keep shared skill/guidance value rules and automation declaration/schedule syntax
+in `MANIFEST.md`. GitHub workflow fields and its derived assignment automation belong
+in the channel guide; Git, GitHub CLI, and Google fields belong in their tool guides.
+`CLI.md` owns operator automation commands; `CODEX.md` owns Codex-specific setup,
+automation support, and limitations. Link shared workflow behavior to the channel
+guide rather than maintaining a second reference in `CODEX.md`.
 
 ## README Marketing
 
