@@ -17,7 +17,11 @@ import {
   externalGoogleSectionSchema,
 } from '../tools/google/config-schema.ts';
 import { decodeGitSection, externalGitSectionSchema } from '../tools/git/config-schema.ts';
-import { decodeGitHubSection, externalGitHubSectionSchema } from './github-schema.ts';
+import {
+  decodeGitHubSection,
+  externalGitHubSectionSchema,
+  hasGitHubWorkflowConfiguration,
+} from './github-schema.ts';
 import { validateGitHubNotificationPolicy } from '../channels/github/notification-policy.ts';
 import { decodeAgentMemory, externalAgentMemorySchema } from './memory-schema.ts';
 import { decodeAgentModels, externalAgentModelsSchema } from './models-schema.ts';
@@ -400,11 +404,7 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
         ...externalAgentManifestSchema.properties,
         github: Type.Optional(
           externalGitHubSectionSchema.anyOf[
-            isRecord(value) &&
-            isRecord(value.github) &&
-            Object.hasOwn(value.github, 'schema-version')
-              ? 1
-              : 0
+            isRecord(value) && hasGitHubWorkflowConfiguration(value.github) ? 1 : 0
           ]!,
         ),
       },
