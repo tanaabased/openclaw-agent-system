@@ -1,10 +1,8 @@
-import { constants } from 'node:fs';
-import { open } from 'node:fs/promises';
-
 import { parseManifestYaml } from './parse.ts';
+import readBoundedManifestBytes, { maximumManifestBytes } from './read-bytes.ts';
 import type { ManifestDiagnostic } from './types.ts';
 
-export const maximumManifestBytes = 1024 * 1024;
+export { maximumManifestBytes } from './read-bytes.ts';
 
 /** read bounded bytes without following a file symlink, including during cache inspection. */
 export async function readManifestBytes(
@@ -18,29 +16,15 @@ export async function readManifestBytes(
     diagnostics: [{ code, message, severity: 'error' as const, sourcePath: path }],
   });
   try {
-    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-    try {
-      const stats = await file.stat();
-      if (!stats.isFile())
-        return failure('manifest-not-regular-file', 'The manifest must be a regular file.');
-      // a bounded read also covers a file growing after discovery.
-      const buffer = Buffer.alloc(maximumManifestBytes + 1);
-      let size = 0;
-      while (size < buffer.length) {
-        const { bytesRead } = await file.read(buffer, size, buffer.length - size, null);
-        if (!bytesRead) break;
-        size += bytesRead;
-      }
-      if (size > maximumManifestBytes)
-        return failure(
-          'manifest-too-large',
-          `The manifest exceeds the ${maximumManifestBytes}-byte size limit.`,
-        );
-      const contents = buffer.subarray(0, size);
-      return { status: 'valid', path, contents };
-    } finally {
-      await file.close();
-    }
+    const file = await readBoundedManifestBytes(path);
+    if (file.status === 'not-regular')
+      return failure('manifest-not-regular-file', 'The manifest must be a regular file.');
+    if (file.status === 'too-large')
+      return failure(
+        'manifest-too-large',
+        `The manifest exceeds the ${maximumManifestBytes}-byte size limit.`,
+      );
+    return { status: 'valid', path, contents: file.contents };
   } catch {
     return failure('manifest-load-failed', 'The manifest could not be read safely.');
   }

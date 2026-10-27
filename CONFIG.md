@@ -1,16 +1,19 @@
 # Global Configuration
 
-Installation housekeeping is shared by OpenClaw and standalone Codex. OpenClaw-only
-plugin options remain under `plugins.entries.agent-system.config`. Workspace
-declarations belong in the [manifest](./MANIFEST.md).
+Global settings use two locations: a shared `config.yaml` for cleanup and OpenClaw's
+plugin configuration for collaboration and credential caching. Workspace declarations
+belong in the [manifest](./MANIFEST.md).
 
-- [Shared cleanup](#shared-cleanup)
-- [`collaboration`](#collaboration)
-- [`opCache`](#opcache)
+- [`config.yaml`](#configyaml)
+  - [`schema-version`](#schema-version)
+  - [`cleanup`](#cleanup)
+- [OpenClaw plugin configuration](#openclaw-plugin-configuration)
+  - [`collaboration`](#collaboration)
+  - [`opCache`](#opcache)
 
-## Shared cleanup
+## `config.yaml`
 
-Choose automatic retirement grace once in
+The shared `schema-version` and `cleanup` settings belong in
 `<XDG_CONFIG_HOME>/tanaab/agent-system/config.yaml`, or
 `<HOME>/.config/tanaab/agent-system/config.yaml` when `XDG_CONFIG_HOME` is unset.
 Roots must be absolute. Both host processes must use the same configuration root;
@@ -24,33 +27,49 @@ cleanup:
   grace-minutes: 60
 ```
 
-| Field                   | Required | Default | Contract                          |
-| ----------------------- | -------- | ------- | --------------------------------- |
-| `cleanup.grace-minutes` | no       | `60`    | Integer from `0` through `43200`. |
-| `schema-version`        | yes      | none    | `1` when the file exists.         |
+### `schema-version`
+
+| Type    | Required                  | Default |
+| ------- | ------------------------- | ------- |
+| integer | yes, when the file exists | none    |
+
+Use `1`, the only supported version.
+
+<a id="shared-cleanup"></a>
+
+### `cleanup`
+
+Controls the grace period for automatic managed-task retirement.
+
+| Field           | Type    | Required | Default | Description                                                |
+| --------------- | ------- | -------- | ------- | ---------------------------------------------------------- |
+| `grace-minutes` | integer | no       | `60`    | Minutes before eligible cleanup, from `0` through `43200`. |
 
 A missing file or omitted grace uses 60 minutes. An unreadable, unsafe, malformed,
 or unsupported file holds cleanup with a diagnostic instead of using a fallback.
 There is no enable/disable switch or per-agent override.
 
-Both runtimes reread settings each lifecycle pass and before resource effects;
-a change during final verification defers the effect to the next pass. Existing
-deadlines survive settings edits, polls, and restarts. New deadlines and genuine
-activity resets use the current grace. Cleanup still requires the owning runtime's
-[ownership and preservation checks](./channels/github/ADVANCED.md#assignment-lifecycle);
-zero grace never bypasses them.
+Both runtimes check these settings before cleanup. A change during the final check
+defers cleanup to the next pass. Existing deadlines survive edits, polls, and restarts;
+new deadlines and activity resets use the current grace period. Even zero grace keeps
+the [ownership and preservation checks](./channels/github/README.md#task-retirement).
 
-## `collaboration`
+## OpenClaw plugin configuration
+
+Set these options under `plugins.entries.agent-system.config` in OpenClaw.
+Standalone Codex does not manage them.
+
+### `collaboration`
 
 | Type                                                                  | Required | Default  |
 | --------------------------------------------------------------------- | -------- | -------- |
 | `"auto"`, `"all"`, `false`, or an array of exact registered agent IDs | no       | `"auto"` |
 
-Ordinary install reconciles collaboration. `"auto"` selects registered Agent
-System-managed agents. `"all"` permits every OpenClaw agent, including unmanaged
-agents and future registrations. A list selects exact registered IDs, including
-unmanaged agents; unregistered IDs produce a warning. `false` or `[]` withdraws
-only Agent System-owned grants, not independently configured operator access.
+Install applies collaboration settings on each run. `"auto"` selects registered Agent
+System-managed agents. `"all"` permits every OpenClaw agent, including unmanaged agents
+and future registrations. A list selects exact registered IDs, including unmanaged
+agents; unregistered IDs produce a warning. `false` or `[]` withdraws only Agent
+System-owned grants, not independently configured operator access.
 
 ```sh
 # select registered managed agents, then reconcile from a managed workspace.
@@ -66,48 +85,37 @@ openclaw config set plugins.entries.agent-system.config.collaboration false --st
 openclaw agent-system install
 ```
 
-Fresh `auto` with fewer than two managed agents leaves native settings untouched
-and reports not applicable. A previously configured team still gets ownership
-cleanup. Already sufficient native enablement, visibility, and allow rules stay
-unchanged, including an unrestricted host. Otherwise install unions required IDs
-with existing `tools.agentToAgent.allow` entries, enables agent-to-agent access,
-and sets `tools.sessions.visibility=all` as needed. On a disabled host with no
-allow entries, exact selected IDs are written together with enablement.
+Install enables agent-to-agent access and `tools.sessions.visibility=all` as needed,
+combining selected IDs with existing `tools.agentToAgent.allow` entries. Already
+sufficient settings stay unchanged. On first setup, `auto` with fewer than two
+managed agents does nothing; later installs still remove obsolete owned grants.
+Missing or invalid managed workspaces block `auto` discovery.
 
-These **global** settings grant session reading and messaging, subject to native
-tool and sandbox restrictions. They cannot create isolated teams: retained
-external participants share access with selected agents. Install reports effective
-entries and notices newly connected external IDs or patterns. No extra flag,
-confirmation, or off/on sequence is needed; ordinary Doctor inspects without
-repairing state. Unrelated tool, sandbox, credential, and workspace permissions
-are unchanged.
+> [!IMPORTANT]
+> Collaboration settings apply globally. Participants can read sessions and send
+> messages, subject to native tool and sandbox restrictions. They do not form isolated
+> teams; retained external participants share access.
 
-Pre-existing exact IDs and matching wildcard patterns remain operator-owned.
-`all` adds an owned `*` only when unrestricted access is not already granted.
-Returning to `auto` withdraws that owned wildcard and establishes the required
-managed IDs while retaining operator entries. Changing selections or removing
-agents withdraws only owned grants; cleanup that empties the list disables access
-in the same write, because OpenClaw treats an empty list as unrestricted. Cleanup
-does not restore session visibility.
+Install reports the resulting grants and newly connected participants; Doctor only
+inspects them. Other permissions remain unchanged.
 
-Native OpenClaw deletion prunes exact allow entries itself, but does not disable
-access when the list empties or remove Agent System's ownership receipt. There
-is no supported agent-deletion plugin hook for immediate reconciliation. The next
-ordinary install cleans up the receipt and remaining owned grants. **Before
-deleting the final managed agent, withdraw owned grants with `false` and install
-from its workspace.** After it is gone there is no workspace-free cleanup command;
-if deletion already emptied an enabled allowlist, disable native agent-to-agent
-access explicitly until reconciliation can run from a managed workspace. Missing
-or invalid registered managed workspaces block `auto` discovery rather than
-being treated as deleted agents. No background reconciler runs.
+Operator-owned IDs and wildcard grants are preserved. `all` adds an owned `*` only
+when needed; returning to `auto` removes it and restores the managed-agent selection.
+Removing agents or changing selections withdraws only owned grants. If that empties
+the allowlist, Install disables access because OpenClaw treats an empty enabled list
+as unrestricted. Cleanup does not restore session visibility.
 
-`collaborationState` is an install-owned receipt beside this setting. It records
-only introduced grants (exact IDs or `*`), selection, and empty-list shutdown.
-Do not edit or delete it: effective access alone never proves ownership.
-Configuration and ownership commit together. Standalone Codex does not manage
-this OpenClaw capability.
+> [!WARNING]
+> Before deleting the final managed agent, set `collaboration: false` and run Install
+> from its workspace. Native deletion removes IDs but can leave an enabled empty
+> allowlist, which OpenClaw treats as unrestricted. No background process repairs it.
+> If this has already happened, disable native agent-to-agent access until you can
+> run Install from a managed workspace.
 
-## `opCache`
+Leave the adjacent `collaborationState` key unchanged. Install uses this saved record
+to identify which grants Agent System may remove.
+
+### `opCache`
 
 Controls in-memory reuse of 1Password clients and resolved values. Gateway tools
 share the cache; separate CLI processes do not. GitHub responses, permissions,
@@ -138,9 +146,9 @@ openclaw agent-system credentials cache flush --agent data --json
 See [`status`](./CLI.md#openclaw-agent-system-credentials-cache-status) and
 [`flush`](./CLI.md#openclaw-agent-system-credentials-cache-flush) for Gateway permissions and output.
 
-Authorization and local credential/configuration changes are checked on each
-operation. Reload, agent removal, credential changes, flush, and shutdown
-invalidate retained state; snapshots already in use are not revoked. If a
+Agent System checks authorization and local credential or configuration changes on
+each operation. Reload, agent removal, credential changes, flush, and shutdown clear
+the cache; operations already using a value keep their snapshot. If a
 credential command reports **invalidation pending**, restore Gateway access and
 flush. External 1Password edits appear after timed expiry or flush; lifetime
 mode requires flush or restart.

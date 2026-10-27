@@ -1,6 +1,8 @@
 # OpenClaw GitHub Example
 
-Install two managed GitHub identities, execute one real identity request as each agent, and verify that native OpenClaw profiles and repeat installation preserve separate credentials and Git authors.
+Install two agents with separate GitHub identities and check each account through a
+real request. Verify that native OpenClaw profiles and repeat installation preserve
+their separate credentials and Git authors.
 
 ## What Belongs Here
 

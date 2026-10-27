@@ -1,6 +1,8 @@
 # OpenClaw Notification PR Reply Recovery Example
 
-Push an approved PR feedback repair and retain its private answer, then stop the fixture before reply composition. Explicit owner input resumes only that reply and publishes it without repeating the pushed repair.
+Push a change requested through approved PR feedback and save the private answer.
+Stop before composing the public reply, then explicitly resume that reply in the same
+chat. Verify that it publishes without repeating the pushed change.
 
 ## What Belongs Here
 
@@ -17,10 +19,10 @@ Push an approved PR feedback repair and retain its private answer, then stop the
 
 ## Notes
 
-- Strict AIMock supplies model text and tool selection; GitHub, native chat execution, dispatch, managed Git, and receipts remain real. Only Tanaabot is assigned; EMORI creates fixtures and comments.
-- Each job prepares its own issue, assessment, and linked PR. Initial feedback permits three bounded coordinator passes for native assessment reconciliation, while preserving the exact source revision. Refreshes target only this issue; the 24-hour schedule avoids unrelated discovery.
+- Strict AIMock supplies the model text and tool choices. GitHub requests, chat execution, dispatch, managed Git, and saved results still run normally. Only Tanaabot is assigned; EMORI creates the test issues and comments.
+- Each job prepares its own issue, assessment, and linked PR. The coordinator has up to three passes to verify the assessment before handling initial feedback, keeping the same source revision. Refreshes target only this issue; a 24-hour schedule avoids unrelated discovery.
 - Native operator messages use the public Gateway SDK with `operator.admin`; the enrolled dispatch device retains `operator.read` and `operator.write`. Native transcript receipts bind the input.
-- The shared PR fixture reconciles delayed closing-issue linkage with at most three prepare/publish passes on the same delivery. Unknown failures and uncertain writes do not create replacement PRs.
+- If the closing-issue link is delayed, the shared fixture checks the same delivery through at most three prepare/publish passes. Unknown failures and uncertain writes never create replacement PRs.
 - The model fixture deliberately ends after the repair and private result are retained. This proves reply-only continuation from a terminal native turn; it does not simulate process death or an uncertain provider write.
 
 ## Setup

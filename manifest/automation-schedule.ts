@@ -8,6 +8,8 @@ export interface AutomationCronFields {
   weekdays: number[];
   dayWildcard: boolean;
   weekdayWildcard: boolean;
+  dayWildcardExpression?: string;
+  weekdayWildcardExpression?: string;
 }
 export type AutomationSchedule = (
   | { kind: 'every' | 'in'; seconds: number }
@@ -126,6 +128,11 @@ function cron(
       weekdays: weekday.values,
       dayWildcard: day.wildcard,
       weekdayWildcard: weekday.wildcard,
+      // Expanded lists lose the wildcard semantics of stepped day fields.
+      ...(day.wildcard && day.values.length !== 31 ? { dayWildcardExpression: parts[2]! } : {}),
+      ...(weekday.wildcard && weekday.values.length !== 7
+        ? { weekdayWildcardExpression: parts[4]! }
+        : {}),
     },
     timezone,
     missedRun: 'native',

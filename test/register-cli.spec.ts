@@ -392,6 +392,9 @@ describe('cli/command-family-fixtures', () => {
     override async plan() {
       return backupPreviewPlan;
     }
+    override async locations() {
+      return { ...backupPreviewPlan, agentDir: undefined };
+    }
     override async prune() {
       return pruneFixture;
     }

@@ -1,6 +1,9 @@
 # OpenClaw Automation Recovery Example
 
-Observe an offline scheduler failure, synchronize two native jobs, repair deliberately changed routing through Doctor and Install, then restart the Gateway and complete the prompt with the same native job identities. Finally remove and delete the command job, retire its ownership, and preserve the unrelated prompt.
+Check how an offline scheduler fails, then synchronize two jobs and repair changed
+routing with Doctor and Install. Restart the Gateway and complete the prompt using
+the same job IDs. Finally, remove the command job and its ownership record while
+preserving the unrelated prompt.
 
 ## What Belongs Here
 

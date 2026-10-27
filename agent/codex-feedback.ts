@@ -1,3 +1,8 @@
+import {
+  recordFeedbackImplementation,
+  recordFeedbackResponse,
+  recordFeedbackCandidate,
+} from './feedback-result.ts';
 import { dispatchAdmission } from './managed-issue.ts';
 import implementationContext from './implementation-context.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
@@ -559,30 +564,18 @@ export default async function runCodexFeedback(
               record,
               (await selectCodexIntake(pluginData, deps)).manifest.github!.notifications!,
             );
-            if (!event.work || !input.implementationResult)
-              throw new Error('feedback-implementation-context-required');
-            if (
-              event.work.result &&
-              automationHash(event.work.result) !== automationHash(input.implementationResult)
-            )
-              throw new Error('feedback-implementation-result-conflict');
-            if (input.implementationResult.outcome === 'done') {
+            await recordFeedbackImplementation(event, input.implementationResult, async () => {
               const git = deps.git ?? dispatchGit;
               if ((await git(found.cwd, ['status', '--porcelain=v1'], signal)).trim())
                 throw new Error('delivery-uncommitted-work');
-              const head = (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
-              if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
-              if (event.work.head && event.work.head !== head)
-                throw new Error('feedback-implementation-head-changed');
-              event.work.head = head;
-            }
-            event.work.result = input.implementationResult;
+              return (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
+            });
             await save();
             return {
               status: 'recorded',
-              result: event.work.result,
-              head: event.work.head,
-              next: event.work.result.outcome === 'done' ? 'delivery' : 'result',
+              result: event.work!.result!,
+              head: event.work!.head,
+              next: event.work!.result!.outcome === 'done' ? 'delivery' : 'result',
             };
           }
           if (input.action === 'context') {
@@ -677,16 +670,8 @@ export default async function runCodexFeedback(
               throw new Error('feedback-composition-required');
             const result = { privateText: input.result.privateText };
             const replyRequested = !selfFeedback && input.reply !== false;
-            if (
-              event.result &&
-              (event.result.privateText !== result.privateText ||
-                event.replyRequested !== replyRequested)
-            )
-              throw new Error('feedback-result-conflict');
-            event.result ??= result;
-            event.replyRequested = replyRequested;
-            event.phase = replyRequested ? 'responded' : 'published';
-            if (event.phase === 'published') feedback.lastServedAt = now;
+            recordFeedbackResponse(event, result.privateText, replyRequested);
+            if (!replyRequested) feedback.lastServedAt = now;
             await save();
             return {
               status: 'recorded',
@@ -733,9 +718,7 @@ export default async function runCodexFeedback(
             if (!event.composition || input.digest !== compositionDigest())
               throw new Error('feedback-composition-stale');
             if (!input.publicText) throw new Error('feedback-candidate-required');
-            if (event.result.publicText && event.result.publicText !== input.publicText)
-              throw new Error('feedback-result-conflict');
-            event.result.publicText = input.publicText;
+            recordFeedbackCandidate(event.result, input.publicText);
             await save();
             return {
               status: 'candidate-recorded',

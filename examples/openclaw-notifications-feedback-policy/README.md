@@ -1,6 +1,8 @@
 # OpenClaw Notification Feedback Policy Example
 
-Admit one issue, remove its live approved-author list, observe feedback admission disabled, exclude a comment posted by a removed author, and restore the list to resume admission with the retained cutoff and owner without reinstalling the coordinator.
+Start an issue, remove its approved authors, and verify that feedback from a removed
+author does not start work. Restore the list and resume accepting feedback without
+reinstalling the coordinator, replaying excluded comments, or changing the issue chat.
 
 ## What Belongs Here
 

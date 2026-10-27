@@ -1,6 +1,9 @@
 # OpenClaw Notification Assignment Policy Example
 
-Retain an unavailable candidate without preventing a valid assignment, remove the admitted assignment through an actor outside the live allowed list, verify that unresolved removal authority preserves its native work, then reassign it and clear the warning without creating another owner.
+Keep an unavailable assignment candidate from blocking a valid one. Have an
+unapproved actor unassign the active issue and verify that its chat and checkout
+remain intact with a warning. Reassign it and clear the warning without starting
+a second workflow.
 
 ## What Belongs Here
 

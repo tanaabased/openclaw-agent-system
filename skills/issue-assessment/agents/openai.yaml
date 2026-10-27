@@ -1,7 +1,0 @@
-interface:
-  display_name: 'Agent System Issue Assessment'
-  short_description: 'Assess an issue and retain a plan or focused questions'
-  icon_small: './assets/icon-small.svg'
-  icon_large: './assets/icon-large.svg'
-  brand_color: '#00c88a'
-  default_prompt: 'Use $agent-system-issue-assessment to assess the selected GitHub issue in the current chat using its existing checkout and my agent configuration. Bootstrap the direct assessment entry unless the host already supplied verified execution context for this invocation; let the runtime reuse matching managed context and retain the result without implementation or publication.'

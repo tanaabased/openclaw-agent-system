@@ -1,7 +1,7 @@
 # Agent System GitHub CLI Tool
 
 <p align="center">
-  <img src="../../assets/github-icon-large.svg" alt="Agent System GitHub CLI" width="180" />
+  <img src="../../skills/github-cli/assets/icon-large.svg" alt="Agent System GitHub CLI" width="180" />
 </p>
 
 The GitHub CLI tool runs noninteractive `gh` commands with the active agent's
@@ -9,7 +9,7 @@ credential, isolated configuration, and policy. Enable it through the workspace'
 `github` declaration.
 
 > [!IMPORTANT]
-> GitHub authorization and server-side protections are authoritative. Agent
+> GitHub permissions and server-side protections decide what is allowed. Agent
 > System adds the narrow release control documented under
 > [`github.policy`](#githubpolicy) and fixed [self-unassignment protection](#assignment-protection).
 
@@ -21,26 +21,11 @@ credential, isolated configuration, and policy. Enable it through the workspace'
   - [`github.ssh-signing-keys`](#githubssh-signing-keys)
   - [`github.token`](#githubtoken)
   - [`github.username`](#githubusername)
-- [Assignment Protection](#assignment-protection)
-- [Native Tool](#native-tool)
-  - [`agent_system_github`](#agent_system_github)
+- [`agent_system_github`](#agent_system_github)
 - [CLI](#cli)
   - [`openclaw agent-system tool gh`](#openclaw-agent-system-tool-gh)
 - [Shim](#shim)
 - [Launcher Bindings](#launcher-bindings)
-
-## Overview
-
-| Interface                       | Purpose                                                      |
-| ------------------------------- | ------------------------------------------------------------ |
-| `agent_system_github`           | Model-facing OpenClaw tool                                   |
-| `gh`                            | Packaged compatibility shim on supported agent command paths |
-| `openclaw agent-system tool gh` | Explicit operator command                                    |
-
-The model-facing tool uses the trusted active agent. Direct CLI and shell use are
-operator interfaces unless OpenClaw supplies an active-agent binding. Every
-interface applies policy before loading the agent's credential and launching
-`gh`.
 
 ## Requirements
 
@@ -53,8 +38,7 @@ Give each agent the least-privilege token and repository role it needs.
 
 ## Configuration Reference
 
-Add `github` to `.agent-system/agent.yaml` or the root `agent.yaml`. The schema is
-strict: unknown and incorrectly cased keys fail validation.
+Declare `github` in the [workspace manifest](../../MANIFEST.md#discovery):
 
 ```yaml
 schema-version: 1
@@ -95,10 +79,9 @@ github:
 | `spinner`           | `enabled`, `disabled` | no       | `enabled`  |
 | `telemetry`         | `enabled`, `disabled` | no       | `disabled` |
 
-Agent System writes a token-free `config.yml` beneath a private per-agent state
-directory and supplies it through `GH_CONFIG_DIR`. It never reads or modifies the
-operator's normal `~/.config/gh` configuration. The child environment also
-disables prompts and editor launches and uses `cat` as its pager.
+Agent System keeps token-free configuration in private per-agent state and leaves
+the operator's `~/.config/gh` untouched. Managed commands disable prompts, editors,
+and interactive paging.
 
 ### `github.host`
 
@@ -129,23 +112,24 @@ through `gh release list` (including its `ls` alias), `gh release view`, and
 `gh release download` remain available. REST `GET` and `HEAD` requests and `POST`
 requests to `.../releases/generate-notes` also remain available.
 
-Apart from fixed [assignment protection](#assignment-protection), other valid `gh`
-operations pass to GitHub, including repository and issue
-deletion, repository settings, branch and tag mutation, and pull-request merges.
-Control them through the agent's token, repository role, organization policy,
-and rulesets. Omit the GitHub `Administration` permission when an agent must not
-change repository settings or delete repositories. Use required reviews and
-branch or tag
-[rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
-to govern merges and ref mutation. Enable
+Other valid operations, including repository deletion and PR merges, rely on GitHub
+permissions and [assignment protection](#assignment-protection). Limit the token's
+[permissions](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens)
+and repository role; omit `Administration` to prevent repository administration.
+Use [rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
+for merges and ref changes, and
 [immutable releases](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/prevent-release-changes)
-when published release tags and assets must remain fixed. See GitHub's
-[fine-grained token permission reference](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens)
-for the current provider contract. A local `allow` cannot override a provider
-denial.
+for published tags and assets. A local `allow` cannot override GitHub denial.
+Release policy is checked before credentials resolve.
 
-A release denial identifies `github.policy.releases`. Enforcement occurs before
-Agent System resolves the environment or token.
+<a id="assignment-protection"></a>
+
+> [!NOTE]
+> Managed GitHub calls cannot remove the authenticated account's own assignment,
+> including through CLI, REST, or GraphQL. This has no policy override; an operator
+> or another authorized user must change that assignment. Ambiguous inputs or
+> incomplete assignment reads block the request. The guard does not cover standalone
+> Codex's native host tools or other unmanaged access.
 
 ### `github.ssh-keys`
 
@@ -167,13 +151,11 @@ Declares GitHub SSH signing keys using the same forms as `github.ssh-keys`.
 Relative paths resolve from the workspace; absolute paths and `~/` paths are also
 supported. Files must be non-symlinked regular files no larger than 64 KiB and
 contain exactly one supported public key. Agent System never accepts private
-keys, removes remote keys, rotates keys, or changes existing titles.
+keys or rotates them.
 
-The generic [`validate`, `install`, and `doctor`](../../CLI.md)
-commands validate declarations, reconcile the private GitHub CLI configuration,
-agent-scoped OpenClaw identity, and missing account keys, and report drift. See the
-[GitHub notifications channel](../../channels/github/README.md) for its separate
-configuration, routing, lifecycle, and security contract.
+Install adds missing account keys without removing or retitling existing keys;
+Doctor reports drift. [GitHub notifications](../../channels/github/README.md) have
+separate workflow configuration.
 
 ### `github.token`
 
@@ -186,16 +168,15 @@ never contain a literal token. A declared binding takes precedence over the
 defaults. SSH authentication or signing keys require an explicit token and
 username because installation may mutate the configured GitHub account.
 
-When both `github.username` and `github.token` are declared, `install` also
-projects that identity into OpenClaw for the same agent. Agent System remains
-the source of truth, and `doctor` treats a system-level OpenClaw identity as
-missing rather than adopting it.
+When both `github.username` and `github.token` are declared, Install also configures
+that identity for the same agent in OpenClaw. Doctor checks this per-agent profile;
+it reports a missing profile rather than adopting a system-level identity.
 
-The token is duplicated only into OpenClaw's owner-readable PAT profile store,
-never `openclaw.json`. Each agent receives a separately verified profile and
-binding; conflicts or unsupported layouts fail closed. Agents that share an OS
-account still share process-level access, so this provides identity separation,
-not hostile-process secret isolation.
+The token is copied only into OpenClaw's owner-readable PAT profile store, never
+`openclaw.json`. Each agent receives a separately verified profile and binding;
+conflicts or unsupported layouts fail closed. Agents that share an OS account still
+share process-level access, so this provides identity separation, not hostile-process
+secret isolation.
 
 ### `github.username`
 
@@ -206,38 +187,15 @@ not hostile-process secret isolation.
 When configured, Agent System verifies the authenticated login through `gh api user`
 in the same child environment before each requested operation and rejects a different login.
 
-## Assignment Protection
+<a id="native-tool"></a>
 
-Managed execution rejects removal of the authenticated account's own assignment.
-This fixed guard has no manifest override; an operator or another authorized user
-must make the reassignment separately. Removing other users, adding assignees,
-and replacing an unrelated issue's assignments remain subject to GitHub permissions.
-
-The guard covers `gh issue edit` and `gh pr edit --remove-assignee`, REST assignee
-removal and issue assignee-list replacement (including legacy `assignee`), and
-GraphQL `removeAssigneesFromAssignable`, `updateIssue`, and `updatePullRequest`.
-It inspects selected GraphQL operations and snapshots JSON/file-backed API inputs.
-Unreadable or ambiguous protected inputs, failed identity checks, and incomplete
-current-assignment reads stop the request before mutation. Provide inspectable
-input or correct the failed check before retrying. Configurable policy and native
-approval still run before credentials; authenticated assignment reads run afterward.
-
-The native tool, managed CLI, contextual shim in agent context, and strict launcher
-share this guard, including OpenClaw-hosted Codex's managed calls. It is not an atomic
-GitHub assignment lock or a universal restriction: concurrent external changes,
-standalone Codex native host commands, absolute host binaries, HTTP/SDKs, unrelated
-integrations, and the shim's non-agent host fallback are outside it. See the
-[shared trust boundary](../../CLI.md#trust-boundary).
-
-## Native Tool
-
-### `agent_system_github`
+## `agent_system_github`
 
 Run ordinary GitHub CLI commands with the trusted active agent. The same
 [configuration](#configuration-reference) and [policy](#githubpolicy) apply to
 native and operator calls.
 
-#### Parameters
+### Parameters
 
 | Parameter | Type         | Required | Default | Description                                                                         |
 | --------- | ------------ | -------- | ------- | ----------------------------------------------------------------------------------- |
@@ -247,7 +205,7 @@ native and operator calls.
 Callers cannot select an agent, workspace, or credential. Unknown parameters are
 rejected.
 
-#### Usage
+### Usage
 
 Inspect the configured GitHub identity:
 
@@ -287,14 +245,13 @@ openclaw agent-system tool gh -- repo view owner/repo --json name --jq .name
 openclaw agent-system tool gh --agent tanaabot -- api user --jq .login
 ```
 
-Arguments after `--` select the GitHub request; inspected external API payloads
-are forwarded from their immutable snapshot. The runtime blocks token display,
-authentication or generated-config mutation, aliases, extensions, and browser
-or editor launch paths. These are non-configurable invariants, not operation policy.
+Managed calls cannot display tokens, change authentication or CLI configuration, use
+aliases or extensions, or launch a browser or editor. Manifest policy cannot disable these
+identity and execution safeguards.
 
 ## Shim
 
-Installation projects the packaged `gh` shim onto supported agent command paths:
+Install adds the packaged `gh` shim to supported agent command paths:
 
 ```sh
 # confirm that this gh belongs to agent system.
@@ -321,12 +278,3 @@ path to the strict managed launcher:
 This launcher requires active-agent authority under the shared
 [execution boundary](../../CLI.md#trust-boundary). The [shim](#shim) retains
 its contextual host fallback.
-
-## Further Reading
-
-- [Agent System README](../../README.md): installation and the common manifest workflow
-- [Manifest reference](../../MANIFEST.md): workspace declarations, environment, and paths
-- [CLI reference](../../CLI.md): shared commands and execution boundaries
-- [Global configuration](../../CONFIG.md): operator-owned plugin settings
-- [Development](../../DEVELOPMENT.md#logging): runtime logging during development
-- [Raw GitHub CLI skill](https://raw.githubusercontent.com/tanaabased/openclaw-agent-system/main/skills/github-cli/SKILL.md): model-facing GitHub guidance

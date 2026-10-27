@@ -2,46 +2,66 @@
 
 ### Compatibility
 
-- Removed V2 GitHub configuration, compatibility aliases, and migration commands. [#428](https://github.com/tanaabased/openclaw-agent-system/issues/428)
-
-- Raised the minimum OpenClaw version and shared `@openclaw/codex` prerequisite to `2026.9.8`. [#218](https://github.com/tanaabased/openclaw-agent-system/issues/218)
-- Removed V1 GitHub notification configuration, polling, and workflow tools; retained historical state without automatic migration. [#323](https://github.com/tanaabased/openclaw-agent-system/issues/323)
-- Updated supported Node.js versions to `>=24.16.0 <25 || >=26.1.0`. [#214](https://github.com/tanaabased/openclaw-agent-system/issues/214)
+- Changed the default `github.issue-assignment.mode` to `auto`; select `plan` to assess without automatic implementation. [#386](https://github.com/tanaabased/openclaw-agent-system/pull/386)
+- Raised the minimum OpenClaw version and shared `@openclaw/codex` prerequisite to `2026.10.6`. [#474](https://github.com/tanaabased/openclaw-agent-system/pull/474)
+- Removed legacy notification-state decoding and repair; pre-reset history requires the documented reset path before upgrading. [#436](https://github.com/tanaabased/openclaw-agent-system/pull/436)
+- Renamed task and reply skills; explicit old skill IDs have no aliases. See [Upgrading](./UPGRADING.md#skill-names). [#498](https://github.com/tanaabased/openclaw-agent-system/pull/498)
+- Replaced V1/V2 GitHub workflow configuration with `github.schema-version: 3`; removed legacy tools and migration commands. [#328](https://github.com/tanaabased/openclaw-agent-system/pull/328) [#443](https://github.com/tanaabased/openclaw-agent-system/pull/443)
+- Reserved `github.review-request` configuration without independent review execution; supported issue workflows remain available. [#334](https://github.com/tanaabased/openclaw-agent-system/pull/334) [#437](https://github.com/tanaabased/openclaw-agent-system/pull/437)
+- Updated supported Node.js versions to `>=24.22.1 <25 || >=26.12.1`. [#474](https://github.com/tanaabased/openclaw-agent-system/pull/474)
 
 ### New Features
 
-- Added `models.routing` skill and guidance customization for initial model selection in OpenClaw and Codex. [#478](https://github.com/tanaabased/openclaw-agent-system/issues/478)
-- Added Codex issue-assignment intake with one persistent chat, historical baseline exclusion, and explicit recurring consent. [#246](https://github.com/tanaabased/openclaw-agent-system/issues/246)
+- Added `agent.local.yaml` overlays for machine-local workspace configuration. [#288](https://github.com/tanaabased/openclaw-agent-system/pull/288)
 - Added `agent.yaml` automations with native OpenClaw scheduling and app-assisted Codex prompt scheduling. [#194](https://github.com/tanaabased/openclaw-agent-system/issues/194) [#195](https://github.com/tanaabased/openclaw-agent-system/issues/195) [#196](https://github.com/tanaabased/openclaw-agent-system/issues/196)
-- Added `github.notifications` V2 policy and native OpenClaw issue assignment, admission, and retained planning. [#245](https://github.com/tanaabased/openclaw-agent-system/issues/245) [#328](https://github.com/tanaabased/openclaw-agent-system/pull/328)
+- Added direct issue assessment, implementation, and GitHub replies through the active agent's configured task skills. [#438](https://github.com/tanaabased/openclaw-agent-system/pull/438) [#450](https://github.com/tanaabased/openclaw-agent-system/pull/450) [#455](https://github.com/tanaabased/openclaw-agent-system/pull/455)
+- Added manual task launch without assignment or schedule activation, plus explicit managed-task retirement. [#464](https://github.com/tanaabased/openclaw-agent-system/pull/464) [#433](https://github.com/tanaabased/openclaw-agent-system/pull/433)
+- Added `models.routing` skill and guidance customization for initial model selection in OpenClaw and Codex. [#478](https://github.com/tanaabased/openclaw-agent-system/issues/478)
 - Added named, persistent automation conversations in OpenClaw and Codex. [#229](https://github.com/tanaabased/openclaw-agent-system/issues/229)
+- Added native Codex hook approval support, including optional execution approval for recognized Agent System runtime calls. [#472](https://github.com/tanaabased/openclaw-agent-system/pull/472) [#474](https://github.com/tanaabased/openclaw-agent-system/pull/474)
 - Added `openclaw agent-system automations` commands to inspect, sync, run, and read native job history. [#197](https://github.com/tanaabased/openclaw-agent-system/issues/197)
-- Added `openclaw agent-system backup prune` to retain the latest local backups. [#198](https://github.com/tanaabased/openclaw-agent-system/issues/198)
+- Added `openclaw agent-system backup prune` and conservative cleanup of incomplete owned backup artifacts. [#198](https://github.com/tanaabased/openclaw-agent-system/issues/198) [#338](https://github.com/tanaabased/openclaw-agent-system/pull/338)
+- Added Plan, Work, and Auto issue workflows in OpenClaw and Codex, with approved issue and linked-PR feedback. [#305](https://github.com/tanaabased/openclaw-agent-system/pull/305) [#327](https://github.com/tanaabased/openclaw-agent-system/pull/327) [#335](https://github.com/tanaabased/openclaw-agent-system/pull/335) [#341](https://github.com/tanaabased/openclaw-agent-system/pull/341) [#437](https://github.com/tanaabased/openclaw-agent-system/pull/437)
+- Added portable repository checkout locations through `git.worktrees.repositories.working-directory`. [#248](https://github.com/tanaabased/openclaw-agent-system/issues/248)
+- Added recoverable notification reset and optional purge, with explicit local scope and preserved GitHub issues and assignments. [#420](https://github.com/tanaabased/openclaw-agent-system/pull/420) [#430](https://github.com/tanaabased/openclaw-agent-system/pull/430)
 
 ### Improvements
 
-- Aligned CLI notice, warning, and error presentation while keeping diagnostics on stderr and JSON results intact. [#230](https://github.com/tanaabased/openclaw-agent-system/pull/230)
-- Enabled managed-agent collaboration by default, adding required session access while retaining operator grants. [#220](https://github.com/tanaabased/openclaw-agent-system/issues/220) [#231](https://github.com/tanaabased/openclaw-agent-system/issues/231)
-- Improved install failure reports with completed work, blocked components, and recovery guidance. [#231](https://github.com/tanaabased/openclaw-agent-system/issues/231)
-- Limited shared `@openclaw/codex` installation and readiness requirements to agents using the Codex runtime. [#214](https://github.com/tanaabased/openclaw-agent-system/issues/214) [#217](https://github.com/tanaabased/openclaw-agent-system/issues/217)
-- Rewired `notifications status`, `refresh`, and `wait` to native V2 state and automation runs. [#326](https://github.com/tanaabased/openclaw-agent-system/issues/326)
+- Aligned CLI status, progress, and failure presentation while keeping diagnostics on stderr and JSON results intact. [#230](https://github.com/tanaabased/openclaw-agent-system/pull/230) [#243](https://github.com/tanaabased/openclaw-agent-system/pull/243) [#492](https://github.com/tanaabased/openclaw-agent-system/pull/492)
+- Applied live workflow policy to retained tasks and continued authorized implementation without another routine stage approval. [#371](https://github.com/tanaabased/openclaw-agent-system/pull/371) [#410](https://github.com/tanaabased/openclaw-agent-system/pull/410)
+- Bound working journal size by expiring historical detail while preserving unfinished work and duplicate-prevention records. [#497](https://github.com/tanaabased/openclaw-agent-system/pull/497)
+- Enabled managed-agent collaboration by default while retaining operator grants. [#220](https://github.com/tanaabased/openclaw-agent-system/issues/220) [#231](https://github.com/tanaabased/openclaw-agent-system/issues/231)
+- Hardened manifest include reads and terminated credential-helper descendants on timeout. [#498](https://github.com/tanaabased/openclaw-agent-system/pull/498)
+- Improved Install diagnostics for partial progress, Gateway failures, and enrollment readiness. [#231](https://github.com/tanaabased/openclaw-agent-system/issues/231) [#442](https://github.com/tanaabased/openclaw-agent-system/pull/442) [#458](https://github.com/tanaabased/openclaw-agent-system/pull/458) [#482](https://github.com/tanaabased/openclaw-agent-system/pull/482)
+- Kept complete assessments in task chats and published concise issue summaries and PR announcements. [#354](https://github.com/tanaabased/openclaw-agent-system/pull/354) [#353](https://github.com/tanaabased/openclaw-agent-system/pull/353) [#401](https://github.com/tanaabased/openclaw-agent-system/pull/401)
+- Limited shared `@openclaw/codex` installation requirements to agents using the Codex runtime. [#214](https://github.com/tanaabased/openclaw-agent-system/issues/214) [#217](https://github.com/tanaabased/openclaw-agent-system/issues/217)
+- Preserved installation identities across reinstalls; kept assignment claim election inactive. [#408](https://github.com/tanaabased/openclaw-agent-system/pull/408)
+- Prevented managed GitHub commands from removing the active agent's own issue assignment. [#387](https://github.com/tanaabased/openclaw-agent-system/pull/387)
+- Retired undeclared automation ownership after verified native job deletion, without silently recreating retired IDs. [#490](https://github.com/tanaabased/openclaw-agent-system/pull/490)
+- Rewired notification commands to inspect saved workflow state and request native automation runs. [#326](https://github.com/tanaabased/openclaw-agent-system/issues/326)
 - Supported stable GoG versions `>=0.42.0 <1.0.0` while retaining the reviewed command and flag surface. [#197](https://github.com/tanaabased/openclaw-agent-system/issues/197)
 
 ### Bug Fixes
 
-- Fixed OpenClaw PR delivery with uncached V3 reviewers. [#428](https://github.com/tanaabased/openclaw-agent-system/issues/428)
-
+- Fixed authorized revisions after completed implementation and preserved operator-selected task models. [#502](https://github.com/tanaabased/openclaw-agent-system/pull/502) [#463](https://github.com/tanaabased/openclaw-agent-system/pull/463)
+- Fixed backup pruning depending on current workspace inputs or full restore verification. [#496](https://github.com/tanaabased/openclaw-agent-system/pull/496) [#498](https://github.com/tanaabased/openclaw-agent-system/pull/498)
+- Fixed Codex intake and managed handoffs retaining obsolete Node.js executable paths after host upgrades. [#504](https://github.com/tanaabased/openclaw-agent-system/pull/504)
 - Fixed Codex session hooks failing when the plugin path contains spaces.
 - Fixed compromised private-state locks crashing the Gateway. [#234](https://github.com/tanaabased/openclaw-agent-system/pull/234)
+- Fixed denied assignments blocking unrelated intake and kept summary-only refusals separate from implementation. [#435](https://github.com/tanaabased/openclaw-agent-system/pull/435) [#457](https://github.com/tanaabased/openclaw-agent-system/pull/457)
 - Fixed implicit model fallback inheritance while preserving configured fallback lists. [#222](https://github.com/tanaabased/openclaw-agent-system/issues/222)
-- Fixed OpenClaw retirement getting stuck on unavailable sessions while retaining normal worktree preservation checks. [#413](https://github.com/tanaabased/openclaw-agent-system/issues/413)
+- Fixed OpenClaw PR delivery when reviewer identities were not cached. [#443](https://github.com/tanaabased/openclaw-agent-system/pull/443)
+- Fixed retirement blocked by unavailable OpenClaw sessions or closed-issue checkout changes, retaining native preservation checks. [#414](https://github.com/tanaabased/openclaw-agent-system/pull/414) [#484](https://github.com/tanaabased/openclaw-agent-system/pull/484)
 - Fixed safe validation explanations being replaced by generic tool rejection messages. [#15](https://github.com/tanaabased/openclaw-agent-system/issues/15)
-- Rejected unsupported native OpenClaw notification retirement waits before polling or requesting refreshes. [#328](https://github.com/tanaabased/openclaw-agent-system/pull/328)
-- Rejected notification timeouts above `2147483` seconds before they overflow the native timer.
+- Fixed stepped cron day constraints being lost during OpenClaw schedule projection. [#498](https://github.com/tanaabased/openclaw-agent-system/pull/498)
+- Isolated new assignment branches from previous attempts and recovered uncertain delivery through retained receipts. [#462](https://github.com/tanaabased/openclaw-agent-system/pull/462) [#412](https://github.com/tanaabased/openclaw-agent-system/pull/412)
+- Rejected incomplete assessment source data before recording a result. [#470](https://github.com/tanaabased/openclaw-agent-system/pull/470)
+- Rejected unsupported notification retirement waits and timeouts above `2147483` seconds before polling or timer overflow. [#328](https://github.com/tanaabased/openclaw-agent-system/pull/328)
 
 ### Developer Notes
 
 - Added recorded CLI responses and provenance checks for deterministic mock-model fixtures. [#199](https://github.com/tanaabased/openclaw-agent-system/issues/199)
+- Separated unit, component, OS, static, and opt-in stress checks; added `bun run validate` for the ordinary validation suite. [#445](https://github.com/tanaabased/openclaw-agent-system/pull/445) [#498](https://github.com/tanaabased/openclaw-agent-system/pull/498)
 
 ## v0.8.0 - [September 29, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.8.0)
 
@@ -53,7 +73,7 @@
 ### Improvements
 
 - Added [`agent-system-google-cli`](./skills/google-cli/SKILL.md) skill for an agent's managed Google operations. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)
-- Added [`agent_system_github_task_pr`](./channels/github/ADVANCED.md#agent_system_github_task_pr) tool for issue-owned PR publication and follow-up handoff. [#180](https://github.com/tanaabased/openclaw-agent-system/issues/180)
+- Added [`agent_system_github_task_pr`](https://github.com/tanaabased/openclaw-agent-system/blob/v0.8.0/channels/github/ADVANCED.md#agent_system_github_task_pr) tool for issue-owned PR publication and follow-up handoff. [#180](https://github.com/tanaabased/openclaw-agent-system/issues/180)
 - Added [`agent_system_google`](./tools/google/README.md#agent_system_google) tool with verified per-agent OAuth and an encrypted keyring. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)
 - Added [`setup-agent`](./MANIFEST.md#setup) configuration for agent-bound setup, with deprecated `setup` fallback. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)
 - Added [`setup-host`](./MANIFEST.md#setup) configuration for dependencies needed before agent reconciliation. [#172](https://github.com/tanaabased/openclaw-agent-system/issues/172)

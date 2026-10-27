@@ -1,6 +1,8 @@
 # OpenClaw Credentials Example
 
-Resolve real 1Password Environment and direct vault secrets into installed consumers, reuse Gateway cache entries, selectively flush one agent, and invalidate stored-credential changes before the next use.
+Use real 1Password Environment and vault secrets through installed tools. Check cache
+reuse, flush one agent's cache without affecting another, and verify that credential
+changes take effect before the next use.
 
 ## What Belongs Here
 

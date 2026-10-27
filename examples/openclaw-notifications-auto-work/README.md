@@ -1,6 +1,7 @@
 # OpenClaw Notification Auto Work Delivery Example
 
-Admit an Auto assignment, retain a reasoned Work decision, and deliver its linked PR in the initial native assessment turn without an operator handoff.
+Start an Auto assignment, save its Work decision, and deliver the linked PR in the
+initial assessment turn without another operator handoff.
 
 ## What Belongs Here
 
@@ -15,9 +16,9 @@ Admit an Auto assignment, retain a reasoned Work decision, and deliver its linke
 
 ## Notes
 
-- Strict AIMock supplies judgment and tool choices; GitHub, native execution, stage selection, publication and receipts remain real. Genuine model interpretation and desktop rendering remain separate acceptance.
+- Strict AIMock supplies the decisions and tool choices. GitHub requests, native execution, stage changes, publication, and saved results remain real. Model interpretation and desktop rendering need separate verification.
 - Adapted from the automatic-delivery fixtures in #434 (`a17b4f7`, authored by `emoriwan`), with one disposable issue and PR per job.
-- Product account proofs remain live. Only Tanaabot is assigned; refreshes target this fixture and cleanup quiesces its Gateway before closing persistent resources.
+- Account checks use the live provider. Only Tanaabot is assigned. Refreshes target this test issue, and cleanup stops the Gateway before closing external resources.
 
 ## Setup
 

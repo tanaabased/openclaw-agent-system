@@ -6,6 +6,8 @@ import { parse } from 'yaml';
 
 import discoverManifest from '../manifest/discover.ts';
 import { loadDiscoveredManifest } from '../manifest/load.ts';
+import { maximumManifestBytes } from '../manifest/read-bytes.ts';
+import readManifestFile from '../manifest/read-file.ts';
 import AgentManifestService from '../manifest/service.ts';
 import { normalizeAgentSetup } from '../manifest/setup-schema.ts';
 import setupStepApplies from '../agent/setup-runtime.ts';
@@ -206,6 +208,68 @@ describe('manifest/setup-file', () => {
     const recursive = await load();
     assert.equal(recursive.status, 'invalid');
     assert.ok(recursive.diagnostics.some(({ fieldPath }) => fieldPath === '/setup/file'));
+  });
+
+  it('should accept includes at the byte limit and reject oversized or nonregular files', async () => {
+    await manifest();
+    const included = join(root, 'setup.yaml');
+    await writeFile(included, Buffer.alloc(maximumManifestBytes, 32));
+    const read = () =>
+      readManifestFile(
+        './setup.yaml',
+        join(root, 'agent.yaml'),
+        root,
+        '/setup',
+        'manifest-setup-file',
+      );
+    const boundary = await read();
+    assert.equal(boundary.status, 'valid');
+    if (boundary.status === 'valid') assert.equal(boundary.contents.length, maximumManifestBytes);
+    await writeFile(included, Buffer.alloc(maximumManifestBytes + 1, 32));
+    const oversized = await read();
+    assert.equal(oversized.status, 'invalid');
+    if (oversized.status === 'invalid')
+      assert.equal(oversized.diagnostics[0]?.code, 'manifest-setup-file-too-large');
+    await rm(included);
+    await mkdir(included);
+    const directory = await read();
+    assert.equal(directory.status, 'invalid');
+    if (directory.status === 'invalid')
+      assert.equal(directory.diagnostics[0]?.code, 'manifest-setup-file-not-regular');
+  });
+
+  it('should revalidate cached setup includes and retain in-workspace symlink support', async () => {
+    const included = join(root, 'linked.yaml');
+    const target = join(root, 'setup.yaml');
+    await symlink(target, included);
+    const service = new AgentManifestService({
+      getConfig: () => ({}),
+      logger: { info() {}, warn() {}, error() {} },
+      parseSessionAgentId: () => 'test',
+      resolveAgentWorkspaceDir: () => root,
+    });
+    for (const key of ['setup-agent', 'setup-host']) {
+      await writeFile(
+        join(root, 'agent.yaml'),
+        `schema-version: 1\nagent:\n  id: test\n${key}:\n  file: ./linked.yaml\n`,
+      );
+      await writeFile(target, 'apply: echo ready\n');
+      const first = await service.loadForAgentId('test');
+      assert.equal(first.status, 'loaded');
+      assert.strictEqual(await service.loadForAgentId('test'), first);
+      await writeFile(target, Buffer.alloc(maximumManifestBytes + 1, 32));
+      const oversized = await service.loadForAgentId('test');
+      assert.equal(oversized.status, 'invalid');
+      assert.ok(oversized.diagnostics.some(({ code }) => code.endsWith('-too-large')));
+      await writeFile(target, 'apply: echo ready\n');
+      assert.equal((await service.loadForAgentId('test')).status, 'loaded');
+      await rm(target);
+      await mkdir(target);
+      const directory = await service.loadForAgentId('test');
+      assert.equal(directory.status, 'invalid');
+      assert.ok(directory.diagnostics.some(({ code }) => code.endsWith('-not-regular')));
+      await rm(target, { recursive: true });
+    }
   });
 
   it('should reject mixing file with inline fields', async () => {

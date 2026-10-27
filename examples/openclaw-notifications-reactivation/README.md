@@ -1,6 +1,8 @@
 # OpenClaw Notification Reactivation Example
 
-Unassign an assessed issue, post approved feedback, and resume the original native owner to publish one source-bound reply. A repeat scan must preserve the chat, checkout, and assessment without another response.
+Unassign an assessed issue, then post approved feedback to resume the original chat
+and publish a reply to that comment. Verify that another scan keeps the chat, checkout,
+and assessment without posting again.
 
 ## What Belongs Here
 

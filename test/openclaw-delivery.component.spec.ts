@@ -272,7 +272,7 @@ describe('agent/openclaw-delivery', () => {
                       modelVisible: true,
                     },
                     {
-                      name: 'agent-system-feedback-reply',
+                      name: 'agent-system-github-reply',
                       source: 'openclaw-plugins',
                       filePath: join(root, 'SKILL.md'),
                       eligible: true,
@@ -290,7 +290,7 @@ describe('agent/openclaw-delivery', () => {
       assert.ok('selection' in composed && composed.selection && 'digest' in composed);
       assert.equal(
         composed.selection.skill.name,
-        variant.includes('skill') ? 'ordinary-reply' : 'agent-system-feedback-reply',
+        variant.includes('skill') ? 'ordinary-reply' : 'agent-system-github-reply',
       );
       assert.equal(
         composed.selection.guidance?.content,

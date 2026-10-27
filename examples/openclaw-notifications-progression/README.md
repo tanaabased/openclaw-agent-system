@@ -1,6 +1,8 @@
 # OpenClaw Notification Progression Example
 
-Move an already assessed issue from Plan to Auto, retain the verified Work decision, enter implementation in the same native owner, hold on clarification, and resume an authorized answer to a local commit without another handoff.
+Change an assessed issue from Plan to Auto, save its Work decision, and start
+implementation in the same chat. Pause for clarification, then use the authorized
+answer to complete a local commit without another handoff.
 
 ## What Belongs Here
 

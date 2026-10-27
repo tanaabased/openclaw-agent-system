@@ -1,6 +1,6 @@
 ---
 name: agent-system-google-cli
-description: Agent System Google CLI guidance for using the active agent's isolated Google account and OAuth credentials.
+description: "Run Google service commands with the active OpenClaw agent's account and OAuth credentials; use native Google tools in standalone Codex."
 license: MIT
 metadata:
   type: integration
@@ -11,7 +11,7 @@ metadata:
     - google
   openclaw:
     emoji: '📬'
-    homepage: https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/google-cli
+    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/google-cli'
     requires:
       bins:
         - gog

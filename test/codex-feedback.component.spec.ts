@@ -1145,7 +1145,7 @@ describe('agent/codex-feedback', () => {
     await call('result', { ...ref, result: { privateText: 'Detailed explanation.' } }, true);
     const composition = await call('compose', ref, true);
     assert.ok('selection' in composition && composition.selection);
-    assert.equal(composition.selection.requestedSkill, 'agent-system:agent-system-feedback-reply');
+    assert.equal(composition.selection.requestedSkill, 'agent-system:agent-system-github-reply');
     assert.equal(
       'privateResponse' in composition && composition.privateResponse,
       'Detailed explanation.',

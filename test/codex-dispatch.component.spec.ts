@@ -1444,7 +1444,7 @@ describe('agent/codex-dispatch', () => {
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...configured, debug: true }));
     const prepared = await prepare();
     const launch = prepared.request as { prompt: string };
-    assert.ok(!launch.prompt.includes('Use $agent-system-issue-assessment'));
+    assert.ok(!launch.prompt.includes('Use $agent-system-task-assessment'));
     assert.ok(launch.prompt.includes(JSON.stringify({ action: 'context', id: prepared.id })));
     assert.ok(launch.prompt.includes('JSON on stdin'));
     assert.match(launch.prompt, /session_id.*write_stdin/u);
@@ -4229,7 +4229,7 @@ describe('agent/codex-dispatch', () => {
                   errors: [],
                   skills: [
                     {
-                      name: 'agent-system:agent-system-feedback-reply',
+                      name: 'agent-system:agent-system-github-reply',
                       path: join(root, 'SKILL.md'),
                       scope: 'user',
                       enabled: true,
@@ -5253,7 +5253,7 @@ describe('agent/codex-dispatch', () => {
     const context = await work.run('context', {}, true);
     assert.equal(
       'implementation' in context && context.implementation?.skill.name,
-      'agent-system:agent-system-issue-implementation',
+      'agent-system:agent-system-task-implementation',
     );
     assert.equal('implementation' in context && context.implementation?.defaultSkill, true);
     assert.equal(

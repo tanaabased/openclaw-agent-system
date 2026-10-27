@@ -1,6 +1,7 @@
 # OpenClaw Notification PR Recipient Preview Example
 
-Change the live reviewer configuration for an already delivered PR, prepare its delivery in the owning chat, and leave GitHub review requests untouched.
+Change the configured reviewers after delivering a PR, then prepare delivery again
+in the same issue chat. Verify that preparation leaves GitHub review requests unchanged.
 
 ## What Belongs Here
 
@@ -17,10 +18,10 @@ Change the live reviewer configuration for an already delivered PR, prepare its 
 
 ## Notes
 
-- Strict AIMock supplies model text and tool selection; GitHub, native chat execution, dispatch, managed Git, and receipts remain real. Only Tanaabot is assigned; EMORI creates fixtures and comments.
-- Each job prepares its own issue, assessment, and linked PR. Initial feedback permits three bounded coordinator passes for native assessment reconciliation, while preserving the exact source revision. Refreshes target only this issue; the 24-hour schedule avoids unrelated discovery.
+- Strict AIMock supplies the model text and tool choices. GitHub requests, chat execution, dispatch, managed Git, and saved results still run normally. Only Tanaabot is assigned; EMORI creates the test issues and comments.
+- Each job prepares its own issue, assessment, and linked PR. The coordinator has up to three passes to verify the assessment before handling initial feedback, keeping the same source revision. Refreshes target only this issue; a 24-hour schedule avoids unrelated discovery.
 - Native operator messages use the public Gateway SDK with `operator.admin`; the enrolled dispatch device retains `operator.read` and `operator.write`. Native transcript receipts bind the input.
-- The shared PR fixture reconciles delayed closing-issue linkage with at most three prepare/publish passes on the same delivery. Unknown failures and uncertain writes do not create replacement PRs.
+- If the closing-issue link is delayed, the shared fixture checks the same delivery through at most three prepare/publish passes. Unknown failures and uncertain writes never create replacement PRs.
 - EMORI is previewed as a compact reviewer only. The scenario never requests a review from a production agent.
 
 ## Setup

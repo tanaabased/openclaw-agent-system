@@ -1,6 +1,4 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createHash } from 'node:crypto';
-import { readFile, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
@@ -65,14 +63,15 @@ function diagnosticCodes(diagnostics: ManifestDiagnostic[]): string {
   return diagnostics.map(({ code }) => code).join(',');
 }
 
-async function setupFileFingerprint(path: string): Promise<string | undefined> {
-  try {
-    const canonicalPath = await realpath(path);
-    const contents = await readFile(canonicalPath);
-    return createHash('sha256').update(canonicalPath).update('\0').update(contents).digest('hex');
-  } catch {
-    return undefined;
-  }
+async function fileFingerprint(path: string, workspaceDir: string): Promise<string | undefined> {
+  const file = await readManifestFile(
+    relative(workspaceDir, path),
+    join(workspaceDir, 'agent.yaml'),
+    workspaceDir,
+    '/file',
+    'manifest-file',
+  );
+  return file.status === 'valid' ? file.fingerprint : undefined;
 }
 
 /** Own manifest resolution, parsing, cache invalidation, and redacted runtime diagnostics. */
@@ -208,22 +207,16 @@ export default class AgentManifestService {
       if (cached.result.status === 'unmanaged') return cached.result;
       if (cached.result.status === 'loaded') {
         const agentFingerprint = cached.result.setupFilePath
-          ? await setupFileFingerprint(cached.result.setupFilePath)
+          ? await fileFingerprint(cached.result.setupFilePath, discovery.workspaceDir)
           : undefined;
         const hostFingerprint = cached.result.setupHostFilePath
-          ? await setupFileFingerprint(cached.result.setupHostFilePath)
+          ? await fileFingerprint(cached.result.setupHostFilePath, discovery.workspaceDir)
           : undefined;
         const automationFiles = await Promise.all(
-          (cached.result.automationFiles ?? []).map(async (file) => {
-            const current = await readManifestFile(
-              relative(discovery.workspaceDir, file.path),
-              join(discovery.workspaceDir, 'agent.yaml'),
-              discovery.workspaceDir,
-              '/automations',
-              'manifest-automation-file',
-            );
-            return current.status === 'valid' && current.fingerprint === file.fingerprint;
-          }),
+          (cached.result.automationFiles ?? []).map(
+            async (file) =>
+              (await fileFingerprint(file.path, discovery.workspaceDir)) === file.fingerprint,
+          ),
         );
         if (
           automationFiles.every(Boolean) &&

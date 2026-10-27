@@ -1,6 +1,8 @@
 # OpenClaw Backup Example
 
-Create and verify an archive containing explicitly included private memory and agent database state, restore it into fresh staging without changing the source, refuse live-agent and populated recovery targets, and prune historical archives without weakening explicit verification.
+Back up private memory and the agent database, verify the archive, and restore it
+into fresh staging without changing the source. Check that live and populated targets
+are refused, and that pruning older archives remains separate from integrity checks.
 
 ## What Belongs Here
 
@@ -93,8 +95,9 @@ node "$GITHUB_WORKSPACE/examples/openclaw-backup/historical-fixture.mjs" "$TMPDI
 if openclaw agent-system backup verify .agent-system/backups/historical-2001.tar.gz --json > "$TMPDIR/prune-incompatible.json"; then exit 1; fi
 jq -e '.status == "failed" and any(.diagnostics[]; .code == "backup-snapshot-failed")' "$TMPDIR/prune-incompatible.json"
 
-# should preview capture-date retention without changing archive bytes
+# should preview retention after a source file is removed without changing archive bytes
 cd "$GITHUB_WORKSPACE/examples/openclaw-backup/data"
+rm run.sh
 sha256sum .agent-system/backups/*.tar.gz > "$TMPDIR/prune-before.sha256"
 openclaw agent-system backup prune --keep 2 --dry-run --json | tee "$TMPDIR/prune-preview.json" | jq -e '.status == "preview" and (.kept | length) == 2 and (.wouldDelete | length) == 1 and (.wouldDelete[0] | endswith("/historical-2000.tar.gz")) and (.skipped | length) == 0'
 sha256sum -c "$TMPDIR/prune-before.sha256"

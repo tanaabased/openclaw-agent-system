@@ -1,6 +1,8 @@
 # OpenClaw Google Example
 
-Install GoG before reconciling the declared Google account, verify its live identity, perform a read-only Tasks request through public and shim routes, and confirm repeat installation preserves the account.
+Install GoG and apply the declared Google account settings. Check the account identity
+and make a read-only Tasks request through both the public command and shim. Verify
+that repeat installation preserves the account.
 
 ## What Belongs Here
 

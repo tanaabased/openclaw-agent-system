@@ -308,7 +308,7 @@ describe('scripts/example-model-scenarios', () => {
   for (const scenarioId of ['openclaw-automations', 'openclaw-automation-recovery']) {
     it(`should keep ${scenarioId} ownership strict and report only failed match booleans`, () => {
       const scenario = resolveExampleModelScenario(scenarioId);
-      const diagnostic = mock.method(console, 'error', () => {});
+      const diagnostic = mock.method(process.stderr, 'write', () => true);
       const valid = request('automation-tanaabot', scenario.userPromptSignals![0]!, []);
       valid.messages[0]!.content = scenario.systemPromptSignals[0]!;
       valid.messages.push({ role: 'user', content: 'Additional runtime context.' });

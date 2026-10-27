@@ -1,6 +1,8 @@
 # Codex Automations Example
 
-Plan automation reconciliation through the packaged Codex runtime, create native per-automation conversations with the selected execution settings, and reuse those same conversations after the creating process exits.
+Plan automation updates through the packaged Codex runtime and create a conversation
+for each job with its selected execution settings. Verify that later processes reuse
+those same conversations.
 
 ## What Belongs Here
 
@@ -16,7 +18,7 @@ Plan automation reconciliation through the packaged Codex runtime, create native
 
 ## Notes
 
-- The named-zone declaration maps to a native timezone-qualified recurrence. Native review is required before saving it; native timing limitations are documented in [Codex automations](../../CODEX.md#repository-automations).
+- The named-zone declaration maps to a native timezone-qualified recurrence. Native review is required before saving it; native timing limitations are documented in [Codex automations](../../MANIFEST.md#codex-execution-and-ownership).
 - Lookup inventories are explicit fixtures. `list` and `sync` inspect or plan native app actions; they do not write scheduler files. `threads-sync` creates/resumes real conversations through `codex app-server` under installation authorization and a fresh digest.
 - Native readback checks `auto_review`, `on-request`, and `workspace-write`. No model generation or provider credentials are used; run only in GitHub Actions.
 - Pending relocation: prepare/cancel retains a pending journal until verification and permits cancellation only while the failed target is unchanged. Pending creates also require no new native IDs; an unmarked job may be a partial create.

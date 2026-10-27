@@ -1,6 +1,7 @@
 # OpenClaw Notification Scheduling Example
 
-Pause and resume the installed notification job through native controls and manifest reconciliation, preserving its native identity, routing, channel readiness, and existing dispatch enrollment.
+Pause and resume the notification job through native controls and manifest settings.
+Verify that its ID, routing, channel readiness, and dispatch enrollment are preserved.
 
 ## What Belongs Here
 

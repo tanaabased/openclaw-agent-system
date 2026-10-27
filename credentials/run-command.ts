@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
 
+import signalProcessTree from '../utils/signal-process-tree.ts';
+
 export type CredentialCommandStatus =
   'completed' | 'failed-to-start' | 'output-too-large' | 'timed-out';
 
@@ -46,6 +48,7 @@ export default function runCredentialCommand(
     let child;
     try {
       child = spawn(options.command, options.args, {
+        detached: true,
         env: options.environment ?? process.env,
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -55,11 +58,15 @@ export default function runCredentialCommand(
       finish('failed-to-start');
       return;
     }
+    const stop = (reason: 'output-too-large' | 'timed-out') => {
+      if (settled || termination) return;
+      termination = reason;
+      signalProcessTree(child, 'SIGKILL');
+    };
     const capture = (destination: Buffer[], chunk: Buffer) => {
       outputBytes += chunk.byteLength;
       if (outputBytes > options.maximumOutputBytes) {
-        termination = 'output-too-large';
-        child.kill('SIGKILL');
+        stop('output-too-large');
         return;
       }
       destination.push(chunk);
@@ -71,10 +78,7 @@ export default function runCredentialCommand(
     child.once('error', () => finish('failed-to-start'));
     child.once('close', (code) => finish(termination ?? 'completed', code ?? 1));
 
-    state.timer = setTimeout(() => {
-      termination = 'timed-out';
-      child.kill('SIGKILL');
-    }, options.timeoutMs);
+    state.timer = setTimeout(() => stop('timed-out'), options.timeoutMs);
     state.timer.unref();
 
     child.stdin.end(options.input);

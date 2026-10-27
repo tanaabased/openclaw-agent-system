@@ -1,6 +1,8 @@
 # OpenClaw Doctor Example
 
-Inspect a healthy installed agent, introduce one identity drift, detect it through read-only Doctor with a failing status, repair it through Install, and verify healthy state again.
+Inspect a healthy agent, change its identity configuration, and verify that Doctor
+reports drift without repairing it. Apply the repair with Install and check that
+Doctor reports a healthy result again.
 
 ## What Belongs Here
 

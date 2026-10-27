@@ -11,15 +11,22 @@
   <img src="https://img.shields.io/badge/Ubuntu-24.04-00c88a" alt="Ubuntu 24.04" />
 </p>
 
-Agent System puts your OpenClaw agent's identity, environment, automations, and credential
-configuration in the repo alongside setup steps for installing dependencies and
-configuring the workspace. Clone the repo and run
-`openclaw agent-system install` to get your agent ready for work.
+Agent System puts your agent's identity, environment, automations, credential bindings,
+and skills in its own repo. Interact with your agents on GitHub like you do with human
+developers. It's agent dotfiles and a workflow runtime in one place.
 
-Enable [GitHub notifications](./channels/github/README.md) and assign an issue
-for native OpenClaw planning or standalone Codex implementation and PR delivery.
+Clone the repo and run `openclaw agent-system install` to get your OpenClaw agent
+ready for work.
 
-Also available as a [minimal standalone Codex plugin](./CODEX.md).
+Built primarily for OpenClaw agents, Agent System can also [bind your Codex profile](./CODEX.md)
+to a workspace. Both runtimes support [GitHub issue-assignment workflows](./channels/github/README.md),
+from assessment through implementation and PR delivery.
+
+See example agents:
+
+- [EMORI](https://github.com/tanaabased/emori) — Co-founder and operating partner running on OpenClaw.
+- [smutlord](https://github.com/tanaabased/smutlord) — Bug-fixing agent running on OpenClaw.
+- [pirog/me](https://github.com/pirog/me) — Mike Pirog's bound Codex profile.
 
 > [!NOTE]
 > The OpenClaw integration requires 2026.10.6 or newer and is developed against 2026.10.6. See
@@ -32,40 +39,46 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 
 ## Overview
 
-- **Configuration travels with the repo:** keep identity, environment, credential bindings, and setup in `agent.yaml`; activate them with `openclaw agent-system install`.
-- **Assign work like you would to a developer:** native GitHub workflows turn issue assignments into OpenClaw plans or Codex work and delivery pull requests.
-- **An identity of its own:** each agent gets its own Git authorship, signing, and GitHub account.
+- **Configuration travels with the repo:** keep identity, environment, credential bindings, automations, setup, and skill selections in `agent.yaml`, alongside your workspace skills and guidance.
+- **Assign work like you would to a developer:** use GitHub issues for assessment, implementation, and pull-request delivery in OpenClaw or Codex.
+- **An identity of its own:** give each OpenClaw agent its own Git authorship, signing, and GitHub account. Standalone Codex uses your native host identity.
 - **SSH keys stay off disk:** 1Password-backed SSH private keys never need to be written to disk.
 - **Policy before credentials:** managed operations enforce workspace boundaries and operation policy before loading secrets.
 - **The right model for the work:** route GitHub issues to declared model tiers by complexity.
 - **Put recurring work on the clock:** schedule repository commands and agent prompts from `agent.yaml`.
-- **Repeatable setup:** rerun Install to reconcile configuration and checked dependency installation; use Doctor to find drift.
+- **Repeatable setup:** rerun Install to apply configuration and repeat dependency setup safely; use Doctor to find drift.
 
 ## Ships With
 
 ### Tools
 
+Native tools run in OpenClaw, including OpenClaw-hosted Codex. Standalone Codex
+uses the [shared skills](#skills) through its native host interfaces.
+
+- [`agent_system_dispatch`](./tools/dispatch/README.md) — Coordinate managed issue work, direct assessment, implementation, replies, and retirement.
 - [`agent_system_doctor`](./tools/doctor/README.md) — Inspect the active agent’s readiness and run declared checks after chat approval.
-- [`agent_system_git`](./tools/git/README.md) — Runs ordinary Git commands with the agent's identity, SSH configuration, signing, and operation policy.
-- [`agent_system_git_worktree`](./tools/git/README.md#gitworktrees) — Prepares, lists, and removes durable managed worktrees.
-- [`agent_system_github`](./tools/github/README.md) — Runs ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
-- [`agent_system_google`](./tools/google/README.md) — Runs Google data commands with the agent's verified account and isolated OAuth credentials.
+- [`agent_system_git`](./tools/git/README.md) — Run ordinary Git commands with the agent's identity, SSH configuration, signing, and operation policy.
+- [`agent_system_git_worktree`](./tools/git/worktree/README.md#agent_system_git_worktree) — Prepare, list, and remove durable managed worktrees.
+- [`agent_system_github`](./tools/github/README.md) — Run ordinary GitHub CLI commands with the agent's credential, isolated configuration, and operation policy.
+- [`agent_system_google`](./tools/google/README.md) — Run Google data commands with the agent's verified account and isolated OAuth credentials.
 - [`agent_system_install`](./tools/install/README.md) — Apply the active agent’s configuration and setup after chat approval.
+- [`agent_system_intake`](./tools/intake/README.md) — Inspect or scan GitHub assignments without creating task sessions.
 - [`agent_system_model_routing`](./tools/model-routing/README.md) — Resolve model and effort candidates from the agent's profiles.
 
 ### GitHub Workflows
 
-- [GitHub notifications](./channels/github/README.md) — Admit approved assignments through runtime-owned automations and retain issue conversation and assessment evidence.
+- [GitHub notifications](./channels/github/README.md) — Start approved assignments through native automations and keep each issue’s conversation and assessment.
 
 ### CLI
 
 - [`openclaw agent-system automations`](./CLI.md#openclaw-agent-system-automations-list) — Inspect, sync, and run declared jobs and read their history.
-- [`openclaw agent-system backup`](./CLI.md#openclaw-agent-system-backup-create) — Create, verify, restore, and prune workspace backups.
-- [`openclaw agent-system credentials set op`](./CLI.md#openclaw-agent-system-credentials-set-op) — Store the agent’s 1Password bootstrap credential.
+- [`openclaw agent-system backup`](./CLI.md#openclaw-agent-system-backup-create) — Create, verify, restore, and prune backups; clean up abandoned temporary artifacts.
+- [`openclaw agent-system credentials`](./CLI.md#openclaw-agent-system-credentials-set-op) — Set, validate, and remove the 1Password bootstrap credential; inspect and flush its cache.
 - [`openclaw agent-system doctor`](./CLI.md#openclaw-agent-system-doctor) — Inspect readiness and drift.
 - [`openclaw agent-system env`](./CLI.md#openclaw-agent-system-env) — Inspect environment sources without exposing values.
 - [`openclaw agent-system install`](./CLI.md#openclaw-agent-system-install) — Apply configuration and dependency setup.
-- [`openclaw agent-system notifications`](./CLI.md#openclaw-agent-system-notifications) — Refresh and inspect GitHub assignments.
+- [`openclaw agent-system instance`](./CLI.md#openclaw-agent-system-instance-inspect) — Inspect or rename the installation identity, or explicitly rotate its ID.
+- [`openclaw agent-system notifications`](./channels/github/CLI.md) — Refresh, inspect, wait for, or reset GitHub notification management.
 - [`openclaw agent-system tool`](./CLI.md#openclaw-agent-system-tool) — Run a configured tool as the agent.
 - [`openclaw agent-system validate`](./CLI.md#openclaw-agent-system-validate) — Validate the workspace manifest.
 - [Complete CLI reference](./CLI.md) — All commands, options, and examples.
@@ -82,12 +95,34 @@ Also available as a [minimal standalone Codex plugin](./CODEX.md).
 - [Git CLI](./skills/git-cli/SKILL.md) — Work with the agent's Git identity and policy.
 - [Git worktree](./skills/git-worktree/SKILL.md) — Prepare, reuse, and remove managed worktrees.
 - [GitHub CLI](./skills/github-cli/SKILL.md) — Work through the agent's GitHub account.
-- [GitHub Update](./skills/github-update/SKILL.md) — Publish missing progress from a private notification session.
+- [GitHub reply](./skills/github-reply/SKILL.md) — Compose a reply using the agent's configured guidance and voice; publish only when authorized.
 - [Google CLI](./skills/google-cli/SKILL.md) — Work through the agent's Google account.
 - [Install](./skills/install/SKILL.md) — Install the active workspace through its owning runtime.
 - [Model routing](./skills/model-routing/SKILL.md) — Select model and effort candidates for new tasks.
+- [Notifications reset](./skills/notifications-reset/SKILL.md) — Reset notification tracking, with optional purge of managed chats and checkouts.
+- [Task assessment](./skills/task-assessment/SKILL.md) — Investigate an issue and retain a plan, questions, or a setup blocker.
+- [Task implementation](./skills/task-implementation/SKILL.md) — Implement an authorized issue plan in the existing checkout.
+- [Task launch](./skills/task-launch/SKILL.md) — Start or reuse managed issue work without assignment or scheduled intake.
+- [Task retirement](./skills/task-retirement/SKILL.md) — Retire one managed task without closing or unassigning its issue.
+- [Task update](./skills/task-update/SKILL.md) — Publish material progress missing from the issue when requested.
 
 ## Installation
+
+### Version Compatibility
+
+| Agent System release | Minimum OpenClaw | Development target |
+| -------------------- | ---------------- | ------------------ |
+| 0.9.0                | 2026.10.6        | 2026.10.6          |
+| 0.8.0                | 2026.9.5         | 2026.9.6           |
+| 0.7.0                | 2026.9.5         | 2026.9.6           |
+| 0.6.0                | 2026.9.2         | 2026.9.3           |
+| 0.5.3                | 2026.7.1         | 2026.7.2           |
+
+Compatibility metadata declares the minimum supported OpenClaw version. Build
+metadata and development dependencies pin the newest version tested for the
+release.
+
+For the update order and existing-installation steps, see [upgrading](./UPGRADING.md).
 
 ### OpenClaw
 
@@ -106,23 +141,15 @@ openclaw plugins install npm:@tanaab/openclaw-agent-system --accept-capabilities
 Both commands accept the declared capabilities, register the plugin, and enable
 it. GitHub workflows require explicit [configuration and installation](./channels/github/README.md#configuration).
 
-For a development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
+### Codex
 
-### Version Compatibility
+Follow the [Codex installation and workspace setup guide](./CODEX.md#plugin-installation)
+to install the standalone plugin, approve its hooks, and bind your profile to a workspace.
 
-| Agent System release | Minimum OpenClaw | Development target |
-| -------------------- | ---------------- | ------------------ |
-| 0.9.0                | 2026.10.6        | 2026.10.6          |
-| 0.8.0                | 2026.9.5         | 2026.9.6           |
-| 0.7.0                | 2026.9.5         | 2026.9.6           |
-| 0.6.0                | 2026.9.2         | 2026.9.3           |
-| 0.5.3                | 2026.7.1         | 2026.7.2           |
+### From Source
 
-Compatibility metadata declares the minimum supported OpenClaw version. Build
-metadata and development dependencies pin the newest version tested for the
-release.
-
-For the update order and existing-installation steps, see [upgrading](./UPGRADING.md).
+For an OpenClaw development checkout, follow [Install from source](./DEVELOPMENT.md#install-from-source).
+For standalone Codex source installation and cache updates, see [Codex development](./DEVELOPMENT.md#codex).
 
 ## Usage
 
@@ -205,8 +232,8 @@ openclaw agent-system tool gh -- api user --jq .login
 
 `install` runs host setup, prepares managed tools, then runs agent setup. It asks
 for consent interactively; CI or `--yes` runs unattended. Doctor runs setup
-checks without repairs. Make applies safe to repeat: earlier effects are not
-rolled back on failure. See [Setup](./MANIFEST.md#setup) for syntax and runtime filters.
+checks without repairs. Write setup commands that are safe to repeat: a failure does not undo earlier
+changes. See [Setup](./MANIFEST.md#setup) for syntax and runtime filters.
 
 Add recurring work to the same manifest, then rerun Install:
 
@@ -223,7 +250,7 @@ automations:
 
 OpenClaw runs command jobs without a model; standalone Codex supports recurring
 prompt jobs through the desktop app. See [automation configuration](./MANIFEST.md#automations)
-and [Codex support](./CODEX.md#repository-automations) for runtime requirements.
+and [Codex support](./MANIFEST.md#codex-execution-and-ownership) for runtime requirements.
 
 Agent System does not provision model credentials, and memory credentials remain
 agent environment bindings rather than `openclaw.json` values. See

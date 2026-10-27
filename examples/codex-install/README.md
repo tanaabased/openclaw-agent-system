@@ -1,6 +1,8 @@
 # Codex Install Example
 
-Install the prepared plugin in isolated Codex state, discover its skills through a fresh app server, explicitly bind a workspace, apply only standalone Codex setup, load its session context, and unbind without changing workspace manifests.
+Install the prepared plugin in isolated Codex state and discover its skills through
+a fresh app server. Bind a workspace, apply Codex setup, load its session context,
+then unbind without changing the workspace manifests.
 
 ## What Belongs Here
 

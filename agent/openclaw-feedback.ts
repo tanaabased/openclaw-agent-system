@@ -1,3 +1,8 @@
+import {
+  recordFeedbackImplementation,
+  recordFeedbackResponse,
+  recordFeedbackCandidate,
+} from './feedback-result.ts';
 import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
 import implementationContext from './implementation-context.ts';
 import workflowRecovery from './workflow-recovery.ts';
@@ -15,7 +20,7 @@ import openClawDelivery, { type OpenClawDeliveryConnection } from './openclaw-de
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { Type, type Static } from 'typebox';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
-import { validateChatSendParams } from '@openclaw/gateway-protocol';
+import sendOpenClawTurn from './openclaw-send-turn.ts';
 import { automationHash } from './automation-hash.ts';
 import { admitFeedback, feedbackRevision } from './feedback-source.ts';
 import { feedbackResultSchema } from './feedback-state.ts';
@@ -116,43 +121,42 @@ export async function advanceFeedbackTurn(input: {
       throw new Error('feedback-session-unverified');
     const runId = `${record.id}:feedback:${event.id}${event.resumed ? ':resume:' + event.resumed : ''}`;
     const message = feedbackTurnMessage(record.id, event.id);
-    const params = {
-      sessionKey: expected.key,
-      agentId: expected.agentId,
-      sessionId: record.sessionCreation.sessionId!,
-      message,
-      queueMode: 'followup',
-      deliver: false,
-      expectedLeafEntryId: session.leaf,
-      idempotencyKey: runId,
-    };
-    if (!validateChatSendParams(params)) throw new Error('dispatch-turn-request-invalid');
-    await input.assertCurrent();
-    event.turn = { runId, message, status: 'attempted' };
-    event.phase = 'prepared';
-    await save();
-    await input.assertCurrent();
-    const sent = sessionObject(await request('chat.send', params));
-    if (sent.runId !== runId || !['started', 'queued', 'ok'].includes(String(sent.status)))
-      throw new Error('dispatch-turn-send-unverified');
-    event.turn.status = 'accepted';
-    event.phase = 'running';
-    await save();
+    await sendOpenClawTurn({
+      request,
+      params: {
+        sessionKey: expected.key,
+        agentId: expected.agentId,
+        sessionId: record.sessionCreation.sessionId!,
+        message,
+        expectedLeafEntryId: session.leaf,
+        idempotencyKey: runId,
+      },
+      assertCurrent: input.assertCurrent,
+      recordAttempt() {
+        event.turn = { runId, message, status: 'attempted' };
+        event.phase = 'prepared';
+      },
+      recordAcceptance() {
+        event.turn!.status = 'accepted';
+        event.phase = 'running';
+      },
+      save,
+    });
   }
   await describeIssueSession(request, record, input.config);
   await reconcileOpenClawTurn({
     request,
     sessionKey: expected.key,
     sessionId: record.sessionCreation.sessionId!,
-    turn: event.turn,
+    turn: event.turn!,
     save,
   });
   if (
-    event.turn.status === 'completed' &&
+    event.turn!.status === 'completed' &&
     event.phase !== 'published' &&
     !event.publicationAttempted
   ) {
-    event.previousTurnIds = [...(event.previousTurnIds ?? []), event.turn.runId];
+    event.previousTurnIds = [...(event.previousTurnIds ?? []), event.turn!.runId];
     event.resumed = (event.resumed ?? 0) + 1;
     delete event.turn;
     delete event.contextInputId;
@@ -165,7 +169,7 @@ export async function advanceFeedbackTurn(input: {
   delete event.retryAfter;
   await save();
   return {
-    status: event.turn.status === 'completed' ? 'feedback-completed' : 'feedback-pending',
+    status: event.turn!.status === 'completed' ? 'feedback-completed' : 'feedback-pending',
     id: record.id,
     eventId: event.id,
   };
@@ -487,31 +491,19 @@ export default async function openClawFeedback(input: {
   }
   if (action.operation === 'implementation-result') {
     feedbackMode(record, await livePolicy());
-    if (!event.work || !action.implementationResult)
-      throw new Error('feedback-implementation-context-required');
-    if (
-      event.work.result &&
-      automationHash(event.work.result) !== automationHash(action.implementationResult)
-    )
-      throw new Error('feedback-implementation-result-conflict');
-    if (action.implementationResult.outcome === 'done') {
+    await recordFeedbackImplementation(event, action.implementationResult, async () => {
       const connection = await input.connectDelivery?.();
       if (!connection) throw new Error('delivery-runtime-unavailable');
       if ((await connection.git(['status', '--porcelain=v1'])).trim())
         throw new Error('delivery-uncommitted-work');
-      const head = (await connection.git(['rev-parse', '--verify', 'HEAD'])).trim();
-      if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
-      if (event.work.head && event.work.head !== head)
-        throw new Error('feedback-implementation-head-changed');
-      event.work.head = head;
-    }
-    event.work.result = action.implementationResult;
+      return (await connection.git(['rev-parse', '--verify', 'HEAD'])).trim();
+    });
     await save();
     return {
       status: 'recorded',
-      result: event.work.result,
-      head: event.work.head,
-      next: event.work.result.outcome === 'done' ? 'delivery' : 'result',
+      result: event.work!.result!,
+      head: event.work!.head,
+      next: event.work!.result!.outcome === 'done' ? 'delivery' : 'result',
     };
   }
   if (action.operation === 'delivery') {
@@ -629,14 +621,7 @@ export default async function openClawFeedback(input: {
     if (!action.privateText?.trim() || action.publicText)
       throw new Error('feedback-result-required');
     const reply = !self && action.reply !== false;
-    if (
-      event.result &&
-      (event.result.privateText !== action.privateText || event.replyRequested !== reply)
-    )
-      throw new Error('feedback-result-conflict');
-    event.result ??= { privateText: action.privateText };
-    event.replyRequested = reply;
-    event.phase = reply ? 'responded' : 'published';
+    recordFeedbackResponse(event, action.privateText, reply);
     if (!reply) record.feedback!.lastServedAt = input.now;
     await save();
     return {
@@ -713,9 +698,7 @@ export default async function openClawFeedback(input: {
     if (!event.composition || action.digest !== compositionDigest())
       throw new Error('feedback-composition-stale');
     if (!action.publicText?.trim()) throw new Error('feedback-candidate-required');
-    if (event.result.publicText && event.result.publicText !== action.publicText)
-      throw new Error('feedback-result-conflict');
-    event.result.publicText = action.publicText;
+    recordFeedbackCandidate(event.result, action.publicText);
     await save();
     return {
       status: 'candidate-recorded',

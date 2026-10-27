@@ -1,6 +1,6 @@
 ---
 name: agent-system-github-cli
-description: Agent System GitHub CLI guidance for using the active agent's isolated GitHub credential, config, and operation policy.
+description: "Run GitHub CLI operations with the active agent's isolated credential and operation policy in OpenClaw; use native GitHub authorization in standalone Codex."
 license: MIT
 metadata:
   type: integration
@@ -11,7 +11,7 @@ metadata:
     - github
   openclaw:
     emoji: '🐙'
-    homepage: https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/github-cli
+    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/github-cli'
     requires:
       bins:
         - gh

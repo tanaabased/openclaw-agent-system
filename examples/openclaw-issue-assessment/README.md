@@ -1,6 +1,8 @@
 # OpenClaw Direct Issue Assessment Example
 
-Assess an explicitly selected unassigned issue in an existing checkout through the default assessment wrapper, retain the result in an ordinary chat, and finish without admitting managed issue work, implementation, or publication.
+Assess an unassigned issue in the current checkout using the default assessment
+skill. Keep the result in the existing chat without starting managed issue work,
+implementing changes, or publishing to GitHub.
 
 ## What Belongs Here
 
@@ -88,7 +90,7 @@ checkout=$(jq -er .path "$TMPDIR/direct-assessment-worktree.json")
 params=$(jq -nc --arg target "$target" --arg checkout "$checkout" '{sessionKey:"agent:issue-assessment-tanaabot:manual-assessment",agentId:"issue-assessment-tanaabot",message:("Direct issue assessment target: " + $target + " checkout: " + $checkout),deliver:false,idempotencyKey:"notification-manual-assessment"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-manual-assessment"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-assessment 600000
-jq -es '[.[].entries[]] | length == 1 and .[0].result.outcome == "plan-ready" and (.[0].result.fullAssessment | type == "string" and test("\\S")) and .[0].selection.skill.name == "agent-system-issue-assessment" and .[0].resultTurnId == "notification-manual-assessment"' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-assessment-*.json
+jq -es '[.[].entries[]] | length == 1 and .[0].result.outcome == "plan-ready" and (.[0].result.fullAssessment | type == "string" and test("\\S")) and .[0].selection.skill.name == "agent-system-task-assessment" and .[0].resultTurnId == "notification-manual-assessment"' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-assessment-*.json
 number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/emori"
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e 'length == 0'

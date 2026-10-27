@@ -1,34 +1,68 @@
-# Model Routing
+# Agent System Model Routing Tool
 
-[Agent System Model Routing](../../skills/model-routing/SKILL.md) assesses bounded task evidence and validates model and effort selections from the active workspace's [model profiles](../../MANIFEST.md#models). The calling model supplies judgment; the helper neither calls a classifier nor creates tasks or changes sessions.
+<a id="model-routing"></a>
+
+<p align="center">
+  <img src="../../skills/model-routing/assets/icon-large.svg" alt="Agent System Model Routing" width="180" />
+</p>
+
+Use [Model Routing](../../skills/model-routing/SKILL.md) to choose a model and reasoning
+effort from the workspace's [profiles](../../MANIFEST.md#models). The calling model
+assesses the task; the helper checks that assessment against the profiles. It does
+not call another classifier, create a task, or change a chat.
+
+- [Requirements](#requirements)
+- [Configuration](#configuration)
+- [`agent_system_model_routing`](#agent_system_model_routing)
+  - [Parameters](#parameters)
+  - [Usage](#usage)
+
+## Requirements
+
+Use the active OpenClaw agent's trusted tool context. In standalone Codex, use the
+[Model Routing skill](../../skills/model-routing/SKILL.md) with a trusted workspace binding.
+Model availability and supported effort remain subject to the owning runtime.
+
+## Configuration
+
+Configure [model profiles and routing guidance](../../MANIFEST.md#models) in the
+workspace manifest. There is no separate tool configuration or dispatch enrollment
+requirement.
 
 ## `agent_system_model_routing`
 
-Inspect the active OpenClaw agent's profiles or resolve an assessment. OpenClaw-hosted Codex uses this native tool too. The active agent and workspace come from trusted tool context; parameters cannot select another workspace. Only non-secret manifest data and configured routing guidance are read; no dispatch enrollment is required.
+Inspect the active agent's profiles or use an assessment to select a model and effort.
+OpenClaw-hosted Codex uses this tool too. The runtime supplies the agent and workspace;
+callers cannot choose another workspace. The tool reads only non-secret manifest data
+and configured routing guidance.
 
 ### Parameters
 
-| Field                    | Required                 | Default                            | Description                                                                                                                                                                       |
-| ------------------------ | ------------------------ | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `action`                 | yes                      | none                               | `inspect` or `resolve`.                                                                                                                                                           |
-| `assessment.complexity`  | for `resolve`            | none                               | `low`, `medium`, `high`, or `unset`.                                                                                                                                              |
-| `assessment.reason`      | for `resolve`            | none                               | Nonempty single-line explanation, at most 400 characters.                                                                                                                         |
-| `assessment.xhighReason` | when selecting xhigh     | none                               | Concrete justification, at most 400 characters.                                                                                                                                   |
-| `context`                | for `resolve`            | none                               | Task evidence as text or `{title, body}`. Title must be nonempty and body must be text; combined text, including two separating newlines, is limited to 18,000 characters.        |
-| `evidence`               | no                       | content assessment                 | `{complexity, source}` for explicit/verified Complexity. Source is `user`, `native`, or `body fallback`. The assessment must agree.                                               |
-| `fallback`               | no                       | no selection on unresolved         | `default` explicitly selects the configured default when complexity is `unset` or work tiers are omitted.                                                                         |
-| `instructionsDigest`     | for customized `resolve` | optional for the unchanged default | Digest returned by inspection; changed guidance requires reassessment. Pass it for every inspected selection.                                                                     |
-| `manifestDigest`         | for `resolve`            | none                               | Digest returned by inspection; stale profiles are rejected.                                                                                                                       |
-| `overrides.effort`       | no                       | profile effort                     | Explicit `none`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `adaptive`, `max`, or `ultra`; Codex does not map `off` or `adaptive`. Native controls remain authoritative. |
-| `overrides.model`        | no                       | profile model                      | Explicit provider-qualified model; standalone Codex also accepts native model ids.                                                                                                |
+| Parameter                | Type             | Required                 | Default                            | Description                                                                                                                                                                       |
+| ------------------------ | ---------------- | ------------------------ | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `action`                 | string           | yes                      | none                               | `inspect` or `resolve`.                                                                                                                                                           |
+| `assessment.complexity`  | string           | for `resolve`            | none                               | `low`, `medium`, `high`, or `unset`.                                                                                                                                              |
+| `assessment.reason`      | string           | for `resolve`            | none                               | Nonempty single-line explanation, at most 400 characters.                                                                                                                         |
+| `assessment.xhighReason` | string           | when selecting xhigh     | none                               | Concrete justification, at most 400 characters.                                                                                                                                   |
+| `context`                | string or object | for `resolve`            | none                               | Task evidence as text or `{title, body}`. Title must be nonempty and body must be text; combined text, including two separating newlines, is limited to 18,000 characters.        |
+| `evidence`               | object           | no                       | content assessment                 | `{complexity, source}` for explicit/verified Complexity. Source is `user`, `native`, or `body fallback`. The assessment must agree.                                               |
+| `fallback`               | string           | no                       | no selection on unresolved         | `default` explicitly selects the configured default when complexity is `unset` or work tiers are omitted.                                                                         |
+| `instructionsDigest`     | string           | for customized `resolve` | optional for the unchanged default | Digest returned by inspection; changed guidance requires reassessment. Pass it for every inspected selection.                                                                     |
+| `manifestDigest`         | string           | for `resolve`            | none                               | Digest returned by inspection; stale profiles are rejected.                                                                                                                       |
+| `overrides.effort`       | string           | no                       | profile effort                     | Explicit `none`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `adaptive`, `max`, or `ultra`; Codex does not map `off` or `adaptive`. Native controls remain authoritative. |
+| `overrides.model`        | string           | no                       | profile model                      | Explicit provider-qualified model; standalone Codex also accepts native model ids.                                                                                                |
 
 `inspect` accepts only `action`. Unknown fields are rejected. Partial work-tier declarations are invalid; default-only profiles are supported by an explicit default policy.
 
 ### Usage
 
+Inspect the configured profiles and routing instructions:
+
 ```json
 { "action": "inspect" }
 ```
+
+Resolve an assessment with explicit fallback to the configured default:
 
 ```json
 {
@@ -40,20 +74,15 @@ Inspect the active OpenClaw agent's profiles or resolve an assessment. OpenClaw-
 }
 ```
 
-Inspection returns `status`, `manifestDigest`, `profiles`, `rubric`, `instructions`, `instructionsDigest`, `instructionsGuidance`, and `reportGuidance`. The instructions identify the selected method and any loaded guidance. Direct OpenClaw leaves custom skill discovery and reading to the host-native caller; it does not claim server-verified skill source evidence. Standalone Codex and scheduled owners resolve custom skills through their existing native catalogs and retain source digests. See [routing configuration and precedence](../../MANIFEST.md#models). Each profile contains `sourceModel`, native `model`, and `thinking`, or an explicit unsupported diagnostic. Configuration generators consume `profiles.default`; no model or effort values are built in.
+Inspection returns the profiles, routing instructions, and digests identifying their
+current versions. Pass those digests when resolving an assessment. If profiles or
+guidance changed, assess again. Missing profiles or a missing workspace binding report
+unavailable; invalid inputs and unsupported selections return errors without a substitute.
 
-Resolution returns `status` (`resolved` or `unresolved`), `profile`, `complexity`, `source`, `reason`, optional `xhighReason`, `recommendation`, `selection`, and `overrides`. An unresolved result has a null profile and no recommendation or selection unless the caller explicitly requests default fallback or supplies both override values. Partial overrides remain in the result for the caller to complete. The result retains unresolved status and reasoning even when default is selected.
+Resolution returns `resolved` or `unresolved`, the selected profile, reasoning, and
+any native candidate. Unresolved work has no selection unless default fallback or both
+model and effort overrides were explicitly supplied; fallback does not change its
+unresolved status. Partial overrides remain available for the caller to complete.
 
-Mapped selections include a native `candidate`. `application: "not-requested"` and `execution: "unverified"` make the evidence boundary explicit. The caller must apply and verify the candidate through supported native controls. Unknown models or unsupported model/effort combinations can still be rejected there; profile mapping is not runtime discovery.
-
-Missing profiles or binding report unavailable. Invalid profiles, malformed requests, changed manifests, evidence conflicts, unsupported mappings/selections, and unjustified xhigh report errors without substitution. These outcomes never grant permission to launch work or change an existing session.
-
-## Standalone Codex Adapter
-
-Use the newest trusted hook's `routingRuntime.argvPrefix`, append `--plugin-data` and `routingRuntime.pluginData`, and supply the same request JSON on standard input. The packaged entry is `dist/codex/codex-runtime.js model-routing`. It reads the persisted binding, manifest, and configured guidance, and uses native `skills/list` for a custom skill; cwd and `CODEX_HOME` do not select profiles. See [Codex routing](../../CODEX.md#model-routing).
-
-## Reporting and Continuation
-
-Pass the inspection's `reportGuidance` with the saved decision to routed work. Its first assessment includes a short **Model routing** blockquote with model, effort, complexity, evidence source, reason, and overrides. Label unresolved default use. Keep recommendations, requested application, and verified execution separate. Ordinary follow-ups, resume, and compaction preserve the saved selection.
-
-Native issue workflows use the same resolver with bounded routing evidence and durable workflow state. Their routing block remains private; see [Codex routing](../../CODEX.md#model-routing).
+The returned candidate does not change your chat or confirm that the model is available.
+Apply it through your runtime's model controls and verify the resulting settings. See [routing precedence](../../MANIFEST.md#models).

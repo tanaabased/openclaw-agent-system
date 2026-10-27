@@ -1,6 +1,6 @@
 ---
 name: agent-system-model-routing
-description: Assess bounded task context and resolve model and effort selections from the active workspace profiles.
+description: 'Resolve a model and reasoning effort for a task from the active workspace profiles without creating a chat or changing its settings.'
 license: MIT
 metadata:
   type: workflow
@@ -65,7 +65,7 @@ Example resolve request after inspection:
 
 ## Checkpoints
 
-- Profiles came from the caller's trusted runtime binding, not the task directory.
+- Profiles came from the caller's trusted runtime binding, not the target checkout.
 - The helper validated the assessment; it did not create a task, resolve secrets, or mutate a session.
 - Report recommendation, requested application, and verified execution as distinct evidence.
 - Preserve the short **🧠 Model routing** card immediately after the first assessment prose. Put its heading and every content line inside one Markdown quote block. Include selected model, effort, complexity, source, reason, and any explicit override or unresolved default use. Keep GitHub's block private, outside the public reply candidate.

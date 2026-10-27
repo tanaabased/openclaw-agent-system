@@ -35,7 +35,7 @@ github:
     mode: work
     paused: true
     assessment:
-      skill: agent-system:agent-system-issue-assessment
+      skill: agent-system:agent-system-task-assessment
     allowed: ['@emoriwan']
     reviewers: ['@tanaabot']
   review-request:

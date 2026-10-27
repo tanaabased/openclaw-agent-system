@@ -1,28 +1,74 @@
-# Issue Dispatch
+# Agent System Issue Dispatch Tool
 
-Managed issue operations share the existing native workflow owners. For assessment-only
-or implementation in the current chat, use their separate skills.
+<a id="issue-dispatch"></a>
 
-## Manual Issue Launch
+<p align="center">
+  <img src="../../skills/task-launch/assets/icon-large.svg" alt="Agent System Issue Dispatch" width="180" />
+</p>
 
-Use `$agent-system-issue-launch` with an issue URL, `owner/repo#number`, repository
+Use the task skills to start, assess, implement, or retire issue work through its native
+workflow. For assessment or implementation in the current chat, choose the corresponding
+skill below.
+
+- [Requirements](#requirements)
+- [Configuration](#configuration)
+- [`agent_system_dispatch`](#agent_system_dispatch)
+  - [Parameters](#parameters)
+  - [Usage](#usage)
+
+## Requirements
+
+Use the active OpenClaw agent and native conversation, or a trusted standalone
+Codex workspace binding. OpenClaw manual launch requires session enrollment through
+[Install](../install/README.md#agent_system_install) with `manualSessionDispatch: true`;
+this does not enable scheduled intake. Codex may require
+[registering the prepared project](../../CODEX.md#issue-assessment).
+
+## Configuration
+
+Use the [GitHub workflow configuration](../../channels/github/CONFIG.md)
+for modes, stage skills, guidance, and delivery. [Model profiles](../../MANIFEST.md#models)
+select the configured model and effort. There is no separate Dispatch manifest section.
+
+## `agent_system_dispatch`
+
+Start with the skill for the requested operation; its returned context
+supplies the current request, required inputs, and recovery instructions.
+
+| Capability                                           | Action                                | Owning instructions                                                                           |
+| ---------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Assess an issue in the current checkout              | `assessment`                          | [Task Assessment](../../skills/task-assessment/SKILL.md)                                      |
+| Implement an authorized plan in the current checkout | `implementation`                      | [Task Implementation](../../skills/task-implementation/SKILL.md)                              |
+| Launch or reuse managed issue work                   | `launch`                              | [Task Launch](../../skills/task-launch/SKILL.md) and [launch reference](#manual-issue-launch) |
+| Reply to an exact GitHub destination                 | `reply`                               | [GitHub Reply](../../skills/github-reply/SKILL.md)                                            |
+| Retire one managed task                              | `retire`                              | [Task Retirement](../../skills/task-retirement/SKILL.md)                                      |
+| Update an issue with verified progress               | `reply` with `purpose: status-update` | [Task Update](../../skills/task-update/SKILL.md)                                              |
+
+The installed workflow also uses this tool internally. Follow the owning skill and
+returned task context rather than assembling an action sequence. Exact variants are
+in the [tool schema](./tool-schema.ts); shared behavior and recovery are in the
+[GitHub workflow guide](../../channels/github/README.md).
+
+<a id="manual-issue-launch"></a>
+
+Use `$agent-system-task-launch` with an issue URL, `owner/repo#number`, repository
 plus number, or a number with an explicit or independently verified repository context.
 The issue may be unassigned or assigned to somebody else. Existing repository access,
 agent eligibility, native authorization, and lifecycle checks still apply.
 
-The launcher creates or returns the normal managed issue conversation and checkout.
-Configured Plan/Work/Auto, stage skills/guidance and native model profiles apply;
+The launcher creates or reuses the managed issue chat and checkout. It uses the
+configured mode, stage skills, guidance, and model profiles;
 explicit supported choices override the corresponding defaults. It changes no issue
 assignment or scheduler. Local recovery records remain, and normal managed assessment
 summaries and PRs may be public. Manual launch alone grants no automatic feedback.
+It has no assigner-derived default PR assignee; explicit named recipients still
+apply. A recipient setting that requires an assignment actor must be corrected
+before manual launch.
 
-### `agent_system_dispatch` — `launch`
+### Parameters
 
-Create/reuse operator-initiated managed issue work in OpenClaw. Standalone Codex
-uses `dispatchRuntime` from trusted context with `launch context|prepare|reconcile`
-before its exact `--plugin-data` argument and JSON on stdin.
-
-#### Parameters
+These parameters cover `launch`. Use the owning skill and
+[tool schema](./tool-schema.ts) for other actions.
 
 | Parameter    | Type   | Required                 | Default                  | Description                                                                                                                  |
 | ------------ | ------ | ------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -40,7 +86,7 @@ before its exact `--plugin-data` argument and JSON on stdin.
 | `target`     | string | yes                      | none                     | Issue URL or supported issue reference.                                                                                      |
 | `title`      | string | for final preparation    | none                     | Concise alphanumeric issue title for native presentation.                                                                    |
 
-#### Usage
+### Usage
 
 Begin a manual launch without assigning the issue:
 
@@ -60,31 +106,6 @@ Begin with explicit planning mode and a repository-qualified number:
 }
 ```
 
-Follow the returned routing/preparation instructions with the same target, receipt
-and current digest. In Codex, project preparation can return a new routing digest
-before final native creation. A prepared Codex creation request is executed unchanged
-once through native `create_thread`; then reconcile the original launch. OpenClaw
-uses the existing enrolled session adapter directly and starts its assessment turn.
-
-An existing destination retains its current stage; revisiting does not rerun setup
-or a completed assessment. Partial/uncertain creation and sends are reconciled from
-the original attempt, never repeated blindly. Inactive or ambiguous owners must
-recover through their lifecycle rather than being recreated.
-
-### Setup and Recovery
-
-OpenClaw launch reuses existing session enrollment. A manual-only installation can
-request [Install](../install/README.md#agent_system_install) with
-`manualSessionDispatch: true` and approve the existing session-access disclosure.
-The operator CLI equivalent is `openclaw agent-system install --manual-session-dispatch`.
-This explicit setup option does not declare or activate intake. Launch never enrolls
-or replaces credentials silently; Doctor remains read-only.
-
-A missing Codex saved project returns the exact prepared folder to register. Keep
-that preparation and retry the same launch after registration. Invalid skills,
-explicit settings, absent assignment-actor recipients and native denials identify
-the correction; none authorize a substitute identity, private API, or new attempt.
-
-Manual origin has no assigner-derived default PR assignee. Explicit named recipients
-remain in effect. A configuration explicitly requesting an assignment actor is invalid
-when there was no assignment actor; correct that configuration before launch.
+Follow the returned preparation instructions, then verify that the same launch completed.
+Reused chats keep their stage and completed assessment. Recover an incomplete or
+uncertain attempt before starting another.

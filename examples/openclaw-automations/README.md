@@ -1,6 +1,7 @@
 # OpenClaw Automations Example
 
-Synchronize one command and one prompt automation without duplication, execute each under its owning agent, and verify completed runs and stable native job identities/routing.
+Install one command job and one prompt job, then run each as its configured agent.
+Verify that both finish and repeat installation preserves their IDs and routing.
 
 ## What Belongs Here
 

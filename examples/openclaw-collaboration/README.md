@@ -1,6 +1,8 @@
 # OpenClaw Collaboration Example
 
-Install collaboration for two managed agents while preserving an operator-owned participant grant, exchange a native message, read the peer history, and verify repeat installation preserves the working configuration.
+Set up collaboration for two agents while keeping an existing operator-granted
+participant. Send a native message, read the other agent's history, and verify that
+repeat installation preserves the working configuration.
 
 ## What Belongs Here
 

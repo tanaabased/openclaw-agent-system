@@ -308,16 +308,18 @@ export default class WorkspaceBackupService {
   }): Promise<BackupPruneResult> {
     if (!Number.isSafeInteger(options.keep) || options.keep < 1)
       throw new BackupError('backup-keep-invalid', 'Supply --keep as a positive integer.');
-    const plan = await this.plan({
+    const locations = await this.locations({
       manifest: options.manifest,
       workspaceDir: options.workspaceDir,
       overrides: options.output ? { output: options.output } : {},
       bound: options.bound,
     });
-    const output = plan.settings.output;
-    const control = await canonicalBackupPath(resolve(plan.workspaceDir, backupControlDirectory));
+    const output = locations.settings.output;
+    const control = await canonicalBackupPath(
+      resolve(locations.workspaceDir, backupControlDirectory),
+    );
     const empty = (): BackupPruneResult => ({
-      agentId: plan.agentId,
+      agentId: options.manifest.agent.id,
       output,
       keep: options.keep,
       kept: [],
@@ -370,7 +372,7 @@ export default class WorkspaceBackupService {
               'backup-archive-changed',
               'The archive changed during inspection.',
             );
-          if (metadata.agentId !== plan.agentId) {
+          if (metadata.agentId !== options.manifest.agent.id) {
             result.skipped.push({ path, reason: 'other-agent' });
             continue;
           }
@@ -433,8 +435,8 @@ export default class WorkspaceBackupService {
     };
     if (options.dryRun) return run();
     // apply uses the same lease as creation; dry-run must not create staging or lock state.
-    await ignoreDestination(plan.workspaceDir, control);
-    await ignoreDestination(plan.workspaceDir, output);
+    await ignoreDestination(locations.workspaceDir, control);
+    await ignoreDestination(locations.workspaceDir, output);
     await ensureDirectory(control, true);
     const lock = await acquirePrivateStateFileLock(join(control, 'capture'), lockOptions);
     try {
@@ -450,10 +452,7 @@ export default class WorkspaceBackupService {
     apply: boolean;
     expectedOutput?: string;
   }) {
-    const locations = await resolveBackupLocations({
-      ...options,
-      runtimeProtection: await this.runtimeProtection(options.manifest.agent.id),
-    });
+    const locations = await this.locations(options);
     if (
       options.expectedOutput !== undefined &&
       options.expectedOutput !== locations.settings.output
@@ -467,6 +466,18 @@ export default class WorkspaceBackupService {
       agentId: options.manifest.agent.id,
       output: locations.settings.output,
       apply: options.apply,
+    });
+  }
+
+  async locations(options: {
+    manifest: AgentManifest;
+    workspaceDir: string;
+    overrides?: BackupConfiguration;
+    bound?: boolean;
+  }) {
+    return resolveBackupLocations({
+      ...options,
+      runtimeProtection: await this.runtimeProtection(options.manifest.agent.id),
     });
   }
 

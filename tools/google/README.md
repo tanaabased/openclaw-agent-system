@@ -1,21 +1,39 @@
-# Google
+# Agent System Google Tool
 
-Agent System runs a reviewed GoG command surface with one ordinary Google user
-OAuth account per OpenClaw agent. The host supplies GoG, optionally
-through [`setup-host`](../../MANIFEST.md#setup); Agent System does not implement
-OAuth consent. Google scopes and resource permissions remain authoritative. No
-additional ClawHub skill, GoG
-plugin, or MCP server is needed.
+<a id="google"></a>
 
-GoG **v0.43.0** is reviewed. Stable releases **>=0.42.0 <1.0.0** are accepted;
-minor and patch updates do not require an exact version match. The admitted
-commands and flags remain restricted to the reviewed surface. Older releases,
-prereleases, and a future 1.x release require a compatibility review.
+<p align="center">
+  <img src="../../skills/google-cli/assets/icon-large.svg" alt="Agent System Google CLI" width="180" />
+</p>
 
-Standalone Codex keeps native host-authorized Google operations. Its Agent System
+Run supported GoG commands with a separate Google user account for each OpenClaw
+agent. Install GoG on the host, optionally through [`setup-host`](../../MANIFEST.md#setup),
+and complete its OAuth consent flow. Google scopes and resource permissions determine
+access. You do not need another ClawHub skill, GoG plugin, or MCP server.
+
+- [Requirements](#requirements)
+- [Configuration Reference](#configuration-reference)
+- [Per-agent Onboarding](#per-agent-onboarding)
+- [Supported Commands](#supported-commands)
+- [`agent_system_google`](#agent_system_google)
+- [CLI](#cli)
+  - [`openclaw agent-system tool gog`](#openclaw-agent-system-tool-gog)
+- [Shim](#shim)
+- [Launcher Bindings](#launcher-bindings)
+
+## Requirements
+
+GoG **v0.43.0** is reviewed. Stable releases **>=0.42.0 <1.0.0** are accepted; minor and
+patch updates do not require an exact version match. Only the reviewed commands and
+flags are supported. Older releases, prereleases, and a future 1.x release require a
+compatibility review.
+
+Standalone Codex uses your host's Google tools and authorization. Its Agent System
 Doctor and Install do not manage Google credentials; see [standalone Codex](../../CODEX.md).
 
-## Configuration
+<a id="configuration"></a>
+
+## Configuration Reference
 
 Declare `google` in the workspace's `agent.yaml`:
 
@@ -44,56 +62,21 @@ google:
   keyring-password: GOG_KEYRING_PASSWORD
 ```
 
-Merge these fields into the existing manifest; retain `schema-version: 1` and other
-agent configuration. For a different Google email, set `google.account` explicitly;
-both it and `agent.email` accept environment-reference forms. Raw JSON bindings
-remain supported with `credential-encoding: json` or omission. Values arrive through
-[declared environment sources](../../MANIFEST.md#environment), including 1Password
-Environments or individual `environment.set` secret references. Validation and
-passive discovery never resolve credentials.
+Merge this example into the existing manifest. Store credentials through
+[declared environment sources](../../MANIFEST.md#environment); validation does not
+resolve them. Set `google.account` only to override the agent email.
 
-### Environment and state
+Managed state uses `$XDG_CONFIG_HOME/tanaab/agent-system/<agent-id>/tools/gog`,
+or `$HOME/.config/tanaab/agent-system/<agent-id>/tools/gog` when unset.
+`XDG_CONFIG_HOME` must be absolute. Optional `GOG_HOME` overrides this location;
+the host value takes precedence over the declared agent environment. Use a separate
+absolute private directory per agent, outside workspaces and worktrees.
 
-These example bindings come from the declared agent environment and need secret
-storage. Their names are conventions, not extra native GoG inputs.
+## Per-agent Onboarding
 
-| Binding                    | Required                       | Default | Purpose                                                                 |
-| -------------------------- | ------------------------------ | ------- | ----------------------------------------------------------------------- |
-| `GOG_CREDENTIALS_JSON_B64` | yes, with the example bindings | none    | Client JSON, decoded according to `credential-encoding`.                |
-| `GOG_KEYRING_PASSWORD`     | yes, with the example binding  | none    | Supplied only to explicit credential consumers and GoG child processes. |
-| `GOG_TOKEN_JSON_B64`       | yes, with the example bindings | none    | Token JSON matching the expected account and OAuth client.              |
-
-Managed execution fixes `GOG_ACCOUNT` to the resolved `google.account` or
-`agent.email`, `GOG_AUTH_MODE` to `stored`, `GOG_CLIENT` to `agent-system`
-(through `--client=agent-system`), and `GOG_KEYRING_BACKEND` to `file`.
-`GOG_CONFIG_DIR`, `GOG_DATA_DIR`, `GOG_STATE_DIR`, and `GOG_CACHE_DIR` use private
-subdirectories; inherited directory, account, client, backend, access-token, and
-ADC overrides cannot redirect managed execution.
-
-Optional `GOG_HOME` selects the managed store directly: the launching host
-value wins over the declared agent environment, then the derived default.
-Without an override, the default is
-`$XDG_CONFIG_HOME/tanaab/agent-system/<agent-id>/tools/gog` when `XDG_CONFIG_HOME`
-is absolute, or `$HOME/.config/tanaab/agent-system/<agent-id>/tools/gog` when unset.
-A relative `XDG_CONFIG_HOME` makes the default state root unavailable.
-Use a separate absolute private directory per agent, outside workspaces and
-admitted worktrees. An ownership receipt prevents another agent from reusing it.
-The host override changes only the home location; it imports no host secrets
-and does not alter [environment-source precedence](../../MANIFEST.md#environment-resolution).
-
-Only explicit Install changes durable authentication state. Unchanged installs
-verify through a copy without reimporting; failed imports or identity checks
-preserve the active state. Competing installs report busy; retry after the
-current install finishes. Routine calls and Doctor use disposable private copies
-without repairing missing state or changing the host environment; their
-`GOG_HOME`, `HOME`, and directory variables point at the copy.
-
-Agents can share an OAuth client, but each Google user needs separate consent
-and a token export. Each agent gets separate state and should get a separate
-keyring password. Complete client JSON needs no extra client ID, client secret,
-or project ID bindings.
-
-## Per-agent onboarding
+If valid client and token exports are already saved, configure their bindings and
+start at step 5. Each Google user needs separate consent and a token export, even
+when agents share an OAuth client. Keep a separate keyring password per agent.
 
 1. Install [GoG v0.43.0](https://github.com/openclaw/gogcli/releases/tag/v0.43.0)
    or a compatible stable release in the range above.
@@ -146,7 +129,7 @@ Paste them into `GOG_CREDENTIALS_JSON_B64` and `GOG_TOKEN_JSON_B64`, respectivel
 Store the chosen password as `GOG_KEYRING_PASSWORD`. Base64 remains a secret.
 
 5. Configure the per-agent manifest bindings. Unset the staging `GOG_HOME`, then
-   run the managed lifecycle from that agent's workspace:
+   run Install and Doctor from that agent's workspace:
 
 ```sh
 unset GOG_HOME GOG_KEYRING_PASSWORD
@@ -155,9 +138,8 @@ openclaw agent-system doctor --json
 openclaw agent-system tool gog -- tasks lists list --max 1
 ```
 
-Choose a read command for a service the agent authorized. A healthy Google finding
-reports a live authenticated email check. The harmless service read also proves
-that the grant has the service permission. Calls need no interactive login after
+Choose a read command for a service the agent authorized. Doctor checks the authenticated email. A successful service read also verifies
+access to that service. Calls need no interactive login after
 setup. GoG performs access-token refresh; Agent System does not implement OAuth.
 
 After managed verification succeeds, remove the identified plaintext download and
@@ -166,23 +148,40 @@ export and any no-longer-needed onboarding keyring. Retain the three secrets in
 follow the [upstream audience guidance](https://gogcli.sh/quickstart.html) rather
 than treating Testing as a permanent unattended setup.
 
-### Recover existing credentials
+## Supported Commands
 
-Reuse valid saved authorizations with `credential-encoding: base64`; no new
-consent is needed. Confirm the agent ID/email, 1Password environment, and three
-binding names. Omit `google.account` only when `agent.email` is the intended
-account. Unset any old `GOG_HOME`, run `openclaw agent-system install --json`,
-then Doctor and a harmless managed read for an already-authorized service.
-A fresh encrypted store can use a new password without changing the Google grant;
-a token export's previous local label does not change its OAuth client.
+Use canonical command names; service and command aliases are not supported. The reviewed
+flags are defined in [the static contract](./command-contract.ts). Unknown flags fail
+before credentials resolve. See the
+[upstream command index](https://github.com/openclaw/gogcli/tree/main/docs/commands) for
+argument details.
 
-Repeat consent only for revoked or expired grants or missing identity access;
-do not add service scopes merely for recovery. After verification, remove only
-identified obsolete GoG files. Do not delete generic `config` or `data` directories
-or discard working credentials before the managed entrypoint succeeds.
+| Service  | Commands                                                                                                     |
+| -------- | ------------------------------------------------------------------------------------------------------------ |
+| Calendar | `events`, `event`, `calendars`, `create`, `update`, `delete`                                                 |
+| Contacts | `list`, `search`, `get`, `create`, `update`, `delete`                                                        |
+| Docs     | `info`, `cat`, `create`, `export`, `copy`, `insert`, `write`                                                 |
+| Drive    | `ls`, `search`, `get`, `upload`, `download`, `mkdir`, `copy`, `delete`, `rename`, `move`, `share`, `unshare` |
+| Gmail    | `search`, `get`, `send`, `attachment`                                                                        |
+| Sheets   | `get`, `update`, `append`, `clear`, `create`, `metadata`, `export`, `copy`                                   |
+| Slides   | `info`, `create`, `export`, `copy`, `list-slides`, `update-notes`, `insert-text`                             |
+| Tasks    | `lists list`, `lists create`, `list`, `get`, `add`, `update`, `done`, `undo`, `delete`                       |
 
-For repository CI credential provisioning, see the
-[OpenClaw Google example](https://github.com/tanaabased/openclaw-agent-system/blob/main/examples/openclaw-google/README.md).
+Auth/config administration, account/client/home/credential overrides, alternate
+authentication, generic API calls, MCP, watches, sync, persisted batches, Markdown
+conversion/import, diagram renderers, and unreviewed commands are unavailable. These
+restrictions protect the agent's identity and keep file access within its allowed
+directories. They are not a configurable Google operation policy. Ordinary supported
+writes remain subject to Google authorization and any host approval mechanism.
+
+Uploads, attachments, body files, signature files, contact input files, and notes
+files must be regular files inside the agent workspace or trusted admitted
+worktrees. Downloads and exports require an explicit output file inside those
+roots, with an existing parent directory. Symlinks, hardlinked files, home expansion,
+comma-separated file paths, and output directories are rejected. Pass repeatable
+attachment flags separately. `--values-json` accepts inline JSON; `@file` input is
+not admitted. Plain text file/stdin input works for Docs; Markdown processing is
+excluded because it can introduce additional file and process effects.
 
 ## `agent_system_google`
 
@@ -190,16 +189,20 @@ Run supported Google data commands with the active agent account.
 
 ### Parameters
 
-| Parameter | Type         | Required | Default | Description                                                    |
-| --------- | ------------ | -------- | ------- | -------------------------------------------------------------- |
-| `argv`    | string array | yes      | none    | Canonical GoG service/subcommand arguments and admitted flags. |
-| `stdin`   | string       | no       | closed  | Optional UTF-8 command input, at most 64 KiB.                  |
+| Parameter | Type         | Required | Default | Description                                                                                   |
+| --------- | ------------ | -------- | ------- | --------------------------------------------------------------------------------------------- |
+| `argv`    | string array | yes      | none    | 1–256 canonical GoG arguments and admitted flags; each argument is at most 65,536 characters. |
+| `stdin`   | string       | no       | closed  | Optional UTF-8 command input, at most 64 KiB.                                                 |
 
 ### Usage
+
+Find up to ten unread messages:
 
 ```json
 { "argv": ["gmail", "search", "is:unread", "--max", "10"] }
 ```
+
+Create an event in the configured account's primary calendar:
 
 ```json
 {
@@ -217,62 +220,32 @@ Run supported Google data commands with the active agent account.
 }
 ```
 
+Upload a file from the allowed workspace:
+
 ```json
 { "argv": ["drive", "upload", "report.pdf"] }
 ```
 
-JSON output is the default; `--plain` requests upstream plain output. The result
-includes `exitCode`, `stdout`, `stderr`, `truncated`, and `status`. Authentication
-rejection, insufficient scopes, provider permission denial, and missing setup have
-distinct statuses; disabled APIs and unreadable keyrings have separate diagnostics. Identity mismatch stops execution before the requested operation.
+JSON output is the default; use `--plain` for plain output. Results include
+`exitCode`, `stdout`, `stderr`, `truncated`, and `status`, with diagnostics for
+setup, authentication, scope, and provider failures. Identity mismatch stops the
+requested operation.
 
-### Supported commands
+## CLI
 
-Use canonical command names; service and command aliases are not admitted. The
-reviewed flags are defined in [the static contract](./command-contract.ts). Unknown
-flags fail before credentials resolve. See the [upstream command index](https://github.com/openclaw/gogcli/tree/main/docs/commands)
-for argument details.
-
-| Service  | Commands                                                                                                     |
-| -------- | ------------------------------------------------------------------------------------------------------------ |
-| Calendar | `events`, `event`, `calendars`, `create`, `update`, `delete`                                                 |
-| Contacts | `list`, `search`, `get`, `create`, `update`, `delete`                                                        |
-| Docs     | `info`, `cat`, `create`, `export`, `copy`, `insert`, `write`                                                 |
-| Drive    | `ls`, `search`, `get`, `upload`, `download`, `mkdir`, `copy`, `delete`, `rename`, `move`, `share`, `unshare` |
-| Gmail    | `search`, `get`, `send`, `attachment`                                                                        |
-| Sheets   | `get`, `update`, `append`, `clear`, `create`, `metadata`, `export`, `copy`                                   |
-| Slides   | `info`, `create`, `export`, `copy`, `list-slides`, `update-notes`, `insert-text`                             |
-| Tasks    | `lists list`, `lists create`, `list`, `get`, `add`, `update`, `done`, `undo`, `delete`                       |
-
-Auth/config administration, account/client/home/credential overrides, alternate
-authentication, generic API calls, MCP, watches, sync, persisted batches, Markdown
-conversion/import, diagram renderers, and unreviewed commands are unavailable.
-This admission boundary protects identity and filesystem containment; it is not a
-configurable Google operation policy. Ordinary supported writes remain subject to
-Google authorization and any host approval mechanism.
-
-Uploads, attachments, body files, signature files, contact input files, and notes
-files must be regular files inside the agent workspace or trusted admitted
-worktrees. Downloads and exports require an explicit output file inside those
-roots, with an existing parent directory. Symlinks, hardlinked files, home expansion,
-comma-separated file paths, and output directories are rejected. Pass repeatable
-attachment flags separately. `--values-json` accepts inline JSON; `@file` input is
-not admitted. Plain text file/stdin input works for Docs; Markdown processing is
-excluded because it can introduce additional file and process effects.
-
-## `openclaw agent-system tool gog`
+### `openclaw agent-system tool gog`
 
 Run the [supported Google commands](#supported-commands) from an operator terminal
 using the selected agent's account and workspace.
 
-### Options
+#### Options
 
 | Option or argument   | Required | Default             | Description                                 |
 | -------------------- | -------- | ------------------- | ------------------------------------------- |
 | `--agent <id>`       | no       | workspace discovery | Select an installed agent's workspace.      |
 | `-- <GoG arguments>` | yes      | none                | Forward canonical GoG arguments after `--`. |
 
-### Usage
+#### Usage
 
 ```text
 openclaw agent-system tool gog [--agent <id>] -- <GoG arguments>
@@ -283,35 +256,37 @@ openclaw agent-system tool gog [--agent <id>] -- <GoG arguments>
 openclaw agent-system tool gog -- tasks lists list --max 1 --readonly
 ```
 
-The same command admission and filesystem boundaries apply as for
+The same supported commands and file-access limits apply as for
 [`agent_system_google`](#agent_system_google).
 
-## `gog` and `AGENT_SYSTEM_GOG`
+<a id="gog-and-agent_system_gog"></a>
 
-The contextual `gog` shim uses the managed runtime inside an agent context and the
-existing sanitized host-execution route outside it. Managed failures never fall
-back to host credentials. `gog --agent-system` reports `agent-system` as a shim
-diagnostic. The strict launcher binding `AGENT_SYSTEM_GOG` requires active-agent
-authority and is suitable for bound scripts.
+## Shim
 
-### Options
-
-| Option or argument | Required | Default | Description                                          |
-| ------------------ | -------- | ------- | ---------------------------------------------------- |
-| `--agent-system`   | no       | off     | Diagnostic used alone to identify the packaged shim. |
-| GoG arguments      | yes      | none    | Same canonical command surface as the native tool.   |
-
-### Usage
+Install adds the packaged `gog` shim to supported agent command paths:
 
 ```sh
-# identify the contextual shim.
+# confirm that this gog belongs to agent system.
 gog --agent-system
 
-# use the strict launcher from an authorized agent-bound script.
+# delegate a google command through the shared tool runtime.
+gog gmail search 'is:unread' --max 10
+```
+
+The packaged command uses managed Google execution in agent context and sanitized
+host execution outside it. Managed failures never fall back to host credentials.
+See the [command-routing contract](../../CLI.md#trust-boundary).
+
+## Launcher Bindings
+
+Agent-bound Gateway and setup children receive `AGENT_SYSTEM_GOG`, the absolute
+path to the strict managed launcher:
+
+```sh
+# require the bound agent's google account without host fallback.
 "$AGENT_SYSTEM_GOG" gmail search 'is:unread' --max 10
 ```
 
-The [operator CLI](#openclaw-agent-system-tool-gog) remains operator-only when invoked unbound.
-Private GoG state follows the [per-agent home contract](#environment-and-state).
-The agents still share an OS user; these are practical context and identity
-boundaries, not complete operating-system isolation.
+This launcher requires active-agent authority under the shared
+[execution boundary](../../CLI.md#trust-boundary). The [shim](#shim) retains
+its contextual host fallback.

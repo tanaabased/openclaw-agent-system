@@ -1,6 +1,8 @@
 # OpenClaw Notification PR Journey Example
 
-Assign one issue, retain its plan, implement approved GitHub direction, and deliver one linked PR in the same native chat and worktree. Implement one ordinary PR conversation comment, update that PR, publish its reply, and verify that a repeat scan repeats no completed effect.
+Assign an issue, save its plan, and implement approved GitHub direction to deliver a
+linked PR from the same chat and worktree. Act on a PR comment, update that PR, and
+publish a reply. Verify that another scan repeats none of the completed actions.
 
 ## What Belongs Here
 
@@ -18,11 +20,11 @@ Assign one issue, retain its plan, implement approved GitHub direction, and deli
 
 ## Notes
 
-- Strict AIMock supplies model text and tool selection; GitHub, native chat execution, dispatch, managed Git, and receipts remain real. Only Tanaabot is assigned; EMORI creates fixtures and comments.
-- Each job prepares its own issue, assessment, and linked PR. Initial feedback permits three bounded coordinator passes for native assessment reconciliation, while preserving the exact source revision. Refreshes target only this issue; the 24-hour schedule avoids unrelated discovery.
+- Strict AIMock supplies the model text and tool choices. GitHub requests, chat execution, dispatch, managed Git, and saved results still run normally. Only Tanaabot is assigned; EMORI creates the test issues and comments.
+- Each job prepares its own issue, assessment, and linked PR. The coordinator has up to three passes to verify the assessment before handling initial feedback, keeping the same source revision. Refreshes target only this issue; a 24-hour schedule avoids unrelated discovery.
 - Approved GitHub comments retain their exact source, native turn, and publication receipts in the owning issue chat.
 - Feedback work enters through direct implementation with a scope argument; re-entry must preserve the existing feedback owner and its publication contract.
-- The shared PR fixture reconciles delayed closing-issue linkage with at most three prepare/publish passes on the same delivery. Unknown failures and uncertain writes do not create replacement PRs.
+- If the closing-issue link is delayed, the shared fixture checks the same delivery through at most three prepare/publish passes. Unknown failures and uncertain writes never create replacement PRs.
 
 ## Setup
 

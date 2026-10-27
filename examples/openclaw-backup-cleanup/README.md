@@ -1,6 +1,8 @@
 # OpenClaw Backup Cleanup Example
 
-Create one valid backup, preview interrupted capture artifacts, remove only owned incomplete attempts, and repeat cleanup without deleting the published archive or foreign state.
+Create a valid backup, then preview and remove incomplete attempts left by an
+interrupted capture. Repeat cleanup and verify that the published archive and
+resources owned by others remain intact.
 
 ## What Belongs Here
 

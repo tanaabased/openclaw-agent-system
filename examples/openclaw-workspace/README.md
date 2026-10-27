@@ -1,6 +1,8 @@
 # OpenClaw Workspace Example
 
-Validate a declared workspace without effects, install its ordered setup and resolved configuration, repeat installation without changes, and inspect healthy/setup-drift state through read-only Doctor.
+Validate a workspace without changing it, then install its ordered setup and
+configuration. Repeat installation without changes and use Doctor to inspect both
+healthy state and setup drift.
 
 ## What Belongs Here
 

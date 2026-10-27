@@ -1,6 +1,9 @@
 # OpenClaw Notification Conversation Continuity Example
 
-Continue one admitted issue after cosmetic chat edits, use a retained answer in a later GitHub question and an equivalent direct question, then revise the assessment through clarification and answer without changing its owner or starting implementation. Publish one later operator status update after the delivered assessment, then verify an already-current no-op.
+Continue an issue after cosmetic chat edits and use a saved answer in later GitHub
+and direct questions. Revise the assessment after clarification without changing
+chats or starting implementation. Publish one requested status update, then verify
+that an already-current issue needs no further post.
 
 ## What Belongs Here
 

@@ -1,8 +1,8 @@
 # OpenClaw Manual Issue Launch Example
 
-Launch one unassigned issue from an ordinary chat without notification configuration,
-create its checkout and native issue conversation through the existing enrolled session
-owner, retain a Plan assessment, then reuse that destination after a Gateway restart.
+Launch an unassigned issue from an ordinary chat without enabling notification intake.
+Create its checkout and issue chat through the enrolled session service, save a Plan
+assessment, and reuse the same chat after a Gateway restart.
 
 ## What Belongs Here
 

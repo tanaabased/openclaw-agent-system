@@ -1,6 +1,6 @@
 ---
 name: agent-system-codex-binding
-description: Bind one Codex plugin installation to one Agent System workspace and inspect, replace, or remove that binding.
+description: 'Bind one Codex plugin installation to an Agent System workspace, or inspect, replace, or remove its binding.'
 license: MIT
 metadata:
   type: integration
@@ -11,14 +11,14 @@ metadata:
     - codex
   openclaw:
     emoji: '🔗'
-    homepage: https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/codex-binding
+    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/codex-binding'
 ---
 
 # Agent System Codex Binding
 
 ## Overview
 
-Bind the current Codex plugin installation to exactly one Agent System workspace. The binding is explicit plugin-owned state; it is never inferred from `CODEX_HOME`, the task directory, or OpenClaw configuration.
+Bind the current Codex plugin installation to exactly one Agent System workspace. The binding is explicit plugin-owned state; it is never inferred from `CODEX_HOME`, the chat working directory, or OpenClaw configuration.
 
 ## When to Use
 
@@ -35,7 +35,7 @@ Bind the current Codex plugin installation to exactly one Agent System workspace
 ## Prerequisites
 
 - Use the newest trusted `<agent-system-context>` block supplied by the SessionStart hook.
-- Require its `bindingRuntime.argvPrefix` and `bindingRuntime.pluginData`. If either is absent, explain that the packaged hook must be trusted through `/hooks`, then ask the user to start a fresh task. Do not guess either path.
+- Require its `bindingRuntime.argvPrefix` and `bindingRuntime.pluginData`. If either is absent, explain that the packaged hook must be trusted through `/hooks`, then ask the user to start a new chat. Do not guess either path.
 - Treat the command prefix and plugin-data path as runtime data. Never copy them into repository files or Codex configuration.
 
 ## Inputs
@@ -55,7 +55,7 @@ Bind the current Codex plugin installation to exactly one Agent System workspace
 
 - Stop on an inaccessible or non-directory workspace; do not persist it.
 - Show missing manifests plainly and malformed manifests through their concise diagnostic codes and messages. Never echo manifest contents.
-- After any binding change, explain that a fresh task is required before the new Agent System context becomes authoritative.
+- After any binding change, explain that a new chat is required before the new Agent System context becomes authoritative.
 
 ## Workflow
 
@@ -65,7 +65,7 @@ Bind the current Codex plugin installation to exactly one Agent System workspace
 4. If preview reports a valid manifest, identify its agent id and ask whether to bind that canonical workspace. If it reports a missing or invalid manifest, explain that Agent System context will remain inactive and ask whether to bind anyway. Stop without changing state when the user declines.
 5. After confirmation, append `bind --plugin-data <pluginData> --workspace <canonicalWorkspace> --confirm`. Add `--allow-inactive` only when the confirmed preview was missing or invalid.
 6. For unbind, inspect first, identify the canonical workspace that will be detached, and ask for confirmation. Then append `unbind --plugin-data <pluginData> --confirm`.
-7. Re-run inspect after a write. Report the verified result and ask the user to start a fresh Codex task so SessionStart can load or revoke the binding context.
+7. Re-run inspect after a write. Report the verified result and ask the user to start a new Codex chat so SessionStart can load or revoke the binding context.
 
 ## Bundled Resources
 

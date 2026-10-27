@@ -1,9 +1,8 @@
 # GitHub Notification Presentation
 
-This guide defines the reusable human-visible components for the GitHub
-notification workflows. It describes their appearance and composition only. The
-[advanced guide](./ADVANCED.md) describes lifecycle behavior, and the
-[notification README](./README.md) describes the current implementation.
+Use this guide when formatting GitHub notification cards and responses. It covers
+their appearance and composition. The
+[notification README](./README.md) describes setup, conversations, and task retirement.
 
 ## Style
 
@@ -36,11 +35,11 @@ rewriting whole cards or searching arbitrary prose. Reuse the shared Markdown
 code-span helper: choose delimiters longer than embedded backtick runs and pad
 boundary backticks. Do not backslash-escape literal contents as Markdown text.
 Retain clickable links, including code-formatted technical labels such as
-[`agent-system-issue-assessment`](../../skills/issue-assessment/SKILL.md); leave
+[`agent-system-task-assessment`](../../skills/task-assessment/SKILL.md); leave
 actors and issue/PR links readable in their existing form. Preserve raw incoming
 and outgoing comment bodies and literal guidance/diff blocks without rewriting.
 
-Representative facts (the Auto decision value is already aligned):
+Examples of formatted values:
 
 ```markdown
 > ## 🧠 Model routing
@@ -256,8 +255,8 @@ implementation began.
 <complete private response>
 ```
 
-The private response is the report of record. Use headings and compact lists or
-tables when they make the complete result easier to review.
+Keep the complete result in the private response. Use headings, compact lists, or
+tables when they make it easier to review.
 
 ## Plan
 
@@ -280,9 +279,9 @@ tables when they make the complete result easier to review.
 The full assessment and engineering plan are saved for implementation. Ask for the full assessment to inspect them.
 ```
 
-For results with an explicit `reviewSummary` and retained `fullAssessment`, show the
-review by default instead of the engineering source. Explain what the person does
-today, where it fails, and what they would do and receive after the proposed change.
+When a result includes both `reviewSummary` and `fullAssessment`, show the review
+summary by default. Explain what the person does today, where it fails, and how the
+proposed change would improve that experience.
 Include brief documentation and test impact in the repository's own terms, plus any
 risk, uncertainty, or decision that could change approval. Roughly 200–400 words is
 an editorial guide for an ordinary human review, not a limit or minimum. Small fixes

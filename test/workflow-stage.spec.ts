@@ -36,7 +36,7 @@ describe('agent/workflow-stage', () => {
         observedAt: 123,
         configuration: { guidance: 'Use the repository conventions.\nPreserve existing work.' },
         resolveSkill: async (id) => {
-          assert.equal(id, `agent-system:agent-system-issue-${stage}`);
+          assert.equal(id, `agent-system:agent-system-task-${stage}`);
           return { ...skill, name: id };
         },
       });

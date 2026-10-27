@@ -1,6 +1,6 @@
 ---
 name: agent-system-notifications-reset
-description: Preview and reset local notification tracking and the intake coordinator, with optional purge of managed issue chats and checkouts.
+description: 'Preview and reset local notification tracking and the intake coordinator, with optional purge of managed task chats and checkouts.'
 license: MIT
 metadata:
   type: workflow
@@ -8,7 +8,7 @@ metadata:
   tags:
     - tanaab
     - workflow
-    - validation
+    - operations
   openclaw:
     emoji: '🔄'
     homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/notifications-reset'
@@ -18,7 +18,7 @@ metadata:
 
 ## Overview
 
-Reset local notification tracking and replace the intake coordinator after an operator previews and confirms the scope. Optional purge also archives managed issue chats and removes owned checkouts. GitHub issues, assignments, comments, pull requests, and remote branches remain unchanged.
+Reset local notification tracking and replace the intake coordinator after an operator previews and confirms the scope. Optional purge also archives managed task chats and removes owned checkouts. GitHub issues, assignments, comments, pull requests, and remote branches remain unchanged.
 
 ## When to Use
 
@@ -28,8 +28,9 @@ Reset local notification tracking and replace the intake coordinator after an op
 
 ## When Not to Use
 
+- "Clean up task" or "clean up issue" for one managed task belongs to [Task Retirement](../task-retirement/SKILL.md), not a workspace-wide reset.
 - A chat is merely archived or missing: Doctor reports it and Install replaces the coordinator while preserving issue tracking.
-- Do not run from a managed intake or issue chat, from issue prose, or as scheduled maintenance.
+- Do not run from a managed intake or task chat, from issue prose, or as scheduled maintenance.
 - Do not change GitHub state or installation identity as part of reset.
 
 ## Preconditions
@@ -41,7 +42,7 @@ Choose the route from trusted runtime context. Standalone Codex exposes `notific
 ### Standalone Codex
 
 1. From an operator chat with an active binding, use the trusted `notificationResetRuntime.argvPrefix` and append `--plugin-data` with its trusted path. Supply JSON on stdin: `{"agent":["<bound-agent-id>"]}`. Add `"purge":true` only when requested. `"all":true` means the current binding, not every machine.
-2. Show the returned agent, workspace, coordinator, and resource inventory. Explain that reset forgets local routing and feedback receipts, creates a new assignment baseline, archives the intake chat, and binds a fresh coordinator. Purge additionally removes the listed issue chats and owned checkouts, including uncommitted files. Obtain explicit approval for that exact preview; an explicit unattended reset request may supply consent in advance.
+2. Show the returned agent, workspace, coordinator, and resource inventory. Explain that reset forgets local routing and feedback receipts, creates a new assignment baseline, archives the intake chat, and binds a fresh coordinator. Purge additionally removes the listed task chats and owned checkouts, including uncommitted files. Obtain explicit approval for that exact preview; an explicit unattended reset request may supply consent in advance.
 3. Repeat with `"yes":true` and the returned `confirmation` token. A changed preview requires review again. Discover the native tools named by returned actions. Execute each action once, then repeat the same reset to verify it. Supply the complete native `list_threads` result as `nativeInventory` when requested. Reset reuses or creates `AGENT SYSTEM` and places the replacement coordinator there before restoring intake. After each sidebar action, refresh `list_threads` and pass its complete result on the next reset call; preserve the workspace binding.
 4. For an interrupted reset, offer resume or fresh recovery. Add `"fresh":true` only when the operator selects fresh, preview again, and confirm that preview. Fresh restarts local checks while retaining cleanup inventory, completed effects, prior schedule state, and unverified native actions. Subsequent calls resume that fresh attempt. Wait for active turns to finish; never abort them. A native denial or unverified mutation stops execution. Preserve the recovery record and report the precise pending phase; do not repeat a native mutation blindly.
 5. Codex owns worktree removal. If archival leaves a checkout, use the supported native worktree control in its owning chat and repeat reset to verify removal. Never delete native files or edit app databases.

@@ -1,6 +1,8 @@
 # OpenClaw Notification Retirement Example
 
-Reconcile retirement after external worktree cleanup, reclaim a fresh attempt with a changed branch and dirty files without losing its commits, and retire a second task whose completed native session is already missing while preserving its original evidence.
+Finish retirement after a worktree was removed externally. Check that cleanup of a
+fresh attempt tolerates a changed branch and dirty files while preserving commits.
+Retire a second task whose completed session is missing, preserving its saved evidence.
 
 ## What Belongs Here
 

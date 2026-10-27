@@ -1,6 +1,8 @@
 # OpenClaw Notification Auto Plan Example
 
-Retain a reasoned Auto Plan decision across repeat scans without implementation, then accept authenticated operator direction and an answer in the same native owner to complete a local change without PR publication.
+Keep an Auto Plan decision across repeat scans without starting implementation.
+Then accept verified operator direction and answer a clarification in the same chat
+to complete a local change without publishing a PR.
 
 ## What Belongs Here
 

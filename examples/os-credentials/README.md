@@ -1,6 +1,8 @@
 # OS Credentials Example
 
-Use private managed storage and a local signing key on macOS and Linux, verify a trusted signed commit, and refuse unsafe permissions or symlink escapes without exposing credentials or damaging peer/outside state.
+Use private credential storage and a local signing key on macOS and Linux to verify
+a trusted signed commit. Check that unsafe permissions and symlink escapes are
+refused without exposing credentials or changing another agent's or external files.
 
 ## What Belongs Here
 

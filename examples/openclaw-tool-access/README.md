@@ -1,6 +1,8 @@
 # OpenClaw Tool Access Example
 
-Add configured capabilities to an installed agent, reconcile its native tool grants, enforce operator denials, and remove stale owned grants when those capabilities disappear.
+Add capabilities to an installed agent and update its tool grants. Verify that
+operator denials still apply and that removing capabilities removes only the grants
+Agent System owns.
 
 ## What Belongs Here
 

@@ -1,7 +1,7 @@
 interface:
   display_name: 'Agent System Git Worktree'
-  short_description: 'Managed agent Git worktrees'
+  short_description: 'Prepare, reuse, find, or remove Git worktrees'
   icon_small: './assets/icon-small.svg'
   icon_large: './assets/icon-large.svg'
   brand_color: '#00c88a'
-  default_prompt: 'Use $agent-system-git-worktree to prepare or reuse a worktree and remove it only when requested.'
+  default_prompt: "Use $agent-system-git-worktree to manage this task's Git worktree through its owning runtime."

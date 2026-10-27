@@ -1,6 +1,6 @@
 ---
 name: agent-system-git-worktree
-description: Agent System guidance for preparing, using, finding, or removing deterministic Git worktrees for an agent task.
+description: 'Prepare, reuse, find, or remove a managed Git worktree for a task through the owning runtime.'
 license: MIT
 metadata:
   type: integration
@@ -11,7 +11,7 @@ metadata:
     - git
   openclaw:
     emoji: '🌳'
-    homepage: https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/git-worktree
+    homepage: 'https://github.com/tanaabased/openclaw-agent-system/tree/main/skills/git-worktree'
     requires:
       bins:
         - git
@@ -41,6 +41,7 @@ Use `agent_system_git_worktree` to prepare, list, or remove deterministic worktr
 ## When Not to Use
 
 - Use `$agent-system-git-cli` for status, diff, commits, branches, fetch, pull, or push.
+- Starting managed issue work belongs to [Task Launch](../task-launch/SKILL.md); "clean up task" or "clean up issue" belongs to [Task Retirement](../task-retirement/SKILL.md), which owns any eligible worktree cleanup.
 - Do not invent repository ids, stable work identifiers, clone URLs, or base refs when the prompt does not provide enough context.
 - Do not use raw `git worktree` mutation or direct filesystem deletion as a substitute for this tool.
 

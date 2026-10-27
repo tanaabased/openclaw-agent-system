@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { readFile, realpath, stat } from 'node:fs/promises';
+import { realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve } from 'node:path';
 
 import isPathContained from '../utils/is-path-contained.ts';
-import { maximumManifestBytes } from './discover.ts';
+import readBoundedManifestBytes, { maximumManifestBytes } from './read-bytes.ts';
 import type { ManifestDiagnostic } from './types.ts';
 
 export interface ManifestFileDependency {
@@ -57,9 +57,6 @@ export default async function readManifestFile(
       return failure('escape', 'escapes the agent workspace through a symlink.', path);
     }
     canonicalPath = resolvedFile;
-    if (!(await stat(canonicalPath)).isFile()) {
-      return failure('not-regular', 'must name a regular file.', path);
-    }
   } catch (error) {
     return failure(
       'unreadable',
@@ -70,16 +67,18 @@ export default async function readManifestFile(
 
   let contents: Buffer;
   try {
-    contents = await readFile(canonicalPath);
+    const file = await readBoundedManifestBytes(canonicalPath);
+    if (file.status === 'not-regular')
+      return failure('not-regular', 'must name a regular file.', path);
+    if (file.status === 'too-large')
+      return failure('too-large', `exceeds the ${maximumManifestBytes}-byte size limit.`, path);
+    contents = file.contents;
   } catch (error) {
     return failure(
       'unreadable',
       `could not be read (${(error as NodeJS.ErrnoException).code ?? 'unknown'}).`,
       path,
     );
-  }
-  if (contents.byteLength > maximumManifestBytes) {
-    return failure('too-large', `exceeds the ${maximumManifestBytes}-byte size limit.`, path);
   }
   let source: string;
   try {

@@ -1,7 +1,7 @@
 interface:
   display_name: 'Agent System Task Retirement'
-  short_description: 'Safely retire one managed task on request'
+  short_description: 'Retire one managed task through its native lifecycle'
   icon_small: './assets/icon-small.svg'
   icon_large: './assets/icon-large.svg'
-  brand_color: '#00c88a'
-  default_prompt: 'Use $agent-system-task-retirement to retire this managed task using its native lifecycle.'
+  brand_color: '#db2777'
+  default_prompt: 'Use $agent-system-task-retirement to retire this managed task through its native lifecycle without closing or unassigning its GitHub issue.'

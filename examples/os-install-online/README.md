@@ -1,6 +1,8 @@
 # Cold Online Install Example
 
-Start the Gateway before the workspace's first Install, enroll dispatch, activate intake, and reconcile declared and derived automations on macOS and Ubuntu. Preserve the first attempt before checking successful convergence.
+Start the Gateway before the workspace's first Install, enroll dispatch, and activate
+intake on macOS and Ubuntu. Check declared and generated automations, preserving the
+first attempt's evidence before testing repeat installation.
 
 ## What Belongs Here
 

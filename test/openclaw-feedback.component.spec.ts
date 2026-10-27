@@ -176,7 +176,7 @@ describe('agent/openclaw-feedback', () => {
             skills: skill
               ? [
                   ...customSkills,
-                  ...['agent-system-feedback-reply', 'agent-system-issue-implementation'].map(
+                  ...['agent-system-github-reply', 'agent-system-task-implementation'].map(
                     (name) => ({
                       name,
                       eligible: true,
@@ -826,7 +826,7 @@ describe('agent/openclaw-feedback', () => {
       assert.ok('selection' in composed && composed.selection && 'digest' in composed);
       assert.equal(
         composed.selection.skill.name,
-        variant.includes('skill') ? 'custom-reply' : 'agent-system-feedback-reply',
+        variant.includes('skill') ? 'custom-reply' : 'agent-system-github-reply',
       );
       assert.equal(
         composed.selection.guidance?.content,

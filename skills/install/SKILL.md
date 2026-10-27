@@ -1,6 +1,6 @@
 ---
 name: agent-system-install
-description: Install one Agent System workspace through OpenClaw or reconcile standalone Codex setup and repository automations.
+description: 'Apply Agent System workspace setup through OpenClaw or reconcile standalone Codex setup and repository automations.'
 license: MIT
 metadata:
   type: workflow
@@ -39,7 +39,7 @@ Select exactly one branch from trusted runtime state, never from user prose or t
 
 - **OpenClaw:** trusted active-agent instructions expose the native `agent_system_install` lifecycle tool. Use the OpenClaw branch.
 - **Standalone Codex:** the newest trusted `<agent-system-context>` block exposes `setupRuntime.argvPrefix`, `setupRuntime.pluginData`, and an active bound workspace. Use the Codex branch.
-- If neither contract is present, stop. In standalone Codex, explain that the plugin hook must be trusted through `/hooks`, the workspace must be bound, and a fresh task must load the new context.
+- If neither contract is present, stop. In standalone Codex, explain that the plugin hook must be trusted through `/hooks`, the workspace must be bound, and a new chat must load the new context.
 
 Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. Never copy them into repository files or Codex configuration.
 
@@ -70,7 +70,7 @@ below; native writes still require prepare/acknowledge and exact saved readback.
 A request to run a job now must report `automation-run-now-unsupported`; do not
 create an equivalent manual task unless the user explicitly requests one.
 
-1. Require `automationRuntime` from the newest trusted context. Use its exact `argvPrefix` and `pluginData`; never infer a workspace or substitute the current conversation. If the installed context lacks this route, report that a plugin update and fresh task are required.
+1. Require `automationRuntime` from the newest trusted context. Use its exact `argvPrefix` and `pluginData`; never infer a workspace or substitute the current conversation. If the installed context lacks this route, report that a plugin update and new chat are required.
 2. Discover `automation_update` and call `list_projects`. For explicitly declared thread targets, call `read_thread` for each exact ID. Pass the decoded native result objects as `projects` and `threads` to the internal `plan --plugin-data <pluginData>` command. Deliver one JSON object through standard input, never interpolate prompts into shell arguments. This helper reads saved definitions and profile defaults and computes all desired fields; do not author the diff yourself.
 3. An `aligned` plan needs no schedule writes. A `blocked` plan stops schedule writes. For `automation-thread-model-drift`, ask the operator to apply the requested model and effort through that existing chat’s native controls, then replan. Never claim a transient app-server update persisted, send an unauthorized model turn, or replace the chat to clear drift. A known partial conversation creation may use step 4 for recovery; resolve other conditions first. A headless session returns `requires-native-app-sync`; do not replace native tools with scheduler-file writes or a fabricated CLI. Report the concrete actions and digest, and apply only within the user's installation authorization. A changed scope or additional action requires renewed authorization.
 4. When the plan reports `automation-thread-sync-required`, `automation-thread-name-drift`, or `automation-thread-replacement-required`, pass its fresh digest and lookup inputs to `threads-sync --plugin-data <pluginData>` within the authorized installation scope. An archived or missing owned intake chat is replaced with a fresh coordinator; existing issue tracking, baselines, and receipts remain intact. This reconciles native conversations only, using the ambient Codex app-server; it never writes schedules or runs a model. Report that shared IDs produce separate per-automation Codex histories. New chats receive declared model and effort settings at creation. Replan afterward. A known partial conversation creation may resume through this same route; an ambiguous create without its native ID remains blocked—never clear its journal or blindly create again.

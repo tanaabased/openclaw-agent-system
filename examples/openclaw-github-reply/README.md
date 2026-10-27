@@ -1,6 +1,8 @@
 # OpenClaw Direct GitHub Reply Example
 
-Draft a reply to an explicitly selected unassigned issue in an ordinary chat without publishing it, then publish only after a later explicit request and reconcile that publication without another post. Repeat the same boundary for a verified operator decision as a status update, then return an already-current no-op.
+Draft a reply to an unassigned issue, then publish it only after an explicit request.
+Verify that checking the same publication does not post again. Repeat this for an
+operator-requested status update and confirm that an already-current issue needs no post.
 
 ## What Belongs Here
 
