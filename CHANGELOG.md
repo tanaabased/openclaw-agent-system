@@ -1,5 +1,7 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+## v0.9.0 - [October 27, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.9.0)
+
 ### Compatibility
 
 - Changed the default `github.issue-assignment.mode` to `auto`; select `plan` to assess without automatic implementation. [#386](https://github.com/tanaabased/openclaw-agent-system/pull/386)
