@@ -22,7 +22,7 @@ function matchesPrompt(request: ChatCompletionRequest): boolean {
     noToolResult: !request.messages.some((message) => message.role === 'tool'),
   };
   const matches = Object.values(checks).every(Boolean);
-  if (!matches) console.error(`automation-fixture-match: ${JSON.stringify(checks)}`);
+  if (!matches) process.stderr.write(`automation-fixture-match: ${JSON.stringify(checks)}\n`);
   return matches;
 }
 
