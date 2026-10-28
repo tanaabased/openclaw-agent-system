@@ -112,13 +112,13 @@ describe('agent/codex-dispatch', () => {
       automationId: 'native-intake',
       currentTimeIso: new Date(now).toISOString(),
     });
-  async function prepare() {
+  async function prepare(title = 'repair contained behavior') {
     const selected = await next();
     assert.equal(selected.status, 'routing-required', JSON.stringify(selected));
     const prepared = await request('prepare', {
       id: selected.id,
       digest: selected.digest,
-      title: 'repair contained behavior',
+      title,
       assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
     });
     assert.equal(prepared.status, 'prepared');
@@ -650,6 +650,16 @@ describe('agent/codex-dispatch', () => {
     }>;
     assert.ok(records[0]!.effective);
     assert.equal(records[0]!.feedback?.admission?.enabled, true);
+  });
+
+  it('should preserve punctuation and unicode in the issue session title', async () => {
+    const title = "Fix user's issue: café 東京 2026.10.6";
+    const prepared = await prepare(title);
+    const records = (await request('inspect')).records as Array<{
+      request?: { title?: string };
+    }>;
+    assert.equal(records[0]!.request?.title, `#3: ${title}`);
+    assert.equal(prepared.status, 'prepared');
   });
 
   it('should hold a saved pilot claim without preparing work or changing its receipt', async () => {

@@ -784,7 +784,7 @@ export async function prepareDispatch(
     delete record.capacityObservation;
     delete record.nativeInactive;
     record.request = {
-      title: '#' + intake.issue.number + ': ' + (input.title as string).trim().toUpperCase(),
+      title: '#' + intake.issue.number + ': ' + (input.title as string).trim(),
       prompt: launchPrompt(record, intake),
       model: decision.candidate.model,
       thinking: decision.candidate.thinking,

@@ -165,7 +165,7 @@ export default class OpenClawDispatchAdmission {
         key: `agent:${manifest.agent.id}:dashboard:agent-system-issue-${record.id}`,
         idempotencyKey: record.id,
         agentId: manifest.agent.id,
-        label: `#${intake.issue.number}: ${input.title.trim().toUpperCase()}`,
+        label: `#${intake.issue.number}: ${input.title.trim()}`,
         category: intake.repository.name,
         cwd: worktree.path,
         model: routing.candidate.model,
