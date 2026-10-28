@@ -1,7 +1,10 @@
 import { getTextContent, type ChatCompletionRequest } from '@copilotkit/aimock';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
-import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
+import {
+  hasOpenClawAIMockToolResult,
+  openClawAIMockToolResultText,
+} from '../../scripts/aimock-tool-result.ts';
 
 const model = /^(?:aimock\/)?gpt-5\.5$/u;
 const wrong = 'native-retirement-wrong';
@@ -28,7 +31,13 @@ export const nativeRetirementScenario: OpenClawAIMockScenario = {
   toolCalls: [wrong, preview, apply].map((id) => ({ id, name: 'agent_system_dispatch' })),
   fixtures: [
     {
-      match: { model, hasToolResult: false, toolName: 'agent_system_dispatch', predicate: prompt },
+      match: {
+        model,
+        toolName: 'agent_system_dispatch',
+        predicate: (request) =>
+          prompt(request) &&
+          ![wrong, preview, apply].some((id) => hasOpenClawAIMockToolResult(request.messages, id)),
+      },
       response: {
         id: wrong,
         toolCalls: [

@@ -59,6 +59,42 @@ function request(
 }
 
 describe('scripts/example-model-scenarios', () => {
+  it('should start native retirement despite unrelated tool history without replaying its own calls', () => {
+    const scenario = resolveExampleModelScenario('openclaw-native-retirement');
+    const prompt = 'Clean up using explicit unmanaged native retirement.';
+    const input = request('native-retirement', prompt, ['agent_system_dispatch'], {
+      callId: 'unrelated-history',
+      content: '{}',
+    });
+    const first = matchFixture([...scenario.fixtures], input)?.response;
+    assert.ok(first && typeof first !== 'function' && 'toolCalls' in first);
+    assert.deepEqual(JSON.parse(first.toolCalls![0]!.arguments), {
+      action: 'retire',
+      native: 'agent:other:disposable',
+    });
+    for (const callId of [
+      'native-retirement-wrong',
+      'native-retirement-preview',
+      'native-retirement-apply',
+    ]) {
+      const failed = request('native-retirement', prompt, ['agent_system_dispatch'], {
+        callId: `${callId}_fc-observed`,
+        content: JSON.stringify({ status: 'failed', code: 'unexpected-failure' }),
+      });
+      assert.equal(matchFixture([...scenario.fixtures], failed), null);
+    }
+    const refused = request('native-retirement', prompt, ['agent_system_dispatch'], {
+      callId: 'native-retirement-wrong_fc-observed',
+      content: JSON.stringify({ code: 'native-retirement-agent-mismatch' }),
+    });
+    const next = matchFixture([...scenario.fixtures], refused)?.response;
+    assert.ok(next && typeof next !== 'function' && 'toolCalls' in next);
+    assert.deepEqual(JSON.parse(next.toolCalls![0]!.arguments), {
+      action: 'retire',
+      native: 'agent:native-retirement:disposable',
+    });
+  });
+
   it('should resolve the deterministic example scenarios', () => {
     assert.equal(new Set(exampleModelScenarioIds).size, exampleModelScenarioIds.length);
     for (const id of exampleModelScenarioIds) assert.equal(resolveExampleModelScenario(id).id, id);
