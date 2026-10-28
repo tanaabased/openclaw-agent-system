@@ -1875,7 +1875,7 @@ describe('agent/openclaw issue dispatch', () => {
     const state = await (await service.scope(manifest, root)).journal.read();
     assert.deepEqual(
       creates().map(({ params }) => params.displayName),
-      ['#3: repair the result', '#4: repair the result'],
+      ['#3: REPAIR THE RESULT', '#4: REPAIR THE RESULT'],
     );
     const later = { ...coordinator, runId: 'later-pass' };
     const input = await service.run(manifest, root, later, { action: 'next' });
@@ -1984,7 +1984,7 @@ describe('agent/openclaw issue dispatch', () => {
     };
     const input = await next();
     assert.equal((await prepare(input)).status, 'session-created');
-    assert.equal(creates()[0]!.params.displayName, '#3: repair the result');
+    assert.equal(creates()[0]!.params.displayName, '#3: REPAIR THE RESULT');
     assert.equal(creates()[0]!.params.label, undefined);
     assert.deepEqual(sessions.get('retired-issue'), archived);
     await service.run(manifest, root, coordinator, { action: 'reconcile', id: input.id });
@@ -2000,7 +2000,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(request.model, 'openai/gpt-6.1-sol');
     assert.equal(request.thinkingLevel, 'high');
     assert.equal(request.category, 'repo');
-    assert.equal(request.displayName, '#3: repair the result');
+    assert.equal(request.displayName, '#3: REPAIR THE RESULT');
     assert.equal(request.label, undefined);
     assert.equal(request.agentId, 'receiver');
     assert.equal(request.cwd, join(root, 'worktree'));
