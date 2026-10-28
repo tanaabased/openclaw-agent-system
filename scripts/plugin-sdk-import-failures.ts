@@ -28,6 +28,7 @@ const supportedPluginSdkSubpaths = new Set([
   'session-visibility',
   'setup-runtime',
   'skill-commands-runtime',
+  'state-paths',
   'status-helpers',
 ]);
 const deprecatedPluginSdkSubpaths = new Set([
