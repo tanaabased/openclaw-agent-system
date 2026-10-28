@@ -120,9 +120,33 @@ jobs:
           AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
         run: bun run test:release
       - name: Publish ClawHub
+        id: publish-clawhub
+        continue-on-error: true
         uses: tanaabased/actions/publish-clawhub@v1
         with:
           tarball: ${{ steps.pack.outputs.tarball-path }}
+          owner: tanaab
+          source-repo: ${{ github.repository }}
+          source-commit: ${{ github.sha }}
+          clawhub-token: ${{ secrets.TANAAB_LOBSTER_BOAT }}
+          wait-timeout: 1800
+      # remove after openclaw/clawhub#3888 is deployed and full-archive publication succeeds.
+      - name: Prepare ClawHub fallback without source maps
+        if: ${{ steps.publish-clawhub.outcome == 'failure' }}
+        env:
+          AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
+        run: bun scripts/clawhub-fallback-task.ts "$AGENT_SYSTEM_PACKAGE" "$RUNNER_TEMP/clawhub-fallback.tgz"
+      - name: Validate ClawHub fallback package
+        if: ${{ steps.publish-clawhub.outcome == 'failure' }}
+        env:
+          AGENT_SYSTEM_PACKAGE: ${{ runner.temp }}/clawhub-fallback.tgz
+          AGENT_SYSTEM_PACKAGE_WITHOUT_SOURCE_MAPS: 'true'
+        run: bun run test:release
+      - name: Publish ClawHub fallback
+        if: ${{ steps.publish-clawhub.outcome == 'failure' }}
+        uses: tanaabased/actions/publish-clawhub@v1
+        with:
+          tarball: ${{ runner.temp }}/clawhub-fallback.tgz
           owner: tanaab
           source-repo: ${{ github.repository }}
           source-commit: ${{ github.sha }}

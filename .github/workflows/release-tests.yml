@@ -76,3 +76,21 @@ jobs:
           source-repo: ${{ github.repository }}
           source-commit: ${{ github.event.pull_request.head.sha }}
           wait-timeout: 1800
+      - name: Prepare ClawHub fallback without source maps
+        env:
+          AGENT_SYSTEM_PACKAGE: ${{ steps.pack.outputs.tarball-path }}
+        run: bun scripts/clawhub-fallback-task.ts "$AGENT_SYSTEM_PACKAGE" "$RUNNER_TEMP/clawhub-fallback.tgz"
+      - name: Validate ClawHub fallback package
+        env:
+          AGENT_SYSTEM_PACKAGE: ${{ runner.temp }}/clawhub-fallback.tgz
+          AGENT_SYSTEM_PACKAGE_WITHOUT_SOURCE_MAPS: 'true'
+        run: bun run test:release
+      - name: Validate ClawHub fallback publisher
+        uses: tanaabased/actions/publish-clawhub@v1
+        with:
+          dry-run: true
+          tarball: ${{ runner.temp }}/clawhub-fallback.tgz
+          owner: tanaab
+          source-repo: ${{ github.repository }}
+          source-commit: ${{ github.event.pull_request.head.sha }}
+          wait-timeout: 1800
