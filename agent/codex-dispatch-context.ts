@@ -1,4 +1,5 @@
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
+import type { CleanupConfiguration } from './cleanup-configuration.ts';
 import type connectCodexGitHubAccount from './codex-github-client.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
 import type {
@@ -32,6 +33,7 @@ type Client = GitHubNotificationIntakeClient & GitHubNotificationItemContextClie
 export type CodexDispatchSelection = Awaited<ReturnType<typeof selectCodexIntake>>;
 export type CodexDispatchNative = ReturnType<typeof codexDispatchNative>;
 export interface CodexDispatchDependencies extends Omit<CodexIntakeDependencies, 'connect'> {
+  readCleanupConfiguration?: () => Promise<CleanupConfiguration>;
   claimStore?: AssignmentClaimStore;
   claims?: Pick<CodexAssignmentClaims, 'select' | 'accept'> &
     Partial<Pick<CodexAssignmentClaims, 'recover'>>;

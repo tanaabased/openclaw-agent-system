@@ -1,4 +1,5 @@
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
+import cleanupConfiguration from '../agent/cleanup-configuration.ts';
 import CodexAssignmentClaims, { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
 import connectCodexGitHubAccount from '../agent/codex-github-client.ts';
 import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
@@ -89,6 +90,17 @@ describe('agent/codex-dispatch', () => {
       unknown
     >;
   const next = () => request('next', { projects });
+  const writeCleanup = (graceMinutes: number) =>
+    writeFile(
+      join(root, 'openclaw.json'),
+      JSON.stringify({
+        plugins: {
+          entries: {
+            'agent-system': { config: { cleanup: { graceMinutes } } },
+          },
+        },
+      }),
+    );
   const report = () =>
     request('report', {
       automationId: 'native-intake',
@@ -188,6 +200,7 @@ describe('agent/codex-dispatch', () => {
       ['workspace', 'plugin', 'codex', 'source', 'worktree', 'common'] as const
     ).map((name) => join(root, name)) as [string, string, string, string, string, string];
     for (const path of [workspace, codexHome, source, worktree, commonDir]) await mkdir(path);
+    await writeFile(join(root, 'openclaw.json'), '{}');
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
     await bindCodexWorkspace(pluginData, workspace);
     fixture = intakeFixture();
@@ -217,6 +230,8 @@ describe('agent/codex-dispatch', () => {
     gitCalls = [];
     const branches = new Map<string, string>();
     deps = {
+      readCleanupConfiguration: () =>
+        cleanupConfiguration({ env: { OPENCLAW_CONFIG_PATH: join(root, 'openclaw.json') } }),
       codexHome,
       assertActive: async () => {},
       now: () => now,
@@ -1955,16 +1970,17 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
-  it('should use fixed automatic grace and ignore obsolete settings during operator retirement', async () => {
+  it('should use configured automatic grace and ignore obsolete settings during operator retirement', async () => {
     const originalXdg = process.env.XDG_CONFIG_HOME;
     const originalOpenClaw = process.env.OPENCLAW_CONFIG_PATH;
     process.env.XDG_CONFIG_HOME = root;
     process.env.OPENCLAW_CONFIG_PATH = join(root, 'openclaw.json');
+    delete deps.readCleanupConfiguration;
     try {
       await writeFile(
         process.env.OPENCLAW_CONFIG_PATH,
         JSON.stringify({
-          plugins: { entries: { 'agent-system': { config: { cleanup: { graceMinutes: 0 } } } } },
+          plugins: { entries: { 'agent-system': { config: { cleanup: { graceMinutes: 17 } } } } },
         }),
       );
       const prepared = await prepare();
@@ -1985,7 +2001,7 @@ describe('agent/codex-dispatch', () => {
         selected.store.location.scope,
       );
       const automatic = (await journal.read()).records[0]!;
-      assert.equal(automatic.retirement!.eligibleAt, now + 60 * 60_000);
+      assert.equal(automatic.retirement!.eligibleAt, now + 17 * 60_000);
       assert.equal(automatic.retired, undefined);
       await writeFile(path, 'invalid obsolete settings');
       const operator = { threadId: 'operator' };
@@ -2005,6 +2021,98 @@ describe('agent/codex-dispatch', () => {
       if (originalOpenClaw === undefined) delete process.env.OPENCLAW_CONFIG_PATH;
       else process.env.OPENCLAW_CONFIG_PATH = originalOpenClaw;
     }
+  });
+
+  it('should hold broken codex cleanup sources and retain the repaired configured deadline across edits', async () => {
+    const prepared = await prepare();
+    created();
+    await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
+    native!.status = 'idle';
+    native!.turnEnded = true;
+    fixture.item.state = 'closed';
+    const current = await selectCodexIntake(pluginData, deps);
+    const journal = new CodexDispatchStore(
+      current.store.location.root,
+      current.store.location.scope,
+    );
+    const record = async () => (await journal.read()).records[0]!;
+    await writeCleanup(-1);
+    now += 60_000;
+    await next();
+    assert.equal((await record()).retirement?.code, 'retirement-configuration-invalid');
+    assert.equal((await record()).retirement?.deadlinePending, true);
+    await rm(join(root, 'openclaw.json'));
+    now += 60_000;
+    await next();
+    assert.equal((await record()).retirement?.code, 'retirement-configuration-unavailable');
+    assert.equal((await record()).retired, undefined);
+    await writeCleanup(17);
+    now += 60_000;
+    await next();
+    const deadline = now + 17 * 60_000;
+    assert.equal((await record()).retirement?.eligibleAt, deadline);
+    await writeCleanup(0);
+    now += 60_000;
+    await next();
+    assert.equal((await record()).retirement?.eligibleAt, deadline);
+    assert.equal((await record()).retired, undefined);
+    now = deadline;
+    assert.equal((await next()).status, 'retirement-inventory-required');
+    assert.equal((await record()).retirement?.archiveAttempt, undefined);
+  });
+
+  it('should keep zero grace codex protection and defer archival when disk policy changes at final verification', async () => {
+    await writeCleanup(0);
+    const prepared = await prepare();
+    created();
+    await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
+    fixture.item.state = 'closed';
+    now += 60_000;
+    await next();
+    const current = await selectCodexIntake(pluginData, deps);
+    const journal = new CodexDispatchStore(
+      current.store.location.root,
+      current.store.location.scope,
+    );
+    const record = async () => (await journal.read()).records[0]!;
+    assert.equal((await record()).retirement?.eligibleAt, now);
+    assert.equal((await record()).retirement?.code, 'retirement-native-work-unresolved');
+    native!.status = 'idle';
+    native!.turnEnded = true;
+    const threads = {
+      schemaVersion: 4,
+      pinnedThreads: [{ id: 'issue-thread' }],
+      unavailableHosts: [],
+      unavailableSources: [],
+    };
+    now += 60_000;
+    await request('next', { projects, threads });
+    assert.equal((await record()).retirement?.code, 'retirement-native-resource-protected');
+    assert.equal((await record()).retirement?.archiveAttempt, undefined);
+    const deadline = (await record()).retirement!.eligibleAt;
+    assert.equal(deadline, now);
+    threads.pinnedThreads = [];
+    deps.retirementNative = {
+      worktreeUsers: async () => ['issue-thread'],
+      archiveOutcome: async () => 'unverified',
+    };
+    const git = deps.git!;
+    deps.git = async (path, args) => {
+      if (args[0] !== 'for-each-ref') return git(path, args);
+      await writeCleanup(17);
+      return 'refs/heads/preserved';
+    };
+    now += 60_000;
+    await request('next', { projects, threads });
+    assert.equal((await record()).retirement?.code, 'retirement-configuration-changed');
+    assert.equal((await record()).retirement?.archiveAttempt, undefined);
+    assert.equal((await record()).retired, undefined);
+    deps.git = async (path, args) =>
+      args[0] === 'for-each-ref' ? 'refs/heads/preserved' : git(path, args);
+    now += 60_000;
+    assert.equal((await request('next', { projects, threads })).status, 'retirement-prepared');
+    assert.equal((await record()).retirement?.eligibleAt, deadline);
+    assert.equal((await record()).retired, undefined);
   });
 
   it('should enter manual retirement for open assigned work immediately and retain its request', async () => {

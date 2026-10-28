@@ -11,11 +11,13 @@ belong in the [manifest](./MANIFEST.md).
 ## OpenClaw plugin configuration
 
 Set these options under `plugins.entries.agent-system.config` in OpenClaw.
-Standalone Codex does not read or manage them.
+Standalone Codex reads only the shared `cleanup` policy; it does not manage
+OpenClaw configuration.
 
 ### `cleanup`
 
-Controls the grace period for automatic managed-task retirement in OpenClaw.
+Controls the grace period for automatic managed-task retirement in OpenClaw and
+standalone Codex.
 
 | Field          | Type    | Required | Default | Description                                                |
 | -------------- | ------- | -------- | ------- | ---------------------------------------------------------- |
@@ -23,15 +25,22 @@ Controls the grace period for automatic managed-task retirement in OpenClaw.
 
 Omitted cleanup or grace uses 60 minutes. Invalid or unavailable settings hold
 cleanup instead of substituting a default. There is no enable/disable switch or
-per-agent override. Standalone Codex always uses the shared 60-minute default;
-it has no configurable cleanup setting.
+per-agent override or separate Codex setting.
+
+Codex reads the JSON/JSON5 file selected by `OPENCLAW_CONFIG_PATH`, or
+`openclaw.json` in the selected OpenClaw state directory. No running Gateway is
+needed. It reads only cleanup policy, without loading dotenv, resolving secrets,
+or changing configuration or agents. Keep the cleanup policy inline: `$include`
+on its path holds Codex cleanup rather than silently using a default. Unrelated
+includes are not followed. An absent default file uses 60 minutes; an explicitly
+selected missing file holds cleanup.
 
 ```sh
-# set the grace period for automatic cleanup in openclaw.
+# set the shared grace period for automatic cleanup.
 openclaw config set plugins.entries.agent-system.config.cleanup.graceMinutes 30 --strict-json
 ```
 
-OpenClaw verifies the current cleanup setting before resource effects. A change
+Both runtimes verify the current cleanup setting before resource effects. A change
 during the final check defers cleanup to the next pass. Existing deadlines survive
 edits, polls, and restarts; new deadlines and activity resets use the current grace.
 Even zero grace keeps the [ownership and preservation checks](./channels/github/README.md#task-retirement).

@@ -1,5 +1,7 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+- Fixed standalone Codex to honor the shared global `cleanup.graceMinutes` setting instead of a fixed 60-minute grace. [#522](https://github.com/tanaabased/openclaw-agent-system/issues/522)
+
 ## v0.9.1 - [October 28, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.9.1)
 
 ### Compatibility
