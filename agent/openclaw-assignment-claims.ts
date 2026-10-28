@@ -1,3 +1,4 @@
+import recoverAssignmentClaim from './assignment-claim-recovery.ts';
 import source from './assignment-claim-source.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type {
@@ -32,6 +33,27 @@ export default class OpenClawAssignmentClaims {
       source: source(input.intake),
       passId: automationHash({ sessionKey, sessionId, runId }),
       hasCapacity: input.hasCapacity,
+    });
+  }
+
+  recover(
+    intake: IntakeRecord,
+    client: Connection,
+    record: OpenClawDispatchRecord,
+    recoveryId: string,
+    operation: 'preview' | 'reserve' | 'accept',
+    successorReceipt?: string,
+  ) {
+    const receipt = record.sessionCreation?.sessionId;
+    if (!receipt) throw new Error('claim-native-creation-unverified');
+    return recoverAssignmentClaim({
+      store: this.store,
+      client: this.connect(client),
+      source: source(intake),
+      recoveryId,
+      predecessorReceipt: receipt,
+      operation,
+      successorReceipt,
     });
   }
 

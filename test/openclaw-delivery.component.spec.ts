@@ -105,6 +105,7 @@ describe('agent/openclaw-delivery', () => {
       signal: new AbortController().signal,
       intake: {
         id: record.intakeId,
+        receiving: { login: 'agent', nodeId: 'U_agent' },
         issue: { number: 3, databaseId: 20, nodeId: 'I_issue' },
         repository: { owner: { login: 'owner' }, name: 'repo', nodeId: 'R_repo' },
         assignment: { actor: { login: 'operator', nodeId: 'U_operator' } },
@@ -123,7 +124,8 @@ describe('agent/openclaw-delivery', () => {
           async git(argv) {
             if (argv[0] === 'branch') return 'task-branch';
             if (argv.includes('--show-toplevel')) return root;
-            if (argv[0] === 'rev-parse') return head;
+            if (argv[0] === 'rev-parse')
+              return argv.some((arg) => arg.startsWith('refs/agent-system/pr/')) ? remote : head;
             if (argv[0] === 'status') return dirty ? ' M file' : '';
             if (argv[0] === 'rev-list') return '1';
             if (argv[0] === 'remote') return 'git@github.com:owner/repo.git';
@@ -133,6 +135,9 @@ describe('agent/openclaw-delivery', () => {
               if (!ancestor) throw new Error('not an ancestor');
             }
             if (argv[0] === 'push') {
+              assert.ok(!argv.some((arg) => arg.includes('force')));
+              if (record.adoptedPullRequest)
+                assert.ok(argv.includes(`${head}:refs/heads/collaborator-work`));
               pushes++;
               remote = head;
             }
@@ -151,6 +156,23 @@ describe('agent/openclaw-delivery', () => {
                 });
               }
               const endpoint = argv.find((arg) => arg.startsWith('repos/'));
+              if (
+                endpoint === 'repos/owner/repo/pulls/7' &&
+                argv.some((arg) => arg.includes('branch:.head.ref'))
+              )
+                return response({
+                  nodeId: 'PR_7',
+                  number: 7,
+                  state: 'open',
+                  repositoryId: 'R_repo',
+                  headRepositoryId: 'R_repo',
+                  head: remote,
+                  branch: 'collaborator-work',
+                  base: 'release',
+                  authorId: 'U_collaborator',
+                  title: pr?.title,
+                  body: pr?.body,
+                });
               if (endpoint === 'repos/owner/repo/issues/3')
                 return response({ databaseId: 20, nodeId: 'I_issue', number: 3, title: 'Issue' });
               if (endpoint === 'repos/owner/repo/pulls' && argv.includes('GET'))
@@ -203,9 +225,9 @@ describe('agent/openclaw-delivery', () => {
                   repositoryId: 'R_repo',
                   headRepositoryId: 'R_repo',
                   headSha: remote,
-                  authorId: 'U_agent',
-                  baseRef: 'main',
-                  headRef: 'task-branch',
+                  authorId: record.adoptedPullRequest?.authorId ?? 'U_agent',
+                  baseRef: record.adoptedPullRequest?.base ?? 'main',
+                  headRef: record.adoptedPullRequest?.branch ?? 'task-branch',
                   state: 'open',
                   number: 7,
                 });
@@ -221,7 +243,14 @@ describe('agent/openclaw-delivery', () => {
   });
   const request = (
     operation:
-      'prepare' | 'publish' | 'reconcile' | 'present' | 'compose' | 'candidate' | 'announce',
+      | 'bind'
+      | 'prepare'
+      | 'publish'
+      | 'reconcile'
+      | 'present'
+      | 'compose'
+      | 'candidate'
+      | 'announce',
     extra = {},
   ) =>
     openClawDelivery({
@@ -233,6 +262,85 @@ describe('agent/openclaw-delivery', () => {
     assert.ok('digest' in prepared);
     return request('publish', { digest: prepared.digest, ...content });
   }
+  it('should bind and non-force update a collaborator pr without rewriting metadata or claiming prior publication', async () => {
+    input.operator = true;
+    remote = 'b'.repeat(40);
+    pr = {
+      itemNodeId: 'PR_7',
+      number: 7,
+      state: 'open',
+      baseRef: 'release',
+      headRef: 'collaborator-work',
+      headRepository: 'owner/repo',
+      title: 'Collaborator title',
+      body: '',
+    };
+    const before = structuredClone(record);
+    const preview = await request('bind', { pullRequest: 'https://github.com/owner/repo/pull/7' });
+    assert.equal(preview.status, 'binding-available');
+    assert.deepEqual(record, before);
+    assert.ok('digest' in preview);
+    const bound = await request('bind', {
+      pullRequest: 'https://github.com/owner/repo/pull/7',
+      digest: preview.digest,
+    });
+    assert.equal(bound.status, 'bound');
+    assert.equal(record.work!.delivery!.reconciled, false);
+    assert.equal(record.work!.delivery!.announcement, undefined);
+    assert.equal(pushes, 0);
+    const prepared = await request('prepare');
+    assert.ok('digest' in prepared);
+    assert.equal((await request('publish', { digest: prepared.digest })).status, 'published');
+    assert.equal(record.work!.delivery!.binding.authorId, 'U_collaborator');
+    assert.equal(record.work!.delivery!.binding.base, 'release');
+    assert.equal(record.work!.delivery!.localBranch, 'task-branch');
+    assert.equal(creates, 0);
+    assert.equal(pushes, 1);
+    assert.equal(patches, 0);
+    assert.equal(pr.body, '');
+    const retained = await request('bind', { pullRequest: 'https://github.com/owner/repo/pull/7' });
+    assert.ok('retained' in retained && retained.retained);
+    assert.equal(record.work!.delivery!.reconciled, true);
+  });
+
+  it('should leave unchanged adoption unannounced and refuse switching its retained local branch', async () => {
+    record.adoptedPullRequest = {
+      pullRequestNodeId: 'PR_7',
+      pullRequestNumber: 7,
+      branch: 'collaborator-work',
+      base: 'release',
+      head,
+      authorId: 'U_collaborator',
+      title: 'Existing work',
+      body: '',
+    };
+    record.adoptedLocalBranch = 'task-branch';
+    assert.equal((await request('prepare')).status, 'bound');
+    assert.equal(record.work!.delivery!.pushedHead, undefined);
+    assert.equal(record.work!.delivery!.announcement, undefined);
+    assert.equal(pushes + creates, 0);
+    record.work!.delivery!.localBranch = 'preserved-predecessor';
+    await assert.rejects(request('prepare'), /delivery-branch-diverged/);
+  });
+
+  it('should reject stale pr binding previews and refuse non-operator binding', async () => {
+    const action = { pullRequest: 'https://github.com/owner/repo/pull/7' };
+    await assert.rejects(request('bind', action), /delivery-binding-operator-required/);
+    input.operator = true;
+    remote = 'b'.repeat(40);
+    pr = { title: 'Existing', body: 'Preserved' };
+    const before = structuredClone(record);
+    const preview = await request('bind', action);
+    assert.ok('digest' in preview);
+    remote = 'c'.repeat(40);
+    await assert.rejects(
+      request('bind', { ...action, digest: preview.digest }),
+      /delivery-binding-stale/,
+    );
+    assert.deepEqual(record, before);
+    assert.equal(pushes + creates, 0);
+  });
+
   for (const variant of ['default', 'skill', 'inline', 'file', 'skill-inline', 'skill-file']) {
     it(`should publish the pr announcement with ${variant} reply customization`, async () => {
       const guidance = 'Explain the delivered change.\nPreserve the validation limit.';

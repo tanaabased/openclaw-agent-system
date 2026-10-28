@@ -4,7 +4,7 @@ import routingInstructions, {
   routingInstructionsDigest,
 } from './routing-instructions.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
-import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
+import verifyIssuePullRequest from './issue-pr-selection.ts';
 import { adoptedCodexDelivery } from './codex-delivery-state.ts';
 import codexIssueBranch from './codex-issue-branch.ts';
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
@@ -65,25 +65,7 @@ async function verifySelectedPullRequest(
     tx.current.workspace,
     tx.signal,
   );
-  if (connected.account.identity.nodeId !== intake.receiving.nodeId)
-    throw new Error('delivery-adoption-account-changed');
-  const observed = await new IssueDeliveryProvider(connected.account).adopt(
-    {
-      repositoryNodeId: intake.repository.nodeId,
-      item: {
-        number: intake.issue.number,
-        itemDatabaseId: intake.issue.databaseId,
-        itemNodeId: intake.issue.nodeId,
-        repositoryOwner: intake.repository.owner.login,
-        repositoryName: intake.repository.name,
-        repositoryDefaultBranch: selected.base,
-      },
-      signal: tx.signal,
-    },
-    `https://github.com/${repository(intake)}/pull/${selected.pullRequestNumber}`,
-  );
-  if (automationHash(observed) !== automationHash(selected))
-    throw new Error('launch-pr-binding-changed');
+  await verifyIssuePullRequest(intake, selected, connected.account);
   if (record.project && record.project.commit !== selected.head)
     throw new Error('launch-pr-head-changed');
 }
@@ -141,6 +123,35 @@ export async function recover(
       adopted: record.adoptedPullRequest,
       policyDigest: notificationAuthorityDigest(current.manifest.github?.notifications),
     });
+  }
+  if (record.predecessorId && acceptClaim && records) {
+    const predecessor = records.find((r) => r.id === record.predecessorId);
+    const admission =
+      predecessor && dispatchAdmission(predecessor, (await current.store.read())?.records ?? []);
+    if (predecessor && admission && !('initiation' in admission) && deps.claims?.recover) {
+      const checked = await revalidateDispatchAssignment(
+        current,
+        intake,
+        deps,
+        new AbortController().signal,
+        true,
+        record,
+      );
+      const accepted = await deps.claims.recover(
+        admission,
+        checked.client,
+        predecessor,
+        record.id,
+        'accept',
+        found.id,
+      );
+      if (accepted) {
+        record.claimId = accepted.commentId;
+        record.claimAccepted = true;
+        await save();
+      }
+    } else if (predecessor?.claimId || predecessor?.claimAccepted)
+      throw new Error('claim-recovery-owner-unresolved');
   }
   record.phase = record.phase === 'complete' ? 'complete' : 'assessing';
   if (record.phase !== 'complete' && record.result?.outcome === 'operator-setup-blocker') {

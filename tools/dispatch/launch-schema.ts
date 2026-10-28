@@ -18,7 +18,7 @@ export const launchRequestSchema = Type.Object(
       Type.String({
         minLength: 1,
         maxLength: 4096,
-        description: 'Standalone Codex only: exact existing same-repository PR URL to continue.',
+        description: 'Exact existing same-repository PR URL to continue in either runtime.',
       }),
     ),
     operation: Type.Union([

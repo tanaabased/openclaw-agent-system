@@ -1,3 +1,4 @@
+import { operatorInputEvent } from './openclaw-session-input.ts';
 import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
 import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
@@ -460,6 +461,8 @@ export default class OpenClawDispatchIssue {
       (event) => event.turn?.runId === caller.runId,
     );
     if (feedbackSource) {
+      if (input.action === 'delivery' && input.operation === 'bind')
+        throw new Error('delivery-binding-operator-required');
       return this.feedback(
         manifest,
         current.workspace,
@@ -473,7 +476,7 @@ export default class OpenClawDispatchIssue {
               operation: input.action,
               eventId: feedbackSource.id,
             }
-          : input.action === 'delivery'
+          : input.action === 'delivery' && input.operation !== 'bind'
             ? {
                 ...input,
                 action: 'feedback',
@@ -531,19 +534,35 @@ export default class OpenClawDispatchIssue {
       return this.context.dependencies.credential.use(
         { signal, assertCurrent },
         async (request) => {
-          const { source, message, progression, revisionAuthorized } = await verifyOpenClawWork({
-            record,
-            caller,
-            operator,
-            mode:
-              record.manualIssue?.selections?.mode ??
-              (await this.context.validateLocal(manifest, workspace, record, true)).manifest.github
-                ?.notifications?.issueAssignment?.mode ??
-              'auto',
-            now,
-            request,
-            config: this.context.dependencies.config(),
-          });
+          const bindingOnly = input.action === 'delivery' && input.operation === 'bind';
+          if (bindingOnly && !operator) throw new Error('delivery-binding-operator-required');
+          const { source, message, progression, revisionAuthorized } = bindingOnly
+            ? {
+                source: await operatorInputEvent({
+                  request,
+                  senderIsOwner: operator,
+                  sessionKey: caller.sessionKey,
+                  sessionId: caller.sessionId,
+                  runId: caller.runId,
+                  retained: [],
+                }),
+                message: undefined,
+                progression: undefined,
+                revisionAuthorized: false,
+              }
+            : await verifyOpenClawWork({
+                record,
+                caller,
+                operator,
+                mode:
+                  record.manualIssue?.selections?.mode ??
+                  (await this.context.validateLocal(manifest, workspace, record, true)).manifest
+                    .github?.notifications?.issueAssignment?.mode ??
+                  'auto',
+                now,
+                request,
+                config: this.context.dependencies.config(),
+              });
           await assertCurrent();
           if (
             input.action === 'implementation-context' &&
@@ -571,7 +590,7 @@ export default class OpenClawDispatchIssue {
               record,
               caller,
               source,
-              progression,
+              progression: progression!,
               revisionAuthorized,
               action: input,
               message,
@@ -586,6 +605,21 @@ export default class OpenClawDispatchIssue {
             return {
               ...response,
               implementation: selected,
+              ...(record.predecessorId
+                ? {
+                    predecessor: (() => {
+                      const previous = tx.state.records.find((r) => r.id === record.predecessorId);
+                      return {
+                        id: record.predecessorId,
+                        threadId: previous?.threadId,
+                        worktree: previous?.worktree,
+                        assessment: previous?.result,
+                        instruction:
+                          'Preserved evidence is not current implementation or publication authority.',
+                      };
+                    })(),
+                  }
+                : {}),
             };
           }
           if (input.action !== 'delivery')
@@ -593,7 +627,7 @@ export default class OpenClawDispatchIssue {
               record,
               caller,
               source,
-              progression,
+              progression: progression!,
               action: input,
               message,
               revisionAuthorized,
@@ -605,6 +639,8 @@ export default class OpenClawDispatchIssue {
             record,
             intake,
             action: input,
+            operator,
+            expectedLocalBranch: record.adoptedLocalBranch,
             source,
             base: repo.defaultBranch,
             recipients: issuePullRequestRecipients(
@@ -635,6 +671,13 @@ export default class OpenClawDispatchIssue {
             connect: async () => {
               if (!this.context.dependencies.delivery)
                 throw new Error('delivery-runtime-unavailable');
+              if (input.operation === 'bind') {
+                const owned = await this.context.dependencies.worktrees.inspectGitHub(
+                  verified.worktreeInput,
+                );
+                if (!owned || owned.path !== record.worktree)
+                  throw new Error('delivery-worktree-diverged');
+              }
               if (['prepare', 'publish', 'reconcile'].includes(input.operation))
                 await new GitHubIdentityCache(current.store.location).resolve(
                   current.policy.policy,
@@ -797,6 +840,21 @@ export default class OpenClawDispatchIssue {
         });
         return {
           ...outcome,
+          ...(record.predecessorId
+            ? {
+                predecessor: (() => {
+                  const previous = tx.state.records.find((r) => r.id === record.predecessorId);
+                  return {
+                    id: record.predecessorId,
+                    threadId: previous?.threadId,
+                    worktree: previous?.worktree,
+                    assessment: previous?.result,
+                    instruction:
+                      'Preserved evidence is not current implementation or publication authority.',
+                  };
+                })(),
+              }
+            : {}),
           assignmentObservation: record.assignmentObservation,
           assignmentWarning:
             record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),

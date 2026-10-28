@@ -71,6 +71,59 @@ describe('agent/issue-launch', () => {
       verifyExisting: async () => {},
     });
 
+  for (const runtime of ['openclaw', 'codex'] as const)
+    it(`should select the exact existing pr for ${runtime} without creating a publication receipt`, async () => {
+      context.binding.runtime = runtime;
+      context.git = async (_cwd, argv) => {
+        assert.equal(argv[0], 'check-ref-format');
+        return '';
+      };
+      context.connectDelivery = async () => ({
+        git: async () => '',
+        account: {
+          identity: fixture.client.identity,
+          execute: async (argv) => ({
+            exitCode: 0,
+            stderr: '',
+            timedOut: false,
+            truncated: false,
+            stdout:
+              'HTTP/2 200 OK\n\n' +
+              JSON.stringify(
+                argv.some((arg) => arg.includes('/pulls/'))
+                  ? {
+                      nodeId: 'PR_7',
+                      number: 7,
+                      state: 'open',
+                      repositoryId: 'R_repo',
+                      headRepositoryId: 'R_repo',
+                      head: 'a'.repeat(40),
+                      branch: 'existing-work',
+                      base: 'release',
+                      authorId: 'U_collaborator',
+                      title: 'Existing work',
+                      body: '',
+                    }
+                  : { databaseId: 20, nodeId: 'I_issue', number: 3, title: 'Issue' },
+              ),
+          }),
+        },
+      });
+      const first = await launch(undefined, {
+        pullRequest: 'https://github.com/owner/repo/pull/7',
+      });
+      assert.equal(first.status, 'routing-required');
+      const record = (await journal.read()).records[0]!;
+      assert.equal(record.adoptedPullRequest?.head, 'a'.repeat(40));
+      assert.equal(record.work?.delivery, undefined);
+      assert.equal(record.threadId, undefined);
+      const again = await launch(undefined, {
+        pullRequest: 'https://github.com/owner/repo/pull/7',
+      });
+      assert.ok('id' in first && 'id' in again && first.id === again.id);
+      assert.equal((await journal.read()).records.length, 1);
+    });
+
   it('should create an explicitly additional task once while ordinary launch reuses the primary', async () => {
     const primary = await launch();
     assert.ok('id' in primary);

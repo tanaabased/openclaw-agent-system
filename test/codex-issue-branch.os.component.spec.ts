@@ -7,9 +7,24 @@ import { promisify } from 'node:util';
 
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import codexIssueBranch from '../agent/codex-issue-branch.ts';
+import type { DispatchGit } from '../agent/codex-dispatch-project.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 
 const execute = promisify(execFile);
+// exercise local git mechanics, not the host's managed launcher or credential configuration.
+const fixtureGit: DispatchGit = async (cwd, args) =>
+  (
+    await execute('/usr/bin/git', args, {
+      cwd,
+      env: {
+        PATH: '/usr/bin:/bin',
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_CONFIG_GLOBAL: '/dev/null',
+        GIT_ALLOW_PROTOCOL: 'file',
+        GIT_TERMINAL_PROMPT: '0',
+      },
+    })
+  ).stdout.trim();
 
 describe('agent/codex-issue-branch', () => {
   let root: string, cwd: string, base: string, record: DispatchRecord;
@@ -19,7 +34,7 @@ describe('agent/codex-issue-branch', () => {
     issue: { nodeId: 'I_issue', number: 42 },
   } as IntakeRecord;
   async function git(...args: string[]) {
-    return (await execute('git', args, { cwd })).stdout.trim();
+    return fixtureGit(cwd, args);
   }
   const prepare = (extra: Partial<Parameters<typeof codexIssueBranch>[0]> = {}) =>
     codexIssueBranch({
@@ -28,6 +43,7 @@ describe('agent/codex-issue-branch', () => {
       intake,
       workspace: root,
       agentId: 'receiver',
+      git: fixtureGit,
       save: async () => {
         saved.push(structuredClone(record));
       },
@@ -131,8 +147,8 @@ describe('agent/codex-issue-branch', () => {
     const oldPath = join(root, '.git', 'old-checkout');
     await git('worktree', 'add', oldPath, 'shared-pr');
     await writeFile(join(oldPath, 'work.txt'), 'unpublished predecessor work');
-    await execute('git', ['commit', '-am', 'unpublished work'], { cwd: oldPath });
-    const oldHead = (await execute('git', ['rev-parse', 'HEAD'], { cwd: oldPath })).stdout.trim();
+    await fixtureGit(oldPath, ['commit', '-am', 'unpublished work']);
+    const oldHead = await fixtureGit(oldPath, ['rev-parse', 'HEAD']);
     const previous = {
       ...record,
       worktree: oldPath,
@@ -149,7 +165,7 @@ describe('agent/codex-issue-branch', () => {
     assert.equal(await git('rev-parse', 'HEAD'), published);
     assert.equal(await git('rev-parse', 'shared-pr'), oldHead);
     assert.equal(
-      (await execute('git', ['show', 'HEAD:work.txt'], { cwd: oldPath })).stdout,
+      await fixtureGit(oldPath, ['show', 'HEAD:work.txt']),
       'unpublished predecessor work',
     );
     record.delivery = {

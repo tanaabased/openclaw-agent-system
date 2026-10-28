@@ -455,8 +455,15 @@ describe('agent/codex-dispatch', () => {
     assert.equal(after.records.length, 2);
     const old = after.records[0]!,
       successor = after.records[1]!;
-    assert.deepEqual(old, { ...before.records[0], supersededBy: successor.id });
+    assert.deepEqual(old, {
+      ...before.records[0],
+      supersededBy: successor.id,
+      recovery: old.recovery,
+    });
+    assert.equal(old.recovery?.digest, preview.digest);
+    assert.equal(old.recovery?.by, 'operator');
     assert.equal(successor.predecessorId, old.id);
+    assert.equal(successor.manualIssue?.selections?.mode, undefined);
     assert.equal(successor.request, undefined);
     assert.equal(successor.result, undefined);
     assert.equal(successor.delivery, undefined);

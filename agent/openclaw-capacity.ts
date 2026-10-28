@@ -4,7 +4,7 @@ import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 export function openClawItemOccupied(record: OpenClawDispatchRecord) {
   if (record.retired && record.retirement?.sessionUnavailableObserved) return false;
   if (record.retirement && record.nativeInactive !== undefined) return !record.nativeInactive;
-  if (record.reset || !record.request) return false;
+  if (record.supersededBy || record.reset || !record.request) return false;
   return Boolean(
     (!record.handoff &&
       record.phase !== 'complete' &&

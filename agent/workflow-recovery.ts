@@ -71,10 +71,6 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'Earlier publication has an uncertain outcome, so its destination was not changed.',
       'Resume the original delivery or announcement through its retained receipts before selecting a different PR. Do not repeat uncertain writes or discard their tracking.',
     ],
-    'launch-pr-runtime-unsupported': [
-      'Existing-PR startup is currently available only in standalone Codex.',
-      'Use standalone Codex Task Launch for explicit PR selection. OpenClaw manual fresh launch remains available without pullRequest; do not silently omit a requested PR.',
-    ],
     'codex-branch-owner-mismatch': [
       'The current branch does not belong to this assignment attempt.',
       'Preserve local work and switch back to this attempt’s retained branch before resuming. Do not reset or adopt a retired attempt’s branch.',

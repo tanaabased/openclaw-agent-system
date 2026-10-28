@@ -1,3 +1,4 @@
+import { automationHash } from './automation-hash.ts';
 import codexIssueLaunch from './codex-issue-launch.ts';
 import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
@@ -343,6 +344,28 @@ async function executeCodexDispatch(
           connect: () => (deps.connect ?? connectCodexGitHub)(current.workspace, signal),
           withNative: (operation) => withNative(current, deps, operation),
           deliveryConnect: deps.deliveryConnect,
+          git: deps.git,
+          ...(!('initiation' in intake) && deps.claims?.recover
+            ? {
+                claim: async (operation: 'preview' | 'reserve') => {
+                  const checked = await revalidateDispatchAssignment(
+                    current,
+                    intake,
+                    deps,
+                    signal,
+                    true,
+                    record,
+                  );
+                  return deps.claims!.recover!(
+                    intake,
+                    checked.client,
+                    record,
+                    automationHash([record.id, 'recovery']),
+                    operation,
+                  );
+                },
+              }
+            : {}),
         });
       if (action === 'prepare' || action === 'reconcile') {
         if (

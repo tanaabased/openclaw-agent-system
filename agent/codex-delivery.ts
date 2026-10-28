@@ -1,3 +1,4 @@
+import bindIssuePullRequest from './issue-pr-binding.ts';
 import { dispatchAdmission } from './managed-issue.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
@@ -157,6 +158,8 @@ export default async function runCodexDelivery(
 ) {
   if (!Value.Check(requestSchema, request)) throw new Error('delivery-request-invalid');
   const input: DeliveryRequest = request;
+  if (input.pullRequest !== undefined && input.action !== 'bind')
+    throw new Error('delivery-request-invalid');
   if (input.title?.includes('\0') || input.body?.includes('\0'))
     throw new Error('delivery-request-invalid');
   const current = await selectCodexIntake(pluginData, {
@@ -251,72 +254,39 @@ export default async function runCodexDelivery(
           throw new Error('codex-branch-owner-mismatch');
         for (const branch of [localBranch, adopted.branch, adopted.base])
           await git(found.cwd, ['check-ref-format', `refs/heads/${branch}`], signal);
-        if (
-          previous?.pullRequest?.pullRequestNodeId === adopted.pullRequestNodeId &&
-          previous.pullRequest.pullRequestNumber === adopted.pullRequestNumber &&
-          previous.binding.branch === adopted.branch &&
-          previous.binding.base === adopted.base &&
-          previous.binding.authorId === adopted.authorId &&
-          (previous.localBranch ?? previous.binding.branch) === localBranch
-        )
-          return {
-            status: 'bound',
-            retained: true,
-            id: record.id,
-            pullRequest: previous.pullRequest,
-            instruction:
-              'This task already selects this PR. Preserve its publication and announcement receipts; synchronize collaborator work before ordinary delivery.',
-          };
-        if (
-          previous?.pendingPush ||
-          (previous?.creationAttempted && !previous.pullRequest) ||
-          (previous?.announcement?.attempted && !previous.announcement.receipt)
-        )
-          throw new Error('delivery-binding-publication-pending');
         const head = (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
-        const digest = automationHash({
+        const bindingResult = await bindIssuePullRequest({
           id: record.id,
+          digest: input.digest,
           operator,
           adopted,
+          previous,
           localBranch,
           head,
-          previous,
+          git: (argv) => git(found.cwd, argv, signal),
+          assertCurrent: async () => {
+            const latest = await native.operatorInput!(caller!);
+            if (latest.turnId !== operator.turnId || latest.inputId !== operator.inputId)
+              throw new Error('delivery-binding-stale');
+          },
+          verify: () =>
+            new IssueDeliveryProvider(connected.account, deps.delay).adopt(
+              {
+                repositoryNodeId: intake.repository.nodeId,
+                item: {
+                  number: intake.issue.number,
+                  itemDatabaseId: intake.issue.databaseId,
+                  itemNodeId: intake.issue.nodeId,
+                  repositoryOwner: intake.repository.owner.login,
+                  repositoryName: intake.repository.name,
+                  repositoryDefaultBranch: checked.repo.defaultBranch,
+                },
+                signal,
+              },
+              input.pullRequest!,
+            ),
         });
-        if (input.digest === undefined)
-          return {
-            status: 'binding-available',
-            id: record.id,
-            digest,
-            pullRequest: adopted,
-            localBranch,
-            instruction:
-              'Bind this exact existing PR without changing local work, publishing, or superseding another task. Supply this digest to apply; integrate its fetched head before later delivery.',
-          };
-        if (input.digest !== digest) throw new Error('delivery-binding-stale');
-        const ref = `refs/agent-system/pr/${record.id}/${adopted.head}`;
-        await git(
-          found.cwd,
-          ['fetch', '--no-tags', 'origin', `refs/heads/${adopted.branch}:${ref}`],
-          signal,
-        );
-        if (
-          (await git(found.cwd, ['rev-parse', '--verify', `${ref}^{commit}`], signal)).trim() !==
-          adopted.head
-        )
-          throw new Error('delivery-binding-stale');
-        await git(
-          found.cwd,
-          [
-            'fetch',
-            '--no-tags',
-            'origin',
-            `refs/heads/${adopted.base}:refs/remotes/origin/${adopted.base}`,
-          ],
-          signal,
-        );
-        const latest = await native.operatorInput(caller!);
-        if (latest.turnId !== operator.turnId || latest.inputId !== operator.inputId)
-          throw new Error('delivery-binding-stale');
+        if (bindingResult.status !== 'bound' || bindingResult.retained) return { ...bindingResult };
         if (previous) (record.deliveryHistory ??= []).push(previous);
         record.issueBranch = { attemptId: record.id, name: localBranch, phase: 'ready' };
         record.adoptedPullRequest = adopted;
@@ -332,14 +302,7 @@ export default async function runCodexDelivery(
           policyDigest: notificationAuthorityDigest(current.manifest.github?.notifications),
         });
         await save();
-        return {
-          status: 'bound',
-          id: record.id,
-          pullRequest: record.delivery.pullRequest,
-          fetchedRef: ref,
-          instruction:
-            'The existing PR is selected and fetched. Local work is unchanged; incorporate collaborator commits before a normal non-force delivery. No publication, attachment, or announcement is recorded.',
-        };
+        return { ...bindingResult };
       }
       const notices = (attached: boolean) =>
         [

@@ -33,7 +33,8 @@ export type CodexDispatchSelection = Awaited<ReturnType<typeof selectCodexIntake
 export type CodexDispatchNative = ReturnType<typeof codexDispatchNative>;
 export interface CodexDispatchDependencies extends Omit<CodexIntakeDependencies, 'connect'> {
   claimStore?: AssignmentClaimStore;
-  claims?: Pick<CodexAssignmentClaims, 'select' | 'accept'>;
+  claims?: Pick<CodexAssignmentClaims, 'select' | 'accept'> &
+    Partial<Pick<CodexAssignmentClaims, 'recover'>>;
   connect?: (workspace: string, signal: AbortSignal) => Promise<Client>;
   activation?: typeof inspectCodexDispatchActivation;
   native?: CodexDispatchNative;

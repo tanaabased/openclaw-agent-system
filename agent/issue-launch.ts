@@ -42,8 +42,6 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
 }) {
   const { action, context, journal, client } = input;
   if (!context.operator) throw new Error('launch-operator-required');
-  if (action.pullRequest && context.binding.runtime !== 'codex')
-    throw new Error('launch-pr-runtime-unsupported');
   await context.assertCurrent();
   const currentTarget = context.currentTarget
     ? issueLaunchTarget(context.currentTarget)
@@ -112,6 +110,9 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
         action.pullRequest,
       )
     : undefined;
+  if (adopted)
+    for (const branch of [adopted.branch, adopted.base])
+      await context.git(context.binding.workspace, ['check-ref-format', `refs/heads/${branch}`]);
   await context.assertCurrent();
   return journal.exclusive(async (state, save) => {
     const manual: OperatorIssue = {

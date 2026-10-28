@@ -56,6 +56,12 @@ export const dispatchRecordProperties = {
   adoptedPullRequest: Type.Optional(adoptedPullRequestSchema),
   supersededBy: Type.Optional(hash),
   predecessorId: Type.Optional(hash),
+  recovery: Type.Optional(
+    Type.Object(
+      { digest: hash, by: text, turnId: text, inputId: text, at: Type.Integer({ minimum: 0 }) },
+      { additionalProperties: false },
+    ),
+  ),
   issueKey: hash,
   sourceThreadId: text,
   phase: Type.Union([
