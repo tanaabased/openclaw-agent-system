@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
-import { createRequire } from 'node:module';
+import { execFile, execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, realpath, readdir, rm, writeFile } from 'node:fs/promises';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,6 +31,7 @@ const success = {
 
 describe('agent/setup-command-service', function () {
   this.timeout(30_000);
+  let childJavascript: string;
   let root: string;
   let workspaceDir: string;
   let otherWorkspace: string;
@@ -47,6 +47,27 @@ describe('agent/setup-command-service', function () {
   let configurationStatus: 'ready' | 'missing' | 'drift';
   let configurationRepairs: number;
 
+  before(async () => {
+    childJavascript = join(projectDir, 'test', `.setup-command-child-${process.pid}.mjs`);
+    // Keep host-command.ts at its source URL because it locates the repository's bin directory.
+    execFileSync(
+      'bun',
+      [
+        'build',
+        childFixture,
+        '--target=node',
+        '--packages=external',
+        '--external=*host-command.ts',
+        `--outfile=${childJavascript}`,
+      ],
+      { cwd: projectDir, stdio: 'pipe' },
+    );
+  });
+
+  after(async () => {
+    if (childJavascript) await rm(childJavascript, { force: true });
+  });
+
   beforeEach(async () => {
     root = await realpath(await mkdtemp('/tmp/setup-binding-'));
     workspaceDir = join(root, 'emori');
@@ -57,7 +78,7 @@ describe('agent/setup-command-service', function () {
     await mkdir(join(workspaceDir, 'repo'));
     await writeFile(
       join(hostBin, 'openclaw'),
-      `#!/bin/sh\nexec ${quote(process.execPath)} --import ${quote(createRequire(import.meta.url).resolve('tsx'))} ${quote(childFixture)} ${quote(authorityRoot)} "$@"\n`,
+      `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(childJavascript)} ${quote(authorityRoot)} "$@"\n`,
       { mode: 0o700 },
     );
     loaded = {
