@@ -69,15 +69,15 @@
       "./dist/index.js"
     ],
     "compat": {
-      "pluginApi": ">=2026.10.6",
-      "minGatewayVersion": "2026.10.6"
+      "pluginApi": ">=2026.10.8",
+      "minGatewayVersion": "2026.10.8"
     },
     "build": {
-      "openclawVersion": "2026.10.6",
-      "pluginSdkVersion": "2026.10.6"
+      "openclawVersion": "2026.10.8",
+      "pluginSdkVersion": "2026.10.8"
     },
     "agentSystem": {
-      "codexPlugin": "@openclaw/codex@2026.10.6"
+      "codexPlugin": "@openclaw/codex@2026.10.8"
     },
     "channel": {
       "id": "agent-system-github",
@@ -137,7 +137,7 @@
     ]
   },
   "peerDependencies": {
-    "openclaw": ">=2026.10.6"
+    "openclaw": ">=2026.10.8"
   },
   "dependencies": {
     "@1password/sdk": "0.5.0",
@@ -179,7 +179,7 @@
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.7.0",
     "mocha": "^11.7.6",
-    "openclaw": "2026.10.6",
+    "openclaw": "2026.10.8",
     "prettier": "^3.9.6",
     "shellcheck": "^4.1.0",
     "tsx": "^4.22.4",
