@@ -1,5 +1,7 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+- Updated installation guidance to use npm while ClawHub publication is blocked upstream. [actions#65](https://github.com/tanaabased/actions/issues/65)
+
 ## v0.9.2 - [October 28, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.9.2)
 
 - Changed the smaller ClawHub fallback archive to upload directly instead of using forced staging. [#518](https://github.com/tanaabased/openclaw-agent-system/issues/518)
