@@ -1999,7 +1999,7 @@ describe('agent/openclaw issue dispatch', () => {
     const request = creates()[0]!.params;
     assert.equal(request.model, 'openai/gpt-6.1-sol');
     assert.equal(request.thinkingLevel, 'high');
-    assert.equal(request.category, 'repo');
+    assert.equal(request.category, 'REPO');
     assert.equal(request.displayName, '#3: REPAIR THE RESULT');
     assert.equal(request.label, undefined);
     assert.equal(request.agentId, 'receiver');
@@ -2102,11 +2102,18 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(calls.length, 0);
   });
 
-  it('should reconcile a lost creation response after rebuilding the service without creating again', async () => {
+  it('should reconcile a legacy lowercase category after a lost creation response without creating again', async () => {
     const input = await next();
     lost = true;
     assert.equal((await prepare(input)).status, 'waiting');
     assert.equal((await record()).sessionCreation?.attempted, true);
+    await (
+      await service.scope(manifest, root)
+    ).journal.exclusive(async (state, save) => {
+      state.records[0]!.request!.category = 'repo';
+      await save();
+    });
+    session!.category = 'repo';
     service = new OpenClawDispatch(service.dependencies);
     const recovered = await service.run(manifest, root, coordinator, {
       action: 'reconcile',

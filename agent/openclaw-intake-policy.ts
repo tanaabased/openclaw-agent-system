@@ -53,7 +53,6 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
         trigger: { script },
         // retain the owning agent's tools; host policy and denials still apply.
         toolsAllow: ['*'],
-        group: 'Agent System',
       },
     },
   ];

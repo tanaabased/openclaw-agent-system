@@ -483,7 +483,7 @@ describe('agent/automation-service', () => {
     assert.equal(native[0]!.displayName, '📥 ISSUE ASSIGNMENTS');
     assert.equal([...sessions.values()][0]!.displayName, 'ISSUE ASSIGNMENTS');
     assert.ok(native[0]!.trigger);
-    assert.equal([...sessions.values()][0]!.category, 'Agent System');
+    assert.equal([...sessions.values()][0]!.category, 'AGENT SYSTEM');
     const identity = native[0]!.id;
     const coordinator = native[0]!.sessionTarget;
     const { store, context } = await service.scope(manifest, root);
@@ -593,7 +593,7 @@ describe('agent/automation-service', () => {
     );
     assert.notEqual(replacement.sessionKey, installedKey);
     assert.equal(sessions.size, 3);
-    assert.equal(sessions.get(replacement.sessionKey)!.category, 'Agent System');
+    assert.equal(sessions.get(replacement.sessionKey)!.category, 'AGENT SYSTEM');
     assert.equal(sessions.get(replacement.sessionKey)!.workspaceDir, root);
     assert.equal(
       await notificationAutomationReadiness(
@@ -649,8 +649,10 @@ describe('agent/automation-service', () => {
       if (method === 'sessions.patch') {
         assert.equal(params.expectedSessionId, 'durable-id');
         Object.assign(sessions.get(key)!, {
-          autoLabel: params.autoLabel,
-          displayName: params.autoLabel,
+          ...(params.autoLabel !== undefined
+            ? { autoLabel: params.autoLabel, displayName: params.autoLabel }
+            : {}),
+          ...(params.category !== undefined ? { category: params.category } : {}),
         });
         return { ok: true };
       }

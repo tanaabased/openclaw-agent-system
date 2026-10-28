@@ -16,6 +16,7 @@ import {
   codexAutomationRunGap,
   prepareCodexAutomation,
   syncCodexAutomationThreads,
+  type CodexAutomationDependencies,
 } from '../agent/codex-automations.ts';
 import codexAutomationSchedule from '../agent/codex-automation-schedule.ts';
 import {
@@ -23,6 +24,7 @@ import {
   parseAutomationReceipt,
   readCodexAutomations,
   type NativeAutomation,
+  type SavedAutomation,
 } from '../agent/codex-automation-state.ts';
 import {
   bindCodexWorkspace,
@@ -157,10 +159,73 @@ describe('agent/codex-automation-native-contract', () => {
 describe('agent/codex-automations', () => {
   let root: string, workspace: string, pluginData: string, codexHome: string;
   let projects: object;
+  let nativeInventory: {
+    schemaVersion: number;
+    unavailableHosts: string[];
+    unavailableSources: string[];
+    sections: Array<{ sectionId: string; name: string; itemKeys: string[] }>;
+  };
   const job = (extra = '') =>
     `  - id: review\n    schedule: every 1 hour\n    prompt: Review this workspace.\n${extra}`;
   const deps = () => ({ codexHome });
-  const inputs = () => ({ projects });
+  const inputs = () => ({ projects, nativeInventory });
+  function applySidebar(effect: unknown) {
+    const action = effect as {
+      status: string;
+      request?: {
+        tool: string;
+        arguments: { name?: string; sectionId?: string; threadId?: string };
+      };
+    };
+    if (action.status !== 'native-action') return false;
+    if (action.request?.tool === 'create_sidebar_section') {
+      nativeInventory.sections.push({
+        sectionId: `section-${nativeInventory.sections.length}`,
+        name: action.request.arguments.name!,
+        itemKeys: [],
+      });
+      return true;
+    }
+    if (action.request?.tool === 'move_thread_to_sidebar_section') {
+      const key = `codex:thread:local:${action.request.arguments.threadId}`;
+      for (const section of nativeInventory.sections)
+        section.itemKeys = section.itemKeys.filter((item) => item !== key);
+      nativeInventory.sections
+        .find(({ sectionId }) => sectionId === action.request!.arguments.sectionId)!
+        .itemKeys.push(key);
+      return true;
+    }
+    return false;
+  }
+  async function syncThreads(dependencies: CodexAutomationDependencies) {
+    for (let i = 0; i < 6; i++) {
+      const plan = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+      const effect = await syncCodexAutomationThreads(
+        pluginData,
+        plan.digest,
+        inputs(),
+        dependencies,
+      );
+      if (effect.status === 'verified') return effect;
+      assert.ok(applySidebar(effect), JSON.stringify(effect));
+    }
+    assert.fail('sidebar placement did not converge');
+  }
+  async function replaceCoordinator(
+    before: SavedAutomation,
+    dependencies: CodexAutomationDependencies,
+  ) {
+    for (let i = 0; i < 6; i++) {
+      const effect = await replaceCodexNotificationCoordinator(
+        pluginData,
+        before,
+        dependencies,
+        inputs(),
+      );
+      if (!applySidebar(effect)) return effect;
+    }
+    throw new Error('sidebar placement did not converge');
+  }
   const inspect = () => inspectCodexAutomations(pluginData, inputs(), deps());
   async function manifest(declaration = job()) {
     await writeFile(
@@ -205,6 +270,12 @@ describe('agent/codex-automations', () => {
     return acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
   }
   beforeEach(async () => {
+    nativeInventory = {
+      schemaVersion: 4,
+      unavailableHosts: [],
+      unavailableSources: [],
+      sections: [],
+    };
     root = await mkdtemp(join(tmpdir(), 'codex-automations-'));
     workspace = join(root, 'workspace');
     pluginData = join(root, 'plugin-data');
@@ -366,7 +437,7 @@ describe('agent/codex-automations', () => {
         },
       },
     };
-    const inspect = () => inspectCodexAutomations(pluginData, {}, dependencies);
+    const inspect = () => inspectCodexAutomations(pluginData, inputs(), dependencies);
     const binding = await inspectCodexWorkspaceBinding(pluginData);
     assert.ok(
       binding.status === 'bound' &&
@@ -374,15 +445,14 @@ describe('agent/codex-automations', () => {
         binding.preview.manifest.status === 'loaded',
       JSON.stringify(binding),
     );
-    let first = await inspect();
-    await syncCodexAutomationThreads(pluginData, first.digest, {}, dependencies);
+    await syncThreads(dependencies);
     async function reconcile() {
       for (let iteration = 0; iteration < 5; iteration++) {
         const plan = await inspect();
         if (plan.status === 'aligned') return;
         const action = plan.actions[0]!;
         assert.ok(action, JSON.stringify(plan.findings));
-        await prepareCodexAutomation(pluginData, plan.digest, {}, dependencies);
+        await prepareCodexAutomation(pluginData, plan.digest, inputs(), dependencies);
         await nativeWrite(action.expected, action.id ?? `intake-job-${creates}-${iteration}`);
         await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, dependencies);
       }
@@ -391,10 +461,10 @@ describe('agent/codex-automations', () => {
     await reconcile();
     const before = await inspectCodexIntake(pluginData, dependencies);
     conversations.get('intake-1')!.archived = true;
-    first = await inspect();
+    const first = await inspect();
     assert.ok(first.findings.some(({ code }) => code === 'automation-thread-replacement-required'));
     assert.equal(creates, 1);
-    await syncCodexAutomationThreads(pluginData, first.digest, {}, dependencies);
+    await syncThreads(dependencies);
     await reconcile();
     assert.equal(creates, 2);
     assert.equal(
@@ -405,21 +475,22 @@ describe('agent/codex-automations', () => {
     assert.equal(saved.definition.kind, 'heartbeat');
     conversations.get('intake-2')!.archived = true;
     await assert.rejects(
-      replaceCodexNotificationCoordinator(pluginData, saved, dependencies),
+      replaceCoordinator(saved, dependencies),
       /notification-reset-automation-changed/u,
     );
     assert.equal(creates, 2);
     await nativeWrite({ ...saved.definition, status: 'PAUSED' }, saved.id);
-    const effect = await replaceCodexNotificationCoordinator(pluginData, saved, dependencies);
+    const effect = await replaceCoordinator(saved, dependencies);
     assert.equal(effect.status, 'native-action');
-    assert.equal(effect.request?.arguments.status, 'PAUSED');
+    assert.ok(effect.status === 'native-action' && effect.request.tool === 'automation_update');
+    assert.equal(effect.request.arguments.status, 'PAUSED');
     const definition = {
       ...saved.definition,
       targetThreadId: 'intake-3',
       status: 'PAUSED' as const,
     };
     await nativeWrite(definition, saved.id);
-    const completed = await replaceCodexNotificationCoordinator(pluginData, saved, dependencies);
+    const completed = await replaceCoordinator(saved, dependencies);
     assert.equal(completed.status, 'done');
     assert.equal(creates, 3);
     const updated = JSON.parse(completed.automation!);
@@ -432,19 +503,15 @@ describe('agent/codex-automations', () => {
     const retained = await codexNotificationResetAutomation(pluginData, dependencies);
     conversations.get('intake-3')!.archived = true;
     await rm(join(codexHome, 'automations', saved.id), { recursive: true });
-    const replacement = await replaceCodexNotificationCoordinator(
-      pluginData,
-      retained,
-      dependencies,
-    );
+    const replacement = await replaceCoordinator(retained, dependencies);
     assert.equal(replacement.status, 'native-action');
-    assert.equal(replacement.request?.arguments.mode, 'create');
-    assert.equal(replacement.request?.arguments.status, 'PAUSED');
-    assert.equal(creates, 4);
-    assert.deepEqual(
-      await replaceCodexNotificationCoordinator(pluginData, retained, dependencies),
-      replacement,
+    assert.ok(
+      replacement.status === 'native-action' && replacement.request.tool === 'automation_update',
     );
+    assert.equal(replacement.request.arguments.mode, 'create');
+    assert.equal(replacement.request.arguments.status, 'PAUSED');
+    assert.equal(creates, 4);
+    assert.deepEqual(await replaceCoordinator(retained, dependencies), replacement);
     assert.equal(creates, 4);
     const replacementDefinition = {
       ...retained.definition,
@@ -453,25 +520,22 @@ describe('agent/codex-automations', () => {
     };
     await nativeWrite({ ...replacementDefinition, rrule: 'FREQ=DAILY' }, 'replacement');
     await assert.rejects(
-      replaceCodexNotificationCoordinator(pluginData, retained, dependencies),
+      replaceCoordinator(retained, dependencies),
       /notification-reset-automation-changed/u,
     );
     await nativeWrite(replacementDefinition, 'replacement');
     await nativeWrite(replacementDefinition, 'duplicate');
     await assert.rejects(
-      replaceCodexNotificationCoordinator(pluginData, retained, dependencies),
+      replaceCoordinator(retained, dependencies),
       /notification-reset-automation-changed/u,
     );
     await rm(join(codexHome, 'automations', 'duplicate'), { recursive: true });
-    const recovered = await replaceCodexNotificationCoordinator(pluginData, retained, dependencies);
+    const recovered = await replaceCoordinator(retained, dependencies);
     assert.equal(recovered.status, 'done');
     const replacementSaved = JSON.parse(recovered.automation!);
     assert.equal(replacementSaved.id, 'replacement');
     assert.equal(replacementSaved.definition.status, 'ACTIVE');
-    assert.deepEqual(
-      await replaceCodexNotificationCoordinator(pluginData, retained, dependencies),
-      recovered,
-    );
+    assert.deepEqual(await replaceCoordinator(retained, dependencies), recovered);
     assert.equal(creates, 4);
     await nativeWrite(replacementSaved.definition, replacementSaved.id);
     assert.equal((await inspect()).status, 'aligned');
@@ -505,7 +569,7 @@ describe('agent/codex-automations', () => {
     await manifest(job('    thread: { id: activity, name: Activity }\n'));
     const before = await inspectCodexAutomations(pluginData, inputs(), dependencies);
     assert.equal(before.status, 'requires-native-app-sync');
-    await syncCodexAutomationThreads(pluginData, before.digest, inputs(), dependencies);
+    await syncThreads(dependencies);
     const migration = await inspectCodexAutomations(pluginData, inputs(), dependencies);
     assert.equal(migration.actions[0]?.retire, true);
     assert.equal(migration.actions[0]?.expected.status, 'PAUSED');
@@ -712,14 +776,65 @@ describe('agent/codex-automations', () => {
     const threads = [
       JSON.parse((await capture('lookups')).replaceAll('/workspace/fixture', workspace)).thread,
     ];
-    const plan = await inspectCodexAutomations(pluginData, { projects, threads }, deps());
+    nativeInventory.sections.push({
+      sectionId: 'existing-section',
+      name: 'AGENT SYSTEM',
+      itemKeys: ['codex:thread:local:fixture-thread'],
+    });
+    const plan = await inspectCodexAutomations(pluginData, { ...inputs(), threads }, deps());
     assert.equal(plan.actions[0]?.expected.kind, 'heartbeat');
+    await syncCodexAutomationThreads(pluginData, plan.digest, { ...inputs(), threads }, deps());
+    nativeInventory.sections.push({
+      sectionId: 'later-duplicate',
+      name: 'AGENT SYSTEM',
+      itemKeys: [],
+    });
+    const retained = await inspectCodexAutomations(pluginData, { ...inputs(), threads }, deps());
+    assert.equal(
+      retained.actions[0]?.expected.kind,
+      'heartbeat',
+      JSON.stringify(retained.findings),
+    );
     await manifest(
       job(
         '    overrides:\n      codex:\n        model: gpt-6-astra\n        target: {thread: fixture-thread}\n',
       ),
     );
     assert.equal((await inspect()).findings[0]?.code, 'automation-thread-overrides-unsupported');
+  });
+
+  it('should move an explicit chat after a group change without rewriting its schedule', async () => {
+    const target =
+      '    runtimes: [codex]\n    overrides:\n      codex:\n        target: {thread: fixture-thread}\n';
+    await manifest(job(target));
+    nativeInventory.sections.push({
+      sectionId: 'default',
+      name: 'AGENT SYSTEM',
+      itemKeys: ['codex:thread:local:fixture-thread'],
+    });
+    const threads = [
+      JSON.parse((await capture('lookups')).replaceAll('/workspace/fixture', workspace)).thread,
+    ];
+    const lookup = () => ({ ...inputs(), threads });
+    const plan = await inspectCodexAutomations(pluginData, lookup(), deps());
+    await prepareCodexAutomation(pluginData, plan.digest, lookup(), deps());
+    await nativeWrite(plan.actions[0]!.expected);
+    await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
+    const before = await readCodexAutomations(codexHome);
+    await manifest(job(target + '    group: operations\n'));
+    for (let i = 0; i < 3; i++) {
+      const current = await inspectCodexAutomations(pluginData, lookup(), deps());
+      assert.ok(current.findings.some(({ code }) => code === 'automation-thread-group-drift'));
+      const effect = await syncCodexAutomationThreads(pluginData, current.digest, lookup(), deps());
+      if (i < 2) assert.ok(applySidebar(effect), JSON.stringify(effect));
+      else assert.equal(effect.status, 'verified');
+    }
+    assert.equal((await inspectCodexAutomations(pluginData, lookup(), deps())).status, 'aligned');
+    assert.deepEqual(await readCodexAutomations(codexHome), before);
+    assert.deepEqual(nativeInventory.sections.find(({ name }) => name === 'OPERATIONS')!.itemKeys, [
+      'codex:thread:local:fixture-thread',
+    ]);
+    assert.deepEqual(nativeInventory.sections[0]!.itemKeys, []);
   });
 
   it('should preserve native notification preferences without declaring drift', async () => {

@@ -44,7 +44,7 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
         !record.project ||
         !record.worktree ||
         !record.request ||
-        record.handoff ||
+        (record.handoff && !(input.action === 'context' && context.operatorInput)) ||
         record.supersededBy ||
         record.retired ||
         record.retirement ||
@@ -117,7 +117,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       ['continuation-auto-wait', 'continuation-assessment-not-actionable'].includes(
         work.code ?? '',
       ) &&
-      !retainedIssueProgression(record)
+      (!retainedIssueProgression(record) || context.operatorInput)
     ) {
       work.phase = 'waiting';
       delete work.code;
@@ -139,7 +139,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       !record.worktree ||
       !record.project ||
       !record.request ||
-      record.handoff ||
+      (record.handoff && !(input.action === 'context' && context.operatorInput)) ||
       record.supersededBy ||
       record.retired ||
       record.retirement ||
@@ -147,6 +147,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       record.reset
     )
       throw new Error('continuation-managed-issue-required');
+    if (record.handoff && work.phase === 'cancelled') throw new Error('implementation-cancelled');
     if (
       input.action === 'next' &&
       ((work.retry && !dispatchRetryDue(work, (deps.now ?? Date.now)())) ||
@@ -285,7 +286,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       found.cwd,
       admitted.repository.owner.login + '/' + admitted.repository.name,
       git,
-      work.attempt ? 'handoff' : undefined,
+      work.attempt || record.handoff ? 'handoff' : undefined,
     );
     record.effective = codexSessionSettings(record, found);
     await save();
@@ -333,13 +334,19 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     });
     if (!turn.ready) return turn.response;
     const { activeAttempt, receipt, currentTurnEnded } = turn;
-    if (input.action === 'context')
+    if (input.action === 'context') {
+      if (record.handoff) {
+        (work.handoffs ??= []).push(record.handoff);
+        delete record.handoff;
+        await save();
+      }
       return await codexWorkContext(record, context, {
         client,
         repo,
         admitted,
         selection: turn.selection,
       });
+    }
     if (input.action === 'result')
       return await recordCodexWorkResult(
         record,

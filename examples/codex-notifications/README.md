@@ -49,7 +49,7 @@ accept feedback, or publish until activation and native ownership are verified.
 - **Explicit retirement:** preview/apply retirement of a second open assigned task, skip grace, and redeem only the prepared native archive request. Own-active-turn requests stay pending. Reconciliation after native cleanup must retain history with one archive and no duplicate admission. Lookup/host errors keep their actual diagnostic; uncertain writes or denials never trigger blind retries.
 - **Explicit unmanaged cleanup (native desktop acceptance):** with no assignment intake, select one disposable native thread through Task Retirement's `native` selector, inspect normal native effects, apply the digest and redeem only the prepared `set_thread_archived` request. Verify archived history through the same entry, then exercise native restore and record the actual checkout disposition separately. Repeat with a known managed thread and require `native-retirement-managed-owner-required` without effects. Native denial or an uncertain desktop response must not prepare another archive. Keep local-only work disposable: this path deliberately has no managed preservation audit. The headless CI blocks below cannot execute the desktop effect and do not establish this acceptance evidence.
 - **Direct reply:** a fresh task selects the configured reply skill/guidance for a disposable source and retains an unpublished draft without intake activation. Later explicit publication verifies the exact destination, author, and permalink. Managed sources reuse their owner, inputs, results, and receipts; invalid managed context cannot become manual authority.
-- **Manual launch:** with intake absent, launch one disposable unassigned issue through `$agent-system-task-launch`, execute its prepared native creation once, and reconcile the same destination. Verify its checkout, effective settings, full assessment and configured Plan/Work/Auto handoff. Reinvoke after a desktop restart and retain the same owner, results and PR; issue assignment and schedules remain unchanged. Also interrupt after repository preparation while intake is active: a real scheduled denial observation must leave manual preparation eligible and finish its report without exhausting the action budget, and a later launch context must return a usable digest for the same receipt. Recover a previously retained false missing-history blocker through the runtime; actual native denials must remain held. Capture actual native receipts separately from the headless refusal and component evidence; these executable checks do not prove desktop creation or rendering.
+- **Manual launch:** with intake absent, launch one disposable unassigned issue through `$agent-system-task-launch`, execute its prepared native creation once, and reconcile the same destination. Verify its checkout, effective settings, full assessment and configured Plan/Work/Auto handoff. After an Auto-to-Plan assessment, request implementation, apply the explicit handoff, and load direct implementation context in the same chat. Verify it consumes the handoff into the existing continuation, retains its receipt and assessment, and neither sends another message nor creates a replacement chat. Repeat context after restart; cancellation, native denial and changed checkout ownership must still block resumption. Reinvoke after a desktop restart and retain the same owner, results and PR; issue assignment and schedules remain unchanged. Also interrupt after repository preparation while intake is active: a real scheduled denial observation must leave manual preparation eligible and finish its report without exhausting the action budget, and a later launch context must return a usable digest for the same receipt. Recover a previously retained false missing-history blocker through the runtime; actual native denials must remain held. Capture actual native receipts separately from the headless refusal and component evidence; these executable checks do not prove desktop creation or rendering.
 
 - **Status update:** in the same native chat, request an issue update after verified progress. Inspect one exact quoted body, posting author and confirmed permalink alongside the complete private answer. Repeat on a later turn and verify already-current means no comment; recover an uncertain original post without another create. Preserve managed owner/mode and reject stale input without manual fallback. This remains separate native acceptance work, not an outcome of the headless checks below.
 
@@ -131,7 +131,7 @@ node "$runtime" intake inspect --plugin-data "$plugin_data" \
   | jq -e '.status == "blocked" and .code == "intake-activation-required" and .records == []'
 if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-activation-required"'
-printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
+printf '%s\n' '{"nativeInventory":{"schemaVersion":4,"sections":[],"unavailableHosts":[],"unavailableSources":[]}}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
   | jq -e 'any(.findings[]; .code == "automation-thread-sync-required") and (.conversations | length) == 1'
 node "$runtime" setup inspect --plugin-data "$plugin_data" \
   | jq -e 'any(.findings[]; .code == "github-notification-runtime-unsupported" and .status == "warning") and all(.findings[]; .code != "github-notification-runtime-unsupported" or .status != "blocked")'
@@ -300,7 +300,7 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/disabled-notification-data"
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/disabled" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
-printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
+printf '%s\n' '{"nativeInventory":{"schemaVersion":4,"sections":[],"unavailableHosts":[],"unavailableSources":[]}}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
   | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
 if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-automation-paused"'
@@ -310,19 +310,18 @@ test ! -d "$CODEX_HOME/automations"
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/notification-data" | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
+printf '%s\n' '{"nativeInventory":{"schemaVersion":4,"sections":[],"unavailableHosts":[],"unavailableSources":[]}}' | node "$runtime" automations plan --plugin-data "$root/notification-data" | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
 test ! -d "$CODEX_HOME/rules"
 
-# should bind work preparation to the installed runtime in the native schedule request
+# should bind work preparation to the installed runtime with explicit sidebar fixtures
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
 sed 's/mode: auto/mode: work/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/work-agent.yaml"
 mv "$root/work-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/work-plan.json"
-jq '{digest:.digest}' "$root/work-plan.json" | node "$runtime" automations threads-sync --plugin-data "$plugin_data" | jq -e '.status == "verified"'
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/work-schedule.json"
+node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$plugin_data" "$root/sidebar-input.json" | jq -e '.status == "verified"'
+node "$runtime" automations plan --plugin-data "$plugin_data" < "$root/sidebar-input.json" > "$root/work-schedule.json"
 node --input-type=module - "$root/work-schedule.json" "$runtime" "$plugin_data" <<'NODE'
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -398,10 +397,10 @@ root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/before-timing.json"
+node "$runtime" automations plan --plugin-data "$plugin_data" < "$root/sidebar-input.json" > "$root/before-timing.json"
 sed 's/  schema-version: 3/  schema-version: 3\n  interval-minutes: 17\n  max-concurrent-items: 8/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/timing-agent.yaml"
 mv "$root/timing-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/after-timing.json"
+node "$runtime" automations plan --plugin-data "$plugin_data" < "$root/sidebar-input.json" > "$root/after-timing.json"
 jq -es '.[0].actions[0].expected.prompt as $before | .[1].actions[0].expected | (.prompt != null and .prompt == $before) and (.rrule | contains("INTERVAL=17"))' "$root/before-timing.json" "$root/after-timing.json"
 test ! -d "$CODEX_HOME/automations"
 

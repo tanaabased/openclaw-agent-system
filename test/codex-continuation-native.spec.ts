@@ -37,6 +37,16 @@ describe('agent/codex-continuation-native', () => {
       data: items.map((item) => ({ turnId: 'operator-turn', item })),
     }));
     assert.equal((await verify('intake', direct)).status, 'verified');
+    items.push({
+      id: 'later-operator-input',
+      type: 'userMessage',
+      content: [{ type: 'text', text: 'Run the disposable pilot.' }],
+    });
+    assert.equal((await verify('intake', direct)).status, 'verified');
+    assert.equal(
+      (await verify('intake', { ...direct, inputId: 'later-operator-input' })).status,
+      'verified',
+    );
     items[0]!.type = 'agentMessage';
     await assert.rejects(verify('intake', direct), /continuation-input-unverified/);
     items[0]!.type = 'userMessage';
