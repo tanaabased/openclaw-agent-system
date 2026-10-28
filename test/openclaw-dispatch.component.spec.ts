@@ -2038,6 +2038,18 @@ describe('agent/openclaw issue dispatch', () => {
     );
   });
 
+  it('should normalize redundant issue metadata without changing worktree title input', async () => {
+    const title = 'REPO #3: #3: Fix café: references to #4';
+    const prepareWorktree = service.dependencies.worktrees.prepareGitHub;
+    service.dependencies.worktrees.prepareGitHub = async (input) => {
+      assert.equal(input.title, title);
+      return prepareWorktree(input);
+    };
+    const created = await prepare(await next(), {}, title);
+    assert.equal(created.status, 'session-created');
+    assert.equal(creates()[0]!.params.displayName, '#3: FIX CAFÉ: REFERENCES TO #4');
+  });
+
   it('should reuse one connection and keep gateway reads free of repeated provider authorization', async () => {
     const input = await next();
     const connect = service.dependencies.connect;

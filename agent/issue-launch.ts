@@ -1,3 +1,4 @@
+import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import IssueDeliveryProvider, {
   type GitHubNotificationIssueDeliveryReceipt,
 } from '../channels/github/publication/issue-delivery.ts';
@@ -333,7 +334,8 @@ export default async function issueLaunch<
       routing,
       origin: record.manualIssue!.initiation,
       instruction:
-        'Use the current model-routing profiles to assess this bounded issue, then call launch prepare with the same target/id, digest, assessment, and a concise title. Preserve the original attempt on retry.',
+        'Use the current model-routing profiles to assess this bounded issue, then call launch prepare with the same target/id, digest, assessment, and title. Preserve the original attempt on retry. ' +
+        issueChatTitleGuidance,
     };
   }, true);
 }

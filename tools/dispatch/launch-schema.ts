@@ -1,3 +1,4 @@
+import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
 import { Type, type Static } from 'typebox';
 
 import { assessmentConfigurationSchema } from '../../manifest/assessment-schema.ts';
@@ -34,6 +35,7 @@ export const launchRequestSchema = Type.Object(
       Type.String({
         minLength: 1,
         maxLength: 80,
+        description: issueChatTitleGuidance,
         pattern: '^(?=.*\\S)[^\\u0000-\\u001F\\u007F-\\u009F]+$',
       }),
     ),

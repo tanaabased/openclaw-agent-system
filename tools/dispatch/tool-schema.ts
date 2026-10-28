@@ -1,3 +1,4 @@
+import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
 import { launchRequestSchema } from './launch-schema.ts';
 import { retirementRequestSchema } from './retirement-schema.ts';
 import { directImplementationRequestSchema } from './implementation-schema.ts';
@@ -48,6 +49,7 @@ const dispatchRequestVariants = Type.Union([
     title: Type.String({
       minLength: 1,
       maxLength: 80,
+      description: issueChatTitleGuidance,
       pattern: '^(?=.*\\S)[^\\u0000-\\u001F\\u007F-\\u009F]+$',
     }),
     fallback: Type.Optional(Type.Literal('default')),
