@@ -32,7 +32,7 @@ describe('agent/codex-dispatch-request', () => {
   it('should accept readable bounded dispatch titles across runtime request schemas', () => {
     const id = 'a'.repeat(64);
     const digest = 'b'.repeat(64);
-    const titles = ['Upgrade OpenClaw to 2026.10.6', "Fix user's issue: café 東京"];
+    const titles = ['Upgrade OpenClaw to 2026.10.6', "Fix user's issue: café 東京", 'x'.repeat(80)];
     for (const title of titles) {
       const prepare = {
         id,

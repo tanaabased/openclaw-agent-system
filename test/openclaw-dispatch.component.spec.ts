@@ -2027,12 +2027,15 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(preparedWorktrees, 1);
   });
 
-  it('should preserve punctuation and unicode in the issue session display title', async () => {
+  it('should uppercase the issue session display title while preserving punctuation and unicode', async () => {
     const input = await next();
-    const title = "Fix user's issue: café 東京 2026.10.6";
+    const title = "Fix user's issue: café 東京 Straße 2026.10.6";
     const created = await prepare(input, {}, title);
     assert.equal(created.status, 'session-created');
-    assert.equal(creates()[0]!.params.displayName, `#3: ${title}`);
+    assert.equal(
+      creates()[0]!.params.displayName,
+      "#3: FIX USER'S ISSUE: CAFÉ 東京 STRASSE 2026.10.6",
+    );
   });
 
   it('should reuse one connection and keep gateway reads free of repeated provider authorization', async () => {
