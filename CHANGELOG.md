@@ -1,5 +1,7 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+## v0.9.1 - [October 28, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.9.1)
+
 ### Compatibility
 
 - Changed standalone Codex cleanup to a fixed 60-minute grace period. [#519](https://github.com/tanaabased/openclaw-agent-system/pull/519)
