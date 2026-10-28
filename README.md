@@ -126,19 +126,17 @@ For the update order and existing-installation steps, see [upgrading](./UPGRADIN
 
 ### OpenClaw
 
-Install the current release from ClawHub:
+Install the current release from npm:
 
-```sh
-openclaw plugins install clawhub:@tanaab/openclaw-agent-system --accept-capabilities
-```
-
-To select npm explicitly instead:
+> [!NOTE]
+> ClawHub publication is currently blocked by an [upstream backend error](https://github.com/openclaw/clawhub/issues/3788).
+> Its listing has an older release. Use npm for the current version.
 
 ```sh
 openclaw plugins install npm:@tanaab/openclaw-agent-system --accept-capabilities
 ```
 
-Both commands accept the declared capabilities, register the plugin, and enable
+This command accepts the declared capabilities, registers the plugin, and enables
 it. GitHub workflows require explicit [configuration and installation](./channels/github/README.md#configuration).
 
 ### Codex

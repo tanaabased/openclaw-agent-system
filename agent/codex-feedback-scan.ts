@@ -1,4 +1,5 @@
-import { dispatchAdmission } from './managed-issue.ts';
+import { managedPullRequest, dispatchAdmission } from './managed-issue.ts';
+
 import workflowFailure from './workflow-failure.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import feedbackOwnPublications from './feedback-own-publications.ts';
@@ -100,9 +101,9 @@ export async function scanCodexFeedback(input: {
         {
           number: admitted.issue.number,
           nodeId: admitted.issue.nodeId,
-          itemType: 'issue' as const,
+          itemType: managedPullRequest(admitted) ? ('pull-request' as const) : ('issue' as const),
         },
-        ...(pr
+        ...(pr && pr.pullRequestNodeId !== admitted.issue.nodeId
           ? [
               {
                 number: pr.pullRequestNumber,

@@ -1,3 +1,4 @@
+import { managedPullRequest, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import feedbackOwnPublications from './feedback-own-publications.ts';
 import { feedbackAuthorityDigest } from './notification-authority.ts';
 import type DiscoveryBudget from './discovery-budget.ts';
@@ -9,7 +10,7 @@ import { inspectActiveIssue, inspectContinuedIssue } from './dispatch-assignment
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { admitFeedback, discoverFeedback, observeFeedbackPolicy } from './feedback-source.ts';
 import type { FeedbackSourceState } from './feedback-state.ts';
-import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
+
 import type {
   GitHubNotificationCommentClient,
   GitHubNotificationIntakeClient,
@@ -128,7 +129,11 @@ export default async function reactivateAssignmentFeedback(input: {
   });
   const comments = await input.comments();
   const targets = [
-    { number: intake.issue.number, nodeId: intake.issue.nodeId, itemType: 'issue' as const },
+    {
+      number: intake.issue.number,
+      nodeId: intake.issue.nodeId,
+      itemType: managedPullRequest(intake) ? ('pull-request' as const) : ('issue' as const),
+    },
     ...(input.pullRequest ? [{ ...input.pullRequest, itemType: 'pull-request' as const }] : []),
   ];
   let publications: Promise<string[]> | undefined;

@@ -144,7 +144,8 @@ jobs:
         run: bun run test:release
       - name: Publish ClawHub fallback
         if: ${{ steps.publish-clawhub.outcome == 'failure' }}
-        uses: tanaabased/actions/publish-clawhub@v1
+        # use the revision before forced staging so the smaller fallback uploads directly.
+        uses: tanaabased/actions/publish-clawhub@87204fe1afd3784873160d98fb7561ab9493fb03
         with:
           tarball: ${{ runner.temp }}/clawhub-fallback.tgz
           owner: tanaab

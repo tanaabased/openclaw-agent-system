@@ -1,4 +1,5 @@
-import { dispatchAdmission } from './managed-issue.ts';
+import { managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
+
 import type { ImplementationResult } from './implementation-result.ts';
 import managedImplementationRoute from './managed-implementation-route.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
@@ -93,9 +94,7 @@ export default async function codexEntryContext<T>(
     const admission =
       records[0] && dispatchAdmission(records[0], (await current.store.read())?.records ?? []);
     if (records.length && !admission) throw new Error('assessment-managed-admission-missing');
-    const currentTarget = admission
-      ? `https://github.com/${admission.repository.owner.login}/${admission.repository.name}/issues/${admission.issue.number}`
-      : undefined;
+    const currentTarget = admission ? managedTargetUrl(admission) : undefined;
     if (routeManaged) {
       const routed = await managedImplementationRoute({
         action: input,

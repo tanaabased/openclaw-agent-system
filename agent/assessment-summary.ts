@@ -1,3 +1,8 @@
+import {
+  managedPullRequest,
+  managedTargetUrl,
+  type ManagedIssue as IntakeRecord,
+} from './managed-issue.ts';
 import publicResponse from './public-response.ts';
 import publicResponsePresentation from '../channels/github/presentation/public-response.ts';
 import workflowFailure from './workflow-failure.ts';
@@ -7,7 +12,7 @@ import { automationHash } from './automation-hash.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { AssessmentSummaryRequest, AssessmentSummary } from './assessment-summary-state.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
-import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
+
 import GitHubNotificationCommentPublisher, {
   type GitHubNotificationCommentPublicationConnection,
 } from '../channels/github/publication/comment-publisher.ts';
@@ -46,7 +51,7 @@ export default async function assessmentSummary(input: {
   publicationCommand?(digest: string): string;
 }) {
   const { record, intake, action } = input;
-  const destination = `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/issues/${intake.issue.number}`;
+  const destination = managedTargetUrl(intake);
   const summaryCard = (summary: AssessmentSummary) =>
     githubCommentCard({
       body: summary.publicText!,
@@ -325,7 +330,7 @@ export function assessmentSummaryPublication(
       result: summary.resultDigest,
     }),
     item: {
-      lifecycleId: 'issue' as const,
+      lifecycleId: managedPullRequest(intake) ? ('pull-request' as const) : ('issue' as const),
       number: intake.issue.number,
       repositoryOwner: intake.repository.owner.login,
       repositoryName: intake.repository.name,

@@ -8,9 +8,9 @@ import { inspectAdmittedIssue, inspectContinuedIssue } from '../agent/dispatch-a
 import { dispatchAdmission } from '../agent/managed-issue.ts';
 import assessmentOwner from '../agent/assessment-owner.ts';
 import pendingDispatchAssignments from '../agent/dispatch-pending.ts';
+import { baseline, intakeFixture, fixturePullRequest } from './github-intake-fixture.ts';
 import managedOwner from '../agent/managed-owner.ts';
 import type { LaunchRequest } from '../tools/dispatch/launch-schema.ts';
-import { baseline, intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/issue-launch', () => {
   let root: string;
@@ -36,8 +36,10 @@ describe('agent/issue-launch', () => {
       inputId: 'operator-input',
       now: baseline,
       manifest: { schemaVersion: 1, agent: { id: 'receiver' } },
-      git: async () => {
-        throw new Error('unexpected git');
+      git: async (_cwd, argv) => {
+        assert.equal(argv[0], 'check-ref-format');
+        if (argv[1] === 'refs/heads/unsafe/../branch') throw new Error('fixture-ref-invalid');
+        return '';
       },
       resolveSkill: async () => {
         throw new Error('unexpected skill resolution');
@@ -70,6 +72,61 @@ describe('agent/issue-launch', () => {
       create: (record) => record,
       verifyExisting: async () => {},
     });
+
+  it('should retain an unassigned draft pr, refresh its unsubmitted head and reuse its native destination', async () => {
+    const pr = fixturePullRequest(fixture);
+    fixture.client.listAssignmentEvents = async () => {
+      throw new Error('no assignment effects');
+    };
+    const target = 'https://github.com/owner/repo/pull/3';
+    const first = await launch(target);
+    assert.ok('digest' in first);
+    pr.headSha = '2'.repeat(40);
+    const second = await launch(target);
+    assert.ok('digest' in second);
+    assert.equal(second.id, first.id);
+    assert.notEqual(second.digest, first.digest);
+    await journal.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      assert.equal(record.manualIssue?.pullRequest?.headSha, pr.headSha);
+      assert.equal(record.manualIssue?.pullRequest?.authorId, 'U_operator');
+      record.threadId = 'pr-chat';
+      await save();
+    });
+    pr.headSha = '3'.repeat(40);
+    assert.equal((await launch(target)).status, 'existing');
+    const records = (await journal.read()).records;
+    assert.equal(records.length, 1);
+    await assert.rejects(
+      inspectAdmittedIssue(records[0]!.manualIssue!, fixture.client),
+      /head-changed/,
+    );
+    await inspectContinuedIssue(records[0]!.manualIssue!, fixture.client, [], records[0]);
+    pr.headRef = 'replacement-branch';
+    await assert.rejects(launch(target), /binding-changed/);
+  });
+
+  it('should reject invalid pr destinations before reserving any work', async () => {
+    const pr = fixturePullRequest(fixture);
+    const target = 'https://github.com/owner/repo/pull/3';
+    for (const mutate of [
+      () => {
+        pr.headRepositoryNodeId = 'R_fork';
+      },
+      () => {
+        pr.headRef = 'unsafe/../branch';
+      },
+      () => {
+        pr.merged = true;
+      },
+    ]) {
+      const before = structuredClone(pr);
+      mutate();
+      await assert.rejects(launch(target));
+      Object.assign(pr, before);
+    }
+    assert.equal((await journal.read()).records.length, 0);
+  });
 
   for (const runtime of ['openclaw', 'codex'] as const)
     it(`should select the exact existing pr for ${runtime} without creating a publication receipt`, async () => {

@@ -67,6 +67,7 @@ export async function resolveDispatchProject(
     projects: unknown;
     repository: string;
     defaultBranch: string;
+    startingHead?: { headRef: string; headSha: string; baseRef?: string };
     workspace: string;
     explicitPath?: string;
   },
@@ -128,14 +129,26 @@ export async function resolveDispatchProject(
     (await git(project.path, ['rev-parse', '--show-toplevel'])) !== project.path
   )
     throw new RepositoryPreparationError('dispatch-project-workspace-required', project.path);
-  const branch = input.defaultBranch;
-  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(branch))
+  const base = input.startingHead?.baseRef;
+  if (base && base !== input.startingHead?.headRef) {
+    await git(project.path, ['check-ref-format', `refs/heads/${base}`]);
+    await git(project.path, [
+      'fetch',
+      '--no-tags',
+      'origin',
+      `refs/heads/${base}:refs/remotes/origin/${base}`,
+    ]);
+  }
+  const branch = input.startingHead?.headRef ?? input.defaultBranch;
+  if (!input.startingHead && !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(branch))
     throw new Error('dispatch-starting-ref-invalid');
   await git(project.path, ['check-ref-format', 'refs/heads/' + branch]);
   const ref = 'refs/remotes/origin/' + branch;
   await git(project.path, ['fetch', '--no-tags', 'origin', 'refs/heads/' + branch + ':' + ref]);
   const commit = await git(project.path, ['rev-parse', '--verify', ref + '^{commit}']);
   if (!/^[a-f0-9]{40,64}$/u.test(commit)) throw new Error('dispatch-starting-ref-invalid');
+  if (input.startingHead && commit !== input.startingHead.headSha)
+    throw new Error('launch-pull-request-head-changed');
   const commonDir = await realpath(
     await git(project.path, ['rev-parse', '--path-format=absolute', '--git-common-dir']),
   );

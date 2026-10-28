@@ -18,7 +18,9 @@ describe('workflow safety and coverage', () => {
   it('should recover only a failed normal clawhub publication and propagate fallback failures', async () => {
     const workflow = parse(await readFile('.github/workflows/release.yml', 'utf8'));
     const steps = workflow.jobs['publish-clawhub'].steps as Step[];
-    const publishers = steps.filter(({ uses }) => uses === 'tanaabased/actions/publish-clawhub@v1');
+    const publishers = steps.filter(({ uses }) =>
+      uses?.startsWith('tanaabased/actions/publish-clawhub@'),
+    );
     const [normal, fallback] = publishers;
     assert.equal(publishers.length, 2, 'one normal publication and at most one fallback');
     assert.equal(normal?.['continue-on-error'], true);

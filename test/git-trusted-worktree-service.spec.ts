@@ -223,6 +223,45 @@ describe('tools/git/trusted-worktree-service', () => {
       code: 'invalid_arguments',
     });
   });
+  it('should pass an attempt-bound pr head through the existing authorized worktree owner', async () => {
+    const { service, prepared, events } = fixture();
+    const startingHead = { headRef: 'existing-work', headSha: '1'.repeat(40) };
+    const result = await service.prepareGitHub({
+      agentId: 'data',
+      cloneUrl: 'https://github.com/owner/repo.git',
+      defaultBranch: 'main',
+      itemDatabaseId: 3,
+      itemNumber: 42,
+      itemType: 'pull-request',
+      repositoryDatabaseId: 7,
+      title: 'Continue original PR',
+      attemptId: 'a'.repeat(64),
+      startingHead,
+    });
+    assert.equal(result.workId, 'pull-request-3');
+    assert.deepEqual(
+      (prepared[0]!.issueBranch as { startingHead?: unknown }).startingHead,
+      startingHead,
+    );
+    assert.ok(events.indexOf('authorize') < events.indexOf('environment'));
+    const denied = fixture({ deny: true });
+    await assert.rejects(
+      denied.service.prepareGitHub({
+        agentId: 'data',
+        cloneUrl: 'https://github.com/owner/repo.git',
+        defaultBranch: 'main',
+        itemDatabaseId: 3,
+        itemNumber: 42,
+        itemType: 'pull-request',
+        repositoryDatabaseId: 7,
+        title: 'Continue original PR',
+        attemptId: 'a'.repeat(64),
+        startingHead,
+      }),
+    );
+    assert.equal(denied.prepared.length, 0);
+    assert.equal(denied.events.includes('environment'), false);
+  });
   it('should retain the legacy path for ordinary attempt receipts', async () => {
     const { service } = fixture();
     const input = {

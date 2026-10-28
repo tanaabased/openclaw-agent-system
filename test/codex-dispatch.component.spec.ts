@@ -1,4 +1,11 @@
+import {
+  fixturePullRequest,
+  baseline,
+  intakeFixture,
+  removeFixtureAssignment,
+} from './github-intake-fixture.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
+import cleanupConfiguration from '../agent/cleanup-configuration.ts';
 import CodexAssignmentClaims, { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
 import connectCodexGitHubAccount from '../agent/codex-github-client.ts';
 import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
@@ -31,7 +38,7 @@ import runCodexFeedback from '../agent/codex-feedback.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { githubNotificationMarkdownCode } from '../channels/github/presentation/card.ts';
-import { baseline, intakeFixture, removeFixtureAssignment } from './github-intake-fixture.ts';
+
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
 import { gitWorktreeRepositoryDirectoryName } from '../tools/git/worktree-names.ts';
 
@@ -89,6 +96,17 @@ describe('agent/codex-dispatch', () => {
       unknown
     >;
   const next = () => request('next', { projects });
+  const writeCleanup = (graceMinutes: number) =>
+    writeFile(
+      join(root, 'openclaw.json'),
+      JSON.stringify({
+        plugins: {
+          entries: {
+            'agent-system': { config: { cleanup: { graceMinutes } } },
+          },
+        },
+      }),
+    );
   const report = () =>
     request('report', {
       automationId: 'native-intake',
@@ -188,6 +206,7 @@ describe('agent/codex-dispatch', () => {
       ['workspace', 'plugin', 'codex', 'source', 'worktree', 'common'] as const
     ).map((name) => join(root, name)) as [string, string, string, string, string, string];
     for (const path of [workspace, codexHome, source, worktree, commonDir]) await mkdir(path);
+    await writeFile(join(root, 'openclaw.json'), '{}');
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
     await bindCodexWorkspace(pluginData, workspace);
     fixture = intakeFixture();
@@ -217,6 +236,8 @@ describe('agent/codex-dispatch', () => {
     gitCalls = [];
     const branches = new Map<string, string>();
     deps = {
+      readCleanupConfiguration: () =>
+        cleanupConfiguration({ env: { OPENCLAW_CONFIG_PATH: join(root, 'openclaw.json') } }),
       codexHome,
       assertActive: async () => {},
       now: () => now,
@@ -1955,16 +1976,17 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
-  it('should use fixed automatic grace and ignore obsolete settings during operator retirement', async () => {
+  it('should use configured automatic grace and ignore obsolete settings during operator retirement', async () => {
     const originalXdg = process.env.XDG_CONFIG_HOME;
     const originalOpenClaw = process.env.OPENCLAW_CONFIG_PATH;
     process.env.XDG_CONFIG_HOME = root;
     process.env.OPENCLAW_CONFIG_PATH = join(root, 'openclaw.json');
+    delete deps.readCleanupConfiguration;
     try {
       await writeFile(
         process.env.OPENCLAW_CONFIG_PATH,
         JSON.stringify({
-          plugins: { entries: { 'agent-system': { config: { cleanup: { graceMinutes: 0 } } } } },
+          plugins: { entries: { 'agent-system': { config: { cleanup: { graceMinutes: 17 } } } } },
         }),
       );
       const prepared = await prepare();
@@ -1985,7 +2007,7 @@ describe('agent/codex-dispatch', () => {
         selected.store.location.scope,
       );
       const automatic = (await journal.read()).records[0]!;
-      assert.equal(automatic.retirement!.eligibleAt, now + 60 * 60_000);
+      assert.equal(automatic.retirement!.eligibleAt, now + 17 * 60_000);
       assert.equal(automatic.retired, undefined);
       await writeFile(path, 'invalid obsolete settings');
       const operator = { threadId: 'operator' };
@@ -2005,6 +2027,98 @@ describe('agent/codex-dispatch', () => {
       if (originalOpenClaw === undefined) delete process.env.OPENCLAW_CONFIG_PATH;
       else process.env.OPENCLAW_CONFIG_PATH = originalOpenClaw;
     }
+  });
+
+  it('should hold broken codex cleanup sources and retain the repaired configured deadline across edits', async () => {
+    const prepared = await prepare();
+    created();
+    await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
+    native!.status = 'idle';
+    native!.turnEnded = true;
+    fixture.item.state = 'closed';
+    const current = await selectCodexIntake(pluginData, deps);
+    const journal = new CodexDispatchStore(
+      current.store.location.root,
+      current.store.location.scope,
+    );
+    const record = async () => (await journal.read()).records[0]!;
+    await writeCleanup(-1);
+    now += 60_000;
+    await next();
+    assert.equal((await record()).retirement?.code, 'retirement-configuration-invalid');
+    assert.equal((await record()).retirement?.deadlinePending, true);
+    await rm(join(root, 'openclaw.json'));
+    now += 60_000;
+    await next();
+    assert.equal((await record()).retirement?.code, 'retirement-configuration-unavailable');
+    assert.equal((await record()).retired, undefined);
+    await writeCleanup(17);
+    now += 60_000;
+    await next();
+    const deadline = now + 17 * 60_000;
+    assert.equal((await record()).retirement?.eligibleAt, deadline);
+    await writeCleanup(0);
+    now += 60_000;
+    await next();
+    assert.equal((await record()).retirement?.eligibleAt, deadline);
+    assert.equal((await record()).retired, undefined);
+    now = deadline;
+    assert.equal((await next()).status, 'retirement-inventory-required');
+    assert.equal((await record()).retirement?.archiveAttempt, undefined);
+  });
+
+  it('should keep zero grace codex protection and defer archival when disk policy changes at final verification', async () => {
+    await writeCleanup(0);
+    const prepared = await prepare();
+    created();
+    await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
+    fixture.item.state = 'closed';
+    now += 60_000;
+    await next();
+    const current = await selectCodexIntake(pluginData, deps);
+    const journal = new CodexDispatchStore(
+      current.store.location.root,
+      current.store.location.scope,
+    );
+    const record = async () => (await journal.read()).records[0]!;
+    assert.equal((await record()).retirement?.eligibleAt, now);
+    assert.equal((await record()).retirement?.code, 'retirement-native-work-unresolved');
+    native!.status = 'idle';
+    native!.turnEnded = true;
+    const threads = {
+      schemaVersion: 4,
+      pinnedThreads: [{ id: 'issue-thread' }],
+      unavailableHosts: [],
+      unavailableSources: [],
+    };
+    now += 60_000;
+    await request('next', { projects, threads });
+    assert.equal((await record()).retirement?.code, 'retirement-native-resource-protected');
+    assert.equal((await record()).retirement?.archiveAttempt, undefined);
+    const deadline = (await record()).retirement!.eligibleAt;
+    assert.equal(deadline, now);
+    threads.pinnedThreads = [];
+    deps.retirementNative = {
+      worktreeUsers: async () => ['issue-thread'],
+      archiveOutcome: async () => 'unverified',
+    };
+    const git = deps.git!;
+    deps.git = async (path, args) => {
+      if (args[0] !== 'for-each-ref') return git(path, args);
+      await writeCleanup(17);
+      return 'refs/heads/preserved';
+    };
+    now += 60_000;
+    await request('next', { projects, threads });
+    assert.equal((await record()).retirement?.code, 'retirement-configuration-changed');
+    assert.equal((await record()).retirement?.archiveAttempt, undefined);
+    assert.equal((await record()).retired, undefined);
+    deps.git = async (path, args) =>
+      args[0] === 'for-each-ref' ? 'refs/heads/preserved' : git(path, args);
+    now += 60_000;
+    assert.equal((await request('next', { projects, threads })).status, 'retirement-prepared');
+    assert.equal((await record()).retirement?.eligibleAt, deadline);
+    assert.equal((await record()).retired, undefined);
   });
 
   it('should enter manual retirement for open assigned work immediately and retain its request', async () => {
@@ -6465,142 +6579,155 @@ describe('agent/codex-dispatch', () => {
     );
     assert.equal(calls, 1);
   });
-  it('should preserve manual issue preparation across scheduled observation and recover its false hold', async () => {
-    const selected = await selectCodexIntake(pluginData, deps);
-    await rm(selected.store.location.path);
-    await writeFile(
-      join(workspace, 'agent.yaml'),
-      JSON.stringify({ ...manifest, github: { username: 'receiver' } }),
-    );
-    fixture.item.assignees = [];
-    fixture.client.listAssignmentEvents = async () => {
-      throw new Error('unexpected assignment history');
-    };
-    deps.threadId = 'operator';
-    deps.activation = async () => {
-      throw new Error('manual work must not require a schedule');
-    };
-    deps.replyConnection = async () => ({
-      close: async () => {},
-      request: async (method) => {
-        if (method === 'thread/read') return { thread: { id: 'operator' } };
-        if (method === 'thread/turns/list')
-          return { data: [{ id: 'operator-turn', status: 'inProgress' }] };
-        if (method === 'thread/items/list')
-          return {
-            data: [
-              {
-                turnId: 'operator-turn',
-                item: { type: 'userMessage', id: 'manual-input', content: 'Work on owner/repo#3' },
-              },
-            ],
-          };
-        throw new Error('unexpected native method: ' + method);
-      },
-    });
-    const target = 'owner/repo#3';
-    const first = await request('launch', { target, operation: 'context', mode: 'work' });
-    assert.equal(first.status, 'routing-required');
-    const project = await request('launch', {
-      target,
-      operation: 'prepare',
-      id: first.id,
-      projects,
-    });
-    assert.equal(project.status, 'routing-required', JSON.stringify(project));
-    const store = new CodexDispatchStore(pluginData, selected.store.location.scope);
-    assert.equal((await store.read()).run, undefined);
-    const scheduled = {
-      threadId: 'intake-thread',
-      activation: async () => ({ sourceThreadId: 'intake-thread' }),
-    };
-    const observe = () => request('observe-denials', {}, scheduled);
-    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
-    await runCodexIntake(pluginData, true, deps);
-    assert.equal((await observe()).status, 'ready');
-    await store.exclusive(async (state, save) => {
-      const record = state.records[0]!;
-      record.phase = 'waiting';
-      record.retryAfter = now + 60000;
-      record.result = {
-        version: 1,
-        outcome: 'operator-setup-blocker',
-        code: 'dispatch-denial-history-unavailable',
-        summary: 'Manual preparation was mistaken for missing scheduled history.',
-        remediation: 'Recover the original launch through its owner.',
-        evidence: [],
-        progress: { completed: [], remaining: ['Recover the original launch.'] },
+  for (const kind of ['issue', 'pull-request'] as const)
+    it(`should launch unassigned manual ${kind} work through existing native owners`, async () => {
+      if (kind === 'pull-request') fixturePullRequest(fixture);
+      const selected = await selectCodexIntake(pluginData, deps);
+      await rm(selected.store.location.path);
+      await writeFile(
+        join(workspace, 'agent.yaml'),
+        JSON.stringify({ ...manifest, github: { username: 'receiver' } }),
+      );
+      fixture.item.assignees = [];
+      fixture.client.listAssignmentEvents = async () => {
+        throw new Error('unexpected assignment history');
       };
-      await save();
+      deps.threadId = 'operator';
+      deps.activation = async () => {
+        throw new Error('manual work must not require a schedule');
+      };
+      deps.replyConnection = async () => ({
+        close: async () => {},
+        request: async (method) => {
+          if (method === 'thread/read') return { thread: { id: 'operator' } };
+          if (method === 'thread/turns/list')
+            return { data: [{ id: 'operator-turn', status: 'inProgress' }] };
+          if (method === 'thread/items/list')
+            return {
+              data: [
+                {
+                  turnId: 'operator-turn',
+                  item: {
+                    type: 'userMessage',
+                    id: 'manual-input',
+                    content: 'Work on owner/repo#3',
+                  },
+                },
+              ],
+            };
+          throw new Error('unexpected native method: ' + method);
+        },
+      });
+      const target =
+        kind === 'pull-request' ? 'https://github.com/owner/repo/pull/3' : 'owner/repo#3';
+      const first = await request('launch', { target, operation: 'context', mode: 'work' });
+      assert.equal(first.status, 'routing-required');
+      const project = await request('launch', {
+        target,
+        operation: 'prepare',
+        id: first.id,
+        projects,
+      });
+      assert.equal(project.status, 'routing-required', JSON.stringify(project));
+      const store = new CodexDispatchStore(pluginData, selected.store.location.scope);
+      assert.equal((await store.read()).run, undefined);
+      const scheduled = {
+        threadId: 'intake-thread',
+        activation: async () => ({ sourceThreadId: 'intake-thread' }),
+      };
+      const observe = () => request('observe-denials', {}, scheduled);
+      await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+      await runCodexIntake(pluginData, true, deps);
+      assert.equal((await observe()).status, 'ready');
+      await store.exclusive(async (state, save) => {
+        const record = state.records[0]!;
+        record.phase = 'waiting';
+        record.retryAfter = now + 60000;
+        record.result = {
+          version: 1,
+          outcome: 'operator-setup-blocker',
+          code: 'dispatch-denial-history-unavailable',
+          summary: 'Manual preparation was mistaken for missing scheduled history.',
+          remediation: 'Recover the original launch through its owner.',
+          evidence: [],
+          progress: { completed: [], remaining: ['Recover the original launch.'] },
+        };
+        await save();
+      });
+      assert.equal((await observe()).status, 'ready');
+      const repaired = (await store.read()).records[0]!;
+      assert.equal(repaired.id, first.id);
+      assert.equal(repaired.phase, 'routing');
+      assert.equal(repaired.result, undefined);
+      assert.equal(repaired.retryAfter, undefined);
+      assert.equal(repaired.preparationObservation, undefined);
+      assert.equal(repaired.request, undefined);
+      assert.equal((await request('next', { projects }, scheduled)).status, 'idle');
+      assert.equal(
+        (
+          await request(
+            'report',
+            {
+              automationId: 'native-intake',
+              currentTimeIso: new Date(now).toISOString(),
+            },
+            scheduled,
+          )
+        ).status,
+        'report',
+      );
+      await writeFile(
+        join(workspace, 'agent.yaml'),
+        JSON.stringify({ ...manifest, github: { username: 'receiver' } }),
+      );
+      const resumed = await request('launch', { target, operation: 'context' });
+      assert.equal(resumed.id, first.id);
+      assert.equal(resumed.digest, project.digest);
+      const prepared = await request('launch', {
+        target,
+        operation: 'prepare',
+        id: first.id,
+        projects,
+        digest: resumed.digest,
+        assessment: { complexity: 'medium', reason: 'Reuse existing issue work.' },
+        title: 'MANUAL ISSUE',
+      });
+      assert.equal(prepared.status, 'prepared', JSON.stringify(prepared));
+      assert.ok(prepared.request);
+      if (kind === 'pull-request')
+        assert.ok(
+          gitCalls.some((argv) =>
+            argv.includes('refs/heads/existing-work:refs/remotes/origin/existing-work'),
+          ),
+        );
+      created();
+      const recovered = await request('launch', { target, operation: 'reconcile', id: first.id });
+      assert.equal(recovered.status, 'existing', JSON.stringify(recovered));
+      const state = await new CodexDispatchStore(pluginData, selected.store.location.scope).read();
+      assert.equal(state.records.length, 1);
+      assert.equal(state.records[0]!.intakeId, undefined);
+      assert.equal(state.records[0]!.issueMode, 'work');
+      assert.equal(state.run?.automationId, 'native-intake');
+      const nativeContext = await request('context', { id: first.id }, { threadId: native!.id });
+      assert.equal(nativeContext.status, 'verified', JSON.stringify(nativeContext));
+      const submitted = await request('result', { id: first.id, result }, { threadId: native!.id });
+      assert.equal(submitted.status, 'recorded', JSON.stringify(submitted));
+      const continuation = await runCodexContinuation(
+        pluginData,
+        { action: 'context', id: String(first.id) },
+        {
+          ...deps,
+          threadId: native!.id,
+          continuationNative: async (_source, attempt) => ({
+            status: 'verified',
+            turnId: attempt.turnId!,
+            ended: false,
+          }),
+        },
+      );
+      assert.equal(continuation.status, 'verified', JSON.stringify(continuation));
+      assert.ok('issueStage' in continuation && continuation.issueStage === 'implementation');
+      const retirement = await request('retire', { id: first.id }, { threadId: 'operator' });
+      assert.equal(retirement.status, 'retire-available', JSON.stringify(retirement));
     });
-    assert.equal((await observe()).status, 'ready');
-    const repaired = (await store.read()).records[0]!;
-    assert.equal(repaired.id, first.id);
-    assert.equal(repaired.phase, 'routing');
-    assert.equal(repaired.result, undefined);
-    assert.equal(repaired.retryAfter, undefined);
-    assert.equal(repaired.preparationObservation, undefined);
-    assert.equal(repaired.request, undefined);
-    assert.equal((await request('next', { projects }, scheduled)).status, 'idle');
-    assert.equal(
-      (
-        await request(
-          'report',
-          {
-            automationId: 'native-intake',
-            currentTimeIso: new Date(now).toISOString(),
-          },
-          scheduled,
-        )
-      ).status,
-      'report',
-    );
-    await writeFile(
-      join(workspace, 'agent.yaml'),
-      JSON.stringify({ ...manifest, github: { username: 'receiver' } }),
-    );
-    const resumed = await request('launch', { target, operation: 'context' });
-    assert.equal(resumed.id, first.id);
-    assert.equal(resumed.digest, project.digest);
-    const prepared = await request('launch', {
-      target,
-      operation: 'prepare',
-      id: first.id,
-      projects,
-      digest: resumed.digest,
-      assessment: { complexity: 'medium', reason: 'Reuse existing issue work.' },
-      title: 'MANUAL ISSUE',
-    });
-    assert.equal(prepared.status, 'prepared', JSON.stringify(prepared));
-    assert.ok(prepared.request);
-    created();
-    const recovered = await request('launch', { target, operation: 'reconcile', id: first.id });
-    assert.equal(recovered.status, 'existing', JSON.stringify(recovered));
-    const state = await new CodexDispatchStore(pluginData, selected.store.location.scope).read();
-    assert.equal(state.records.length, 1);
-    assert.equal(state.records[0]!.intakeId, undefined);
-    assert.equal(state.records[0]!.issueMode, 'work');
-    assert.equal(state.run?.automationId, 'native-intake');
-    const nativeContext = await request('context', { id: first.id }, { threadId: native!.id });
-    assert.equal(nativeContext.status, 'verified', JSON.stringify(nativeContext));
-    const submitted = await request('result', { id: first.id, result }, { threadId: native!.id });
-    assert.equal(submitted.status, 'recorded', JSON.stringify(submitted));
-    const continuation = await runCodexContinuation(
-      pluginData,
-      { action: 'context', id: String(first.id) },
-      {
-        ...deps,
-        threadId: native!.id,
-        continuationNative: async (_source, attempt) => ({
-          status: 'verified',
-          turnId: attempt.turnId!,
-          ended: false,
-        }),
-      },
-    );
-    assert.equal(continuation.status, 'verified', JSON.stringify(continuation));
-    assert.ok('issueStage' in continuation && continuation.issueStage === 'implementation');
-    const retirement = await request('retire', { id: first.id }, { threadId: 'operator' });
-    assert.equal(retirement.status, 'retire-available', JSON.stringify(retirement));
-  });
 });

@@ -15,7 +15,7 @@ import githubNotificationCard, {
 
 interface AssessmentPresentationContext extends WorkflowInstructionsPresentation {
   includeDetails?: boolean;
-  issue: { label: string; url: string };
+  issue: { label: string; url: string; kind?: 'Issue' | 'Pull request' };
   assessmentOnly?: boolean;
   routing?: Pick<RoutingDecision, 'complexity' | 'profile' | 'reason' | 'source'> & {
     model: string;
@@ -67,7 +67,13 @@ export default function renderAssessmentResult(
       ...(context.assessmentOnly
         ? ['Assessment only. No implementation or publication is authorized.']
         : []),
-      '**Issue:** [' + text(context.issue.label) + '](' + context.issue.url + ')',
+      '**' +
+        (context.issue.kind ?? 'Issue') +
+        ':** [' +
+        text(context.issue.label) +
+        '](' +
+        context.issue.url +
+        ')',
       ...(result.outcome === 'operator-setup-blocker'
         ? [
             '## Action',

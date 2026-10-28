@@ -3,6 +3,7 @@ import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
 import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
+import { parseCleanupConfiguration } from '../agent/cleanup-configuration.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -161,6 +162,7 @@ describe('agent/codex-feedback', () => {
       definitionDigest: 'e'.repeat(64),
     };
     deps = {
+      readCleanupConfiguration: async () => parseCleanupConfiguration(),
       codexHome,
       now: () => baseline + 70000 + occurrence,
       activation: async () => ({

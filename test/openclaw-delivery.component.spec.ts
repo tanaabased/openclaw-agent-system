@@ -1,3 +1,5 @@
+import manualPullRequest from '../agent/manual-pull-request.ts';
+import { fixturePullRequest, intakeFixture } from './github-intake-fixture.ts';
 import openClawWorkAction from '../agent/openclaw-work.ts';
 import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
 import assert from 'node:assert/strict';
@@ -6,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import announcementFixture from './delivery-announcement-fixture.ts';
-import { intakeFixture } from './github-intake-fixture.ts';
+
 import openClawSkill from '../agent/openclaw-skill.ts';
 import selectFeedbackStage from '../agent/feedback-stage.ts';
 
@@ -39,8 +41,10 @@ describe('agent/openclaw-delivery', () => {
   let pr: Record<string, unknown> | undefined;
   let input: Omit<Parameters<typeof openClawDelivery>[0], 'action'>;
   let rejectCreation = false;
+  let adopted = false;
   beforeEach(async () => {
     rejectCreation = false;
+    adopted = false;
     root = await realpath(await mkdtemp(join(tmpdir(), 'openclaw-delivery-')));
     announcement = announcementFixture({ login: 'agent', nodeId: 'U_agent', type: 'User' });
     creates = pushes = saves = 0;
@@ -219,14 +223,23 @@ describe('agent/openclaw-delivery', () => {
                 if (failPatch === 'after') throw new Error('update interrupted');
                 return response(pr);
               }
+              if (
+                adopted &&
+                endpoint === 'repos/owner/repo/pulls/7' &&
+                argv.some((arg) => arg.includes('itemNodeId:'))
+              )
+                return response(pr);
               if (endpoint === 'repos/owner/repo/pulls/7')
                 return response({
                   nodeId: 'PR_7',
                   repositoryId: 'R_repo',
                   headRepositoryId: 'R_repo',
                   headSha: remote,
-                  authorId: record.adoptedPullRequest?.authorId ?? 'U_agent',
-                  baseRef: record.adoptedPullRequest?.base ?? 'main',
+                  repositoryDatabaseId: 10,
+                  headRepositoryDatabaseId: 10,
+                  authorId:
+                    record.adoptedPullRequest?.authorId ?? (adopted ? 'U_operator' : 'U_agent'),
+                  baseRef: record.adoptedPullRequest?.base ?? (adopted ? 'release' : 'main'),
                   headRef: record.adoptedPullRequest?.branch ?? 'task-branch',
                   state: 'open',
                   number: 7,
@@ -262,6 +275,68 @@ describe('agent/openclaw-delivery', () => {
     assert.ok('digest' in prepared);
     return request('publish', { digest: prepared.digest, ...content });
   }
+  function adoptTarget() {
+    adopted = true;
+    const f = intakeFixture();
+    const source = fixturePullRequest(f, '8'.repeat(40));
+    source.headRef = 'task-branch';
+    Object.assign(input.intake, {
+      assignment: undefined,
+      issue: { number: 7, databaseId: 20, nodeId: 'PR_7' },
+      initiation: { kind: 'operator' },
+      pullRequest: manualPullRequest(f.repository, f.item),
+    });
+    input.base = 'release';
+    record.context = JSON.stringify({ title: 'Original title', body: 'Original body' });
+    pr = {
+      itemNodeId: 'PR_7',
+      number: 7,
+      state: 'open',
+      baseRef: 'release',
+      headRef: 'task-branch',
+      headRepository: 'owner/repo',
+      title: 'Original title',
+      body: 'Original body',
+      draft: true,
+    };
+    remote = source.headSha;
+  }
+
+  it('should update an adopted non-agent-authored draft without creating or changing metadata', async () => {
+    adoptTarget();
+    const original = structuredClone(pr);
+    assert.equal((await publish()).status, 'published');
+    assert.equal(creates, 0);
+    assert.equal(patches, 0);
+    assert.deepEqual(pr, original);
+    assert.equal(pushes, 1);
+    assert.equal(record.work?.delivery?.binding.branch, 'task-branch');
+    assert.equal(record.work?.delivery?.pullRequest?.pullRequestNumber, 7);
+    const shown = await request('present');
+    assert.ok('presentation' in shown);
+    assert.match(String(shown.presentation), /Pull request updated/);
+    assert.equal((await publish()).status, 'published');
+    assert.equal(pushes, 1);
+  });
+
+  it('should refuse a removed adopted target before push and never create a replacement', async () => {
+    adoptTarget();
+    pr!.state = 'closed';
+    await assert.rejects(publish(), /incompatible/);
+    assert.equal(pushes, 0);
+    assert.equal(creates, 0);
+  });
+
+  it('should preserve adopted work when native push authorization is denied', async () => {
+    adoptTarget();
+    input.reauthorize = async () => {
+      throw new Error('native-approval-denied');
+    };
+    await assert.rejects(publish(), /native-approval-denied/);
+    assert.equal(pushes, 0);
+    assert.equal(creates, 0);
+    assert.equal(record.work?.delivery?.pullRequest?.pullRequestNumber, 7);
+  });
   it('should bind and non-force update a collaborator pr without rewriting metadata or claiming prior publication', async () => {
     input.operator = true;
     remote = 'b'.repeat(40);

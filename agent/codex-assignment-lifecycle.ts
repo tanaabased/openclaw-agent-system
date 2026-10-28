@@ -24,7 +24,7 @@ export default async function reconcileCodexLifecycle(
   manual?: { id: string; caller: string },
 ) {
   const current = await selectCodexIntake(pluginData, deps);
-  const readConfiguration = cleanupConfiguration;
+  const readConfiguration = deps.readCleanupConfiguration ?? cleanupConfiguration;
   const configuration = await readConfiguration();
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   const retained = managedIssueState(await current.store.read(), (await store.read()).records);

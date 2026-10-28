@@ -1,10 +1,13 @@
+import {
+  managedTargetUrl,
+  type ManagedIssue as IntakeRecord,
+  type ManagedIssueState as IntakeState,
+} from './managed-issue.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
+import type { CleanupConfiguration } from './cleanup-configuration.ts';
 import type connectCodexGitHubAccount from './codex-github-client.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
-import type {
-  ManagedIssue as IntakeRecord,
-  ManagedIssueState as IntakeState,
-} from './managed-issue.ts';
+
 import type CodexAssignmentClaims from './codex-assignment-claims.ts';
 import type {
   GitHubNotificationIntakeClient,
@@ -32,6 +35,7 @@ type Client = GitHubNotificationIntakeClient & GitHubNotificationItemContextClie
 export type CodexDispatchSelection = Awaited<ReturnType<typeof selectCodexIntake>>;
 export type CodexDispatchNative = ReturnType<typeof codexDispatchNative>;
 export interface CodexDispatchDependencies extends Omit<CodexIntakeDependencies, 'connect'> {
+  readCleanupConfiguration?: () => Promise<CleanupConfiguration>;
   claimStore?: AssignmentClaimStore;
   claims?: Pick<CodexAssignmentClaims, 'select' | 'accept'> &
     Partial<Pick<CodexAssignmentClaims, 'recover'>>;
@@ -52,7 +56,7 @@ export function repository(record: IntakeRecord) {
   return record.repository.owner.login + '/' + record.repository.name;
 }
 export function issueUrl(record: IntakeRecord) {
-  return 'https://github.com/' + repository(record) + '/issues/' + record.issue.number;
+  return managedTargetUrl(record);
 }
 export function code(error: unknown) {
   if (codexHostAccess(error)) return 'codex-host-access-required';
