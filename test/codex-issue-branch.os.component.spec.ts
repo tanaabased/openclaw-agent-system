@@ -7,9 +7,24 @@ import { promisify } from 'node:util';
 
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import codexIssueBranch from '../agent/codex-issue-branch.ts';
+import type { DispatchGit } from '../agent/codex-dispatch-project.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 
 const execute = promisify(execFile);
+// exercise local git mechanics, not the host's managed launcher or credential configuration.
+const fixtureGit: DispatchGit = async (cwd, args) =>
+  (
+    await execute('/usr/bin/git', args, {
+      cwd,
+      env: {
+        PATH: '/usr/bin:/bin',
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_CONFIG_GLOBAL: '/dev/null',
+        GIT_ALLOW_PROTOCOL: 'file',
+        GIT_TERMINAL_PROMPT: '0',
+      },
+    })
+  ).stdout.trim();
 
 describe('agent/codex-issue-branch', () => {
   let root: string, cwd: string, base: string, record: DispatchRecord;
@@ -19,7 +34,7 @@ describe('agent/codex-issue-branch', () => {
     issue: { nodeId: 'I_issue', number: 42 },
   } as IntakeRecord;
   async function git(...args: string[]) {
-    return (await execute('git', args, { cwd })).stdout.trim();
+    return fixtureGit(cwd, args);
   }
   const prepare = (extra: Partial<Parameters<typeof codexIssueBranch>[0]> = {}) =>
     codexIssueBranch({
@@ -28,6 +43,7 @@ describe('agent/codex-issue-branch', () => {
       intake,
       workspace: root,
       agentId: 'receiver',
+      git: fixtureGit,
       save: async () => {
         saved.push(structuredClone(record));
       },
@@ -118,6 +134,54 @@ describe('agent/codex-issue-branch', () => {
     const branch = await prepare();
     assert.equal(await git('branch', '--show-current'), branch);
     assert.equal(record.issueBranch?.phase, 'ready');
+  });
+
+  it('should continue a fetched pr head on a distinct local branch while preserving occupied unpublished work', async () => {
+    await git('switch', '-c', 'shared-pr');
+    await writeFile(join(root, 'work.txt'), 'published PR work');
+    await git('commit', '-am', 'published work');
+    const published = await git('rev-parse', 'HEAD');
+    const fetchedRef = 'refs/agent-system/pr/fixture';
+    await git('fetch', '--no-tags', root, `refs/heads/shared-pr:${fetchedRef}`);
+    await git('switch', '--detach', published);
+    const oldPath = join(root, '.git', 'old-checkout');
+    await git('worktree', 'add', oldPath, 'shared-pr');
+    await writeFile(join(oldPath, 'work.txt'), 'unpublished predecessor work');
+    await fixtureGit(oldPath, ['commit', '-am', 'unpublished work']);
+    const oldHead = await fixtureGit(oldPath, ['rev-parse', 'HEAD']);
+    const previous = {
+      ...record,
+      worktree: oldPath,
+      issueBranch: { attemptId: record.id, name: 'shared-pr', phase: 'ready' as const },
+    };
+    record = {
+      ...record,
+      id: 'b'.repeat(64),
+      project: { ...record.project!, commit: await git('rev-parse', fetchedRef) },
+    };
+    records = [previous, record];
+    const local = await prepare();
+    assert.notEqual(local, 'shared-pr');
+    assert.equal(await git('rev-parse', 'HEAD'), published);
+    assert.equal(await git('rev-parse', 'shared-pr'), oldHead);
+    assert.equal(
+      await fixtureGit(oldPath, ['show', 'HEAD:work.txt']),
+      'unpublished predecessor work',
+    );
+    record.delivery = {
+      localBranch: local,
+      pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+      binding: {
+        repositoryId: intake.repository.nodeId,
+        issueId: intake.issue.nodeId,
+        threadId: record.threadId!,
+        worktree: cwd,
+        branch: 'shared-pr',
+      },
+    } as NonNullable<DispatchRecord['delivery']>;
+    delete record.issueBranch;
+    assert.equal(await prepare({ prepare: false }), local);
+    assert.equal(await git('rev-parse', 'shared-pr'), oldHead);
   });
 
   it('should recover a created ref before checkout from the retained base', async () => {

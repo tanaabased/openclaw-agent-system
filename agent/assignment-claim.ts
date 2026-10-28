@@ -66,6 +66,7 @@ export async function claimAssignment(input: {
     let record = state.claims[assignmentClaimKey(source)];
     if (record && record.instanceId !== state.instanceId)
       return { status: 'recovery-required', code: 'claim-instance-rotated' };
+    if (record?.recovery) return { status: 'recovery-required', code: 'claim-recovery-reserved' };
     const retainedWinner = record?.winnerId;
     if (retainedWinner && !claims.some(({ comment }) => comment.databaseId === retainedWinner))
       return { status: 'recovery-required', code: 'claim-winner-missing' };
@@ -178,6 +179,8 @@ export async function acceptAssignmentClaim(input: {
       !record.commentId
     )
       throw new Error('claim-owner-required');
+    if (record.recovery && record.recovery.successorReceipt !== input.nativeReceipt)
+      throw new Error('claim-recovery-reserved');
     if (record.nativeReceipt && record.nativeReceipt !== input.nativeReceipt)
       throw new Error('claim-native-receipt-conflict');
     record.nativeReceipt = input.nativeReceipt;

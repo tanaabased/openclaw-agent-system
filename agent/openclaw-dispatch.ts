@@ -1,3 +1,4 @@
+import recoverOpenClawTask from './openclaw-dispatch-recovery.ts';
 import issueLaunch from './issue-launch.ts';
 import openClawEntryContext from './openclaw-entry-context.ts';
 import { Value } from 'typebox/value';
@@ -252,6 +253,16 @@ export default class OpenClawDispatch {
         authority,
         dependencies: this.dependencies,
       });
+    if (input.action === 'recover')
+      return recoverOpenClawTask({
+        service: this.context,
+        manifest,
+        workspace,
+        caller,
+        input,
+        operator,
+        authority,
+      });
     if (input.action === 'retire')
       return retireOpenClawTask({
         service: this.context,
@@ -356,6 +367,7 @@ export default class OpenClawDispatch {
         Date.now() - snapshot.discoveryCheckedAt > 120000 ||
         snapshot.records.some(
           (record) =>
+            !record.supersededBy &&
             !record.retired &&
             !record.retirement &&
             !record.reset &&
@@ -400,7 +412,14 @@ export default class OpenClawDispatch {
         )
           throw new Error('dispatch-at-capacity');
         const activeKeys = after.records
-          .filter((record) => !record.retired && !record.retirement && !record.reset)
+          .filter(
+            (record) =>
+              !record.supersededBy &&
+              !record.retired &&
+              !record.retirement &&
+              !record.reset &&
+              !record.manualIssue?.fresh,
+          )
           .map((record) => record.issueKey);
         if (new Set(activeKeys).size !== activeKeys.length)
           throw new Error(stateSnapshotConflictCode);

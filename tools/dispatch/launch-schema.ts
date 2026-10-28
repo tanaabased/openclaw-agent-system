@@ -8,6 +8,19 @@ export const launchRequestSchema = Type.Object(
     action: Type.Literal('launch'),
     target: Type.String({ minLength: 1, maxLength: 4096 }),
     repository: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+    fresh: Type.Optional(
+      Type.Boolean({
+        description:
+          'Only an explicit operator request through Task Launch may create an additional task; automatic intake never selects this.',
+      }),
+    ),
+    pullRequest: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 4096,
+        description: 'Exact existing same-repository PR URL to continue in either runtime.',
+      }),
+    ),
     operation: Type.Union([
       Type.Literal('context'),
       Type.Literal('prepare'),

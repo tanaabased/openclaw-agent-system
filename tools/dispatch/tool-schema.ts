@@ -19,6 +19,12 @@ const dispatchRequestVariants = Type.Union([
   replyRequestSchema,
   directAssessmentRequestSchema,
   directImplementationRequestSchema,
+  object({
+    action: Type.Literal('recover'),
+    id,
+    pullRequest: Type.String({ minLength: 1, maxLength: 4096 }),
+    digest: Type.Optional(id),
+  }),
   object({ action: Type.Literal('retire'), id: Type.Optional(id), digest: Type.Optional(id) }),
   object({
     action: Type.Literal('check'),
@@ -73,6 +79,7 @@ const dispatchRequestVariants = Type.Union([
     action: Type.Literal('delivery'),
     id,
     operation: Type.Union([
+      Type.Literal('bind'),
       Type.Literal('prepare'),
       Type.Literal('publish'),
       Type.Literal('reconcile'),
@@ -81,6 +88,7 @@ const dispatchRequestVariants = Type.Union([
       Type.Literal('candidate'),
       Type.Literal('announce'),
     ]),
+    pullRequest: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
     digest: Type.Optional(id),
     publicText: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
     title: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: '\\S' })),

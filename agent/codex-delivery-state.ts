@@ -2,6 +2,8 @@ import {
   deliveryContentUpdateSchema,
   deliveryPendingPushSchema,
   deliveryPullRequestSchema,
+  adoptedPullRequestSchema,
+  adoptedIssueDelivery,
 } from './delivery-state.ts';
 import { Type, type Static } from 'typebox';
 import { deliveryAnnouncementStateSchema } from './delivery-announcement-state.ts';
@@ -32,6 +34,8 @@ export const codexDeliveryStateSchema = Type.Object(
     pushedHead: Type.Optional(Type.String({ pattern: '^[a-f0-9]{40,64}$' })),
     pendingPush: Type.Optional(deliveryPendingPushSchema),
     pullRequest: Type.Optional(deliveryPullRequestSchema),
+    adopted: Type.Optional(adoptedPullRequestSchema),
+    localBranch: Type.Optional(text),
     reconciled: Type.Boolean(),
     attached: Type.Boolean(),
     cardAttempts: Type.Integer({ minimum: 0 }),
@@ -49,3 +53,9 @@ export const codexDeliveryStateSchema = Type.Object(
   { additionalProperties: false },
 );
 export type CodexDeliveryState = Static<typeof codexDeliveryStateSchema>;
+
+export function adoptedCodexDelivery(
+  input: Parameters<typeof adoptedIssueDelivery>[0],
+): CodexDeliveryState {
+  return { ...adoptedIssueDelivery(input), attached: false, cardAttempts: 0 };
+}

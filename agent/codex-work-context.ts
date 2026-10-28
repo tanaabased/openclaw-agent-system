@@ -50,9 +50,11 @@ export default async function codexWorkContext(
         work.result ?? (work.revisionSource ? work.resultHistory?.at(-1)?.result : undefined),
       revision: Boolean(work.revisionSource),
       scope: work.scope,
+      existingPullRequest: Boolean(record.adoptedPullRequest),
     }),
     issueStage: record.progression?.stage ?? 'planning',
     issueBranch: record.issueBranch?.name,
+    adoptedPullRequest: record.adoptedPullRequest,
     assignmentObservation: record.assignmentObservation,
     assignmentWarning:
       record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),

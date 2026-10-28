@@ -18,6 +18,7 @@ import type { GitWorktreeCleanupResult, GitWorktreeResult } from './worktree-ser
 export interface TrustedGitHubWorktreeInput {
   agentId: string;
   attemptId?: string;
+  separateCheckout?: boolean;
   cloneUrl: string;
   defaultBranch: string;
   startingHead?: { headRef: string; headSha: string };
@@ -34,6 +35,7 @@ export interface TrustedGitHubWorktreeResult extends GitWorktreeResult {
 
 export interface TrustedGitHubWorktreePrepareInput extends TrustedGitHubWorktreeInput {
   title: string;
+  startingCommit?: string;
 }
 
 export interface TrustedGitHubWorktreeCleanupInput extends TrustedGitHubWorktreeInput {
@@ -76,7 +78,10 @@ function unavailable(agentId: string, reason: string): AgentSystemToolError {
 }
 
 function attemptIdentity(input: TrustedGitHubWorktreeInput): string | undefined {
-  if (input.attemptId === undefined) return undefined;
+  if (input.attemptId === undefined) {
+    if (input.separateCheckout) throw new Error('dispatch-worktree-attempt-required');
+    return undefined;
+  }
   if (!/^[a-f0-9]{64}$/.test(input.attemptId)) {
     throw new AgentSystemToolError(
       'invalid_arguments',
@@ -112,7 +117,7 @@ export default class TrustedGitWorktreeService {
       throw new AgentSystemToolError('invalid_arguments', 'The GitHub work-item type is invalid.');
     }
     const repositoryId = `github-${repositoryDatabaseId}`;
-    const workId = `${input.itemType}-${itemDatabaseId}`;
+    const workId = `${input.itemType}-${itemDatabaseId}${input.separateCheckout && attemptId ? `-${attemptId}` : ''}`;
     const { result, workspaceDir } = await this.#execute(
       agentId,
       { action: 'list', repositoryId },
@@ -186,10 +191,12 @@ export default class TrustedGitWorktreeService {
       throw new AgentSystemToolError('invalid_arguments', 'The GitHub work-item type is invalid.');
     }
     const repositoryId = `github-${repositoryDatabaseId}`;
-    const workId = `${input.itemType}-${itemDatabaseId}`;
+    const workId = `${input.itemType}-${itemDatabaseId}${input.separateCheckout && attemptId ? `-${attemptId}` : ''}`;
+    if (input.startingCommit !== undefined && !/^[a-f0-9]{40,64}$/u.test(input.startingCommit))
+      throw new Error('launch-pr-head-changed');
     const toolInput = {
       action: 'prepare' as const,
-      baseRef: `origin/${defaultBranch}`,
+      baseRef: input.startingCommit ?? `origin/${defaultBranch}`,
       repository: {
         cloneUrl: requiredText(input.cloneUrl, 'The GitHub clone URL', 4096),
         id: repositoryId,
@@ -232,10 +239,11 @@ export default class TrustedGitWorktreeService {
       input.repositoryDatabaseId,
       'The GitHub repository database id',
     )}`;
+    const attemptId = attemptIdentity(input);
     const workId = `${input.itemType}-${positiveInteger(
       input.itemDatabaseId,
       'The GitHub work-item database id',
-    )}`;
+    )}${input.separateCheckout && attemptId ? `-${attemptId}` : ''}`;
     if (!observed) {
       return {
         branch: input.worktree.branch,

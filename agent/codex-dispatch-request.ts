@@ -16,6 +16,7 @@ const schemas = {
   handoff: object(recovery),
   reset: object(recovery),
   retire: object({ ...recovery, threads: Type.Optional(Type.Unknown()) }),
+  recover: object({ ...recovery, pullRequest: Type.String({ minLength: 1, maxLength: 4096 }) }),
   'retry-denied': object({
     ...recovery,
     approvedCallId: Type.Optional(Type.String({ pattern: '\\S' })),

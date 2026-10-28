@@ -158,6 +158,11 @@ export default class OpenClawDispatchContext {
       fresh.manifest.agent.id !== manifest.agent.id
     )
       throw new Error('dispatch-workspace-binding-changed');
+    if (
+      record.supersededBy ||
+      (await current.journal.read()).records.find((r) => r.id === record.id)?.supersededBy
+    )
+      throw new Error('dispatch-task-superseded');
     if (record.retired || (record.retirement && record.retirement.reason !== 'assignment-removed'))
       throw new Error('dispatch-issue-inactive');
     if (record.reset) throw new Error('dispatch-reset-pending');
@@ -266,6 +271,7 @@ export default class OpenClawDispatchContext {
     const worktreeInput = {
       agentId: manifest.agent.id,
       attemptId: record.worktreeAttemptId,
+      separateCheckout: Boolean(record.manualIssue?.fresh || record.predecessorId),
       cloneUrl: repo.cloneUrl,
       defaultBranch: repo.defaultBranch,
       itemDatabaseId: intake.issue.databaseId,

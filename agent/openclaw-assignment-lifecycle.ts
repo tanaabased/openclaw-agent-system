@@ -176,6 +176,7 @@ export default async function reconcileOpenClawLifecycle(input: {
           const worktreeInput = {
             agentId: manifest.agent.id,
             attemptId: record.worktreeAttemptId,
+            separateCheckout: Boolean(record.manualIssue?.fresh || record.predecessorId),
             cloneUrl: repo.cloneUrl,
             defaultBranch: repo.defaultBranch,
             repositoryDatabaseId: repo.databaseId,

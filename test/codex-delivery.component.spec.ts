@@ -364,6 +364,7 @@ describe('agent/codex-delivery', () => {
       threadId: 'child',
       attachment: async () => attached,
       native: {
+        operatorInput: async () => ({ turnId: 'turn', inputId: 'operator-input' }),
         assessmentSkill: async (_cwd, name) => ({
           name,
           path: '/skills/reply/SKILL.md',
@@ -445,7 +446,25 @@ describe('agent/codex-delivery', () => {
               };
               return result(pr);
             }
-            if (endpoint === 'repos/owner/repo/pulls/7') {
+            if (
+              endpoint === 'repos/owner/repo/pulls/7' ||
+              endpoint === 'repos/owner/repo/pulls/8'
+            ) {
+              if (argv.some((arg) => arg.includes('branch:.head.ref')))
+                return result({
+                  nodeId: pr?.itemNodeId,
+                  number: pr?.number,
+                  state: 'open',
+                  repositoryId: 'R_repo',
+                  headRepositoryId: 'R_repo',
+                  head: remote,
+                  branch: pr?.headRef,
+                  base: pr?.baseRef,
+                  authorId: 'U_collaborator',
+                  title: pr?.title,
+                  body: pr?.body,
+                  ...bindingOverride,
+                });
               if (argv.some((arg) => arg.includes('draft,state')))
                 return result({
                   nodeId: 'PR_7',
@@ -597,6 +616,123 @@ describe('agent/codex-delivery', () => {
     assert.equal((await store.read()).records[0]!.delivery?.pullRequest?.pullRequestNumber, 7);
   });
 
+  it('should bind missing-receipt work to a collaborator pr and publish without replacing metadata or creating a pr', async () => {
+    remote = firstHead;
+    pr = {
+      itemNodeId: 'PR_7',
+      number: 7,
+      state: 'open',
+      baseRef: 'release',
+      headRef: 'shared-work',
+      headRepository: 'owner/repo',
+      title: 'Collaborator title',
+      body: 'Keep this body.',
+    };
+    bindingOverride = { authorId: 'U_collaborator', baseRef: 'release', headRef: 'shared-work' };
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.issueBranch;
+      await save();
+    });
+    dirty = true;
+    const preview = await request('bind', { pullRequest: url });
+    assert.equal(preview.status, 'binding-available');
+    assert.equal((await store.read()).records[0]!.delivery, undefined);
+    assert.equal(
+      gitCalls.some((args) => args[0] === 'fetch'),
+      false,
+    );
+    const bound = await request('bind', { pullRequest: url, digest: requiredDigest(preview) });
+    assert.equal(bound.status, 'bound');
+    const saved = (await store.read()).records[0]!;
+    assert.equal(saved.issueBranch?.name, 'pirog-work');
+    assert.equal(saved.delivery?.binding.branch, 'shared-work');
+    assert.equal(saved.delivery?.binding.authorId, 'U_collaborator');
+    assert.equal(saved.delivery?.reconciled, false);
+    assert.equal(saved.delivery?.pushedHead, undefined);
+    assert.equal(saved.delivery?.announcement, undefined);
+    assert.equal(saved.delivery?.attached, false);
+    assert.equal(dirty, true);
+    assert.equal(creates, 0);
+    dirty = false;
+    assert.equal((await request('prepare')).status, 'bound');
+    assert.equal(
+      (await request('bind', { pullRequest: url, digest: requiredDigest(preview) })).status,
+      'bound',
+    );
+    assert.equal((await store.read()).records[0]!.deliveryHistory, undefined);
+    head = 'b'.repeat(40);
+    const delivery = await request('prepare');
+    await request('publish', { digest: requiredDigest(delivery) });
+    assert.equal(creates, 0);
+    assert.equal(bodyWrites, 0);
+    assert.equal(pr.body, 'Keep this body.');
+    assert.ok(gitCalls.some((args) => args.includes(`${head}:refs/heads/shared-work`)));
+    assert.equal(
+      gitCalls.some((args) => args.includes('--force')),
+      false,
+    );
+  });
+
+  it('should refuse stale or foreign pr selection without creating a binding or changing local work', async () => {
+    remote = head;
+    pr = {
+      itemNodeId: 'PR_7',
+      number: 7,
+      state: 'open',
+      baseRef: 'main',
+      headRef: 'shared-work',
+      headRepository: 'owner/repo',
+      title: 'Title',
+      body: '',
+    };
+    await assert.rejects(
+      request('bind', { pullRequest: 'https://github.com/other/repo/pull/7' }),
+      /adoption-target-invalid/,
+    );
+    const preview = await request('bind', { pullRequest: url });
+    remote = 'b'.repeat(40);
+    await assert.rejects(
+      request('bind', { pullRequest: url, digest: requiredDigest(preview) }),
+      /binding-stale/,
+    );
+    bindingOverride.headRepositoryId = 'R_fork';
+    await assert.rejects(request('bind', { pullRequest: url }), /adoption-identity-mismatch/);
+    assert.equal((await store.read()).records[0]!.delivery, undefined);
+    assert.equal(creates, 0);
+  });
+
+  it('should retain earlier delivery receipts when explicitly changing prs and stop uncertain publication', async () => {
+    await publish();
+    const previous = (await store.read()).records[0]!.delivery!;
+    pr = {
+      itemNodeId: 'PR_8',
+      number: 8,
+      state: 'open',
+      baseRef: 'main',
+      headRef: 'other-work',
+      headRepository: 'owner/repo',
+      title: 'Other PR',
+      body: 'Keep other work.',
+    };
+    const target = 'https://github.com/owner/repo/pull/8';
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.delivery!.pendingPush = { previousHead: head, head: 'b'.repeat(40) };
+      await save();
+    });
+    await assert.rejects(request('bind', { pullRequest: target }), /publication-pending/);
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.delivery!.pendingPush;
+      await save();
+    });
+    const preview = await request('bind', { pullRequest: target });
+    await request('bind', { pullRequest: target, digest: requiredDigest(preview) });
+    const current = (await store.read()).records[0]!;
+    assert.deepEqual(current.deliveryHistory, [previous]);
+    assert.equal(current.delivery!.pullRequest!.pullRequestNumber, 8);
+    assert.equal(current.delivery!.reconciled, false);
+    assert.equal(current.delivery!.pushedHead, undefined);
+    assert.equal(creates, 1);
+  });
   it('should reject a retired or same-issue branch before pushing or creating a pr', async () => {
     branch = '3-retired-attempt';
     await assert.rejects(publish(), /codex-branch-owner-mismatch/);

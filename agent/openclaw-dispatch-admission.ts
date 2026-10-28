@@ -1,4 +1,5 @@
-import { managedPullRequest } from './managed-issue.ts';
+import { dispatchAdmission, managedPullRequest } from './managed-issue.ts';
+import verifyIssuePullRequest from './issue-pr-selection.ts';
 import openClawRoutingInstructions from './openclaw-routing-instructions.ts';
 import { assertRoutingInstructions, routingInstructionsDigest } from './routing-instructions.ts';
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
@@ -24,6 +25,7 @@ import advanceIssueTurn from './openclaw-session-turn.ts';
 function digest(record: OpenClawDispatchRecord) {
   return automationHash({
     context: record.context,
+    ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),
     manifest: record.manifestDigest,
     instructions:
       record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
@@ -52,6 +54,19 @@ export default class OpenClawDispatchAdmission {
     } = tx;
     const { client, intake, worktreeInput } = verified;
     const claims = this.context.dependencies.claims;
+    const verifyPr = async () => {
+      if (!record.adoptedPullRequest) return;
+      const connection = await this.context.dependencies.delivery?.({
+        manifest,
+        workspaceDir: workspace,
+        worktree: record.worktree ?? workspace,
+        caller,
+        signal: transactionSignal,
+      });
+      if (!connection) throw new Error('delivery-runtime-unavailable');
+      await verifyIssuePullRequest(intake, record.adoptedPullRequest, connection.account);
+    };
+    await verifyPr();
     if (
       !('initiation' in intake) &&
       !claims &&
@@ -121,10 +136,26 @@ export default class OpenClawDispatchAdmission {
       }
       const worktree = await this.context.dependencies.worktrees.prepareGitHub({
         ...worktreeInput,
+        ...(record.adoptedPullRequest ? { startingCommit: record.adoptedPullRequest.head } : {}),
         attemptId: record.worktreeAttemptId,
         title: input.title,
       });
       record.worktree = worktree.path;
+      if (record.adoptedPullRequest) record.adoptedLocalBranch = worktree.branch;
+      if (record.adoptedPullRequest) {
+        if (!this.context.dependencies.assessmentGit) throw new Error('assessment-git-unavailable');
+        const head = await this.context.dependencies.assessmentGit({
+          manifest,
+          workspace,
+          caller,
+          cwd: record.worktree,
+          argv: ['rev-parse', '--verify', 'HEAD'],
+          signal: transactionSignal,
+        });
+        if (head.trim() !== record.adoptedPullRequest.head)
+          throw new Error('launch-pr-head-changed');
+        await verifyPr();
+      }
       record.routing = JSON.stringify(routing);
       record.routingInstructions = instructions;
       record.routingNote = `Requested ${routing.candidate.model} / ${routing.candidate.thinking}; session settings are verified at creation, not model execution.`;
@@ -204,6 +235,38 @@ export default class OpenClawDispatchAdmission {
           await turnAuthority.assertCurrent();
           await save();
         });
+      }
+      if (record.predecessorId) {
+        const predecessor = state.records.find((r) => r.id === record.predecessorId);
+        const admission =
+          predecessor && dispatchAdmission(predecessor, current.admitted.records ?? []);
+        if (predecessor && admission && !('initiation' in admission) && claims) {
+          await createIssueSession({
+            config: this.context.dependencies.config(),
+            credential: this.context.guardedCredential(() =>
+              this.context.validate(manifest, workspace, record, false, false, client, signal),
+            ),
+            record,
+            save,
+            authority: turnAuthority,
+          });
+          if (!record.sessionCreation?.verified || !record.sessionCreation.sessionId)
+            throw new Error('claim-native-creation-unverified');
+          const accepted = await claims.recover(
+            admission,
+            client,
+            predecessor,
+            record.id,
+            'accept',
+            record.sessionCreation.sessionId,
+          );
+          if (accepted) {
+            record.claimId = accepted.commentId;
+            record.claimAccepted = true;
+            await save();
+          }
+        } else if (predecessor?.claimId || predecessor?.claimAccepted)
+          throw new Error('claim-recovery-owner-unresolved');
       }
       const result = await (working ? advanceIssueTurn : createIssueSession)({
         config: this.context.dependencies.config(),

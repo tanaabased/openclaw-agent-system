@@ -31,7 +31,11 @@ export default async function codexIssueBranch(input: {
         delivery.worktree !== cwd
       )
         throw new Error('codex-branch-owner-required');
-      record.issueBranch = { attemptId: record.id, name: delivery.branch, phase: 'ready' };
+      record.issueBranch = {
+        attemptId: record.id,
+        name: record.delivery?.localBranch ?? delivery.branch,
+        phase: 'ready',
+      };
     } else {
       if (
         !input.prepare ||
@@ -62,7 +66,8 @@ export default async function codexIssueBranch(input: {
       (other) =>
         other.id !== record.id &&
         other.project?.commonDir === record.project!.commonDir &&
-        (other.issueBranch?.name === branch.name || other.delivery?.binding.branch === branch.name),
+        (other.issueBranch?.name === branch.name ||
+          (other.delivery?.localBranch ?? other.delivery?.binding.branch) === branch.name),
     )
   )
     throw new Error('codex-branch-owner-mismatch');

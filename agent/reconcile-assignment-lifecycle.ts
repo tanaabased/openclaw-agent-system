@@ -54,7 +54,13 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   const graceMinutes = configuration.status === 'ready' ? configuration.graceMinutes : undefined;
   const latest = new Map(input.admitted.map((item) => [issueKey(item), item]));
   const selected = input.records
-    .filter((record) => !record.reset && !record.retired && record.sourceThreadId === input.owner)
+    .filter(
+      (record) =>
+        !record.supersededBy &&
+        !record.reset &&
+        !record.retired &&
+        record.sourceThreadId === input.owner,
+    )
     .filter((record) => !input.targetId || record.id === input.targetId)
     .filter(
       (record) =>

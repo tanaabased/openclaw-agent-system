@@ -1,3 +1,4 @@
+import recoverAssignmentClaim from './assignment-claim-recovery.ts';
 import { join } from 'node:path';
 
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
@@ -35,6 +36,27 @@ export default class CodexAssignmentClaims {
       source: source(input.intake),
       passId: automationHash({ threadId: input.threadId, turnId: input.turnId }),
       hasCapacity: input.hasCapacity,
+    });
+  }
+
+  recover(
+    intake: IntakeRecord,
+    client: Connection,
+    record: DispatchRecord,
+    recoveryId: string,
+    operation: 'preview' | 'reserve' | 'accept',
+    successorReceipt?: string,
+  ) {
+    const receipt = record.threadId;
+    if (!receipt) throw new Error('claim-native-creation-unverified');
+    return recoverAssignmentClaim({
+      store: this.store,
+      client: this.connect(client),
+      source: source(intake),
+      recoveryId,
+      predecessorReceipt: receipt,
+      operation,
+      successorReceipt,
     });
   }
 

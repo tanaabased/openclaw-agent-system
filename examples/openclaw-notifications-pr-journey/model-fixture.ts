@@ -26,6 +26,7 @@ const dispatchStages = [
   'report',
   'handoff-preview',
   'handoff',
+  'binding-verify',
   'work-context',
   'work-result',
   'delivery-prepare',
@@ -648,6 +649,21 @@ function respond(
   const operatorId =
     automaticId ?? /Operator request for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
   if (operatorId) {
+    const selectedPr =
+      /Bind existing PR (https:\/\/github\.com\/[^\s]+\/pull\/[1-9][0-9]*)\./u.exec(prompt)?.[1];
+    if (selectedPr) {
+      const bound = result('binding-verify');
+      if (!bound)
+        return dispatch('binding-verify', {
+          action: 'delivery',
+          operation: 'bind',
+          id: operatorId,
+          pullRequest: selectedPr,
+        });
+      assert.equal(bound.status, 'bound');
+      assert.equal(bound.retained, true);
+    }
+
     if (prompt.includes('Preview reviewer delivery without publishing.')) {
       const prepared = result('delivery-prepare');
       if (!prepared)

@@ -1,4 +1,6 @@
-import type { GitHubNotificationIssueDeliveryReceipt } from '../channels/github/publication/issue-delivery.ts';
+import IssueDeliveryProvider, {
+  type GitHubNotificationIssueDeliveryReceipt,
+} from '../channels/github/publication/issue-delivery.ts';
 import manualPullRequest from './manual-pull-request.ts';
 import initialModelRouting from './initial-model-routing.ts';
 import { routingInstructionsDigest } from './routing-instructions.ts';
@@ -110,6 +112,34 @@ export default async function issueLaunch<
     ),
     ...(pullRequest ? { pullRequest } : {}),
   };
+  if (pullRequest && action.pullRequest) throw new Error('launch-pr-target-conflict');
+  const connection = action.pullRequest
+    ? await context.connectDelivery?.(context.binding.workspace)
+    : undefined;
+  if (
+    action.pullRequest &&
+    (!connection || connection.account.identity.nodeId !== client.identity.nodeId)
+  )
+    throw new Error('delivery-adoption-account-changed');
+  const adopted = action.pullRequest
+    ? await new IssueDeliveryProvider(connection!.account).adopt(
+        {
+          repositoryNodeId: repo.nodeId,
+          item: {
+            number: item.number,
+            itemDatabaseId: item.databaseId,
+            itemNodeId: item.nodeId,
+            repositoryOwner: repo.owner.login,
+            repositoryName: repo.name,
+            repositoryDefaultBranch: repo.defaultBranch,
+          },
+        },
+        action.pullRequest,
+      )
+    : undefined;
+  if (adopted)
+    for (const branch of [adopted.branch, adopted.base])
+      await context.git(context.binding.workspace, ['check-ref-format', `refs/heads/${branch}`]);
   await context.assertCurrent();
   return journal.exclusive(async (state, save) => {
     const manual: OperatorIssue = {
@@ -121,6 +151,7 @@ export default async function issueLaunch<
         item.nodeId,
         context.binding.session,
         context.inputId,
+        ...(action.fresh ? ['fresh'] : []),
       ]),
       scope: input.scope,
       receiving: { login: client.identity.login, nodeId: client.identity.nodeId },
@@ -142,6 +173,7 @@ export default async function issueLaunch<
         turn: context.turnId,
         input: context.inputId,
       },
+      ...(action.fresh ? { fresh: true as const } : {}),
       selections: {
         ...(action.mode ? { mode: action.mode } : {}),
         ...action.stages,
@@ -171,18 +203,27 @@ export default async function issueLaunch<
             record.work?.delivery?.pullRequest?.pullRequestNodeId === item.nodeId),
         ),
     );
-    if (ownership.status === 'ambiguous') throw new Error('launch-owner-ambiguous');
+    if (!action.fresh && !action.id && ownership.status === 'ambiguous')
+      throw new Error('launch-owner-ambiguous');
     const own = ownership.caller;
     if (own && !own.retired && !own.reset && own !== ownership.owner)
       throw new Error('launch-managed-target-mismatch');
-    let record = ownership.owner;
+    let record = action.id
+      ? state.records.find((entry) => entry.id === action.id && entry.issueKey === key)
+      : action.fresh
+        ? state.records.find((entry) => entry.id === manual.id && entry.manualIssue?.fresh)
+        : ownership.owner;
     if (
-      ownership.status === 'historical' ||
+      (!action.fresh && !action.id && ownership.status === 'historical') ||
       own?.retired ||
       own?.reset ||
+      own?.supersededBy ||
       own?.retirement ||
       own?.nativeInactive ||
       record?.retirement ||
+      record?.retired ||
+      record?.reset ||
+      record?.supersededBy ||
       record?.nativeInactive
     )
       throw new Error('launch-owner-inactive');
@@ -201,6 +242,16 @@ export default async function issueLaunch<
       await save();
     }
 
+    if (
+      adopted &&
+      record &&
+      automationHash(record.adoptedPullRequest) !== automationHash(adopted)
+    ) {
+      if (record.request || !record.adoptedPullRequest)
+        throw new Error('launch-pr-binding-changed');
+      record.adoptedPullRequest = adopted;
+      if ('project' in record) delete record.project;
+    }
     if (record?.threadId) {
       await input.verifyExisting(record);
       await context.assertCurrent();
@@ -249,6 +300,7 @@ export default async function issueLaunch<
         manifestDigest: automationHash(context.manifest),
         context: JSON.stringify(evidence),
       });
+      if (adopted) record.adoptedPullRequest = adopted;
       state.records.push(record);
     }
     const routing = record.request
@@ -272,6 +324,7 @@ export default async function issueLaunch<
       context: JSON.parse(record.context!),
       digest: automationHash({
         context: record.context,
+        ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),
         manifest: record.manifestDigest,
         instructions:
           record.routingInstructions && routingInstructionsDigest(record.routingInstructions),

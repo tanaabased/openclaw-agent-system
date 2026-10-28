@@ -21,6 +21,8 @@ export interface ReplyOwner {
   inactive: boolean;
   retired?: boolean;
   reset?: boolean;
+  supersededBy?: string;
+  manualIssue?: { fresh?: boolean };
   repository?: string;
   number?: number;
   pullRequestNumber?: number;

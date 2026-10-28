@@ -105,6 +105,8 @@ inactive lifecycle, cancellation, and actual native denial.
 
 ## Workflow
 
+For an explicit request to select or change this managed task's existing PR, use `agent_system_dispatch` with `action: delivery`, `operation: bind` in OpenClaw, or the trusted `deliveryRuntime` with `bind` in standalone Codex, its retained `id`, and exact same-repository `pullRequest` URL. Omit `digest` for preview, inspect it, then apply that digest within the existing operator request. Binding fetches the PR but preserves local files and commits; it records no successful publication or announcement. Incorporate collaborator changes before normal non-force delivery. Resolve uncertain earlier publication before changing destination. This action neither starts implementation nor supersedes another task; it is not an automatic intake operation.
+
 1. Read the complete plan and any retained assessment, then inspect the existing files, branch, and relevant
    repository behavior. Preserve prior work; reconcile an interrupted attempt before
    making changes. Keep the host-selected model and effort.

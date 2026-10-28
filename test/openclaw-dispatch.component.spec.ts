@@ -7297,6 +7297,185 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).feedback?.startedAt, baseline);
     assert.deepEqual((await record()).feedback?.events, []);
   });
+  for (const claimed of [false, true])
+    it(`should replace a stranded openclaw task through one native successor with claim transfer ${claimed}`, async () => {
+      multiple = true;
+      if (claimed) {
+        enableClaims();
+        await service.run(manifest, root, coordinator, { action: 'next' });
+        coordinator.runId = 'recovery-claim-occurrence';
+      }
+      const input = await next();
+      await prepare(input);
+      await assess(input.id);
+      await completeAssessment(input.id);
+      const predecessor = await record();
+      const operator = {
+        sessionKey: 'agent:receiver:recovery-operator',
+        sessionId: 'recovery-session',
+        runId: 'recovery-run',
+        toolCallId: 'recover',
+      };
+      sessions.set(operator.sessionKey, { sessionId: operator.sessionId });
+      histories.set(operator.sessionKey, {
+        active: true,
+        inputReceipts: [],
+        messages: [
+          {
+            role: 'user',
+            content: 'Replace the stranded task using its PR.',
+            __openclaw: {
+              id: 'recovery-input',
+              runId: operator.runId,
+              idempotencyKey: 'recovery-run:user',
+              senderIsOwner: true,
+            },
+          },
+        ],
+      });
+      let prHead = 'a'.repeat(40);
+      let providerReads = 0;
+      service.dependencies.assessmentGit = async ({ argv }) =>
+        argv.includes('--show-toplevel') ? root : prHead;
+      service.dependencies.delivery = async () => ({
+        git: async () => '',
+        account: {
+          identity: fixture.client.identity,
+          execute: async (argv) => {
+            providerReads++;
+            const data = argv.some((arg) => arg.includes('/pulls/'))
+              ? {
+                  nodeId: 'PR_7',
+                  number: 7,
+                  state: 'open',
+                  repositoryId: 'R_repo',
+                  headRepositoryId: 'R_repo',
+                  head: prHead,
+                  branch: 'existing-work',
+                  base: 'release',
+                  authorId: 'U_collaborator',
+                  title: 'Existing work',
+                  body: '',
+                }
+              : { databaseId: 20, nodeId: 'I_issue', number: 3, title: 'Issue' };
+            return {
+              exitCode: 0,
+              stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(data),
+              stderr: '',
+              timedOut: false,
+              truncated: false,
+            };
+          },
+        },
+      });
+      const action = {
+        action: 'recover' as const,
+        id: input.id,
+        pullRequest: 'https://github.com/owner/repo/pull/7',
+      };
+      const preview = await service.run(manifest, root, operator, action, true);
+      assert.equal(preview.status, 'recovery-available', JSON.stringify(preview));
+      assert.ok('digest' in preview && typeof preview.digest === 'string');
+      assert.deepEqual(await record(), predecessor);
+      prHead = 'b'.repeat(40);
+      await assert.rejects(
+        service.run(manifest, root, operator, { ...action, digest: preview.digest }, true),
+        /dispatch-recovery-stale/,
+      );
+      prHead = 'a'.repeat(40);
+      histories.get(predecessor.threadId!)!.active = true;
+      await assert.rejects(
+        service.run(manifest, root, operator, action, true),
+        /chat-active-or-unverified/,
+      );
+      histories.get(predecessor.threadId!)!.active = false;
+      const applied = await service.run(
+        manifest,
+        root,
+        operator,
+        { ...action, digest: preview.digest },
+        true,
+      );
+      assert.equal(applied.status, 'recovery-ready', JSON.stringify(applied));
+      assert.ok('successorId' in applied && typeof applied.successorId === 'string');
+      assert.equal(
+        (await service.run(manifest, root, operator, action, true)).status,
+        'recovery-ready',
+      );
+      const old = await record();
+      assert.equal(old.supersededBy, applied.successorId);
+      assert.equal(old.worktree, predecessor.worktree);
+      assert.deepEqual(old.result, predecessor.result);
+      await assert.rejects(context(input.id), /dispatch-task-superseded/);
+      const target = 'owner/repo#3';
+      const admitted = await service.run(
+        manifest,
+        root,
+        operator,
+        { action: 'launch', operation: 'context', target, id: applied.successorId },
+        true,
+      );
+      assert.ok('digest' in admitted && typeof admitted.digest === 'string');
+      // The existing native creation reconciliation must reuse this exact checkout and request.
+      const nativePrepare = service.dependencies.worktrees.prepareGitHub;
+      service.dependencies.worktrees.prepareGitHub = async (request) => {
+        assert.equal(request.startingCommit, prHead);
+        const result = await nativePrepare(request);
+        const path = join(root, 'successor-worktree');
+        await mkdir(path, { recursive: true });
+        return { ...result, path };
+      };
+      lost = true;
+      const uncertain = await service.run(
+        manifest,
+        root,
+        operator,
+        {
+          action: 'launch',
+          operation: 'prepare',
+          target,
+          id: applied.successorId,
+          digest: admitted.digest,
+          title: 'continue existing work',
+          assessment: { complexity: 'low', reason: 'Retain the task plan.' },
+        },
+        true,
+      );
+      assert.notEqual(uncertain.status, 'session-created');
+      lost = false;
+      const recovered = await service.run(
+        manifest,
+        root,
+        operator,
+        { action: 'launch', operation: 'reconcile', target, id: applied.successorId },
+        true,
+      );
+      assert.equal(recovered.status, 'assessment-pending', JSON.stringify(recovered));
+      const records = (await (await service.scope(manifest, root)).journal.read()).records;
+      assert.equal(records.length, 2);
+      const successor = records.find((r) => r.id === applied.successorId)!;
+      assert.notEqual(successor.worktree, predecessor.worktree);
+      assert.equal(successor.adoptedPullRequest?.head, prHead);
+      assert.equal(successor.manualIssue?.selections?.mode, undefined);
+      assert.equal(successor.work?.delivery, undefined);
+      assert.equal(successor.result, undefined);
+      assert.equal(creates().length, 2);
+      if (claimed) {
+        const claims = await service.dependencies.claimStore!.exclusive(async (state) =>
+          structuredClone(state),
+        );
+        assert.equal(
+          Object.values(claims!.claims)[0]!.nativeReceipt,
+          successor.sessionCreation!.sessionId,
+        );
+        assert.equal(
+          Object.values(claims!.claims)[0]!.recovery?.predecessorReceipt,
+          predecessor.sessionCreation!.sessionId,
+        );
+      }
+      assert.ok(providerReads > 0);
+    });
+
   for (const kind of ['issue', 'pull-request'] as const)
     it(`should launch unassigned manual ${kind} work through existing native owners`, async () => {
       if (kind === 'pull-request') {
@@ -7422,6 +7601,52 @@ describe('agent/openclaw issue dispatch', () => {
       );
       assert.equal(reused.status, 'existing');
       assert.equal(calls.filter((call) => call.method === 'sessions.create').length, 1);
+      const additional = await service.run(
+        manifest,
+        root,
+        who,
+        { action: 'launch', operation: 'context', target, fresh: true },
+        true,
+      );
+      assert.ok('id' in additional && typeof additional.id === 'string');
+      assert.ok('digest' in additional && typeof additional.digest === 'string');
+      const originalPrepare = service.dependencies.worktrees.prepareGitHub;
+      service.dependencies.worktrees.prepareGitHub = async (request) => {
+        const result = await originalPrepare(request);
+        const path = join(root, 'additional-worktree');
+        await mkdir(path, { recursive: true });
+        return { ...result, path };
+      };
+      const extra = await service.run(
+        manifest,
+        root,
+        who,
+        {
+          action: 'launch',
+          operation: 'prepare',
+          target,
+          fresh: true,
+          id: additional.id,
+          digest: additional.digest,
+          title: 'additional collaboration',
+          assessment: { complexity: 'low', reason: 'Bounded independent collaboration.' },
+        },
+        true,
+      );
+      assert.equal(extra.status, 'assessment-pending', JSON.stringify(extra));
+      assert.equal(creates().length, 2);
+      assert.equal(
+        (
+          await service.run(
+            manifest,
+            root,
+            who,
+            { action: 'launch', operation: 'context', target, fresh: true },
+            true,
+          )
+        ).status,
+        'existing',
+      );
       assert.equal((await context(first.id)).status, 'verified');
       assert.equal((await submit(first.id, plan)).status, 'recorded');
       assert.equal(
