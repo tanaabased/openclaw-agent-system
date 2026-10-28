@@ -208,7 +208,7 @@ export default async function runCodexFeedback(
       if (input.action === 'next') {
         let policyObserved = false;
         for (const record of state.records) {
-          if (record.retired || record.reset || !record.feedback) continue;
+          if (record.supersededBy || record.retired || record.reset || !record.feedback) continue;
           const enabled = record.feedback.admission?.enabled;
           const observedAt = record.feedback.admission?.observedAt;
           observeFeedbackPolicy(record.feedback, current.manifest.github?.notifications, scanTime);
@@ -221,7 +221,8 @@ export default async function runCodexFeedback(
       if (snapshot && occurrence) {
         const cycleAt = state.discoveryCycleAt ?? scanTime;
         const owners = state.records.filter(
-          (r) => !r.retired && !r.retirement && !r.reset && r.effective && r.threadId,
+          (r) =>
+            !r.supersededBy && !r.retired && !r.retirement && !r.reset && r.effective && r.threadId,
         );
         if (
           owners.some(
@@ -251,6 +252,7 @@ export default async function runCodexFeedback(
       );
       const records = state.records.filter(
         (record) =>
+          !record.supersededBy &&
           !record.retired &&
           !record.retirement &&
           !record.reset &&

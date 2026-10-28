@@ -17,6 +17,7 @@ export default function implementationContext(input: {
   scope?: 'local' | 'pull-request';
   direct?: boolean;
   revision?: boolean;
+  existingPullRequest?: boolean;
 }) {
   return {
     status: 'verified' as const,
@@ -42,6 +43,7 @@ export default function implementationContext(input: {
       input.direct || input.scope === 'local'
         ? { publication: input.scope === 'pull-request' }
         : undefined,
+      input.existingPullRequest,
     ),
   };
 }

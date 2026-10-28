@@ -25,7 +25,8 @@ export default function pendingDispatchAssignments<R extends SharedDispatchRecor
   return [...latest].flatMap(([key, item]) => {
     if (state.records.some((record) => record.issueKey === key && unresolvedRetirement(record)))
       return [];
-    const previous = state.records.findLast((record) => record.issueKey === key);
+    const matching = state.records.filter((record) => record.issueKey === key);
+    const previous = matching.findLast((record) => !record.manualIssue?.fresh) ?? matching.at(-1);
     if (previous?.manualIssue && !previous.retired && !previous.retirement && !previous.reset)
       return [];
     if (previous?.retirement && !previous.retired) {

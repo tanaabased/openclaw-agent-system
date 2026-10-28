@@ -22,6 +22,7 @@ export default async function authorizeCodexFeedback(input: {
   provider: Awaited<ReturnType<typeof connectCodexFeedback>>;
 }) {
   const { current, record, event, intake, provider } = input;
+  if (record.supersededBy) throw new Error('dispatch-task-superseded');
   const policy = assignmentIntakePolicy(current.manifest, 'codex');
   if (!policy) throw new WorkflowPolicyHeld('feedback-disabled');
   const owner = intake.repository.owner.login,

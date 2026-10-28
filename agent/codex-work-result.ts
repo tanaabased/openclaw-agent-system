@@ -74,6 +74,7 @@ export default async function recordCodexWorkResult(
       input.result.outcome,
       'codex',
       work.scope === 'local' ? { publication: false } : undefined,
+      Boolean(record.adoptedPullRequest),
     ),
     presentation: implementationPresentation(input.result),
   };

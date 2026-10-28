@@ -60,6 +60,9 @@ export default async function codexIssueLaunch(
             ...admitted,
             digest: automationHash({
               context: record.context,
+              ...(record.adoptedPullRequest
+                ? { adoptedPullRequest: record.adoptedPullRequest }
+                : {}),
               project: record.project,
               manifest: record.manifestDigest,
               instructions:
@@ -98,7 +101,17 @@ export default async function codexIssueLaunch(
         operatorInput: { turnId: context.turnId, inputId: context.inputId },
       };
       if (input.operation === 'reconcile') {
-        const native = await recover(current, record, issue, deps, save);
+        const native = await recover(
+          current,
+          record,
+          issue,
+          deps,
+          save,
+          undefined,
+          'assessment',
+          true,
+          state.records,
+        );
         return {
           status: 'existing' as const,
           id: record.id,

@@ -4,7 +4,7 @@ After one delivered PR, accept an explicit operator request to add a follow-up c
 
 ## What Belongs Here
 
-- Operator-driven changes to committed content and PR title/body after initial delivery.
+- Native operator binding to the exact retained PR without changing earlier publication receipts, then operator-driven changes to committed content and PR title/body.
 - An advanced pushed head with unchanged issue, chat, checkout, PR identity, feedback receipts, and announcement.
 
 ## What Does Not Belong Here
@@ -19,10 +19,15 @@ After one delivered PR, accept an explicit operator request to add a follow-up c
 
 - Strict AIMock supplies the model text and tool choices. GitHub requests, chat execution, dispatch, managed Git, and saved results still run normally. Only Tanaabot is assigned; EMORI creates the test issues and comments.
 - Each job prepares its own issue, assessment, and linked PR. The coordinator has up to three passes to verify the assessment before handling initial feedback, keeping the same source revision. Refreshes target only this issue; a 24-hour schedule avoids unrelated discovery.
+- The first follow-up also invokes `delivery bind` on its exact retained PR in the real agent/tool loop; this adds one tool call, no chat, model turn, or provider fixture. Missing-receipt adoption and replacement remain component/native acceptance below.
 - Operator follow-ups collect direct implementation context from the retained owner and plan, without a separate assessment or handoff; delivery preserves the same PR and announcement.
 - A second operator revision starts from the issue owner’s retained `done` result. Its extra native turn proves that completion does not freeze later edits; the first revision starts from feedback-owned work.
 - Native operator messages use the public Gateway SDK with `operator.admin`; the enrolled dispatch device retains `operator.read` and `operator.write`. Native transcript receipts bind the input.
 - If the closing-issue link is delayed, the shared fixture checks the same delivery through at most three prepare/publish passes. Unknown failures and uncertain writes never create replacement PRs.
+
+## Native replacement acceptance
+
+In an isolated disposable installation, retain an idle managed issue task and its open same-repository PR but no local delivery receipt. From a separate native operator chat, preview and apply `recover` with the exact predecessor and PR; retry the same receipt after an interrupted creation. Verify one successor at the fetched head on a distinct local branch/checkout, unchanged predecessor work and assessment, exact local claim transfer, and refusal of old-chat execution. Complete one small successor commit and non-force update to the same PR without replaying the predecessor announcement. A changed head, active predecessor, denied creation, or external claim must stop the attempt. This costs one operator turn, one successor assessment/implementation journey, and one small PR update; it remains separate from the executable retained-binding check below. Component fakes do not establish installed acceptance.
 
 ## Setup
 
@@ -147,7 +152,8 @@ conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-delivery.json")
 receipt=$(jq -er .id "$TMPDIR/notification-delivery.json")
 leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
-params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" '{sessionKey:$key,agentId:"pr-update-tanaabot",sessionId:$session,message:("Operator request for managed issue " + $receipt + ": Add a follow-up commit and update the existing PR title and body."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-update"}')"
+pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" --arg pr "$pr" '{sessionKey:$key,agentId:"pr-update-tanaabot",sessionId:$session,message:("Operator request for managed issue " + $receipt + ": Bind existing PR https://github.com/tanaabased/big-test-bucket/pull/" + $pr + ". Add a follow-up commit and update the existing PR title and body."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-update"}')"
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-update"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-update" 600000
 jq -es --arg id "$receipt" '[.[].records[] | select(.id == $id)] | .[0]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-first-update.json"

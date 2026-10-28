@@ -173,6 +173,22 @@ if output=$(printf '%s\n' '{"action":"launch","operation":"prepare","target":"ta
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "workflow-command-action-mismatch"'
 test ! -d "$CODEX_HOME/automations"
 
+# should keep explicit fresh launch behind native operator input
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/notification-data"
+if output=$(printf '%s\n' '{"action":"launch","operation":"context","target":"tanaabased/big-test-bucket#1","fresh":true,"pullRequest":"https://github.com/tanaabased/big-test-bucket/pull/2"}' | env -u CODEX_THREAD_ID node "$runtime" dispatch launch context --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-native-caller-required"'
+
+# should keep pr binding behind a native managed caller
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/notification-data"
+if output=$(printf '%s\n' '{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pullRequest":"https://github.com/tanaabased/big-test-bucket/pull/2"}' | env -u CODEX_THREAD_ID node "$runtime" delivery bind --plugin-data "$plugin_data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "delivery-managed-issue-required"'
+
 # should reject unsupported configuration before binding
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

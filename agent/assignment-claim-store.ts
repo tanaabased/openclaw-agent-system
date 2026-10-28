@@ -97,6 +97,12 @@ const recordSchema = Type.Object(
     cleanupPending: Type.Optional(Type.Boolean()),
     cleaned: Type.Optional(Type.Boolean()),
     nativeReceipt: Type.Optional(text),
+    recovery: Type.Optional(
+      Type.Object(
+        { id: text, predecessorReceipt: text, successorReceipt: Type.Optional(text) },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );

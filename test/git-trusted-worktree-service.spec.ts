@@ -23,7 +23,13 @@ const manifest: AgentManifest = {
 };
 
 function fixture(
-  options: { deny?: boolean; listed?: boolean; listedBranch?: string; ssh?: boolean } = {},
+  options: {
+    deny?: boolean;
+    listed?: boolean;
+    listedBranch?: string;
+    listedWorkId?: string;
+    ssh?: boolean;
+  } = {},
 ) {
   const events: string[] = [];
   const prepared: Array<{
@@ -71,7 +77,12 @@ function fixture(
           ? [
               {
                 branch: options.listedBranch ?? legacyBranch,
-                path: ownedPath,
+                path: options.listedWorkId
+                  ? ownedPath.replace(
+                      legacyBranch,
+                      gitWorktreeDirectoryName(repositoryId, options.listedWorkId),
+                    )
+                  : ownedPath,
                 repositoryId: 'github-7',
                 status: 'active' as const,
               },
@@ -81,7 +92,7 @@ function fixture(
       async cleanup(_context, repositoryId, workId, expectedBranch) {
         events.push('cleanup');
         assert.equal(repositoryId, 'github-7');
-        assert.equal(workId, 'issue-3');
+        assert.ok(workId.startsWith('issue-3'));
         return {
           branch: expectedBranch ?? legacyBranch,
           path: ownedPath,
@@ -101,7 +112,10 @@ function fixture(
                 input.issueBranch.suffix,
               )
             : legacyBranch,
-          path: ownedPath,
+          path: ownedPath.replace(
+            legacyBranch,
+            gitWorktreeDirectoryName(repositoryId, input.workId),
+          ),
           repositoryId: input.repositoryId,
           status: 'created' as const,
           workId: input.workId,
@@ -178,33 +192,77 @@ describe('tools/git/trusted-worktree-service', () => {
       itemType: 'issue' as const,
       repositoryDatabaseId: 7,
       title: 'Fix agent path resolution',
+      separateCheckout: true,
       attemptId: 'a'.repeat(64),
     };
     const { service } = fixture();
     const a = await service.prepareGitHub(input);
     const b = await service.prepareGitHub({ ...input, attemptId: 'b'.repeat(64) });
     assert.notEqual(a.branch, b.branch);
-    assert.equal(a.path, b.path);
-    const retained = fixture({ listed: true, listedBranch: a.branch });
+    assert.notEqual(a.path, b.path);
+    const retained = fixture({
+      listed: true,
+      listedBranch: a.branch,
+      listedWorkId: `issue-3-${input.attemptId}`,
+    });
     assert.equal((await retained.service.inspectGitHub(input))?.branch, a.branch);
     assert.equal(
       (await retained.service.cleanupGitHub({ ...input, worktree: a })).status,
       'removed',
     );
-    await assert.rejects(retained.service.inspectGitHub({ ...input, attemptId: 'b'.repeat(64) }), {
-      code: 'git-worktree-owner-mismatch',
-    });
-    await assert.rejects(
-      retained.service.cleanupGitHub({ ...input, attemptId: 'b'.repeat(64), worktree: a }),
-      { code: 'git-worktree-owner-mismatch' },
+    assert.equal(
+      await retained.service.inspectGitHub({ ...input, attemptId: 'b'.repeat(64) }),
+      undefined,
     );
-    await assert.rejects(fixture({ listed: true }).service.inspectGitHub(input), {
-      code: 'git-worktree-owner-mismatch',
-    });
+    assert.equal(
+      (await retained.service.cleanupGitHub({ ...input, attemptId: 'b'.repeat(64), worktree: a }))
+        .status,
+      'missing',
+    );
     await assert.rejects(service.prepareGitHub({ ...input, attemptId: 'untrusted-title' }), {
       code: 'invalid_arguments',
     });
   });
+  it('should retain the legacy path for ordinary attempt receipts', async () => {
+    const { service } = fixture();
+    const input = {
+      agentId: 'data',
+      cloneUrl: 'https://github.com/owner/repo.git',
+      defaultBranch: 'main',
+      itemDatabaseId: 3,
+      itemNumber: 42,
+      itemType: 'issue' as const,
+      repositoryDatabaseId: 7,
+      title: 'Continue work',
+      attemptId: 'a'.repeat(64),
+    };
+    const result = await service.prepareGitHub(input);
+    assert.equal(result.path, ownedPath);
+    const retained = fixture({ listed: true, listedBranch: result.branch });
+    assert.equal((await retained.service.inspectGitHub(input))?.path, ownedPath);
+  });
+
+  it('should prepare the exact verified pr commit through the worktree owner', async () => {
+    const { service, prepared } = fixture();
+    const input = {
+      agentId: 'data',
+      cloneUrl: 'https://github.com/owner/repo.git',
+      defaultBranch: 'main',
+      itemDatabaseId: 3,
+      itemNumber: 42,
+      itemType: 'issue' as const,
+      repositoryDatabaseId: 7,
+      title: 'Continue work',
+      startingCommit: 'a'.repeat(40),
+    };
+    await service.prepareGitHub(input);
+    assert.equal(prepared[0]!.baseRef, input.startingCommit);
+    await assert.rejects(
+      service.prepareGitHub({ ...input, startingCommit: 'HEAD' }),
+      /launch-pr-head-changed/,
+    );
+  });
+
   it('should authorize before resolving values and reuse the worktree definition', async () => {
     const { events, prepared, service } = fixture();
 
@@ -342,7 +400,6 @@ describe('tools/git/trusted-worktree-service', () => {
     const { service } = fixture({ listed: true, listedBranch: 'implementation-renamed' });
     const input = {
       agentId: 'data',
-      attemptId: 'a'.repeat(64),
       cloneUrl: 'https://github.com/tanaabased/openclaw-agent-system.git',
       defaultBranch: 'main',
       itemDatabaseId: 3,

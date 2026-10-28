@@ -17,6 +17,15 @@ export interface GitHubNotificationIssueDeliveryReceipt {
   pullRequestNumber: number;
 }
 
+export interface AdoptedPullRequest extends GitHubNotificationIssueDeliveryReceipt {
+  branch: string;
+  base: string;
+  head: string;
+  authorId: string;
+  title: string;
+  body: string;
+}
+
 export type GitHubIssueDeliveryFailureCategory =
   'github-request' | 'invalid-response' | 'identity-mismatch';
 
@@ -50,6 +59,7 @@ export interface IssueDeliveryInput {
   signal?: AbortSignal;
   recipients?: GitHubPullRequestRecipient[];
   expectedPullRequest?: GitHubNotificationIssueDeliveryReceipt;
+  adopted?: Pick<AdoptedPullRequest, 'authorId' | 'base'>;
   headSha?: string;
   previousHeadSha?: string;
   repositoryNodeId?: string;
@@ -186,6 +196,65 @@ export default class IssueDeliveryProvider {
     >,
     private readonly delay = abortableDelay,
   ) {}
+  /** explicit selection observes existing work; it is not a publication receipt. */
+  async adopt(
+    input: Pick<IssueDeliveryInput, 'item' | 'repositoryNodeId' | 'signal'>,
+    target: string,
+  ): Promise<AdoptedPullRequest> {
+    const repository = `${input.item.repositoryOwner}/${input.item.repositoryName}`;
+    const reference = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/([1-9][0-9]*)\/?$/iu.exec(
+      target,
+    );
+    if (!reference || reference[1]!.toLowerCase() !== repository.toLowerCase())
+      throw new Error('delivery-adoption-target-invalid');
+    const number = positiveInteger(Number(reference[2]), 'pull request number');
+    const observed = record(
+      await this.#github(
+        this.client,
+        [
+          'api',
+          `repos/${repository}/pulls/${number}`,
+          '--jq',
+          '{nodeId:.node_id,number,state,repositoryId:.base.repo.node_id,headRepositoryId:.head.repo.node_id,head:.head.sha,branch:.head.ref,base:.base.ref,authorId:.user.node_id,title,body}',
+        ],
+        input.signal,
+      ),
+      'pull request adoption',
+    );
+    if (
+      !input.repositoryNodeId ||
+      observed.repositoryId !== input.repositoryNodeId ||
+      observed.headRepositoryId !== input.repositoryNodeId ||
+      observed.state !== 'open' ||
+      observed.number !== number
+    )
+      throw new Error('delivery-adoption-identity-mismatch');
+    const head = requiredString(observed.head, 'pull request head', 64);
+    if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-adoption-head-invalid');
+    parseIssue(
+      await this.#github(
+        this.client,
+        [
+          'api',
+          `repos/${repository}/issues/${input.item.number}`,
+          '--jq',
+          '{databaseId:.id,nodeId:.node_id,number,title}',
+        ],
+        input.signal,
+      ),
+      input.item,
+    );
+    return {
+      pullRequestNodeId: requiredString(observed.nodeId, 'pull request node id', 255),
+      pullRequestNumber: number,
+      branch: requiredString(observed.branch, 'pull request branch', 255),
+      base: requiredString(observed.base, 'pull request base', 255),
+      head,
+      authorId: requiredString(observed.authorId, 'pull request author', 255),
+      title: requiredString(observed.title, 'pull request title', 512),
+      body: boundedString(observed.body ?? '', 'pull request body', 65536),
+    };
+  }
   async inspect(
     input: IssueDeliveryInput,
   ): Promise<GitHubNotificationIssueDeliveryReceipt | undefined> {
@@ -215,7 +284,7 @@ export default class IssueDeliveryProvider {
       ),
       input.item,
     );
-    if (!(await this.#linkedIssue(input, pullRequest)))
+    if (!input.adopted && !(await this.#linkedIssue(input, pullRequest)))
       throw new Error('github-delivery-linkage-unverified');
     const observed = record(
       await this.#github(
@@ -321,8 +390,8 @@ export default class IssueDeliveryProvider {
           nodeId: pullRequest.itemNodeId,
           repositoryId: input.repositoryNodeId,
           headRepositoryId: input.repositoryNodeId,
-          authorId: github.identity.nodeId,
-          baseRef: input.item.repositoryDefaultBranch,
+          authorId: input.adopted?.authorId ?? github.identity.nodeId,
+          baseRef: input.adopted?.base ?? input.item.repositoryDefaultBranch,
           headRef: branch,
           state: 'open',
           number: pullRequest.number,
@@ -348,7 +417,10 @@ export default class IssueDeliveryProvider {
         await this.delay(delays[attempt]!, input.signal);
       }
     }
-    if (!normalize && pullRequest.baseRef !== input.item.repositoryDefaultBranch) {
+    if (
+      !normalize &&
+      pullRequest.baseRef !== (input.adopted?.base ?? input.item.repositoryDefaultBranch)
+    ) {
       throw new Error('The task pull request targets a different base branch.');
     }
     if (!normalize && input.headSha === undefined) {
@@ -372,7 +444,7 @@ export default class IssueDeliveryProvider {
           'GitHub returned an invalid pull request author.',
         );
       }
-      if (authorNodeId !== github.identity.nodeId) {
+      if (authorNodeId !== (input.adopted?.authorId ?? github.identity.nodeId)) {
         throw new GitHubIssueDeliveryError(
           'identity-mismatch',
           'The task pull request was not created by the active agent.',

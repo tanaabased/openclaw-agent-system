@@ -1,3 +1,4 @@
+import recoverAssignmentClaim from '../agent/assignment-claim-recovery.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -100,6 +101,41 @@ describe('agent/assignment-claim', () => {
     };
     return Promise.all([pass(0, 'first', override), pass(1, 'first', override)]);
   };
+
+  it('should transfer only the exact accepted local claim and converge after reservation', async () => {
+    await pass(0, 'first');
+    await pass(0, 'second');
+    await acceptAssignmentClaim({ store: stores[0]!, client, source, nativeReceipt: 'old-chat' });
+    const recover = (
+      operation: 'preview' | 'reserve' | 'accept',
+      successorReceipt?: string,
+      index = 0,
+    ) =>
+      recoverAssignmentClaim({
+        store: stores[index]!,
+        client,
+        source,
+        predecessorReceipt: 'old-chat',
+        recoveryId: 'exact-recovery',
+        operation,
+        successorReceipt,
+      });
+    const before = structuredClone(comments);
+    assert.ok(await recover('preview'));
+    await assert.rejects(recover('reserve', undefined, 1), /claim-recovery-owner-unresolved/);
+    await recover('reserve');
+    await recover('reserve');
+    assert.equal((await pass(0, 'third')).code, 'claim-recovery-reserved');
+    await assert.rejects(
+      acceptAssignmentClaim({ store: stores[0]!, client, source, nativeReceipt: 'old-chat' }),
+      /claim-recovery-reserved/,
+    );
+    await recover('accept', 'new-chat');
+    await recover('accept', 'new-chat');
+    await assert.rejects(recover('accept', 'competing-chat'), /claim-native-receipt-conflict/);
+    assert.deepEqual(comments, before);
+    assert.equal(writes, 1);
+  });
 
   it('should admit only the earliest claimant on a later pass and clean only the loser', async () => {
     await race();

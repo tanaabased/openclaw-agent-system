@@ -6,7 +6,7 @@ import type { DispatchRecord } from './codex-dispatch-state.ts';
 function reserved(record: DispatchRecord): boolean {
   if (record.retirement && record.nativeInactive !== undefined) return !record.nativeInactive;
   if (record.denial) return false;
-  if (record.reset || !record.request) return false;
+  if (record.supersededBy || record.reset || !record.request) return false;
   const progress = issueWorkflowProgress(record);
   const { action } = progress;
   return (

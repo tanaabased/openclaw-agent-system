@@ -38,6 +38,7 @@ export default async function reconcileCodexLifecycle(
   if (
     !snapshot.records.some(
       (record) =>
+        !record.supersededBy &&
         !record.retired &&
         !record.reset &&
         (manual?.id === record.id ||

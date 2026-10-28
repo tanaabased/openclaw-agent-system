@@ -22,7 +22,7 @@ export default function assessmentOwner<
   });
   if (ownership.status === 'ambiguous') throw new Error('assessment-managed-owner-ambiguous');
   const { owner: record, caller } = ownership;
-  if (ownership.status === 'historical' || caller?.retired || caller?.reset)
+  if (ownership.status === 'historical' || caller?.retired || caller?.reset || caller?.supersededBy)
     throw new Error('assessment-managed-context-invalid');
   if (caller && caller !== record) throw new Error('assessment-managed-target-mismatch');
   if (!record) return;

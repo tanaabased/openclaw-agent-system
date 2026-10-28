@@ -203,6 +203,7 @@ export const dispatchRecordSchema = Type.Object(
     clientThreadId: Type.Optional(text),
     receiptThreadId: Type.Optional(text),
     delivery: Type.Optional(codexDeliveryStateSchema),
+    deliveryHistory: Type.Optional(Type.Array(codexDeliveryStateSchema)),
     continuation: Type.Optional(codexContinuationStateSchema),
     feedback: Type.Optional(codexFeedbackSchema),
     renameRequested: Type.Optional(Type.Boolean()),

@@ -1,4 +1,5 @@
 interface Delivery {
+  adopted?: unknown;
   pullRequest?: { pullRequestNumber: number };
   reconciled?: boolean;
   attached?: boolean;
@@ -11,6 +12,7 @@ export interface IssueWorkflowState {
   retired?: unknown;
   retirement?: unknown;
   reset?: unknown;
+  supersededBy?: string;
   handoff?: unknown;
   blocker?: string;
   retry?: unknown;
@@ -49,6 +51,7 @@ type Progress = {
 
 /** unfinished work is shared; native custody and live authorization remain with each host. */
 export default function issueWorkflowProgress(record: IssueWorkflowState): Progress {
+  if (record.supersededBy) return { action: 'stopped', status: 'superseded' };
   if (record.retirement)
     return { action: 'stopped', status: record.retired ? 'retired' : 'retirement-pending' };
   if (
@@ -99,7 +102,11 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
       (work?.implementation ||
         work?.turn ||
         (continuation && !['delivery', 'complete'].includes(continuation.phase!))));
-  if (!implementing && (result?.outcome === 'done' || delivery?.pullRequest)) {
+  const observationOnly = Boolean(delivery?.adopted && !delivery.pushedHead);
+  if (
+    !implementing &&
+    (result?.outcome === 'done' || (delivery?.pullRequest && !observationOnly))
+  ) {
     const published =
       delivery?.pullRequest &&
       delivery.reconciled &&

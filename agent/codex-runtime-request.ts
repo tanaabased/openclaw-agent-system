@@ -17,6 +17,7 @@ const actions: Record<string, readonly string[]> = {
     'retry-denied',
     'reset',
     'retire',
+    'recover',
   ],
   continuation: [
     'next',
@@ -28,7 +29,16 @@ const actions: Record<string, readonly string[]> = {
     'retry',
     'retry-denied',
   ],
-  delivery: ['prepare', 'publish', 'reconcile', 'compose', 'candidate', 'announce', 'present'],
+  delivery: [
+    'bind',
+    'prepare',
+    'publish',
+    'reconcile',
+    'compose',
+    'candidate',
+    'announce',
+    'present',
+  ],
   feedback: [
     'reply',
     'implementation-context',

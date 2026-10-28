@@ -133,9 +133,10 @@ export default class OpenClawNotifications {
         );
       const items: GitHubNotificationStatusResult['items'] = [...latest.values()].map((item) => {
         const waiting = pending.find((entry) => entry.intake.id === item.id);
+        const matching = journal.records.filter((entry) => entry.issueKey === issueKey(item));
         const record = waiting
           ? waiting.record
-          : journal.records.findLast((entry) => entry.issueKey === issueKey(item));
+          : (matching.findLast((entry) => !entry.manualIssue?.fresh) ?? matching.at(-1));
         const prepared = Boolean(
           record?.worktree && record.threadId && record.sessionCreation?.verified,
         );

@@ -1,3 +1,5 @@
+import { dispatchGit, type DispatchGit } from './codex-dispatch-project.ts';
+import recoverIssueTask from './issue-task-recovery.ts';
 import { type CleanupConfiguration } from './cleanup-configuration.ts';
 import { automationHash } from './automation-hash.ts';
 import assignmentRetirement from './assignment-retirement.ts';
@@ -6,13 +8,15 @@ import type { DispatchState, DispatchRecord } from './codex-dispatch-state.ts';
 import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
+import connectCodexGitHubAccount from './codex-github-client.ts';
+import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
 
 type Native = ReturnType<typeof codexDispatchNative>;
 
 export default async function recoverDispatch(
   input: Record<string, unknown>,
   context: {
-    action: 'retire' | 'reset' | 'retry-denied';
+    action: 'recover' | 'retire' | 'reset' | 'retry-denied';
     state: DispatchState;
     record: DispatchRecord;
     intake: IntakeRecord;
@@ -27,6 +31,9 @@ export default async function recoverDispatch(
     revalidate(): Promise<unknown>;
     connect(): Promise<GitHubNotificationIntakeClient>;
     withNative<T>(operation: (host: Native) => Promise<T>): Promise<T>;
+    deliveryConnect?: typeof connectCodexGitHubAccount;
+    git?: DispatchGit;
+    claim?: (operation: 'preview' | 'reserve') => Promise<unknown>;
   },
 ) {
   const {
@@ -45,6 +52,89 @@ export default async function recoverDispatch(
     connect,
     withNative,
   } = context;
+  if (action === 'recover') {
+    if (state.records.some((entry) => [entry.threadId, entry.receiptThreadId].includes(caller)))
+      throw new Error('dispatch-operator-caller-required');
+    const operatorInput = () => withNative((host) => host.operatorInput(caller));
+    return recoverIssueTask({
+      ...context,
+      operator: await operatorInput(),
+      operatorInput,
+      digest: input.digest,
+      mode: record.issueMode,
+      create: (record) => record,
+      effects: {
+        nativeDenial: Boolean(record.denial),
+        pendingPush: Boolean(record.delivery?.pendingPush),
+        uncertainPrCreation: Boolean(
+          record.delivery?.creationAttempted && !record.delivery.pullRequest,
+        ),
+        uncertainAnnouncement: Boolean(
+          record.delivery?.announcement?.attempted && !record.delivery.announcement.receipt,
+        ),
+        pendingSummaryTurn: Boolean(record.summaryRecovery && !record.summaryRecovery.ended),
+        pendingAutoDecision: Boolean(record.autoDecision && !record.autoDecision.ended),
+        unfinishedImplementation: Boolean(
+          record.continuation && record.continuation.phase !== 'complete',
+        ),
+        pendingFeedback: record.feedback?.events.some(
+          (event) => !['complete', 'cancelled', 'held'].includes(event.phase),
+        ),
+        assignmentClaim: Boolean((record.claimId || record.claimAccepted) && !context.claim),
+      },
+      observe: async () => {
+        const native = await withNative((host) =>
+          host.find({
+            sourceThreadId: record.sourceThreadId,
+            prompt: record.request!.prompt,
+            createdAfter: record.createdAt,
+            threadId: record.threadId,
+            observationOnly: true,
+          }),
+        );
+        if (
+          !native ||
+          native.id !== record.threadId ||
+          native.cwd !== record.worktree ||
+          native.status !== 'idle' ||
+          native.turnStatus !== 'completed' ||
+          !native.turnId ||
+          !native.turnEnded
+        )
+          throw new Error('dispatch-recovery-chat-active-or-unverified');
+        return native;
+      },
+      adopt: async () => {
+        const connected = await (context.deliveryConnect ?? connectCodexGitHubAccount)(
+          intake.workspaceDir,
+          AbortSignal.timeout(60000),
+        );
+        if (connected.account.identity.nodeId !== intake.receiving.nodeId)
+          throw new Error('delivery-adoption-account-changed');
+        const { repo } = (await revalidate()) as { repo: { defaultBranch: string } };
+        const adopted = await new IssueDeliveryProvider(connected.account).adopt(
+          {
+            repositoryNodeId: intake.repository.nodeId,
+            item: {
+              number: intake.issue.number,
+              itemDatabaseId: intake.issue.databaseId,
+              itemNodeId: intake.issue.nodeId,
+              repositoryOwner: intake.repository.owner.login,
+              repositoryName: intake.repository.name,
+              repositoryDefaultBranch: repo.defaultBranch,
+            },
+          },
+          input.pullRequest as string,
+        );
+        for (const branch of [adopted.branch, adopted.base])
+          await (context.git ?? dispatchGit)(intake.workspaceDir, [
+            'check-ref-format',
+            `refs/heads/${branch}`,
+          ]);
+        return adopted;
+      },
+    });
+  }
   if (action === 'retire') {
     if (
       state.records.some(
