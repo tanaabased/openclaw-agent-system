@@ -225,6 +225,29 @@ describe('agent/codex-automations', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it('should rename and remove labels through native updates without replacing jobs', async () => {
+    await syncOne();
+    const [before] = await readCodexAutomations(codexHome);
+    assert.equal(before!.definition.name, 'fixture: review');
+    for (const label of ['🔄 NIGHTLY REFRESH', '🔄 RENAMED', undefined]) {
+      await manifest(job(label ? `    display-name: "${label}"\n` : ''));
+      const plan = await inspect();
+      assert.equal(plan.actions.length, 1);
+      assert.equal(plan.actions[0]!.mode, 'update');
+      assert.equal(plan.actions[0]!.id, before!.id);
+      assert.deepEqual(plan.actions[0]!.expected, {
+        ...before!.definition,
+        name: label ?? 'fixture: review',
+      });
+      await syncOne();
+      const saved = await readCodexAutomations(codexHome);
+      assert.equal(saved.length, 1);
+      assert.equal(saved[0]!.id, before!.id);
+      assert.equal(saved[0]!.definition.name, label ?? 'fixture: review');
+      assert.equal((await inspect()).status, 'aligned');
+    }
+  });
+
   it('should keep reviewed zoned schedules pending until saved and reuse their native identity', async () => {
     const zoned = (zone = 'Europe/London', hour = 8) =>
       job().replace('every 1 hour', `{ cron: "0 ${hour} * * *", timezone: "${zone}" }`);
@@ -511,6 +534,36 @@ describe('agent/codex-automations', () => {
       1,
     );
     assert.equal((await readCodexAutomations(codexHome)).length, 2);
+    const beforeRename = (await readCodexAutomations(codexHome)).find(
+      ({ id }) => id === 'replacement',
+    )!;
+    assert.equal(beforeRename.definition.name, 'fixture: review');
+    for (const label of ['🔄 NIGHTLY REFRESH', '🔄 RENAMED', undefined]) {
+      await manifest(
+        job(
+          `    thread: { id: activity, name: Activity }\n${label ? `    display-name: "${label}"\n` : ''}`,
+        ),
+      );
+      const plan = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+      const action = plan.actions[0]!;
+      assert.equal(plan.actions.length, 1);
+      assert.equal(action.mode, 'update');
+      assert.equal(action.id, 'replacement');
+      assert.deepEqual(action.expected, {
+        ...beforeRename.definition,
+        name: label ?? 'fixture: review',
+      });
+      await prepareCodexAutomation(pluginData, plan.digest, inputs(), dependencies);
+      await nativeWrite(action.expected, action.id);
+      await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, dependencies);
+      assert.equal(
+        (await inspectCodexAutomations(pluginData, inputs(), dependencies)).status,
+        'aligned',
+      );
+      assert.equal(creates, 1);
+      assert.deepEqual([...conversations.values()], [{ id: 'thread-1', name: 'Activity' }]);
+      assert.equal((await readCodexAutomations(codexHome)).length, 2);
+    }
   });
 
   it('should list owned state through the planner and report native occurrence gaps without writes', async () => {

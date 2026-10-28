@@ -141,6 +141,7 @@ Operator [list](./CLI.md#openclaw-agent-system-automations-list),
 
 | Field             | Type                                                       | Required         | Default       | Description                                                                    |
 | ----------------- | ---------------------------------------------------------- | ---------------- | ------------- | ------------------------------------------------------------------------------ |
+| `display-name`    | nonblank single-line string, up to 200 UTF-16 code units   | no               | runtime-owned | Automation label; independent of the persistent conversation name.             |
 | `enabled`         | boolean                                                    | no               | `true`        | Desired enabled state.                                                         |
 | `id`              | lowercase kebab-case string                                | yes              | none          | Stable unique ID within the workspace.                                         |
 | `overrides`       | runtime mapping                                            | no               | none          | Prompt-only `openclaw` / `codex` settings below.                               |
@@ -155,6 +156,24 @@ Operator [list](./CLI.md#openclaw-agent-system-automations-list),
 
 Use exactly one of `run`, `prompt`, or `payload`. Commands reuse
 [setup command syntax](#syntax), without setup checks, steps, or timeout defaults.
+
+Set `display-name` to give the automation a readable label, including emoji. Outer
+whitespace is trimmed; NUL and line breaks are rejected. Codex uses the label as its
+native automation `name`; OpenClaw uses native `displayName`, retaining its stable
+job `name`. Without a label, Codex uses `<agent-id>: <automation-id>` and OpenClaw
+uses `Agent System: <automation-id>`. Changing or removing the label through normal
+synchronization updates the existing job or restores that default; it does not
+replace the job, change its schedule, or rename its chat.
+
+```yaml
+automations:
+  - id: nightly-refresh
+    display-name: '🔄 NIGHTLY REFRESH'
+    schedule: every 24 hours
+    prompt: Refresh the workspace summary.
+    thread: { name: NIGHTLY REFRESH }
+```
+
 Each `overrides.openclaw` or `overrides.codex` object accepts only:
 
 | Field    | Type                                              | Required | Default                                |
