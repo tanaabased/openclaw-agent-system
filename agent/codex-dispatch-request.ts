@@ -25,7 +25,11 @@ const schemas = {
     id,
     digest,
     assessment: assessmentSchema,
-    title: Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9 -]{2,79}$' }),
+    title: Type.String({
+      minLength: 1,
+      maxLength: 80,
+      pattern: '^(?=.*\\S)[^\\u0000-\\u001F\\u007F-\\u009F]+$',
+    }),
     fallback: Type.Optional(Type.Literal('default')),
   }),
   reconcile: object({ id, receipt: Type.Optional(Type.Unknown()) }),
