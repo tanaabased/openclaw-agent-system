@@ -1,3 +1,4 @@
 schema-version: 1
 agent:
   id: other
+  name: Native Retirement Control
