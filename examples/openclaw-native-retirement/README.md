@@ -70,6 +70,9 @@ curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence
 ## Cleanup
 
 ```bash
+# should report strict mock failures before stopping the provider
+curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics
+
 # should stop the isolated gateway and strict provider
 openclaw-gateway stop --timeout 340
 openclaw-aimock stop
