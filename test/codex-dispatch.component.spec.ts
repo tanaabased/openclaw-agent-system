@@ -4,6 +4,7 @@ import {
   intakeFixture,
   removeFixtureAssignment,
 } from './github-intake-fixture.ts';
+import { retainedProjectWork } from './project-pickup-fixture.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
 import cleanupConfiguration from '../agent/cleanup-configuration.ts';
 import CodexAssignmentClaims, { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
@@ -4948,6 +4949,25 @@ describe('agent/codex-dispatch', () => {
     assert.equal(after.worktree, before.worktree);
     assert.deepEqual(after.result, before.result);
     assert.deepEqual(after.continuation!.attempt!.request, before.continuation!.attempt!.request);
+  });
+
+  it('should carry scoped work from admission through assessment and continuation', async () => {
+    const selected = await selectCodexIntake(pluginData, deps);
+    await selected.store.exclusive(async (state, save) => {
+      const intake = state!.records[0]!;
+      intake.evidence.projectWork = retainedProjectWork(intake, 'codex');
+      intake.evidence.mode = 'work';
+      await save(state!);
+    });
+    const milestone = { nodeId: 'MI_pilot', number: 10, state: 'open' as const };
+    if (fixture.item.itemType === 'issue') fixture.item.milestone = milestone;
+    fixture.client.getMilestone = async () => milestone;
+    const work = await workIssue(result, 'Follow the plan.', 'company:implement', 'plan');
+    const assessment = await request('context', { id: work.id }, { threadId: native!.id });
+    assert.equal(assessment.mode, 'work');
+    assert.equal((await work.run('next')).status, 'prepared');
+    work.receive();
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
   });
 
   it('should apply live work mode to a plan admission without reinstalling', async () => {

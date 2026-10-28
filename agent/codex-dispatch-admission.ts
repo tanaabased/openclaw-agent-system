@@ -1,3 +1,4 @@
+import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   managedPullRequest,
   dispatchAdmission,
@@ -429,6 +430,9 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     record = {
       id: automationHash([current.store.location.scope, randomUUID()]),
       intakeId: intake.id,
+      ...(!('initiation' in intake) && intake.evidence.projectWork
+        ? { projectWork: structuredClone(intake.evidence.projectWork) }
+        : {}),
       issueKey: issueKey(intake),
       sourceThreadId: activation.sourceThreadId,
       phase: 'routing',
@@ -727,10 +731,7 @@ export async function prepareDispatch(
         withNative(current, deps, (native) => native.assessmentSkill(record.project!.path, id)),
     });
     record.assessment = selected.selection;
-    record.issueMode =
-      record.manualIssue?.selections?.mode ??
-      current.manifest.github?.notifications?.issueAssignment?.mode ??
-      'auto';
+    record.issueMode = issueWorkflowMode(current.manifest.github?.notifications, record);
     if (record.issueMode === 'work' || record.issueMode === 'auto') {
       if (!record.manualIssue)
         await (deps.activation ?? inspectCodexDispatchActivation)(

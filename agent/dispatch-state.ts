@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { projectWorkSchema } from './project-pickup-authority.ts';
 import { issueKey } from './dispatch-pending.ts';
 import { adoptedPullRequestSchema } from './delivery-state.ts';
 import ColdHistory from './cold-history.ts';
@@ -47,6 +48,7 @@ export const assessmentStageReceiptSchema = Type.Object(
   { additionalProperties: false },
 );
 export const dispatchRecordProperties = {
+  projectWork: Type.Optional(projectWorkSchema),
   retainedHistory: Type.Optional(retainedHistorySchema),
   directAssessments: Type.Optional(assessmentEntriesSchema),
   providerDiagnostic: Type.Optional(providerDiagnosticSchema),

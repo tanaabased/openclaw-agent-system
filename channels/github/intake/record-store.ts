@@ -1,4 +1,5 @@
 import { providerDiagnosticSchema } from '../../../utils/provider-diagnostic.ts';
+import { projectWorkSchema, projectWorkMatches } from '../../../agent/project-pickup-authority.ts';
 import { historySoftBytes } from '../../../agent/history-state.ts';
 import { refreshStateSnapshot } from '../../../core/merge-state-snapshot.ts';
 import { assertNotificationManagement } from '../../../agent/notification-reset-state.ts';
@@ -57,6 +58,7 @@ export const intakeRecordSchema = Type.Object(
         repositoryReadable: Type.Literal(true),
         ownerPinned: Type.Literal(true),
         actorPinned: Type.Literal(true),
+        projectWork: Type.Optional(projectWorkSchema),
       },
       { additionalProperties: false },
     ),
@@ -221,6 +223,8 @@ export default class IntakeRecordStore {
             r.receiving.nodeId !== value.account.nodeId ||
             r.workspaceDir !== value.workspaceDir ||
             r.agentId !== value.agentId ||
+            (r.evidence.projectWork !== undefined &&
+              !projectWorkMatches(r.evidence.projectWork, r)) ||
             r.id !==
               automationHash([
                 value.scope,

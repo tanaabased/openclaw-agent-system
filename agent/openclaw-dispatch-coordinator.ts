@@ -1,3 +1,4 @@
+import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   managedTargetUrl,
   dispatchAdmission,
@@ -235,16 +236,9 @@ export default class OpenClawDispatchCoordinator {
       (record) =>
         (openClawDecisionPending(
           record,
-          record.manualIssue?.selections?.mode ??
-            manifest.github?.notifications?.issueAssignment?.mode ??
-            'auto',
+          issueWorkflowMode(manifest.github?.notifications, record),
         ) ||
-          openClawWorkSlot(
-            record,
-            record.manualIssue?.selections?.mode ??
-              manifest.github?.notifications?.issueAssignment?.mode ??
-              'auto',
-          )) &&
+          openClawWorkSlot(record, issueWorkflowMode(manifest.github?.notifications, record))) &&
         (openClawItemOccupied(record) || capacity.available > 0),
     );
     const responsePending = state.records.some((record) => openClawResponseEligible(record));
@@ -525,15 +519,11 @@ export default class OpenClawDispatchCoordinator {
       .flatMap((record) => {
         const slot = openClawWorkSlot(
           record,
-          record.manualIssue?.selections?.mode ??
-            manifest.github?.notifications?.issueAssignment?.mode ??
-            'auto',
+          issueWorkflowMode(manifest.github?.notifications, record),
         );
         const decision = openClawDecisionPending(
           record,
-          record.manualIssue?.selections?.mode ??
-            manifest.github?.notifications?.issueAssignment?.mode ??
-            'auto',
+          issueWorkflowMode(manifest.github?.notifications, record),
         );
         return slot || decision || openClawResponseEligible(record)
           ? [
@@ -684,6 +674,9 @@ export default class OpenClawDispatchCoordinator {
     const record: OpenClawDispatchRecord = pending.record ?? {
       id: automationHash([current.journal.scope, randomUUID()]),
       intakeId: pending.intake.id,
+      ...(!('initiation' in pending.intake) && pending.intake.evidence.projectWork
+        ? { projectWork: structuredClone(pending.intake.evidence.projectWork) }
+        : {}),
       issueKey: issueKey(pending.intake),
       sourceThreadId,
       phase: 'routing',

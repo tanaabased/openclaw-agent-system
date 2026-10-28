@@ -6,6 +6,7 @@ import type {
   GitHubAssignmentEvent,
   GitHubCanonicalWorkItem,
   GitHubIdentity,
+  GitHubMilestone,
   GitHubRepositoryIdentity,
 } from './work-item.ts';
 
@@ -69,6 +70,7 @@ export interface GitHubNotificationIntakeClient {
   ): Promise<GitHubAssignedItemDiscovery>;
   getItem(owner: string, name: string, number: number): Promise<GitHubCanonicalWorkItem>;
   getRepository(owner: string, name: string): Promise<GitHubRepositoryIdentity>;
+  getMilestone?(owner: string, name: string, number: number): Promise<GitHubMilestone>;
   listAssignmentEvents(
     owner: string,
     name: string,

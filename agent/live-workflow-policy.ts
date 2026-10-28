@@ -1,4 +1,6 @@
 import type { AgentManifest } from '../manifest/types.ts';
+import issueWorkflowMode from './issue-workflow-mode.ts';
+import { projectWorkMatches } from './project-pickup-authority.ts';
 import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 
@@ -13,9 +15,16 @@ export default function liveWorkflowPolicy(
   if ('initiation' in intake && effect === 'assignment') return;
   // admission rules apply once; live mode governs the first implementation transition.
   if (effect === 'implementation')
-    return (('initiation' in intake ? intake.selections?.mode : undefined) ??
-      policy?.issueAssignment?.mode ??
-      'auto') === 'plan'
+    return issueWorkflowMode(
+      policy,
+      'initiation' in intake
+        ? { manualIssue: intake }
+        : {
+            projectWork: projectWorkMatches(intake.evidence?.projectWork, intake)
+              ? intake.evidence?.projectWork
+              : undefined,
+          },
+    ) === 'plan'
       ? 'implementation-disabled'
       : undefined;
   if (effect !== 'assignment' || 'initiation' in intake) return;
@@ -28,6 +37,10 @@ export default function liveWorkflowPolicy(
   )
     return 'repository-outside-workflow';
   if (
+    !projectWorkMatches(
+      intake.evidence?.projectWork?.pickup ? intake.evidence?.projectWork : undefined,
+      intake,
+    ) &&
     !policy.issueAssignment.allowed.some((actor) =>
       githubIdentityMatches(actor, intake.assignment.actor),
     )

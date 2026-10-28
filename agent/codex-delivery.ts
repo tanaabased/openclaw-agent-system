@@ -1,3 +1,4 @@
+import issueWorkflowMode from './issue-workflow-mode.ts';
 import { managedPullRequest, managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
 
 import bindIssuePullRequest from './issue-pr-binding.ts';
@@ -476,10 +477,7 @@ export default async function runCodexDelivery(
         )
           throw new Error('delivery-continuation-stopped');
         const transition = issueProgression(record, {
-          mode:
-            record.manualIssue?.selections?.mode ??
-            current.manifest.github?.notifications?.issueAssignment?.mode ??
-            'auto',
+          mode: issueWorkflowMode(current.manifest.github?.notifications, record),
           now: (deps.now ?? Date.now)(),
         });
         if (

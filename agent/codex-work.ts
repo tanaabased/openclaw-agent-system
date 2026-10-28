@@ -1,3 +1,4 @@
+import issueWorkflowMode from './issue-workflow-mode.ts';
 import codexWorkContext from './codex-work-context.ts';
 import recordCodexWorkResult from './codex-work-result.ts';
 import advanceCodexWorkTurn from './codex-work-turn.ts';
@@ -27,10 +28,7 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
   const { input, deps, current, caller, native, admissions, save } = context;
   if (input.action === 'next' || input.action === 'context')
     for (const record of state.records) {
-      const liveMode =
-        record.manualIssue?.selections?.mode ??
-        current.manifest.github?.notifications?.issueAssignment?.mode ??
-        'auto';
+      const liveMode = issueWorkflowMode(current.manifest.github?.notifications, record);
       if (input.action === 'context' && record.id !== input.id) continue;
       if (input.action === 'context' && caller !== record.threadId)
         throw new Error('continuation-issue-caller-required');
@@ -104,10 +102,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     save,
     signal,
   } = context;
-  const liveMode =
-    record.manualIssue?.selections?.mode ??
-    current.manifest.github?.notifications?.issueAssignment?.mode ??
-    'auto';
+  const liveMode = issueWorkflowMode(current.manifest.github?.notifications, record);
   const retryDenied = input.action === 'retry-denied';
   const retry = input.action === 'retry' || retryDenied;
   try {
@@ -199,9 +194,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       if (held) throw new WorkflowPolicyHeld(held);
       if (
         enteringImplementation &&
-        (record.manualIssue?.selections?.mode ??
-          live.manifest.github?.notifications?.issueAssignment?.mode ??
-          'auto') !== liveMode
+        issueWorkflowMode(live.manifest.github?.notifications, record) !== liveMode
       )
         throw new WorkflowPolicyHeld('workflow-mode-updated');
       return live;

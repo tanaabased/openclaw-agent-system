@@ -9,6 +9,7 @@ GitHub authorization without consuming the manifest token or managing OpenClaw c
 
 - [`github`](#github)
 - [`github.issue-assignment`](#githubissue-assignment)
+- [`github.project-pickup`](#githubproject-pickup)
 - [`github.review-request`](#githubreview-request)
 - [Common Types](#common-types)
   - [Identity Lists](#identity-lists)
@@ -82,6 +83,32 @@ an installation UUID does not transfer that work. OpenClaw provides
 
 Workflow declarations default to `3`, the only supported version. Explicit unsupported
 versions are rejected. GitHub CLI-only configuration does not require this field.
+
+## `github.project-pickup`
+
+Declares the policy for one repository and milestone. It requires `issue-assignment`
+and a repository within `allowed-repository-owners`; it does not expand GitHub access
+or approved assignment and feedback authors.
+
+> [!IMPORTANT]
+> This release validates the policy but does not activate project pickup. Scheduled
+> selection and enrollment are not available yet in either runtime. Adding this key
+> or running Install does not self-assign issues or change existing held work to Work.
+
+| Field                | Required | Meaning                                                                                                                                                                                        |
+| -------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `paused`             | no       | Defaults to `false`; desired pause state for future pickup scheduling.                                                                                                                         |
+| `schedule`           | yes      | Existing [recurring schedule syntax](../../MANIFEST.md#automations): cron with an optional IANA timezone, or `every`. One-shot schedules are rejected. Native adapter limitations still apply. |
+| `window-minutes`     | yes      | Positive integer duration for each pickup window.                                                                                                                                              |
+| `selection.guidance` | no       | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                   |
+| `projects`           | yes      | Exactly one entry with `repository: owner/name` and `milestone: {number: 10, policy: only}`. The milestone number must be positive. Other policies and multi-project selection are rejected.   |
+
+The shared policy checks open issues against the exact repository and an open
+milestone. Missing, inaccessible, or closed milestones produce diagnostics; an empty
+backlog supplies no pickup. Runtime-owned enrollment and assignment evidence are
+required before a new scoped assignment can receive Work. Existing actor checks,
+work-size assessment, capacity, cancellation, merge, and release boundaries remain
+in force. The policy does not add a new numeric work-size limit.
 
 ## `github.issue-assignment`
 

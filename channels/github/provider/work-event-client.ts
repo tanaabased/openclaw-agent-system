@@ -97,6 +97,10 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
     return this.#items.getRepository(owner, name);
   }
 
+  getMilestone(owner: string, name: string, number: number) {
+    return this.#items.getMilestone(owner, name, number);
+  }
+
   getItem(owner: string, name: string, number: number): Promise<GitHubCanonicalWorkItem> {
     return this.#items.getItem(owner, name, number);
   }

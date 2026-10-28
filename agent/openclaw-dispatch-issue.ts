@@ -1,3 +1,4 @@
+import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   managedTargetUrl,
   managedPullRequest,
@@ -94,12 +95,7 @@ export default class OpenClawDispatchIssue {
       }
     }
     if (
-      openClawDecisionPending(
-        record,
-        record.manualIssue?.selections?.mode ??
-          manifest.github?.notifications?.issueAssignment?.mode ??
-          'auto',
-      )
+      openClawDecisionPending(record, issueWorkflowMode(manifest.github?.notifications, record))
     ) {
       const assertDecision = async () => {
         await authority.assertCurrent?.();
@@ -109,9 +105,7 @@ export default class OpenClawDispatchIssue {
           !record.decisionTurn &&
           !openClawDecisionPending(
             record,
-            record.manualIssue?.selections?.mode ??
-              live.manifest.github?.notifications?.issueAssignment?.mode ??
-              'auto',
+            issueWorkflowMode(live.manifest.github?.notifications, record),
           )
         )
           throw new WorkflowPolicyHeld('workflow-mode-updated');
@@ -147,10 +141,7 @@ export default class OpenClawDispatchIssue {
       authority.signal?.throwIfAborted();
       const live = await this.context.validateLocal(manifest, workspace, record, true);
       const transition = issueProgression(record, {
-        mode:
-          record.manualIssue?.selections?.mode ??
-          live.manifest.github?.notifications?.issueAssignment?.mode ??
-          'auto',
+        mode: issueWorkflowMode(live.manifest.github?.notifications, record),
         now,
       });
       if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
@@ -190,10 +181,7 @@ export default class OpenClawDispatchIssue {
           return advanceOpenClawWork({
             record,
             reconcileOnly,
-            mode:
-              record.manualIssue?.selections?.mode ??
-              live.manifest.github?.notifications?.issueAssignment?.mode ??
-              'auto',
+            mode: issueWorkflowMode(live.manifest.github?.notifications, record),
             selection,
             now,
             request,
@@ -560,11 +548,11 @@ export default class OpenClawDispatchIssue {
                 record,
                 caller,
                 operator,
-                mode:
-                  record.manualIssue?.selections?.mode ??
+                mode: issueWorkflowMode(
                   (await this.context.validateLocal(manifest, workspace, record, true)).manifest
-                    .github?.notifications?.issueAssignment?.mode ??
-                  'auto',
+                    .github?.notifications,
+                  record,
+                ),
                 now,
                 request,
                 config: this.context.dependencies.config(),

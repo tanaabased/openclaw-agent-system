@@ -1,3 +1,4 @@
+import issueWorkflowMode from './issue-workflow-mode.ts';
 import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
 import readRetainedHistory from './read-retained-history.ts';
@@ -188,10 +189,7 @@ export async function handoffDispatch(
     )
       throw new Error(record.continuation.code ?? 'continuation-implementation-blocked');
     const transition = issueProgression(record, {
-      mode:
-        record.manualIssue?.selections?.mode ??
-        current.manifest.github?.notifications?.issueAssignment?.mode ??
-        'auto',
+      mode: issueWorkflowMode(current.manifest.github?.notifications, record),
       now: (deps.now ?? Date.now)(),
       operator: native.followUpUserTurn,
     });
@@ -248,10 +246,7 @@ export async function assessDispatch(
 ) {
   const { pluginData, current, deps, now, signal, save, fresh } = tx;
   if (action === 'context')
-    record.issueMode =
-      record.manualIssue?.selections?.mode ??
-      current.manifest.github?.notifications?.issueAssignment?.mode ??
-      'auto';
+    record.issueMode = issueWorkflowMode(current.manifest.github?.notifications, record);
   if (action === 'summary') {
     if (!record.result || !native.turnId) throw new Error('assessment-summary-source-unavailable');
     const activate = () =>
@@ -395,9 +390,7 @@ export async function assessDispatch(
             previousResult: record.result,
             handoff: assessmentHandoff(
               record,
-              record.manualIssue?.selections?.mode ??
-                current.manifest.github?.notifications?.issueAssignment?.mode ??
-                'auto',
+              issueWorkflowMode(current.manifest.github?.notifications, record),
               'codex',
             ),
             previousResultDigest: automationHash(record.result),
@@ -426,10 +419,7 @@ export async function assessDispatch(
         id: record.id,
         previousResultDigest: record.result ? automationHash(record.result) : undefined,
       }),
-      mode:
-        record.manualIssue?.selections?.mode ??
-        current.manifest.github?.notifications?.issueAssignment?.mode ??
-        'auto',
+      mode: issueWorkflowMode(current.manifest.github?.notifications, record),
       instructions:
         'Read feedbackWork for retained plan revisions and responses before interpreting the current input. Historical responses supply context, not fresh authorization. ' +
         codexAssessmentInstructions +
@@ -502,9 +492,7 @@ export async function assessDispatch(
       previousResultDigest: automationHash(result),
       handoff: assessmentHandoff(
         record,
-        record.manualIssue?.selections?.mode ??
-          current.manifest.github?.notifications?.issueAssignment?.mode ??
-          'auto',
+        issueWorkflowMode(current.manifest.github?.notifications, record),
         'codex',
       ),
       presentation,

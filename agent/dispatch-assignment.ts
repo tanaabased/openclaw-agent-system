@@ -1,4 +1,5 @@
 import manualPullRequest from './manual-pull-request.ts';
+import { projectWorkMatches } from './project-pickup-authority.ts';
 import { managedPullRequest, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
@@ -182,5 +183,20 @@ export async function inspectAdmittedIssue(
   if (latest.nodeId !== record.assignment.nodeId) throw new Error('dispatch-assignment-superseded');
   if (!githubIdentityMatches(latest.actor, record.assignment.actor))
     throw new Error('dispatch-assignment-actor-changed');
+  const work = record.evidence?.projectWork;
+  if (work) {
+    if (!projectWorkMatches(work, record)) throw new Error('project-pickup-authority-mismatch');
+    const item = current.item;
+    if (item.itemType !== 'issue' || item.milestone?.nodeId !== work.enrollment.milestoneNodeId)
+      throw new Error('project-pickup-milestone-changed');
+    if (!client.getMilestone) throw new Error('project-pickup-milestone-unavailable');
+    const milestone = await client.getMilestone(
+      record.repository.owner.login,
+      record.repository.name,
+      item.milestone.number,
+    );
+    if (milestone.nodeId !== work.enrollment.milestoneNodeId || milestone.state !== 'open')
+      throw new Error('project-pickup-milestone-changed');
+  }
   return current;
 }

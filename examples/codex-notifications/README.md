@@ -212,6 +212,14 @@ node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-no
   | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "manifest-unknown-key")'
 test ! -d "$CODEX_HOME/automations"
 
+# should validate project pickup policy without activating a native schedule
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/project-pickup" \
+  | jq -e '.manifest.status == "valid"'
+test ! -d "$CODEX_HOME/automations"
+
 # should expose packaged dispatch without letting intake-only state launch work
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

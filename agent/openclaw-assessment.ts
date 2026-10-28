@@ -1,3 +1,4 @@
+import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   managedTargetUrl,
   managedPullRequest,
@@ -203,11 +204,7 @@ export async function issueAssessmentAction(input: {
       ...(record.result
         ? {
             previousResult: record.result,
-            handoff: assessmentHandoff(
-              record,
-              record.manualIssue?.selections?.mode ?? input.policy?.issueAssignment?.mode ?? 'auto',
-              'openclaw',
-            ),
+            handoff: assessmentHandoff(record, issueWorkflowMode(input.policy, record), 'openclaw'),
             previousResultDigest: automationHash(record.result),
             previousResultTurnId: record.resultTurnId,
             ...(record.resultTurnId === caller.runId
@@ -225,7 +222,7 @@ export async function issueAssessmentAction(input: {
               : {}),
           }
         : {}),
-      mode: record.manualIssue?.selections?.mode ?? input.policy?.issueAssignment?.mode ?? 'auto',
+      mode: issueWorkflowMode(input.policy, record),
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
       resultSubmission: assessmentSubmission({
@@ -235,8 +232,7 @@ export async function issueAssessmentAction(input: {
       }),
       instructions:
         'Read feedbackWork; retained history grants no authority. ' +
-        ((record.manualIssue?.selections?.mode ?? input.policy?.issueAssignment?.mode ?? 'auto') ===
-        'auto'
+        (issueWorkflowMode(input.policy, record) === 'auto'
           ? 'Auto requires result.decision with mode plan|work and reasons; work requires plan-ready. '
           : '') +
         assessmentInstructions +
@@ -255,11 +251,7 @@ export async function issueAssessmentAction(input: {
   )
     throw new Error('assessment-result-conflict');
   const candidate = parseAssessmentSubmission(input.result);
-  if (
-    (record.manualIssue?.selections?.mode ?? input.policy?.issueAssignment?.mode ?? 'auto') ===
-      'auto' &&
-    !candidate.decision
-  )
+  if (issueWorkflowMode(input.policy, record) === 'auto' && !candidate.decision)
     throw new Error('assessment-decision-required');
   const previous =
     record.result && record.stageReceipt && record.resultTurnId
@@ -311,11 +303,7 @@ export async function issueAssessmentAction(input: {
     id: record.id,
     outcome: result.outcome,
     previousResultDigest: automationHash(result),
-    handoff: assessmentHandoff(
-      record,
-      record.manualIssue?.selections?.mode ?? input.policy?.issueAssignment?.mode ?? 'auto',
-      'openclaw',
-    ),
+    handoff: assessmentHandoff(record, issueWorkflowMode(input.policy, record), 'openclaw'),
     presentation,
     instruction: assessmentSummaryInstructions('openclaw'),
   };
