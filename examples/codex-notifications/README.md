@@ -131,7 +131,7 @@ node "$runtime" intake inspect --plugin-data "$plugin_data" \
   | jq -e '.status == "blocked" and .code == "intake-activation-required" and .records == []'
 if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-activation-required"'
-printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
+printf '%s\n' '{"nativeInventory":{"schemaVersion":4,"sections":[],"unavailableHosts":[],"unavailableSources":[]}}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
   | jq -e 'any(.findings[]; .code == "automation-thread-sync-required") and (.conversations | length) == 1'
 node "$runtime" setup inspect --plugin-data "$plugin_data" \
   | jq -e 'any(.findings[]; .code == "github-notification-runtime-unsupported" and .status == "warning") and all(.findings[]; .code != "github-notification-runtime-unsupported" or .status != "blocked")'
@@ -300,7 +300,7 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/disabled-notification-data"
 node "$runtime" binding bind --plugin-data "$plugin_data" --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/disabled" --confirm \
   | jq -e '.status == "bound" and .preview.manifest.status == "valid"'
-printf '%s\n' '{}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
+printf '%s\n' '{"nativeInventory":{"schemaVersion":4,"sections":[],"unavailableHosts":[],"unavailableSources":[]}}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
   | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
 if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-automation-paused"'
@@ -310,19 +310,18 @@ test ! -d "$CODEX_HOME/automations"
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/notification-data" | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
+printf '%s\n' '{"nativeInventory":{"schemaVersion":4,"sections":[],"unavailableHosts":[],"unavailableSources":[]}}' | node "$runtime" automations plan --plugin-data "$root/notification-data" | jq -e '.status == "requires-native-app-sync" and any(.findings[]; .code == "automation-thread-sync-required")'
 test ! -d "$CODEX_HOME/rules"
 
-# should bind work preparation to the installed runtime in the native schedule request
+# should bind work preparation to the installed runtime with explicit sidebar fixtures
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
 sed 's/mode: auto/mode: work/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/work-agent.yaml"
 mv "$root/work-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/work-plan.json"
-jq '{digest:.digest}' "$root/work-plan.json" | node "$runtime" automations threads-sync --plugin-data "$plugin_data" | jq -e '.status == "verified"'
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/work-schedule.json"
+node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$plugin_data" "$root/sidebar-input.json" | jq -e '.status == "verified"'
+node "$runtime" automations plan --plugin-data "$plugin_data" < "$root/sidebar-input.json" > "$root/work-schedule.json"
 node --input-type=module - "$root/work-schedule.json" "$runtime" "$plugin_data" <<'NODE'
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -398,10 +397,10 @@ root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/before-timing.json"
+node "$runtime" automations plan --plugin-data "$plugin_data" < "$root/sidebar-input.json" > "$root/before-timing.json"
 sed 's/  schema-version: 3/  schema-version: 3\n  interval-minutes: 17\n  max-concurrent-items: 8/' "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml" > "$root/timing-agent.yaml"
 mv "$root/timing-agent.yaml" "$GITHUB_WORKSPACE/examples/codex-notifications/active/agent.yaml"
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$plugin_data" > "$root/after-timing.json"
+node "$runtime" automations plan --plugin-data "$plugin_data" < "$root/sidebar-input.json" > "$root/after-timing.json"
 jq -es '.[0].actions[0].expected.prompt as $before | .[1].actions[0].expected | (.prompt != null and .prompt == $before) and (.rrule | contains("INTERVAL=17"))' "$root/before-timing.json" "$root/after-timing.json"
 test ! -d "$CODEX_HOME/automations"
 

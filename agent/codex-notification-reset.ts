@@ -16,7 +16,8 @@ import { readCodexAutomations, type SavedAutomation } from './codex-automation-s
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import codexResetRemoved from './codex-reset-removed.ts';
-import codexResetPlacement from './codex-reset-placement.ts';
+import CodexSidebarJournal, { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
+import { defaultManagedGroup } from '../utils/managed-group-name.ts';
 import { connectCodexThreads, codexThreadAdapter } from './codex-thread-client.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
 import waitForCodexWorktreeRemoval from './codex-worktree-removal.ts';
@@ -38,6 +39,7 @@ const schema = Type.Object(
     fresh: Type.Optional(Type.Boolean()),
     confirmation: Type.Optional(Type.String()),
     nativeInventory: Type.Optional(Type.Unknown()),
+    placementReceipt: Type.Optional(sidebarReceiptSchema),
   },
   { additionalProperties: false },
 );
@@ -299,12 +301,22 @@ export default async function runCodexNotificationReset(
         pluginData,
         before,
         deps,
+        { nativeInventory: input.nativeInventory, placementReceipt: input.placementReceipt },
       );
       if (replacement.status !== 'done') return replacement;
       const saved = JSON.parse(replacement.automation) as SavedAutomation;
       if (saved.definition.kind !== 'heartbeat')
         throw new Error('notification-reset-coordinator-missing');
-      const placement = codexResetPlacement(input.nativeInventory, saved.definition.targetThreadId);
+      const journal = new CodexSidebarJournal(pluginData, current.codexHome, defaultManagedGroup);
+      const pending = (await journal.read()).pending;
+      const receipt =
+        pending?.digest === input.placementReceipt?.digest ? input.placementReceipt : undefined;
+      const placement = await journal.apply(
+        `reset:${current.store.location.scope}`,
+        input.nativeInventory,
+        saved.definition.targetThreadId,
+        receipt,
+      );
       return placement.status === 'done' ? replacement : placement;
     },
     restore: (record) => toggle(record, true),

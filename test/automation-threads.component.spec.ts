@@ -56,23 +56,63 @@ describe('agent/automation-threads', () => {
     const store = new AutomationThreads({ root, scope: runtime, runtime }, adapter);
     return { store, adapter, native, creates: () => creates };
   }
-  it('should reconcile an internal group, detect drift read-only and preserve native identity', async () => {
+  it('should reconcile a declared group, detect drift read-only and preserve native identity', async () => {
     const f = fixture('openclaw');
     const declarations = jobs('Intake', ['intake']);
-    declarations[0]!.internalOpenClaw = {
-      trigger: { script: 'check' },
-      toolsAllow: [],
-      group: 'Agent System',
-    };
+    declarations[0]!.group = ' operations ';
     const id = (await f.store.resolve(declarations, true)).get('intake')!.id;
-    assert.equal(f.native.get(id)!.group, 'Agent System');
+    assert.equal(f.native.get(id)!.group, 'OPERATIONS');
     f.native.get(id)!.group = 'Other';
     await assert.rejects(f.store.resolve(declarations), rejects('automation-thread-group-drift'));
     assert.equal(f.native.get(id)!.group, 'Other');
     assert.equal((await f.store.resolve(declarations, true)).get('intake')!.id, id);
-    assert.equal(f.native.get(id)!.group, 'Agent System');
+    assert.equal(f.native.get(id)!.group, 'OPERATIONS');
     assert.equal(f.creates(), 1);
   });
+  it('should retain the chat when placement is unsupported or native readback has not changed', async () => {
+    const f = fixture('openclaw');
+    const declarations = jobs('Activity', ['activity']);
+    const id = (await f.store.resolve(declarations, true)).get('activity')!.id;
+    declarations[0]!.group = 'operations';
+    const setGroup = f.store.adapter.setGroup;
+    delete f.store.adapter.setGroup;
+    await assert.rejects(
+      f.store.resolve(declarations, true),
+      rejects('automation-thread-group-unsupported'),
+    );
+    f.store.adapter.setGroup = async () => {};
+    await assert.rejects(
+      f.store.resolve(declarations, true),
+      rejects('automation-thread-readback-diverged'),
+    );
+    assert.equal(f.native.get(id)!.group, 'AGENT SYSTEM');
+    f.store.adapter.setGroup = setGroup;
+    assert.equal((await f.store.resolve(declarations, true)).get('activity')!.id, id);
+    assert.equal(f.creates(), 1);
+  });
+  for (const runtime of ['openclaw', 'codex'] as const)
+    it(`should move the same ${runtime} chat and reject conflicting native aliases before mutation`, async () => {
+      const f = fixture(runtime);
+      const declarations = jobs('Activity', ['activity']);
+      const id = (await f.store.resolve(declarations, true)).get('activity')!.id;
+      assert.equal(f.native.get(id)!.group, 'AGENT SYSTEM');
+      declarations[0]!.group = ' operations ';
+      await assert.rejects(f.store.resolve(declarations), rejects('automation-thread-group-drift'));
+      assert.equal((await f.store.resolve(declarations, true)).get('activity')!.id, id);
+      assert.equal(f.native.get(id)!.group, 'OPERATIONS');
+      const alias = structuredClone(declarations[0]!);
+      alias.id = 'alias';
+      alias.enabled = false;
+      alias.group = 'Other';
+      alias.overrides[runtime] = { target: { thread: id } };
+      await assert.rejects(
+        f.store.resolve([...declarations, alias], true),
+        rejects('automation-thread-group-conflict'),
+      );
+      assert.equal(f.native.get(id)!.group, 'OPERATIONS');
+      assert.equal(f.creates(), 1);
+    });
+
   it('should create with selected settings and detect drift without changing or replacing the chat', async () => {
     const f = fixture('codex');
     const declarations = jobs('Intake', ['intake']);
@@ -81,6 +121,7 @@ describe('agent/automation-threads', () => {
     assert.deepEqual(f.native.get(id), {
       id,
       name: 'Intake',
+      group: 'AGENT SYSTEM',
       model: 'gpt-6-luna',
       effort: 'medium',
     });
