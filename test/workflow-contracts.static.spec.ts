@@ -15,35 +15,27 @@ interface Step {
 }
 
 describe('workflow safety and coverage', () => {
-  it('should recover only a failed normal clawhub publication and propagate fallback failures', async () => {
+  it('should make only clawhub optional and warn when its job fails', async () => {
     const workflow = parse(await readFile('.github/workflows/release.yml', 'utf8'));
-    const steps = workflow.jobs['publish-clawhub'].steps as Step[];
+    const clawHub = workflow.jobs['publish-clawhub'];
+    assert.equal(clawHub['continue-on-error'], true);
+    for (const id of ['publish-npm', 'publish-repo']) {
+      assert.notEqual(workflow.jobs[id]['continue-on-error'], true);
+      assert.ok(!workflow.jobs[id].needs, `${id} must remain independent of ClawHub`);
+    }
+    const steps = clawHub.steps as Step[];
     const publishers = steps.filter(({ uses }) =>
       uses?.startsWith('tanaabased/actions/publish-clawhub@'),
     );
-    const [normal, fallback] = publishers;
-    assert.equal(publishers.length, 2, 'one normal publication and at most one fallback');
-    assert.equal(normal?.['continue-on-error'], true);
-    assert.notEqual(fallback?.['continue-on-error'], true);
-    assert.equal(normal?.with?.tarball, '${{ steps.pack.outputs.tarball-path }}');
-    assert.equal(fallback?.with?.tarball, '${{ runner.temp }}/clawhub-fallback.tgz');
-    const recovery = steps.slice(steps.indexOf(normal!) + 1);
-    assert.ok(recovery.some(({ run }) => run?.includes('clawhub-fallback-task.ts')));
-    assert.ok(recovery.some(({ env }) => env?.AGENT_SYSTEM_PACKAGE_WITHOUT_SOURCE_MAPS === 'true'));
-    for (const step of recovery) {
-      assert.equal(step.if, `\${{ steps.${normal!.id}.outcome == 'failure' }}`);
-      assert.notEqual(step['continue-on-error'], true);
-    }
-    for (const key of [
-      'owner',
-      'source-repo',
-      'source-commit',
-      'clawhub-token',
-      'tags',
-      'wait-timeout',
-    ]) {
-      assert.equal(fallback?.with?.[key], normal?.with?.[key], `${key} must survive fallback`);
-    }
+    assert.equal(publishers.length, 1, 'do not re-upload after an ambiguous failure');
+    const [publisher] = publishers;
+    assert.equal(publisher?.with?.tarball, '${{ steps.pack.outputs.tarball-path }}');
+    assert.notEqual(publisher?.['continue-on-error'], true);
+    const warning = steps.find(({ run }) => run?.includes('::warning'));
+    assert.ok(warning);
+    assert.equal(warning.if, '${{ failure() }}');
+    assert.ok(steps.indexOf(warning) > steps.indexOf(publisher!));
+    assert.ok(warning.run?.includes('GITHUB_STEP_SUMMARY'));
   });
 
   it('should keep source checks read-only and native coverage on both supported platforms', async () => {
