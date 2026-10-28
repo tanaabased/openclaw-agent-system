@@ -101,6 +101,8 @@ export async function presentDispatch(
         current.workspace,
         {
           debug: current.manifest.debug,
+          routingManifestPath:
+            current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
           includeDetails: input.includeDetails === true,
         },
       ),
@@ -281,6 +283,8 @@ export async function assessDispatch(
       authorityDigest,
       presentation: assessmentPresentation(record.result, record, intake, current.workspace, {
         debug: current.manifest.debug,
+        routingManifestPath:
+          current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
       }),
       save,
       publicationCommand: (digest) =>
@@ -405,6 +409,9 @@ export async function assessDispatch(
               current.workspace,
               {
                 debug: current.manifest.debug,
+                routingManifestPath:
+                  current.manifestSources?.['/models/routing/guidance']?.path ??
+                  current.manifestPath,
                 manifestPath:
                   current.manifestSources?.['/github/issue-assignment/assessment/guidance']?.path ??
                   current.manifestPath,
@@ -481,6 +488,8 @@ export async function assessDispatch(
     }
     const presentation = assessmentPresentation(result, record, intake, current.workspace, {
       debug: current.manifest.debug,
+      routingManifestPath:
+        current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
       manifestPath:
         current.manifestSources?.['/github/issue-assignment/assessment/guidance']?.path ??
         current.manifestPath,

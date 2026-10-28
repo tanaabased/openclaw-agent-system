@@ -312,7 +312,20 @@ content; do not present the decision as permission or replace the retained asses
 The private routing card follows the recommendation (or a distinct assessment). Its values come from saved routing and
 native readback, with requested selection distinct from effective execution. Preserve
 the model, effort, selection rationale, and provenance; use readable Markdown rather
-than assuming native card styling. By default, do not append the retained engineering source, structured evidence, or investigation when a human review is present. When explicitly requested,
+than assuming native card styling.
+
+When retained routing instructions include customization, add **Routing method**
+immediately after **Selected**. Show the custom skill name in backticks, linked to
+its verified source when available. Append `+ custom guidance` when guidance is
+selected; guidance alone reads `Default routing + custom guidance`. An entirely
+default selection or an older record without instruction metadata adds no line.
+Use the selection saved with that decision, not current routing configuration.
+Keep **Source** unchanged: it describes model/profile decision provenance, not the
+instruction source. Apply these rules to Codex and OpenClaw manual launch and
+scheduled intake, including Codex's separate routing note. This fact reports
+selection, not skill compliance or effective model settings.
+
+By default, do not append the retained engineering source, structured evidence, or investigation when a human review is present. When explicitly requested,
 place retained **Evidence** and **Investigation** under one **Reference material** section
 after the complete source, questions, or setup action. Introduce it as supporting detail; nest **Completed** and **Remaining** beneath
 Investigation. Omit empty subsections and omit Reference material when both are empty.
@@ -320,7 +333,13 @@ Keep consequential uncertainty, blocking questions, and required actions in the 
 assessment, questions, or action; the reference section must not be their only home.
 The framing follows the structured result; prose headings never select state.
 
-When debug presentation is enabled, follow Model routing with a quoted
+When debug presentation is enabled, follow Model routing with the shared quoted
+**🔬 Debug** card using **Context: Model routing instructions**. Show the retained
+skill and guidance source through the instruction renderer below, including
+literal inline guidance. Do not invent a resolved path for the default routing
+skill. Exact guidance stays private and out of public GitHub summaries.
+
+Follow routing and its optional debug details with a quoted
 **🔬 Debug** card with **Context: Assessment instructions**. Show the retained **Skill**, including the
 default, linked to its resolved `SKILL.md`. Show file **Guidance** as a linked
 workspace-relative label. For inline guidance, link “Inline guidance” to its
@@ -332,7 +351,8 @@ private. Selection metadata is not proof of compliance.
 Reuse the same **🔬 Debug** component with **Implementation instructions** context
 immediately after the PR card and **Feedback reply instructions** context after the public reply quote and
 publication link or obstacle. With debug off, omit instruction cards entirely,
-including custom selections and guidance. Errors, blockers, private responses,
+including custom selections and guidance details; the compact **Routing method**
+fact remains visible when customized. Errors, blockers, private responses,
 and publication outcomes remain visible. Do not put reply instructions in the
 incoming comment card or public GitHub reply.
 

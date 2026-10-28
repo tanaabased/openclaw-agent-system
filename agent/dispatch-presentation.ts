@@ -16,7 +16,10 @@ export default function assessmentPresentation(
   record: SharedDispatchRecord,
   intake: IntakeRecord,
   workspace: string,
-  presentation: WorkflowInstructionsPresentation & { includeDetails?: boolean } = {},
+  presentation: WorkflowInstructionsPresentation & {
+    includeDetails?: boolean;
+    routingManifestPath?: string;
+  } = {},
 ) {
   const decision = JSON.parse(record.routing!) as RoutingDecision;
   return renderAssessmentResult(result, {
@@ -28,6 +31,7 @@ export default function assessmentPresentation(
       effort: decision.selection!.effort,
     },
     effective: record.effective,
+    routingInstructions: record.routingInstructions,
     workspace,
     assessment: record.stageReceipt?.selection ?? record.assessment,
   });

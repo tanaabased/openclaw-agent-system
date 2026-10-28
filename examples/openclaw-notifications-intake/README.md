@@ -5,18 +5,19 @@ Activate notification intake, start three independent issue assessments before a
 ## What Belongs Here
 
 - Native channel readiness and a safe intake baseline before fixture assignment.
-- Custom routing skill/guidance selection during concurrent admission with distinct verified native owners and complete retained assessments.
+- Custom routing skill/guidance selection during concurrent admission with distinct verified native owners, complete retained assessments, and private routing-method readback.
 - One repeat scan proving that admission does not duplicate chats, checkouts, or turns.
 
 ## What Does Not Belong Here
 
-- Assessment presentation and ordinary issue feedback: [issue planning](../openclaw-notifications-issue-journey/README.md). Implementation and PR feedback: [PR delivery](../openclaw-notifications-pr-journey/README.md).
+- Other assessment presentation and ordinary issue feedback: [issue planning](../openclaw-notifications-issue-journey/README.md). Implementation and PR feedback: [PR delivery](../openclaw-notifications-pr-journey/README.md).
 - Restart recovery: [assessment recovery](../openclaw-notifications-assessment-recovery/README.md). Unassigned-issue feedback: [reactivation](../openclaw-notifications-reactivation/README.md). Coordinator/tracking reset: [reset](../openclaw-notifications-reset/README.md). Resource reconciliation: [retirement](../openclaw-notifications-retirement/README.md).
 - Scheduler controls: [scheduling](../openclaw-notifications-scheduling/README.md). Unavailable-assignment recovery: [assignment policy](../openclaw-notifications-assignment-policy/README.md). Debug-card presentation: [assessment recovery](../openclaw-notifications-assessment-recovery/README.md).
 
 ## Notes
 
 - Native skill discovery and retained guidance are asserted during admission; the fixed mock judgment does not prove interpretation of the custom skill. No additional live-model turn is required.
+- One completed assessment checks that the retained custom method reaches the private routing card. Formatting and debug variants stay in owning renderer tests.
 - Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases all three only after verifying their native starts; model judgment is not under test.
 - V3 object identities preserve supplied names and node IDs through installation and intake. Only Tanaabot receives the three disposable assignments.
 - Scoped refreshes and a 24-hour schedule bound discovery. The job owns its workspaces, issues, native state, and SSH registration; cleanup stops the Gateway before changing external fixtures.
@@ -146,6 +147,11 @@ done
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es '[.[].records[]] | length == 3 and all(.[]; .assessmentTurn.status == "completed" and .result.outcome == "plan-ready")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+
+# should show the retained custom routing method in the native private assessment
+conversation=$(jq -er '.[0].threadId' "$TMPDIR/notification-started.json")
+run_id=$(jq -er '.[0].assessmentTurn.runId' "$TMPDIR/notification-started.json")
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --arg run "$run_id" '([.messages[] | select(.role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop")] | if length == 1 then .[0].content | (if type == "string" then . else map(.text // "") | join("") end) | contains("Model routing") and contains("Routing method") and contains("intake-routing") and contains("+ custom guidance") and (contains("Keep disposable cleanup plans bounded.") | not) else error("one stopped assessment response required") end)'
 
 # should retain complete results and native bindings for all three owners
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
