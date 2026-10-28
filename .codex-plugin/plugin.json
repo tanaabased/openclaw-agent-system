@@ -1,6 +1,6 @@
 {
   "name": "agent-system",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Better per-agent management for OpenClaw.",
   "author": {
     "name": "Tanaab Maneuvering Systems LLC",

@@ -1,5 +1,28 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
+## v0.9.1 - [October 28, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.9.1)
+
+### Compatibility
+
+- Changed standalone Codex cleanup to a fixed 60-minute grace period. [#519](https://github.com/tanaabased/openclaw-agent-system/pull/519)
+- Moved OpenClaw cleanup grace to `plugins.entries.agent-system.config.cleanup.graceMinutes`; removed global `config.yaml`. [#519](https://github.com/tanaabased/openclaw-agent-system/pull/519)
+
+### New Features
+
+- Added explicit fresh managed issue tasks and same-repository PR adoption in Codex and OpenClaw. [#517](https://github.com/tanaabased/openclaw-agent-system/pull/517)
+- Added managed-task PR rebinding while preserving local work and the existing PR. [#517](https://github.com/tanaabased/openclaw-agent-system/pull/517)
+- Added replacement recovery for stranded tasks, preserving predecessor chats, checkouts, and assessments. [#517](https://github.com/tanaabased/openclaw-agent-system/pull/517)
+
+### Improvements
+
+- Added retained routing skill and guidance details to private assessment cards. [#514](https://github.com/tanaabased/openclaw-agent-system/pull/514)
+- Made `github.schema-version` optional, defaulting workflow declarations to `3`. [#513](https://github.com/tanaabased/openclaw-agent-system/pull/513)
+
+### Developer Notes
+
+- Added `--debug` fixture-cleanup diagnostics on stderr while preserving JSON output. [#515](https://github.com/tanaabased/openclaw-agent-system/pull/515)
+- Added conditional ClawHub publication fallback excluding generated source maps. [#520](https://github.com/tanaabased/openclaw-agent-system/pull/520)
+
 ## v0.9.0 - [October 27, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.9.0)
 
 ### Compatibility
