@@ -1,4 +1,3 @@
-import readInstallationConfig, { parseInstallationConfig } from '../core/installation-config.ts';
 import assert from 'node:assert/strict';
 import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import { automationHash } from '../agent/automation-hash.ts';
@@ -187,8 +186,6 @@ describe('agent/openclaw issue dispatch', () => {
     histories.clear();
     config = {};
     service = new OpenClawDispatch({
-      readInstallationConfig: async () =>
-        parseInstallationConfig(undefined, '/installation/config.yaml'),
       root: join(root, 'dispatch'),
       config: () => config,
       intake,
@@ -646,41 +643,68 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(calls.length, 0);
   });
 
-  it('should consume shared settings and hold invalid cleanup settings while retaining the original deadline', async () => {
+  it('should consume native settings and hold invalid cleanup settings while retaining the original deadline', async () => {
     const { items } = await assignments(1, 1);
     const selected = await next();
     await prepare(selected);
     await assess(selected.id);
     await completeAssessment(selected.id);
-    const directory = join(root, 'tanaab', 'agent-system');
-    const path = join(directory, 'config.yaml');
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    await writeFile(path, 'schema-version: 1\ncleanup: {grace-minutes: 17}', { mode: 0o600 });
-    service.dependencies.readInstallationConfig = () =>
-      readInstallationConfig({ XDG_CONFIG_HOME: root });
+    config.plugins = { entries: { 'agent-system': { config: { cleanup: { graceMinutes: 17 } } } } };
     items[0]!.state = 'closed';
     service.dependencies.now = () => baseline + 180_001;
     await service.run(manifest, root, coordinator, { action: 'next' });
     const original = await record();
     assert.equal(original.retirement?.eligibleAt, baseline + 180_001 + 17 * 60_000);
-    await writeFile(path, 'schema-version: 1\ncleanup: {grace-minutes: -1}');
+    config.plugins!.entries!['agent-system']!.config!.cleanup = { graceMinutes: -1 };
     service.dependencies.now = () => original.retirement!.eligibleAt;
     await service.run(manifest, root, coordinator, { action: 'next' });
     const blocked = await record();
     assert.equal(blocked.retired, undefined);
     assert.equal(blocked.retirement?.code, 'retirement-configuration-invalid');
-    assert.ok(blocked.retirement?.diagnostic?.includes(path));
+    assert.ok(
+      blocked.retirement?.diagnostic?.includes('plugins.entries.agent-system.config.cleanup'),
+    );
     assert.equal(blocked.retirement?.eligibleAt, original.retirement!.eligibleAt);
     assert.equal(
       calls.some((call) => call.method === 'sessions.patch' && call.params.archived),
       false,
     );
-    await writeFile(path, 'schema-version: 1\ncleanup: {grace-minutes: 0}');
+    config.plugins!.entries!['agent-system']!.config!.cleanup = { graceMinutes: 0 };
     service.dependencies.now = () => original.retirement!.eligibleAt + 60_000;
     await service.run(manifest, root, coordinator, { action: 'next' });
     const resumed = await record();
     assert.notEqual(resumed.retirement?.code, 'retirement-configuration-invalid');
     assert.equal(resumed.retirement?.eligibleAt, original.retirement!.eligibleAt);
+  });
+
+  it('should defer native cleanup if grace changes during preservation verification', async () => {
+    const { items } = await assignments(1, 1);
+    const selected = await next();
+    await prepare(selected);
+    await assess(selected.id);
+    await completeAssessment(selected.id);
+    config.plugins = { entries: { 'agent-system': { config: { cleanup: { graceMinutes: 0 } } } } };
+    service.dependencies.worktrees.cleanupGitHub = async (input) => {
+      if (input.verifyOnly)
+        config.plugins!.entries!['agent-system']!.config!.cleanup = { graceMinutes: 17 };
+      return {
+        ...input.worktree,
+        repositoryId: 'github-10',
+        workId: 'issue-20',
+        status: input.verifyOnly ? 'preserved' : 'removed',
+      };
+    };
+    items[0]!.state = 'closed';
+    service.dependencies.now = () => baseline + 180_001;
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const deferred = await record();
+    assert.equal(deferred.retired, undefined);
+    assert.equal(deferred.retirement?.code, 'retirement-configuration-changed');
+    assert.equal(
+      calls.some((call) => call.method === 'sessions.patch' && call.params.archived),
+      false,
+    );
+    assert.equal(deferred.retirement?.worktreeRemovalAttemptedAt, undefined);
   });
 
   it('should retire only the closed owner after its deadline and preserve active sibling work', async () => {
@@ -792,8 +816,9 @@ describe('agent/openclaw issue dispatch', () => {
         };
       };
       if (protection === 'invalid-config')
-        service.dependencies.readInstallationConfig = async () =>
-          parseInstallationConfig('schema-version: 2', '/installation/config.yaml');
+        config.plugins = {
+          entries: { 'agent-system': { config: { cleanup: { graceMinutes: -1 } } } },
+        };
       if (protection === 'running') histories.get(before.threadId!)!.active = true;
       if (protection === 'pinned') sessions.get(before.threadId!)!.pinned = true;
       await assert.rejects(
@@ -837,11 +862,7 @@ describe('agent/openclaw issue dispatch', () => {
     const retire = (digest?: string) =>
       service.run(manifest, root, operator, { action: 'retire', id: target.id, digest }, true);
     const preview = await retire();
-    service.dependencies.readInstallationConfig = async () =>
-      parseInstallationConfig(
-        'schema-version: 1\ncleanup: {grace-minutes: 9}',
-        '/installation/config.yaml',
-      );
+    config.plugins = { entries: { 'agent-system': { config: { cleanup: { graceMinutes: 9 } } } } };
     await assert.rejects(
       retire('digest' in preview ? String(preview.digest) : ''),
       /dispatch-recovery-stale/,
@@ -4734,11 +4755,9 @@ describe('agent/openclaw issue dispatch', () => {
         manifest.github!.notifications!.issueAssignment!.feedback = { inherit: true, allowed: [] };
       if (change === 'models') manifest.models!.medium!.effort = 'medium';
       if (change === 'cleanup')
-        service.dependencies.readInstallationConfig = async () =>
-          parseInstallationConfig(
-            'schema-version: 1\ncleanup: {grace-minutes: 60}',
-            '/installation/config.yaml',
-          );
+        config.plugins = {
+          entries: { 'agent-system': { config: { cleanup: { graceMinutes: 17 } } } },
+        };
       if (change === 'stale-readback') {
         const manifests = service.dependencies.intake.dependencies.manifestService;
         const load = manifests.loadForAgentId.bind(manifests);
@@ -7151,11 +7170,7 @@ describe('agent/openclaw issue dispatch', () => {
     const before = sends().length;
     manifest.github!.notifications!.intervalMinutes += 1;
     manifest.github!.notifications!.maxConcurrentItems += 1;
-    service.dependencies.readInstallationConfig = async () =>
-      parseInstallationConfig(
-        'schema-version: 1\ncleanup: {grace-minutes: 30}',
-        '/installation/config.yaml',
-      );
+    config.plugins = { entries: { 'agent-system': { config: { cleanup: { graceMinutes: 30 } } } } };
     await service.run(manifest, root, coordinator, { action: 'next' });
     assert.equal((await record()).feedback!.events[0]!.phase, 'running');
     manifest.github!.notifications!.issueAssignment!.allowed = [

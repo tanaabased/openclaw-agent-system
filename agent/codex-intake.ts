@@ -9,7 +9,6 @@ import { readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import type readInstallationConfig from '../core/installation-config.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import { CodexAutomationError } from './codex-automation-state.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
@@ -27,7 +26,6 @@ import { githubIdentityMatches } from '../channels/github/provider/work-item.ts'
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 
 export interface CodexIntakeDependencies {
-  readInstallationConfig?: typeof readInstallationConfig;
   assertActive?: () => Promise<void>;
   threadId?: string;
   intakeNative?: Pick<ReturnType<typeof codexDispatchNative>, 'occurrence'>;

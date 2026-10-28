@@ -76,6 +76,19 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
+      "cleanup": {
+        "type": "object",
+        "description": "Grace before automatic managed-task cleanup. Ownership and resource-preservation checks always apply.",
+        "additionalProperties": false,
+        "properties": {
+          "graceMinutes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 43200,
+            "default": 60
+          }
+        }
+      },
       "opCache": {
         "description": "Process-local OP credential caching controlled by the operator.",
         "oneOf": [

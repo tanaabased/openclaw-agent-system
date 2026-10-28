@@ -1,63 +1,40 @@
 # Global Configuration
 
-Global settings use two locations: a shared `config.yaml` for cleanup and OpenClaw's
-plugin configuration for collaboration and credential caching. Workspace declarations
+Global settings belong in OpenClaw's plugin configuration. Workspace declarations
 belong in the [manifest](./MANIFEST.md).
 
-- [`config.yaml`](#configyaml)
-  - [`schema-version`](#schema-version)
-  - [`cleanup`](#cleanup)
 - [OpenClaw plugin configuration](#openclaw-plugin-configuration)
+  - [`cleanup`](#cleanup)
   - [`collaboration`](#collaboration)
   - [`opCache`](#opcache)
-
-## `config.yaml`
-
-The shared `schema-version` and `cleanup` settings belong in
-`<XDG_CONFIG_HOME>/tanaab/agent-system/config.yaml`, or
-`<HOME>/.config/tanaab/agent-system/config.yaml` when `XDG_CONFIG_HOME` is unset.
-Roots must be absolute. Both host processes must use the same configuration root;
-`CODEX_HOME`, plugin-data directories, and manifest environment declarations do not
-select this file. Keep its directory owner-only (`700`) and the regular file private
-(`600`); symlinks are not supported. Reading settings creates no files or directories.
-
-```yaml
-schema-version: 1
-cleanup:
-  grace-minutes: 60
-```
-
-### `schema-version`
-
-| Type    | Required                  | Default |
-| ------- | ------------------------- | ------- |
-| integer | yes, when the file exists | none    |
-
-Use `1`, the only supported version.
-
-<a id="shared-cleanup"></a>
-
-### `cleanup`
-
-Controls the grace period for automatic managed-task retirement.
-
-| Field           | Type    | Required | Default | Description                                                |
-| --------------- | ------- | -------- | ------- | ---------------------------------------------------------- |
-| `grace-minutes` | integer | no       | `60`    | Minutes before eligible cleanup, from `0` through `43200`. |
-
-A missing file or omitted grace uses 60 minutes. An unreadable, unsafe, malformed,
-or unsupported file holds cleanup with a diagnostic instead of using a fallback.
-There is no enable/disable switch or per-agent override.
-
-Both runtimes check these settings before cleanup. A change during the final check
-defers cleanup to the next pass. Existing deadlines survive edits, polls, and restarts;
-new deadlines and activity resets use the current grace period. Even zero grace keeps
-the [ownership and preservation checks](./channels/github/README.md#task-retirement).
 
 ## OpenClaw plugin configuration
 
 Set these options under `plugins.entries.agent-system.config` in OpenClaw.
-Standalone Codex does not manage them.
+Standalone Codex does not read or manage them.
+
+### `cleanup`
+
+Controls the grace period for automatic managed-task retirement in OpenClaw.
+
+| Field          | Type    | Required | Default | Description                                                |
+| -------------- | ------- | -------- | ------- | ---------------------------------------------------------- |
+| `graceMinutes` | integer | no       | `60`    | Minutes before eligible cleanup, from `0` through `43200`. |
+
+Omitted cleanup or grace uses 60 minutes. Invalid or unavailable settings hold
+cleanup instead of substituting a default. There is no enable/disable switch or
+per-agent override. Standalone Codex always uses the shared 60-minute default;
+it has no configurable cleanup setting.
+
+```sh
+# set the grace period for automatic cleanup in openclaw.
+openclaw config set plugins.entries.agent-system.config.cleanup.graceMinutes 30 --strict-json
+```
+
+OpenClaw verifies the current cleanup setting before resource effects. A change
+during the final check defers cleanup to the next pass. Existing deadlines survive
+edits, polls, and restarts; new deadlines and activity resets use the current grace.
+Even zero grace keeps the [ownership and preservation checks](./channels/github/README.md#task-retirement).
 
 ### `collaboration`
 

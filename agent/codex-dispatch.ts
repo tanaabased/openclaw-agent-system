@@ -304,7 +304,7 @@ async function executeCodexDispatch(
           issueUrl: issueUrl(intake),
           caller,
           now,
-          readConfiguration: deps.readInstallationConfig ?? cleanupConfiguration,
+          readConfiguration: cleanupConfiguration,
           save,
           fresh: async () => {
             await fresh();

@@ -1,4 +1,3 @@
-import readInstallationConfig, { parseInstallationConfig } from '../core/installation-config.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
 import CodexAssignmentClaims, { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
 import connectCodexGitHubAccount from '../agent/codex-github-client.ts';
@@ -154,8 +153,6 @@ describe('agent/codex-dispatch', () => {
     gitCalls = [];
     const branches = new Map<string, string>();
     deps = {
-      readInstallationConfig: async () =>
-        parseInstallationConfig(undefined, '/installation/config.yaml'),
       codexHome,
       assertActive: async () => {},
       now: () => now,
@@ -1743,52 +1740,56 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
-  it('should skip only operator grace while both paths retain live cleanup configuration holds', async () => {
-    const prepared = await prepare();
-    created();
-    await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
-    native!.status = 'idle';
-    native!.turnEnded = true;
-    const directory = join(root, 'tanaab', 'agent-system');
-    const path = join(directory, 'config.yaml');
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    await writeFile(path, 'schema-version: 1\ncleanup: {grace-minutes: 17}', { mode: 0o600 });
-    deps.readInstallationConfig = () => readInstallationConfig({ XDG_CONFIG_HOME: root });
-    fixture.item.state = 'closed';
-    const operator = { threadId: 'operator' };
-    const preview = await request('retire', { id: prepared.id }, operator);
-    const queued = await request('retire', { id: prepared.id, digest: preview.digest }, operator);
-    assert.equal(queued.status, 'retirement-inventory-required');
-    const requestedAt = now;
-    now += 60_000;
-    await next();
-    const selected = await selectCodexIntake(pluginData, deps);
-    const journal = new CodexDispatchStore(
-      selected.store.location.root,
-      selected.store.location.scope,
-    );
-    const deadline = (await journal.read()).records[0]!.retirement!.eligibleAt;
-    assert.equal(deadline, requestedAt);
-    await writeFile(path, 'schema-version: 1\ncleanup: {grace-minutes: -1}');
-    const held = await request('retire', { id: prepared.id }, operator);
-    const appliedHold = await request('retire', { id: prepared.id, digest: held.digest }, operator);
-    assert.equal(
-      (appliedHold.retirement as { code: string }).code,
-      'retirement-configuration-invalid',
-    );
-    await next();
-    const current = await selectCodexIntake(pluginData, deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
-    const blocked = (await store.read()).records[0]!;
-    assert.equal(blocked.retirement?.code, 'retirement-configuration-invalid');
-    assert.equal(blocked.retired, undefined);
-    assert.equal(blocked.retirement?.eligibleAt, deadline);
-    await writeFile(path, 'schema-version: 1\ncleanup: {grace-minutes: 0}');
-    now += 60_000;
-    await next();
-    const resumed = (await store.read()).records[0]!;
-    assert.notEqual(resumed.retirement?.code, 'retirement-configuration-invalid');
-    assert.equal(resumed.retirement?.eligibleAt, deadline);
+  it('should use fixed automatic grace and ignore obsolete settings during operator retirement', async () => {
+    const originalXdg = process.env.XDG_CONFIG_HOME;
+    const originalOpenClaw = process.env.OPENCLAW_CONFIG_PATH;
+    process.env.XDG_CONFIG_HOME = root;
+    process.env.OPENCLAW_CONFIG_PATH = join(root, 'openclaw.json');
+    try {
+      await writeFile(
+        process.env.OPENCLAW_CONFIG_PATH,
+        JSON.stringify({
+          plugins: { entries: { 'agent-system': { config: { cleanup: { graceMinutes: 0 } } } } },
+        }),
+      );
+      const prepared = await prepare();
+      created();
+      await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
+      native!.status = 'idle';
+      native!.turnEnded = true;
+      const directory = join(root, 'tanaab', 'agent-system');
+      const path = join(directory, 'config.yaml');
+      await mkdir(directory, { recursive: true, mode: 0o700 });
+      await writeFile(path, 'schema-version: 1\ncleanup: {grace-minutes: 0}', { mode: 0o600 });
+      fixture.item.state = 'closed';
+      now += 60_000;
+      await next();
+      const selected = await selectCodexIntake(pluginData, deps);
+      const journal = new CodexDispatchStore(
+        selected.store.location.root,
+        selected.store.location.scope,
+      );
+      const automatic = (await journal.read()).records[0]!;
+      assert.equal(automatic.retirement!.eligibleAt, now + 60 * 60_000);
+      assert.equal(automatic.retired, undefined);
+      await writeFile(path, 'invalid obsolete settings');
+      const operator = { threadId: 'operator' };
+      const preview = await request('retire', { id: prepared.id }, operator);
+      const queued = await request('retire', { id: prepared.id, digest: preview.digest }, operator);
+      assert.equal(queued.status, 'retirement-inventory-required');
+      const requestedAt = now;
+      now += 60_000;
+      await next();
+      const manual = (await journal.read()).records[0]!;
+      assert.equal(manual.retirement!.eligibleAt, requestedAt);
+      assert.notEqual(manual.retirement?.code, 'retirement-configuration-invalid');
+      assert.equal(manual.retired, undefined);
+    } finally {
+      if (originalXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = originalXdg;
+      if (originalOpenClaw === undefined) delete process.env.OPENCLAW_CONFIG_PATH;
+      else process.env.OPENCLAW_CONFIG_PATH = originalOpenClaw;
+    }
   });
 
   it('should enter manual retirement for open assigned work immediately and retain its request', async () => {

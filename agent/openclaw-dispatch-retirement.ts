@@ -1,7 +1,7 @@
 import { dispatchAdmission } from './managed-issue.ts';
 import assignmentRetirement from './assignment-retirement.ts';
 import { automationHash } from './automation-hash.ts';
-import cleanupConfiguration from './cleanup-configuration.ts';
+import { openClawCleanupConfiguration } from './cleanup-configuration.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
 import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
 import observeRetirementSession from './openclaw-retirement-observation.ts';
@@ -73,9 +73,7 @@ export default async function retireOpenClawTask(options: {
       loaded.manifest.agent.id !== manifest.agent.id
     )
       throw new Error('dispatch-workspace-binding-changed');
-    const configuration = await (
-      service.dependencies.readInstallationConfig ?? cleanupConfiguration
-    )();
+    const configuration = await openClawCleanupConfiguration(service.dependencies.config);
     const digest = automationHash({
       record,
       configuration,

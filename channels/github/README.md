@@ -201,9 +201,10 @@ recovery or renewed authorization.
 Closing an issue, archiving its agent chat, or having an approved assignment actor
 unassign the agent makes the task eligible for retirement. New workflow turns stop,
 and cleanup waits for the agent to be idle and the
-[installation-wide grace period](../../CONFIG.md#cleanup), which defaults to
-**60 minutes**. This setting belongs in global `config.yaml`, not the workspace's
-`github` mapping. New activity can defer cleanup; a restart does not reset the deadline.
+[cleanup grace period](../../CONFIG.md#cleanup), which defaults to
+**60 minutes**. OpenClaw configures it through
+`plugins.entries.agent-system.config.cleanup.graceMinutes`; standalone Codex uses
+the fixed 60-minute default. New activity can defer cleanup; a restart does not reset the deadline.
 
 Retirement archives the chat and removes its owned checkout while preserving
 branches and GitHub content. Unverified unassignment leaves the resources intact

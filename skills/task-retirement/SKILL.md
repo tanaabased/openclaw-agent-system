@@ -62,7 +62,7 @@ is `retired`; protected or asynchronous resources remain pending.
 ## Failure Handling
 
 Report the exact diagnostic. Running work, pins, shared ownership, unpreserved
-changes, unavailable native inventory and invalid installation configuration
+changes, unavailable native inventory and invalid OpenClaw cleanup settings
 remain protected. Do not force archive or remove files. An active task cannot
 archive itself during its current turn. Pending requests continue through normal
 intake reconciliation; the operator can also repeat this exact operation.
