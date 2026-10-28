@@ -155,7 +155,9 @@ old_coordinator=$(jq -er '.targets[0].resources[] | select(.kind == "coordinator
 confirmation=$(jq -er .confirmation "$TMPDIR/reset-preview.json")
 openclaw agent-system notifications reset --agent reset-tanaabot --fresh --confirmation "$confirmation" --yes --json | jq -e '.results | length == 1 and .[0].status == "complete" and .[0].automationRestored == true'
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$old_coordinator" '{key:$key}')" --json | jq -e '.session.archived == true'
-openclaw agent-system automations list --agent reset-tanaabot --json | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == true)'
+openclaw agent-system automations list --agent reset-tanaabot --json | tee "$TMPDIR/reset-automations-after.json" | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == true)'
+coordinator=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .routing | sub("^session:"; "")' "$TMPDIR/reset-automations-after.json")
+openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$coordinator" '{key:$key}')" --json | jq -e '.session.category == "AGENT SYSTEM"'
 jq -es 'all(.[]; (.records | length) == 0 and .resetGeneration != null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 openclaw agent-system notifications status --agent reset-tanaabot --json | jq -e '.baseline.status == "ready" and (.items | length) == 0'
 ```

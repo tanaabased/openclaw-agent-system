@@ -50,10 +50,14 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
           turnId: attempt.turnId!,
           ended: false,
         };
-      const user = items.findLastIndex((item) => item.type === 'userMessage');
+      // later operator steering does not erase custody of the retained input receipt.
+      const user = items.findIndex(
+        (item) => item.type === 'userMessage' && item.id === attempt.inputId,
+      );
       if (
         user < 0 ||
-        items[user]!.id !== attempt.inputId ||
+        items.filter((item) => item.type === 'userMessage' && item.id === attempt.inputId)
+          .length !== 1 ||
         items
           .slice(user + 1)
           .some(

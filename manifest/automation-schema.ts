@@ -11,6 +11,7 @@ import {
   type NormalizedCommand,
 } from './command-schema.ts';
 import type { ManifestDiagnostic } from './types.ts';
+import managedGroupName from '../utils/managed-group-name.ts';
 
 const textSchema = Type.String({ pattern: '^(?=[\\s\\S]*\\S)[^\\u0000\\r\\n]*(?![\\s\\S])' });
 const displayNameSchema = Type.String({
@@ -45,6 +46,7 @@ const jobSchema = Type.Object(
     'display-name': Type.Optional(displayNameSchema),
     enabled: Type.Optional(Type.Boolean()),
     thread: Type.Optional(Type.Union([Type.Null(), textSchema, automationThreadSchema])),
+    group: Type.Optional(Type.String()),
     runtimes: Type.Optional(
       Type.Array(Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]), {
         uniqueItems: true,
@@ -97,6 +99,7 @@ export interface AgentAutomation {
     | { kind: 'command'; run: NormalizedCommand }
     | { kind: 'prompt'; prompt: string | { file: string } };
   thread?: { id?: string; name?: string };
+  group?: string;
   timeoutSeconds?: number;
   overrides: Partial<Record<AutomationRuntime, AutomationOverride>>;
 }
@@ -105,7 +108,6 @@ export type ResolvedAutomation = Omit<AgentAutomation, 'payload'> & {
   internalOpenClaw?: {
     trigger: { script: string };
     toolsAllow: string[];
-    group?: string;
   };
   payload: { kind: 'command'; run: NormalizedCommand } | { kind: 'prompt'; prompt: string };
 };
@@ -190,6 +192,40 @@ export default function normalizeAutomations(
             kind: 'prompt' as const,
             prompt: typeof payload.prompt === 'string' ? payload.prompt : { ...payload.prompt },
           };
+    let group: string | undefined;
+    if (job.group !== undefined) {
+      if (payload.kind === 'command') {
+        diagnostics.push({
+          ...automationDiagnostic('manifest-automation-group-persistent-required', `${path}/group`),
+          message:
+            'group requires a persistent prompt chat; remove group from this command automation.',
+        });
+        continue;
+      }
+      try {
+        group = managedGroupName(
+          job.group,
+          (job.runtimes ?? ['openclaw', 'codex']).includes('openclaw') ? 512 : undefined,
+        );
+      } catch (error) {
+        diagnostics.push({
+          ...automationDiagnostic('manifest-automation-group', `${path}/group`),
+          message: `Invalid group: ${error instanceof Error ? error.message : 'invalid name'}. Use a nonblank name without control characters within the native name limit.`,
+        });
+        continue;
+      }
+      for (const runtime of job.runtimes ?? (['openclaw', 'codex'] as const)) {
+        const target = job.overrides?.[runtime]?.target;
+        if (target === 'independent' || (!target && !job.thread))
+          diagnostics.push({
+            ...automationDiagnostic(
+              'manifest-automation-group-persistent-required',
+              `${path}/group`,
+            ),
+            message: `group requires a persistent prompt chat for ${runtime}; declare thread or overrides.${runtime}.target.thread, or remove group.`,
+          });
+      }
+    }
     if (
       normalizedPayload.kind === 'command' &&
       normalizedPayload.run.kind === 'exec' &&
@@ -217,6 +253,7 @@ export default function normalizeAutomations(
       runtimes: [...(job.runtimes ?? (['openclaw', 'codex'] as const))].sort(),
       schedule,
       payload: normalizedPayload,
+      ...(group === undefined ? {} : { group }),
       ...(job.thread == null
         ? {}
         : {

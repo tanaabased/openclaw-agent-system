@@ -10,6 +10,7 @@ import ensurePrivateStateDirectories from '../core/ensure-private-state-director
 import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
 import type { AutomationRuntime, ResolvedAutomation } from '../manifest/automation-schema.ts';
+import managedGroupName, { defaultManagedGroup } from '../utils/managed-group-name.ts';
 
 const recordSchema = Type.Object(
   {
@@ -72,8 +73,17 @@ export function automationThreadSelection(
   if (job.payload.kind !== 'prompt') return;
   const target = job.overrides[runtime]?.target;
   if (target === 'independent') return;
+  const group = managedGroupName(
+    job.group ?? defaultManagedGroup,
+    runtime === 'openclaw' ? 512 : undefined,
+  );
   if (target)
-    return { key: automationHash(['native', target.thread]), exact: target.thread, managed: false };
+    return {
+      key: automationHash(['native', target.thread]),
+      exact: target.thread,
+      managed: false,
+      group,
+    };
   if (!job.thread) return;
   return {
     key: automationHash(
@@ -86,9 +96,7 @@ export function automationThreadSelection(
     ...(job.thread.id ? { exact: job.thread.id } : {}),
     ...(job.thread.name ? { name: job.thread.name } : {}),
     managed: true,
-    ...(runtime === 'openclaw' && job.internalOpenClaw?.group
-      ? { group: job.internalOpenClaw.group }
-      : {}),
+    group,
   };
 }
 
@@ -163,6 +171,14 @@ export default class AutomationThreads {
         }
       >();
       const nativeNames = new Map<string, string>();
+      const groups = new Map<string, string>();
+      for (const { selection } of selected) {
+        const previous = groups.get(selection.key);
+        if (previous !== undefined && previous !== selection.group)
+          throw new AutomationError('automation-thread-group-conflict');
+        groups.set(selection.key, selection.group!);
+      }
+      const nativeGroups = new Map<string, string>();
       // verify every existing target and all aliases before the first mutation.
       for (const { job, selection } of selected) {
         if (prepared.has(selection.key)) continue;
@@ -181,6 +197,12 @@ export default class AutomationThreads {
         if (native?.archived && !replace)
           throw new AutomationError('automation-thread-unavailable');
         if (!selection.managed && !native) throw new AutomationError('automation-thread-missing');
+        if (native) {
+          const previous = nativeGroups.get(native.id);
+          if (previous !== undefined && previous !== selection.group)
+            throw new AutomationError('automation-thread-group-conflict');
+          nativeGroups.set(native.id, selection.group!);
+        }
         if (record && record.phase !== 'ready' && !apply)
           throw new AutomationError('automation-thread-recovery-required');
         const name = names.get(selection.key);
