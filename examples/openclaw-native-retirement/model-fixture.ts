@@ -7,9 +7,9 @@ import {
 } from '../../scripts/aimock-tool-result.ts';
 
 const model = /^(?:aimock\/)?gpt-5\.5$/u;
-const wrong = 'native-retirement-wrong';
-const preview = 'native-retirement-preview';
-const apply = 'native-retirement-apply';
+const wrong = 'call_native_retirement_wrong';
+const preview = 'call_native_retirement_preview';
+const apply = 'call_native_retirement_apply';
 const target = 'agent:native-retirement:disposable';
 const result = (request: ChatCompletionRequest, id: string) => {
   const text = openClawAIMockToolResultText(request.messages, id);

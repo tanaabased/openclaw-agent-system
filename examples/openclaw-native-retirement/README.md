@@ -64,7 +64,7 @@ openclaw gateway call sessions.patch --params "$(jq -nc --arg id "$(jq -r .sessi
 openclaw gateway call sessions.describe --params '{"key":"agent:native-retirement:disposable"}' --json | jq -e '.session.sessionId == input.sessionId and (.session.archivedAt // 0) == 0' - "$TMPDIR/native-retirement-target.json"
 
 # should complete the strict model exchange without unexpected requests
-curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e '.scenario == "openclaw-native-retirement" and .strictMissCount == 0 and .finalResponseCount == 1 and any(.tools[]; .name == "agent_system_dispatch" and .callResponseCount == 3)'
+curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | jq -e 'if .scenario == "openclaw-native-retirement" and .strictMissCount == 0 and .finalResponseCount == 1 and any(.tools[]; .name == "agent_system_dispatch" and .callResponseCount == 3) then true else error(tojson) end'
 ```
 
 ## Cleanup
