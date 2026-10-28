@@ -6,6 +6,7 @@ import { launchRequestSchema } from '../tools/dispatch/launch-schema.ts';
 import openClawImplementationEntry from './openclaw-implementation-entry.ts';
 import openClawAssessmentEntry from './openclaw-assessment-entry.ts';
 import retireOpenClawTask from './openclaw-dispatch-retirement.ts';
+import retireOpenClawNative from './openclaw-native-retirement.ts';
 import pendingPublicResponse from './pending-public-response.ts';
 import openClawReply from './openclaw-reply.ts';
 import type { Static } from 'typebox';
@@ -260,6 +261,17 @@ export default class OpenClawDispatch {
         workspace,
         caller,
         input,
+        operator,
+        authority,
+      });
+    if (input.action === 'retire' && input.native !== undefined)
+      return retireOpenClawNative({
+        dependencies: this.dependencies,
+        manifest,
+        workspace,
+        caller,
+        native: input.native,
+        digest: input.digest,
         operator,
         authority,
       });

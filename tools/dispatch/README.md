@@ -41,13 +41,54 @@ supplies the current request, required inputs, and recovery instructions.
 | Implement an authorized plan in the current checkout | `implementation`                      | [Task Implementation](../../skills/task-implementation/SKILL.md)                              |
 | Launch or reuse managed issue work                   | `launch`                              | [Task Launch](../../skills/task-launch/SKILL.md) and [launch reference](#manual-issue-launch) |
 | Reply to an exact GitHub destination                 | `reply`                               | [GitHub Reply](../../skills/github-reply/SKILL.md)                                            |
-| Retire one managed task                              | `retire`                              | [Task Retirement](../../skills/task-retirement/SKILL.md)                                      |
+| Retire a managed task or exact native chat           | `retire`                              | [Task Retirement](../../skills/task-retirement/SKILL.md)                                      |
 | Update an issue with verified progress               | `reply` with `purpose: status-update` | [Task Update](../../skills/task-update/SKILL.md)                                              |
 
 The installed workflow also uses this tool internally. Follow the owning skill and
 returned task context rather than assembling an action sequence. Exact variants are
 in the [tool schema](./tool-schema.ts); shared behavior and recovery are in the
 [GitHub workflow guide](../../channels/github/README.md).
+
+### Native cleanup
+
+Explicit unmanaged cleanup needs no GitHub issue or assignment intake. Use the
+invoking runtime's exact native identifier. Known managed chats must use managed
+retirement; a managed denial never falls back to unmanaged cleanup.
+
+#### Parameters
+
+| Parameter | Type   | Required  | Default | Description                                                                                     |
+| --------- | ------ | --------- | ------- | ----------------------------------------------------------------------------------------------- |
+| `action`  | string | yes       | none    | `retire`.                                                                                       |
+| `digest`  | string | for apply | none    | Digest returned by the latest exact-target preview.                                             |
+| `native`  | string | yes       | none    | Exact OpenClaw session key or standalone Codex thread id. Cannot be combined with managed `id`. |
+
+#### Usage
+
+Preview one unmanaged OpenClaw session:
+
+```json
+{ "action": "retire", "native": "agent:example:disposable" }
+```
+
+Inspect its target and effects, then repeat with the returned `digest`. Existing
+explicit cleanup intent authorizes apply without another conversational
+confirmation. OpenClaw requires enrolled session transport; explicit Install with
+`--manual-session-dispatch` supplies it when absent. Standalone Codex requires the
+native desktop archive tool and uses its exact thread id through the shared skill.
+
+> [!WARNING]
+> This is intentional disposal through normal native cleanup, not managed
+> preservation. It may stop selected work, archive native descendants or reclaim
+> a native checkout/local branch. Local-only work may be lost. Remote branches,
+> GitHub issues and assignments are not changed.
+
+`archived` verifies native archival, not disk reclamation. Checkout disposition
+`native-owned` means the runtime owns any later cleanup; removal or retention is
+not independently verified. Uncertain results stay `pending`; native denial is
+`failed`. Missing native tools are unavailable, never a reason to delete files.
+Use native history/restore where supported; restoring history does not guarantee
+recovery of discarded local changes. This entry has no keep-checkout option.
 
 <a id="manual-issue-launch"></a>
 

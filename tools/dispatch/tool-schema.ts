@@ -1,4 +1,5 @@
 import { launchRequestSchema } from './launch-schema.ts';
+import { retirementRequestSchema } from './retirement-schema.ts';
 import { directImplementationRequestSchema } from './implementation-schema.ts';
 import { directAssessmentRequestSchema } from './assessment-schema.ts';
 import { feedbackDecisionSchema } from '../../agent/feedback-work.ts';
@@ -25,7 +26,7 @@ const dispatchRequestVariants = Type.Union([
     pullRequest: Type.String({ minLength: 1, maxLength: 4096 }),
     digest: Type.Optional(id),
   }),
-  object({ action: Type.Literal('retire'), id: Type.Optional(id), digest: Type.Optional(id) }),
+  retirementRequestSchema,
   object({
     action: Type.Literal('check'),
     observation: Type.Optional(
