@@ -76,12 +76,12 @@ an installation UUID does not transfer that work. OpenClaw provides
 
 ### `schema-version`
 
-| Type         | Required           | Default |
-| ------------ | ------------------ | ------- |
-| integer, `3` | yes, for workflows | none    |
+| Type         | Required | Default |
+| ------------ | -------- | ------- |
+| integer, `3` | no       | `3`     |
 
-Use `3`, the only supported workflow version. It must be explicit; GitHub CLI-only
-configuration does not require this field.
+Workflow declarations default to `3`, the only supported version. Explicit unsupported
+versions are rejected. GitHub CLI-only configuration does not require this field.
 
 ## `github.issue-assignment`
 
