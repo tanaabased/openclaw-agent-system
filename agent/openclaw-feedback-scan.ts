@@ -1,3 +1,4 @@
+import { managedPullRequest } from './managed-issue.ts';
 import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
@@ -184,8 +185,12 @@ export async function scanOpenClawFeedback(input: {
         };
         const pr = record.work?.delivery?.reconciled ? record.work.delivery.pullRequest : undefined;
         const sources = [
-          { number: intake.issue.number, nodeId: intake.issue.nodeId, itemType: 'issue' as const },
-          ...(pr
+          {
+            number: intake.issue.number,
+            nodeId: intake.issue.nodeId,
+            itemType: managedPullRequest(intake) ? ('pull-request' as const) : ('issue' as const),
+          },
+          ...(pr && pr.pullRequestNodeId !== intake.issue.nodeId
             ? [
                 {
                   number: pr.pullRequestNumber,

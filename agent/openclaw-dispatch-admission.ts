@@ -1,4 +1,4 @@
-import { dispatchAdmission } from './managed-issue.ts';
+import { dispatchAdmission, managedPullRequest } from './managed-issue.ts';
 import verifyIssuePullRequest from './issue-pr-selection.ts';
 import openClawRoutingInstructions from './openclaw-routing-instructions.ts';
 import { assertRoutingInstructions, routingInstructionsDigest } from './routing-instructions.ts';
@@ -270,9 +270,24 @@ export default class OpenClawDispatchAdmission {
       }
       const result = await (working ? advanceIssueTurn : createIssueSession)({
         config: this.context.dependencies.config(),
-        credential: this.context.guardedCredential(() =>
-          this.context.validate(manifest, workspace, record, false, false, client, signal),
-        ),
+        credential: this.context.guardedCredential(async (method) => {
+          const checked = await this.context.validate(
+            manifest,
+            workspace,
+            record,
+            false,
+            false,
+            client,
+            signal,
+          );
+          if (
+            method === 'sessions.create' &&
+            managedPullRequest(intake) &&
+            checked.item.pullRequest?.headSha !== managedPullRequest(intake)?.headSha
+          )
+            throw new Error('launch-pull-request-head-changed');
+          return checked;
+        }),
         record,
         save,
         authority: turnAuthority,

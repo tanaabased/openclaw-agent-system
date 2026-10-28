@@ -1,6 +1,6 @@
 ---
 name: agent-system-task-launch
-description: 'Start or resume an Agent System-managed task tracked by a GitHub issue in Codex or OpenClaw. Use for "work on task", "work on issue", or "start task" requests that launch managed work, without assigning the issue or enabling scheduled intake.'
+description: 'Start or resume work from a GitHub issue or existing same-repository pull request in Codex or OpenClaw. Use for "work on task", "work on issue", "continue this PR", or "start task" requests that launch managed work, without assigning it or enabling scheduled intake.'
 license: MIT
 metadata:
   type: workflow
@@ -27,6 +27,7 @@ Start the existing managed task workflow from an explicit operator request inste
 ## When to Use
 
 - The operator explicitly asks to start managed work on one accessible open GitHub issue, with or without an assignment.
+- The operator supplies an open same-repository PR URL to continue that PR, not to review it independently.
 - Requests such as "work on task #123", "work on issue #123", or "pull down issue #123" mean starting its managed workflow when no narrower assessment or implementation request is specified.
 - The operator retries partial setup or asks to return to already managed work.
 
@@ -43,7 +44,7 @@ Use the trusted invoking agent and host context. An issue need not be assigned, 
 
 ## Workflow
 
-1. Resolve the requested issue URL, owner/repo#number, repository plus number, or issue number with verified repository context. Use the current managed target or independently verified project remotes when unambiguous. Ask for missing repository context instead of guessing from a group name or issue prose.
+1. Resolve the requested issue or PR URL, owner/repo#number, repository plus number, or number with verified repository context. Use the current managed target or independently verified project remotes when unambiguous. Ask for missing repository context instead of guessing from a group name or provider prose. PR continuation starts at its verified current head and retains that PR as the update destination; forks, closed PRs and conflicting targets are unsupported.
 2. In OpenClaw call agent_system_dispatch with action launch, operation context, and target; include repository only when needed. In standalone Codex use dispatchRuntime from the newest trusted context, followed by launch context before its exact --plugin-data argument, sending JSON on stdin. Never infer executable or credential paths.
 3. Supply supported explicit mode, routing model/effort, and assessment/implementation stages only when requested. Omitted fields inherit current agent.yaml defaults independently. Preserve the returned receipt; do not silently replace invalid explicit selections.
    Only an explicit operator request for another task permits `fresh: true`. Keep that choice inside Task Launch; automatic intake never selects it. The original task stays active. In either runtime, include an explicitly selected same-repository `pullRequest` URL to start from its verified fetched head and later update that PR. Otherwise fresh launch does not select another task's PR. Retain the returned `id` for every subsequent preparation/reconciliation; a retry is not another launch.
@@ -60,6 +61,7 @@ For an explicit replacement request, use `agent_system_dispatch` in OpenClaw or 
 - Native operator input, agent binding and current provider access precede launch effects.
 - No fake assignment, assigner, automation occurrence or intake receipt is created.
 - Manual launch grants no new background feedback or scheduling. Normal managed summaries and PRs may be public; local recovery records remain.
+- Existing PR work updates only its original source branch and PR. Preserve its base, title, body and draft/review state unless separately directed; never create a replacement, force-push, add an issue-closing link or mark a draft ready. Changed heads require fresh verification; divergent collaborator work or a changed prepared checkout stops unsafe delivery.
 - Native denials stop the affected operation. Never use private APIs, another identity, or direct session-store edits to recover.
 
 ## Completion Criteria

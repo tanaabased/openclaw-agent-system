@@ -54,6 +54,13 @@ export interface IssueDeliveryInput {
     assignmentActorNodeId?: string;
   };
   branch: string;
+  adoptedPullRequest?: {
+    headRef: string;
+    baseRef: string;
+    authorId: string;
+    repositoryNodeId: string;
+    repositoryDatabaseId: number;
+  };
   title?: string;
   body?: string;
   signal?: AbortSignal;
@@ -271,20 +278,25 @@ export default class IssueDeliveryProvider {
     const pullRequest = await this.#find(input);
     if (!pullRequest) throw new Error('delivery-announcement-pr-missing');
     await this.#verify(input, pullRequest, false);
-    parseIssue(
-      await this.#github(
-        this.client,
-        [
-          'api',
-          `repos/${input.item.repositoryOwner}/${input.item.repositoryName}/issues/${input.item.number}`,
-          '--jq',
-          '{databaseId:.id,nodeId:.node_id,number,title}',
-        ],
-        input.signal,
-      ),
-      input.item,
-    );
-    if (!input.adopted && !(await this.#linkedIssue(input, pullRequest)))
+    if (!input.adoptedPullRequest)
+      parseIssue(
+        await this.#github(
+          this.client,
+          [
+            'api',
+            `repos/${input.item.repositoryOwner}/${input.item.repositoryName}/issues/${input.item.number}`,
+            '--jq',
+            '{databaseId:.id,nodeId:.node_id,number,title}',
+          ],
+          input.signal,
+        ),
+        input.item,
+      );
+    if (
+      !input.adoptedPullRequest &&
+      !input.adopted &&
+      !(await this.#linkedIssue(input, pullRequest))
+    )
       throw new Error('github-delivery-linkage-unverified');
     const observed = record(
       await this.#github(
@@ -319,6 +331,36 @@ export default class IssueDeliveryProvider {
   async #find(input: IssueDeliveryInput): Promise<PullRequestIdentity | undefined> {
     const github = this.client;
     const repository = `${input.item.repositoryOwner}/${input.item.repositoryName}`;
+    if (input.adoptedPullRequest) {
+      if (
+        !input.expectedPullRequest ||
+        input.expectedPullRequest.pullRequestNodeId !== input.item.itemNodeId ||
+        input.expectedPullRequest.pullRequestNumber !== input.item.number ||
+        !input.headSha ||
+        input.branch !== input.adoptedPullRequest.headRef ||
+        input.repositoryNodeId !== input.adoptedPullRequest.repositoryNodeId ||
+        input.item.repositoryDefaultBranch !== input.adoptedPullRequest.baseRef
+      )
+        throw new Error('delivery-adopted-pull-request-binding-required');
+      const found = parsePullRequest(
+        await this.#github(
+          github,
+          [
+            'api',
+            `repos/${repository}/pulls/${input.expectedPullRequest.pullRequestNumber}`,
+            '--jq',
+            pullRequestProjection(),
+          ],
+          input.signal,
+        ),
+      );
+      if (
+        found.itemNodeId !== input.expectedPullRequest.pullRequestNodeId ||
+        found.number !== input.expectedPullRequest.pullRequestNumber
+      )
+        throw new Error('delivery-adopted-pull-request-identity-changed');
+      return found;
+    }
     const pullRequests = await this.#github(
       github,
       [
@@ -380,7 +422,9 @@ export default class IssueDeliveryProvider {
               'api',
               `repos/${repository}/pulls/${pullRequest.number}`,
               '--jq',
-              '{nodeId:.node_id,repositoryId:.base.repo.node_id,headRepositoryId:.head.repo.node_id,headSha:.head.sha,authorId:.user.node_id,baseRef:.base.ref,headRef:.head.ref,state,number}',
+              input.adoptedPullRequest
+                ? '{nodeId:.node_id,repositoryId:.base.repo.node_id,headRepositoryId:.head.repo.node_id,repositoryDatabaseId:.base.repo.id,headRepositoryDatabaseId:.head.repo.id,headSha:.head.sha,authorId:.user.node_id,baseRef:.base.ref,headRef:.head.ref,state,number}'
+                : '{nodeId:.node_id,repositoryId:.base.repo.node_id,headRepositoryId:.head.repo.node_id,headSha:.head.sha,authorId:.user.node_id,baseRef:.base.ref,headRef:.head.ref,state,number}',
             ],
             input.signal,
           ),
@@ -390,11 +434,18 @@ export default class IssueDeliveryProvider {
           nodeId: pullRequest.itemNodeId,
           repositoryId: input.repositoryNodeId,
           headRepositoryId: input.repositoryNodeId,
-          authorId: input.adopted?.authorId ?? github.identity.nodeId,
+          authorId:
+            input.adoptedPullRequest?.authorId ?? input.adopted?.authorId ?? github.identity.nodeId,
           baseRef: input.adopted?.base ?? input.item.repositoryDefaultBranch,
           headRef: branch,
           state: 'open',
           number: pullRequest.number,
+          ...(input.adoptedPullRequest
+            ? {
+                repositoryDatabaseId: input.adoptedPullRequest.repositoryDatabaseId,
+                headRepositoryDatabaseId: input.adoptedPullRequest.repositoryDatabaseId,
+              }
+            : {}),
         };
         for (const [field, value] of Object.entries(expected))
           if (observed[field] !== value)
@@ -444,7 +495,10 @@ export default class IssueDeliveryProvider {
           'GitHub returned an invalid pull request author.',
         );
       }
-      if (authorNodeId !== (input.adopted?.authorId ?? github.identity.nodeId)) {
+      if (
+        authorNodeId !==
+        (input.adoptedPullRequest?.authorId ?? input.adopted?.authorId ?? github.identity.nodeId)
+      ) {
         throw new GitHubIssueDeliveryError(
           'identity-mismatch',
           'The task pull request was not created by the active agent.',
@@ -460,19 +514,23 @@ export default class IssueDeliveryProvider {
     const github = this.client;
     const branch = input.branch;
     const repository = `${input.item.repositoryOwner}/${input.item.repositoryName}`;
-    const issue = parseIssue(
-      await this.#github(
-        github,
-        [
-          'api',
-          `repos/${repository}/issues/${input.item.number}`,
-          '--jq',
-          '{databaseId:.id,nodeId:.node_id,number,title}',
-        ],
-        input.signal,
-      ),
-      input.item,
-    );
+    if (input.adoptedPullRequest && (normalize || input.linkIssue || input.recipients?.length))
+      throw new Error('delivery-adopted-pull-request-side-effect-invalid');
+    const issue = input.adoptedPullRequest
+      ? { title: input.title ?? '' }
+      : parseIssue(
+          await this.#github(
+            github,
+            [
+              'api',
+              `repos/${repository}/issues/${input.item.number}`,
+              '--jq',
+              '{databaseId:.id,nodeId:.node_id,number,title}',
+            ],
+            input.signal,
+          ),
+          input.item,
+        );
     const existing = await this.#find(input);
     if (!existing) await input.beforeCreate?.();
     let pullRequest = !existing

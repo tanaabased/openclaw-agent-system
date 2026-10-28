@@ -1,3 +1,4 @@
+import { managedPullRequest } from './managed-issue.ts';
 import { lstat } from 'node:fs/promises';
 
 import { openClawCleanupConfiguration } from './cleanup-configuration.ts';
@@ -181,7 +182,7 @@ export default async function reconcileOpenClawLifecycle(input: {
             repositoryDatabaseId: repo.databaseId,
             itemDatabaseId: intake.issue.databaseId,
             itemNumber: intake.issue.number,
-            itemType: 'issue' as const,
+            itemType: managedPullRequest(intake) ? ('pull-request' as const) : ('issue' as const),
             ...(issueClosed ? { closedIssueWorktree: record.worktree } : {}),
           };
           const worktree = await service.dependencies.worktrees.inspectGitHub(worktreeInput);

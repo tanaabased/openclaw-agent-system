@@ -2,7 +2,8 @@ import githubNotificationCard, { githubNotificationMarkdownText } from './card.t
 
 interface GitHubNotificationPullRequestOpenedPresentationInput {
   commentFlow?: 'openclaw' | 'codex' | 'unavailable' | 'unverified' | 'omit';
-  issueNumber: number;
+  issueNumber?: number;
+  updated?: boolean;
   pullRequestNumber: number;
   repositoryName: string;
   repositoryOwner: string;
@@ -19,15 +20,19 @@ export function githubNotificationPullRequestOpenedCard(
     {
       emoji: '🔀',
       facts: [
-        {
-          label: 'Issue',
-          value: `[${githubNotificationMarkdownText(`${repository}#${input.issueNumber}`)}](${repositoryUrl}/issues/${input.issueNumber})`,
-        },
+        ...(input.issueNumber
+          ? [
+              {
+                label: 'Issue',
+                value: `[${githubNotificationMarkdownText(`${repository}#${input.issueNumber}`)}](${repositoryUrl}/issues/${input.issueNumber})`,
+              },
+            ]
+          : []),
         {
           label: 'Pull request',
           value: `[${githubNotificationMarkdownText(`${repository}#${input.pullRequestNumber}`)}](${repositoryUrl}/pull/${input.pullRequestNumber})`,
         },
-        ...(input.commentFlow === 'omit'
+        ...(input.commentFlow === 'omit' || input.updated
           ? []
           : [
               {
@@ -43,7 +48,7 @@ export function githubNotificationPullRequestOpenedCard(
               },
             ]),
       ],
-      title: 'Pull request opened',
+      title: input.updated ? 'Pull request updated' : 'Pull request opened',
     },
     { quoted: true },
   );

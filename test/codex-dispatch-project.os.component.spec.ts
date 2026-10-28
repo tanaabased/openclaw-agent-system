@@ -43,6 +43,35 @@ describe('agent/codex-dispatch-project', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it('should fetch the selected pr source and refuse a mismatched provider head', async () => {
+    const input = {
+      projects: [project(source)],
+      repository: 'owner/repo',
+      defaultBranch: 'main',
+      workspace: root,
+      startingHead: { headRef: 'existing-work', headSha: commit },
+    };
+    const calls: string[][] = [];
+    const selected = await resolveDispatchProject(input, async (cwd, argv) => {
+      calls.push(argv);
+      return git(cwd, argv);
+    });
+    assert.equal(selected.commit, commit);
+    assert.equal(selected.ref, 'refs/remotes/origin/existing-work');
+    assert.ok(
+      calls.some((argv) =>
+        argv.includes('refs/heads/existing-work:refs/remotes/origin/existing-work'),
+      ),
+    );
+    await assert.rejects(
+      resolveDispatchProject(
+        { ...input, startingHead: { ...input.startingHead, headSha: '2'.repeat(40) } },
+        git,
+      ),
+      /head-changed/,
+    );
+  });
+
   it('should report native authentication failures without exposing git stderr', async function () {
     if (process.platform === 'win32') this.skip();
     const bin = join(root, 'bin');

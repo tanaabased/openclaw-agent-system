@@ -1,3 +1,8 @@
+import {
+  managedTargetUrl,
+  managedPullRequest,
+  type ManagedIssue as IntakeRecord,
+} from './managed-issue.ts';
 import openClawResponseAuthority from './openclaw-response-authority.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import assessmentHandoff from './assessment-handoff.ts';
@@ -22,7 +27,7 @@ import {
   sessionObject,
   type DispatchCaller,
 } from './openclaw-session-create.ts';
-import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
+
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { AssessmentConfiguration } from '../manifest/assessment-schema.ts';
 
@@ -39,9 +44,9 @@ export function assessmentTurnMessage(
         {
           emoji: '📥',
           item: {
-            kind: 'Issue',
+            kind: managedPullRequest(input.intake) ? 'Pull request' : 'Issue',
             label: `${input.intake.repository.owner.login}/${input.intake.repository.name}#${input.intake.issue.number}`,
-            url: `https://github.com/${input.intake.repository.owner.login}/${input.intake.repository.name}/issues/${input.intake.issue.number}`,
+            url: managedTargetUrl(input.intake),
           },
           sender: input.intake.assignment
             ? {

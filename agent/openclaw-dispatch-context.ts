@@ -1,4 +1,5 @@
-import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
+import { managedPullRequest, managedIssueState, dispatchAdmission } from './managed-issue.ts';
+
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
 import GitWorktreeConflict from '../tools/git/worktree-conflict.ts';
@@ -193,12 +194,14 @@ export default class OpenClawDispatchContext {
   }
 
   /** Refresh provider authority at action entry and immediately before native dispatch. */
-  guardedCredential(revalidate: () => Promise<unknown>): Pick<SessionDispatchCredential, 'use'> {
+  guardedCredential(
+    revalidate: (method: 'sessions.create' | 'chat.send') => Promise<unknown>,
+  ): Pick<SessionDispatchCredential, 'use'> {
     return {
       use: (authority, operation) =>
         this.dependencies.credential.use(authority, (request) =>
           operation(async (method, params) => {
-            if (method === 'sessions.create' || method === 'chat.send') await revalidate();
+            if (method === 'sessions.create' || method === 'chat.send') await revalidate(method);
             return request(method, params);
           }),
         ),
@@ -257,7 +260,14 @@ export default class OpenClawDispatchContext {
               client,
               record,
             )
-          : await inspectAdmittedIssue(intake, client);
+          : await inspectAdmittedIssue(intake, client, Boolean(record.sessionCreation?.attempted));
+    const pullRequest = managedPullRequest(intake);
+    if (
+      pullRequest &&
+      !record.sessionCreation?.attempted &&
+      item.pullRequest?.headSha !== pullRequest.headSha
+    )
+      throw new Error('launch-pull-request-head-changed');
     const worktreeInput = {
       agentId: manifest.agent.id,
       attemptId: record.worktreeAttemptId,
@@ -266,7 +276,10 @@ export default class OpenClawDispatchContext {
       defaultBranch: repo.defaultBranch,
       itemDatabaseId: intake.issue.databaseId,
       itemNumber: intake.issue.number,
-      itemType: 'issue' as const,
+      itemType: pullRequest ? ('pull-request' as const) : ('issue' as const),
+      ...(pullRequest
+        ? { startingHead: { headRef: pullRequest.headRef, headSha: pullRequest.headSha } }
+        : {}),
       repositoryDatabaseId: repo.databaseId,
     };
     if (record.worktree) {

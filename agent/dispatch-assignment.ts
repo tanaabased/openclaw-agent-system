@@ -1,4 +1,6 @@
-import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
+import manualPullRequest from './manual-pull-request.ts';
+import { managedPullRequest, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
+
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import {
   githubIdentityMatches,
@@ -123,6 +125,7 @@ export async function inspectActiveIssue(
   record: IntakeRecord,
   client: GitHubNotificationIntakeClient,
   feedbackOnly = false,
+  retainedStartup = false,
 ) {
   if (!githubIdentityMatches(client.identity, record.receiving))
     throw new Error('dispatch-receiver-account-changed');
@@ -136,10 +139,16 @@ export async function inspectActiveIssue(
     item.nodeId !== record.issue.nodeId ||
     item.databaseId !== record.issue.databaseId ||
     item.number !== record.issue.number ||
-    item.itemType !== 'issue'
+    item.itemType !== (managedPullRequest(record) ? 'pull-request' : 'issue')
   )
     throw new Error('dispatch-issue-identity-changed');
   if (item.state !== 'open') throw new Error('dispatch-issue-closed');
+  const adopted = managedPullRequest(record);
+  if (adopted) {
+    const observed = manualPullRequest(repo, item, adopted);
+    if (!feedbackOnly && !retainedStartup && observed.headSha !== adopted.headSha)
+      throw new Error('launch-pull-request-head-changed');
+  }
   if (
     !('initiation' in record) &&
     !feedbackOnly &&
@@ -153,8 +162,9 @@ export async function inspectActiveIssue(
 export async function inspectAdmittedIssue(
   record: IntakeRecord,
   client: GitHubNotificationIntakeClient,
+  retainedStartup = false,
 ) {
-  const current = await inspectActiveIssue(record, client);
+  const current = await inspectActiveIssue(record, client, false, retainedStartup);
   if ('initiation' in record) return current;
   const events = await client.listAssignmentEvents(
     record.repository.owner.login,

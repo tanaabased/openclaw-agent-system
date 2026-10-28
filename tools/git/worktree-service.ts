@@ -43,7 +43,13 @@ export interface GitWorktreeServiceContext {
 export interface GitWorktreePrepareInput {
   baseRef: string;
   cloneUrl?: string;
-  issueBranch?: { number: number; suffix: string; title: string; attemptId?: string };
+  issueBranch?: {
+    number: number;
+    suffix: string;
+    title: string;
+    attemptId?: string;
+    startingHead?: { headRef: string; headSha: string };
+  };
   reconcileOrigin?: boolean;
   repositoryId: string;
   workId: string;
@@ -172,6 +178,32 @@ export default class GitWorktreeService {
       input.cloneUrl,
       input.reconcileOrigin ?? false,
     );
+    const startingHead = input.issueBranch?.startingHead;
+    if (startingHead) {
+      if (!/^[a-f0-9]{40,64}$/u.test(startingHead.headSha))
+        throw new Error('launch-pull-request-head-invalid');
+      const source = `refs/heads/${startingHead.headRef}`;
+      const fetched = `refs/remotes/origin/${startingHead.headRef}`;
+      requireGitSuccess(
+        'source ref validation',
+        await this.#run(context, repository.path, ['check-ref-format', source]),
+      );
+      requireGitSuccess(
+        'source fetch',
+        await this.#run(context, repository.path, [
+          'fetch',
+          '--no-tags',
+          'origin',
+          `${source}:${fetched}`,
+        ]),
+      );
+      const observed = requireGitSuccess(
+        'source head',
+        await this.#run(context, repository.path, ['rev-parse', '--verify', `${fetched}^{commit}`]),
+      );
+      if (observed.stdout.trim() !== startingHead.headSha)
+        throw new Error('launch-pull-request-head-changed');
+    }
     const stableName = gitWorktreeDirectoryName(input.repositoryId, input.workId);
     const branch = input.issueBranch
       ? gitHubIssueBranchName(
@@ -198,6 +230,18 @@ export default class GitWorktreeService {
           'The deterministic Git worktree path uses another branch.',
         );
       }
+      if (startingHead) {
+        const head = requireGitSuccess(
+          'owned starting head',
+          await this.#run(context, existing.path, ['rev-parse', '--verify', 'HEAD']),
+        );
+        const status = requireGitSuccess(
+          'owned starting status',
+          await this.#run(context, existing.path, ['status', '--porcelain=v1']),
+        );
+        if (head.stdout.trim() !== startingHead.headSha || status.stdout.trim())
+          throw new Error('launch-pull-request-checkout-changed');
+      }
       return this.#result(input.repositoryId, input.workId, existing, 'existing');
     }
     if ((await pathKind(path)) !== 'absent') {
@@ -206,7 +250,7 @@ export default class GitWorktreeService {
         'The deterministic Git worktree path is already occupied.',
       );
     }
-    if (repository.refreshBeforeCreate) {
+    if (repository.refreshBeforeCreate && !startingHead) {
       requireGitSuccess(
         'fetch',
         await this.#run(context, repository.path, [
@@ -227,7 +271,7 @@ export default class GitWorktreeService {
         'rev-parse',
         '--verify',
         '--end-of-options',
-        `${input.baseRef}^{commit}`,
+        `${startingHead?.headSha ?? input.baseRef}^{commit}`,
       ]),
     );
     const branchExists =
@@ -254,7 +298,7 @@ export default class GitWorktreeService {
         'add',
         ...(branchExists ? [] : ['-b', branch]),
         path,
-        branchExists ? branch : input.baseRef,
+        branchExists ? branch : (startingHead?.headSha ?? input.baseRef),
       ]),
     );
     const canonicalPath = await realpath(path);

@@ -1,4 +1,5 @@
-import { dispatchAdmission } from './managed-issue.ts';
+import { managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
+
 import assignmentRetirement from './assignment-retirement.ts';
 import { automationHash } from './automation-hash.ts';
 import { openClawCleanupConfiguration } from './cleanup-configuration.ts';
@@ -86,7 +87,7 @@ export default async function retireOpenClawTask(options: {
         status: 'retire-available',
         id,
         digest,
-        issue: `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/issues/${intake.issue.number}`,
+        issue: managedTargetUrl(intake),
         sessionKey: record.threadId,
         worktree: record.worktree,
         instruction:

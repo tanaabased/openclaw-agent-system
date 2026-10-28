@@ -1,4 +1,5 @@
-import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
+import { managedPullRequest, managedIssueState, dispatchAdmission } from './managed-issue.ts';
+
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import { withNotificationResetDiagnostic } from './notification-reset-diagnostic.ts';
 import { lstat } from 'node:fs/promises';
@@ -208,7 +209,7 @@ export default class OpenClawNotificationReset {
             repositoryDatabaseId: repository.databaseId,
             itemDatabaseId: item.issue.databaseId,
             itemNumber: item.issue.number,
-            itemType: 'issue',
+            itemType: managedPullRequest(item) ? 'pull-request' : 'issue',
           });
           if (observed && observed.path !== entry.worktree)
             throw new Error('notification-reset-worktree-changed');
@@ -424,7 +425,7 @@ export default class OpenClawNotificationReset {
           defaultBranch: repository.defaultBranch,
           itemDatabaseId: item.issue.databaseId,
           itemNumber: item.issue.number,
-          itemType: 'issue' as const,
+          itemType: managedPullRequest(item) ? ('pull-request' as const) : ('issue' as const),
           repositoryDatabaseId: repository.databaseId,
         };
         const observed = await deps.worktrees.inspectGitHub(input);
