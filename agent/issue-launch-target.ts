@@ -5,14 +5,15 @@ export default function issueLaunchTarget(target: string, repository?: string) {
   const value = target.trim();
   if (/^https:\/\//u.test(value)) {
     const locator = replyLocator(value);
-    if (locator.kind || locator.itemType !== 'issue') throw new Error('launch-open-issue-required');
+    if (locator.kind) throw new Error('launch-open-issue-required');
     const slug = `${locator.owner}/${locator.name}`;
     if (repository && repository.toLowerCase() !== slug.toLowerCase())
       throw new Error('launch-repository-conflict');
     return {
+      itemType: locator.itemType,
       repository: slug,
       number: locator.number,
-      url: `https://github.com/${slug}/issues/${locator.number}`,
+      url: `https://github.com/${slug}/${locator.itemType === 'pull-request' ? 'pull' : 'issues'}/${locator.number}`,
     };
   }
   const qualified = /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)(?:#|\s+#?)([1-9][0-9]*)$/u.exec(value);

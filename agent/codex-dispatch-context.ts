@@ -1,9 +1,11 @@
+import {
+  managedTargetUrl,
+  type ManagedIssue as IntakeRecord,
+  type ManagedIssueState as IntakeState,
+} from './managed-issue.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
-import type {
-  ManagedIssue as IntakeRecord,
-  ManagedIssueState as IntakeState,
-} from './managed-issue.ts';
+
 import type CodexAssignmentClaims from './codex-assignment-claims.ts';
 import type {
   GitHubNotificationIntakeClient,
@@ -49,7 +51,7 @@ export function repository(record: IntakeRecord) {
   return record.repository.owner.login + '/' + record.repository.name;
 }
 export function issueUrl(record: IntakeRecord) {
-  return 'https://github.com/' + repository(record) + '/issues/' + record.issue.number;
+  return managedTargetUrl(record);
 }
 export function code(error: unknown) {
   if (codexHostAccess(error)) return 'codex-host-access-required';

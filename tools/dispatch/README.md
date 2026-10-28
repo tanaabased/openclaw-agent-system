@@ -39,7 +39,7 @@ supplies the current request, required inputs, and recovery instructions.
 | ---------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Assess an issue in the current checkout              | `assessment`                          | [Task Assessment](../../skills/task-assessment/SKILL.md)                                      |
 | Implement an authorized plan in the current checkout | `implementation`                      | [Task Implementation](../../skills/task-implementation/SKILL.md)                              |
-| Launch or reuse managed issue work                   | `launch`                              | [Task Launch](../../skills/task-launch/SKILL.md) and [launch reference](#manual-issue-launch) |
+| Launch or reuse issue or existing PR work            | `launch`                              | [Task Launch](../../skills/task-launch/SKILL.md) and [launch reference](#manual-issue-launch) |
 | Reply to an exact GitHub destination                 | `reply`                               | [GitHub Reply](../../skills/github-reply/SKILL.md)                                            |
 | Retire one managed task                              | `retire`                              | [Task Retirement](../../skills/task-retirement/SKILL.md)                                      |
 | Update an issue with verified progress               | `reply` with `purpose: status-update` | [Task Update](../../skills/task-update/SKILL.md)                                              |
@@ -51,7 +51,7 @@ in the [tool schema](./tool-schema.ts); shared behavior and recovery are in the
 
 <a id="manual-issue-launch"></a>
 
-Use `$agent-system-task-launch` with an issue URL, `owner/repo#number`, repository
+Use `$agent-system-task-launch` with an issue or open same-repository PR URL, `owner/repo#number`, repository
 plus number, or a number with an explicit or independently verified repository context.
 The issue may be unassigned or assigned to somebody else. Existing repository access,
 agent eligibility, native authorization, and lifecycle checks still apply.
@@ -63,7 +63,15 @@ assignment or scheduler. Local recovery records remain, and normal managed asses
 summaries and PRs may be public. Manual launch alone grants no automatic feedback.
 It has no assigner-derived default PR assignee; explicit named recipients still
 apply. A recipient setting that requires an assignment actor must be corrected
-before manual launch.
+before manual issue launch. Existing PR continuation preserves its recipients rather
+than applying new default assignments or review requests.
+
+PR work starts at its verified current head and updates that original PR and source
+branch. Open drafts and non-default bases are supported; launch does not change the
+base, title, body, draft or review state. Forks, closed PRs, deleted source branches,
+unsafe refs and competing owners stop explicitly. A moved head needs fresh verification;
+divergent collaborator work must be incorporated before a normal push. There is no
+replacement PR, force push, automatic merge or issue closure.
 
 ### Parameters
 
@@ -83,7 +91,7 @@ These parameters cover `launch`. Use the owning skill and
 | `repository` | string | when otherwise ambiguous | none                     | Explicit `owner/repository` for an issue number.                                                                             |
 | `routing`    | object | no                       | configured model profile | Supported explicit `model` and/or `effort`, resolved through shared model routing.                                           |
 | `stages`     | object | no                       | current configuration    | Assessment/implementation `skill` and/or inline or contained-file `guidance`.                                                |
-| `target`     | string | yes                      | none                     | Issue URL or supported issue reference.                                                                                      |
+| `target`     | string | yes                      | none                     | Issue or same-repository PR URL, or a supported repository-qualified number.                                                 |
 | `title`      | string | for final preparation    | none                     | Concise alphanumeric issue title for native presentation.                                                                    |
 
 ### Usage
@@ -104,6 +112,12 @@ Begin with explicit planning mode and a repository-qualified number:
   "repository": "owner/repo",
   "mode": "plan"
 }
+```
+
+Continue an existing PR through the same launch flow:
+
+```json
+{ "action": "launch", "operation": "context", "target": "https://github.com/owner/repo/pull/7" }
 ```
 
 Follow the returned preparation instructions, then verify that the same launch completed.

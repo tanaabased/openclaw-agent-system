@@ -1,3 +1,4 @@
+import { manualPullRequestSchema } from './manual-pull-request.ts';
 import { selectedProfileSchema } from './model-routing.ts';
 import { Type, type Static } from 'typebox';
 
@@ -13,6 +14,7 @@ const mode = Type.Union([Type.Literal('plan'), Type.Literal('work'), Type.Litera
 export const operatorIssueSchema = Type.Object(
   {
     ...Type.Omit(intakeRecordSchema, ['assignment', 'evidence']).properties,
+    pullRequest: Type.Optional(manualPullRequestSchema),
     initiation: Type.Object(
       {
         kind: Type.Literal('operator'),
@@ -82,4 +84,13 @@ export function managedIssueState(
     records: [],
   };
   return { ...base, records: [...base.records, ...manual] };
+}
+
+/** provider numbers share a namespace; old issue admissions keep their original journal format. */
+export function managedPullRequest(record: ManagedIssue) {
+  return 'initiation' in record ? record.pullRequest : undefined;
+}
+
+export function managedTargetUrl(record: ManagedIssue) {
+  return `https://github.com/${record.repository.owner.login}/${record.repository.name}/${managedPullRequest(record) ? 'pull' : 'issues'}/${record.issue.number}`;
 }

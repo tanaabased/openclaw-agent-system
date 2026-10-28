@@ -25,6 +25,7 @@ class FakeGitRunner implements GitWorktreeGitRunner {
   readonly calls: Array<{ argv: string[]; cwd: string }> = [];
   readonly identities = new Map<string, string>();
   readonly origins = new Map<string, string>();
+  head = '';
   dirty = false;
   preserved = true;
   fetchFails = false;
@@ -35,6 +36,8 @@ class FakeGitRunner implements GitWorktreeGitRunner {
     this.calls.push({ argv: input.argv, cwd: input.cwd });
     await this.beforeRun?.(input);
     const [command, ...argv] = input.argv;
+    if (command === 'rev-parse' && argv[0] === '--verify')
+      return { exitCode: 0, stderr: '', stdout: this.head };
     if (command === 'rev-parse' && argv[0] === '--git-common-dir') {
       return { exitCode: 0, stderr: '', stdout: '.git\n' };
     }
@@ -162,6 +165,51 @@ async function fixture(
 }
 
 describe('tools/git/worktree-service', () => {
+  it('should pin pr preparation to the fetched source and reject changed heads or existing local work', async () => {
+    const { service, context, git, workspaceDir } = await fixture();
+    const head = '1'.repeat(40);
+    git.head = head;
+    const input = {
+      baseRef: 'origin/main',
+      cloneUrl: 'https://example.com/owner/repository.git',
+      repositoryId: 'shared',
+      workId: 'pull-request-3',
+      issueBranch: {
+        number: 3,
+        suffix: 'a'.repeat(16),
+        title: 'Continue original PR',
+        attemptId: 'a'.repeat(64),
+        startingHead: { headRef: 'existing-work', headSha: head },
+      },
+    };
+    try {
+      await assert.rejects(
+        service.prepare(context, {
+          ...input,
+          issueBranch: {
+            ...input.issueBranch,
+            startingHead: { ...input.issueBranch.startingHead, headSha: '2'.repeat(40) },
+          },
+        }),
+        /head-changed/,
+      );
+      assert.equal(git.worktrees.size, 0);
+      const created = await service.prepare(context, input);
+      assert.ok(
+        git.calls.some(({ argv }) =>
+          argv.includes('refs/heads/existing-work:refs/remotes/origin/existing-work'),
+        ),
+      );
+      assert.ok(git.calls.some(({ argv }) => argv[0] === 'worktree' && argv.at(-1) === head));
+      assert.equal((await service.prepare(context, input)).path, created.path);
+      git.dirty = true;
+      await assert.rejects(service.prepare(context, input), /checkout-changed/);
+      assert.equal(git.worktrees.size, 1);
+    } finally {
+      await rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
   it('should reject preparation for a missing local override', async () => {
     const { context, service, workspaceDir } = await fixture(
       { missing: '/missing/local/repository' },

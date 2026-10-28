@@ -1,3 +1,5 @@
+import type { GitHubNotificationIssueDeliveryReceipt } from '../channels/github/publication/issue-delivery.ts';
+import manualPullRequest from './manual-pull-request.ts';
 import initialModelRouting from './initial-model-routing.ts';
 import { routingInstructionsDigest } from './routing-instructions.ts';
 import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
@@ -17,8 +19,15 @@ import type {
   GitHubNotificationItemContextClient,
 } from '../channels/github/provider/work-event-types.ts';
 
+type ExistingDelivery = { pullRequest?: GitHubNotificationIssueDeliveryReceipt };
+
 /** manual admission joins the existing dispatch journal; no assignment or scheduler effects. */
-export default async function issueLaunch<R extends SharedDispatchRecord>(input: {
+export default async function issueLaunch<
+  R extends SharedDispatchRecord & {
+    delivery?: ExistingDelivery;
+    work?: { delivery?: ExistingDelivery };
+  },
+>(input: {
   action: LaunchRequest;
   context: AssessmentEntryDependencies;
   journal: DispatchStore<R>;
@@ -67,24 +76,40 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
       status: 'clarification-needed' as const,
       questions: ['Which owner/repository contains this issue?'],
     };
-  if (currentTarget && target.url.toLowerCase() !== currentTarget.url.toLowerCase())
+  if (
+    currentTarget &&
+    (target.repository.toLowerCase() !== currentTarget.repository.toLowerCase() ||
+      target.number !== currentTarget.number ||
+      ('itemType' in target && target.itemType !== currentTarget.itemType))
+  )
     throw new Error('launch-managed-target-mismatch');
   const [owner, name] = target.repository.split('/') as [string, string];
   const repo = await client.getRepository(owner, name);
   const item = await client.getItem(owner, name, target.number);
-  if (item.itemType !== 'issue' || item.state !== 'open')
-    throw new Error('launch-open-issue-required');
-  const canonical = `https://github.com/${repo.owner.login}/${repo.name}/issues/${item.number}`;
+  if (item.state !== 'open' || ('itemType' in target && target.itemType !== item.itemType))
+    throw new Error(
+      item.itemType === 'pull-request'
+        ? 'launch-open-pull-request-required'
+        : 'launch-open-issue-required',
+    );
+  const pullRequest = item.itemType === 'pull-request' ? manualPullRequest(repo, item) : undefined;
+  if (pullRequest)
+    for (const ref of [pullRequest.headRef, pullRequest.baseRef])
+      await context.git(context.binding.workspace, ['check-ref-format', `refs/heads/${ref}`]);
+  const canonical = `https://github.com/${repo.owner.login}/${repo.name}/${pullRequest ? 'pull' : 'issues'}/${item.number}`;
   if (
     item.number !== target.number ||
     `${repo.owner.login}/${repo.name}`.toLowerCase() !== target.repository.toLowerCase()
   )
     throw new Error('launch-target-identity-mismatch');
-  const evidence = dispatchContext(
-    await client.getItemContext(repo.owner.login, repo.name, item.number, 'issue', true),
-    canonical,
-    context.now,
-  );
+  const evidence = {
+    ...dispatchContext(
+      await client.getItemContext(repo.owner.login, repo.name, item.number, item.itemType, true),
+      canonical,
+      context.now,
+    ),
+    ...(pullRequest ? { pullRequest } : {}),
+  };
   await context.assertCurrent();
   return journal.exclusive(async (state, save) => {
     const manual: OperatorIssue = {
@@ -109,6 +134,7 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
         name: repo.name,
       },
       issue: { nodeId: item.nodeId, databaseId: item.databaseId, number: item.number },
+      ...(pullRequest ? { pullRequest } : {}),
       initiation: {
         kind: 'operator',
         session: context.binding.session,
@@ -137,11 +163,18 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
     const ownership = managedOwner(
       state.records,
       context.binding.session,
-      (record) => record.issueKey === key,
+      (record) =>
+        record.issueKey === key ||
+        Boolean(
+          pullRequest &&
+          (record.delivery?.pullRequest?.pullRequestNodeId === item.nodeId ||
+            record.work?.delivery?.pullRequest?.pullRequestNodeId === item.nodeId),
+        ),
     );
     if (ownership.status === 'ambiguous') throw new Error('launch-owner-ambiguous');
     const own = ownership.caller;
-    if (own && own.issueKey !== key) throw new Error('launch-managed-target-mismatch');
+    if (own && !own.retired && !own.reset && own !== ownership.owner)
+      throw new Error('launch-managed-target-mismatch');
     let record = ownership.owner;
     if (
       ownership.status === 'historical' ||
@@ -154,6 +187,20 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
     )
       throw new Error('launch-owner-inactive');
     if (action.id && record?.id !== action.id) throw new Error('launch-receipt-mismatch');
+    if (record?.manualIssue?.pullRequest && pullRequest)
+      manualPullRequest(repo, item, record.manualIssue.pullRequest);
+    if (
+      record?.manualIssue &&
+      !record.request &&
+      !record.threadId &&
+      pullRequest &&
+      record.manualIssue.pullRequest?.headSha !== pullRequest.headSha
+    ) {
+      record.manualIssue.pullRequest = pullRequest;
+      record.context = JSON.stringify(evidence);
+      await save();
+    }
+
     if (record?.threadId) {
       await input.verifyExisting(record);
       await context.assertCurrent();
@@ -169,6 +216,7 @@ export default async function issueLaunch<R extends SharedDispatchRecord>(input:
       };
     }
     if (
+      !pullRequest &&
       issuePullRequestRecipients(context.manifest.github?.notifications, true)?.some(
         (entry) => 'source' in entry,
       )

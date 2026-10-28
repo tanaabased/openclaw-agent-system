@@ -133,9 +133,9 @@ export default async function deliveryAnnouncement(input: {
 }) {
   const { delivery, publication } = input;
   const repository = `${publication.item.repositoryOwner}/${publication.item.repositoryName}`;
-  const issueUrl = `https://github.com/${repository}/issues/${publication.item.number}`;
+  const issueUrl = `https://github.com/${repository}/${publication.adoptedPullRequest ? 'pull' : 'issues'}/${publication.item.number}`;
   const item = {
-    lifecycleId: 'issue' as const,
+    lifecycleId: publication.adoptedPullRequest ? ('pull-request' as const) : ('issue' as const),
     number: publication.item.number,
     repositoryOwner: publication.item.repositoryOwner,
     repositoryName: publication.item.repositoryName,

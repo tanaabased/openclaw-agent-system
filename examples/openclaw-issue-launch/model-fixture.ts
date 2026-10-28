@@ -6,12 +6,13 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
-import { issueExampleScenario } from '../openclaw-notifications-issue-journey/model-fixture.ts';
+import { createPRExampleScenario } from '../openclaw-notifications-pr-journey/model-fixture.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
 const prefix = 'call_manual_launch_';
 const stages = ['context', 'prepare'];
+const issueExampleScenario = createPRExampleScenario('openclaw-issue-launch');
 
 /** only the trigger is new; the child uses the existing managed assessment protocol. */
 function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
@@ -23,7 +24,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   if (boundary < 0) return;
   const messages = request.messages.slice(boundary);
   const target =
-    /Manual issue launch target: (https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/[1-9][0-9]*)/u.exec(
+    /Manual issue launch target: (https:\/\/github\.com\/tanaabased\/big-test-bucket\/(?:issues|pull)\/[1-9][0-9]*)/u.exec(
       getTextContent(messages[0]!.content) ?? '',
     )?.[1];
   if (!target) return;

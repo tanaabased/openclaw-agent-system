@@ -1,6 +1,11 @@
+import {
+  managedTargetUrl,
+  dispatchAdmission,
+  type ManagedIssue as IntakeRecord,
+} from './managed-issue.ts';
 import openClawRoutingInstructions from './openclaw-routing-instructions.ts';
 import { routingInstructionsGuidance, routingInstructionsDigest } from './routing-instructions.ts';
-import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
+
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import { openClawResponseEligible } from './openclaw-response-continuation.ts';
 import { randomUUID } from 'node:crypto';
@@ -46,7 +51,7 @@ import workflowRecovery from './workflow-recovery.ts';
 import workflowStatus from './workflow-status.ts';
 
 function source(intake: IntakeRecord) {
-  return `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/issues/${intake.issue.number}`;
+  return managedTargetUrl(intake);
 }
 function digest(record: OpenClawDispatchRecord) {
   return automationHash({

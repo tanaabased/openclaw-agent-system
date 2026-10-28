@@ -1,4 +1,5 @@
-import { dispatchAdmission } from './managed-issue.ts';
+import { managedPullRequest, managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
+
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
@@ -190,6 +191,7 @@ export default async function runCodexDelivery(
         throw new Error('delivery-native-binding-mismatch');
       const intake = dispatchAdmission(record, (await current.store.read())?.records ?? []);
       if (!intake) throw new Error('delivery-admission-missing');
+      const adoptedPullRequest = managedPullRequest(intake);
       const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
       const previous = record.delivery;
       const notices = (attached: boolean) =>
@@ -281,17 +283,15 @@ export default async function runCodexDelivery(
           pullRequest: previous.pullRequest,
           presentation: [
             githubNotificationPullRequestOpenedCard({
-              issueNumber: intake.issue.number,
+              issueNumber: adoptedPullRequest ? undefined : intake.issue.number,
+              updated: Boolean(adoptedPullRequest),
               pullRequestNumber: previous.pullRequest.pullRequestNumber,
               repositoryOwner: intake.repository.owner.login,
               repositoryName: intake.repository.name,
               commentFlow,
             }),
             ...(implementationInstructions ? [implementationInstructions] : []),
-            announcementPresentation(
-              previous.announcement,
-              `https://github.com/${repository}/issues/${intake.issue.number}`,
-            ),
+            announcementPresentation(previous.announcement, managedTargetUrl(intake)),
             ...presentationNotices.map((notice) => notice.message),
           ].join('\n\n'),
         };
@@ -406,7 +406,7 @@ export default async function runCodexDelivery(
       if (!announcementOnly) {
         await verifyDispatchWorktree(record.project, found.cwd, repository, git, 'handoff');
         branch = (await git(found.cwd, ['branch', '--show-current'], signal)).trim();
-        if (!branch || branch === checked.repo.defaultBranch)
+        if (!branch || branch === (adoptedPullRequest?.baseRef ?? checked.repo.defaultBranch))
           throw new Error('delivery-branch-required');
         await codexIssueBranch({
           record,
@@ -421,19 +421,24 @@ export default async function runCodexDelivery(
         await git(found.cwd, ['check-ref-format', `refs/heads/${branch}`], signal);
         if (await git(found.cwd, ['status', '--porcelain=v1'], signal))
           throw new Error('delivery-uncommitted-work');
+        if (adoptedPullRequest) branch = adoptedPullRequest.headRef;
         head = (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
         if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('delivery-head-invalid');
         const count = Number(
           await git(
             found.cwd,
-            ['rev-list', '--count', `refs/remotes/origin/${checked.repo.defaultBranch}..HEAD`],
+            [
+              'rev-list',
+              '--count',
+              `refs/remotes/origin/${adoptedPullRequest?.baseRef ?? checked.repo.defaultBranch}..HEAD`,
+            ],
             signal,
           ),
         );
         if (!Number.isSafeInteger(count) || count < 1)
           throw new Error('delivery-committed-work-required');
       }
-      if (!announcementOnly)
+      if (!announcementOnly && !adoptedPullRequest)
         await new GitHubIdentityCache(current.store.location).resolve(
           current.manifest.github?.notifications,
           connected.client,
@@ -448,7 +453,7 @@ export default async function runCodexDelivery(
                 Boolean(record.manualIssue),
               )
             : undefined;
-      if (!announcementOnly)
+      if (!announcementOnly && !adoptedPullRequest)
         resolvePullRequestRecipients(
           recipients ?? (intake.assignment ? undefined : []),
           intake.assignment?.actor,
@@ -459,7 +464,7 @@ export default async function runCodexDelivery(
         threadId: record.threadId,
         worktree: record.worktree,
         branch,
-        base: checked.repo.defaultBranch,
+        base: adoptedPullRequest?.baseRef ?? checked.repo.defaultBranch,
         head,
         authorId: connected.account.identity.nodeId,
         policyDigest,
@@ -486,12 +491,27 @@ export default async function runCodexDelivery(
       const delivery: CodexDeliveryState = {
         id: previous?.id ?? automationHash({ admission: intake.id, threadId: record.threadId }),
         binding,
-        title: input.title ?? previous?.title,
-        body: input.body ?? previous?.body,
+        title:
+          input.title ??
+          previous?.title ??
+          (adoptedPullRequest ? JSON.parse(record.context!).title : undefined),
+        body:
+          input.body ??
+          previous?.body ??
+          (adoptedPullRequest ? JSON.parse(record.context!).body : undefined),
         creationAttempted: previous?.creationAttempted ?? false,
         ...(previous?.pushedHead ? { pushedHead: previous.pushedHead } : {}),
         ...(previous?.pendingPush ? { pendingPush: previous.pendingPush } : {}),
-        ...(previous?.pullRequest ? { pullRequest: previous.pullRequest } : {}),
+        ...(previous?.pullRequest
+          ? { pullRequest: previous.pullRequest }
+          : adoptedPullRequest
+            ? {
+                pullRequest: {
+                  pullRequestNodeId: intake.issue.nodeId,
+                  pullRequestNumber: intake.issue.number,
+                },
+              }
+            : {}),
         reconciled: false,
         attached: previous?.attached ?? false,
         cardAttempts: previous?.cardAttempts ?? 0,
@@ -533,12 +553,13 @@ export default async function runCodexDelivery(
             itemNodeId: intake.issue.nodeId,
             repositoryOwner: intake.repository.owner.login,
             repositoryName: intake.repository.name,
-            repositoryDefaultBranch: checked.repo.defaultBranch,
+            repositoryDefaultBranch: adoptedPullRequest?.baseRef ?? checked.repo.defaultBranch,
           },
           branch,
           headSha: head,
           repositoryNodeId: intake.repository.nodeId,
           expectedPullRequest: previous.pullRequest,
+          adoptedPullRequest,
           signal,
         };
         const announce = await deliveryAnnouncement({
@@ -610,7 +631,7 @@ export default async function runCodexDelivery(
               itemNodeId: intake.issue.nodeId,
               repositoryOwner: intake.repository.owner.login,
               repositoryName: intake.repository.name,
-              repositoryDefaultBranch: checked.repo.defaultBranch,
+              repositoryDefaultBranch: adoptedPullRequest?.baseRef ?? checked.repo.defaultBranch,
               assignmentActorLogin: intake.assignment?.actor.login,
               assignmentActorNodeId: intake.assignment?.actor.nodeId,
             },
@@ -618,11 +639,14 @@ export default async function runCodexDelivery(
             title: delivery.title,
             body: delivery.body,
             signal,
-            recipients: recipients ?? (intake.assignment ? undefined : []),
+            recipients: adoptedPullRequest
+              ? []
+              : (recipients ?? (intake.assignment ? undefined : [])),
             expectedPullRequest: delivery.pullRequest,
             headSha: head,
             repositoryNodeId: intake.repository.nodeId,
-            linkIssue: true,
+            linkIssue: !adoptedPullRequest,
+            adoptedPullRequest,
             contentUpdate: delivery.contentUpdate,
             onLinkageRetry: async () => {
               delivery.notices = [

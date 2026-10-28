@@ -1,3 +1,8 @@
+import {
+  managedPullRequest,
+  dispatchAdmission,
+  type ManagedIssue as IntakeRecord,
+} from './managed-issue.ts';
 import routingInstructions, {
   assertRoutingInstructions,
   routingInstructionsGuidance,
@@ -8,7 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
 import { workflowFeedbackAccepting } from '../channels/github/feedback-policy.ts';
-import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
+
 import assignmentCard from '../channels/github/presentation/assignment-card.ts';
 import modelRoutingCard from '../channels/github/presentation/model-routing.ts';
 import { RepositoryPreparationError } from '../tools/git/repository-service.ts';
@@ -150,7 +155,7 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
     {
       emoji: '📥',
       item: {
-        kind: 'Issue',
+        kind: managedPullRequest(intake) ? 'Pull request' : 'Issue',
         label: repository(intake) + '#' + intake.issue.number,
         url: issueUrl(intake),
       },
@@ -377,6 +382,7 @@ export async function prepareIssueProject(
       projects: input.projects,
       repository: repository(intake),
       defaultBranch: repo.defaultBranch,
+      startingHead: managedPullRequest(intake),
       workspace: current.workspace,
       explicitPath,
     };
@@ -448,7 +454,7 @@ export async function prepareIssueProject(
       repo.owner.login,
       repo.name,
       intake.issue.number,
-      'issue',
+      managedPullRequest(intake) ? 'pull-request' : 'issue',
       true,
     );
     const snapshot = dispatchContext(context, issueUrl(intake), now);

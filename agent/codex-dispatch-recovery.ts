@@ -3,7 +3,7 @@ import { automationHash } from './automation-hash.ts';
 import assignmentRetirement from './assignment-retirement.ts';
 import type { codexDispatchNative } from './codex-dispatch-native.ts';
 import type { DispatchState, DispatchRecord } from './codex-dispatch-state.ts';
-import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
+import { managedPullRequest, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 
@@ -66,7 +66,7 @@ export default async function recoverDispatch(
       !githubIdentityMatches(client.identity, intake.receiving) ||
       item.nodeId !== intake.issue.nodeId ||
       item.databaseId !== intake.issue.databaseId ||
-      item.itemType !== 'issue' ||
+      item.itemType !== (managedPullRequest(intake) ? 'pull-request' : 'issue') ||
       item.number !== intake.issue.number ||
       record.sourceThreadId !== sourceThreadId
     )

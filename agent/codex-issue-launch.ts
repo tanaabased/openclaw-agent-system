@@ -108,7 +108,12 @@ export default async function codexIssueLaunch(
             'Continue the saved issue stage in this native destination; never repeat creation.',
         };
       }
-      if (!record.project) return prepareIssueProject(input, record, issue, tx);
+      if (
+        !record.project ||
+        (record.manualIssue.pullRequest &&
+          record.project.commit !== record.manualIssue.pullRequest.headSha)
+      )
+        return prepareIssueProject(input, record, issue, tx);
       if (!input.assessment || !input.title || !input.digest)
         throw new Error('launch-preparation-required');
       return prepareDispatch(input, record, issue, tx);

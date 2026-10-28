@@ -109,3 +109,29 @@ export function removeFixtureAssignment(fixture: ReturnType<typeof intakeFixture
   fixture.events.push(event);
   return event;
 }
+
+/** same-repository operator continuation, independent of assignment eligibility and PR authorship. */
+export function fixturePullRequest(
+  fixture: ReturnType<typeof intakeFixture>,
+  headSha = '1'.repeat(40),
+) {
+  const pullRequest = {
+    author: { login: 'operator', nodeId: 'U_operator', type: 'User' },
+    baseRef: 'release',
+    baseRepositoryDatabaseId: fixture.repository.databaseId,
+    baseRepositoryNodeId: fixture.repository.nodeId,
+    draft: true,
+    headRef: 'existing-work',
+    headRepositoryDatabaseId: fixture.repository.databaseId,
+    headRepositoryNodeId: fixture.repository.nodeId,
+    headSha,
+    merged: false,
+  };
+  Object.assign(fixture.item, {
+    itemType: 'pull-request',
+    nodeId: 'PR_existing',
+    pullRequest,
+    assignees: [],
+  });
+  return pullRequest;
+}

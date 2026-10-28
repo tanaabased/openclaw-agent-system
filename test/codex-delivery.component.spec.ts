@@ -1,3 +1,11 @@
+import manualPullRequest from '../agent/manual-pull-request.ts';
+import {
+  fixturePullRequest,
+  account,
+  baseline,
+  intakeFixture,
+  removeFixtureAssignment,
+} from './github-intake-fixture.ts';
 import { issueKey } from '../agent/dispatch-pending.ts';
 import { beginFeedbackWork } from '../agent/feedback-work.ts';
 import { discoverFeedback } from '../agent/feedback-source.ts';
@@ -18,12 +26,6 @@ import runCodexDelivery, {
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import {
-  account,
-  baseline,
-  intakeFixture,
-  removeFixtureAssignment,
-} from './github-intake-fixture.ts';
 
 const id = 'd'.repeat(64);
 const firstHead = 'a'.repeat(40);
@@ -502,6 +504,99 @@ describe('agent/codex-delivery', () => {
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
+  async function adoptTarget() {
+    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const { assignment, evidence, ...identity } = (await current.store.read())!.records[0]!;
+    assert.ok(assignment);
+    const source = fixturePullRequest(fixture, '8'.repeat(40));
+    source.headRef = 'existing-work';
+    fixture.item.nodeId = 'PR_7';
+    fixture.item.number = 7;
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.manualIssue = {
+        ...identity,
+        id: record.id,
+        issue: { ...identity.issue, number: 7, nodeId: 'PR_7' },
+        pullRequest: manualPullRequest(fixture.repository, fixture.item),
+        initiation: {
+          kind: 'operator',
+          session: record.sourceThreadId,
+          incarnation: record.sourceThreadId,
+          turn: 'operator-turn',
+          input: 'operator-input',
+        },
+        evidence: {
+          policyDigest: evidence.policyDigest,
+          mode: 'work',
+          open: true,
+          repositoryReadable: true,
+        },
+        selections: { mode: 'work' },
+      };
+      delete record.intakeId;
+      record.context = JSON.stringify({ title: 'Original title', body: 'Original body' });
+      record.issueKey = issueKey(record.manualIssue);
+      await save();
+    });
+    remote = source.headSha;
+    pr = {
+      itemNodeId: 'PR_7',
+      number: 7,
+      state: 'open',
+      baseRef: 'release',
+      headRef: 'existing-work',
+      headRepository: 'owner/repo',
+      title: 'Original title',
+      body: 'Original body',
+      draft: true,
+    };
+    bindingOverride = {
+      baseRef: 'release',
+      headRef: 'existing-work',
+      authorId: 'U_operator',
+      repositoryDatabaseId: 10,
+      headRepositoryDatabaseId: 10,
+    };
+  }
+
+  it('should update an adopted pr through its original remote branch without replacing or normalizing it', async () => {
+    await adoptTarget();
+    const original = structuredClone(pr);
+    assert.equal((await publish()).status, 'published');
+    assert.equal(creates, 0);
+    assert.equal(bodyWrites, 0);
+    assert.deepEqual(pr, original);
+    assert.deepEqual(assignedRecipients, []);
+    assert.deepEqual(requestedReviewers, []);
+    assert.ok(gitCalls.some((argv) => argv.includes(`${head}:refs/heads/existing-work`)));
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.issueBranch?.name, 'pirog-work');
+    assert.equal(retained.delivery?.binding.branch, 'existing-work');
+    assert.equal(retained.delivery?.pullRequest?.pullRequestNumber, 7);
+    assert.match(String((await request('present')).presentation), /Pull request updated/);
+  });
+
+  it('should stop before an adopted push when its provider identity or native authority changes', async () => {
+    await adoptTarget();
+    bindingOverride.authorId = 'U_replacement';
+    await assert.rejects(publish(), /binding changed/);
+    assert.equal(
+      gitCalls.some((argv) => argv.includes('push')),
+      false,
+    );
+    assert.equal(creates, 0);
+    bindingOverride.authorId = 'U_operator';
+    const git = deps.git!;
+    deps.git = async (cwd, argv, signal) => {
+      if (argv.includes('push')) throw new Error('native-approval-denied');
+      return git(cwd, argv, signal);
+    };
+    await assert.rejects(publish(), /native-approval-denied/);
+    assert.equal(creates, 0);
+    assert.equal((await store.read()).records[0]!.delivery?.pullRequest?.pullRequestNumber, 7);
+  });
+
   it('should reject a retired or same-issue branch before pushing or creating a pr', async () => {
     branch = '3-retired-attempt';
     await assert.rejects(publish(), /codex-branch-owner-mismatch/);

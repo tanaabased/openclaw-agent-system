@@ -20,6 +20,7 @@ export interface TrustedGitHubWorktreeInput {
   attemptId?: string;
   cloneUrl: string;
   defaultBranch: string;
+  startingHead?: { headRef: string; headSha: string };
   itemDatabaseId: number;
   itemNumber: number;
   itemType: 'issue' | 'pull-request';
@@ -76,7 +77,7 @@ function unavailable(agentId: string, reason: string): AgentSystemToolError {
 
 function attemptIdentity(input: TrustedGitHubWorktreeInput): string | undefined {
   if (input.attemptId === undefined) return undefined;
-  if (input.itemType !== 'issue' || !/^[a-f0-9]{64}$/.test(input.attemptId)) {
+  if (!/^[a-f0-9]{64}$/.test(input.attemptId)) {
     throw new AgentSystemToolError(
       'invalid_arguments',
       'The GitHub worktree attempt id is invalid.',
@@ -156,10 +157,7 @@ export default class TrustedGitWorktreeService {
         workId,
         attemptId,
       );
-      if (
-        input.itemType !== 'issue' ||
-        !isGitHubIssueBranchName(match.branch, itemNumber, suffix)
-      ) {
+      if (!isGitHubIssueBranchName(match.branch, itemNumber, suffix)) {
         throw new GitWorktreeConflict(
           'owner-mismatch',
           'The owned GitHub worktree path uses an unrelated branch.',
@@ -203,11 +201,12 @@ export default class TrustedGitWorktreeService {
       agentId,
       toolInput,
       input.signal,
-      input.itemType === 'issue'
+      input.itemType === 'issue' || attemptId !== undefined
         ? {
             number: itemNumber,
             title: input.title,
             ...(attemptId === undefined ? {} : { attemptId }),
+            ...(input.startingHead ? { startingHead: input.startingHead } : {}),
           }
         : undefined,
     );
@@ -351,7 +350,12 @@ export default class TrustedGitWorktreeService {
     agentId: string,
     toolInput: GitWorktreeToolInput,
     signal?: AbortSignal,
-    issueBranch?: { number: number; title: string; attemptId?: string },
+    issueBranch?: {
+      number: number;
+      title: string;
+      attemptId?: string;
+      startingHead?: { headRef: string; headSha: string };
+    },
   ): Promise<{ result: GitWorktreeResult | GitWorktreeResult[]; workspaceDir: string }> {
     const loaded = await this.#dependencies.manifestService.loadForAgentId(agentId, 'service');
     if (loaded.status !== 'loaded' || loaded.manifest.agent.id !== agentId) {

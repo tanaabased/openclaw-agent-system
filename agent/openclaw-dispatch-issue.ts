@@ -1,5 +1,11 @@
+import {
+  managedTargetUrl,
+  managedPullRequest,
+  dispatchAdmission,
+  type ManagedIssue as IntakeRecord,
+} from './managed-issue.ts';
 import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
-import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
+
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import continueOpenClawResponse, {
   openClawResponseEligible,
@@ -49,7 +55,7 @@ import { selectWorkflowStage } from './workflow-stage.ts';
 import workflowRecovery from './workflow-recovery.ts';
 
 function source(intake: IntakeRecord) {
-  return `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/issues/${intake.issue.number}`;
+  return managedTargetUrl(intake);
 }
 export default class OpenClawDispatchIssue {
   constructor(readonly context: OpenClawDispatchContext) {}
@@ -601,12 +607,25 @@ export default class OpenClawDispatchIssue {
               assertCurrent,
               save,
             });
+          const assertPRCheckout = async () => {
+            if (
+              !managedPullRequest(intake) ||
+              !['prepare', 'publish', 'reconcile'].includes(input.operation)
+            )
+              return;
+            const owned = await this.context.dependencies.worktrees.inspectGitHub(
+              verified.worktreeInput,
+            );
+            if (!owned || owned.path !== record.worktree)
+              throw new Error('delivery-worktree-owner-changed');
+          };
+          await assertPRCheckout();
           return openClawDelivery({
             record,
             intake,
             action: input,
             source,
-            base: repo.defaultBranch,
+            base: managedPullRequest(intake)?.baseRef ?? repo.defaultBranch,
             recipients: issuePullRequestRecipients(
               current.policy.policy,
               Boolean(record.manualIssue),
@@ -630,12 +649,16 @@ export default class OpenClawDispatchIssue {
             assertCurrent,
             reauthorize: async () => {
               await this.context.validate(manifest, workspace, record, true, false, client, signal);
+              await assertPRCheckout();
             },
             save,
             connect: async () => {
               if (!this.context.dependencies.delivery)
                 throw new Error('delivery-runtime-unavailable');
-              if (['prepare', 'publish', 'reconcile'].includes(input.operation))
+              if (
+                !managedPullRequest(intake) &&
+                ['prepare', 'publish', 'reconcile'].includes(input.operation)
+              )
                 await new GitHubIdentityCache(current.store.location).resolve(
                   current.policy.policy,
                   client,
@@ -771,7 +794,7 @@ export default class OpenClawDispatchIssue {
                     repo.owner.login,
                     repo.name,
                     intake.issue.number,
-                    'issue',
+                    managedPullRequest(intake) ? 'pull-request' : 'issue',
                     true,
                   ),
                   source(intake),
