@@ -23,7 +23,7 @@ Retire a second task whose completed session is missing, preserving its saved ev
 - Strict AIMock reuses assessment judgment and adds the existing digest-bound retirement preview/apply exchange. Real native execution must leave the request pending while its own turn is active.
 - The retention check seeds repeated copies of an already verified assessment only while the Gateway is stopped. It exercises the packed runtime after restart; it neither fabricates cleanup receipts nor runs a performance benchmark.
 - The two native cases share a job but select their exact retained owners. No reset empties the journal between them; earlier retired attempts remain as independent history.
-- The fresh attempt is closed and retired before the missing-session case. Three 61-second waits preserve the existing lifecycle observation coverage with zero shared cleanup grace.
+- The fresh attempt is closed and retired before the missing-session case. Three 61-second waits preserve the existing lifecycle observation coverage with zero OpenClaw cleanup grace.
 - CI owns two disposable issues, their workspaces/state, and SSH registration. Only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule bound discovery; cleanup stops the Gateway before external changes.
 
 ## Setup
@@ -36,10 +36,8 @@ openclaw config set skills.workshop.autonomous.mode off
 # keep unrelated nightly memory turns out of the strict notification fixture
 openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
 
-# should select one shared installation grace for both agent workspaces
-install -d -m 700 "$XDG_CONFIG_HOME/tanaab/agent-system"
-cp "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/config.yaml" "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
-chmod 600 "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
+# should configure native openclaw cleanup grace
+openclaw config set plugins.entries.agent-system.config.cleanup.graceMinutes 0 --strict-json
 
 # should prepare the declared identity pins and isolated ssh fixture
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot/keys" "$HOME/.ssh"

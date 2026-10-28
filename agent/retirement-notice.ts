@@ -5,18 +5,18 @@ export default function retirementNotice(code: string, diagnostic?: string) {
   )
     return {
       severity: 'warning' as const,
-      title: 'Shared cleanup configuration unavailable',
+      title: 'OpenClaw cleanup configuration unavailable',
       summary: 'Cleanup remains pending; no default is substituted for broken configuration.',
       next:
         diagnostic ??
-        'Inspect the installation `config.yaml` selected by host `XDG_CONFIG_HOME` or `HOME`. Restore a readable private file with `schema-version: 1` and `cleanup.grace-minutes`, or deliberately remove it to use the 60-minute default.',
+        'Inspect `plugins.entries.agent-system.config.cleanup` in OpenClaw configuration. Set `graceMinutes` to an integer from 0 through 43200, or omit cleanup to use the 60-minute default.',
     };
   if (code === 'retirement-configuration-changed')
     return {
       severity: 'info' as const,
       title: 'Cleanup settings changed during verification',
       summary: 'The pending resource effect was deferred.',
-      next: 'Intake will reread the shared settings on its next pass. Existing deadlines and uncertain effect receipts remain intact.',
+      next: 'Intake will reread the OpenClaw settings on its next pass. Existing deadlines and uncertain effect receipts remain intact.',
     };
   if (code === 'retirement-native-archive-unverified')
     return {

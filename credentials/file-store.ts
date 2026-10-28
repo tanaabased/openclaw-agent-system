@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 
-import installationConfigRoot from '../core/installation-config-root.ts';
 import nodeErrorCode from '../utils/node-error-code.ts';
 import {
   isCredentialKeyValid,
@@ -40,7 +39,12 @@ function hasPrivateMode(mode: number): boolean {
 export function resolveFileCredentialStoreRoot(
   environment: Readonly<Record<string, string | undefined>>,
 ): string | undefined {
-  return installationConfigRoot(environment);
+  const xdg = environment.XDG_CONFIG_HOME?.trim();
+  if (xdg) return isAbsolute(xdg) ? join(resolve(xdg), 'tanaab', 'agent-system') : undefined;
+  const home = environment.HOME?.trim();
+  return home && isAbsolute(home)
+    ? join(resolve(home), '.config', 'tanaab', 'agent-system')
+    : undefined;
 }
 
 /** Persist credentials in an owner-only, agent-scoped filesystem fallback. */

@@ -1,6 +1,6 @@
 import { lstat } from 'node:fs/promises';
 
-import cleanupConfiguration from './cleanup-configuration.ts';
+import { openClawCleanupConfiguration } from './cleanup-configuration.ts';
 import reactivateAssignmentFeedback from './assignment-feedback-reactivation.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 
@@ -20,7 +20,7 @@ export default async function reconcileOpenClawLifecycle(input: {
   activeSessionKey?: string;
 }) {
   const { service, manifest, workspace, authority } = input;
-  const readConfiguration = service.dependencies.readInstallationConfig ?? cleanupConfiguration;
+  const readConfiguration = () => openClawCleanupConfiguration(service.dependencies.config);
   const configuration = await readConfiguration();
   const current = await service.scope(manifest, workspace);
   current.policy.policy.issueAssignment!.allowed =

@@ -106,5 +106,11 @@ describe('credentials/file-store', () => {
       resolveFileCredentialStoreRoot({ XDG_CONFIG_HOME: 'relative', HOME: '/home/data' }),
       undefined,
     );
+    assert.equal(resolveFileCredentialStoreRoot({ HOME: 'relative' }), undefined);
+    assert.equal(resolveFileCredentialStoreRoot({}), undefined);
+    assert.equal(
+      resolveFileCredentialStoreRoot({ XDG_CONFIG_HOME: '/config', CODEX_HOME: '/other' }),
+      '/config/tanaab/agent-system',
+    );
   });
 });

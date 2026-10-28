@@ -20,7 +20,7 @@ a second workflow.
 ## Notes
 
 - Strict AIMock supplies the initial assessment; GitHub assignment changes and native state observations remain real.
-- Two 61-second waits observe removal and reassignment through the owning lifecycle interval. The shared cleanup grace is zero; it does not bypass that interval.
+- Two 61-second waits observe removal and reassignment through the owning lifecycle interval. The OpenClaw cleanup grace is zero; it does not bypass that interval.
 - CI owns one disposable issue and its workspaces/SSH registration. Only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule bound discovery; cleanup stops the Gateway before external changes.
 
 ## Setup
@@ -33,10 +33,8 @@ openclaw config set skills.workshop.autonomous.mode off
 # keep unrelated nightly memory turns out of the strict notification fixture
 openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
 
-# should select one shared installation grace for both agent workspaces
-install -d -m 700 "$XDG_CONFIG_HOME/tanaab/agent-system"
-cp "$GITHUB_WORKSPACE/examples/openclaw-notifications-assignment-policy/config.yaml" "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
-chmod 600 "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
+# should configure native openclaw cleanup grace
+openclaw config set plugins.entries.agent-system.config.cleanup.graceMinutes 0 --strict-json
 
 # should prepare the declared identity pins and isolated ssh fixture
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-notifications-assignment-policy/tanaabot/keys" "$HOME/.ssh"

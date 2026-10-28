@@ -1,7 +1,10 @@
 import commentProviderFixture from './github-comment-provider-fixture.ts';
 import reactivateAssignmentFeedback from '../agent/assignment-feedback-reactivation.ts';
 import type { FeedbackSourceState } from '../agent/feedback-state.ts';
-import { parseInstallationConfig, type InstallationConfig } from '../core/installation-config.ts';
+import {
+  parseCleanupConfiguration,
+  type CleanupConfiguration,
+} from '../agent/cleanup-configuration.ts';
 import assert from 'node:assert/strict';
 import assignmentRetirement from '../agent/assignment-retirement.ts';
 import reconcile from '../agent/reconcile-assignment-lifecycle.ts';
@@ -43,8 +46,8 @@ function setup() {
   let activityId = 'turn-1';
   let failure = false;
   let beforeRecheck = () => {};
-  const settings: { value: InstallationConfig } = {
-    value: parseInstallationConfig(undefined, '/installation/config.yaml'),
+  const settings: { value: CleanupConfiguration } = {
+    value: parseCleanupConfiguration(),
   };
   const records = [record];
   const admissions = [admitted];
@@ -293,12 +296,11 @@ describe('assignment retirement', () => {
     h.settings.value = {
       status: 'blocked',
       code: 'retirement-configuration-invalid',
-      path: '/installation/config.yaml',
     };
     await h.run(h.record.id);
     assert.equal(h.cleanups(), 0);
     assert.equal(h.record.retirement?.code, 'retirement-configuration-invalid');
-    h.settings.value = parseInstallationConfig(undefined, '/installation/config.yaml');
+    h.settings.value = parseCleanupConfiguration();
     await h.run(h.record.id);
     assert.ok(h.record.retired);
   });
@@ -308,10 +310,7 @@ describe('assignment retirement', () => {
       const h = setup();
       h.record.worktree = '/managed/issue';
       h.fixture.item.state = 'closed';
-      h.settings.value = parseInstallationConfig(
-        'schema-version: 1\ncleanup: {grace-minutes: 0}',
-        '/installation/config.yaml',
-      );
+      h.settings.value = parseCleanupConfiguration({ graceMinutes: 0 });
       if (shared)
         h.records.push({ ...h.record, id: 'active-peer', sourceThreadId: 'different-owner' });
       let removals = 0;
@@ -389,7 +388,6 @@ describe('assignment retirement', () => {
       h.settings.value = {
         status: 'blocked',
         code: 'retirement-configuration-invalid',
-        path: '/installation/config.yaml',
       };
       await h.run();
       h.advance(120);
@@ -583,7 +581,6 @@ describe('assignment retirement', () => {
     h.settings.value = {
       status: 'blocked',
       code: 'retirement-configuration-invalid',
-      path: '/installation/config.yaml',
     };
     h.fixture.item.state = 'closed';
     await h.run();
@@ -593,22 +590,18 @@ describe('assignment retirement', () => {
     assert.equal(h.record.retirement?.code, 'retirement-configuration-invalid');
     assert.equal(h.cleanups(), 0);
   });
-  it('should begin a full shared grace only after invalid configuration is repaired', async () => {
+  it('should begin a full grace only after invalid configuration is repaired', async () => {
     const h = setup();
     h.settings.value = {
       status: 'blocked',
       code: 'retirement-configuration-invalid',
-      path: '/installation/config.yaml',
     };
     h.fixture.item.state = 'closed';
     await h.run();
     h.advance(120);
     await h.run();
     assert.equal(h.record.retirement?.deadlinePending, true);
-    h.settings.value = parseInstallationConfig(
-      'schema-version: 1\ncleanup: {grace-minutes: 17}',
-      '/installation/config.yaml',
-    );
+    h.settings.value = parseCleanupConfiguration({ graceMinutes: 17 });
     h.advance(1);
     await h.run();
     assert.equal(h.record.retirement?.eligibleAt, baseline + 138 * 60_000);
@@ -630,10 +623,7 @@ describe('assignment retirement', () => {
     assert.equal(h.record.retirement?.eligibleAt, deadline);
     assert.equal(h.record.retirement?.code, 'retirement-configuration-invalid');
     assert.equal(h.cleanups(), 0);
-    h.settings.value = parseInstallationConfig(
-      'schema-version: 1\ncleanup: {grace-minutes: 43200}',
-      '/installation/config.yaml',
-    );
+    h.settings.value = parseCleanupConfiguration({ graceMinutes: 43200 });
     h.advance(1);
     await h.run();
     assert.equal(h.record.retirement?.eligibleAt, deadline);
@@ -646,10 +636,7 @@ describe('assignment retirement', () => {
     await h.run();
     h.advance(60);
     h.beforeRecheck(() => {
-      h.settings.value = parseInstallationConfig(
-        'schema-version: 1\ncleanup: {grace-minutes: 0}',
-        '/installation/config.yaml',
-      );
+      h.settings.value = parseCleanupConfiguration({ graceMinutes: 0 });
     });
     await h.run();
     assert.equal(h.cleanups(), 0);
@@ -821,7 +808,6 @@ describe('assignment retirement', () => {
     h.settings.value = {
       status: 'blocked',
       code: 'retirement-configuration-invalid',
-      path: '/installation/config.yaml',
     };
     removeFixtureAssignment(h.fixture);
     h.setBusy(true);

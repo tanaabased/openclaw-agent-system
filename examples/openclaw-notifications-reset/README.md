@@ -32,10 +32,8 @@ openclaw config set skills.workshop.autonomous.mode off
 # keep unrelated nightly memory turns out of the strict notification fixture
 openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
 
-# should select one shared installation grace for both agent workspaces
-install -d -m 700 "$XDG_CONFIG_HOME/tanaab/agent-system"
-cp "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/config.yaml" "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
-chmod 600 "$XDG_CONFIG_HOME/tanaab/agent-system/config.yaml"
+# should configure native openclaw cleanup grace
+openclaw config set plugins.entries.agent-system.config.cleanup.graceMinutes 0 --strict-json
 
 # should prepare the declared identity pins and isolated ssh fixture
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/tanaabot/keys" "$HOME/.ssh"
