@@ -14,6 +14,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { clawHubSourceMaps, withoutClawHubSourceMapReference } from './clawhub-fallback.ts';
+
 interface ClawHubValidation {
   status?: string;
   summary?: {
@@ -101,6 +103,8 @@ async function run(command: string, args: string[], options: RunOptions = {}): P
 
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'openclaw-agent-system-package-'));
 const suppliedArchivePath = process.env.AGENT_SYSTEM_PACKAGE?.trim();
+const withoutSourceMaps = process.env.AGENT_SYSTEM_PACKAGE_WITHOUT_SOURCE_MAPS === 'true';
+assert.ok(!withoutSourceMaps || suppliedArchivePath, 'fallback checks require a supplied archive');
 const environment = {
   ...process.env,
   npm_config_cache: join(temporaryRoot, 'npm-cache'),
@@ -218,11 +222,8 @@ try {
     'package.json',
     'openclaw.plugin.json',
     'dist/index.js',
-    'dist/index.js.map',
     'dist/memory-secret-provider-entry.js',
-    'dist/memory-secret-provider-entry.js.map',
     'dist/codex/codex-runtime.js',
-    'dist/codex/codex-runtime.js.map',
     'hooks/hooks.json',
     'index.ts',
     'agent/assessment-result.ts',
@@ -276,6 +277,9 @@ try {
     'LICENSE',
   ];
   await check('include required package files', () => {
+    for (const path of clawHubSourceMaps) {
+      assert.equal(packedPaths.has(path), !withoutSourceMaps, `unexpected source map: ${path}`);
+    }
     for (const path of [...requiredArtifactPaths, ...packageSourcePaths]) {
       assert.equal(packedPaths.has(path), true, `packed plugin is missing ${path}`);
     }
@@ -375,7 +379,12 @@ try {
       readFile(join(process.cwd(), 'dist', 'index.js')),
       readFile(join(packageRoot, 'dist', 'index.js')),
     ]);
-    assert.deepEqual(packedEntry, localEntry);
+    assert.deepEqual(
+      packedEntry,
+      withoutSourceMaps
+        ? withoutClawHubSourceMapReference('dist/index.js', localEntry)
+        : localEntry,
+    );
 
     const entryUrl = pathToFileURL(join(process.cwd(), 'dist', 'index.js'));
     const builtModule = (await import(entryUrl.href)) as {
@@ -391,7 +400,12 @@ try {
       readFile(join(process.cwd(), 'dist', 'memory-secret-provider-entry.js')),
       readFile(join(packageRoot, 'dist', 'memory-secret-provider-entry.js')),
     ]);
-    assert.deepEqual(packedEntry, localEntry);
+    assert.deepEqual(
+      packedEntry,
+      withoutSourceMaps
+        ? withoutClawHubSourceMapReference('dist/memory-secret-provider-entry.js', localEntry)
+        : localEntry,
+    );
   });
 
   await check('ship an executable Codex session hook', async () => {
