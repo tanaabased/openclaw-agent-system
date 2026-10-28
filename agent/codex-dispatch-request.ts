@@ -2,6 +2,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { assessmentSummaryRequestProperties } from './assessment-summary-state.ts';
 import { assessmentSchema } from './model-routing.ts';
+import { nativeRetirementProperties } from '../tools/dispatch/retirement-schema.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const digest = Type.Optional(Type.String());
@@ -15,7 +16,10 @@ const schemas = {
   report: object({ automationId: Type.String(), currentTimeIso: Type.String() }),
   handoff: object(recovery),
   reset: object(recovery),
-  retire: object({ ...recovery, threads: Type.Optional(Type.Unknown()) }),
+  retire: Type.Union([
+    object({ ...recovery, threads: Type.Optional(Type.Unknown()) }),
+    object(nativeRetirementProperties),
+  ]),
   recover: object({ ...recovery, pullRequest: Type.String({ minLength: 1, maxLength: 4096 }) }),
   'retry-denied': object({
     ...recovery,
@@ -53,7 +57,7 @@ export default function validateDispatchRequest(
   const schema = schemas[action as DispatchAction];
   const request = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
   if (
-    Object.hasOwn(schema.properties, 'id') &&
+    (action === 'retire' || ('properties' in schema && Object.hasOwn(schema.properties, 'id'))) &&
     Object.hasOwn(request, 'id') &&
     !Value.Check(id, request.id)
   )
