@@ -84,6 +84,7 @@ export function projectAutomation(
   const override = job.overrides.openclaw;
   return {
     name: `Agent System: ${job.id}`,
+    ...(job.displayName === undefined ? {} : { displayName: job.displayName }),
     declarationKey: record.marker,
     agentId: context.agentId,
     enabled: job.enabled,
@@ -135,6 +136,7 @@ export function nativeAutomationHash(job: Record<string, unknown>): string {
     Object.fromEntries(
       [
         'name',
+        'displayName',
         'declarationKey',
         'agentId',
         'enabled',
@@ -196,6 +198,7 @@ export function automationPatch(
       failureDestination: null,
     };
   }
+  if (current.displayName != null && desired.displayName === undefined) patch.displayName = null;
   for (const key of ['sessionKey', 'trigger', 'pacing'])
     if (current[key] !== undefined && desired[key] === undefined) patch[key] = null;
   return patch;

@@ -13,6 +13,10 @@ import {
 import type { ManifestDiagnostic } from './types.ts';
 
 const textSchema = Type.String({ pattern: '^(?=[\\s\\S]*\\S)[^\\u0000\\r\\n]*(?![\\s\\S])' });
+const displayNameSchema = Type.String({
+  maxLength: 200,
+  pattern: '^(?=[\\s\\S]*\\S)[^\\u0000\\r\\n\\u000b\\u000c\\u0085\\u2028\\u2029]*(?![\\s\\S])',
+});
 export const automationFileSchema = Type.Object(
   { file: textSchema },
   { additionalProperties: false },
@@ -38,6 +42,7 @@ export const automationThreadSchema = Type.Object(
 const jobSchema = Type.Object(
   {
     id: Type.String({ pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*(?![\\s\\S])' }),
+    'display-name': Type.Optional(displayNameSchema),
     enabled: Type.Optional(Type.Boolean()),
     thread: Type.Optional(Type.Union([Type.Null(), textSchema, automationThreadSchema])),
     runtimes: Type.Optional(
@@ -84,6 +89,7 @@ export type AutomationRuntime = 'openclaw' | 'codex';
 export type AutomationOverride = Static<typeof overrideSchema>;
 export interface AgentAutomation {
   id: string;
+  displayName?: string;
   enabled: boolean;
   runtimes: AutomationRuntime[];
   schedule: AutomationSchedule;
@@ -95,8 +101,6 @@ export interface AgentAutomation {
   overrides: Partial<Record<AutomationRuntime, AutomationOverride>>;
 }
 export type ResolvedAutomation = Omit<AgentAutomation, 'payload'> & {
-  /** optional presentation supplied by a runtime-owned job projection. */
-  displayName?: string;
   /** Trusted runtime-derived settings; not accepted by the external manifest schema. */
   internalOpenClaw?: {
     trigger: { script: string };
@@ -146,6 +150,11 @@ export default function normalizeAutomations(
   const automations: AgentAutomation[] = [];
   for (const [index, job] of value.entries()) {
     const path = `/automations/${index}`;
+    // native openclaw also bounds utf-16 length, not only json schema code points.
+    if (job['display-name'] !== undefined && job['display-name'].length > 200) {
+      diagnostics.push(automationDiagnostic('manifest-automation-schema', `${path}/display-name`));
+      continue;
+    }
     if (ids.has(job.id))
       diagnostics.push(automationDiagnostic('manifest-automation-duplicate-id', `${path}/id`));
     ids.add(job.id);
@@ -203,6 +212,7 @@ export default function normalizeAutomations(
     }
     automations.push({
       id: job.id,
+      ...(job['display-name'] === undefined ? {} : { displayName: job['display-name'].trim() }),
       enabled: job.enabled ?? true,
       runtimes: [...(job.runtimes ?? (['openclaw', 'codex'] as const))].sort(),
       schedule,
