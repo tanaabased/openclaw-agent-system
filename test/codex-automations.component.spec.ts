@@ -800,7 +800,7 @@ describe('agent/codex-automations', () => {
         '    overrides:\n      codex:\n        model: gpt-6-astra\n        target: {thread: fixture-thread}\n',
       ),
     );
-    assert.equal((await inspect()).findings[0]?.code, 'automation-thread-overrides-unsupported');
+    assert.equal((await inspect()).findings[0]?.code, 'automation-thread-settings-unowned');
   });
 
   it('should move an explicit chat after a group change without rewriting its schedule', async () => {

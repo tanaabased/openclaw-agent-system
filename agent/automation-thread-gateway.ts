@@ -62,6 +62,20 @@ export default function automationThreadGateway(
       throw new AutomationError('automation-thread-workspace-mismatch');
     return {
       id: key,
+      incarnation: row.sessionId,
+      ...(typeof row.lifecycleRevision === 'string'
+        ? { lifecycleRevision: row.lifecycleRevision }
+        : {}),
+      ...(typeof row.model === 'string'
+        ? {
+            model: row.model.includes('/')
+              ? row.model
+              : typeof row.modelProvider === 'string'
+                ? `${row.modelProvider}/${row.model}`
+                : undefined,
+          }
+        : {}),
+      ...(typeof row.thinkingLevel === 'string' ? { effort: row.thinkingLevel } : {}),
       archived: row.archived === true,
       ...(typeof row.displayName === 'string' ? { name: row.displayName } : {}),
       ...(typeof row.category === 'string' ? { group: row.category } : {}),
@@ -72,7 +86,7 @@ export default function automationThreadGateway(
   }
   return {
     lookup,
-    async create(record, saveId) {
+    async create(record, saveId, _fresh, settings) {
       const key =
         record.nativeId ??
         `agent:${context.agentId}:automation:${context.scope}:${record.key}${record.generation ? `:${record.generation}` : ''}`;
@@ -82,8 +96,35 @@ export default function automationThreadGateway(
           key,
           agentId: context.agentId,
           cwd: context.workspaceDir,
+          ...(settings?.model ? { model: settings.model } : {}),
+          ...(settings?.effort ? { thinkingLevel: settings.effort } : {}),
         });
       return key;
+    },
+    async updateSettings(current, settings) {
+      const latest = await lookup(current.id);
+      if (
+        !latest ||
+        latest.incarnation !== current.incarnation ||
+        latest.model !== current.model ||
+        latest.effort !== current.effort
+      )
+        throw new AutomationError('automation-thread-settings-conflict');
+      try {
+        await request('sessions.patch', {
+          key: current.id,
+          expectedSessionId: latest.sessionId,
+          ...(latest.lifecycleRevision
+            ? { expectedLifecycleRevision: latest.lifecycleRevision }
+            : {}),
+          ...(settings.model === undefined ? {} : { model: settings.model }),
+          ...(settings.effort === undefined ? {} : { thinkingLevel: settings.effort }),
+        });
+      } catch (error) {
+        if (error instanceof AutomationError && error.diagnostic?.category === 'rejected')
+          throw new AutomationError('automation-thread-settings-denied', error.diagnostic);
+        throw error;
+      }
     },
     async setGroup(id, group) {
       const current = await lookup(id);

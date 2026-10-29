@@ -325,7 +325,7 @@ describe('agent/automation-service', () => {
         connectionDetails: {},
       });
     });
-    manifest.automations![0]!.overrides.openclaw = { effort: 'max' };
+    manifest.automations![0]!.overrides.openclaw = { effort: 'unsupported' };
     await assert.rejects(service.contribution().reconcile!({ manifest, workspaceDir: root }), {
       code: 'automation-effort-unsupported',
     });
@@ -455,7 +455,13 @@ describe('agent/automation-service', () => {
       if (method === 'sessions.list') return { sessions: [...sessions.values()] };
       if (method === 'sessions.create') {
         assert.equal(params.cwd, root);
-        sessions.set(key, { key, sessionId: 'intake-session', workspaceDir: root });
+        sessions.set(key, {
+          key,
+          sessionId: 'intake-session',
+          workspaceDir: root,
+          model: params.model,
+          thinkingLevel: params.thinkingLevel,
+        });
         return { ok: true };
       }
       if (method === 'sessions.patch') {
@@ -473,6 +479,8 @@ describe('agent/automation-service', () => {
     manifest.models = {
       default: { model: 'openai/gpt-6-luna', effort: 'medium' },
       low: { model: 'openai/gpt-6-luna', effort: 'medium' },
+      medium: { model: 'openai/gpt-6-luna', effort: 'medium' },
+      high: { model: 'openai/gpt-6-luna', effort: 'high' },
     };
     manifest.github = { username: 'tanaabot', notifications: policy };
     await service.reconcile(manifest, root);
@@ -620,6 +628,89 @@ describe('agent/automation-service', () => {
     assert.equal(
       (await service.inspect(manifest, root)).every((finding) => finding.status === 'healthy'),
       true,
+    );
+  });
+
+  it('should create and update shared settings while preserving the native chat and schedule', async () => {
+    const sessions = new Map<string, Record<string, unknown>>();
+    const original = service.dependencies.request!;
+    service.dependencies.request = async (method, params) => {
+      if (!method.startsWith('sessions.')) return original(method, params);
+      calls.push({ method, params: structuredClone(params) });
+      const key = String(params.key ?? params.sessionId);
+      if (method === 'sessions.resolve')
+        return sessions.has(key) ? { ok: true, key, agentId: 'tanaabot' } : { ok: false };
+      if (method === 'sessions.list') return { sessions: [...sessions.values()] };
+      if (method === 'sessions.create') {
+        sessions.set(key, {
+          key,
+          sessionId: 'same-chat',
+          lifecycleRevision: 'revision-1',
+          workspaceDir: root,
+          model: params.model,
+          thinkingLevel: params.thinkingLevel,
+        });
+        return { ok: true };
+      }
+      if (method === 'sessions.patch') {
+        assert.equal(params.expectedSessionId, 'same-chat');
+        if (params.model || params.thinkingLevel) {
+          assert.deepEqual(params, {
+            key,
+            expectedSessionId: 'same-chat',
+            expectedLifecycleRevision: 'revision-1',
+            model: 'openai/gpt-6-luna',
+            thinkingLevel: 'high',
+          });
+        }
+        Object.assign(sessions.get(key)!, {
+          ...(params.autoLabel ? { displayName: params.autoLabel } : {}),
+          ...(params.category ? { category: params.category } : {}),
+          ...(params.model ? { model: params.model } : {}),
+          ...(params.thinkingLevel ? { thinkingLevel: params.thinkingLevel } : {}),
+        });
+        return { ok: true };
+      }
+      throw new Error('unexpected session call');
+    };
+    manifest.models = { default: { model: 'openai/gpt-6-luna', effort: 'medium' } };
+    manifest.automations = jobs([
+      {
+        id: 'prompt',
+        schedule: 'every 1 hour',
+        prompt: 'Check.',
+        thread: { id: 'activity', name: 'Activity' },
+      },
+    ]);
+    await service.reconcile(manifest, root);
+    const [chat] = [...sessions.values()];
+    assert.equal(chat?.thinkingLevel, 'medium');
+    assert.equal(chat?.model, 'openai/gpt-6-luna');
+    const id = native[0]!.id;
+    manifest.models.default.effort = 'high';
+    calls = [];
+    const findings = await service.inspect(manifest, root);
+    assert.ok(
+      findings.some(({ message }) => message.includes('high') && message.includes('medium')),
+    );
+    assert.equal(
+      calls.some(({ method }) => method === 'sessions.patch'),
+      false,
+    );
+    await service.reconcile(manifest, root);
+    assert.equal(sessions.size, 1);
+    assert.equal(chat?.thinkingLevel, 'high');
+    assert.equal(native[0]!.id, id);
+    assert.equal(native[0]!.payload.thinking, 'high');
+    assert.equal(
+      calls.some(({ method }) => method === 'sessions.create'),
+      false,
+    );
+    calls = [];
+    await service.reconcile(manifest, root);
+    assert.equal(
+      calls.some(({ method }) => ['sessions.patch', 'cron.update'].includes(method)),
+      false,
     );
   });
 

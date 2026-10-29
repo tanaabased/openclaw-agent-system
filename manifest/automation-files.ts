@@ -1,5 +1,6 @@
 import normalizeAutomations, {
   automationDiagnostic,
+  automationProfileDiagnostics,
   type ResolvedAutomation,
 } from './automation-schema.ts';
 import { parseManifestYaml } from './parse.ts';
@@ -43,6 +44,13 @@ export default async function loadAutomations(
       };
     declarations = normalized.automations;
   }
+  const profileDiagnostics = automationProfileDiagnostics(declarations, parsed.manifest.models);
+  if (profileDiagnostics.length)
+    return {
+      status: 'invalid',
+      diagnostics: profileDiagnostics,
+      paths: files.map((file) => file.path),
+    };
   const automations: ResolvedAutomation[] = [];
   for (const [index, job] of declarations.entries()) {
     if (job.payload.kind === 'command' || typeof job.payload.prompt === 'string') {

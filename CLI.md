@@ -566,7 +566,9 @@ Inspect registration, identity, models, memory, paths, and configured capabiliti
 without applying repairs. `openclaw agent-system status` is an alias.
 
 Doctor also reports automation drift, disabled or completed jobs, unsupported targets,
-and execution or delivery failures. Scheduler inspection requires the operator's
+and execution or delivery failures. Managed-chat model drift includes requested and
+observed model/effort; denied or uncertain updates retain their recovery state.
+Doctor never applies those changes. Scheduler inspection requires the operator's
 native read permission; it does not change or run jobs.
 
 When Codex is required, the `codex-plugin` component reports the shared
@@ -636,7 +638,10 @@ Output lists variable names, sources, required state, and override counts; value
 
 Apply the workspace agent's identity, models, memory, paths, capabilities, and setup.
 Install also updates repository [automations](./MANIFEST.md#automations). Use [`automations sync`](#openclaw-agent-system-automations-sync)
-to reconcile automation jobs alone. Automation reconciliation requires a running
+to reconcile automation jobs alone, including saved model/effort on existing managed
+chats. Busy chats may need a later Install; denied or uncertain attempts are not
+replayed. See [model settings and recovery](./MANIFEST.md#automations).
+Automation reconciliation requires a running
 Gateway. If initial scheduler discovery cannot reach it, Install continues with
 an `automation-sync-deferred` warning and skipped outcome; scheduler state remains
 unverified and unchanged. Rerun Install or `automations sync` when the Gateway is available. Explicit sync, invalid declarations, authorization and

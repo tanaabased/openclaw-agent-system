@@ -8,7 +8,7 @@ those same conversations.
 
 - Digest-bound plans for native automation actions without private scheduler-file writes.
 - Real app-server conversation creation, selected model/permission readback, and attributed setup history without model generation.
-- Fresh-process resumption and repeated sync preserving conversation identity and settings.
+- Fresh-process resumption and shared profile changes preserving conversation identity, permissions, and durable model/effort settings.
 
 ## What Does Not Belong Here
 
@@ -98,5 +98,18 @@ node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/thr
 jq -S '.threads | map_values(.id)' "$root/threads-created.json" > "$root/threads-ids.json"
 jq -S '.threads | map_values(.id)' "$root/threads-reused.json" | diff - "$root/threads-ids.json"
 jq -e 'any(.nativeInventory.sections[]; .name == "agent system" and .itemKeys == []) and any(.nativeInventory.sections[]; .name == "AGENT SYSTEM" and (.itemKeys | length) == 2)' "$root/sidebar-input.json"
+test ! -d "$CODEX_HOME/automations"
+
+# should update shared profile effort without replacing either conversation
+root="$TMPDIR/agent-system-codex-automations"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const path=process.env.GITHUB_WORKSPACE+"/examples/codex-automations/threads/agent.yaml"; const manifest=parse(fs.readFileSync(path,"utf8")); manifest.models.default.effort="high"; fs.writeFileSync(path,stringify(manifest));'
+node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/threads-data" "$root/sidebar-input.json" > "$root/threads-updated.json"
+jq -S '.threads | map_values(.id)' "$root/threads-updated.json" | diff - "$root/threads-ids.json"
+jq -e 'all(.threads[]; .settings.requested.model == "gpt-6-luna" and .settings.observed.model == "gpt-6-luna" and .settings.requested.effort == "high" and .settings.observed.effort == "high")' "$root/threads-updated.json"
+node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/threads-data" "$root/sidebar-input.json" > "$root/threads-cold.json"
+jq -S '.threads' "$root/threads-updated.json" > "$root/threads-settings.json"
+jq -S '.threads' "$root/threads-cold.json" | diff - "$root/threads-settings.json"
 test ! -d "$CODEX_HOME/automations"
 ```

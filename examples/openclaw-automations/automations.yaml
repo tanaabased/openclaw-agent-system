@@ -12,6 +12,8 @@
   runtimes: [openclaw]
   schedule: every 1 hour
   timeout-seconds: 120
+  model: aimock/gpt-5.5
+  effort: medium
   prompt:
     file: ./prompt.md
   thread: { id: automation-status, name: Automation status }

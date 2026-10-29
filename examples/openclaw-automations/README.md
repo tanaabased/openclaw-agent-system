@@ -6,6 +6,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 ## What Belongs Here
 
 - Public managed sync/list/run boundaries and repeated sync preserving the same native jobs.
+- Shared model/effort creation and same-chat updates, followed by a real scheduler occurrence requested through the native run control.
 - Native display-name rename/removal while preserving the job, its completed run state, and separate chat binding.
 - A completed command receipt proving managed Git identity and a completed prompt in the owning agent context.
 - Exact native run IDs and durable completion evidence, rather than treating queued admission as success.
@@ -35,6 +36,10 @@ openclaw-aimock prepare --scenario openclaw-automations
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 openclaw agent-system install --yes --json
 
+# should keep automation session choices local even when native sticky selection is global
+openclaw config set agents.defaults.modelSelectionScope global
+openclaw config get agents.defaults.model --json > "$TMPDIR/automation-global-model.json"
+
 # should start the gateway with the installed agent
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 ```
@@ -57,6 +62,19 @@ openclaw gateway call sessions.list --params '{"limit":100}' --json | jq -e --ar
 node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); jobs.find(({id})=>id==="prompt").group="  straße ops  "; fs.writeFileSync("automations.yaml",stringify(jobs));'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 openclaw gateway call sessions.list --params '{"limit":100}' --json | jq -e --arg key "$chat" 'any(.sessions[]; .key == $key and .category == "STRASSE OPS")'
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
+openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
+
+# should save changed effort on the same chat and scheduled job
+cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+chat=$(jq -er '.jobs[] | select(.id == "prompt") | .routing | sub("^session:"; "")' "$TMPDIR/automation-before.json")
+openclaw gateway call sessions.list --params '{"limit":100}' --json | jq -e --arg key "$chat" 'any(.sessions[]; .key == $key and .thinkingLevel == "medium")'
+node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); jobs.find(({id})=>id==="prompt").effort="high"; fs.writeFileSync("automations.yaml",stringify(jobs));'
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
+openclaw gateway call sessions.list --params '{"limit":100}' --json | jq -e --arg key "$chat" 'any(.sessions[]; .key == $key and .thinkingLevel == "high" and (.model == "gpt-5.5" or .model == "aimock/gpt-5.5"))'
+native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
+openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.payload.model == "aimock/gpt-5.5" and .payload.thinking == "high"'
+openclaw config get agents.defaults.model --json | diff - "$TMPDIR/automation-global-model.json"
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
 
