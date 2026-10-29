@@ -765,8 +765,9 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sessions.get(closed.threadId!)!.archived, true);
     const retired = await record(closed.threadId);
     assert.ok(retired.retired);
-    assert.deepEqual(retired.result, closed.result);
-    assert.deepEqual(retired.stageReceipt, closed.stageReceipt);
+    assert.equal(retired.retainedHistory?.outcome?.assessment, closed.result?.outcome);
+    assert.equal(retired.result, undefined);
+    assert.equal(retired.stageReceipt, undefined);
     await assert.rejects(stat(closed.worktree!), { code: 'ENOENT' });
     const retained = await record(sibling.threadId);
     assert.equal(retained.retirement, undefined);
@@ -843,18 +844,24 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(after.retirement!.reason, 'operator-requested');
       assert.equal(after.retirement!.eligibleAt, service.dependencies.now!());
       assert.equal(removed, protection === 'none');
-      assert.deepEqual(after.result, before.result);
+      if (protection === 'none') {
+        assert.equal(
+          after.retainedHistory?.outcome?.assessment,
+          before.result?.outcome ?? 'missing',
+        );
+        assert.equal(after.result, undefined);
+      } else assert.deepEqual(after.result, before.result);
       assert.equal(fixture.item.state, 'open');
       if (protection === 'none') {
         assert.equal((await retire()).status, 'retired');
         assert.equal(calls.filter((call) => call.method === 'sessions.patch').length, 1);
-        await (
-          await service.scope(manifest, root)
-        ).journal.exclusive(async (state, save) => {
-          delete state.records[0]!.retirement!.archivedAt;
-          await save();
-        });
-        assert.equal((await retire()).status, 'retirement-unverified');
+        await assert.rejects(
+          (await service.scope(manifest, root)).journal.exclusive(async (state, save) => {
+            delete state.records[0]!.retirement!.archivedAt;
+            await save();
+          }),
+          /dispatch-state-invalid/,
+        );
       } else
         assert.equal(
           calls.some((call) => call.method === 'sessions.patch'),
@@ -997,7 +1004,8 @@ describe('agent/openclaw issue dispatch', () => {
       assert.ok(after.retired, after.retirement?.code ?? 'retirement did not finish');
       assert.ok(after.retirement?.archivedAt);
       assert.ok(after.retirement?.worktreeRemovedAt);
-      assert.deepEqual(after.result, before.result);
+      assert.equal(after.retainedHistory?.outcome?.assessment, before.result?.outcome ?? 'missing');
+      assert.equal(after.result, undefined);
       assert.equal(removed, true);
     });
   }
@@ -1072,8 +1080,9 @@ describe('agent/openclaw issue dispatch', () => {
     );
     const after = await record();
     assert.ok(after.retired);
-    assert.deepEqual(after.request, before.request);
-    assert.deepEqual(after.sessionCreation, before.sessionCreation);
+    assert.equal(after.retainedHistory?.terminal, true);
+    assert.equal(after.request, undefined);
+    assert.equal(after.retainedHistory?.sessionId, before.sessionCreation?.sessionId);
     assert.equal(after.retirement?.worktreeRemovalAttemptedAt, undefined);
     assert.deepEqual(after.retirement?.worktreeRemovalObserved, {
       at: deadline + 60_000,
@@ -1132,8 +1141,9 @@ describe('agent/openclaw issue dispatch', () => {
         });
         assert.equal(after.retirement?.archivedAt, undefined);
         assert.equal(after.retirement?.archiveAttempt, undefined);
-        assert.deepEqual(after.request, before.request);
-        assert.deepEqual(after.sessionCreation, before.sessionCreation);
+        assert.equal(after.retainedHistory?.terminal, true);
+        assert.equal(after.request, undefined);
+        assert.equal(after.retainedHistory?.sessionId, before.sessionCreation?.sessionId);
         assert.equal(after.threadId, before.threadId);
         assert.equal(after.nativeInactive, before.nativeInactive);
         assert.equal(removals, tree === 'existing' ? 1 : 0);

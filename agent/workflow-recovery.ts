@@ -19,6 +19,14 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     };
   }
   const reasons: Record<string, [string, string]> = {
+    'dispatch-state-capacity': [
+      'This save exceeds the 64 MiB working-content or 65 MiB total journal ceiling. The committed state is preserved.',
+      'Retry context/reconciliation in the same chat to offload verified retired history, then resubmit the complete result. If protected active work still fills the emergency budget, reduce pressure through supported retirement. Do not delete the journal, reset intake, or manufacture completion flags.',
+    ],
+    'dispatch-storage-admission-paused': [
+      'The proposed new task would reach the 32 MiB admission threshold; native creation was not authorized.',
+      'Leave the assignment pending. Existing tasks can progress, deliver and retire within the 64 MiB emergency budget. Reconciliation offloads eligible history; admission resumes automatically below 32 MiB with room for the proposed task.',
+    ],
     'assessment-result-incomplete': [
       'The new assessment is missing its complete source; the result was not recorded.',
       'Include the complete assessment, evidence, plan or questions in `fullAssessment` and resubmit the result in this chat. Keep the previous saved result; do not substitute a summary for the source.',

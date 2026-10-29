@@ -1,3 +1,4 @@
+import { dispatchStoragePressure } from './dispatch-storage.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import issueChatTitle from './issue-chat-title.ts';
 import {
@@ -408,6 +409,8 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
   }
   if (!codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 3).available)
     return checked('at-capacity');
+  if (['paused', 'emergency'].includes(dispatchStoragePressure(state).level))
+    return { ...(await checked('at-capacity')), code: 'dispatch-storage-admission-paused' };
   const intake = pendingDispatchAssignments(state, admitted, codexUnresolvedRetirement)
     .filter(({ intake }) => !liveWorkflowPolicy(current.manifest, 'codex', intake))
     .find(

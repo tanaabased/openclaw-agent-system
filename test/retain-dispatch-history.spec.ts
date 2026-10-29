@@ -98,6 +98,8 @@ describe('agent/retain-dispatch-history', () => {
 
   it('should protect unfinished native work and implementation after a published reply', () => {
     const source = record();
+    delete source.retired;
+    delete source.retirement;
     source.firstTurn = { runId: 'running', message: 'prompt', status: 'accepted' };
     assert.equal(retainDispatchHistory(source), undefined);
     const workEvent = event(1);
@@ -113,6 +115,80 @@ describe('agent/retain-dispatch-history', () => {
       { ...event(1), receipt: undefined },
     ])
       assert.equal(settledFeedback(changed), false);
+  });
+
+  it('should offload stale turns and unsuccessful outcomes after native cleanup without inventing success', () => {
+    const source = record();
+    source.firstTurn = {
+      runId: 'stale',
+      message: 'large prompt',
+      status: 'consumed',
+      consumedByEventId: 'event',
+      cancelled: true,
+    };
+    source.result = {
+      version: 1,
+      outcome: 'operator-setup-blocker',
+      summary: 'failed',
+      fullAssessment: 'full failed plan',
+      code: 'setup-unavailable',
+      remediation: 'restore setup',
+      evidence: [],
+      progress: { completed: [], remaining: ['work'] },
+    };
+    source.directAssessments = [
+      {
+        id,
+        binding: id,
+        target: 'issue',
+        repositoryId: 'repo',
+        subjectId: 'issue',
+        checkout: { path: '/worktree', revision: 'head', dirty: false },
+        evidence: 'unfinished incidental context',
+        selection,
+        turnId: 'turn',
+        inputId: 'input',
+      },
+    ];
+    source.feedback = {
+      baseline: {},
+      events: [
+        { ...event(1), reported: false },
+        {
+          ...event(2),
+          receipt: undefined,
+          publicationAttempted: true,
+          policyHeld: 'native-denial',
+        },
+      ],
+    };
+    const terminal = retainDispatchHistory(source)!;
+    assert.equal(terminal.retainedHistory!.outcome!.assessment, 'operator-setup-blocker');
+    assert.equal(terminal.retainedHistory!.outcome!.code, 'setup-unavailable');
+    assert.deepEqual(terminal.retainedHistory!.outcome!.assessments, [{ id, outcome: 'missing' }]);
+    assert.deepEqual(terminal.retainedHistory!.outcome!.turns, [
+      { runId: 'stale', status: 'consumed', consumedByEventId: 'event', cancelled: true },
+    ]);
+    assert.equal(terminal.retainedHistory!.effects![0]!.reported, false);
+    assert.deepEqual(terminal.retainedHistory!.effects![0]!.receipt, event(1).receipt);
+    assert.equal(terminal.retainedHistory!.effects![1]!.hold, 'native-denial');
+    assert.equal(terminal.feedback, undefined);
+    assert.equal(terminal.result, undefined);
+    assert.equal(validTerminalRecord(terminal), true);
+    assert.equal(source.firstTurn.status, 'consumed');
+  });
+
+  it('should reject contradictory native activity and cleanup receipts predating intent', () => {
+    for (const source of [
+      { ...record(), nativeInactive: false },
+      { ...record(), retirement: { ...record().retirement!, worktreeRemovedAt: 9 } },
+      {
+        ...record(),
+        retirement: { ...record().retirement!, archiveAttempt: { at: 11, turnId: 'later' } },
+      },
+      { ...record(), retirement: { ...record().retirement!, deadlinePending: true as const } },
+    ])
+      assert.equal(retainDispatchHistory(source), undefined);
   });
 
   it('should preserve replacement links when settled successor history is offloaded', () => {

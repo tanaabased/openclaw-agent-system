@@ -97,6 +97,9 @@ async function statusNotificationsAgentSystem(
         },
         { label: 'status', style: 'field', value: result.status, valueStyle: statusStyle },
         { label: 'code', style: 'field', value: result.code, quiet: true },
+        ...(result.storage
+          ? [{ label: 'storage', style: 'field' as const, value: result.storage.message }]
+          : []),
         {
           label: 'baseline',
           style: 'field',

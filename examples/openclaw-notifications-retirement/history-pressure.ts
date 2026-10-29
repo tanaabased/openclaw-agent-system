@@ -17,17 +17,33 @@ for (const name of await readdir(root)) {
 assert.equal(matches.length, 1);
 const { path, state, record } = matches[0]!;
 assert.ok(record.retired && record.retirement.worktreeRemovedAt);
-if (operation === 'seed') {
-  assert.deepEqual(record.result, before.result);
-  const revision = {
-    runId: record.resultTurnId,
-    result: record.result,
-    receipt: record.stageReceipt,
-  };
-  record.assessmentHistory ??= [];
-  while (Buffer.byteLength(JSON.stringify(state)) <= 2 * 1024 * 1024)
-    record.assessmentHistory.push(structuredClone(revision));
-  assert.ok(Buffer.byteLength(JSON.stringify(state)) < 4 * 1024 * 1024);
+async function archived() {
+  const reference = record.retainedHistory.entries.at(-1);
+  const cold = join(
+    root,
+    'history-openclaw-' + state.scope,
+    reference.at + '-' + reference.digest + '.json',
+  );
+  const text = await readFile(cold, 'utf8');
+  assert.equal(createHash('sha256').update(text).digest('hex'), reference.digest);
+  return { cold, value: JSON.parse(text).value };
+}
+if (operation === 'verify-result') {
+  assert.equal(record.retainedHistory.terminal, true);
+  assert.deepEqual((await archived()).value.result, before.result);
+} else if (operation === 'seed') {
+  const { value } = await archived();
+  // Restore the exact pre-offload fixture with its verified cleanup, then model stale bookkeeping.
+  Object.assign(record, value);
+  delete record.retainedHistory;
+  const turn = record.decisionTurn ?? record.assessmentTurn;
+  assert.ok(turn.consumedByEventId);
+  turn.status = 'consumed';
+  delete turn.replyEventId;
+  delete turn.executionModel;
+  delete turn.failed;
+  assert.ok(Buffer.byteLength(JSON.stringify(state)) < 2 * 1024 * 1024);
+  await writeFile(beforePath + '.history-seed.json', JSON.stringify(record));
   await writeFile(path, JSON.stringify(state));
 } else {
   assert.equal(record.retainedHistory.terminal, true);
@@ -39,16 +55,14 @@ if (operation === 'seed') {
       .length,
     1,
   );
+  assert.ok(
+    record.retainedHistory.outcome.turns.some(
+      (turn: { status: string }) => turn.status === 'consumed',
+    ),
+  );
   if (operation === 'verify-and-remove-cold-copy') {
-    const reference = record.retainedHistory.entries.at(-1);
-    const cold = join(
-      root,
-      'history-openclaw-' + state.scope,
-      reference.at + '-' + reference.digest + '.json',
-    );
-    const text = await readFile(cold, 'utf8');
-    assert.equal(createHash('sha256').update(text).digest('hex'), reference.digest);
-    assert.deepEqual(JSON.parse(text).value.result, before.result);
+    const { cold, value } = await archived();
+    assert.deepEqual(value, JSON.parse(await readFile(beforePath + '.history-seed.json', 'utf8')));
     await unlink(cold);
   } else assert.equal(operation, 'verify-terminal');
 }
