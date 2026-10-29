@@ -22,6 +22,31 @@ describe('agent/dispatch-retry', () => {
     assert.equal(dispatchFailureStatus(record, 'continuation-native-approval-denied'), 'blocked');
   });
 
+  it('should recheck known prerequisites and native custody at a bounded cadence', () => {
+    for (const code of [
+      'dispatch-project-registration-unavailable',
+      'dispatch-assessment-skill-unavailable',
+      'dispatch-assessment-guidance-unreadable',
+      'workflow-stage-skill-unavailable',
+      'dispatch-creation-unresolved',
+      'dispatch-assignment-superseded',
+    ]) {
+      const record = {} as SharedDispatchRecord;
+      for (const now of [0, 300000, 600000]) {
+        assert.equal(scheduleDispatchRetry(record, code, undefined, now), true);
+        assert.equal(record.retryAfter, now + 300000);
+        assert.equal(dispatchRetryDue(record, now), false);
+        assert.equal(dispatchRetryDue(record, now + 300000), true);
+      }
+      assert.equal(
+        scheduleDispatchRetry(record, 'dispatch-creation-denied', undefined, 900000),
+        false,
+      );
+      assert.equal(record.retry, undefined);
+      assert.equal(record.retryAfter, undefined);
+    }
+  });
+
   it('should reserve durable blockers for decisions and authority loss', () => {
     const record = {} as SharedDispatchRecord;
     for (const code of [

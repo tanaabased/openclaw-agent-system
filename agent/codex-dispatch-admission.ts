@@ -30,6 +30,7 @@ import { automationHash } from './automation-hash.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
 import codexCapacity, { codexUnresolvedRetirement } from './codex-capacity.ts';
+import { dispatchRecheckable } from './dispatch-retry.ts';
 import { dispatchCheckDigest } from './codex-dispatch-check.ts';
 import {
   code,
@@ -315,7 +316,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
           record.result.code === 'dispatch-assignment-superseded')) &&
       (record.result?.outcome !== 'operator-setup-blocker' ||
         Boolean(record.retry) ||
-        record.result.code === 'dispatch-assignment-superseded') &&
+        dispatchRecheckable(record.result.code)) &&
       (record.retryAfter ?? 0) <= now,
   )) {
     const intake = dispatchAdmission(pending, admitted.records);
@@ -419,6 +420,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
         (record?.result?.outcome !== 'operator-setup-blocker' ||
           Boolean(record.retry) ||
+          dispatchRecheckable(record.result.code) ||
           record.intakeId !== intake.id) &&
         (record?.retryAfter ?? 0) <= now,
     )?.intake;

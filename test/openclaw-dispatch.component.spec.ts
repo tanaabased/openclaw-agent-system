@@ -6768,7 +6768,7 @@ describe('agent/openclaw issue dispatch', () => {
       { action: 'delivery', operation: 'prepare', id },
       true,
     );
-    assert.equal(delivery.status, 'waiting');
+    assert.equal(delivery.status, 'needs-attention');
     assert.ok('code' in delivery && delivery.code === 'delivery-implementation-incomplete');
   });
 

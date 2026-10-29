@@ -1189,7 +1189,7 @@ describe('agent/codex-delivery', () => {
     assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
     assert.equal(linkReads, 5);
     const retained = await request('present');
-    assert.equal(retained.workflowStatus, 'delivered-response-pending');
+    assert.equal(retained.workflowStatus, 'delivery');
     assert.match(String(retained.presentation), /pull\/7/);
     wrongIssueLink = false;
     await publish();

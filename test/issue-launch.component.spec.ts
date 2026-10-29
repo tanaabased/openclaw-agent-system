@@ -388,7 +388,7 @@ describe('agent/issue-launch', () => {
     assert.equal((await journal.read()).records.length, 0);
   });
 
-  it('should preserve live operator direction and refuse inactive owner recreation', async () => {
+  it('should preserve live operator direction and reuse an idle owner without recreation', async () => {
     context.assertCurrent = async () => {
       throw new Error('native-input-changed');
     };
@@ -399,7 +399,9 @@ describe('agent/issue-launch', () => {
       state.records[0]!.nativeInactive = true;
       await save();
     });
-    await assert.rejects(launch(), /owner-inactive/);
+    const before = await journal.read();
+    await launch();
+    assert.equal((await journal.read()).records[0]!.id, before.records[0]!.id);
     assert.equal((await journal.read()).records.length, 1);
   });
   it('should distinguish decoded assigner defaults from explicit recipient requirements', async () => {

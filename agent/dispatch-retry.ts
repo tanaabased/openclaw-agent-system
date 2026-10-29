@@ -34,6 +34,21 @@ const transient = new Set([
   'intake-provider-unavailable',
 ]);
 
+// these owners can inspect repaired prerequisites or reconcile retained native intent.
+// rechecking never authorizes replay of an uncertain creation or a native denial.
+const recheckable = new Set([
+  'dispatch-project-registration-unavailable',
+  'dispatch-assessment-skill-unavailable',
+  'dispatch-assessment-guidance-unreadable',
+  'workflow-stage-skill-unavailable',
+  'dispatch-creation-unresolved',
+  'dispatch-assignment-superseded',
+]);
+
+export function dispatchRecheckable(code: string | undefined) {
+  return code !== undefined && recheckable.has(code);
+}
+
 function explicitStop(code: string) {
   return (
     /-(?:cancelled|authority-revoked)$/.test(code) ||
@@ -50,13 +65,16 @@ export function scheduleDispatchRetry(
 ) {
   const diagnostic = workflowFailure(error, code).providerDiagnostic;
   record.providerDiagnostic = diagnostic;
+  const recheck = !diagnostic && dispatchRecheckable(code);
   const retryable =
     !explicitStop(code) &&
     (diagnostic
       ? ['transport', 'rate-limit', 'authentication', 'permission'].includes(
           diagnostic.classification,
         )
-      : transient.has(code) || /^git-(?:fetch|clone)-(?:(?:dns|timeout|connection)-)/.test(code));
+      : recheck ||
+        transient.has(code) ||
+        /^git-(?:fetch|clone)-(?:(?:dns|timeout|connection)-)/.test(code));
   if (!retryable) {
     delete record.retry;
     delete record.retryAfter;
@@ -65,7 +83,7 @@ export function scheduleDispatchRetry(
   const attempts = Math.min(5, (record.retry?.attempts ?? 0) + 1);
   record.retry = { code, attempts };
   record.retryAfter = Math.max(
-    now + Math.min(300000 * 2 ** (attempts - 1), 3600000),
+    now + (recheck ? 300000 : Math.min(300000 * 2 ** (attempts - 1), 3600000)),
     now + (diagnostic?.retryAfterMs ?? 0),
     diagnostic?.resetAt ?? 0,
   );

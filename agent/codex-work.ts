@@ -22,6 +22,7 @@ import {
   dispatchFailureStatus,
   dispatchRetryDue,
   scheduleDispatchRetry,
+  dispatchRecheckable,
 } from './dispatch-retry.ts';
 import { feedbackWorkStarted } from './feedback-work.ts';
 import issueProgression, { retainedIssueProgression } from './issue-progression.ts';
@@ -62,7 +63,12 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
         )
       )
         continue;
-      if (input.action === 'next' && record.implementationPreparationError && !record.retry)
+      if (
+        input.action === 'next' &&
+        record.implementationPreparationError &&
+        !record.retry &&
+        !dispatchRecheckable(record.implementationPreparationError)
+      )
         continue;
       if (record.retry && (record.retryAfter ?? 0) > (deps.now ?? Date.now)()) continue;
       try {
