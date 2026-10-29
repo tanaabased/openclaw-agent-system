@@ -26,6 +26,7 @@ import {
 
 export interface AssignmentScanInput {
   projectPickup?: ProjectPickupAuthority;
+  readProjectPickup?(): Promise<ProjectPickupAuthority | undefined>;
   runtime?: 'codex' | 'openclaw';
   store: Pick<IntakeRecordStore, 'exclusive' | 'location'>;
   workspaceDir: string;
@@ -291,9 +292,21 @@ export default async function scanAssignments(
           if (observedIndex < 0) state!.observedAssignments.push(observation);
           else state!.observedAssignments[observedIndex] = observation;
           if (seen.has(id)) return;
-          const projectWork = input.projectPickup
+          // the attempt is persisted before github can expose the event; read it after observing that event.
+          const pickup = input.readProjectPickup
+            ? await input.readProjectPickup()
+            : input.projectPickup;
+          if (
+            pickup?.withheldAssignments?.some(
+              (hold) =>
+                hold.issueNodeId === item.nodeId &&
+                (!hold.assignmentNodeId || hold.assignmentNodeId === event.nodeId),
+            )
+          )
+            return;
+          const projectWork = pickup
             ? await authorizeProjectAssignment({
-                authority: input.projectPickup,
+                authority: pickup,
                 runtime: input.runtime,
                 scope: state!.scope,
                 workspaceDir: input.workspaceDir,
@@ -306,6 +319,14 @@ export default async function scanAssignments(
                 now: input.now,
               })
             : undefined;
+          if (
+            pickup?.receipts.some(
+              (receipt) =>
+                receipt.issueNodeId === item.nodeId && receipt.assignmentNodeId === event.nodeId,
+            ) &&
+            !projectWork?.pickup
+          )
+            return;
           if (
             !projectWork?.pickup &&
             !input.policy.issueAssignment!.allowed.some((actor) =>

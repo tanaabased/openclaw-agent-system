@@ -19,6 +19,8 @@ a second workflow.
 
 ## Notes
 
+- Project pickup selection and uncertain-assignment recovery have controlled native-adapter coverage in `test/project-pickup-selection.component.spec.ts`. Installed pickup activation remains [#527](https://github.com/tanaabased/openclaw-agent-system/issues/527); unattended acceptance remains [#529](https://github.com/tanaabased/openclaw-agent-system/issues/529). This scenario does not establish either outcome.
+
 - Strict AIMock supplies the initial assessment; GitHub assignment changes and native state observations remain real.
 - Two 61-second waits observe removal and reassignment through the owning lifecycle interval. The OpenClaw cleanup grace is zero; it does not bypass that interval.
 - CI owns one disposable issue and its workspaces/SSH registration. Only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule bound discovery; cleanup stops the Gateway before external changes.

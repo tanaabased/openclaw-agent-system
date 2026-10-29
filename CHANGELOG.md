@@ -1,6 +1,7 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
 - Added `automations[].group` for shared uppercase Codex sections and OpenClaw categories, defaulting to `AGENT SYSTEM`. [#544](https://github.com/tanaabased/openclaw-agent-system/issues/544)
+- Added shared project pickup selection and assignment recovery for Codex and OpenClaw; activation remains pending. [#526](https://github.com/tanaabased/openclaw-agent-system/issues/526)
 - Fixed Codex and OpenClaw issue chat titles to stay uppercase without repeated repository or issue prefixes, while allowing punctuation and Unicode. [#546](https://github.com/tanaabased/openclaw-agent-system/pull/546)
 - Fixed explicit Codex implementation requests to resume handed-off issue plans after native verification. [#544](https://github.com/tanaabased/openclaw-agent-system/issues/544)
 - Made ClawHub publication best-effort with a warning on failure, and removed the automatic fallback upload. npm and repository publication remain required.

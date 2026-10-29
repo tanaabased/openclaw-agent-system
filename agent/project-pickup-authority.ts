@@ -57,6 +57,7 @@ export type ProjectWork = Static<typeof projectWorkSchema>;
 export interface ProjectPickupAuthority {
   enrollment: Static<typeof projectPickupEnrollmentSchema>;
   receipts: readonly Static<typeof projectPickupReceiptSchema>[];
+  withheldAssignments?: readonly { issueNodeId: string; assignmentNodeId?: string }[];
 }
 
 /** enrollment binds scope and native timing; live guidance and pause do not require reenrollment. */
@@ -138,6 +139,7 @@ export default async function authorizeProjectAssignment(input: {
     freshRepository.databaseId !== repository.databaseId ||
     freshItem.nodeId !== item.nodeId ||
     freshItem.databaseId !== item.databaseId ||
+    (receipt && freshItem.assignees.length !== 1) ||
     !freshItem.assignees.some((assignee) => githubIdentityMatches(assignee, client.identity))
   )
     return;

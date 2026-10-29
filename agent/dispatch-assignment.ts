@@ -187,6 +187,8 @@ export async function inspectAdmittedIssue(
   if (work) {
     if (!projectWorkMatches(work, record)) throw new Error('project-pickup-authority-mismatch');
     const item = current.item;
+    if (work.pickup && item.assignees.length !== 1)
+      throw new Error('project-pickup-ownership-changed');
     if (item.itemType !== 'issue' || item.milestone?.nodeId !== work.enrollment.milestoneNodeId)
       throw new Error('project-pickup-milestone-changed');
     if (!client.getMilestone) throw new Error('project-pickup-milestone-unavailable');

@@ -206,7 +206,12 @@ async function selectClaim(
     threadId: tx.caller,
     turnId: tx.operatorInput?.turnId ?? state.run!.id,
     hasCapacity:
-      codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 3).available > 0,
+      codexCapacity(
+        state.records,
+        current.policy?.policy.maxConcurrentItems ?? 3,
+        state.projectPickup,
+        intake.evidence?.projectWork?.pickup?.issueNodeId,
+      ).available > 0,
   });
   if (claim.status === 'recovery-required')
     throw new Error(claim.code ?? 'claim-recovery-required');
@@ -406,19 +411,32 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
       return fail(pending, error);
     }
   }
-  if (!codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 3).available)
-    return checked('at-capacity');
   const intake = pendingDispatchAssignments(state, admitted, codexUnresolvedRetirement)
     .filter(({ intake }) => !liveWorkflowPolicy(current.manifest, 'codex', intake))
     .find(
       ({ record, intake }) =>
+        codexCapacity(
+          state.records,
+          current.policy?.policy.maxConcurrentItems ?? 3,
+          state.projectPickup,
+          intake.evidence?.projectWork?.pickup?.issueNodeId,
+        ).available > 0 &&
         !record?.denial &&
         !record?.request &&
         (!deps.claims || record?.claimPass !== (tx.operatorInput?.turnId ?? state.run!.id)) &&
         (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
         (record?.retryAfter ?? 0) <= now,
     )?.intake;
-  if (!intake) return checked('idle');
+  if (!intake)
+    return checked(
+      codexCapacity(
+        state.records,
+        current.policy?.policy.maxConcurrentItems ?? 3,
+        state.projectPickup,
+      ).available
+        ? 'idle'
+        : 'at-capacity',
+    );
   let record = state.records.find(
     (entry) =>
       !entry.reset &&
@@ -660,7 +678,11 @@ export async function prepareDispatch(
   if (
     record.manualIssue &&
     !record.request &&
-    !codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 3).available
+    !codexCapacity(
+      state.records,
+      current.policy?.policy.maxConcurrentItems ?? 3,
+      state.projectPickup,
+    ).available
   )
     throw new Error('dispatch-at-capacity');
   if (record.denial) throw new Error('dispatch-denial-held');

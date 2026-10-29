@@ -419,8 +419,11 @@ export default class OpenClawDispatch {
         );
         if (
           newlyReserved &&
-          dispatchCapacity(after.records, current.policy.policy.maxConcurrentItems).occupied >
-            current.policy.policy.maxConcurrentItems
+          dispatchCapacity(
+            after.records,
+            current.policy.policy.maxConcurrentItems,
+            after.projectPickup,
+          ).occupied > current.policy.policy.maxConcurrentItems
         )
           throw new Error('dispatch-at-capacity');
         const activeKeys = after.records

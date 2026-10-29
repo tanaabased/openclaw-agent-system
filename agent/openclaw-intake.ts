@@ -1,3 +1,7 @@
+import { openClawItemOccupied } from './openclaw-capacity.ts';
+import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
+import projectPickup, { pickupAuthority, type PickupInput } from './project-pickup.ts';
+import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { ProjectPickupAuthority } from './project-pickup-authority.ts';
 import DiscoveryBudget from './discovery-budget.ts';
@@ -67,6 +71,64 @@ export default class OpenClawIntake {
       return 'automation-observation-unavailable';
     }
   }
+  /** consumes trusted enrollment without creating a schedule or a competing execution loop. */
+  async pickup(
+    manifest: AgentManifest,
+    workspaceDir: string,
+    input: PickupInput,
+    timezone: string,
+  ) {
+    if (!this.dependencies.projectPickup)
+      throw new IntakeError('project-pickup-activation-required');
+    const { store, workspace } = await this.select(manifest, workspaceDir);
+    const code = await this.readiness(manifest, workspace);
+    if (code) throw new IntakeError(code);
+    const journal = new OpenClawDispatchStore(store.location.root, store.location.scope);
+    return journal.exclusive(async (state, save, signal) => {
+      const readPolicy = async () => {
+        const loaded = await this.dependencies.manifestService.loadForAgentId(
+          manifest.agent.id,
+          'service',
+        );
+        if (
+          loaded.status !== 'loaded' ||
+          (await realpath(loaded.scope.workspaceDir)) !== workspace ||
+          loaded.manifest.agent.id !== manifest.agent.id
+        )
+          throw new IntakeError('intake-workspace-binding-changed');
+        const live = assignmentIntakePolicy(loaded.manifest, 'openclaw');
+        if (!live) throw new IntakeError('intake-policy-disabled');
+        return live.policy;
+      };
+      await readPolicy();
+      const client = (await this.dependencies.connect(
+        { manifest, workspaceDir: workspace },
+        signal,
+      )) as ProjectPickupClient;
+      if (
+        !client.discoverProject ||
+        !client.projectCandidate ||
+        !client.projectBlocked ||
+        !client.assignProjectIssue
+      )
+        throw new IntakeError('project-pickup-provider-unavailable');
+      return projectPickup({
+        runtime: 'openclaw',
+        scope: store.location.scope,
+        workspaceDir: workspace,
+        agentId: manifest.agent.id,
+        enrollment: this.dependencies.projectPickup!.enrollment,
+        timezone,
+        state,
+        save,
+        now: this.dependencies.now ?? Date.now,
+        readPolicy,
+        client,
+        occupied: openClawItemOccupied,
+        input,
+      });
+    });
+  }
   async inspect(manifest: AgentManifest, workspaceDir: string) {
     const blocker = githubNotificationRuntimeBlocker(manifest.github?.notifications, 'openclaw');
     if (blocker)
@@ -127,7 +189,11 @@ export default class OpenClawIntake {
     const target = store;
     return scanAssignments({
       runtime: 'openclaw',
-      projectPickup: this.dependencies.projectPickup,
+      readProjectPickup: async () =>
+        pickupAuthority(
+          (await new OpenClawDispatchStore(store.location.root, store.location.scope).read())
+            .projectPickup,
+        ) ?? this.dependencies.projectPickup,
       store: target,
       budget,
       workspaceDir: workspace,

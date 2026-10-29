@@ -18,6 +18,8 @@ accept feedback, or publish until activation and native ownership are verified.
 
 ## Notes
 
+- Project pickup selection and uncertain-assignment recovery have controlled native-adapter coverage in `test/project-pickup-selection.component.spec.ts`. Installed pickup activation remains [#527](https://github.com/tanaabased/openclaw-agent-system/issues/527); unattended acceptance remains [#529](https://github.com/tanaabased/openclaw-agent-system/issues/529). This scenario does not establish either outcome.
+
 - These direct Ubuntu checks use isolated Codex state without hosted secrets or model generation. Both active and paused fixtures declare V3; a paused declaration retains configuration while future occurrences remain disabled.
 - Pending relocation: explicit-target reset refusal, host/update/quiet heartbeat cases, restored pre-reset history, removed configuration fields, and cadence-change checks remain below.
 - Native acceptance below is an inventory of separate installed/manual checks, not coverage executed by this README. Keep results, app/plugin revision, time, redacted source IDs, and actual native receipts in issue or PR evidence.

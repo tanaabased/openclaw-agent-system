@@ -57,7 +57,7 @@ export default function prepareDispatchReport(input: {
       codexUnresolvedRetirement(record) &&
       (codexItemOccupied(record) || waitingIssues.has(record.issueKey)),
   );
-  const occupied = codexCapacity(state.records, input.slots).occupied;
+  const occupied = codexCapacity(state.records, input.slots, state.projectPickup).occupied;
   const pending = pendingDispatchAssignments(state, intake, codexUnresolvedRetirement).length;
   const feedback = active.flatMap((record) =>
     (record.feedback?.events ?? []).map((event) => ({ record, event })),

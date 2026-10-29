@@ -1,3 +1,4 @@
+import type { ProjectPickupState } from '../agent/project-pickup-state.ts';
 import {
   projectPickupPolicyDigest,
   type ProjectPickupAuthority,
@@ -83,5 +84,43 @@ export function retainedProjectWork(record: IntakeRecord, runtime: 'codex' | 'op
     },
     issueNodeId: record.issue.nodeId,
     assignmentNodeId: record.assignment.nodeId,
+  };
+}
+
+/** retained assignment and reservation consumed by the native dispatch tests. */
+export function reservedProjectPickup(
+  record: IntakeRecord,
+  runtime: 'codex' | 'openclaw',
+): ProjectPickupState {
+  const work = retainedProjectWork(record, runtime);
+  const receipt = {
+    enrollmentId: work.enrollment.id,
+    issueNodeId: work.issueNodeId,
+    assignmentNodeId: work.assignmentNodeId,
+    window: { id: 'window', opensAt: baseline, closesAt: baseline + 3600000 },
+  };
+  record.evidence.projectWork = { ...work, pickup: receipt };
+  record.evidence.mode = 'work';
+  return {
+    enrollment: work.enrollment,
+    timezone: 'UTC',
+    highWater: baseline,
+    operations: [
+      {
+        id: 'operation',
+        phase: 'assigned',
+        page: 1,
+        candidates: [],
+        window: receipt.window,
+        selected: {
+          nodeId: record.issue.nodeId,
+          number: record.issue.number,
+          title: 'ready work',
+          body: '',
+          labels: [],
+        },
+        receipt,
+      },
+    ],
   };
 }

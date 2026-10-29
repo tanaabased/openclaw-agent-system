@@ -49,7 +49,7 @@ export default function openclawIntakeReport(input: {
       };
     });
   const managing = active.filter((record) => record.sessionCreation?.verified && record.threadId);
-  const capacity = dispatchCapacity(state.records, input.slots);
+  const capacity = dispatchCapacity(state.records, input.slots, state.projectPickup);
   const started = managing.filter((record) => record.intakeReportedAt === undefined).slice(0, 12);
   const pending =
     intake && observation.status === 'ready' ? pendingAssignments(state, intake).length : undefined;
