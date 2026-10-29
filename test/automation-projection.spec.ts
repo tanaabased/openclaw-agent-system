@@ -26,6 +26,46 @@ function job(payload: { prompt: string } | { run: string[] }) {
 }
 
 describe('agent/automation-projection', () => {
+  it('should name jobs by trusted origin and migrate only their native name', () => {
+    const record = {
+      id: 'github-declared-job',
+      marker: 'fixture',
+      hash: '',
+      triggerHash: '',
+      generation: 1,
+      anchorMs: 0,
+      removed: false,
+    };
+    for (const payload of [{ prompt: 'Review.' }, { run: ['node', 'task.js'] }]) {
+      for (const origin of [undefined, 'builtin'] as const) {
+        const declaration = { ...job(payload), id: record.id, origin };
+        for (const displayName of [undefined, 'AGENT SYSTEM: misleading label']) {
+          const desired = projectAutomation({ ...declaration, displayName }, record, context);
+          assert.equal(
+            desired.name,
+            origin ? 'AGENT SYSTEM: github-declared-job' : 'TANAABOT: github-declared-job',
+          );
+          assert.equal(desired.displayName, displayName);
+          const current = {
+            ...desired,
+            id: 'native',
+            configRevision: '1',
+            state: {},
+            declarationKey: record.marker,
+            agentId: context.agentId,
+            name: 'Agent System: github-declared-job',
+          };
+          assert.deepEqual(automationPatch(current, desired), { name: desired.name });
+          assert.deepEqual(automationPatch({ ...current, name: desired.name }, desired), {});
+          assert.deepEqual(
+            effectiveAutomation(declaration, context),
+            effectiveAutomation({ ...declaration, origin: undefined }, context),
+          );
+        }
+      }
+    }
+  });
+
   it('should patch only presentation when labels are added, renamed or removed', () => {
     const record = {
       id: 'review',
@@ -38,7 +78,7 @@ describe('agent/automation-projection', () => {
     };
     for (const original of [job({ prompt: 'Review.' }), job({ run: ['node', 'task.js'] })]) {
       const unlabeled = projectAutomation(original, record, context);
-      assert.equal(unlabeled.name, 'Agent System: review');
+      assert.equal(unlabeled.name, 'TANAABOT: review');
       assert.equal(Object.hasOwn(unlabeled, 'displayName'), false);
       const nativeFields = {
         id: 'native-review',

@@ -173,6 +173,39 @@ describe('agent/automation-service', () => {
   const mutations = () =>
     calls.filter(({ method }) => ['cron.add', 'cron.update'].includes(method));
 
+  for (const payload of [{ run: ['node', 'task.js'] }, { prompt: 'Review.' }])
+    it(`should migrate declared ${'run' in payload ? 'command' : 'prompt'} names without changing job state`, async () => {
+      manifest.agent.name = 'Different display identity';
+      manifest.automations = jobs([
+        { id: 'github-declared-job', schedule: 'every 1 hour', enabled: false, ...payload },
+      ]);
+      await service.reconcile(manifest, root);
+      const { store } = await service.scope(manifest, root);
+      const ledger = await store.read();
+      const record = structuredClone(ledger.records[0]!);
+      native[0]!.name = 'Agent System: github-declared-job';
+      native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'ok', nextRunAtMs: now + 3600000 };
+      ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+      await store.write(ledger);
+      const before = structuredClone(native[0]!);
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.deepEqual(
+        mutations().map(({ method, params }) => ({ method, patch: params.patch })),
+        [{ method: 'cron.update', patch: { name: 'TANAABOT: github-declared-job' } }],
+      );
+      assert.deepEqual(native[0], {
+        ...before,
+        name: 'TANAABOT: github-declared-job',
+        configRevision: native[0]!.configRevision,
+      });
+      const after = (await store.read()).records[0]!;
+      assert.deepEqual(after, { ...record, nativeHash: nativeAutomationHash(native[0]!) });
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.deepEqual(mutations(), []);
+    });
+
   for (const state of ['recurring', 'disabled', 'completed'] as const)
     it(`should migrate legacy capture for ${state} jobs without replacing or rescheduling them`, async () => {
       if (state !== 'completed')
@@ -706,7 +739,7 @@ describe('agent/automation-service', () => {
     assert.equal(native.length, 1);
     assert.equal(sessions.size, 1);
     assert.equal(native[0]!.enabled, true);
-    assert.equal(native[0]!.name, 'Agent System: github-issue-assignment');
+    assert.equal(native[0]!.name, 'AGENT SYSTEM: github-issue-assignment');
     assert.equal(native[0]!.displayName, '📥 ISSUE ASSIGNMENTS');
     assert.equal([...sessions.values()][0]!.displayName, 'ISSUE ASSIGNMENTS');
     assert.ok(native[0]!.trigger);
@@ -714,8 +747,29 @@ describe('agent/automation-service', () => {
     const identity = native[0]!.id;
     const coordinator = native[0]!.sessionTarget;
     const { store, context } = await service.scope(manifest, root);
+    native[0]!.name = 'Agent System: github-issue-assignment';
+    const legacy = await store.read();
+    legacy.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+    await store.write(legacy);
+    const beforeRename = structuredClone(native[0]!);
+    calls = [];
+    await service.reconcile(manifest, root);
+    assert.deepEqual(
+      mutations().map(({ params }) => params.patch),
+      [{ name: 'AGENT SYSTEM: github-issue-assignment' }],
+    );
+    const renamed: NativeAutomation = {
+      ...beforeRename,
+      name: 'AGENT SYSTEM: github-issue-assignment',
+      configRevision: native[0]!.configRevision,
+    };
+    assert.deepEqual(native[0], renamed);
+    calls = [];
+    await service.reconcile(manifest, root);
+    assert.deepEqual(mutations(), []);
     const ledger = await store.read();
     const oldJob = structuredClone(openclawIntakeJobs(manifest)[0]!);
+    native[0]!.name = 'Agent System: github-issue-assignment';
     delete native[0]!.displayName;
     oldJob.payload = {
       kind: 'command',
@@ -732,6 +786,7 @@ describe('agent/automation-service', () => {
     calls = [];
     await service.reconcile(manifest, root);
     assert.equal(native[0]!.id, identity);
+    assert.equal(native[0]!.name, 'AGENT SYSTEM: github-issue-assignment');
     assert.equal(native[0]!.displayName, '📥 ISSUE ASSIGNMENTS');
     assert.equal(native[0]!.sessionTarget, coordinator);
     assert.equal(sessions.size, 1);

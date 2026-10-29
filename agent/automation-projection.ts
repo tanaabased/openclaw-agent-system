@@ -86,7 +86,7 @@ export function projectAutomation(
   const timeoutSeconds = Number(effective.content.timeoutSeconds);
   const override = job.overrides.openclaw;
   return {
-    name: `Agent System: ${job.id}`,
+    name: `${job.origin === 'builtin' ? 'AGENT SYSTEM' : context.agentId.toUpperCase()}: ${job.id}`,
     ...(job.displayName === undefined ? {} : { displayName: job.displayName }),
     declarationKey: record.marker,
     agentId: context.agentId,

@@ -43,6 +43,7 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
     ...jobs,
     {
       id: openclawIntakeAutomationId,
+      origin: 'builtin',
       displayName: '📥 ISSUE ASSIGNMENTS',
       enabled: !selected.policy.issueAssignment!.paused,
       runtimes: ['openclaw'],
