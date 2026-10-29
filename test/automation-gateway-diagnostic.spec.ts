@@ -13,6 +13,10 @@ describe('agent/automation-gateway-diagnostic', () => {
         ['model not allowed: secret-model', 'model-not-allowed'],
         ['invalid model: secret-model', 'model-invalid'],
         ['invalid thinkingLevel (use secret-levels)', 'effort-invalid'],
+        [
+          'thinkingLevel "secret-effort" is not supported for secret-provider/secret-model (use secret-levels)',
+          'effort-unsupported',
+        ],
       ]) {
         const error = Object.assign(new Error(message), {
           name: 'GatewayClientRequestError',

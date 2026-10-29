@@ -14,7 +14,8 @@ export interface AutomationGatewayDiagnostic extends GatewayErrorDiagnostic {
     | 'parameters-invalid'
     | 'model-not-allowed'
     | 'model-invalid'
-    | 'effort-invalid';
+    | 'effort-invalid'
+    | 'effort-unsupported';
 }
 
 const resolverReasons = [
@@ -29,6 +30,7 @@ const settingsReasons = [
   'model-not-allowed',
   'model-invalid',
   'effort-invalid',
+  'effort-unsupported',
 ] as const;
 
 /** missing method evidence is unknown, never copied from arbitrary upstream text. */
@@ -106,6 +108,12 @@ export default function automationGatewayDiagnostic(
     else if (/^invalid model: [^\r\n]+$/.test(error.message)) diagnostic.reason = 'model-invalid';
     else if (/^invalid thinkingLevel \(use [^\r\n]+\)$/.test(error.message))
       diagnostic.reason = 'effort-invalid';
+    else if (
+      /^thinkingLevel "[^"\r\n]+" is not supported for [^\r\n]+ \(use [^\r\n]+\)$/.test(
+        error.message,
+      )
+    )
+      diagnostic.reason = 'effort-unsupported';
   }
   return diagnostic;
 }
