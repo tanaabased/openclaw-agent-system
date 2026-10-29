@@ -6,6 +6,7 @@ Request lifecycle tools through native OpenClaw and hosted Codex, deny installat
 
 - Native approval requests and decisions bound to the originating agent/tool call.
 - Denied Install leaves check/apply markers absent, approved Install applies once, and both Doctor routes remain read-only.
+- Activated scheduled hosted-Codex maintenance uses the same native tools without approval, while the ordinary interactive calls still require it.
 
 ## What Does Not Belong Here
 
@@ -14,7 +15,7 @@ Request lifecycle tools through native OpenClaw and hosted Codex, deny installat
 
 ## Notes
 
-- Strict AIMock supplies four authored turns with synthetic credentials. The Gateway, hosted Codex app server, approval protocol, and lifecycle effects remain real.
+- Strict AIMock supplies four interactive turns and one scheduled hosted-Codex maintenance turn with synthetic credentials. The Gateway, hosted Codex app server, approval protocol, and lifecycle effects remain real. The scheduled turn adds the runtime-specific proof that host occurrence identity reaches these tools; no global plugin-approval bypass is enabled.
 - The driver connects as the native Control UI approval client. It verifies protocol decisions and filesystem effects, not rendered UI. Denial may end the chat before another model request.
 
 ## Setup
@@ -56,8 +57,18 @@ node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/appro
 # should resolve and approve the hosted codex doctor tool without applying setup
 node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/approval-scenario.mts" runtime-codex doctor
 
+# should complete activated hosted codex maintenance without another native approval
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/codex"
+rm -f "$TMPDIR/agent-system-approval-check" "$TMPDIR/agent-system-approval-apply"
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
+run_id=$(openclaw agent-system automations run maintenance --json | jq -er 'select(.status == "queued") | .runId | strings')
+node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" maintenance "$run_id"
+grep -Fx applied "$TMPDIR/agent-system-approval-apply"
+test "$(wc -l < "$TMPDIR/agent-system-approval-apply" | tr -d ' ')" = 1
+grep -Fx checked "$TMPDIR/agent-system-approval-check"
+
 # should complete all lifecycle approval turns through strict aimock
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | tee "$TMPDIR/lifecycle-approvals-evidence.json"
-jq -e '.scenario == "openclaw-lifecycle-approvals" and .strictMissCount == 0 and .finalResponseCount >= 3 and .finalResponseCount <= 4 and any(.tools[]; .name == "agent_system_doctor" and .callResponseCount == 2 and .resultRequestCount == 2) and any(.tools[]; .name == "agent_system_install" and .callResponseCount >= 1 and .callResponseCount <= 2 and .resultRequestCount >= 1 and .resultRequestCount <= 2)' "$TMPDIR/lifecycle-approvals-evidence.json"
+jq -e '.scenario == "openclaw-lifecycle-approvals" and .strictMissCount == 0 and .finalResponseCount >= 4 and .finalResponseCount <= 5 and any(.tools[]; .name == "agent_system_doctor" and .callResponseCount == 3 and .resultRequestCount == 3) and any(.tools[]; .name == "agent_system_install" and .callResponseCount >= 2 and .callResponseCount <= 3 and .resultRequestCount >= 3 and .resultRequestCount <= 4)' "$TMPDIR/lifecycle-approvals-evidence.json"
 ```
