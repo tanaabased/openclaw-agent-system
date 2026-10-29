@@ -34,6 +34,7 @@ export const externalGitHubSectionSchema = Type.Union([
 type ExternalGitHubSection = Static<typeof externalGitHubSectionSchema>;
 
 const githubWorkflowProperties = new Set([
+  'project-pickup',
   'schema-version',
   'runtimes',
   'interval-minutes',

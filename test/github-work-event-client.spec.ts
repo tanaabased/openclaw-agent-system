@@ -28,6 +28,62 @@ function response(body: unknown, link?: string): AgentSystemCliResult {
 }
 
 describe('channels/github/provider/work-event-client', () => {
+  it('should revalidate milestone observations and retain issue membership without masking denial', async () => {
+    const headers: Array<string | undefined> = [];
+    let denied = false;
+    const account = {
+      observationScope: {},
+      identity: { login: 'receiver', nodeId: 'U_receiver' },
+      async execute(argv: string[]) {
+        if (argv.includes('/repos/owner/repo/issues/3'))
+          return response({
+            databaseId: 20,
+            nodeId: 'I_issue',
+            number: 3,
+            state: 'open',
+            updatedAt: '2026-10-07T10:01:00Z',
+            title: 'work',
+            isPullRequest: false,
+            assignees: [],
+            milestone: { node_id: 'MI_pilot', number: 10, state: 'open' },
+          });
+        assert.ok(argv.includes('/repos/owner/repo/milestones/10'));
+        const conditional = argv.find((value) => value.startsWith('If-None-Match:'));
+        headers.push(conditional);
+        if (denied) return { ...response({}), exitCode: 1, stdout: 'HTTP/2 403 Forbidden\n\n{}' };
+        if (conditional)
+          return {
+            ...response({}),
+            exitCode: 1,
+            stdout: 'HTTP/2 304 Not Modified\n\n',
+            stderr: 'gh: HTTP 304',
+          };
+        return {
+          ...response({}),
+          stdout:
+            'HTTP/2 200 OK\netag: "milestone"\n\n' +
+            JSON.stringify({ node_id: 'MI_pilot', number: 10, state: 'open' }),
+        };
+      },
+    };
+    const client = new GitHubWorkEventClient(account);
+    assert.deepEqual(await client.getMilestone('owner', 'repo', 10), {
+      nodeId: 'MI_pilot',
+      number: 10,
+      state: 'open',
+    });
+    assert.equal((await client.getMilestone('owner', 'repo', 10)).state, 'open');
+    const item = await client.getItem('owner', 'repo', 3);
+    assert.equal(item.itemType === 'issue' && item.milestone?.nodeId, 'MI_pilot');
+    denied = true;
+    await assert.rejects(client.getMilestone('owner', 'repo', 10), GitHubWorkEventClientError);
+    assert.deepEqual(headers, [
+      undefined,
+      'If-None-Match: "milestone"',
+      'If-None-Match: "milestone"',
+    ]);
+  });
+
   const repository = {
     archived: false,
     disabled: false,

@@ -21,6 +21,7 @@ values in logs.
 - The routing exchange checks custom guidance without dispatch enrollment; it proves instruction plumbing, not model interpretation.
 - Strict AIMock supplies fixed responses; the Gateway and tools run normally without a live model or hosted secrets.
 - After installation, the fixture appends V3 declarations with paused schedules and uses a GitHub-shaped session key. Intake has not been installed; successful loading must not create notification work.
+- The same declaration includes project-pickup policy. Loading it must not enroll pickup or grant self-assignment; selection and activation are outside this example.
 - The routing turn requests issue-session dispatch and must be rejected before credential access or creation. It does not prove successful dispatch or recovery.
 - Pending relocation: retired-notification validation and absence of temporary dispatch-invocation tracing remain below.
 

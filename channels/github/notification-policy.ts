@@ -10,6 +10,35 @@ export function validateGitHubNotificationPolicy(
   const policy = github?.notifications;
   if (!policy) return [];
   const diagnostics: ManifestDiagnostic[] = [];
+  if (policy.projectPickup) {
+    if (!policy.issueAssignment)
+      diagnostics.push({
+        code: 'github-project-pickup-assignment-required',
+        fieldPath: '/github/project-pickup',
+        message:
+          'Project pickup requires issue-assignment and its existing actor and workflow settings.',
+        severity: 'error',
+      });
+    if (!policy.projectPickup.schedule)
+      diagnostics.push({
+        code: 'github-project-pickup-schedule-invalid',
+        fieldPath: '/github/project-pickup/schedule',
+        message:
+          'Use a recurring automation schedule (cron with an optional IANA timezone, or every). One-shot schedules are not supported.',
+        severity: 'error',
+      });
+    const owner = policy.projectPickup.projects[0]!.repository.split('/')[0]!.toLowerCase();
+    if (
+      !policy.allowedRepositoryOwners.some((pin) => !pin.login || pin.login.toLowerCase() === owner)
+    )
+      diagnostics.push({
+        code: 'github-project-pickup-repository-outside-workflow',
+        fieldPath: '/github/project-pickup/projects/0/repository',
+        message:
+          'Choose a repository owned by an allowed-repository-owners identity. Pickup does not expand repository access.',
+        severity: 'error',
+      });
+  }
   if (typeof github?.username !== 'string' || !github.username.trim()) {
     diagnostics.push({
       code: 'github-notification-literal-username-required',
@@ -52,7 +81,7 @@ export interface GitHubNotificationRuntimeDiagnostic {
   message: string;
   remediation: string;
   status: 'blocked' | 'warning';
-  workflow: 'issue-assignment' | 'review-request';
+  workflow: 'issue-assignment' | 'review-request' | 'project-pickup';
 }
 
 /** scope missing capabilities to their workflow; optional feedback never gates assignment. */
@@ -62,6 +91,17 @@ export function githubNotificationRuntimeDiagnostics(
 ): GitHubNotificationRuntimeDiagnostic[] {
   if (!declaration || !declaration.runtimes.includes(runtime)) return [];
   const diagnostics: GitHubNotificationRuntimeDiagnostic[] = [];
+  if (declaration.projectPickup)
+    diagnostics.push({
+      code: 'github-notification-runtime-unsupported',
+      fieldPath: '/github/project-pickup',
+      message:
+        'Project pickup policy is validated, but scheduled selection and activation are not available yet.',
+      remediation:
+        'Keep ordinary issue assignment configured. Declaring project-pickup does not activate pickup or authorize self-assignment.',
+      status: 'warning',
+      workflow: 'project-pickup',
+    });
   const review = declaration.reviewRequest;
   if (review && (review.paused !== undefined || review.allowed.length))
     diagnostics.push({

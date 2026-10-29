@@ -1,4 +1,7 @@
 import GitHubIdentityCache from '../identity-cache.ts';
+import authorizeProjectAssignment, {
+  type ProjectPickupAuthority,
+} from '../../../agent/project-pickup-authority.ts';
 import { GitHubAccountClientError } from '../../../core/github-account-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from '../../../agent/discovery-budget.ts';
 import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
@@ -22,6 +25,8 @@ import {
 } from './record-store.ts';
 
 export interface AssignmentScanInput {
+  projectPickup?: ProjectPickupAuthority;
+  runtime?: 'codex' | 'openclaw';
   store: Pick<IntakeRecordStore, 'exclusive' | 'location'>;
   workspaceDir: string;
   agentId: string;
@@ -285,13 +290,33 @@ export default async function scanAssignments(
           const observedIndex = state!.observedAssignments.findIndex((entry) => entry.id === id);
           if (observedIndex < 0) state!.observedAssignments.push(observation);
           else state!.observedAssignments[observedIndex] = observation;
+          if (seen.has(id)) return;
+          const projectWork = input.projectPickup
+            ? await authorizeProjectAssignment({
+                authority: input.projectPickup,
+                runtime: input.runtime,
+                scope: state!.scope,
+                workspaceDir: input.workspaceDir,
+                agentId: input.agentId,
+                policy: input.policy,
+                client,
+                repository,
+                item,
+                event,
+                now: input.now,
+              })
+            : undefined;
           if (
-            seen.has(id) ||
+            !projectWork?.pickup &&
             !input.policy.issueAssignment!.allowed.some((actor) =>
               identityMatches(actor, event.actor),
             )
           )
             return;
+          if (projectWork) {
+            record.evidence.projectWork = projectWork;
+            record.evidence.mode = 'work';
+          }
           seen.add(id);
           records.push(record);
         };
@@ -303,13 +328,17 @@ export default async function scanAssignments(
           const diagnostic =
             error instanceof GitHubWorkEventClientError ? error.providerDiagnostic : undefined;
           const localCode =
-            error instanceof IntakeError &&
-            ['intake-resource-changed', 'intake-assignment-history-incomplete'].includes(error.code)
-              ? error.code
-              : diagnostic?.classification === 'permission' ||
-                  (diagnostic?.classification === 'unknown' && diagnostic.httpStatus === 404)
-                ? 'intake-github-permission'
-                : undefined;
+            error instanceof Error && /^project-pickup-[a-z-]+$/.test(error.message)
+              ? error.message
+              : error instanceof IntakeError &&
+                  ['intake-resource-changed', 'intake-assignment-history-incomplete'].includes(
+                    error.code,
+                  )
+                ? error.code
+                : diagnostic?.classification === 'permission' ||
+                    (diagnostic?.classification === 'unknown' && diagnostic.httpStatus === 404)
+                  ? 'intake-github-permission'
+                  : undefined;
           if (!localCode || error === persistenceError || budget.exhausted || signal.aborted)
             throw error;
           state.deferred = [

@@ -18,6 +18,9 @@ export function notificationAuthority(policy: GitHubNotificationPolicy) {
     allowedRepositoryOwners: policy.allowedRepositoryOwners,
     issueAssignment: policy.issueAssignment,
     reviewRequest: policy.reviewRequest,
+    ...(policy.projectPickup
+      ? { projectPickup: { ...policy.projectPickup, paused: undefined } }
+      : {}),
   });
   value.runtimes = ordered(value.runtimes);
   value.allowedRepositoryOwners = ordered(value.allowedRepositoryOwners);

@@ -1,4 +1,5 @@
 import type { AssessmentConfiguration } from '../../manifest/assessment-schema.ts';
+import type { ProjectPickupPolicy } from './project-pickup-schema.ts';
 
 /** input provenance is retained without selecting a separate execution engine. */
 export interface GitHubIdentityPin {
@@ -22,6 +23,7 @@ export type GitHubFeedbackPolicy = {
 
 /** effective workflow controls shared by the configuration decoder and native runtimes. */
 export interface GitHubNotificationPolicy {
+  projectPickup?: ProjectPickupPolicy;
   schemaVersion: 3;
   runtimes: Array<'openclaw' | 'codex'>;
   intervalMinutes: number;

@@ -1,5 +1,7 @@
 import { Type, type Static } from 'typebox';
 
+import decodeProjectPickup, { projectPickupSchema } from './project-pickup-schema.ts';
+
 import {
   assessmentConfigurationSchema,
   decodeAssessmentConfiguration,
@@ -35,6 +37,7 @@ const trigger = {
 };
 
 export const githubV3Properties = {
+  'project-pickup': Type.Optional(projectPickupSchema),
   'schema-version': Type.Optional(Type.Literal(3)),
   runtimes: Type.Optional(
     Type.Array(Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]), {
@@ -99,6 +102,9 @@ export default function decodeGitHubV3(value: ExternalGitHubV3): GitHubNotificat
     runtimes: value.runtimes ?? ['openclaw', 'codex'],
     intervalMinutes: value['interval-minutes'] ?? 5,
     maxConcurrentItems: value['max-concurrent-items'] ?? 3,
+    ...(value['project-pickup']
+      ? { projectPickup: decodeProjectPickup(value['project-pickup']) }
+      : {}),
     allowedRepositoryOwners: value['allowed-repository-owners'].map(identity),
     ...(issue === undefined
       ? {}

@@ -5,6 +5,7 @@ import {
   removeFixtureAssignment,
   originalIntakeDigest,
 } from './github-intake-fixture.ts';
+import { retainedProjectWork } from './project-pickup-fixture.ts';
 import assert from 'node:assert/strict';
 import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import { automationHash } from '../agent/automation-hash.ts';
@@ -3020,6 +3021,29 @@ describe('agent/openclaw issue dispatch', () => {
   }
   const workPass = (runId: string) =>
     service.run(manifest, root, { ...coordinator, runId }, { action: 'next' });
+
+  it('should carry scoped work from admission through assessment and continuation', async () => {
+    const selected = await service.scope(manifest, root);
+    await selected.store.exclusive(async (state, save) => {
+      const intake = state!.records[0]!;
+      intake.evidence.projectWork = retainedProjectWork(intake, 'openclaw');
+      intake.evidence.mode = 'work';
+      await save(state!);
+    });
+    const milestone = { nodeId: 'MI_pilot', number: 10, state: 'open' as const };
+    if (fixture.item.itemType === 'issue') fixture.item.milestone = milestone;
+    fixture.client.getMilestone = async () => milestone;
+    const id = await readyWork('plan');
+    const assessment = await context(id);
+    assert.ok('mode' in assessment);
+    assert.equal(assessment.mode, 'work');
+    assert.equal((await workPass('pickup-work')).status, 'implementation-pending');
+    const verified = await service.run(manifest, root, assessor(id), {
+      action: 'implementation-context',
+      id,
+    });
+    assert.equal(verified.status, 'verified');
+  });
 
   it('should retain recorded assessment receipts after later tuning and unavailable settings readback', async () => {
     const id = await readyWork('work');

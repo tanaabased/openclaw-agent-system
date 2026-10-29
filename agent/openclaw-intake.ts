@@ -1,4 +1,5 @@
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
+import type { ProjectPickupAuthority } from './project-pickup-authority.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 import { realpath } from 'node:fs/promises';
 
@@ -20,6 +21,7 @@ import type AgentManifestService from '../manifest/service.ts';
 import type { GitHubNotificationItemSelector } from '../channels/github/provider/work-item.ts';
 
 export interface OpenClawIntakeDependencies {
+  projectPickup?: ProjectPickupAuthority;
   root: string;
   resetRoot?: string;
   namespace: string;
@@ -124,6 +126,8 @@ export default class OpenClawIntake {
     }
     const target = store;
     return scanAssignments({
+      runtime: 'openclaw',
+      projectPickup: this.dependencies.projectPickup,
       store: target,
       budget,
       workspaceDir: workspace,
