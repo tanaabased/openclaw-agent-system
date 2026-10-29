@@ -1,3 +1,4 @@
+import { implementationMaterialSchema } from './implementation-material-schema.ts';
 import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
 import { launchRequestSchema } from './launch-schema.ts';
 import { retirementRequestSchema } from './retirement-schema.ts';
@@ -75,6 +76,7 @@ const dispatchRequestVariants = Type.Union([
   object({
     action: Type.Literal('implementation-context'),
     id,
+    material: Type.Optional(implementationMaterialSchema),
     scope: Type.Optional(Type.Union([Type.Literal('local'), Type.Literal('pull-request')])),
   }),
   object({
@@ -111,6 +113,7 @@ const dispatchRequestVariants = Type.Union([
     action: Type.Literal('feedback'),
     id,
     eventId: id,
+    material: Type.Optional(implementationMaterialSchema),
     resume: Type.Optional(Type.Boolean()),
     operation: Type.Union([
       Type.Literal('context'),

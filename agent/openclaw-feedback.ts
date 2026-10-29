@@ -402,11 +402,13 @@ export default async function openClawFeedback(input: {
     if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
       throw new Error('feedback-input-unverified');
     const inputId = consumedInputEvent(history.messages, event.turn);
-    event.turn.consumedByEventId = inputId;
-    event.turn.status = 'consumed';
-    if (action.operation === 'context' || action.operation === 'implementation-context') {
-      event.contextInputId = inputId;
-      await save();
+    if (!action.material) {
+      event.turn.consumedByEventId = inputId;
+      event.turn.status = 'consumed';
+      if (action.operation === 'context' || action.operation === 'implementation-context') {
+        event.contextInputId = inputId;
+        await save();
+      } else if (event.contextInputId !== inputId) throw new Error('feedback-context-required');
     } else if (event.contextInputId !== inputId) throw new Error('feedback-context-required');
   }
   if (
@@ -444,22 +446,25 @@ export default async function openClawFeedback(input: {
   if (action.operation === 'implementation-context') {
     const live = await livePolicy();
     feedbackMode(record, live);
-    if (event.work?.result)
+    if (!action.material && event.work?.result)
       return {
         status: 'finished',
         result: event.work.result,
         next: event.work.result.outcome === 'done' ? 'delivery' : 'result',
       };
-    const implementation = await beginFeedbackWork({
-      record,
-      event,
-      policy: live,
-      decision: action.decision,
-      workspace: input.workspace,
-      now: input.now,
-      pullRequest: record.work?.delivery?.pullRequest,
-      resolveSkill: (id) => openClawSkill(request, expected, id),
-    });
+    if (action.material && !event.work) throw new Error('implementation-material-context-required');
+    const implementation = action.material
+      ? event.work!.selection
+      : await beginFeedbackWork({
+          record,
+          event,
+          policy: live,
+          decision: action.decision,
+          workspace: input.workspace,
+          now: input.now,
+          pullRequest: record.work?.delivery?.pullRequest,
+          resolveSkill: (id) => openClawSkill(request, expected, id),
+        });
     await save();
     return {
       ...implementationContext({

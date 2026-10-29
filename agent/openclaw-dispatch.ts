@@ -1,3 +1,4 @@
+import implementationMaterial from './implementation-material.ts';
 import recoverOpenClawTask from './openclaw-dispatch-recovery.ts';
 import issueLaunch from './issue-launch.ts';
 import openClawEntryContext from './openclaw-entry-context.ts';
@@ -110,9 +111,42 @@ export default class OpenClawDispatch {
     operator = false,
     authority: DispatchAuthority = {},
   ) {
-    return input.action === 'launch'
+    if (
+      'material' in input &&
+      input.material &&
+      !(
+        (input.action === 'implementation-context' && !input.scope) ||
+        (input.action === 'feedback' &&
+          input.operation === 'implementation-context' &&
+          !input.decision) ||
+        (input.action === 'implementation' &&
+          input.operation === 'context' &&
+          !input.scope &&
+          !input.plan)
+      )
+    )
+      throw new Error('implementation-material-request-invalid');
+    const response = await (input.action === 'launch'
       ? this.launch(manifest, workspace, caller, input, operator, authority)
-      : this.execute(manifest, workspace, caller, input, operator, authority);
+      : this.execute(manifest, workspace, caller, input, operator, authority));
+    if (
+      input.action === 'implementation-context' ||
+      (input.action === 'feedback' && input.operation === 'implementation-context')
+    ) {
+      if ('resultContract' in response && response.resultContract === 'implementation-result/v1') {
+        const request =
+          input.action === 'feedback'
+            ? {
+                action: 'feedback',
+                operation: 'implementation-context',
+                id: input.id,
+                eventId: input.eventId,
+              }
+            : { action: 'implementation-context', id: input.id };
+        return implementationMaterial(response, request, input.material);
+      }
+    }
+    return response;
   }
   private async launch(
     manifest: AgentManifest,

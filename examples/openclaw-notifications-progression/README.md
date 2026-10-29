@@ -7,7 +7,7 @@ answer to complete a local commit without another handoff.
 ## What Belongs Here
 
 - A live mode edit taking effect without Install and preserving the original assessment, model selection, chat, and worktree.
-- The authorized assessment-to-implementation transition, with completed work reconciled rather than dispatched again.
+- The authorized assessment-to-implementation transition, including bounded native retrieval of an oversized retained plan, with completed work reconciled rather than dispatched again.
 - A reported summary-publication hold retained independently of same-turn authorized implementation.
 - Clarification holding the implementation stage until an answer arrives, then resuming the same work without pushing or publishing.
 
@@ -22,6 +22,7 @@ answer to complete a local commit without another handoff.
 
 - Strict AIMock supplies decisions; the installed plugin, GitHub assignment, managed checkout, coordinator, and receipts remain real. This is not proof of genuine model judgment.
 - The Auto decision turn records a controlled reported summary denial without invoking publication. This verifies the installed hold protocol and independent progression, not an actual native reviewer refusal. Controlled Codex and OpenClaw adapter coverage owns denial and negative-authority permutations.
+- The retained plan exceeds the old implementation response budget when repeated. Strict AIMock retrieves every material page through the native tool before clarification and resumption; this proves installed retrieval, not genuine model interpretation or the Codex bridge’s truncation behavior.
 - The final operator answer explicitly requests a local commit and prohibits push/PR publication. The test verifies the committed change, not delivery.
 - EMORI creates the disposable issue; only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule isolate discovery. Cleanup disposes of the issue and SSH registration; the runner owns the local workspace.
 

@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import implementationMaterial, {
+  type ImplementationMaterialRead,
+} from '../agent/implementation-material.ts';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import waitForAssessmentRelease from '../examples/openclaw-notifications-intake/assessment-barrier.ts';
@@ -14,7 +17,10 @@ import assessmentSubmission from '../agent/assessment-submission.ts';
 import { issueExampleScenario } from '../examples/openclaw-notifications-issue-journey/model-fixture.ts';
 import { intakeExampleScenario } from '../examples/openclaw-notifications-intake/model-fixture.ts';
 import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
-import { progressionExampleScenario } from '../examples/openclaw-notifications-progression/model-fixture.ts';
+import {
+  progressionExampleScenario,
+  retainedPlan,
+} from '../examples/openclaw-notifications-progression/model-fixture.ts';
 import { prExampleScenario } from '../examples/openclaw-notifications-pr-journey/model-fixture.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
@@ -92,6 +98,26 @@ for (const scenario of [
     return typeof fixture.response === 'function'
       ? await fixture.response(input)
       : fixture.response;
+  }
+
+  async function appendPagedContext(input: ChatCompletionRequest, value: Record<string, unknown>) {
+    const request = { action: 'implementation-context', id };
+    append(input, 'work-context', implementationMaterial(value, request));
+    let pages = 0;
+    for (; pages < 64; pages++) {
+      const next = await response(input);
+      assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
+      const args = JSON.parse(next.toolCalls[0]!.arguments);
+      if (!args.material) break;
+      assert.ok(Value.Check(dispatchParameters, args));
+      assert.ok('material' in args);
+      append(
+        input,
+        `work-material-${pages}`,
+        implementationMaterial(value, request, args.material as ImplementationMaterialRead),
+      );
+    }
+    assert.ok(pages > 0 && pages < 64);
   }
 
   type Action = Static<typeof dispatchParameters> | { action: 'scan'; policyDigest: string };
@@ -836,7 +862,9 @@ for (const scenario of [
             await publishProgressionSummary(automatic, scenario, true);
           }
           await action(automatic, 'implementation-context');
-          append(automatic, 'work-context', {
+          await appendPagedContext(automatic, {
+            id,
+            plan: retainedPlan,
             status: 'verified',
             runtime: 'openclaw',
             deliveryOnly: false,
@@ -871,7 +899,9 @@ for (const scenario of [
             `Answer for managed issue ${id}: Yes, after evidence is captured. Do not push or publish a PR.`,
           );
           await action(answer, 'implementation-context');
-          append(answer, 'work-context', {
+          await appendPagedContext(answer, {
+            id,
+            plan: retainedPlan,
             status: 'verified',
             runtime: 'openclaw',
             deliveryOnly: false,

@@ -1,3 +1,4 @@
+import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 import {
   fixturePullRequest,
   baseline,
@@ -3690,6 +3691,40 @@ describe('agent/codex-dispatch', () => {
       'recorded',
     );
     assert.equal(((await request('inspect')).records as unknown[]).length, 1);
+  });
+
+  it('should recover oversized codex implementation material without another transition or approval', async () => {
+    const large = 'Retained engineering plan and evidence.\n'.repeat(750);
+    const assessment = { ...result, plan: large, fullAssessment: large };
+    const work = await workIssue(assessment);
+    assert.equal((await work.run('next')).status, 'prepared');
+    work.receive();
+    const first = await work.run('context', {}, true);
+    assert.equal(first.status, 'verified');
+    assert.ok('contextMaterials' in first && first.contextMaterials);
+    const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+    configured.github['issue-assignment'].mode = 'plan';
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const before = (await store.read()).records[0]!;
+    const restored = await hydrateImplementation(first, async (read) =>
+      work.run('context', { material: read.material }, true),
+    );
+    assert.deepEqual(restored.assessment, assessment);
+    assert.equal(restored.plan, large);
+    assert.equal(restored.publicationAuthorized, true);
+    const after = (await store.read()).records[0]!;
+    assert.deepEqual(after.result, before.result);
+    assert.deepEqual(after.stageReceipt, before.stageReceipt);
+    assert.deepEqual(after.progression, before.progression);
+    assert.deepEqual(after.continuation, before.continuation);
+    assert.equal(after.worktree, before.worktree);
+    const read = (first.contextMaterials as { fields: Field[] }).fields[0]!.request;
+    await assert.rejects(
+      work.run('context', { material: read.material }, 'foreign-thread'),
+      /caller-required/,
+    );
   });
 
   for (const setting of ['model', 'effort'] as const)
