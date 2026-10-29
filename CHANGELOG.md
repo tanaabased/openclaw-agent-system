@@ -5,6 +5,8 @@
 - Added shared automation model/profile and effort selection, with verified updates to existing managed chats. [#556](https://github.com/tanaabased/openclaw-agent-system/issues/556)
 - Changed omitted automation models to inherit `models.default` when configured. Review effective settings before Install. [#556](https://github.com/tanaabased/openclaw-agent-system/issues/556)
 - Fixed Codex and OpenClaw issue chat titles to stay uppercase without repeated repository or issue prefixes, while allowing punctuation and Unicode. [#546](https://github.com/tanaabased/openclaw-agent-system/pull/546)
+- Fixed direct task handoff to reactivate a finished Codex chat from a verified new user turn while preserving its owner and prior work.
+- Fixed command capture to inherit OpenClaw defaults, migrate existing command automation limits to 16 MiB per stream without blocking scheduled execution, and preserve diagnostic tails with explicit truncation evidence. [#566](https://github.com/tanaabased/openclaw-agent-system/issues/566)
 - Fixed explicit Codex implementation requests to resume handed-off issue plans after native verification. [#544](https://github.com/tanaabased/openclaw-agent-system/issues/544)
 - Fixed retired-task history retention to offload unsuccessful and stale work after verified cleanup. [#565](https://github.com/tanaabased/openclaw-agent-system/issues/565)
 - Made ClawHub publication best-effort with a warning on failure, and removed the automatic fallback upload. npm and repository publication remain required.

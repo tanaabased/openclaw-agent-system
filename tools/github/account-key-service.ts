@@ -4,6 +4,7 @@ import { constants } from 'node:fs';
 import { lstat, open } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 
+import cliOutputComplete from '../../api/cli-output-complete.ts';
 import type { AgentSystemCliResult } from '../../api/types.ts';
 import { GitHubAccountClientError } from '../../core/github-account-client.ts';
 import type { AgentManifest } from '../../manifest/types.ts';
@@ -241,7 +242,7 @@ export default class GitHubAccountKeyService {
     client: { execute(argv: string[], stdin?: string): Promise<AgentSystemCliResult> },
   ): Promise<Set<string>> {
     const result = await client.execute(['api', '--paginate', '--slurp', category.endpoint]);
-    if (result.exitCode !== 0 || result.timedOut || result.truncated) {
+    if (result.exitCode !== 0 || !cliOutputComplete(result)) {
       throw commandError('github-account-key-list-failed', `list ${category.label} keys`, result);
     }
 
@@ -287,7 +288,7 @@ export default class GitHubAccountKeyService {
       ['api', '--include', '--method', 'POST', category.endpoint, '--input', '-'],
       JSON.stringify({ key: key.key, title: key.title }),
     );
-    if (result.exitCode !== 0 || result.timedOut || result.truncated) {
+    if (result.exitCode !== 0 || !cliOutputComplete(result)) {
       throw commandError(
         'github-account-key-create-failed',
         `add ${category.label} key ${key.fingerprint}`,

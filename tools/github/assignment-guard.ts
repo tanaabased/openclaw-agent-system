@@ -1,3 +1,4 @@
+import cliOutputComplete from '../../api/cli-output-complete.ts';
 import AgentSystemToolError from '../../api/error.ts';
 import type { AgentSystemCliResult } from '../../api/types.ts';
 import { githubCliDiagnostic } from '../../credentials/github-diagnostic.ts';
@@ -20,7 +21,7 @@ function checked(result: AgentSystemCliResult): string {
       githubCredentialRejected(result),
       githubCliDiagnostic(result, 'identity-check'),
     );
-  if (result.truncated)
+  if (!cliOutputComplete(result))
     throw new AgentSystemToolError(
       'execution_failed',
       'GitHub returned an incomplete assignment check.',

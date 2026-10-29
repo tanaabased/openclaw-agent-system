@@ -1,3 +1,4 @@
+import cliOutputComplete from '../../api/cli-output-complete.ts';
 import gitCommandTimeout from './command-timeout.ts';
 import type { AgentSystemCliRunner } from '../../api/types.ts';
 import AgentSystemToolError from '../../api/error.ts';
@@ -126,7 +127,6 @@ export default class GitWorktreeGitRunnerFactory {
               excludedExecutableDirectories: [
                 ...(this.#dependencies.excludedExecutableDirectories ?? []),
               ],
-              maxOutputBytes: 65_536,
               ...(signal === undefined ? {} : { signal }),
               timeoutMs,
             });
@@ -142,6 +142,11 @@ export default class GitWorktreeGitRunnerFactory {
               'The Git worktree request timed out.',
             );
           }
+          if (!cliOutputComplete(result))
+            throw new AgentSystemToolError(
+              'execution_failed',
+              'The Git worktree response is incomplete.',
+            );
           return {
             exitCode: result.exitCode,
             stderr: redact(result.stderr, secrets),

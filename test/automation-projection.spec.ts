@@ -76,6 +76,45 @@ describe('agent/automation-projection', () => {
     }
   });
 
+  it('should inherit capture for new commands and migrate retained overrides in place', () => {
+    const record = {
+      id: 'review',
+      marker: 'fixture',
+      hash: '',
+      triggerHash: '',
+      generation: 1,
+      anchorMs: 0,
+      removed: false,
+    };
+    const desired = projectAutomation(job({ run: ['node', 'task.js'] }), record, context);
+    assert.equal(Object.hasOwn(desired.payload, 'outputMaxBytes'), false);
+    const current = {
+      ...desired,
+      id: 'native',
+      configRevision: '1',
+      declarationKey: 'fixture',
+      agentId: context.agentId,
+      state: {},
+    };
+    assert.deepEqual(automationPatch(current, desired), {});
+    for (const outputMaxBytes of [16384, 12345, 16777216]) {
+      const limited = { ...current, payload: { ...current.payload, outputMaxBytes } };
+      const original = structuredClone(limited);
+      const migrated = projectAutomation(
+        job({ run: ['node', 'task.js'] }),
+        record,
+        context,
+        limited,
+      );
+      assert.equal(migrated.payload.outputMaxBytes, 16777216);
+      assert.deepEqual(
+        automationPatch(limited, migrated),
+        outputMaxBytes === 16777216 ? {} : { payload: { ...migrated.payload, toolsAllow: null } },
+      );
+      assert.deepEqual(limited, original);
+    }
+  });
+
   it('should project omitted and null zones locally and preserve explicit zones', () => {
     const record = {
       id: 'review',
