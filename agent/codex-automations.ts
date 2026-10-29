@@ -541,7 +541,7 @@ export async function inspectCodexDispatchActivation(
   };
   if (
     (selected.cleanupOnly && (!retainedWork || !selected.policyBlocker)) ||
-    (!retainedWork && selected.ledger.pending) ||
+    (!retainedWork && selected.ledger.pending?.action.manifestId === intakeAutomationId) ||
     !record ||
     record.definition.kind !== 'heartbeat' ||
     (!retainedWork &&

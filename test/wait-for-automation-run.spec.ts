@@ -6,6 +6,29 @@ import {
 } from '../scripts/wait-for-automation-run.mjs';
 
 describe('scripts/wait-for-automation-run', () => {
+  it('should require the exact expected failure without accepting success or another run', () => {
+    const page = { entries: [{ runId: 'requested-run', execution: 'error' }] };
+    assert.equal(
+      assertAutomationRun(
+        page,
+        'requested-run',
+        'failure',
+        () => assert.fail('unexpected diagnostic'),
+        'error',
+      ),
+      true,
+    );
+    assert.throws(() => assertAutomationRun(page, 'another-run', 'failure', () => {}, 'error'));
+    assert.throws(() =>
+      assertAutomationRun(
+        { entries: [{ runId: 'requested-run', execution: 'ok' }] },
+        'requested-run',
+        'failure',
+        () => {},
+        'error',
+      ),
+    );
+  });
   it('should diagnose the exact failed run before preserving the execution assertion', () => {
     const reports: unknown[] = [];
     const report = (nativeId: string, runId: string) => reports.push({ nativeId, runId });

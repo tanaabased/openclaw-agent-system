@@ -1,0 +1,7 @@
+- id: failed-output
+  runtimes: [openclaw]
+  schedule: every 1 hour
+  timeout-seconds: 120
+  run:
+    command: sh
+    args: [./failed-output.sh]

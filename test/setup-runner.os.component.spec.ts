@@ -118,6 +118,27 @@ describe('agent/setup-runner', () => {
     assert.deepEqual(await readdir(temporaryDirectory), []);
   });
 
+  it('should return captured streams only when explicitly requested and preserve truncation metadata', async () => {
+    const run = runner(async () => ({
+      ...success,
+      code: 17,
+      stdout: 'captured output',
+      stderr: 'captured error',
+      stderrTruncatedBytes: 12,
+    }));
+    const result = await run(shell('exit 17'), { ...context(), captureOutput: true });
+    assert.equal(result.exitCode, 17);
+    assert.equal(result.truncated, true);
+    assert.deepEqual(result.output, {
+      stdout: 'captured output',
+      stderr: 'captured error',
+      stdoutTruncatedBytes: undefined,
+      stderrTruncatedBytes: 12,
+    });
+    assert.equal((await run(shell('exit 17'), context())).output, undefined);
+    assert.deepEqual(await readdir(temporaryDirectory), []);
+  });
+
   it('should select fixed wrappers without using managed launcher overrides', async () => {
     const expected = {
       sh: ['-e'],

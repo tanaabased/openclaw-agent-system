@@ -460,6 +460,48 @@ describe('agent/codex-intake', () => {
       )!;
       const path = join(pluginData, file);
       const original = await readFile(path, 'utf8');
+      for (const mode of ['create', 'update'] as const) {
+        const pendingLedger = JSON.parse(original);
+        pendingLedger.pending = {
+          digest: 'a'.repeat(64),
+          manifestDigest: 'pending-manifest',
+          action: {
+            manifestId: 'nightly-refresh',
+            mode,
+            ...(mode === 'update' ? { id: 'nightly-refresh-job' } : {}),
+            expected: {
+              ...pendingLedger.records[0].definition,
+              name: '🌙 NIGHTLY REFRESH',
+            },
+            removed: false,
+          },
+          targetBefore: { hash: 'b'.repeat(64), nativeIds: [] },
+        };
+        await writeFile(path, JSON.stringify(pendingLedger));
+        assert.deepEqual(
+          await inspectCodexDispatchActivation(pluginData, deps, false, false, 'intake'),
+          { sourceThreadId: 'intake-thread' },
+        );
+      }
+      const pendingIntakeLedger = JSON.parse(original);
+      pendingIntakeLedger.pending = {
+        digest: 'c'.repeat(64),
+        manifestDigest: 'pending-manifest',
+        action: {
+          manifestId: intakeAutomationId,
+          mode: 'update',
+          id: nativeId,
+          expected: pendingIntakeLedger.records[0].definition,
+          removed: false,
+        },
+        targetBefore: { hash: 'd'.repeat(64), nativeIds: [nativeId] },
+      };
+      await writeFile(path, JSON.stringify(pendingIntakeLedger));
+      await assert.rejects(
+        inspectCodexDispatchActivation(pluginData, deps, false, false, 'intake'),
+        /intake-automation-update-required/,
+      );
+      await writeFile(path, original);
       const ledger = JSON.parse(original);
       const oldPrompt =
         'Previously reconciled automation instructions.\n\n' +
@@ -467,6 +509,10 @@ describe('agent/codex-intake', () => {
       ledger.records[0].definition.prompt = oldPrompt;
       await writeFile(path, JSON.stringify(ledger));
       await saveNative({ ...prepared.request, prompt: oldPrompt });
+      await assert.rejects(
+        inspectCodexDispatchActivation(pluginData, deps, false, false, 'intake'),
+        /intake-automation-update-required/,
+      );
       const inspection = await inspectCodexIntake(pluginData, { codexHome });
       assert.equal(inspection.code, 'intake-automation-update-required');
       assert.match(inspection.remediation!, /apply the update/);
