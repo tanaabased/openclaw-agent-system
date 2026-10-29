@@ -242,15 +242,23 @@ describe('scripts/wait-for-automation-run', () => {
     }
   });
 
-  it('should bound diagnostic output after redaction', () => {
+  it('should retain the native error and latest gateway evidence when bounding redacted output', () => {
     const output: string[] = [];
     reportAutomationFailure('native-job', 'requested-run', {
       run(command: string) {
-        return { status: 0, stdout: command === process.execPath ? 'x'.repeat(20_000) : '' };
+        return {
+          status: 0,
+          stdout:
+            command === process.execPath
+              ? 'native error\n' + 'x'.repeat(20_000) + '\nlatest gateway failure'
+              : '',
+        };
       },
       write: (text: string) => output.push(text),
     });
     assert.ok(output.join('').length < 16_100);
     assert.ok(output.join('').includes('truncated'));
+    assert.ok(output.join('').startsWith('native error\n'));
+    assert.ok(output.join('').includes('latest gateway failure'));
   });
 });

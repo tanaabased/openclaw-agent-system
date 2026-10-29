@@ -9,7 +9,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 - Shared model/effort creation and same-chat updates, followed by a timer-fired occurrence with native execution evidence.
 - Native display-name rename/removal while preserving the job, its completed run state, and separate chat binding.
 - Completed same-agent Install/Doctor through a command descendant and native prompt tools, including default setup, without per-occurrence approval.
-- Failed command tails, truncation evidence, and exit status reaching the exact native run record with delivery disabled.
+- Failed command output beyond the former local caps and exit status reaching the exact native run record with delivery disabled.
 - Exact native run IDs and durable completion evidence, rather than treating queued admission as success.
 
 ## What Does Not Belong Here
@@ -26,7 +26,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 - Strict AIMock supplies Install, Doctor, and the final response; scheduling, native lifecycle authorization, setup, and command execution remain real. No hosted provider credential or remote SSH is needed. Native lifecycle approval is not automatically allowed; an unexpected approval stalls and fails the occurrence.
 - AIMock normalizes away request reasoning effort. Verify effort through the native embedded-run diagnostic correlated with the completed occurrence's session, not through the mock response or saved settings alone.
 - Source tests cover option/offline variants, one-shot retention, unmanaged jobs, stale authority, containment, timeout/cancellation cleanup, and thread-selection permutations.
-- The failure fixture emits 32 MiB per stream to exercise native truncation on the pinned host, then emits late markers and exits 17. It adds no model turn or provider call.
+- The failure fixture emits 64 KiB per stream, then late markers and exit 17. This exceeds the former local caps while keeping native diagnostic redaction within its transaction admission budget. Component tests cover forwarding native truncation metadata; this installed case verifies default capture without truncation. It adds no model turn or provider call.
 - The output check reads `cron.runs`, the Gateway API supplying run cards. It verifies output propagation, not browser rendering or OpenClaw restart persistence.
 
 ## Setup
@@ -126,8 +126,10 @@ openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId,
 ```
 
 ```bash
-# should retain late diagnostics and truncation evidence for a failed command with notifications disabled
+# should retain long output and the actual exit of a failed command with notifications disabled
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+rm -f failed-output.started failed-output.finished
+trap 'for phase in started finished; do if test -f "failed-output.$phase"; then printf "fixture %s: present\n" "$phase" >&2; else printf "fixture %s: absent\n" "$phase" >&2; fi; done' ERR
 cat failed-output.yaml >> automations.yaml
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 openclaw agent-system automations list --json > "$TMPDIR/automation-output-job.json"
@@ -143,8 +145,11 @@ const { assertFailedCommandRun } = await import(pathToFileURL(process.env.GITHUB
 const page = JSON.parse(readFileSync(process.env.TMPDIR + '/failed-output-native-run.json', 'utf8'));
 assertFailedCommandRun(page, process.argv[2], process.argv[3], 17);
 NODE
-jq -e --arg runId "$run_id" 'any(.entries[]; .runId == $runId and .status == "error" and (.summary | contains("stdout-fixture-marker")) and (.summary | contains("stderr-fixture-marker")) and any(.diagnostics.entries[]; .exitCode == 17 and .truncated == true) and any(.summary | split("\n")[] | fromjson?; .id == "failed-output" and .exitCode == 17 and .termination == "exit" and .timedOut == false and .cancelled == false and .truncated == true and .stdoutTruncatedBytes > 0 and .stderrTruncatedBytes > 0))' "$TMPDIR/failed-output-native-run.json"
+jq -e --arg runId "$run_id" 'any(.entries[]; .runId == $runId and .status == "error" and (.summary | contains("stdout-fixture-marker")) and (.summary | contains("stderr-fixture-marker")) and any(.diagnostics.entries[]; .exitCode == 17 and .truncated != true) and any(.summary | split("\n")[] | fromjson?; .id == "failed-output" and .exitCode == 17 and .termination == "exit" and .timedOut == false and .cancelled == false and .truncated == false and .stdoutTruncatedBytes == 0 and .stderrTruncatedBytes == 0))' "$TMPDIR/failed-output-native-run.json"
+test -f failed-output.started
+test -f failed-output.finished
 printf '%s\n' "$run_id" > "$TMPDIR/failed-output-run-id"
+trap - ERR
 ```
 
 ```bash

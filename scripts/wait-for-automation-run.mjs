@@ -73,8 +73,10 @@ export function reportAutomationFailure(
     const redactor = join(dirname(helper.stdout.trim()), 'lib', 'redact-stream.mjs');
     const redacted = run(process.execPath, [redactor], evidence.join('\n'));
     assert.equal(redacted.status, 0);
-    write(redacted.stdout.slice(0, 16_000) + '\n');
-    if (redacted.stdout.length > 16_000) write('[automation diagnostics truncated]\n');
+    if (redacted.stdout.length > 16_000) {
+      write(redacted.stdout.slice(0, 4000) + '\n[automation diagnostics truncated]\n');
+      write(redacted.stdout.slice(-12_000) + '\n');
+    } else write(redacted.stdout + '\n');
   } catch {
     write('automation diagnostics withheld: CI redactor unavailable\n');
   }
