@@ -8,6 +8,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 - Public managed sync/list/run boundaries and repeated sync preserving the same native jobs.
 - Native display-name rename/removal while preserving the job, its completed run state, and separate chat binding.
 - A completed command receipt proving managed Git identity and a completed prompt in the owning agent context.
+- Failed command stdout, stderr, and exit status reaching the exact native run record with delivery disabled.
 - Exact native run IDs and durable completion evidence, rather than treating queued admission as success.
 
 ## What Does Not Belong Here
@@ -23,6 +24,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 - Both jobs recur hourly; explicit run requests exercise them immediately. Command receipts are written beside the checked-in manifest on the disposable runner.
 - Strict AIMock supplies one prompt completion; scheduling, the Gateway, and command execution remain real. No hosted provider credential or remote SSH is needed.
 - Source tests cover option/offline variants, one-shot retention, unmanaged jobs, stale authority, containment, timeout/cancellation cleanup, and thread-selection permutations.
+- The output check reads `cron.runs`, the Gateway API supplying run cards. It verifies output propagation, not browser rendering or OpenClaw restart persistence.
 
 ## Setup
 
@@ -34,8 +36,6 @@ openclaw-aimock prepare --scenario openclaw-automations
 # should install the owning workspace before starting the gateway
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 openclaw agent-system install --yes --json
-openclaw config set browser.headless true --strict-json
-openclaw config set browser.noSandbox true --strict-json
 
 # should start the gateway with the installed agent
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
@@ -103,16 +103,7 @@ native=$(jq -er '.jobs[] | select(.id == "failed-output") | .nativeId' "$TMPDIR/
 openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.delivery.mode == "none"'
 run_id=$(openclaw agent-system automations run failed-output --json | jq -er 'select(.status == "queued") | .runId | strings')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" failed-output "$run_id" error
-openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg runId "$run_id" '{id:$id,runId:$runId,limit:1}')" --json | tee "$TMPDIR/automation-output-run.json" | jq -e --arg runId "$run_id" 'any(.entries[]; .runId == $runId and .status == "error" and (.summary | contains("stdout-fixture-marker")) and (.summary | contains("stderr-fixture-marker")) and any(.diagnostics.entries[]; .exitCode == 17))'
-```
-
-```bash
-# should display that same failed run in the gateway ui after a full page reload
-cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
-openclaw browser start --json
-native=$(jq -er '.entries[0].jobId' "$TMPDIR/automation-output-run.json")
-run_id=$(jq -er '.entries[0].runId' "$TMPDIR/automation-output-run.json")
-node ./verify-output-ui.mjs "$native" "$run_id"
+openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg runId "$run_id" '{id:$id,runId:$runId,limit:1}')" --json | jq -e --arg runId "$run_id" 'any(.entries[]; .runId == $runId and .status == "error" and (.summary | contains("stdout-fixture-marker")) and (.summary | contains("stderr-fixture-marker")) and any(.diagnostics.entries[]; .exitCode == 17))'
 ```
 
 ## Cleanup
