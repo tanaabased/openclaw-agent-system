@@ -4,7 +4,7 @@ import type { AssessmentSummary } from './assessment-summary-state.ts';
 import { nativeObject } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
 import type { CodexContinuationState } from './codex-continuation-state.ts';
-import dispatchHistory, { dispatchHistoryPages } from './codex-dispatch-history.ts';
+import dispatchHistory, { dispatchHistoryPages, dispatchTurn } from './codex-dispatch-history.ts';
 import type { CodexThreadRequest } from './codex-thread-client.ts';
 
 /** an explicit local host selects the same native destination as an omitted host. */
@@ -76,8 +76,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
         attempt.turnId !== attempt.sourceTurnId
       )
         throw new Error('continuation-assessment-origin-invalid');
-      const turns = await dispatchHistory(request, attempt.request.threadId, true);
-      const turn = turns.find((entry) => entry.id === attempt.turnId);
+      const turn = await dispatchTurn(request, attempt.request.threadId, attempt.turnId!);
       if (!turn || !Array.isArray(turn.items)) throw new Error('continuation-history-incomplete');
       const ended =
         ['completed', 'failed', 'interrupted'].includes(String(turn.status)) &&
@@ -163,7 +162,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
           automationHash(attempt.request))
     )
       return { status: 'blocked' as const, code: 'continuation-send-mismatch' };
-    const target = await dispatchHistory(request, attempt.request.threadId, true);
+    const target = await dispatchHistory(request, attempt.request.threadId, attempt.beforeTurnId);
     const before = target.findIndex((entry) => entry.id === attempt.beforeTurnId);
     if (before < 0) throw new Error('continuation-history-incomplete');
     const escaped = (value: string) =>

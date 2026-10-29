@@ -88,6 +88,7 @@ describe('agent/openclaw-response-authority', () => {
             status: 'timeout',
             ...(options.cancelled ? { stopReason: 'aborted' } : {}),
           };
+        if (method === 'chat.message.get') return { ok: true, message: options.reply };
         assert.equal(method, 'chat.history');
         if (params.messageId === 'current-input')
           return { sessionId: caller.sessionId, messages: [current] };
@@ -96,7 +97,7 @@ describe('agent/openclaw-response-authority', () => {
           return {
             sessionId: options.sessionId ?? caller.sessionId,
             messages: [options.oldInput ?? original],
-            ...(Number(params.limit) > 1 ? { newerCursor: 'host-page-token' } : {}),
+            ...(params.limit !== 1 ? { newerCursor: 'host-page-token' } : {}),
           };
         }
         if (params.cursor) {
@@ -135,10 +136,7 @@ describe('agent/openclaw-response-authority', () => {
   it('should reject replaced sessions and cancelled old executions', async () => {
     await assert.rejects(verify({ sessionId: 'replacement' }), /dispatch-input-unverified/);
     await assert.rejects(verify({ cancelled: true }), /dispatch-turn-cancelled/);
-    await assert.rejects(
-      verify({ pageSessionId: 'replacement' }),
-      /dispatch-assessment-continuation-not-ready/,
-    );
+    await assert.rejects(verify({ pageSessionId: 'replacement' }), /workflow-evidence-conflicting/);
   });
 
   it('should require an exact nontruncated terminal reply from the historical execution', async () => {
@@ -149,11 +147,10 @@ describe('agent/openclaw-response-authority', () => {
     ])
       await assert.rejects(
         verify({ reply: { ...terminal, __openclaw: meta } }),
-        /dispatch-assessment-continuation-not-ready/,
+        'truncated' in meta && meta.truncated
+          ? /workflow-evidence-truncated/
+          : /dispatch-assessment-continuation-not-ready/,
       );
-    await assert.rejects(
-      verify({ repeatCursor: true }),
-      /dispatch-assessment-continuation-not-ready/,
-    );
+    await assert.rejects(verify({ repeatCursor: true }), /workflow-evidence-incomplete/);
   });
 });

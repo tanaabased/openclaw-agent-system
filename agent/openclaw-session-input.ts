@@ -1,3 +1,4 @@
+import { completeOpenClawMessage, openClawHistoryPages } from './openclaw-history.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { sessionObject } from './openclaw-session-create.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
@@ -21,8 +22,6 @@ export async function nativeInputEvent(input: {
     await request('chat.history', {
       sessionKey,
       inputRunIds: [runId],
-      limit: 200,
-      maxChars: 100000,
     }),
   );
   if (history.sessionId !== sessionId || !Array.isArray(history.messages)) fail();
@@ -43,24 +42,29 @@ export async function nativeInputEvent(input: {
     .filter((entry) => entry?.runId === runId)
     .map((entry) => entry!.inputEventId);
   if (receipt) anchors.push(receipt.consumedByEventId as string);
-  const candidates = (history.messages as unknown[]).map(sessionObject).filter((entry) => {
-    const meta = sessionObject(entry.__openclaw);
-    return (
-      entry.role === 'user' &&
-      (meta.runId === runId ||
-        meta.idempotencyKey === `${runId}:user` ||
-        entry.idempotencyKey === `${runId}:user`)
-    );
-  });
-  if (candidates.length > 1) fail();
-  if (candidates.length) {
-    const id = issueInputEventId(candidates[0]!, runId);
-    if (
-      !id ||
-      (input.requireOwner && sessionObject(candidates[0]!.__openclaw).senderIsOwner === false)
-    )
-      fail();
-    anchors.push(id!);
+  for await (const messages of openClawHistoryPages(request, input, { first: history })) {
+    const candidates = messages.filter((entry) => {
+      const meta = sessionObject(entry.__openclaw);
+      return (
+        entry.role === 'user' &&
+        (meta.runId === runId ||
+          meta.idempotencyKey === `${runId}:user` ||
+          entry.idempotencyKey === `${runId}:user`)
+      );
+    });
+    if (candidates.length > 1) fail();
+    if (candidates.length) {
+      const candidate = await completeOpenClawMessage(request, input, candidates[0]!);
+      const id = issueInputEventId(candidate, runId);
+      if (
+        !id ||
+        (input.requireOwner && sessionObject(candidate.__openclaw).senderIsOwner === false)
+      )
+        fail();
+      anchors.push(id!);
+    }
+    // a native consumption receipt or retained exact identity avoids unrelated history reads.
+    if (anchors.length) break;
   }
   if (!anchors.length || anchors.some((id) => !id || id !== anchors[0])) fail();
   const inputEventId = anchors[0]!;
@@ -71,7 +75,6 @@ export async function nativeInputEvent(input: {
       sessionId,
       messageId: inputEventId,
       limit: 1,
-      maxChars: 100000,
     }),
   );
   if (exact.sessionId !== sessionId || !Array.isArray(exact.messages)) fail();
@@ -86,7 +89,7 @@ export async function nativeInputEvent(input: {
     );
   });
   if (matches.length !== 1) fail();
-  const entry = matches[0]!;
+  const entry = await completeOpenClawMessage(request, input, matches[0]!);
   if (
     issueInputEventId(entry, runId) !== inputEventId ||
     (input.requireOwner && sessionObject(entry.__openclaw).senderIsOwner === false)
