@@ -180,7 +180,9 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         if (graceMinutes === undefined) record.retirement.deadlinePending = true;
         else record.retirement.eligibleAt = now + graceMinutes * 60_000;
       }
-      if (native && !native.unavailableSession && (record.retirement || native.archived))
+      // an unavailable session supersedes an earlier activity observation, not proof of idleness.
+      if (native?.unavailableSession) delete record.nativeInactive;
+      else if (native && (record.retirement || native.archived))
         record.nativeInactive = native.idle;
       if (reason === 'issue-closed' || native?.archived) delete record.feedbackReactivation;
       const successor = latest.get(record.issueKey);

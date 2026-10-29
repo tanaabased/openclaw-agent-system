@@ -79,10 +79,12 @@ describe('agent/retain-dispatch-history', () => {
 
   it('should require verified cleanup and preserve the original input', () => {
     const source = record();
+    source.worktreeAttemptId = id;
     const before = structuredClone(source);
     const terminal = retainDispatchHistory(source)!;
     assert.equal(terminal.context, undefined);
     assert.equal(terminal.intakeId, source.intakeId);
+    assert.equal(terminal.worktreeAttemptId, id);
     assert.equal(validTerminalRecord(terminal), true);
     assert.deepEqual(source, before);
     for (const field of ['worktreeRemovedAt', 'archivedAt'] as const) {

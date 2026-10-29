@@ -20,6 +20,7 @@ const terminalKeys = new Set([
   'manifestDigest',
   'threadId',
   'worktree',
+  'worktreeAttemptId',
   'retired',
   'retirement',
   'nativeInactive',

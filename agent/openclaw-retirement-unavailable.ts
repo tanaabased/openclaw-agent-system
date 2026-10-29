@@ -1,5 +1,6 @@
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import retirementSessionIdentity from './openclaw-retirement-identity.ts';
 
 /** an unavailable session is an inference, never proof of deletion or native idleness. */
 export default async function observeUnavailableRetirementSession(input: {
@@ -10,19 +11,19 @@ export default async function observeUnavailableRetirementSession(input: {
   request: DispatchRequest;
 }) {
   const { record, agentId, owner, request } = input;
+  const intent = retirementSessionIdentity(record, agentId);
   if (
     ![
       'retirement-session-identity-unresolved',
       'dispatch-session-response-invalid-sessions-describe-session-null',
       'session-dispatch-describe-forbidden',
     ].includes(input.code) ||
-    !record.request ||
+    !intent ||
     !record.worktree ||
-    record.request.cwd !== record.worktree ||
+    intent.cwd !== record.worktree ||
     record.sourceThreadId !== owner
   )
     return undefined;
-  const intent = record.request;
   const key = intent.key;
   if (key === owner || (record.threadId && key !== record.threadId) || intent.agentId !== agentId)
     return undefined;
