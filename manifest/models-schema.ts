@@ -21,9 +21,23 @@ export interface AgentModelsConfiguration {
   routing?: AssessmentConfiguration;
 }
 
+export const modelReferenceSchema = Type.String({ pattern: '^[^/@\\s]+/[^@\\s]+$' });
+export const explicitModelEfforts = [
+  'none',
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'adaptive',
+  'max',
+  'ultra',
+] as const;
+
 const externalAgentModelProfileSchema = Type.Object(
   {
-    model: Type.String({ pattern: '^[^/@\\s]+/[^@\\s]+$' }),
+    model: modelReferenceSchema,
     effort: Type.Union([Type.Literal('medium'), Type.Literal('high'), Type.Literal('xhigh')]),
   },
   { additionalProperties: false },

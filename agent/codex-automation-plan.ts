@@ -3,7 +3,10 @@ import { realpath } from 'node:fs/promises';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { automationThreadSelection } from './automation-threads.ts';
+import {
+  automationThreadSelection,
+  type AutomationThreadModelObservation,
+} from './automation-threads.ts';
 import { automationHash } from './automation-hash.ts';
 import codexAutomationSchedule from './codex-automation-schedule.ts';
 import {
@@ -46,10 +49,11 @@ export interface CodexAutomationPlan {
   status: 'aligned' | 'requires-native-app-sync' | 'blocked';
   digest: string;
   actions: CodexAutomationAction[];
-  findings: { id: string; code: string }[];
+  findings: { id: string; code: string; settings?: AutomationThreadModelObservation }[];
   unmanagedCount: number;
   conversations?: {
     id: string;
+    settings?: AutomationThreadModelObservation;
     routing: 'per-automation' | 'exact-native';
     nativeId: string | null;
     name?: string;
@@ -137,7 +141,7 @@ export default async function planCodexAutomations(options: {
   records: CodexAutomationRecord[];
   inputs: CodexAutomationInputs;
   defaults?: { model: string; effort: string };
-  bindings?: Map<string, { id: string }>;
+  bindings?: Map<string, { id: string; settings?: AutomationThreadModelObservation }>;
 }): Promise<CodexAutomationPlan> {
   const { scope, workspace, jobs, records, saved, inputs } = options;
   const findings: CodexAutomationPlan['findings'] = [];
@@ -342,6 +346,7 @@ export default async function planCodexAutomations(options: {
               ? [
                   {
                     id: job.id,
+                    settings: options.bindings?.get(job.id)?.settings,
                     routing: selection.managed
                       ? ('per-automation' as const)
                       : ('exact-native' as const),

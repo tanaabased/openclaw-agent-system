@@ -1,3 +1,4 @@
+import automationModels from './automation-models.ts';
 import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import { assessmentSummaryConsent } from './assessment-summary-state.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
@@ -10,9 +11,10 @@ export const openclawIntakeAutomationId = 'github-issue-assignment';
 
 /** Derived declarations use the ordinary automation reconciler, never edit agent.yaml. */
 export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAutomation[] {
-  const jobs = manifest.automations ?? [];
-  if (jobs.some((job) => job.id === openclawIntakeAutomationId))
+  const declarations = manifest.automations ?? [];
+  if (declarations.some((job) => job.id === openclawIntakeAutomationId))
     throw new IntakeError('intake-automation-id-reserved');
+  const jobs = automationModels(declarations, manifest.models, 'openclaw');
   const selected = assignmentIntakePolicy(manifest, 'openclaw');
   if (!selected) return jobs;
   if (!manifest.models?.default) throw new IntakeError('intake-default-profile-required');

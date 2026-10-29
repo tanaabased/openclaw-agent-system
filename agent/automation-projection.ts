@@ -1,6 +1,8 @@
+import type { AutomationThreadModelObservation } from './automation-threads.ts';
 import { AutomationError, type NativeAutomation } from './automation-gateway.ts';
 import { automationHash, type AutomationRecord } from './automation-store.ts';
 import automationContent from '../manifest/automation-content.ts';
+import { explicitModelEfforts } from '../manifest/models-schema.ts';
 import type { ResolvedAutomation } from '../manifest/automation-schema.ts';
 
 export interface AutomationProjectionContext {
@@ -9,7 +11,10 @@ export interface AutomationProjectionContext {
   command: string[];
   environment: Record<string, string>;
   timezone: string;
-  threads?: Map<string, { id: string; outcome: string; name?: string }>;
+  threads?: Map<
+    string,
+    { id: string; outcome: string; name?: string; settings?: AutomationThreadModelObservation }
+  >;
 }
 export type NativeAutomationSpec = Record<string, unknown> & {
   enabled: boolean;
@@ -19,10 +24,7 @@ export type NativeAutomationSpec = Record<string, unknown> & {
 
 export function effectiveAutomation(job: ResolvedAutomation, context: AutomationProjectionContext) {
   const override = job.overrides.openclaw;
-  if (
-    override?.effort &&
-    !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'adaptive'].includes(override.effort)
-  ) {
+  if (override?.effort && !(explicitModelEfforts as readonly string[]).includes(override.effort)) {
     throw new AutomationError('automation-effort-unsupported');
   }
   const normalized = automationContent(job, 'openclaw');

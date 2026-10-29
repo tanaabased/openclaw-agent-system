@@ -11,6 +11,7 @@ import {
   type NormalizedCommand,
 } from './command-schema.ts';
 import type { ManifestDiagnostic } from './types.ts';
+import { explicitModelEfforts, modelReferenceSchema } from './models-schema.ts';
 import managedGroupName from '../utils/managed-group-name.ts';
 
 const textSchema = Type.String({ pattern: '^(?=[\\s\\S]*\\S)[^\\u0000\\r\\n]*(?![\\s\\S])' });
@@ -44,6 +45,13 @@ const jobSchema = Type.Object(
   {
     id: Type.String({ pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*(?![\\s\\S])' }),
     'display-name': Type.Optional(displayNameSchema),
+    model: Type.Optional(
+      Type.Union([
+        modelReferenceSchema,
+        ...['default', 'low', 'medium', 'high'].map((value) => Type.Literal(value)),
+      ]),
+    ),
+    effort: Type.Optional(Type.Union(explicitModelEfforts.map((value) => Type.Literal(value)))),
     enabled: Type.Optional(Type.Boolean()),
     thread: Type.Optional(Type.Union([Type.Null(), textSchema, automationThreadSchema])),
     group: Type.Optional(Type.String()),
@@ -92,6 +100,8 @@ export type AutomationOverride = Static<typeof overrideSchema>;
 export interface AgentAutomation {
   id: string;
   displayName?: string;
+  model?: string;
+  effort?: string;
   enabled: boolean;
   runtimes: AutomationRuntime[];
   schedule: AutomationSchedule;
@@ -119,6 +129,26 @@ export function automationDiagnostic(code: string, fieldPath: string): ManifestD
     message: `Invalid automation declaration at ${fieldPath}.`,
     severity: 'error',
   };
+}
+
+/** profile references are validated without native catalogs or credentials. */
+export function automationProfileDiagnostics(
+  jobs: AgentAutomation[],
+  models: unknown,
+): ManifestDiagnostic[] {
+  return jobs.flatMap((job, index) => {
+    if (!['default', 'low', 'medium', 'high'].includes(job.model ?? '')) return [];
+    if (models && typeof models === 'object' && Object.hasOwn(models, job.model!)) return [];
+    return [
+      {
+        ...automationDiagnostic(
+          'manifest-automation-profile-missing',
+          `/automations/${index}/model`,
+        ),
+        message: `The requested automation model profile is not configured at /automations/${index}/model.`,
+      },
+    ];
+  });
 }
 
 /** normalize declarations without files, clocks, model calls, or runtime capability checks. */
@@ -173,6 +203,10 @@ export default function normalizeAutomations(
       (job.run !== undefined
         ? { kind: 'command' as const, run: job.run, shell: job.shell }
         : { kind: 'prompt' as const, prompt: job.prompt! });
+    if (payload.kind === 'command' && (job.model !== undefined || job.effort !== undefined)) {
+      diagnostics.push(automationDiagnostic('manifest-automation-command-model', path));
+      continue;
+    }
     if (payload.kind === 'command' && job.overrides !== undefined) {
       diagnostics.push(
         automationDiagnostic('manifest-automation-command-overrides', `${path}/overrides`),
@@ -253,6 +287,8 @@ export default function normalizeAutomations(
       runtimes: [...(job.runtimes ?? (['openclaw', 'codex'] as const))].sort(),
       schedule,
       payload: normalizedPayload,
+      ...(job.model === undefined ? {} : { model: job.model }),
+      ...(job.effort === undefined ? {} : { effort: job.effort }),
       ...(group === undefined ? {} : { group }),
       ...(job.thread == null
         ? {}

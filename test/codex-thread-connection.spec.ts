@@ -67,6 +67,40 @@ function fixture() {
 }
 
 describe('codex thread connection lifecycle', () => {
+  for (const version of ['0.159.0', '0.160.1', '0.164.0', undefined]) {
+    it(`should gate experimental updates for native version ${version ?? 'unknown'}`, async () => {
+      const f = fixture();
+      const connecting = f.connect();
+      assert.deepEqual((f.calls[0] as unknown as { params: unknown }).params, {
+        clientInfo: { name: 'agent_system', version: '1' },
+        capabilities: { experimentalApi: true },
+      });
+      f.reply({
+        codexHome: '/profile',
+        ...(version ? { userAgent: `agent_system/${version} (fixture)` } : {}),
+      });
+      const connection = await connecting;
+      const update = connection.request('thread/settings/update', {
+        threadId: 'native',
+        effort: 'high',
+      });
+      if (version === '0.160.1' || version === '0.164.0') {
+        f.reply({});
+        await update;
+        assert.equal(f.calls.at(-1)!.method, 'thread/settings/update');
+      } else {
+        await assert.rejects(update, { code: 'automation-thread-settings-unsupported' });
+        assert.equal(
+          f.calls.some(({ method }) => method === 'thread/settings/update'),
+          false,
+        );
+      }
+      const closed = connection.close();
+      f.advance(5_000);
+      await closed;
+    });
+  }
+
   it('should allow cold initialization and materialization beyond the old per-request deadline', async () => {
     const f = fixture();
     const connecting = f.connect();
