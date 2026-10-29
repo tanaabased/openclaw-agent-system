@@ -37,6 +37,9 @@ describe('agent/codex-dispatch-request', () => {
       "Fix user's issue: café 東京",
       'x'.repeat(80),
       'EMORI #149: Fix café: #150',
+      'EMORI #149 - Fix login timeout',
+      '#149 Fix login timeout',
+      'tanaabased/emori#149 – #149 — Fix café: #150',
     ];
     for (const title of titles) {
       const prepare = {

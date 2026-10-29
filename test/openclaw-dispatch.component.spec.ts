@@ -2045,17 +2045,29 @@ describe('agent/openclaw issue dispatch', () => {
     );
   });
 
-  it('should normalize redundant issue metadata without changing worktree title input', async () => {
-    const title = 'REPO #3: #3: Fix café: references to #4';
-    const prepareWorktree = service.dependencies.worktrees.prepareGitHub;
-    service.dependencies.worktrees.prepareGitHub = async (input) => {
-      assert.equal(input.title, title);
-      return prepareWorktree(input);
-    };
-    const created = await prepare(await next(), {}, title);
-    assert.equal(created.status, 'session-created');
-    assert.equal(creates()[0]!.params.displayName, '#3: FIX CAFÉ: REFERENCES TO #4');
-  });
+  for (const [kind, title, expected] of [
+    ['colon prefixes', 'REPO #3: #3: Fix café: references to #4', '#3: FIX CAFÉ: REFERENCES TO #4'],
+    [
+      'mixed prefixes',
+      'REPO #3 - OWNER/REPO #3 – #3 — #3 Fix café: references to #4',
+      '#3: FIX CAFÉ: REFERENCES TO #4',
+    ],
+    ['whitespace prefixes', '#3 Fix login timeout', '#3: FIX LOGIN TIMEOUT'],
+    ['repository words', 'REPO automation fixes', '#3: REPO AUTOMATION FIXES'],
+    ['other issues', '#4 - Review REPO #3', '#3: #4 - REVIEW REPO #3'],
+    ['other repositories', 'other/repo #3 — Fix café', '#3: OTHER/REPO #3 — FIX CAFÉ'],
+    ['metadata only', 'REPO #3 — #3', '#3: ISSUE'],
+  ])
+    it(`should preserve worktree input when creating a chat title with ${kind}`, async () => {
+      const prepareWorktree = service.dependencies.worktrees.prepareGitHub;
+      service.dependencies.worktrees.prepareGitHub = async (input) => {
+        assert.equal(input.title, title);
+        return prepareWorktree(input);
+      };
+      const created = await prepare(await next(), {}, title);
+      assert.equal(created.status, 'session-created');
+      assert.equal(creates()[0]!.params.displayName, expected);
+    });
 
   it('should reuse one connection and keep gateway reads free of repeated provider authorization', async () => {
     const input = await next();
