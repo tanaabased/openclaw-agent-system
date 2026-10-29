@@ -5,7 +5,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 
 ## What Belongs Here
 
-- Public managed sync/list/run boundaries and repeated sync preserving the same native jobs, including migration of legacy command output limits.
+- Public managed sync/list/run boundaries and repeated sync preserving the same native jobs, including migration of legacy native names and command output limits.
 - Shared model/effort creation and same-chat updates, followed by a timer-fired occurrence with native execution evidence.
 - Native display-name rename/removal while preserving the job, its completed run state, and separate chat binding.
 - Completed same-agent Install/Doctor through a command descendant and native prompt tools, including default setup, without per-occurrence approval.
@@ -108,11 +108,27 @@ openclaw-aimock evidence --scenario openclaw-automations --expected-evidence "$G
 grep -Fx installed maintenance.installed
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 
+# should migrate legacy native names in place after both jobs have completed
+cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+for job in identity prompt; do
+  native=$(jq -er --arg job "$job" '.jobs[] | select(.id == $job) | .nativeId' "$TMPDIR/automation-before.json")
+  openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json > "$TMPDIR/name-before-$job.json"
+  jq -S 'del(.name,.configRevision,.updatedAtMs)' "$TMPDIR/name-before-$job.json" > "$TMPDIR/name-preserved-$job.json"
+  openclaw gateway call cron.update --params "$(jq -c --arg job "$job" '{id,expectedConfigRevision:.configRevision,patch:{name:("Agent System: "+$job)}}' "$TMPDIR/name-before-$job.json")" --json > /dev/null
+done
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "updated")'
+for job in identity prompt; do
+  native=$(jq -er --arg job "$job" '.jobs[] | select(.id == $job) | .nativeId' "$TMPDIR/automation-before.json")
+  openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | tee "$TMPDIR/name-after-$job.json" | jq -e --arg job "$job" '.name == ("AUTOMATION-TANAABOT: "+$job)'
+  jq -S 'del(.name,.configRevision,.updatedAtMs)' "$TMPDIR/name-after-$job.json" | diff - "$TMPDIR/name-preserved-$job.json"
+done
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
+
 # should rename and clear the automation label without replacing its job or chat
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
 openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json > "$TMPDIR/label-before.json"
-jq -e '.displayName == "🔄 AUTOMATION STATUS" and .name == "Agent System: prompt"' "$TMPDIR/label-before.json"
+jq -e '.displayName == "🔄 AUTOMATION STATUS" and .name == "AUTOMATION-TANAABOT: prompt"' "$TMPDIR/label-before.json"
 jq -S '{id,name,declarationKey,agentId,schedule,sessionTarget,payload,enabled,history:(.state | {lastRunAtMs,lastRunStatus,lastDurationMs})}' "$TMPDIR/label-before.json" > "$TMPDIR/label-preserved.json"
 for label in '🔄 RENAMED STATUS' ''; do
   node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); const job=jobs.find(({id})=>id==="prompt"); if(process.argv[1]) job["display-name"]=process.argv[1]; else delete job["display-name"]; fs.writeFileSync("automations.yaml",stringify(jobs));' "$label"
