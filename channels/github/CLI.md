@@ -140,16 +140,36 @@ openclaw agent-system notifications status --json
 
 `status` reports baseline, capacity, preparation, and blockers without advancing work.
 The optional `workflow` identifies the phase and chat; `workflowStatus` distinguishes
-`retirement-pending`, `retired`, `obsolete`, and `partially-delivered` work. Partial
-delivery means the PR exists but still needs linkage or presentation. Only issue
-selectors are supported.
+`retirement-pending`, `retired`, and `obsolete` tasks from current work.
+`publication-held` means local implementation is ready within a local-only scope.
+`delivery` still needs verified PR publication; `delivered-response-pending` means
+publication is verified but an announcement or presentation remains.
+`delivered` settles that delivery round; the issue chat remains available for follow-up.
+Only issue selectors are supported.
 
-`waiting` means setup or evidence is needed, `retrying` indicates a transient failure,
-and `blocked` indicates denial, cancellation, or lost authority. Follow the reported
+`clarification-needed` waits for an answer, `policy-held` waits for eligible policy,
+and `retrying` has a scheduled backoff. `needs-attention` identifies a failure without
+an automatic retry; inspect its diagnostic and reconcile through the owning context.
+`blocked` indicates denial, cancellation, or lost authority. Follow the reported
 diagnostic. An incomplete check does not prove a successful scan or absence of work.
 Use Doctor for missing or disabled schedules and Install to reconcile drift. Resume
 interrupted work in its [existing chat](./README.md#chatting), rather than resetting
 tracking to force a retry.
+
+Doctor, notification status, and intake reports show journal content size, thresholds,
+bytes reclaimed by the last offload, and reasons records remain protected. Both runtimes
+warn at 16 MiB and pause new scheduled or manual tasks at 32 MiB. Intake reports notify
+on pressure transitions or substantial growth, not every scan. Existing tasks can
+continue within the 64 MiB content ceiling, with 1 MiB of additional reporting space.
+These limits are fixed; raising them is not a supported recovery setting.
+
+Normal dispatch reconciliation offloads verified retired detail, including failed tasks
+and stale historical turns, before new work. Retry context and the complete assessment
+in the same chat after reconciliation. Admission resumes below 32 MiB with room for the
+proposed task. Oversized saves preserve the committed journal; active work may still
+exhaust the finite emergency budget. Do not delete state or mark work successful to
+free space. Cold detail expires after 30 days or eviction from its 64 MiB budget;
+compact terminal identity and effect receipts remain and never restore authority.
 
 For an OpenClaw readiness probe, use:
 

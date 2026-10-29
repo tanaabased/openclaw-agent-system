@@ -92,6 +92,26 @@ function fixture(initial: 'missing' | 'enabled' | 'disabled' = 'enabled') {
 }
 
 describe('agent/codex-plugin-lifecycle', () => {
+  it('should reject parseable incomplete plugin discovery before reconciliation', async () => {
+    for (const metadata of [
+      { stdoutTruncatedBytes: 1 },
+      { stderrTruncatedBytes: 1 },
+      { signal: 'SIGTERM' },
+    ]) {
+      const f = fixture('missing');
+      const previous = f.dependencies.runOpenClawCommand;
+      f.dependencies.runOpenClawCommand = async (args, cwd, signal) => ({
+        ...(await previous(args, cwd, signal)),
+        ...(args[1] === 'list' ? metadata : {}),
+      });
+      await assert.rejects(f.contribution().reconcile!(context));
+      assert.equal(
+        f.calls.some((args) => args[1] === 'install' || args[1] === 'enable'),
+        false,
+      );
+    }
+  });
+
   it('should skip openai models on the openclaw runtime without inspecting a missing plugin', async () => {
     const f = fixture('missing');
     f.dependencies.readConfig = () => ({

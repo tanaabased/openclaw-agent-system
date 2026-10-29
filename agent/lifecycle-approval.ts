@@ -16,13 +16,18 @@ import { lifecycleParameters, type LifecycleToolName } from './lifecycle-tool-co
 import AgentSystemToolError from '../api/error.ts';
 
 type LoadedManifest = Extract<AgentManifestLoadResult, { status: 'loaded' }>;
-interface ApprovalContext {
+export interface ApprovalContext {
   requester?: { senderIsOwner?: boolean };
   agentId?: string;
   sessionKey?: string;
   sessionId?: string;
   toolCallId?: string;
   abortSignal?: AbortSignal;
+  runId?: string;
+}
+export interface LifecycleAutomationAuthorization {
+  assertActive(): void;
+  assertCurrent(): Promise<void>;
 }
 interface PendingOperation {
   loaded: LoadedManifest;
@@ -35,6 +40,8 @@ interface PendingOperation {
   sessionDispatchConsent: boolean;
   signals: Set<AbortSignal>;
   expiresAt: number;
+  automation?: LifecycleAutomationAuthorization;
+  runId?: string;
   dispose(): void;
 }
 
@@ -65,6 +72,10 @@ export default class AgentLifecycleApproval {
       manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'withSnapshot'>;
       doctorService: Pick<AgentDoctorService, 'inspect'>;
       installService: Pick<AgentInstallService, 'install'>;
+      automation?(
+        loaded: LoadedManifest,
+        context: ApprovalContext,
+      ): Promise<LifecycleAutomationAuthorization | undefined>;
     },
   ) {}
 
@@ -86,6 +97,8 @@ export default class AgentLifecycleApproval {
       previous?.dispose();
       denied();
     }
+    const automation = await this.dependencies.automation?.(loaded, context);
+    await automation?.assertCurrent();
     const consumers =
       name === 'agent_system_install'
         ? sessionDispatchRequirements(
@@ -94,7 +107,7 @@ export default class AgentLifecycleApproval {
               true,
           )
         : [];
-    if (consumers.length && context.requester?.senderIsOwner !== true) denied();
+    if (consumers.length && !automation && context.requester?.senderIsOwner !== true) denied();
     const workspaceDir = await realpath(loaded.scope.workspaceDir);
     context.abortSignal?.throwIfAborted();
     const operation = name === 'agent_system_install' ? 'Install' : 'Doctor';
@@ -103,6 +116,9 @@ export default class AgentLifecycleApproval {
     // Codex can revisit the hook between native approval and dynamic tool execution.
     if (
       previous?.allowed &&
+      (previous.automation
+        ? automation !== undefined && previous.runId === context.runId
+        : !automation) &&
       this.#pending.get(id) === previous &&
       Date.now() < previous.expiresAt &&
       ![...previous.signals].some((signal) => signal.aborted) &&
@@ -116,6 +132,7 @@ export default class AgentLifecycleApproval {
       selection.skipSetupHost === previous.skipSetupHost &&
       selection.skipSetupAgent === previous.skipSetupAgent
     ) {
+      await previous.automation?.assertCurrent();
       if (context.abortSignal) {
         previous.signals.add(context.abortSignal);
         context.abortSignal.addEventListener('abort', previous.dispose, { once: true });
@@ -148,7 +165,7 @@ export default class AgentLifecycleApproval {
         ].join('\n')
       : ordinaryDescription;
     // Do not let the host's display bound silently omit the target or selected operation.
-    if (description.length > 512) denied();
+    if (!automation && description.length > 512) denied();
     const timeoutMs = consumers.length ? 600_000 : 120_000;
     const pending: PendingOperation = {
       loaded: structuredClone(loaded),
@@ -157,7 +174,9 @@ export default class AgentLifecycleApproval {
         (params as { manualSessionDispatch?: boolean } | undefined)?.manualSessionDispatch === true,
       workspaceDir,
       ...selection,
-      allowed: false,
+      allowed: automation !== undefined,
+      ...(automation ? { automation } : {}),
+      ...(automation && context.runId ? { runId: context.runId } : {}),
       sessionDispatchConsent: consumers.length > 0,
       signals: new Set(context.abortSignal ? [context.abortSignal] : []),
       expiresAt: Date.now() + timeoutMs,
@@ -171,6 +190,7 @@ export default class AgentLifecycleApproval {
     timer.unref();
     context.abortSignal?.addEventListener('abort', pending.dispose, { once: true });
     this.#pending.set(id, pending);
+    if (automation) return {};
     return {
       requireApproval: {
         title: `Agent System ${operation}`,
@@ -219,12 +239,13 @@ export default class AgentLifecycleApproval {
     const assertEnrollmentCurrent = () => {
       if (!pending.sessionDispatchConsent) return;
       if (
-        context.senderIsOwner !== true ||
+        (!pending.automation && context.senderIsOwner !== true) ||
         !context.assertInvocationCurrent ||
         Date.now() >= pending.expiresAt
       )
         denied();
       context.assertInvocationCurrent();
+      pending.automation?.assertActive();
       for (const signal of pending.signals) signal.throwIfAborted();
       signal?.throwIfAborted();
     };
@@ -233,6 +254,11 @@ export default class AgentLifecycleApproval {
     const combinedSignal = AbortSignal.any(signals);
     const assertCurrent = async () => {
       combinedSignal.throwIfAborted();
+      if (pending.automation) {
+        if (!context.assertInvocationCurrent) denied();
+        context.assertInvocationCurrent();
+        await pending.automation.assertCurrent();
+      }
       assertEnrollmentCurrent();
       if (!context.workspaceDir || (await realpath(context.workspaceDir)) !== pending.workspaceDir)
         denied();

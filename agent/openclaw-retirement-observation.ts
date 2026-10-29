@@ -2,6 +2,7 @@ import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import observeUnavailableRetirementSession from './openclaw-retirement-unavailable.ts';
 import workflowFailure from './workflow-failure.ts';
+import retirementSessionIdentity from './openclaw-retirement-identity.ts';
 
 export function retirementObject(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -24,11 +25,10 @@ export async function observeRetiringSession(
   record: OpenClawDispatchRecord,
   agentId: string,
 ) {
-  if (!record.request) return undefined;
-  const intent = record.request;
+  const intent = retirementSessionIdentity(record, agentId);
+  if (!intent) return undefined;
   if (
-    !record.sessionCreation?.sessionId ||
-    !record.sessionCreation.attempted ||
+    !intent.sessionId ||
     intent.agentId !== agentId ||
     (record.threadId && record.threadId !== intent.key) ||
     record.worktree !== intent.cwd
@@ -42,7 +42,7 @@ export async function observeRetiringSession(
   if (
     row.key !== key ||
     row.agentId !== agentId ||
-    row.sessionId !== record.sessionCreation.sessionId ||
+    row.sessionId !== intent.sessionId ||
     (row.spawnedCwd ?? row.workspaceDir) !== record.worktree
   )
     throw new Error('retirement-session-identity-changed');

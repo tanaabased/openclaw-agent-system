@@ -1,6 +1,7 @@
 import { codexItemOccupied } from './codex-capacity.ts';
 import projectPickup, { pickupAuthority, type PickupInput } from './project-pickup.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
+import { dispatchStorageNotice } from './dispatch-storage.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { ProjectPickupAuthority } from './project-pickup-authority.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
@@ -354,6 +355,13 @@ export async function inspectCodexIntake(pluginData: string, deps: CodexIntakeDe
     status: code ? 'blocked' : 'ready',
     ...(code ? { code, remediation: intakeRemediation(code) } : {}),
     ...context,
+    ...(context
+      ? {
+          storage: dispatchStorageNotice(
+            await new CodexDispatchStore(pluginData, context.scope).read(),
+          ),
+        }
+      : {}),
     baselineAt: state?.baselineAt ?? null,
     checkpoint: state?.checkpoint ?? null,
     blocker: state?.blocker ?? null,

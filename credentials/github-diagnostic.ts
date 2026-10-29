@@ -1,3 +1,4 @@
+import cliOutputComplete from '../api/cli-output-complete.ts';
 import { parseGitHubApiResponse } from '../channels/github/provider/api-response.ts';
 import type { AgentSystemCliResult } from '../api/types.ts';
 import githubCredentialRejected from './github-rejection.ts';
@@ -53,6 +54,7 @@ export function githubCliDiagnostic(
   result: AgentSystemCliResult,
   operation: ProviderDiagnostic['operation'] = 'api-request',
 ): ProviderDiagnostic {
+  if (!cliOutputComplete(result)) return githubDiagnostic({ timedOut: result.timedOut }, operation);
   const errorLine = result.stderr.match(/^gh: ([^\r\n]+)/mu)?.[1];
   const matchedStatus = errorLine?.match(/\(HTTP ([1-5]\d{2})\)\s*$/u);
   const status = matchedStatus

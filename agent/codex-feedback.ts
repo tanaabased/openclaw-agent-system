@@ -1,3 +1,5 @@
+import implementationMaterial from './implementation-material.ts';
+import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import {
   recordFeedbackImplementation,
   recordFeedbackResponse,
@@ -80,6 +82,7 @@ const requestSchema = Type.Object(
       Type.Literal('publish-approved'),
     ]),
     id: Type.Optional(Type.String()),
+    material: Type.Optional(implementationMaterialSchema),
     eventId: Type.Optional(Type.String()),
     digest: Type.Optional(Type.String()),
     decision: Type.Optional(feedbackDecisionSchema),
@@ -107,7 +110,9 @@ export default async function runCodexFeedback(
     return codexReply(pluginData, input, deps);
   if (
     !Value.Check(requestSchema, input) ||
-    (input.action !== 'next' && (!input.id || !input.eventId))
+    (input.action !== 'next' && (!input.id || !input.eventId)) ||
+    (input.material !== undefined &&
+      (input.action !== 'implementation-context' || input.decision !== undefined))
   )
     throw new Error('feedback-request-invalid');
   const current = await selectCodexIntake(pluginData, deps);
@@ -203,7 +208,7 @@ export default async function runCodexFeedback(
       if (fresh.sourceThreadId !== activation.sourceThreadId)
         throw new Error('feedback-schedule-owner-changed');
     }
-    return await store.exclusive(async (state, save, signal) => {
+    const response = await store.exclusive(async (state, save, signal) => {
       if (applyFeedbackScans(state.records, scans)) await save();
       if (input.action === 'next') {
         let policyObserved = false;
@@ -405,8 +410,10 @@ export default async function runCodexFeedback(
             deps.git,
             'handoff',
           );
-          record.effective = codexSessionSettings(record, found);
-          await save();
+          if (!input.material) {
+            record.effective = codexSessionSettings(record, found);
+            await save();
+          }
           if (operatorPublication) {
             if (selfFeedback) throw new Error('feedback-self-publication-denied');
             const retainedTurn = event.attempt?.turnId;
@@ -439,23 +446,26 @@ export default async function runCodexFeedback(
             }
             if (event.attempt.turnId && event.attempt.turnId !== receipt.turnId)
               throw new Error('feedback-turn-changed');
-            event.attempt.turnId = receipt.turnId;
-            delete event.retry;
-            delete event.retryAfter;
-            if (event.phase === 'prepared') event.phase = 'running';
-            if (receipt.ended && found.turnEnded && ['idle', 'notLoaded'].includes(found.status))
-              record.nativeInactive = true;
-            else delete record.nativeInactive;
-            if (receipt.ended && !event.publicationAttempted && input.action === 'next') {
-              event.previousTurnIds = [...(event.previousTurnIds ?? []), receipt.turnId];
-              event.resumed = (event.resumed ?? 0) + 1;
-              delete event.attempt;
-              delete event.code;
-              event.phase = 'queued';
+            if (!input.material) {
+              event.attempt.turnId = receipt.turnId;
+              delete event.retry;
+              delete event.retryAfter;
+              if (event.phase === 'prepared') event.phase = 'running';
+              if (receipt.ended && found.turnEnded && ['idle', 'notLoaded'].includes(found.status))
+                record.nativeInactive = true;
+              else delete record.nativeInactive;
+              delete record.capacityObservation;
+              if (receipt.ended && !event.publicationAttempted && input.action === 'next') {
+                event.previousTurnIds = [...(event.previousTurnIds ?? []), receipt.turnId];
+                event.resumed = (event.resumed ?? 0) + 1;
+                delete event.attempt;
+                delete event.code;
+                event.phase = 'queued';
+                await save();
+                continue;
+              }
               await save();
-              continue;
             }
-            await save();
             if (
               (input.action === 'next' || input.action === 'reconcile') &&
               !reconcilingPublication
@@ -494,6 +504,7 @@ export default async function runCodexFeedback(
               },
             };
             delete record.nativeInactive;
+            delete record.capacityObservation;
             event.phase = 'prepared';
             await save();
             return {
@@ -507,7 +518,7 @@ export default async function runCodexFeedback(
             const live = (await selectCodexIntake(pluginData, deps)).manifest.github!
               .notifications!;
             feedbackMode(record, live);
-            if (event.work?.result)
+            if (!input.material && event.work?.result)
               return {
                 status: 'finished',
                 result: event.work.result,
@@ -515,28 +526,33 @@ export default async function runCodexFeedback(
                 instructions:
                   'Reuse this retained outcome. Deliver done work through deliveryRuntime with id and eventId; otherwise retain the feedback response. A new answer is handled as new admitted feedback or native direction, never a timer retry.',
               };
-            const implementation = await beginFeedbackWork({
-              record,
-              event,
-              policy: live,
-              decision: input.decision,
-              workspace: current.workspace,
-              now,
-              pullRequest: record.delivery?.pullRequest,
-              resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
-            });
+            if (input.material && !event.work)
+              throw new Error('implementation-material-context-required');
+            const implementation = input.material
+              ? event.work!.selection
+              : await beginFeedbackWork({
+                  record,
+                  event,
+                  policy: live,
+                  decision: input.decision,
+                  workspace: current.workspace,
+                  now,
+                  pullRequest: record.delivery?.pullRequest,
+                  resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
+                });
             await save();
-            await codexIssueBranch({
-              record,
-              records: state.records,
-              intake: admitted,
-              workspace: current.workspace,
-              agentId: current.manifest.agent.id,
-              git: deps.git,
-              signal,
-              save,
-              prepare: true,
-            });
+            if (!input.material)
+              await codexIssueBranch({
+                record,
+                records: state.records,
+                intake: admitted,
+                workspace: current.workspace,
+                agentId: current.manifest.agent.id,
+                git: deps.git,
+                signal,
+                save,
+                prepare: true,
+              });
             return {
               ...implementationContext({
                 runtime: 'codex',
@@ -955,6 +971,17 @@ export default async function runCodexFeedback(
       }
       return { status: 'idle' };
     }, !['next', 'reconcile'].includes(input.action));
+    if (
+      input.action === 'implementation-context' &&
+      'resultContract' in response &&
+      response.resultContract === 'implementation-result/v1'
+    )
+      return implementationMaterial(
+        response,
+        { action: 'implementation-context', id: input.id, eventId: input.eventId },
+        input.material,
+      );
+    return response;
   } catch (error) {
     if (
       error &&

@@ -26,6 +26,10 @@
 - Treat preventing obvious cross-agent impersonation as a core product goal. Managed agents share an OS user, so provide practical agent-context and workspace guardrails without claiming complete isolation.
 - Keep the central native-tool instruction in `before_prompt_build`, inject descendant authority through `resolve_exec_env` for native execution, verify the configured per-agent `CODEX_HOME` for OpenClaw-hosted Codex execution, and keep the high-confidence operator-command gate in `before_tool_call`. Block with an actionable native retry instead of claiming transparent cross-tool rewriting, and never log the inspected raw command.
 
+## Runtime defaults
+
+- Inherit supported runtime and provider defaults unless a concrete Agent System invariant requires an override. Do not duplicate upstream constants or add arbitrary local caps. Document the invariant and verification for any exception; adapters without a host default must keep their own bounded, justified behavior.
+
 ## Policy design
 
 - Treat policy as manifest-configurable control over what a contained tool may do, not as the implementation of Agent System's non-configurable product invariants.
@@ -47,7 +51,8 @@
 - Keep the npm identity `@tanaab/openclaw-agent-system`, OpenClaw plugin id `agent-system`, and display name `Agent System` as separate contracts.
 - Keep `openclaw agent-system` canonical and `openclaw as` as its tested alias.
 - Follow [Skill Authoring](./skills/AGENTS.md) for skill terminology, naming, metadata, presentation assets, and identity changes.
-- Keep `package.json#codexTools.managedPaths` limited to the Codex runtime and skill paths owned by cache reconciliation; it does not control what native Codex copies during installation. After changing one of those paths in an installed source checkout, run `bun run codex:sync` and then `bun run codex:check`; use a fresh Codex task to verify skill discovery. Do not sync before the one-time Codex Tools install or after unrelated OpenClaw runtime changes.
+- Keep `package.json#codexTools.managedPaths` limited to the Codex runtime and skill paths owned by cache reconciliation; it does not control what native Codex copies during installation.
+- Do not update the live Codex installation during routine development or validation, including to resolve cache drift against a task worktree. Use isolated caches for development verification. For Me-managed installations, routine live updates belong to explicitly operator-requested Agent System Install against the trusted Me binding or the authorized nightly refresh, using merged `main` from the designated source checkouts with unchanged installation inputs. Do not invoke Install or direct cache sync incidentally during task work.
 - Use kebab-case for schema-owned YAML keys and camelCase inside TypeScript.
 - Keep `utils/encode.ts` and `utils/decode.ts` faithful to their Core Next behavior. Apply them through schema-aware callers; never deep-convert literal data maps such as environment-variable names or user-defined identifiers.
 
@@ -75,6 +80,10 @@
 - Resolve model work through its owning native runtime's trusted durable stage and context contracts. Unsupported workflows fail explicitly; provider prose and generic notification text never select another mode or authority.
 - Bind managed GitHub reply candidates to their native workflow and exact authorized source across process and runtime boundaries. Direct operator-invoked replies retain their verified operator context and exact destination through the shared reply owner; do not require a fabricated managed workflow or an additional approval step beyond the existing publication contract. Staging text alone never authorizes publication.
 - Keep the issue as the conversation owner after delivery, freeze each admitted comment's exact source, and reauthorize that source before publishing its reply. Preserve raw provider prose separately from visible mention substitution and treat it as untrusted context.
+
+## Storage design
+
+- Agent System-owned storage must distinguish routine cleanup, new-work admission pressure, and emergency protection. Justify limits with concrete invariants and measurements, reserve headroom for admitted work to progress and retire, and preserve committed state when a proposed save exceeds its budget.
 
 ## Test design
 

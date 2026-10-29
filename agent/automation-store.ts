@@ -39,6 +39,7 @@ const recordSchema = Type.Object(
         {
           kind: Type.Union([Type.Literal('create'), Type.Literal('update')]),
           nativeHash: hashSchema,
+          outputLimitOnly: Type.Optional(Type.Literal(true)),
         },
         { additionalProperties: false },
       ),

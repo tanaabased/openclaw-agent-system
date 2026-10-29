@@ -19,6 +19,7 @@ import {
   sessionDispatchDeadlineError,
 } from './session-dispatch-diagnostic.ts';
 import waitForSessionDispatchGateway, {
+  sessionDispatchReadinessTimeoutMs,
   type ReadinessOptions,
 } from './session-dispatch-readiness.ts';
 import type { ReadinessEvidence } from './session-dispatch-readiness-evidence.ts';
@@ -161,7 +162,7 @@ export async function useSessionDispatchClient<T>(
     },
     DEFAULT_PREAUTH_HANDSHAKE_TIMEOUT_MS +
       DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS +
-      (authority.waitForGateway ? 30_000 : 0),
+      (authority.waitForGateway ? sessionDispatchReadinessTimeoutMs : 0),
   );
   let failed = false;
   try {
@@ -182,7 +183,7 @@ export async function useSessionDispatchClient<T>(
               client.start();
             },
           },
-          { signal: startup.signal, timeoutMs: 30_000 },
+          { signal: startup.signal, timeoutMs: sessionDispatchReadinessTimeoutMs },
         )
       : Promise.resolve(client.start());
     const hello = await Promise.race([ready.promise, start.then(() => ready.promise)]).catch(

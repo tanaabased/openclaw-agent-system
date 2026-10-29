@@ -1,5 +1,6 @@
 import { setTimeout } from 'node:timers/promises';
 
+import cliOutputComplete from '../api/cli-output-complete.ts';
 import type { AgentSystemCliResult } from '../api/types.ts';
 import { githubCliDiagnostic } from '../credentials/github-diagnostic.ts';
 
@@ -21,10 +22,9 @@ export default async function retryGitHubRead(
   for (let attempt = 0; ; attempt++) {
     options.signal?.throwIfAborted();
     const result = await read(Math.max(1, deadline - now()));
+    if (!cliOutputComplete(result)) return result;
     const diagnostic = githubCliDiagnostic(result);
     const transient =
-      !result.timedOut &&
-      !result.truncated &&
       result.exitCode !== 0 &&
       ([502, 503, 504].includes(diagnostic.httpStatus ?? 0) ||
         (diagnostic.httpStatus === null &&

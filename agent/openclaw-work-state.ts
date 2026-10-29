@@ -34,6 +34,7 @@ export const openclawWorkStateSchema = Type.Object(
     deliveryTurn: Type.Optional(issueTurnSchema),
     code: Type.Optional(text),
     selection: Type.Optional(assessmentSelectionSchema),
+    contextSelection: Type.Optional(assessmentSelectionSchema),
     implementation: Type.Optional(input),
     publication: Type.Optional(input),
     caller: Type.Optional(input),

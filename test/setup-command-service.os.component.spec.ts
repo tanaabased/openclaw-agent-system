@@ -5,6 +5,7 @@ import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import AgentCommandAuthority from '../agent/command-authority.ts';
+import BoundCommandService from '../agent/bound-command-service.ts';
 import SetupCommandService, {
   type SetupCommandServiceDependencies,
 } from '../agent/setup-command-service.ts';
@@ -15,6 +16,7 @@ import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import { normalizeAgentSetup, type AgentSetupCommand } from '../manifest/setup-schema.ts';
 import { createGitHubTool } from '../tools/github/tool.ts';
 import { createGitTool } from '../tools/git/tool.ts';
+import automationLifecycleCommand from '../cli/automation-lifecycle.ts';
 
 const projectDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const childFixture = join(projectDir, 'test', 'setup-command-child.ts');
@@ -248,6 +250,85 @@ describe('agent/setup-command-service', function () {
     });
   }
 
+  it('should execute deterministic maintenance in its admitted owner through real descendant sockets', async () => {
+    const calls: string[] = [];
+    const service = new BoundCommandService({
+      ...dependencies,
+      executeLifecycle: (input, scope, signal) =>
+        automationLifecycleCommand(input, scope, signal, {
+          manifestService: {
+            async withSnapshot(_loaded, _signal, execute) {
+              return execute();
+            },
+          },
+          doctorService: {
+            async inspect(input) {
+              await input.assertCurrent?.();
+              calls.push('doctor');
+              return { agentId: 'emori', workspaceDir, status: 'healthy', findings: [] };
+            },
+          },
+          installService: {
+            async install(input) {
+              await input.assertCurrent?.();
+              input.assertEnrollmentCurrent?.();
+              assert.equal(input.sessionDispatchConsent, true);
+              assert.equal(input.skipSetupHost, undefined);
+              assert.equal(input.skipSetupAgent, undefined);
+              calls.push('install');
+              return { agentId: 'emori', workspaceDir, outcomes: [], warnings: [] };
+            },
+          },
+        }),
+    });
+    const result = await service.run(
+      command('openclaw agent-system status --json && openclaw agent-system install --json'),
+      {
+        agentId: 'emori',
+        workspaceDir,
+        captureOutput: true,
+        automation: { loaded, assertActive() {}, async assertCurrent() {} },
+      },
+    );
+    assert.equal(result.exitCode, 0);
+    assert.deepEqual(calls, ['doctor', 'install']);
+    assert.deepEqual(environmentCalls, []);
+    const client = new AgentCommandAuthority({
+      rootDir: authorityRoot,
+      manifestService: dependencies.manifestService,
+    });
+    await assert.rejects(client.resolve(childEnvironments.at(-1)!, workspaceDir));
+  });
+
+  it('should deny ordinary setup and explicit lifecycle target overrides before owner effects', async () => {
+    let calls = 0;
+    const service = new BoundCommandService({
+      ...dependencies,
+      async executeLifecycle() {
+        calls++;
+        return { exitCode: 0, stdout: '', stderr: '' };
+      },
+    });
+    const ordinary = await service.run(command('openclaw agent-system install --json'), {
+      agentId: 'emori',
+      workspaceDir,
+      mode: 'apply',
+    });
+    assert.equal(ordinary.exitCode, 1);
+    const overridden = await service.run(
+      command('openclaw agent-system doctor --agent emori --json'),
+      {
+        agentId: 'emori',
+        workspaceDir,
+        captureOutput: true,
+        automation: { loaded, assertActive() {}, async assertCurrent() {} },
+      },
+    );
+    assert.equal(overridden.exitCode, 1);
+    assert.equal(calls, 0);
+    assert.deepEqual(environmentCalls, []);
+  });
+
   function useBoundRunner(command: string, argv: string[], catchFailure = false) {
     dependencies.runCommandWithTimeout = async (_argv, options) => {
       assert.ok(typeof options === 'object');
@@ -268,6 +349,29 @@ describe('agent/setup-command-service', function () {
       };
     };
   }
+
+  it('should opt into bound output without changing setup privacy or authority cleanup', async () => {
+    dependencies.runCommandWithTimeout = async () => ({
+      ...success,
+      code: 17,
+      stdout: 'command output',
+      stderr: 'command error',
+    });
+    const target = { agentId: 'emori', workspaceDir };
+    const result = await new BoundCommandService(dependencies).run(command('exit 17'), {
+      ...target,
+      captureOutput: true,
+    });
+    assert.equal(result.exitCode, 17);
+    assert.equal(result.output?.stdout, 'command output');
+    assert.equal(result.output?.stderr, 'command error');
+    assert.deepEqual(await readdir(authorityRoot), []);
+    assert.equal(
+      (await new SetupCommandService(dependencies).run(command('exit 17'), target)).output,
+      undefined,
+    );
+    assert.deepEqual(await readdir(authorityRoot), []);
+  });
 
   it('should run pre-agent commands with host tools and without managed authority or secrets', async () => {
     const service = new SetupCommandService(dependencies);

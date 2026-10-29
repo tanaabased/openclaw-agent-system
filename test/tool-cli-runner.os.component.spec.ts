@@ -86,9 +86,7 @@ describe('api/cli-runner', () => {
         input: 'request-body',
         killGraceMs: 5_000,
         killProcessTree: true,
-        maxCombinedOutputBytes: 1024,
         maxOutputBytes: 1024,
-        outputCapture: 'head',
         signal: controller.signal,
         timeoutMs: 1000,
       });
@@ -100,9 +98,28 @@ describe('api/cli-runner', () => {
       resolvedExecutable: executable,
       stderr: '',
       stdout: 'selected',
+      termination: 'exit',
+      signal: null,
+      killed: false,
       timedOut: false,
       truncated: false,
     });
+  });
+
+  it('should inherit native capture defaults and preserve output above former caller ceilings', async () => {
+    const stdout = '€'.repeat(400_000) + '\nlate stdout error';
+    const stderr = 'x'.repeat(70_000) + '\nlate stderr error';
+    const runCli = createToolCliRunner(async (_argv, options) => {
+      assert.ok(typeof options === 'object');
+      for (const field of ['maxOutputBytes', 'maxCombinedOutputBytes', 'outputCapture'])
+        assert.equal(Object.hasOwn(options, field), false);
+      return { ...successfulResult, code: 17, stdout, stderr };
+    });
+    const result = await runCli({ ...request(), maxOutputBytes: undefined });
+    assert.equal(result.stdout, stdout);
+    assert.equal(result.stderr, stderr);
+    assert.equal(result.exitCode, 17);
+    assert.equal(result.truncated, false);
   });
 
   it('should close stdin when no command input is supplied', async () => {
@@ -130,6 +147,8 @@ describe('api/cli-runner', () => {
       assert.equal(result.stdout, 'abc');
       assert.equal(result.stderr, 'd');
       assert.equal(result.truncated, true);
+      for (const [key, value] of Object.entries(truncation))
+        assert.equal(Reflect.get(result, key), value);
       assert.equal(result.timedOut, false);
     }
   });

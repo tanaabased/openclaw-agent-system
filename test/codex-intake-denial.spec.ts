@@ -54,6 +54,28 @@ function fixture(items: Record<string, unknown>[], partial = false) {
 }
 
 describe('agent/codex-intake-denial', () => {
+  it('should retain an exact preparation denial beyond twenty metadata pages', async () => {
+    let page = 0;
+    const result = await intakeDenial(async (method, params) => {
+      assert.equal(params.limit, undefined);
+      if (method === 'thread/turns/list') {
+        page++;
+        return {
+          data: [{ id: page === 23 ? 'original' : `later-${page}` }],
+          nextCursor: page < 23 ? String(page) : null,
+        };
+      }
+      return {
+        data: (params.turnId === 'original' ? [boundary, denied] : []).map((item) => ({
+          turnId: params.turnId,
+          item,
+        })),
+        nextCursor: null,
+      };
+    }, record);
+    assert.equal(result?.callId, 'refusal');
+    assert.equal(page, 23);
+  });
   it('should bind path launches without replacing historical executable evidence', async () => {
     const pathAnchor: PreparationObservation = {
       ...anchor,

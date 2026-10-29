@@ -7,7 +7,7 @@ import { resolveToolExecutable } from '../api/cli-runner.ts';
 import type { AgentSetupCommand, AgentSetupShell } from '../manifest/setup-schema.ts';
 import isPathContained from '../utils/is-path-contained.ts';
 
-const maximumOutputBytes = 65_536;
+// opt-in debug release stays small and allowlisted; this does not limit process capture.
 const maximumDiagnosticBytes = 16_384;
 const inheritedEnvironmentNames = ['HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'TMP', 'TEMP'] as const;
 const inheritedOpenClawEnvironmentNames = [
@@ -24,6 +24,7 @@ const shellArguments: Record<AgentSetupShell, readonly string[]> = {
 
 export interface SetupExecutionContext {
   workspaceDir: string;
+  captureOutput?: boolean;
   /** Trusted host search directories, never taken from the manifest or child environment. */
   executableDirectories: readonly string[];
   /** Supplied by the authority owner; this runner never selects or authenticates an agent. */
@@ -41,6 +42,10 @@ export interface SetupCommandResult {
   truncated: boolean;
   termination?: SetupProcessResult['termination'];
   signal?: string | null;
+  output?: Pick<
+    SetupProcessResult,
+    'stdout' | 'stderr' | 'stdoutTruncatedBytes' | 'stderrTruncatedBytes'
+  >;
 }
 
 export interface SetupProcessResult {
@@ -61,9 +66,9 @@ export interface SetupProcessOptions {
   input: string;
   killGraceMs: number;
   killProcessTree: boolean;
-  maxCombinedOutputBytes: number;
-  maxOutputBytes: number;
-  outputCapture: 'head';
+  maxCombinedOutputBytes?: number;
+  maxOutputBytes?: number;
+  outputCapture?: 'head' | 'tail';
   signal?: AbortSignal;
   timeoutMs: number;
 }
@@ -247,9 +252,6 @@ export default function createSetupCommandRunner(dependencies: {
         env: environment,
         input: '',
         timeoutMs: command.timeoutSeconds * 1_000,
-        maxOutputBytes: maximumOutputBytes,
-        maxCombinedOutputBytes: maximumOutputBytes,
-        outputCapture: 'head',
         killGraceMs: commandTerminationGraceMs,
         killProcessTree: true,
         ...(signal === undefined ? {} : { signal }),
@@ -266,6 +268,16 @@ export default function createSetupCommandRunner(dependencies: {
         termination: result.termination,
         signal: result.signal,
         truncated: (result.stdoutTruncatedBytes ?? 0) > 0 || (result.stderrTruncatedBytes ?? 0) > 0,
+        ...(context.captureOutput
+          ? {
+              output: {
+                stdout: result.stdout,
+                stderr: result.stderr,
+                stdoutTruncatedBytes: result.stdoutTruncatedBytes,
+                stderrTruncatedBytes: result.stderrTruncatedBytes,
+              },
+            }
+          : {}),
       };
     } catch (error) {
       if (error instanceof SetupCommandError) throw error;

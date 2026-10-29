@@ -12,6 +12,9 @@ import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.t
 
 const prefix = 'call_notifications_';
 const identity = 'Name: Notification Tanaabot';
+export const retainedPlan =
+  'Add the cleanup rule after evidence is captured and review the diff.\n' +
+  'Retained evidence: preserve disposable fixture cleanup timing.\n'.repeat(390);
 const dispatchStages = [
   ...Array.from({ length: 8 }, (_, index) =>
     ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
@@ -23,6 +26,9 @@ const dispatchStages = [
   'refresh-result',
   'work-context',
   'work-result',
+  ...Array.from({ length: 64 }, (_, i) => `work-material-${i}`),
+  ...Array.from({ length: 64 }, (_, i) => `summary-material-${i}`),
+  ...Array.from({ length: 64 }, (_, i) => `assessment-material-${i}`),
   'recovery-present',
   'summary-compose',
   'summary-candidate',
@@ -98,6 +104,59 @@ function respond(
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
   };
+  const hydrate = (
+    context: Record<string, unknown>,
+    owner: 'work' | 'summary' | 'assessment',
+  ): FixtureResponse | undefined => {
+    const materials = context.contextMaterials as
+      | {
+          fields: Array<{
+            path: string[];
+            request: Record<string, unknown>;
+            digest: string;
+            length: number;
+          }>;
+          aliases: Array<{ path: string[]; from: string[] }>;
+        }
+      | undefined;
+    const locate = (path: string[]) => {
+      let parent = context;
+      for (const name of path.slice(0, -1)) {
+        parent[name] ??= {};
+        parent = parent[name] as Record<string, unknown>;
+      }
+      return { parent, name: path.at(-1)! };
+    };
+    let sequence = 0;
+    for (const field of [...(materials?.fields ?? [])].sort(
+      (a, b) => a.path.length - b.path.length,
+    )) {
+      let request: Record<string, unknown> | undefined = field.request;
+      let text = '';
+      while (request) {
+        const stage = `${owner}-material-${sequence++}`;
+        assert.ok(sequence <= 64);
+        const page = result(stage);
+        if (!page) return dispatch(stage, request);
+        assert.equal(page.status, 'material');
+        assert.ok(JSON.stringify(page).length < 64000);
+        const value = page.materialPage as { offset: number; digest: string; text: string };
+        assert.equal(value.offset, text.length);
+        assert.equal(value.digest, field.digest);
+        text += value.text;
+        request = page.next as Record<string, unknown> | undefined;
+      }
+      assert.equal(text.length, field.length);
+      const { parent, name } = locate(field.path);
+      parent[name] = JSON.parse(text);
+    }
+    for (const alias of materials?.aliases ?? []) {
+      const source = locate(alias.from);
+      const destination = locate(alias.path);
+      destination.parent[destination.name] = source.parent[source.name];
+    }
+    delete context.contextMaterials;
+  };
   const summary = (
     id: string,
     presentation?: string,
@@ -123,6 +182,17 @@ function respond(
       !skill?.path
     )
       return;
+    const paged = Boolean(composed.contextMaterials);
+    const pendingMaterial = hydrate(composed, 'summary');
+    if (pendingMaterial) return pendingMaterial;
+    if (holdSummary && paged) {
+      assert.equal(composed.privateResponse, retainedPlan);
+      const assessment = (
+        composed.verifiedOutcome as { assessment: { fullAssessment: string; plan: string } }
+      ).assessment;
+      assert.equal(assessment.fullAssessment, retainedPlan);
+      assert.equal(assessment.plan, retainedPlan);
+    }
     if (openClawAIMockToolResultText(messages, prefix + 'summary-skill') === undefined)
       return call('summary-skill', 'read', { path: skill.path });
     const candidate = result('summary-candidate');
@@ -266,7 +336,10 @@ function respond(
       return { content: 'The decision was interrupted before its result was recorded.' };
     const fresh = result('refresh-context');
     if (!fresh) return dispatch('refresh-context', { action: 'context', id: decisionId });
-    if (fresh.status !== 'verified' || fresh.mode !== 'auto' || !fresh.previousResult) return;
+    if (fresh.status !== 'verified' || fresh.mode !== 'auto') return;
+    const pendingAssessment = hydrate(fresh, 'assessment');
+    if (pendingAssessment) return pendingAssessment;
+    if (!fresh.previousResult) return;
     const saved = result('refresh-result');
     if (!saved)
       return dispatch('refresh-result', {
@@ -307,15 +380,22 @@ function respond(
   if (operatorId) {
     const context = result('work-context');
     if (!context)
-      return dispatch('work-context', { action: 'implementation-context', id: operatorId });
+      return dispatch('work-context', {
+        action: 'implementation-context',
+        id: operatorId,
+        ...(answerId ? { scope: 'local' } : {}),
+      });
     const path = (context.project as { path?: string } | undefined)?.path;
     if (
       context.status !== 'verified' ||
       context.runtime !== 'openclaw' ||
       !path ||
-      context.publicationAuthorized !== true
+      context.publicationAuthorized !== !answerId
     )
       return;
+    const pendingMaterial = hydrate(context, 'work');
+    if (pendingMaterial) return pendingMaterial;
+    if (holdSummary) assert.equal(context.plan, retainedPlan);
     if (
       context.pendingPublicResponse &&
       (context.pendingPublicResponse as { state?: string }).state !== 'blocked'
@@ -432,9 +512,14 @@ function respond(
         summary: 'Document disposable issue cleanup.',
         assessment: 'The admitted issue requests a small documentation change.',
         planSummary: 'Describe closing disposable test issues after capturing evidence.',
-        plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
-        fullAssessment:
-          'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation or publication was performed.',
+        reviewSummary:
+          'Document closing disposable test issues after evidence is captured; preserve the complete retained implementation plan.',
+        plan: holdSummary
+          ? retainedPlan
+          : 'Add the cleanup rule to the repository documentation and review the resulting diff.',
+        fullAssessment: holdSummary
+          ? retainedPlan
+          : 'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation or publication was performed.',
         evidence: [
           {
             source: project.path,

@@ -1,4 +1,5 @@
 import type { ProjectPickupState } from './project-pickup-state.ts';
+import { dispatchStorageNotice } from './dispatch-storage.ts';
 import { type default as assignmentIntakePolicy } from './assignment-intake-policy.ts';
 import {
   githubNotificationRuntimeBlocker,
@@ -199,10 +200,16 @@ export default class OpenClawNotifications {
           workflow: { phase, ...(record?.threadId ? { conversation: record.threadId } : {}) },
         };
       });
+      const storage = dispatchStorageNotice({
+        version: 1,
+        scope: store.location.scope,
+        ...journal,
+      });
       const code =
         (await this.dependencies.intake.readiness(manifest, workspace)) ?? state.blocker?.code;
       return {
         ...base,
+        storage,
         baseline: { status: 'ready', observedAt: state.baselineAt },
         scan: { completedAt: state.checkpoint, attemptedAt: state.lastAttemptAt },
         capacity: {
@@ -225,6 +232,7 @@ export default class OpenClawNotifications {
         ),
         status:
           code ||
+          storage.level !== 'normal' ||
           items.some(
             (item) =>
               (!selector ||
@@ -238,6 +246,7 @@ export default class OpenClawNotifications {
               : 'ready',
         code:
           code ??
+          (storage.level !== 'normal' ? 'dispatch-storage-' + storage.level : undefined) ??
           (state.checkpoint === undefined
             ? 'github-notification-scan-pending'
             : 'github-notification-status-ready'),

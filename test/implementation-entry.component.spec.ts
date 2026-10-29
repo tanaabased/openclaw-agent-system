@@ -1,3 +1,4 @@
+import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -88,6 +89,45 @@ describe('agent/implementation-entry', () => {
       deps,
     );
 
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should recover oversized ${runtime} retained material without changing scope or consumed inputs`, async () => {
+      deps.binding.runtime = runtime;
+      const largePlan = 'Complete engineering plan.\n'.repeat(1300);
+      const first = await call('context', { plan: largePlan });
+      assert.equal(first.status, 'verified');
+      assert.ok('publicationAuthorized' in first);
+      assert.equal(first.publicationAuthorized, false);
+      const store = new DirectEntryStore(
+        deps.root,
+        deps.binding,
+        implementationEntriesSchema,
+        'implementation',
+      );
+      const before = await store.exclusive(async (entries) => structuredClone(entries));
+      const count = selections.length;
+      const restored = await hydrateImplementation(first, async (request) =>
+        implementationEntry(request, deps),
+      );
+      assert.equal(restored.plan, largePlan);
+      assert.equal(restored.publicationAuthorized, false);
+      assert.deepEqual(await store.exclusive(async (entries) => entries), before);
+      assert.equal(selections.length, count);
+      assert.ok('contextMaterials' in first && first.contextMaterials);
+      const fields = (first.contextMaterials as { fields: Field[] }).fields;
+      const read = fields[0]!.request;
+      await assert.rejects(
+        implementationEntry({ ...read, id: 'b'.repeat(64) }, deps),
+        /implementation-entry-unavailable/,
+      );
+      const denied = {
+        ...deps,
+        assertCurrent: async () => {
+          throw new Error('current-owner-denied');
+        },
+      };
+      await assert.rejects(implementationEntry(read, denied), /current-owner-denied/);
+    });
+
   for (const runtime of ['codex', 'openclaw'] as const) {
     it(`should inject the configured ${runtime} implementation once and retain ordinary output unchanged`, async () => {
       deps.binding.runtime = runtime;
@@ -97,6 +137,7 @@ describe('agent/implementation-entry', () => {
       assert.equal(first.assessment, undefined);
       assert.equal(first.issueStage, 'implementation');
       assert.equal(first.resultContract, 'implementation-result/v1');
+      assert.ok('publicationAuthorized' in first);
       assert.equal(first.publicationAuthorized, false);
       assert.equal(first.entry, 'direct');
       const resumed = await call('context', { id: first.id });

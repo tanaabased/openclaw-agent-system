@@ -1063,7 +1063,7 @@ describe('agent/codex-delivery', () => {
     assert.ok(!gitCalls.some((argv) => argv.includes('push')));
     const published = await publish();
     assert.equal(published.status, 'published');
-    assert.equal(published.workflowStatus, 'partially-delivered');
+    assert.equal(published.workflowStatus, 'delivered-response-pending');
     assert.equal(pr!.title, 'Authored title');
     assert.equal(pr!.body, 'Authored body.\n\nCloses https://github.com/owner/repo/issues/3');
     assert.deepEqual(
@@ -1189,7 +1189,7 @@ describe('agent/codex-delivery', () => {
     assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
     assert.equal(linkReads, 5);
     const retained = await request('present');
-    assert.equal(retained.workflowStatus, 'partially-delivered');
+    assert.equal(retained.workflowStatus, 'delivery');
     assert.match(String(retained.presentation), /pull\/7/);
     wrongIssueLink = false;
     await publish();

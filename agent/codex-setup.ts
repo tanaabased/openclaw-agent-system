@@ -175,13 +175,24 @@ export async function inspectCodexSetup(
     context.manifest.github?.notifications,
     'codex',
   );
+  const intake = await inspectCodexIntake(pluginData, dependencies);
   return {
     status: 'inspected' as const,
     agentId: selected.agentId,
     workspaceDir: selected.workspaceDir,
     manifestDigest: selected.manifestDigest,
-    intake: await inspectCodexIntake(pluginData, dependencies),
+    intake,
     findings: [
+      ...(intake.storage && intake.storage.level !== 'normal'
+        ? [
+            {
+              component: 'github-notifications',
+              status: 'warning' as const,
+              code: 'dispatch-storage-' + intake.storage.level,
+              message: intake.storage.message,
+            },
+          ]
+        : []),
       ...(await lifecycle.inspect(context)),
       ...(await instanceIdentity(codexInstanceStore(pluginData)).inspect!(context)).map(
         (finding) => ({ ...finding, component: 'instance-identity' }),

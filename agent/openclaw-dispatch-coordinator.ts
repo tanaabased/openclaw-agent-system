@@ -1,4 +1,5 @@
 import projectPickupCapacity from './project-pickup-capacity.ts';
+import { dispatchStoragePressure } from './dispatch-storage.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   managedTargetUrl,
@@ -236,7 +237,8 @@ export default class OpenClawDispatchCoordinator {
           (record.blocker &&
             dispatchRetryDue(record, (this.context.dependencies.now ?? Date.now)()))),
     );
-    const pending = pendingAssignments(state, current.admitted)
+    const storagePaused = ['paused', 'emergency'].includes(dispatchStoragePressure(state).level);
+    const pending = (storagePaused ? [] : pendingAssignments(state, current.admitted))
       .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
       .filter(pendingAssignment)
       .some(
@@ -626,7 +628,8 @@ export default class OpenClawDispatchCoordinator {
         });
       return { status: continuationStatus(continuing)!, id: continuing.id };
     }
-    const pending = pendingAssignments(state, current.admitted)
+    const storagePaused = ['paused', 'emergency'].includes(dispatchStoragePressure(state).level);
+    const pending = (storagePaused ? [] : pendingAssignments(state, current.admitted))
       .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
       .filter(pendingAssignment)
       .filter(
@@ -696,11 +699,13 @@ export default class OpenClawDispatchCoordinator {
       return { status: 'at-capacity' as const };
     if (!pending)
       return {
-        status:
-          pass.selected.length ||
-          pendingAssignments(state, current.admitted)
-            .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
-            .some(pendingAssignment)
+        ...(storagePaused ? { code: 'dispatch-storage-admission-paused' } : {}),
+        status: storagePaused
+          ? 'at-capacity'
+          : pass.selected.length ||
+              pendingAssignments(state, current.admitted)
+                .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
+                .some(pendingAssignment)
             ? 'pass-completed'
             : 'idle',
       };

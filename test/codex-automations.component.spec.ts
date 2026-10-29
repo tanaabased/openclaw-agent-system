@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -319,44 +319,65 @@ describe('agent/codex-automations', () => {
     }
   });
 
-  it('should keep reviewed zoned schedules pending until saved and reuse their native identity', async () => {
+  it('should reject timezone-qualified creates before journaling a native proposal', async () => {
     const zoned = (zone = 'Europe/London', hour = 8) =>
       job().replace('every 1 hour', `{ cron: "0 ${hour} * * *", timezone: "${zone}" }`);
     await manifest(zoned());
-    const first = await inspect();
-    assert.equal(first.actions[0]!.review, true);
-    const prepared = await prepareCodexAutomation(pluginData, first.digest, inputs(), deps());
-    assert.equal(prepared.request.mode, 'suggested_create');
-    const proposal = { content: [{ type: 'text', text: 'Rendered automation card in the app.' }] };
     await assert.rejects(
-      acknowledgeCodexAutomation(pluginData, first.digest, proposal, deps()),
-      rejectsCode('automation-native-receipt-missing'),
+      prepareCodexAutomation(pluginData, (await inspect()).digest, inputs(), deps()),
+      (error: unknown) =>
+        !!error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'automation-dtstart-create-unsupported' &&
+        error instanceof Error &&
+        error.message.includes('does not support DTSTART recurrences'),
     );
-    await assert.rejects(
-      acknowledgeCodexAutomation(pluginData, first.digest, undefined, deps()),
-      rejectsCode('automation-review-pending'),
+    const afterFailure = await inspect();
+    assert.equal(afterFailure.status, 'requires-native-app-sync');
+    assert.equal(afterFailure.actions.length, 1);
+    assert.deepEqual(await readCodexAutomations(codexHome), []);
+    assert.deepEqual(
+      (await readdir(pluginData)).filter((name) =>
+        /^codex-automations-[a-f0-9]{64}\.json$/u.test(name),
+      ),
+      [],
     );
-    assert.deepEqual((await inspect()).actions, []);
-    await nativeWrite(first.actions[0]!.expected);
-    await acknowledgeCodexAutomation(pluginData, first.digest, undefined, deps());
-    assert.equal((await inspect()).status, 'aligned');
+  });
 
-    await manifest(zoned().replace('Review this workspace.', 'Review changed content.'));
-    const unrelated = await inspect();
-    assert.equal(unrelated.actions[0]!.review, undefined);
-    assert.equal(unrelated.actions[0]!.expected.rrule, first.actions[0]!.expected.rrule);
+  it('should directly create supported local-time cron schedules', async () => {
+    await manifest(job().replace('every 1 hour', '{ cron: "0 9 * * *" }'));
+    const plan = await inspect();
+    assert.equal(plan.actions[0]!.mode, 'create');
+    assert.equal(plan.actions[0]!.review, undefined);
+    const prepared = await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+    assert.equal(prepared.request.mode, 'create');
+    await nativeWrite(plan.actions[0]!.expected);
+    await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
+    assert.equal((await inspect()).status, 'aligned');
+  });
+
+  it('should directly create intervals and update timezone schedules in place', async () => {
+    const zoned = (zone = 'America/New_York', hour = 9) =>
+      job().replace('every 1 hour', `{ cron: "0 ${hour} * * *", timezone: "${zone}" }`);
+    const initial = await inspect();
+    assert.equal(initial.actions[0]!.mode, 'create');
+    assert.equal(initial.actions[0]!.review, undefined);
     await syncOne();
 
-    await manifest(zoned('America/New_York', 9));
+    await manifest(zoned());
     const edit = await inspect();
+    assert.equal(edit.actions[0]!.mode, 'update');
+    assert.equal(edit.actions[0]!.review, undefined);
     assert.equal(edit.actions[0]!.id, 'fixture-native');
-    const changed = await prepareCodexAutomation(pluginData, edit.digest, inputs(), deps());
-    assert.equal(changed.request.mode, 'suggested_update');
-    await assert.rejects(
-      acknowledgeCodexAutomation(pluginData, edit.digest, undefined, deps()),
-      rejectsCode('automation-review-pending'),
-    );
-    await nativeWrite({ ...edit.actions[0]!.expected, rrule: first.actions[0]!.expected.rrule });
+    const prepared = await prepareCodexAutomation(pluginData, edit.digest, inputs(), deps());
+    assert.equal(prepared.request.mode, 'update');
+    assert.equal(prepared.request.id, 'fixture-native');
+    assert.equal(prepared.request.rrule, edit.actions[0]!.expected.rrule);
+    assert.ok('projectId' in prepared.request);
+    assert.equal(prepared.request.projectId, 'fixture-project');
+    assert.equal(prepared.request.status, edit.actions[0]!.expected.status);
+    await nativeWrite({ ...edit.actions[0]!.expected, rrule: 'FREQ=HOURLY;BYMINUTE=0' });
     await assert.rejects(
       acknowledgeCodexAutomation(pluginData, edit.digest, undefined, deps()),
       rejectsCode('automation-readback-diverged'),
@@ -364,13 +385,16 @@ describe('agent/codex-automations', () => {
     await nativeWrite(edit.actions[0]!.expected);
     await acknowledgeCodexAutomation(pluginData, edit.digest, undefined, deps());
     assert.equal((await inspect()).status, 'aligned');
-    await manifest(zoned('America/New_York', 9) + '    enabled: false\n');
-    assert.equal((await inspect()).actions[0]!.review, undefined);
-    await syncOne();
+    const [saved] = await readCodexAutomations(codexHome);
+    assert.equal(saved!.id, 'fixture-native');
+    assert.equal(saved!.definition.rrule, edit.actions[0]!.expected.rrule);
+    assert.ok(saved!.definition.kind === 'cron');
+    assert.equal(saved!.definition.projectId, 'fixture-project');
+    assert.equal(saved!.definition.status, edit.actions[0]!.expected.status);
   });
 
-  it('should cancel dismissed review only when no possible saved create exists', async () => {
-    await manifest(job().replace('every 1 hour', '{ cron: "0 8 * * *", timezone: UTC }'));
+  it('should cancel a failed direct create only when no partial saved create exists', async () => {
+    await manifest(job());
     const plan = await inspect();
     await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
     await cancelCodexAutomation(pluginData, plan.digest, deps());
@@ -772,6 +796,10 @@ describe('agent/codex-automations', () => {
 
   it('should require an explicit verified thread and reject model overrides on heartbeats', async () => {
     await manifest(job('    overrides:\n      codex:\n        target: {thread: fixture-thread}\n'));
+    await appendFile(
+      join(workspace, 'agent.yaml'),
+      '\nmodels:\n  default:\n    model: openai/default\n    effort: high\n',
+    );
     assert.equal((await inspect()).findings[0]?.code, 'automation-thread-verification-required');
     const threads = [
       JSON.parse((await capture('lookups')).replaceAll('/workspace/fixture', workspace)).thread,
@@ -800,7 +828,7 @@ describe('agent/codex-automations', () => {
         '    overrides:\n      codex:\n        model: gpt-6-astra\n        target: {thread: fixture-thread}\n',
       ),
     );
-    assert.equal((await inspect()).findings[0]?.code, 'automation-thread-overrides-unsupported');
+    assert.equal((await inspect()).findings[0]?.code, 'automation-thread-settings-unowned');
   });
 
   it('should move an explicit chat after a group change without rewriting its schedule', async () => {

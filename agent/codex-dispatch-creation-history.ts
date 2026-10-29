@@ -1,5 +1,5 @@
 import { nativeObject } from './automation-gateway.ts';
-import { dispatchHistoryPages } from './codex-dispatch-history.ts';
+import { dispatchHistoryPages, nativeHistoryPages } from './codex-dispatch-history.ts';
 import type { CodexThreadRequest } from './codex-thread-client.ts';
 
 /** read complete native evidence from preparation forward without scanning unrelated older history. */
@@ -10,21 +10,15 @@ export default async function creationHistory(
   currentTurnId?: string,
 ) {
   const turns: Record<string, unknown>[] = [];
-  const cursors = new Set<string>();
   const ids = new Set<string>();
-  let cursor: string | undefined;
   let preparation: Record<string, unknown> | undefined;
   let newerStart = Infinity;
-  for (let page = 0; page < 20 && !preparation; page++) {
-    const result = await request('thread/turns/list', {
-      threadId,
-      itemsView: 'notLoaded',
-      sortDirection: 'desc',
-      limit: 50,
-      ...(cursor ? { cursor } : {}),
-    });
-    if (!Array.isArray(result.data) || !result.data.length) return;
-    for (const turn of result.data) {
+  for await (const page of nativeHistoryPages(request, 'thread/turns/list', {
+    threadId,
+    itemsView: 'notLoaded',
+    sortDirection: 'desc',
+  })) {
+    for (const turn of page) {
       if (
         !nativeObject(turn) ||
         typeof turn.id !== 'string' ||
@@ -63,14 +57,6 @@ export default async function creationHistory(
       }
     }
     if (preparation) break;
-    if (
-      typeof result.nextCursor !== 'string' ||
-      !result.nextCursor ||
-      cursors.has(result.nextCursor)
-    )
-      return;
-    cursor = result.nextCursor;
-    cursors.add(cursor);
   }
   if (!preparation) return;
   for (const turn of turns) {

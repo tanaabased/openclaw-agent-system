@@ -25,6 +25,55 @@ const job = (id: string) => ({
   state: {},
 });
 describe('agent/automation-gateway', () => {
+  it('should enable rejection capture only in explicitly debugged ci without retrying the mutation', async () => {
+    const previous = {
+      CI: process.env.CI,
+      OPENCLAW_DEBUG: process.env.OPENCLAW_DEBUG,
+      TEST_SECRET: process.env.TEST_SECRET,
+    };
+    try {
+      process.env.TEST_SECRET = 'opaque-test-secret';
+      for (const [ci, debug, capture] of [
+        ['false', '1', false],
+        ['true', '0', false],
+        ['true', '1', true],
+      ] as const) {
+        process.env.CI = ci;
+        process.env.OPENCLAW_DEBUG = debug;
+        let calls = 0;
+        const request = createAutomationGateway(async () => {
+          calls++;
+          throw Object.assign(
+            new Error('snapshot rejected for private-session with opaque-test-secret'),
+            {
+              name: 'GatewayClientRequestError',
+              gatewayCode: 'INVALID_REQUEST',
+              retryable: false,
+            },
+          );
+        });
+        await assert.rejects(
+          request('sessions.create', { key: 'private-session' }),
+          (error: unknown) => {
+            assert.ok(error instanceof AutomationError);
+            assert.equal(Boolean(error.diagnostic?.nativeRejection), capture);
+            assert.doesNotMatch(
+              JSON.stringify(error.diagnostic),
+              /opaque-test-secret|private-session/,
+            );
+            return true;
+          },
+        );
+        assert.equal(calls, 1);
+      }
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   for (const ending of ['success', 'timeout', 'cancel', 'shorter-deadline'] as const) {
     it(`should apply the creation budget at the cli sdk call for ${ending}`, async () => {
       const rpc = gatewayRequestFixture(
@@ -131,7 +180,13 @@ describe('agent/automation-gateway', () => {
         { id: 'fixture' },
         {
           progress: false,
-          scopes: [readOnly ? 'operator.read' : 'operator.admin'],
+          scopes: [
+            readOnly
+              ? 'operator.read'
+              : method.startsWith('sessions.')
+                ? 'operator.write'
+                : 'operator.admin',
+          ],
           ...(readOnly ? { sharedStateMode: 'read-only' } : {}),
         },
       ]);

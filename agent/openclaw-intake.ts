@@ -2,6 +2,7 @@ import { openClawItemOccupied } from './openclaw-capacity.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 import projectPickup, { pickupAuthority, type PickupInput } from './project-pickup.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
+import { dispatchStorageNotice } from './dispatch-storage.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { ProjectPickupAuthority } from './project-pickup-authority.ts';
 import DiscoveryBudget from './discovery-budget.ts';
@@ -149,6 +150,16 @@ export default class OpenClawIntake {
     return {
       status: code ? 'blocked' : 'ready',
       ...(code ? { code } : {}),
+      ...(this.dependencies.resetRoot
+        ? {
+            storage: dispatchStorageNotice(
+              await new OpenClawDispatchStore(
+                this.dependencies.resetRoot,
+                store.location.scope,
+              ).read(),
+            ),
+          }
+        : {}),
       baselineAt: state?.baselineAt ?? null,
       checkpoint: state?.checkpoint ?? null,
       records: state?.records ?? [],
@@ -275,6 +286,18 @@ export default class OpenClawIntake {
         if (result.code === 'github-notification-runtime-unsupported') return diagnostics;
         return [
           ...diagnostics,
+          ...(result.storage && result.storage.level !== 'normal'
+            ? [
+                {
+                  component: 'github-intake',
+                  status: 'warning' as const,
+                  code: 'dispatch-storage-' + result.storage.level,
+                  message: result.storage.message,
+                  remediation:
+                    'Reconcile verified retired history; keep existing work in its owning chat.',
+                },
+              ]
+            : []),
           {
             component: 'github-intake',
             status:

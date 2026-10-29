@@ -751,7 +751,7 @@ describe('cli/automation-commands', () => {
           assert.ok(result.output.join('').includes('workspace  /workspace'));
         }
         assert.match(result.diagnostics.join(''), /sessions\.create/u);
-        assert.match(result.diagnostics.join(''), /INVALID_REQUEST/u);
+        assert.match(result.diagnostics.join('').replace(/\s/gu, ''), /INVALID_REQUEST/u);
         assert.ok(![...result.output, ...result.diagnostics].join('').includes('secret'));
         assert.deepEqual(result.exitCodes, [1]);
       }

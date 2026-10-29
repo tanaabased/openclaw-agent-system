@@ -1,3 +1,4 @@
+import { assertDispatchStorage } from './dispatch-storage.ts';
 import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import IssueDeliveryProvider, {
   type GitHubNotificationIssueDeliveryReceipt,
@@ -220,12 +221,10 @@ export default async function issueLaunch<
       own?.reset ||
       own?.supersededBy ||
       own?.retirement ||
-      own?.nativeInactive ||
       record?.retirement ||
       record?.retired ||
       record?.reset ||
-      record?.supersededBy ||
-      record?.nativeInactive
+      record?.supersededBy
     )
       throw new Error('launch-owner-inactive');
     if (action.id && record?.id !== action.id) throw new Error('launch-receipt-mismatch');
@@ -290,6 +289,7 @@ export default async function issueLaunch<
       throw new Error('launch-selections-conflict');
     if (record && (!record.manualIssue || record.sourceThreadId !== context.binding.session))
       throw new Error('launch-preparation-owner-required');
+    if (!record?.request) assertDispatchStorage(state, true);
     if (!record) {
       record = input.create({
         id: manual.id,

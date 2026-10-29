@@ -10,7 +10,7 @@ Retire a second task whose completed session is missing, preserving its saved ev
 - A fresh assignment creating a distinct owner/branch from the repository base while preserving the retired branch's local commit.
 - Closed-issue archival and automatic removal of that fresh checkout despite a changed branch and modified/untracked files, preserving its commits and assessment.
 - Explicit retirement from an active turn remaining pending, followed by verified missing-session reconciliation and safe checkout removal without invented archival.
-- Offloading settled history above 2 MiB through an installed normal save, then retaining the terminal owner after loss of its cold copy.
+- Offloading verified retirement immediately, including legacy stale consumed turns below 2 MiB, through an installed normal save, then retaining the terminal owner after loss of its cold copy.
 
 ## What Does Not Belong Here
 
@@ -21,7 +21,7 @@ Retire a second task whose completed session is missing, preserving its saved ev
 ## Notes
 
 - Strict AIMock reuses assessment judgment and adds the existing digest-bound retirement preview/apply exchange. Real native execution must leave the request pending while its own turn is active.
-- The retention check seeds repeated copies of an already verified assessment only while the Gateway is stopped. It exercises the packed runtime after restart; it neither fabricates cleanup receipts nor runs a performance benchmark.
+- The retention check restores an archived fixture and seeds stale consumed-turn bookkeeping only while the Gateway is stopped. It exercises the packed runtime after restart; it neither fabricates cleanup receipts nor runs a performance benchmark.
 - The two native cases share a job but select their exact retained owners. No reset empties the journal between them; earlier retired attempts remain as independent history.
 - The fresh attempt is closed and retired before the missing-session case. Three 61-second waits preserve the existing lifecycle observation coverage with zero OpenClaw cleanup grace.
 - CI owns two disposable issues, their workspaces/state, and SSH registration. Only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule bound discovery; cleanup stops the Gateway before external changes.
@@ -133,7 +133,8 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-retired.json"
-jq -e --slurpfile before "$TMPDIR/notification-dispatch-before.json" '.retirement.worktreeRemovalObserved.source == "external-cleanup" and .retirement.worktreeRemovalAttemptedAt == null and .retirement.reason == "issue-closed" and .retired.at != null and .retirement.archivedAt != null and .retirement.worktreeRemovedAt != null and .result == $before[0].result and .threadId == $before[0].threadId' "$TMPDIR/notification-retired.json"
+jq -e --slurpfile before "$TMPDIR/notification-dispatch-before.json" '.retirement.worktreeRemovalObserved.source == "external-cleanup" and .retirement.worktreeRemovalAttemptedAt == null and .retirement.reason == "issue-closed" and .retired.at != null and .retirement.archivedAt != null and .retirement.worktreeRemovedAt != null and .retainedHistory.terminal == true and .retainedHistory.outcome.assessment == $before[0].result.outcome and .threadId == $before[0].threadId' "$TMPDIR/notification-retired.json"
+node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/history-pressure.ts" verify-result "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2" "$TMPDIR/notification-dispatch-before.json"
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.archived == true or .session.archivedAt != null'
 worktree=$(jq -er .worktree "$TMPDIR/notification-retired.json")
 test ! -e "$worktree"
@@ -152,7 +153,7 @@ openclaw agent-system notifications wait --repository tanaabased/big-test-bucket
 jq -es --slurpfile old "$TMPDIR/notification-retired.json" '[.[].records[] | select(.issueKey == $old[0].issueKey)] | if length == 2 then map(select(.retired == null))[0] else error("exactly two attempts required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-fresh.json"
 jq -e --slurpfile old "$TMPDIR/notification-retired.json" '.id != $old[0].id and .worktreeAttemptId == .id and .threadId != $old[0].threadId and .sessionCreation.verified == true and .result.outcome == "plan-ready"' "$TMPDIR/notification-fresh.json"
 conversation=$(jq -er .threadId "$TMPDIR/notification-fresh.json")
-openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e --slurpfile old "$TMPDIR/notification-retired.json" '.session.displayName == $old[0].request.label and .session.label == null'
+openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e --slurpfile before "$TMPDIR/notification-dispatch-before.json" '.session.displayName == $before[0].request.label and .session.label == null'
 worktree=$(jq -er .worktree "$TMPDIR/notification-fresh.json")
 test "$(git -C "$worktree" branch --show-current)" != "$(cat "$TMPDIR/notification-retired-branch")"
 test "$(git --git-dir="$(cat "$TMPDIR/notification-git-dir")" rev-parse "$(cat "$TMPDIR/notification-retired-branch")")" = "$(cat "$TMPDIR/notification-retired-tip")"
@@ -179,7 +180,8 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
 sleep 61
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es --slurpfile before "$TMPDIR/notification-fresh.json" '[.[].records[] | select(.id == $before[0].id)] | length == 1 and .[0].retired.at != null and .[0].retirement.archivedAt != null and .[0].retirement.worktreeRemovalAttemptedAt != null and .[0].retirement.worktreeRemovedAt != null and .[0].result == $before[0].result and .[0].threadId == $before[0].threadId' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --slurpfile before "$TMPDIR/notification-fresh.json" '[.[].records[] | select(.id == $before[0].id)] | length == 1 and .[0].retired.at != null and .[0].retirement.archivedAt != null and .[0].retirement.worktreeRemovalAttemptedAt != null and .[0].retirement.worktreeRemovedAt != null and .[0].retainedHistory.terminal == true and .[0].retainedHistory.outcome.assessment == $before[0].result.outcome and .[0].threadId == $before[0].threadId' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/history-pressure.ts" verify-result "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2" "$TMPDIR/notification-fresh.json"
 test ! -e "$(jq -er .worktree "$TMPDIR/notification-fresh.json")"
 test "$(git --git-dir="$(cat "$TMPDIR/notification-git-dir")" rev-parse "$(cat "$TMPDIR/notification-dirty-branch")")" = "$(cat "$TMPDIR/notification-dirty-tip")"
 
@@ -225,7 +227,8 @@ run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" 
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 id=$(jq -er .id "$TMPDIR/notification-unavailable-before.json")
 jq -es --arg id "$id" '[.[].records[] | select(.id == $id)] | if length == 1 then .[0] else error("one retained record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-unavailable-after.json"
-jq -e --slurpfile before "$TMPDIR/notification-unavailable-before.json" '.retirement.reason == "operator-requested" and .retired.at != null and .retirement.sessionUnavailableObserved.session == "not-found" and .retirement.archivedAt == null and .retirement.archiveAttempt == null and .retirement.worktreeRemovalAttemptedAt != null and .retirement.worktreeRemovedAt != null and .request == $before[0].request and .sessionCreation == $before[0].sessionCreation and .result == $before[0].result and .threadId == $before[0].threadId' "$TMPDIR/notification-unavailable-after.json"
+jq -e --slurpfile before "$TMPDIR/notification-unavailable-before.json" '.retirement.reason == "operator-requested" and .retired.at != null and .retirement.sessionUnavailableObserved.session == "not-found" and .retirement.archivedAt == null and .retirement.archiveAttempt == null and .retirement.worktreeRemovalAttemptedAt != null and .retirement.worktreeRemovedAt != null and .retainedHistory.sessionId == $before[0].sessionCreation.sessionId and .retainedHistory.terminal == true and .retainedHistory.outcome.assessment == $before[0].result.outcome and .threadId == $before[0].threadId' "$TMPDIR/notification-unavailable-after.json"
+node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/history-pressure.ts" verify-result "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2" "$TMPDIR/notification-unavailable-before.json"
 worktree=$(jq -er .worktree "$TMPDIR/notification-unavailable-after.json")
 test ! -e "$worktree"
 openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(.[]; .path != $path)'
@@ -234,7 +237,7 @@ openclaw agent-system tool worktree -- list | jq -e --arg path "$worktree" 'all(
 ## Retained History
 
 ```bash
-# should offload settled history through the installed save path after restart
+# should offload retired stale-turn detail below the soft trigger after restart
 openclaw-gateway stop --timeout 340
 node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/history-pressure.ts" seed "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2" "$TMPDIR/notification-unavailable-after.json"
 OPENCLAW_LOG_LEVEL=info openclaw-gateway start

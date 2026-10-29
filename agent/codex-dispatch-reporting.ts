@@ -22,7 +22,11 @@ import { type DispatchState, type DispatchRecord } from './codex-dispatch-state.
 
 import codexHostAccess from './codex-host-access.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
-import { dispatchFailurePhase, scheduleDispatchRetry } from './dispatch-retry.ts';
+import {
+  dispatchFailurePhase,
+  dispatchRecheckable,
+  scheduleDispatchRetry,
+} from './dispatch-retry.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import workflowFailure from './workflow-failure.ts';
 import workflowRecovery from './workflow-recovery.ts';
@@ -311,10 +315,14 @@ export async function failDispatch(
     record.retryAfter &&
     record.result.outcome === 'operator-setup-blocker'
   )
-    record.result.remediation =
-      'Automatic recovery will retry at or after ' +
-      new Date(record.retryAfter).toISOString() +
-      '. Preserve the retained request; no new stage approval is needed.';
+    record.result.remediation = dispatchRecheckable(code(error))
+      ? record.result.remediation +
+        ' Agent System will recheck at or after ' +
+        new Date(record.retryAfter).toISOString() +
+        '.'
+      : 'Automatic recovery will retry at or after ' +
+        new Date(record.retryAfter).toISOString() +
+        '. Preserve the retained request; no new stage approval is needed.';
   const shared = ['authentication', 'missing-credential'].includes(
     workflowFailure(error, 'dispatch-operation-failed').providerDiagnostic?.classification ?? '',
   );

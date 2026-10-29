@@ -1,3 +1,4 @@
+import implementationMaterial from './implementation-material.ts';
 import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
 import codexCapacity from './codex-capacity.ts';
 import { code as responseFailureCode } from './codex-dispatch-context.ts';
@@ -33,7 +34,11 @@ export default async function runCodexContinuation(
   input: unknown,
   deps: CodexContinuationDependencies = {},
 ) {
-  if (!Value.Check(requestSchema, input) || (input.action !== 'next' && !input.id))
+  if (
+    !Value.Check(requestSchema, input) ||
+    (input.action !== 'next' && !input.id) ||
+    (input.material !== undefined && input.action !== 'context')
+  )
     throw new Error('continuation-request-invalid');
   const current = await selectCodexIntake(pluginData, deps);
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
@@ -137,7 +142,7 @@ export default async function runCodexContinuation(
       if (decision.response) return decision.response;
       const decisionPending = decision.decisionPending;
       if (input.action !== 'next' && decisionPending) return decisionPending;
-      await prepareCodexWork(state, context);
+      if (!input.material) await prepareCodexWork(state, context);
       if (input.action === 'next') {
         for (const record of state.records) {
           if (state.continuationRun?.responses?.includes(record.id)) continue;
@@ -178,7 +183,6 @@ export default async function runCodexContinuation(
                 record.result &&
                 record.threadId &&
                 record.worktree &&
-                !record.handoff &&
                 !record.supersededBy &&
                 !record.retired &&
                 !record.retirement &&
@@ -200,6 +204,12 @@ export default async function runCodexContinuation(
       }
       return decisionPending ?? { status: 'idle' as const };
     }, input.action !== 'next');
+    if (
+      input.action === 'context' &&
+      'resultContract' in response &&
+      response.resultContract === 'implementation-result/v1'
+    )
+      return implementationMaterial(response, { action: 'context', id: input.id }, input.material);
     if (response.status !== 'deliver') return response;
     if (
       !input.delivery ||

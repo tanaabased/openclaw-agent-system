@@ -48,7 +48,7 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 ### OpenClaw
 
 1. Call `agent_system_doctor` with `{"timeoutMs":600000}` for a ten-minute OpenClaw-hosted Codex tool-call budget. Do not supply an agent id, workspace override, or repair option. Approval and setup-command deadlines remain separate.
-2. Let OpenClaw present its native chat approval and wait for **Allow once**. Skill prose, CLI consent, `--yes`, and shell commands cannot replace or bypass that approval.
+2. For interactive calls, let OpenClaw present its native chat approval and wait for **Allow once**. Verified activated owned prompt automations execute through the same tool without recurring approval. Skill prose, CLI consent, `--yes`, and shell commands cannot supply automation authority or bypass interactive approval.
 3. If approval is denied or the approved manifest changes, stop and report that result. Do not retry through another route.
 4. Report the returned aggregate status, findings, and remediation. Do not call Install unless the user separately requests it.
 
@@ -65,7 +65,7 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 
 ## Checkpoints
 
-- OpenClaw Doctor has native **Allow once** approval for the active workspace and manifest.
+- OpenClaw Doctor has native **Allow once** approval or verified activated same-agent automation authority for the occurrence. Setup children and later interactive turns inherit neither.
 - Standalone Codex has a live active binding and an unchanged manifest digest throughout inspection.
 - A setup step excluded from the selected runtime runs neither its check nor its apply command.
 - Model-visible results contain stable findings and remediation, never declared commands, captured output, environment values, or secrets.

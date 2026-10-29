@@ -139,21 +139,23 @@ Operator [list](./CLI.md#openclaw-agent-system-automations-list),
 [run](./CLI.md#openclaw-agent-system-automations-run), and
 [history](./CLI.md#openclaw-agent-system-automations-runs) use these same declarations.
 
-| Field             | Type                                                       | Required         | Default                                    | Description                                                                    |
-| ----------------- | ---------------------------------------------------------- | ---------------- | ------------------------------------------ | ------------------------------------------------------------------------------ |
-| `display-name`    | nonblank single-line string, up to 200 UTF-16 code units   | no               | runtime-owned                              | Automation label; independent of the persistent conversation name.             |
-| `enabled`         | boolean                                                    | no               | `true`                                     | Desired enabled state.                                                         |
-| `group`           | nonblank string                                            | no               | `AGENT SYSTEM` for persistent prompt chats | Sidebar destination; normalized to uppercase.                                  |
-| `id`              | lowercase kebab-case string                                | yes              | none                                       | Stable unique ID within the workspace.                                         |
-| `overrides`       | runtime mapping                                            | no               | none                                       | Prompt-only `openclaw` / `codex` settings below.                               |
-| `payload`         | command or prompt object                                   | one payload form | none                                       | `{ kind: command, run: ..., shell?: ... }` or `{ kind: prompt, prompt: ... }`. |
-| `prompt`          | nonblank string or `{ file: relative-path }`               | one payload form | none                                       | Inline text or UTF-8 prompt file.                                              |
-| `run`             | nonblank shell string, argv array, or `{ command, args? }` | one payload form | none                                       | Command; argv stays literal and ordered.                                       |
-| `runtimes`        | unique list of `openclaw` / `codex`                        | no               | both                                       | Runtime applicability.                                                         |
-| `schedule`        | string or object                                           | yes              | none                                       | Schedule forms below.                                                          |
-| `shell`           | `sh`, `bash`, or `zsh`                                     | no               | `sh`                                       | Shell strings only; place inside `payload` for long-form commands.             |
-| `thread`          | null, nonblank string, or `{ id?: string, name?: string }` | no               | independent                                | Persistent prompt conversation; at least one object field is required.         |
-| `timeout-seconds` | integer, 1–3600                                            | no               | runtime-owned                              | Job-level only. OpenClaw projection: 1800 seconds; Codex: native default.      |
+| Field             | Type                                                                                      | Required         | Default                                            | Description                                                                    |
+| ----------------- | ----------------------------------------------------------------------------------------- | ---------------- | -------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `display-name`    | nonblank single-line string, up to 200 UTF-16 code units                                  | no               | runtime-owned                                      | Automation label; independent of the persistent conversation name.             |
+| `effort`          | `none`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `adaptive`, `max`, or `ultra` | no               | selected profile effort, otherwise native          | Prompt-only; the selected runtime/model must support it.                       |
+| `enabled`         | boolean                                                                                   | no               | `true`                                             | Desired enabled state.                                                         |
+| `group`           | nonblank string                                                                           | no               | `AGENT SYSTEM` for persistent prompt chats         | Sidebar destination; normalized to uppercase.                                  |
+| `id`              | lowercase kebab-case string                                                               | yes              | none                                               | Stable unique ID within the workspace.                                         |
+| `model`           | provider-qualified model or `default`, `low`, `medium`, `high`                            | no               | `models.default` when configured, otherwise native | Prompt-only shared model selection.                                            |
+| `overrides`       | runtime mapping                                                                           | no               | none                                               | Prompt-only `openclaw` / `codex` settings below.                               |
+| `payload`         | command or prompt object                                                                  | one payload form | none                                               | `{ kind: command, run: ..., shell?: ... }` or `{ kind: prompt, prompt: ... }`. |
+| `prompt`          | nonblank string or `{ file: relative-path }`                                              | one payload form | none                                               | Inline text or UTF-8 prompt file.                                              |
+| `run`             | nonblank shell string, argv array, or `{ command, args? }`                                | one payload form | none                                               | Command; argv stays literal and ordered.                                       |
+| `runtimes`        | unique list of `openclaw` / `codex`                                                       | no               | both                                               | Runtime applicability.                                                         |
+| `schedule`        | string or object                                                                          | yes              | none                                               | Schedule forms below.                                                          |
+| `shell`           | `sh`, `bash`, or `zsh`                                                                    | no               | `sh`                                               | Shell strings only; place inside `payload` for long-form commands.             |
+| `thread`          | null, nonblank string, or `{ id?: string, name?: string }`                                | no               | independent                                        | Persistent prompt conversation; at least one object field is required.         |
+| `timeout-seconds` | integer, 1–3600                                                                           | no               | runtime-owned                                      | Job-level only. OpenClaw projection: 1800 seconds; Codex: native default.      |
 
 Use exactly one of `run`, `prompt`, or `payload`. Commands reuse
 [setup command syntax](#syntax), without setup checks, steps, or timeout defaults.
@@ -174,6 +176,26 @@ automations:
     prompt: Refresh the workspace summary.
     thread: { name: NIGHTLY REFRESH }
 ```
+
+Model selection is shared by both runtimes. A named [model profile](#models) supplies
+model and effort; a missing requested profile is an error. An explicit model inherits
+`models.default.effort` when available. An explicit automation effort replaces the
+inherited effort. Finally, runtime overrides replace model and effort independently.
+Codex shared models must use the `openai/` provider; Codex runtime overrides may still
+use unqualified native model IDs.
+
+Install applies these settings to new and existing managed chats and verifies saved
+readback. The same resolved pair feeds independent jobs and schedule drift detection.
+Jobs sharing an OpenClaw chat must agree on settings. Explicit runtime targets are
+not owned chats: they keep their native settings and do not inherit `models.default`.
+Explicit automation or runtime model/effort settings are rejected for those targets.
+Command jobs reject model and effort.
+
+> [!IMPORTANT]
+> Workspaces declaring `models` now use `models.default` for prompt automations that
+> omit `model`, except unowned runtime targets. Review this before Install: it can change cost or availability.
+> Without shared or runtime settings and without `models`, native inheritance remains.
+> Removing a desired field stops managing it; it does not reset the chat's saved native setting.
 
 Each `overrides.openclaw` or `overrides.codex` object accepts only:
 
@@ -291,11 +313,33 @@ launchers, which check tool policy before loading credentials. Other executables
 as host commands under the same [containment limits](./CLI.md#trust-boundary) as setup.
 Rerun Install after changing a command declaration.
 
+Approving and activating an owned automation also authorizes its same-agent Install
+and Doctor calls for that occurrence, without another permission setting or recurring
+chat approval. Command jobs can call `openclaw agent-system install` and
+`openclaw agent-system doctor` (or `status`); prompt jobs use the native lifecycle tools,
+including OpenClaw-hosted Codex. The target comes from the verified job binding, never
+`--agent`, a replacement workspace, or prompt text. Ordinary setup children and later
+interactive turns do not inherit this authority. Expired, cancelled, changed, or
+unverifiable runs are refused; correct the reported condition before requesting another run.
+Install runs normal applicable setup unless the author chooses its supported skip
+options. Doctor runs checks without repairs. Activation does not override provider
+permissions, enrollment/pairing requirements, shared prerequisites, or the native
+prompt tools' operator-only scheduler-sync limitation. Standalone Codex retains its
+[native approval boundary](#codex-execution-and-ownership).
+
 Prompt jobs normally start a separate session for the configured agent. They use its
-native model and effort defaults unless you specify a model and supported thinking
-level. Persistent jobs reuse their verified session and conversation history.
-Results stay in native run history unless you configure delivery. Command summaries
-report status codes without script output or credentials.
+resolved shared model and effort, then runtime overrides; absent settings inherit
+native defaults. Persistent jobs reuse their verified session and conversation history.
+Results stay in native run history unless you configure delivery. Command runs retain
+bounded stdout and stderr, even without delivery. Authorized Gateway operators can
+inspect output and truncation in run details; setup output stays private. Agent System
+inherits OpenClaw capture defaults and forwards captured output without another cap.
+Install and automation sync migrate existing managed command jobs with an explicit
+`outputMaxBytes` to 16 MiB per stream, preserving their IDs, schedules, routing and
+history. The native update API cannot clear that field, so migrated jobs retain this
+fixed compatibility value; new jobs omit it and inherit OpenClaw defaults. Scheduled
+command execution remains available before sync and while an output-limit-only
+update is pending, including after a lost update acknowledgement.
 
 Timeouts include startup and range from 1 to 3600 seconds (default 1800). OpenClaw
 controls overlapping runs of the same job, retries, recovery, and daylight saving time;
@@ -335,13 +379,13 @@ Codex supports this subset of the shared declarations:
 
 | Manifest field                                    | Codex behavior                                                                                                                                                                                                                                                                                              |
 | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `overrides.codex.effort`, `overrides.codex.model` | Independent jobs inherit omitted values from the ambient Codex home's top-level configuration at sync time. Named configuration profiles require explicit overrides. Later default changes appear as drift; native Codex decides model/effort availability.                                                 |
+| `overrides.codex.effort`, `overrides.codex.model` | Override shared model and effort independently. Remaining omissions on independent jobs inherit the ambient Codex home's top-level configuration. Native model catalog support is checked for managed chats.                                                                                                |
 | `overrides.codex.target`                          | Defaults to an independent job in the one saved local project matching the bound workspace. `{ thread: existing-id }` selects an existing local chat there; model and effort overrides are rejected for these explicit chat targets.                                                                        |
 | `prompt`, `payload`                               | Recurring prompts, including prompts asking a model to run a script.                                                                                                                                                                                                                                        |
 | `run`                                             | Zero-model commands are unsupported, including `payload.kind: command`.                                                                                                                                                                                                                                     |
 | `schedule`                                        | Whole-minute intervals from 1 to 1440 or whole-hour intervals from 1 to 999. Cron supports one minute every hour, or one daily time with daily, weekday, or month-day selection across all months. Multiple-job expressions and unsupported day-field combinations are rejected; one-shots are unsupported. |
 | `schedule.timezone`                               | Omit or use `null` for native local time. Named IANA zones map directly to native `DTSTART;TZID=…` recurrence rules; UTC uses a UTC start. Available for every supported cron shape, including hourly. `native` is not accepted.                                                                            |
-| `thread`                                          | Creates a persistent conversation per automation. Explicit model and effort overrides set initial native chat settings; later drift requires the native chat controls.                                                                                                                                      |
+| `thread`                                          | Creates a persistent conversation per automation. Resolved model and effort apply at creation and through later Install updates, preserving the chat and its permissions.                                                                                                                                   |
 | `timeout-seconds`                                 | Unsupported. Native timeout, concurrency, retry, and catch-up rules apply.                                                                                                                                                                                                                                  |
 
 Independent jobs require one saved local project matching the bound workspace;
@@ -352,9 +396,11 @@ New automation chats use native `auto_review`, `workspace-write`, and `on-reques
 approvals. Install verifies saved permissions; existing ready chats keep theirs.
 Native review may still deny an action. Install does not add global approval rules.
 
-Save the native review card when creating or changing a schedule with a timezone.
-A proposal alone does not apply the schedule. Unrelated edits preserve its recurrence;
-Codex controls timezones, daylight saving time, and missed runs.
+Install reports `automation-dtstart-create-unsupported` before journaling a proposal
+when a new timezone-qualified schedule requires `DTSTART`. Keep the requested timezone;
+do not replace it with local time. Timezone changes to existing schedules use direct
+updates, and Install verifies the saved schedule and target. Codex controls timezones,
+daylight saving time, and missed runs.
 
 > [!WARNING]
 > In Codex desktop version 26.1021.22027 (21747), named-zone scheduling can use the
@@ -371,10 +417,21 @@ notification preferences remain native-owned. Install leaves unchanged jobs alon
 Removed declarations pause jobs and retain history; reintroduced IDs reuse them.
 Unrelated jobs are not adopted by name. Unknown saved schemas stop inspection.
 
-For `automation-thread-model-drift`, change the model and effort in the existing chat's
-native controls, then rerun Install. After an interrupted update, use the Install skill
-to check what was saved before retrying. Missing jobs, conflicting state, or concurrent
-edits can block an update; earlier verified changes remain applied.
+For `automation-thread-model-drift`, rerun Install to reconcile the existing managed
+chat. Doctor reports requested and observed values without applying changes. Codex
+settings updates require CLI `0.160.1` or newer and its experimental settings API;
+unsupported native operations remain explicit errors. Settings-only updates never
+create a replacement chat or generate a model turn.
+
+`automation-thread-settings-busy` means Codex still owns the chat's writer, which can
+include an idle desktop-loaded chat. Release that chat in the native app and rerun
+Install. Agent System does not interrupt it or schedule an automatic idle retry.
+In either runtime, `automation-thread-settings-denied` or
+`automation-thread-settings-uncertain` retains the attempt without replay. Inspect
+native settings and, if needed, apply the retained request shown by Doctor through
+supported native controls. Matching saved values clear the receipt on a later Install. Correcting
+authorization alone does not replay a denied attempt; do not delete ownership records.
+A conflict or missing chat stops the update; earlier verified changes remain applied.
 
 For `automation-journal-busy`, confirm no installation or synchronization is running
 before removing only the stale Agent System `.lock` directory. Never edit native
@@ -742,8 +799,10 @@ command defaults to a 600-second timeout. Only the direct command object accepts
 `timeout-seconds`, an integer from `1` through `3600`; strings and arrays retain
 the default.
 
-Commands start in the bound workspace with closed stdin and a 64 KiB combined
-output capture limit. Timeouts terminate the command's process tree. Ordinary
+Commands start in the bound workspace with closed stdin. OpenClaw owns command
+capture defaults. Standalone Codex has no host capture API, so its process adapter
+retains the last 512 KiB per stream independently (at most 1 MiB of raw output),
+with truncation counts. Timeouts terminate the command's process tree. Ordinary
 runs report step ids, setup owner (`setup-host` or `setup-agent`), check/apply
 phase (including checks after apply), and known exit codes, timeouts, signals, or
 execution failures. Unavailable termination details stay unknown; command

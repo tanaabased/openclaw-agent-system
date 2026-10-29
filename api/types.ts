@@ -42,6 +42,11 @@ export interface AgentSystemCliResult {
   stdout: string;
   timedOut: boolean;
   truncated: boolean;
+  stdoutTruncatedBytes?: number;
+  stderrTruncatedBytes?: number;
+  termination?: 'exit' | 'signal' | 'timeout' | 'no-output-timeout';
+  signal?: string | null;
+  killed?: boolean;
 }
 
 export interface AgentSystemCliRunRequest {
@@ -50,7 +55,7 @@ export interface AgentSystemCliRunRequest {
   environment: NodeJS.ProcessEnv;
   executable: string;
   excludedExecutableDirectories?: string[];
-  maxOutputBytes: number;
+  maxOutputBytes?: number;
   signal?: AbortSignal;
   stdin?: string;
   timeoutMs: number;

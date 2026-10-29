@@ -88,7 +88,7 @@ function connectionFixture(
               milliseconds,
               DEFAULT_PREAUTH_HANDSHAKE_TIMEOUT_MS +
                 DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS +
-                (authority.waitForGateway ? 30_000 : 0),
+                (authority.waitForGateway ? 90_000 : 0),
             );
             deadline = callback;
             return () => {
@@ -295,7 +295,7 @@ describe('credentials/session-dispatch-client', () => {
     assert.equal(f.calls.at(-1), 'shutdown');
   });
 
-  it('should allow install verification to finish when a reload delays hello past twelve seconds', async () => {
+  it('should reserve authentication time after a cold reload consumes most of the readiness budget', async () => {
     let deadlineMs = 0;
     let expire = () => {};
     const result = await useSessionDispatchClient(
@@ -309,15 +309,16 @@ describe('credentials/session-dispatch-client', () => {
       { waitForGateway: true },
       async () => 'verified',
       {
-        async waitForGateway() {
-          return { ready: true, elapsedMs: 0, maxDriftMs: 0, checks: 1, aborted: false };
+        async waitForGateway(_port, _authority, options) {
+          assert.equal(options.maxWaitMs, 90_000);
+          return { ready: true, elapsedMs: 85_000, maxDriftMs: 0, checks: 1, aborted: false };
         },
         createClient(options) {
           assert.equal(options.deviceToken, 'retained-device');
           return {
             start() {
-              // a reload starts after the readiness observation and delays hello until 14s.
-              if (deadlineMs <= 14_000) expire();
+              // readiness consumes 85s, then authentication takes another 14s.
+              if (deadlineMs <= 99_000) expire();
               else
                 options.onHelloOk!({ auth: { scopes: [] } } as unknown as Parameters<
                   NonNullable<GatewayClientOptions['onHelloOk']>
@@ -338,6 +339,7 @@ describe('credentials/session-dispatch-client', () => {
       },
     );
     assert.equal(result, 'verified');
+    assert.equal(deadlineMs, 135_000);
   });
 
   for (const deadline of [false, true]) {

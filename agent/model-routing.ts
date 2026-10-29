@@ -2,6 +2,7 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import {
+  explicitModelEfforts,
   externalAgentModelsSchema,
   type AgentModelsConfiguration,
 } from '../manifest/models-schema.ts';
@@ -84,18 +85,7 @@ export function selectRoutingOverrides(
   const selection = { ...profile, ...overrides };
   if (
     !Value.Check(selectedProfileSchema, selection) ||
-    ![
-      'none',
-      'off',
-      'minimal',
-      'low',
-      'medium',
-      'high',
-      'xhigh',
-      'adaptive',
-      'max',
-      'ultra',
-    ].includes(selection.effort)
+    !(explicitModelEfforts as readonly string[]).includes(selection.effort)
   ) {
     throw new RoutingError(
       'model-routing-selection-unsupported',

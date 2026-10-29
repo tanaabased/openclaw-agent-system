@@ -56,7 +56,11 @@ export const codexContinuationStateSchema = Type.Object(
     clarificationTurnId: Type.Optional(text),
     blockedTurnId: Type.Optional(text),
     activeTurnId: Type.Optional(text),
-    handoffs: Type.Optional(Type.Array(Type.Required(dispatchRecordProperties.handoff))),
+    handoffs: Type.Optional(
+      Type.Array(
+        Type.Object(dispatchRecordProperties.handoff.properties, { additionalProperties: false }),
+      ),
+    ),
     selection: assessmentSelectionSchema,
     assessmentDigest: Type.Optional(hash),
     assessmentSelectionDigest: Type.Optional(hash),

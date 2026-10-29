@@ -1,3 +1,4 @@
+import workflowStatus from './workflow-status.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   managedTargetUrl,
@@ -25,7 +26,12 @@ import assessmentSummary from './assessment-summary.ts';
 import { automationHash } from './automation-hash.ts';
 import dispatchContext from './dispatch-context.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
-import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
+import {
+  dispatchFailurePhase,
+  dispatchFailureStatus,
+  dispatchRetryDue,
+  scheduleDispatchRetry,
+} from './dispatch-retry.ts';
 import redactFeedback from './feedback-redaction.ts';
 import selectFeedbackStage from './feedback-stage.ts';
 import issueProgression from './issue-progression.ts';
@@ -388,7 +394,7 @@ export default class OpenClawDispatchIssue {
         event.phase = 'blocked';
       await save();
       return {
-        status: event.phase === 'blocked' ? 'blocked' : dispatchFailurePhase(event, code, error),
+        status: event.phase === 'blocked' ? 'blocked' : dispatchFailureStatus(event, code, error),
         id: record.id,
         eventId: event.id,
         nextAction: code === 'feedback-composition-changed' ? 'compose' : 'next',
@@ -566,19 +572,35 @@ export default class OpenClawDispatchIssue {
           ) {
             if (!record.request || !('key' in record.request))
               throw new Error('dispatch-work-context-mismatch');
+            if (
+              input.material &&
+              (!record.work?.selection ||
+                !record.progression ||
+                record.progression.stage !== 'implementation')
+            )
+              throw new Error('implementation-material-context-required');
             const previous = record.work?.selection;
             const configured = (await this.context.validateLocal(manifest, workspace, record, true))
               .manifest.github?.notifications?.issueAssignment?.implementation;
-            const selected = (
-              await selectWorkflowStage({
-                stage: 'implementation',
-                configuration: { ...configured, ...record.manualIssue?.selections?.implementation },
-                workspace: current.workspace,
-                observedAt: previous?.observedAt ?? now,
-                resolveSkill: (id) =>
-                  openClawSkill(request, record.request as { key: string; agentId: string }, id),
-              })
-            ).selection;
+            const selected = input.material
+              ? (record.work!.contextSelection ?? previous!)
+              : (
+                  await selectWorkflowStage({
+                    stage: 'implementation',
+                    configuration: {
+                      ...configured,
+                      ...record.manualIssue?.selections?.implementation,
+                    },
+                    workspace: current.workspace,
+                    observedAt: previous?.observedAt ?? now,
+                    resolveSkill: (id) =>
+                      openClawSkill(
+                        request,
+                        record.request as { key: string; agentId: string },
+                        id,
+                      ),
+                  })
+                ).selection;
             // retain selection with the context that first enters implementation.
             const response = await openClawWorkAction({
               record,
@@ -594,6 +616,7 @@ export default class OpenClawDispatchIssue {
             });
             if (record.work) {
               record.work.selection ??= selected;
+              if (!input.material) record.work.contextSelection = selected;
               await save();
             }
             return {
@@ -708,10 +731,10 @@ export default class OpenClawDispatchIssue {
             signal.throwIfAborted();
             const code = openClawDispatchFailureCode(error);
             return {
-              status: dispatchFailurePhase({}, code, error),
+              status: dispatchFailureStatus({}, code, error),
               workflowStatus: record.work?.delivery?.pullRequest
-                ? 'partially-delivered'
-                : dispatchFailurePhase({}, code, error),
+                ? workflowStatus(record)
+                : dispatchFailureStatus({}, code, error),
               id: record.id,
               ...workflowFailure(error, code),
               code: code === 'dispatch-operation-failed' ? 'delivery-provider-failed' : code,
@@ -744,6 +767,7 @@ export default class OpenClawDispatchIssue {
           const expected = record.request;
           const recovery = record.resultTurnId !== caller.runId;
           return assessmentSummary({
+            runtime: 'openclaw',
             recovery,
             record,
             intake,

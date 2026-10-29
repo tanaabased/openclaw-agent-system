@@ -1,3 +1,5 @@
+import { observeCodexActivity } from './codex-capacity-reconcile.ts';
+import codexCapacity from './codex-capacity.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import codexWorkContext from './codex-work-context.ts';
 import recordCodexWorkResult from './codex-work-result.ts';
@@ -15,7 +17,13 @@ import type { DispatchRecord, DispatchState } from './codex-dispatch-state.ts';
 import codexHostAccess from './codex-host-access.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import codexSessionSettings from './codex-session-settings.ts';
-import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
+import {
+  dispatchFailurePhase,
+  dispatchFailureStatus,
+  dispatchRetryDue,
+  scheduleDispatchRetry,
+  dispatchRecheckable,
+} from './dispatch-retry.ts';
 import { feedbackWorkStarted } from './feedback-work.ts';
 import issueProgression, { retainedIssueProgression } from './issue-progression.ts';
 import issueWorkflowProgress from './issue-workflow-progress.ts';
@@ -42,7 +50,6 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
         !record.project ||
         !record.worktree ||
         !record.request ||
-        (record.handoff && !(input.action === 'context' && context.operatorInput)) ||
         record.supersededBy ||
         record.retired ||
         record.retirement ||
@@ -54,6 +61,13 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
           admitted,
           context.operatorInput ? 'continued-work' : 'implementation',
         )
+      )
+        continue;
+      if (
+        input.action === 'next' &&
+        record.implementationPreparationError &&
+        !record.retry &&
+        !dispatchRecheckable(record.implementationPreparationError)
       )
         continue;
       if (record.retry && (record.retryAfter ?? 0) > (deps.now ?? Date.now)()) continue;
@@ -74,15 +88,14 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
           selection: selected.selection,
           policyDigest: notificationAuthorityDigest(current.manifest.github?.notifications),
         };
+        delete record.implementationPreparationError;
         delete record.retry;
         delete record.retryAfter;
       } catch (error) {
         if (codexHostAccess(error)) throw error;
         const code = workflowFailure(error, 'continuation-selection-unavailable').code;
-        if (!scheduleDispatchRetry(record, code, error, (deps.now ?? Date.now)())) {
-          record.retry = { code, attempts: 1 };
-          record.retryAfter = (deps.now ?? Date.now)() + 300000;
-        }
+        scheduleDispatchRetry(record, code, error, (deps.now ?? Date.now)());
+        record.implementationPreparationError = code;
       }
       await save();
     }
@@ -108,6 +121,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
   try {
     const work = record.continuation;
     if (
+      !input.material &&
       work?.phase === 'blocked' &&
       ['continuation-auto-wait', 'continuation-assessment-not-actionable'].includes(
         work.code ?? '',
@@ -118,7 +132,12 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       delete work.code;
       delete work.retryAfter;
     }
-    if (work?.phase === 'blocked' && work.code === 'continuation-turn-ended' && !retry) {
+    if (
+      !input.material &&
+      work?.phase === 'blocked' &&
+      work.code === 'continuation-turn-ended' &&
+      !retry
+    ) {
       work.phase =
         work.result?.outcome === 'done'
           ? 'delivery'
@@ -134,7 +153,6 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       !record.worktree ||
       !record.project ||
       !record.request ||
-      (record.handoff && !(input.action === 'context' && context.operatorInput)) ||
       record.supersededBy ||
       record.retired ||
       record.retirement ||
@@ -146,7 +164,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     if (
       input.action === 'next' &&
       ((work.retry && !dispatchRetryDue(work, (deps.now ?? Date.now)())) ||
-        (work.code && (work.retryAfter ?? 0) > (deps.now ?? Date.now)()))
+        (work.code && !work.retry))
     )
       return undefined;
     if (!occurrence && !retry && caller !== record.threadId)
@@ -202,6 +220,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     };
     if (!['reconcile', 'cancel', 'result'].includes(input.action)) await authorizeLive();
     if (
+      !input.material &&
       !work.attempt &&
       !work.binding &&
       (input.action === 'next' ||
@@ -222,7 +241,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       });
       work.selection = selected.selection;
     }
-    delete work.policyHeld;
+    if (!input.material) delete work.policyHeld;
     if (enteringImplementation && liveMode === 'auto' && !context.operatorInput) {
       if (!record.result.decision) throw new WorkflowPolicyHeld('auto-decision-required');
       if (
@@ -274,6 +293,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       (await realpath(found.cwd)) !== (await realpath(record.worktree))
     )
       throw new Error('continuation-native-binding-mismatch');
+    observeCodexActivity(record, found, (deps.now ?? Date.now)());
     await verifyDispatchWorktree(
       record.project,
       found.cwd,
@@ -281,6 +301,16 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       git,
       work.attempt || record.handoff ? 'handoff' : undefined,
     );
+    if (input.material) {
+      if (!retainedIssueProgression(record))
+        throw new Error('implementation-material-context-required');
+      return codexWorkContext(
+        record,
+        context,
+        { client, repo, admitted, selection: work.selection },
+        true,
+      );
+    }
     record.effective = codexSessionSettings(record, found);
     await save();
     if (input.action === 'cancel') {
@@ -327,6 +357,8 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     });
     if (!turn.ready) return turn.response;
     const { activeAttempt, receipt, currentTurnEnded } = turn;
+    delete work.code;
+    await save();
     if (input.action === 'context') {
       if (record.handoff) {
         (work.handoffs ??= []).push(record.handoff);
@@ -364,6 +396,15 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       ['idle', 'notLoaded'].includes(found.status) &&
       ['implementation', 'delivery'].includes(issueWorkflowProgress(record).action)
     ) {
+      if (
+        codexCapacity(
+          context.records.filter((entry) => entry.id !== record.id),
+          current.policy!.policy.maxConcurrentItems,
+        ).available === 0
+      )
+        return undefined;
+      delete record.nativeInactive;
+      delete record.capacityObservation;
       work.retries = [
         ...(work.retries ?? []),
         {
@@ -411,7 +452,6 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       throw error;
     if (record.continuation) {
       record.continuation.code = workflowFailure(error, 'continuation-operation-failed').code;
-      record.continuation.retryAfter = (deps.now ?? Date.now)() + 300000;
       scheduleDispatchRetry(
         record.continuation,
         record.continuation.code,
@@ -424,11 +464,11 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     }
     return {
       status: record.continuation
-        ? dispatchFailurePhase(record.continuation, record.continuation.code!, error)
-        : 'waiting',
+        ? dispatchFailureStatus(record.continuation, record.continuation.code!, error)
+        : 'needs-attention',
       id: record.id,
       ...workflowFailure(error, 'continuation-operation-failed'),
-      nextAction: 'next',
+      nextAction: record.continuation?.retry ? 'next' : 'context',
     };
   }
 }

@@ -1,6 +1,7 @@
+import cliOutputComplete from '../api/cli-output-complete.ts';
 import type { AgentSystemCliResult } from '../api/types.ts';
 
 /** A confirmed authentication rejection invalidates credentials; it never authorizes replay. */
 export default function githubCredentialRejected(result: AgentSystemCliResult): boolean {
-  return result.exitCode !== 0 && !result.timedOut && /\(HTTP 401\)/u.test(result.stderr);
+  return result.exitCode !== 0 && cliOutputComplete(result) && /\(HTTP 401\)/u.test(result.stderr);
 }

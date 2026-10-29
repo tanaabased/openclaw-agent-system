@@ -1,3 +1,4 @@
+import { dispatchStoragePressure } from './dispatch-storage.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import issueChatTitle from './issue-chat-title.ts';
 import {
@@ -29,6 +30,7 @@ import { automationHash } from './automation-hash.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
 import codexCapacity, { codexUnresolvedRetirement } from './codex-capacity.ts';
+import { dispatchRecheckable } from './dispatch-retry.ts';
 import { dispatchCheckDigest } from './codex-dispatch-check.ts';
 import {
   code,
@@ -278,12 +280,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         entry.request &&
         !entry.supersededBy &&
         !entry.denial &&
-        !entry.handoff &&
-        (codexUnresolvedRetirement(entry) ||
-          ((entry.threadId || entry.receiptThreadId) &&
-            (['blocked', 'waiting', 'retrying'].includes(entry.phase) ||
-              (entry.continuation && ['blocked', 'cancelled'].includes(entry.continuation.phase)) ||
-              entry.feedback?.events.some((event) => event.phase === 'blocked' && event.attempt)))),
+        (codexUnresolvedRetirement(entry) || entry.threadId || entry.receiptThreadId),
     )
     .sort((a, b) => (a.capacityObservation?.at ?? 0) - (b.capacityObservation?.at ?? 0))
     .filter(
@@ -322,6 +319,9 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
       (record.phase !== 'blocked' ||
         (record.result?.outcome === 'operator-setup-blocker' &&
           record.result.code === 'dispatch-assignment-superseded')) &&
+      (record.result?.outcome !== 'operator-setup-blocker' ||
+        Boolean(record.retry) ||
+        dispatchRecheckable(record.result.code)) &&
       (record.retryAfter ?? 0) <= now,
   )) {
     const intake = dispatchAdmission(pending, admitted.records);
@@ -411,6 +411,8 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
       return fail(pending, error);
     }
   }
+  if (['paused', 'emergency'].includes(dispatchStoragePressure(state).level))
+    return { ...(await checked('at-capacity')), code: 'dispatch-storage-admission-paused' };
   const intake = pendingDispatchAssignments(state, admitted, codexUnresolvedRetirement)
     .filter(({ intake }) => !liveWorkflowPolicy(current.manifest, 'codex', intake))
     .find(
@@ -425,6 +427,10 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         !record?.request &&
         (!deps.claims || record?.claimPass !== (tx.operatorInput?.turnId ?? state.run!.id)) &&
         (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
+        (record?.result?.outcome !== 'operator-setup-blocker' ||
+          Boolean(record.retry) ||
+          dispatchRecheckable(record.result.code) ||
+          record.intakeId !== intake.id) &&
         (record?.retryAfter ?? 0) <= now,
     )?.intake;
   if (!intake)

@@ -8,7 +8,9 @@ import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import AgentLifecycleApproval from '../agent/lifecycle-approval.ts';
+import AgentLifecycleApproval, {
+  type LifecycleAutomationAuthorization,
+} from '../agent/lifecycle-approval.ts';
 import AgentInstallService from '../agent/install-service.ts';
 import AgentDoctorService from '../agent/doctor-service.ts';
 import SetupLifecycleService from '../agent/setup-lifecycle.ts';
@@ -31,7 +33,11 @@ setup:
       apply: apply-approved
 `;
 
-async function fixture(agentId = 'data') {
+async function fixture(
+  agentId = 'data',
+  automation?:
+    LifecycleAutomationAuthorization | (() => LifecycleAutomationAuthorization | undefined),
+) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'lifecycle-approval-')));
   roots.push(root);
   await writeFile(join(root, 'agent.yaml'), manifest.replace('id: data', `id: ${agentId}`));
@@ -84,6 +90,9 @@ async function fixture(agentId = 'data') {
     }),
   );
   const approval = new AgentLifecycleApproval({
+    ...(automation
+      ? { automation: async () => (typeof automation === 'function' ? automation() : automation) }
+      : {}),
     manifestService: service,
     doctorService: new AgentDoctorService({ lifecycleRegistry }),
     installService: new AgentInstallService({
@@ -122,6 +131,79 @@ afterEach(async () => {
 });
 
 describe('agent/lifecycle-approval', () => {
+  it('should require interactive approval on a later turn in the same persistent automation chat', async () => {
+    let scheduled = true;
+    const authorization = { assertActive() {}, async assertCurrent() {} };
+    const f = await fixture('data', () => (scheduled ? authorization : undefined));
+    assert.deepEqual(
+      await f.approval.request('agent_system_doctor', {}, { ...f.context, runId: 'scheduled' }),
+      {},
+    );
+    scheduled = false;
+    const interactive = await f.approval.request(
+      'agent_system_doctor',
+      {},
+      { ...f.context, runId: 'interactive' },
+    );
+    assert.ok(interactive.requireApproval);
+    await assert.rejects(f.approval.execute('agent_system_doctor', {}, 'call', f.toolContext));
+    assert.equal(f.calls.length, 0);
+  });
+  for (const name of lifecycleToolNames) {
+    it(`should execute activated automation ${name} without interactive consent`, async () => {
+      let active = true;
+      const assertActive = () => {
+        if (!active) throw new Error('occurrence closed');
+      };
+      const f = await fixture('data', { assertActive, assertCurrent: async () => assertActive() });
+      assert.deepEqual(await f.approval.request(name, {}, f.context), {});
+      const result = await f.approval.execute(name, {}, 'call', {
+        ...f.toolContext,
+        assertInvocationCurrent: assertActive,
+      });
+      assert.equal(result.agentId, 'data');
+      assert.ok(f.calls.includes(name === 'agent_system_install' ? 'reconcile' : 'inspect'));
+      if (name === 'agent_system_install') assert.ok(f.calls.includes('check-approved'));
+      active = false;
+      await assert.rejects(f.approval.request(name, {}, f.context));
+    });
+
+    it(`should refuse cancelled automation ${name} before credentials or lifecycle effects`, async () => {
+      let active = true;
+      const assertActive = () => {
+        if (!active) throw new Error('occurrence closed');
+      };
+      const f = await fixture('data', { assertActive, assertCurrent: async () => assertActive() });
+      await f.approval.request(name, {}, f.context);
+      active = false;
+      await assert.rejects(
+        f.approval.execute(name, {}, 'call', {
+          ...f.toolContext,
+          assertInvocationCurrent: assertActive,
+        }),
+      );
+      assert.deepEqual(f.calls, []);
+    });
+  }
+
+  it('should preserve automation setup choices and stop before effects after changed options', async () => {
+    const f = await fixture('data', { assertActive() {}, async assertCurrent() {} });
+    await f.approval.request('agent_system_install', { skipSetup: true }, f.context);
+    await assert.rejects(
+      f.approval.execute('agent_system_install', {}, 'call', {
+        ...f.toolContext,
+        assertInvocationCurrent() {},
+      }),
+    );
+    assert.equal(f.calls.length, 0);
+    await f.approval.request('agent_system_install', { skipSetup: true }, f.context);
+    await f.approval.execute('agent_system_install', { skipSetup: true }, 'call', {
+      ...f.toolContext,
+      assertInvocationCurrent() {},
+    });
+    assert.ok(f.calls.includes('reconcile'));
+    assert.ok(!f.calls.includes('check-approved'));
+  });
   for (const name of lifecycleToolNames) {
     it(`should revalidate an approved ${name} across both hooks and execute only once`, async () => {
       const f = await fixture();

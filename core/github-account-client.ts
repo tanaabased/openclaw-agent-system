@@ -1,3 +1,4 @@
+import cliOutputComplete from '../api/cli-output-complete.ts';
 import GitHubRequestCooldown from './github-request-cooldown.ts';
 import retryGitHubRead from './github-read-retry.ts';
 import { parseGitHubApiResponse } from '../channels/github/provider/api-response.ts';
@@ -30,8 +31,6 @@ const baselineEnvironmentNames = [
   'TMP',
   'TMPDIR',
 ] as const;
-const defaultMaximumOutputBytes = 65_536;
-const maximumOutputBytes = 1024 * 1024;
 const defaultTimeoutMs = 30_000;
 
 export interface GitHubAccountClientDependencies {
@@ -122,7 +121,7 @@ function connectionError(message: string, evidence?: ProviderDiagnostic): GitHub
 }
 
 function parseIdentity(result: AgentSystemCliResult): GitHubAccountIdentity {
-  if (result.exitCode !== 0 || result.timedOut || result.truncated) {
+  if (result.exitCode !== 0 || !cliOutputComplete(result)) {
     throw new GitHubAccountClientError(
       'github-account-identity-failed',
       'The GitHub account identity check did not complete successfully.',
@@ -170,17 +169,22 @@ function parseIdentity(result: AgentSystemCliResult): GitHubAccountIdentity {
 }
 
 function normalizedExecutionOptions(options: GitHubAccountExecutionOptions | undefined): {
-  maxOutputBytes: number;
+  maxOutputBytes?: number;
   timeoutMs: number;
 } {
-  const requestedMaximum = Number.isFinite(options?.maxOutputBytes)
-    ? (options?.maxOutputBytes ?? defaultMaximumOutputBytes)
-    : defaultMaximumOutputBytes;
+  if (
+    options?.maxOutputBytes !== undefined &&
+    (!Number.isSafeInteger(options.maxOutputBytes) || options.maxOutputBytes < 1)
+  )
+    throw new GitHubAccountClientError(
+      'github-account-output-limit-invalid',
+      'The output limit must be a positive safe integer.',
+    );
   const requestedTimeout = Number.isFinite(options?.timeoutMs)
     ? (options?.timeoutMs ?? defaultTimeoutMs)
     : defaultTimeoutMs;
   return {
-    maxOutputBytes: Math.max(1, Math.min(maximumOutputBytes, Math.floor(requestedMaximum))),
+    ...(options?.maxOutputBytes === undefined ? {} : { maxOutputBytes: options.maxOutputBytes }),
     timeoutMs: Math.max(1, Math.min(120_000, Math.floor(requestedTimeout))),
   };
 }
@@ -326,7 +330,9 @@ export default class GitHubAccountClient {
             environment,
             executable: 'gh',
             excludedExecutableDirectories,
-            maxOutputBytes: limits.maxOutputBytes,
+            ...(limits.maxOutputBytes === undefined
+              ? {}
+              : { maxOutputBytes: limits.maxOutputBytes }),
             ...(requestSignal ? { signal: requestSignal } : {}),
             ...(stdin === undefined ? {} : { stdin }),
             timeoutMs: limits.timeoutMs,
@@ -394,7 +400,6 @@ export default class GitHubAccountClient {
             environment: profileEnvironment(configDirectory),
             executable: 'gh',
             excludedExecutableDirectories,
-            maxOutputBytes: defaultMaximumOutputBytes,
             ...(signal ? { signal } : {}),
             ...(stdin === undefined ? {} : { stdin }),
             timeoutMs,

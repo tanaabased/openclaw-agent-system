@@ -6,7 +6,9 @@
 
 Doctor inspects the active agent's configuration and runs declared setup checks without
 applying repairs. It uses the same service as the operator CLI and requires native chat
-approval through OpenClaw.
+approval through OpenClaw. A verified activated owned prompt automation uses the
+same tool without recurring approval; see
+[automation authorization](../../MANIFEST.md#openclaw-execution-and-ownership).
 
 <a id="configuration"></a>
 
@@ -24,7 +26,7 @@ reports `automation-requires-operator-sync`.
 
 ## `agent_system_doctor`
 
-Request approval, then inspect the active workspace. Declared checks require
+For interactive calls, request approval, then inspect the active workspace. Declared checks require
 approval even though Doctor applies no repairs; see [chat approval](../../CLI.md#chat-approval).
 
 ### Parameters

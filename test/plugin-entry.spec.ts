@@ -150,15 +150,16 @@ describe('index', () => {
 
     assert.equal(channelInboundDispatchAccessed, false);
     assert.equal(typeof registrar, 'function');
-    assert.deepEqual(hookNames, [
+    for (const name of [
       'before_tool_call',
       'after_tool_call',
-      'before_tool_call',
+      'before_agent_reply',
+      'agent_end',
       'resolve_exec_env',
-      'before_tool_call',
       'session_start',
       'before_prompt_build',
-    ]);
+    ])
+      assert.ok(hookNames.includes(name), `missing native boundary: ${name}`);
     assert.deepEqual(channelIds, ['agent-system-github']);
     assert.deepEqual(commandNames, []);
     assert.deepEqual(

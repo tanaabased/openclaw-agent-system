@@ -57,8 +57,8 @@ describe('agent/issue-workflow-progress', () => {
       };
       if (runtime === 'codex') issue.delivery = delivery;
       else issue.work!.delivery = delivery;
-      assert.deepEqual(issueWorkflowProgress(issue), { action: 'complete', status: 'complete' });
-      assert.equal(workflowStatus(issue), 'complete');
+      assert.deepEqual(issueWorkflowProgress(issue), { action: 'complete', status: 'delivered' });
+      assert.equal(workflowStatus(issue), 'delivered');
       if (runtime === 'codex') {
         issue.continuation!.head = 'new';
         assert.equal(issueWorkflowProgress(issue).action, 'delivery');
@@ -69,7 +69,7 @@ describe('agent/issue-workflow-progress', () => {
       delivery.announcement.code = 'delivery-announcement-unconfirmed';
       assert.deepEqual(issueWorkflowProgress(issue), {
         action: 'delivery',
-        status: 'partially-delivered',
+        status: 'delivered-response-pending',
         publicationPending: false,
       });
       delivery.announcement.code = undefined;
@@ -85,8 +85,11 @@ describe('agent/issue-workflow-progress', () => {
       const issue = record('done');
       if (runtime === 'codex') issue.continuation!.scope = 'local';
       else issue.work!.scope = 'local';
-      assert.deepEqual(issueWorkflowProgress(issue), { action: 'complete', status: 'complete' });
-      assert.equal(workflowStatus(issue), 'complete');
+      assert.deepEqual(issueWorkflowProgress(issue), {
+        action: 'complete',
+        status: 'publication-held',
+      });
+      assert.equal(workflowStatus(issue), 'publication-held');
       if (runtime === 'codex') issue.continuation!.scope = 'pull-request';
       else issue.work!.scope = 'pull-request';
       assert.equal(issueWorkflowProgress(issue).action, 'delivery');
