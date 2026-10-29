@@ -13,7 +13,8 @@ replace inherited fields, and runtime overrides still win per field. Workspaces
 without model configuration retain native inheritance.
 
 Install now reconciles existing managed chat settings as well as new chats. Explicit
-runtime targets remain unowned and cannot receive inherited or explicit settings.
+runtime targets remain unowned: omitted settings preserve the chat's native choices
+even when `models.default` is configured. Explicit job settings remain rejected.
 See [automation configuration and recovery](./MANIFEST.md#automations) for precedence,
 busy chats, and denied or uncertain updates.
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -772,6 +772,10 @@ describe('agent/codex-automations', () => {
 
   it('should require an explicit verified thread and reject model overrides on heartbeats', async () => {
     await manifest(job('    overrides:\n      codex:\n        target: {thread: fixture-thread}\n'));
+    await appendFile(
+      join(workspace, 'agent.yaml'),
+      '\nmodels:\n  default:\n    model: openai/default\n    effort: high\n',
+    );
     assert.equal((await inspect()).findings[0]?.code, 'automation-thread-verification-required');
     const threads = [
       JSON.parse((await capture('lookups')).replaceAll('/workspace/fixture', workspace)).thread,

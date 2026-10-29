@@ -64,14 +64,40 @@ describe('agent/automation-models', () => {
         () => automationModels(jobs({ model: 'low' }), { default: models.default }, runtime),
         { code: 'automation-model-profile-missing' },
       );
-      assert.throws(
-        () =>
+      const unowned = jobs({ overrides: { [runtime]: { target: { thread: 'unowned' } } } });
+      assert.deepEqual(automationModels(unowned, models, runtime), unowned);
+      for (const settings of [
+        { model: 'default' },
+        { effort: 'low' },
+        {
+          overrides: { [runtime]: { target: { thread: 'unowned' }, effort: 'high' } },
+        },
+        {
+          overrides: { [runtime]: { target: { thread: 'unowned' }, model: 'openai/explicit' } },
+        },
+      ])
+        assert.throws(
+          () =>
+            automationModels(
+              jobs({
+                overrides: { [runtime]: { target: { thread: 'unowned' } } },
+                ...settings,
+              }),
+              models,
+              runtime,
+            ),
+          { code: 'automation-thread-settings-unowned' },
+        );
+      assert.equal(
+        automationContent(automationModels(unowned, models, runtime)[0]!, runtime).hash,
+        automationContent(
           automationModels(
-            jobs({ overrides: { [runtime]: { target: { thread: 'unowned' } } } }),
-            models,
+            unowned,
+            { default: { model: 'openai/changed', effort: 'high' } },
             runtime,
-          ),
-        { code: 'automation-thread-settings-unowned' },
+          )[0]!,
+          runtime,
+        ).hash,
       );
     });
     it(`should detect profile changes without changing schedule anchors for ${runtime}`, () => {

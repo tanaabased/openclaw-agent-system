@@ -187,12 +187,13 @@ use unqualified native model IDs.
 Install applies these settings to new and existing managed chats and verifies saved
 readback. The same resolved pair feeds independent jobs and schedule drift detection.
 Jobs sharing an OpenClaw chat must agree on settings. Explicit runtime targets are
-not owned chats: desired model/effort, including inherited defaults, are rejected for
-those targets. Command jobs reject model and effort.
+not owned chats: they keep their native settings and do not inherit `models.default`.
+Explicit automation or runtime model/effort settings are rejected for those targets.
+Command jobs reject model and effort.
 
 > [!IMPORTANT]
 > Workspaces declaring `models` now use `models.default` for prompt automations that
-> omit `model`. Review this before Install: it can change cost or availability.
+> omit `model`, except unowned runtime targets. Review this before Install: it can change cost or availability.
 > Without shared or runtime settings and without `models`, native inheritance remains.
 > Removing a desired field stops managing it; it does not reset the chat's saved native setting.
 

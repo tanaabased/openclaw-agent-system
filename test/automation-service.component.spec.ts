@@ -714,6 +714,52 @@ describe('agent/automation-service', () => {
     );
   });
 
+  it('should preserve unowned chat settings and schedule when only workspace defaults change', async () => {
+    const original = service.dependencies.request!;
+    const key = 'agent:tanaabot:existing';
+    service.dependencies.request = async (method, params) => {
+      if (!method.startsWith('sessions.')) return original(method, params);
+      calls.push({ method, params });
+      if (method === 'sessions.resolve') return { ok: true, key, agentId: 'tanaabot' };
+      if (method === 'sessions.list')
+        return {
+          sessions: [
+            {
+              key,
+              sessionId: 'existing',
+              workspaceDir: root,
+              category: 'AGENT SYSTEM',
+              model: 'openai/native',
+              thinkingLevel: 'low',
+            },
+          ],
+        };
+      assert.fail('unowned chat must not receive a session mutation');
+    };
+    manifest.models = { default: { model: 'openai/default', effort: 'medium' } };
+    manifest.automations = jobs([
+      {
+        id: 'prompt',
+        schedule: 'every 1 hour',
+        prompt: 'Check.',
+        overrides: { openclaw: { target: { thread: key } } },
+      },
+    ]);
+    await service.reconcile(manifest, root);
+    assert.equal(native[0]!.payload.model, undefined);
+    assert.equal(native[0]!.payload.thinking, undefined);
+    const before = structuredClone(native);
+    manifest.models.default = { model: 'openai/changed', effort: 'high' };
+    calls = [];
+    await service.reconcile(manifest, root);
+    assert.deepEqual(native, before);
+    assert.ok(
+      !calls.some(({ method }) =>
+        ['sessions.create', 'sessions.patch', 'cron.update'].includes(method),
+      ),
+    );
+  });
+
   it('should share a native session, preserve history across routing changes, and recover a lost create response', async () => {
     const sessions = new Map<string, Record<string, unknown>>();
     const original = service.dependencies.request!;

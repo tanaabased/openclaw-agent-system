@@ -24,13 +24,24 @@ export default function automationModels(
   if (models) validateRoutingProfiles(models);
   return jobs.map((job) => {
     if (job.payload.kind !== 'prompt' || !job.runtimes.includes(runtime)) return job;
+    const override = job.overrides[runtime];
+    if (override?.target && override.target !== 'independent') {
+      if (
+        job.model !== undefined ||
+        job.effort !== undefined ||
+        override.model !== undefined ||
+        override.effort !== undefined
+      )
+        throw new AutomationError('automation-thread-settings-unowned');
+      // workspace defaults do not grant ownership of an explicitly selected native chat.
+      return job;
+    }
     const selector = job.model;
     const profileName = ['default', 'low', 'medium', 'high'].includes(selector ?? '')
       ? (selector as 'default' | 'low' | 'medium' | 'high')
       : undefined;
     const profile = profileName ? models?.[profileName] : models?.default;
     if (profileName && !profile) throw new AutomationError('automation-model-profile-missing');
-    const override = job.overrides[runtime];
     const baseModel = profileName ? profile!.model : (selector ?? profile?.model);
     const baseEffort = job.effort ?? profile?.effort;
     if (baseModel !== undefined && !Value.Check(modelReferenceSchema, baseModel))
@@ -40,8 +51,6 @@ export default function automationModels(
     const effort = override?.effort ?? baseEffort;
     if (effort !== undefined && !(explicitModelEfforts as readonly string[]).includes(effort))
       throw new AutomationError('automation-effort-unsupported');
-    if (override?.target && override.target !== 'independent' && (model || effort))
-      throw new AutomationError('automation-thread-settings-unowned');
     let nativeModel = model;
     if (runtime === 'codex') {
       if (model?.includes('/')) {
