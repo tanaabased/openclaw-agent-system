@@ -136,6 +136,11 @@ describe('tools/dispatch/tool', () => {
       }),
       true,
     );
+    assert.equal(
+      f.adapter.tool.isConfigured({ schemaVersion: 1, agent: { id: 'receiver' } }),
+      true,
+      'explicit native cleanup must not require GitHub configuration',
+    );
   });
 
   it('should isolate simultaneous caller captures across agents with the same call id', async () => {

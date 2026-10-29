@@ -1370,7 +1370,11 @@ describe('agent/openclaw issue dispatch', () => {
     );
     return value;
   }
-  function prepare(input: { id: string; digest: string }, authority = {}) {
+  function prepare(
+    input: { id: string; digest: string },
+    authority = {},
+    title = 'repair the result',
+  ) {
     return service.run(
       manifest,
       root,
@@ -1379,7 +1383,7 @@ describe('agent/openclaw issue dispatch', () => {
         action: 'prepare',
         id: input.id,
         digest: input.digest,
-        title: 'repair the result',
+        title,
         assessment: { complexity: 'medium', reason: 'Interacting concerns.' },
       },
       false,
@@ -1981,7 +1985,7 @@ describe('agent/openclaw issue dispatch', () => {
     };
     const input = await next();
     assert.equal((await prepare(input)).status, 'session-created');
-    assert.equal(creates()[0]!.params.displayName, archived.label);
+    assert.equal(creates()[0]!.params.displayName, '#3: REPAIR THE RESULT');
     assert.equal(creates()[0]!.params.label, undefined);
     assert.deepEqual(sessions.get('retired-issue'), archived);
     await service.run(manifest, root, coordinator, { action: 'reconcile', id: input.id });
@@ -1996,7 +2000,7 @@ describe('agent/openclaw issue dispatch', () => {
     const request = creates()[0]!.params;
     assert.equal(request.model, 'openai/gpt-6.1-sol');
     assert.equal(request.thinkingLevel, 'high');
-    assert.equal(request.category, 'repo');
+    assert.equal(request.category, 'REPO');
     assert.equal(request.displayName, '#3: REPAIR THE RESULT');
     assert.equal(request.label, undefined);
     assert.equal(request.agentId, 'receiver');
@@ -2022,6 +2026,29 @@ describe('agent/openclaw issue dispatch', () => {
     assert.ok('effect' in again && again.effect === 'reconciled');
     assert.equal(creates().length, 1);
     assert.equal(preparedWorktrees, 1);
+  });
+
+  it('should uppercase the issue session display title while preserving punctuation and unicode', async () => {
+    const input = await next();
+    const title = "Fix user's issue: café 東京 Straße 2026.10.6";
+    const created = await prepare(input, {}, title);
+    assert.equal(created.status, 'session-created');
+    assert.equal(
+      creates()[0]!.params.displayName,
+      "#3: FIX USER'S ISSUE: CAFÉ 東京 STRASSE 2026.10.6",
+    );
+  });
+
+  it('should normalize redundant issue metadata without changing worktree title input', async () => {
+    const title = 'REPO #3: #3: Fix café: references to #4';
+    const prepareWorktree = service.dependencies.worktrees.prepareGitHub;
+    service.dependencies.worktrees.prepareGitHub = async (input) => {
+      assert.equal(input.title, title);
+      return prepareWorktree(input);
+    };
+    const created = await prepare(await next(), {}, title);
+    assert.equal(created.status, 'session-created');
+    assert.equal(creates()[0]!.params.displayName, '#3: FIX CAFÉ: REFERENCES TO #4');
   });
 
   it('should reuse one connection and keep gateway reads free of repeated provider authorization', async () => {
@@ -2088,11 +2115,18 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(calls.length, 0);
   });
 
-  it('should reconcile a lost creation response after rebuilding the service without creating again', async () => {
+  it('should reconcile a legacy lowercase category after a lost creation response without creating again', async () => {
     const input = await next();
     lost = true;
     assert.equal((await prepare(input)).status, 'waiting');
     assert.equal((await record()).sessionCreation?.attempted, true);
+    await (
+      await service.scope(manifest, root)
+    ).journal.exclusive(async (state, save) => {
+      state.records[0]!.request!.category = 'repo';
+      await save();
+    });
+    session!.category = 'repo';
     service = new OpenClawDispatch(service.dependencies);
     const recovered = await service.run(manifest, root, coordinator, {
       action: 'reconcile',

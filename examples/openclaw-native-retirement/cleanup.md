@@ -1,0 +1,1 @@
+Clean up exactly agent:native-retirement:disposable using explicit unmanaged native retirement. First verify that agent:other:disposable is refused, then preview and apply cleanup of the requested target. No GitHub issue, intake activation, or additional conversational confirmation.

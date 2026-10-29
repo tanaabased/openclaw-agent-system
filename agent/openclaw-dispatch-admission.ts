@@ -1,3 +1,4 @@
+import issueChatTitle from './issue-chat-title.ts';
 import { dispatchAdmission, managedPullRequest } from './managed-issue.ts';
 import verifyIssuePullRequest from './issue-pr-selection.ts';
 import openClawRoutingInstructions from './openclaw-routing-instructions.ts';
@@ -21,6 +22,7 @@ import { type OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { sameIntakeRun } from './openclaw-intake-pass.ts';
 import createIssueSession from './openclaw-session-create.ts';
 import advanceIssueTurn from './openclaw-session-turn.ts';
+import managedGroupName from '../utils/managed-group-name.ts';
 
 function digest(record: OpenClawDispatchRecord) {
   return automationHash({
@@ -165,8 +167,12 @@ export default class OpenClawDispatchAdmission {
         key: `agent:${manifest.agent.id}:dashboard:agent-system-issue-${record.id}`,
         idempotencyKey: record.id,
         agentId: manifest.agent.id,
-        label: `#${intake.issue.number}: ${input.title.trim().toUpperCase()}`,
-        category: intake.repository.name,
+        label: issueChatTitle(
+          input.title,
+          intake.issue.number,
+          `${intake.repository.owner.login}/${intake.repository.name}`,
+        ),
+        category: managedGroupName(intake.repository.name, 512),
         cwd: worktree.path,
         model: routing.candidate.model,
         thinkingLevel: routing.candidate.thinking,
@@ -195,7 +201,8 @@ export default class OpenClawDispatchAdmission {
         record.request.key !==
           `agent:${manifest.agent.id}:dashboard:agent-system-issue-${record.id}` ||
         record.request.idempotencyKey !== record.id ||
-        record.request.category !== intake.repository.name
+        managedGroupName(record.request.category, 512) !==
+          managedGroupName(intake.repository.name, 512)
       )
         throw new Error('dispatch-session-binding-changed');
       const assessment = input.action === 'assess' || Boolean(record.assessmentTurn);

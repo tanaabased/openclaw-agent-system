@@ -39,6 +39,8 @@ export interface CodexAutomationAction {
 export interface CodexAutomationInputs {
   projects?: unknown;
   threads?: unknown[];
+  nativeInventory?: unknown;
+  placementReceipt?: { digest: string; sectionId: string };
 }
 export interface CodexAutomationPlan {
   status: 'aligned' | 'requires-native-app-sync' | 'blocked';
@@ -96,7 +98,11 @@ async function projectId(input: unknown, workspace: string): Promise<string> {
   return matches[0]!;
 }
 
-async function verifyThread(inputs: unknown[], id: string, workspace: string): Promise<void> {
+export async function verifyThread(
+  inputs: unknown[],
+  id: string,
+  workspace: string,
+): Promise<void> {
   const schema = Type.Object({
     schemaVersion: Type.Literal(1),
     thread: Type.Object({

@@ -130,7 +130,8 @@ describe('agent/automation-service', () => {
       Object.assign(job, patch, { configRevision: String(++revision) });
       if (job.payload.kind === 'agentTurn' && job.payload.toolsAllow === undefined)
         job.payload.toolsAllow = ['*'];
-      for (const key of ['trigger', 'pacing', 'sessionKey']) if (job[key] === null) delete job[key];
+      for (const key of ['displayName', 'trigger', 'pacing', 'sessionKey'])
+        if (job[key] === null) delete job[key];
       if (afterWriteFailure) {
         afterWriteFailure = false;
         throw new Error('lost acknowledgement');
@@ -169,6 +170,38 @@ describe('agent/automation-service', () => {
   });
   const mutations = () =>
     calls.filter(({ method }) => ['cron.add', 'cron.update'].includes(method));
+
+  it('should relabel completed one-shots without rearming them or changing command hashes', async () => {
+    await service.reconcile(manifest, root);
+    native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'ok' };
+    await service.reconcile(manifest, root);
+    const before = structuredClone(native[0]!);
+    const { store } = await service.scope(manifest, root);
+    const record = (await store.read()).records[0]!;
+    for (const label of ['🔄 NIGHTLY REFRESH', '🔄 RENAMED', undefined]) {
+      manifest.automations![0]!.displayName = label;
+      assert.ok(
+        (await service.inspect(manifest, root)).some(({ code }) => code === 'automation-drift'),
+      );
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.deepEqual(
+        mutations().map(({ params }) => params.patch),
+        [{ displayName: label ?? null }],
+      );
+      assert.deepEqual(native[0], {
+        ...before,
+        configRevision: native[0]!.configRevision,
+        ...(label ? { displayName: label } : {}),
+      });
+      assert.equal(native.length, 1);
+      assert.deepEqual((await store.read()).records[0]!.anchorMs, record.anchorMs);
+      assert.equal((await store.read()).records[0]!.generation, record.generation);
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.equal(mutations().length, 0);
+    }
+  });
 
   it('should pause and restore exact native settings without changing the installed receipt', async () => {
     await service.reconcile(manifest, root);
@@ -447,13 +480,16 @@ describe('agent/automation-service', () => {
     assert.equal(sessions.size, 1);
     assert.equal(native[0]!.enabled, true);
     assert.equal(native[0]!.name, 'Agent System: github-issue-assignment');
+    assert.equal(native[0]!.displayName, '📥 ISSUE ASSIGNMENTS');
+    assert.equal([...sessions.values()][0]!.displayName, 'ISSUE ASSIGNMENTS');
     assert.ok(native[0]!.trigger);
-    assert.equal([...sessions.values()][0]!.category, 'Agent System');
+    assert.equal([...sessions.values()][0]!.category, 'AGENT SYSTEM');
     const identity = native[0]!.id;
     const coordinator = native[0]!.sessionTarget;
     const { store, context } = await service.scope(manifest, root);
     const ledger = await store.read();
     const oldJob = structuredClone(openclawIntakeJobs(manifest)[0]!);
+    delete native[0]!.displayName;
     oldJob.payload = { kind: 'prompt', prompt: 'Advance at most one issue per run.' };
     native[0]!.payload.message = oldJob.payload.prompt;
     ledger.records[0]!.hash = effectiveAutomation(oldJob, context).hash;
@@ -462,6 +498,7 @@ describe('agent/automation-service', () => {
     calls = [];
     await service.reconcile(manifest, root);
     assert.equal(native[0]!.id, identity);
+    assert.equal(native[0]!.displayName, '📥 ISSUE ASSIGNMENTS');
     assert.equal(native[0]!.sessionTarget, coordinator);
     assert.equal(sessions.size, 1);
     assert.match(String(native[0]!.payload.message), /Fill initially available intake slots/);
@@ -556,7 +593,7 @@ describe('agent/automation-service', () => {
     );
     assert.notEqual(replacement.sessionKey, installedKey);
     assert.equal(sessions.size, 3);
-    assert.equal(sessions.get(replacement.sessionKey)!.category, 'Agent System');
+    assert.equal(sessions.get(replacement.sessionKey)!.category, 'AGENT SYSTEM');
     assert.equal(sessions.get(replacement.sessionKey)!.workspaceDir, root);
     assert.equal(
       await notificationAutomationReadiness(
@@ -612,8 +649,10 @@ describe('agent/automation-service', () => {
       if (method === 'sessions.patch') {
         assert.equal(params.expectedSessionId, 'durable-id');
         Object.assign(sessions.get(key)!, {
-          autoLabel: params.autoLabel,
-          displayName: params.autoLabel,
+          ...(params.autoLabel !== undefined
+            ? { autoLabel: params.autoLabel, displayName: params.autoLabel }
+            : {}),
+          ...(params.category !== undefined ? { category: params.category } : {}),
         });
         return { ok: true };
       }
@@ -636,6 +675,24 @@ describe('agent/automation-service', () => {
     assert.equal(native[0]?.sessionTarget, native[1]?.sessionTarget);
     assert.match(String(native[0]?.sessionTarget), /^session:agent:tanaabot:/);
     const nativeIds = native.map((job) => job.id);
+    const originalJob = structuredClone(native[0]!);
+    const originalSessions = structuredClone(sessions);
+    for (const label of ['🔄 NIGHTLY REFRESH', '🔄 RENAMED', undefined]) {
+      manifest.automations[0]!.displayName = label;
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.deepEqual(
+        mutations().map(({ params }) => params.patch),
+        [{ displayName: label ?? null }],
+      );
+      assert.deepEqual(native[0], {
+        ...originalJob,
+        configRevision: native[0]!.configRevision,
+        ...(label ? { displayName: label } : {}),
+      });
+      assert.deepEqual(sessions, originalSessions);
+      assert.equal(native.length, 2);
+    }
     const before = calls.length;
     await service.reconcile(manifest, root);
     assert.equal(

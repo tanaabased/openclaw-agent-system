@@ -19,7 +19,7 @@ those same conversations.
 ## Notes
 
 - The named-zone declaration maps to a native timezone-qualified recurrence. Native review is required before saving it; native timing limitations are documented in [Codex automations](../../MANIFEST.md#codex-execution-and-ownership).
-- Lookup inventories are explicit fixtures. `list` and `sync` inspect or plan native app actions; they do not write scheduler files. `threads-sync` creates/resumes real conversations through `codex app-server` under installation authorization and a fresh digest.
+- Sidebar inventories and responses are explicit headless fixtures; native sidebar behavior requires desktop verification. Lookup inventories are explicit fixtures. `list` and `sync` inspect or plan native app actions; they do not write scheduler files. `threads-sync` creates/resumes real conversations through `codex app-server` under installation authorization and a fresh digest.
 - Native readback checks `auto_review`, `on-request`, and `workspace-write`. No model generation or provider credentials are used; run only in GitHub Actions.
 - Pending relocation: prepare/cancel retains a pending journal until verification and permits cancellation only while the failed target is unchanged. Pending creates also require no new native IDs; an unmarked job may be a partial create.
 - Lost-response recovery may acknowledge the exact saved pending definition without another create; further writes need a fresh plan. Older journals retain whole-scheduler cancellation checks in source coverage.
@@ -87,16 +87,16 @@ root="$TMPDIR/agent-system-codex-automations"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 node "$runtime" binding bind --plugin-data "$root/threads-data" --workspace "$GITHUB_WORKSPACE/examples/codex-automations/threads" --confirm
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/threads-data" > "$root/threads-plan.json"
-jq '{digest}' "$root/threads-plan.json" | node "$runtime" automations threads-sync --plugin-data "$root/threads-data" | tee "$root/threads-created.json" | jq -e '.status == "verified" and ([.threads[].id] | unique | length) == 2'
-printf '{}\n' | node "$runtime" automations plan --plugin-data "$root/threads-data" | tee "$root/threads-plan.json" | jq -e '.status == "requires-native-app-sync" and ([.actions[].expected.targetThreadId] | unique | length) == 2 and all(.actions[]; .expected.kind == "heartbeat")'
+node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/threads-data" "$root/sidebar-input.json" | tee "$root/threads-created.json" | jq -e '.status == "verified" and ([.threads[].id] | unique | length) == 2'
+node "$runtime" automations plan --plugin-data "$root/threads-data" < "$root/sidebar-input.json" | tee "$root/threads-plan.json" | jq -e '.status == "requires-native-app-sync" and ([.actions[].expected.targetThreadId] | unique | length) == 2 and all(.actions[]; .expected.kind == "heartbeat")'
 
 # should retain conversation identities and model settings after the creating process exits
 root="$TMPDIR/agent-system-codex-automations"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
-jq '{digest}' "$root/threads-plan.json" | node "$runtime" automations threads-sync --plugin-data "$root/threads-data" > "$root/threads-reused.json"
+node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/threads-data" "$root/sidebar-input.json" > "$root/threads-reused.json"
 jq -S '.threads | map_values(.id)' "$root/threads-created.json" > "$root/threads-ids.json"
 jq -S '.threads | map_values(.id)' "$root/threads-reused.json" | diff - "$root/threads-ids.json"
+jq -e 'any(.nativeInventory.sections[]; .name == "agent system" and .itemKeys == []) and any(.nativeInventory.sections[]; .name == "AGENT SYSTEM" and (.itemKeys | length) == 2)' "$root/sidebar-input.json"
 test ! -d "$CODEX_HOME/automations"
 ```

@@ -1,7 +1,9 @@
+import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { assessmentSummaryRequestProperties } from './assessment-summary-state.ts';
 import { assessmentSchema } from './model-routing.ts';
+import { nativeRetirementProperties } from '../tools/dispatch/retirement-schema.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const digest = Type.Optional(Type.String());
@@ -15,7 +17,10 @@ const schemas = {
   report: object({ automationId: Type.String(), currentTimeIso: Type.String() }),
   handoff: object(recovery),
   reset: object(recovery),
-  retire: object({ ...recovery, threads: Type.Optional(Type.Unknown()) }),
+  retire: Type.Union([
+    object({ ...recovery, threads: Type.Optional(Type.Unknown()) }),
+    object(nativeRetirementProperties),
+  ]),
   recover: object({ ...recovery, pullRequest: Type.String({ minLength: 1, maxLength: 4096 }) }),
   'retry-denied': object({
     ...recovery,
@@ -25,7 +30,12 @@ const schemas = {
     id,
     digest,
     assessment: assessmentSchema,
-    title: Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9 -]{2,79}$' }),
+    title: Type.String({
+      minLength: 1,
+      maxLength: 80,
+      description: issueChatTitleGuidance,
+      pattern: '^(?=.*\\S)[^\\u0000-\\u001F\\u007F-\\u009F]+$',
+    }),
     fallback: Type.Optional(Type.Literal('default')),
   }),
   reconcile: object({ id, receipt: Type.Optional(Type.Unknown()) }),
@@ -49,7 +59,7 @@ export default function validateDispatchRequest(
   const schema = schemas[action as DispatchAction];
   const request = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
   if (
-    Object.hasOwn(schema.properties, 'id') &&
+    (action === 'retire' || ('properties' in schema && Object.hasOwn(schema.properties, 'id'))) &&
     Object.hasOwn(request, 'id') &&
     !Value.Check(id, request.id)
   )

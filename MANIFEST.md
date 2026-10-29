@@ -139,22 +139,42 @@ Operator [list](./CLI.md#openclaw-agent-system-automations-list),
 [run](./CLI.md#openclaw-agent-system-automations-run), and
 [history](./CLI.md#openclaw-agent-system-automations-runs) use these same declarations.
 
-| Field             | Type                                                       | Required         | Default       | Description                                                                    |
-| ----------------- | ---------------------------------------------------------- | ---------------- | ------------- | ------------------------------------------------------------------------------ |
-| `enabled`         | boolean                                                    | no               | `true`        | Desired enabled state.                                                         |
-| `id`              | lowercase kebab-case string                                | yes              | none          | Stable unique ID within the workspace.                                         |
-| `overrides`       | runtime mapping                                            | no               | none          | Prompt-only `openclaw` / `codex` settings below.                               |
-| `payload`         | command or prompt object                                   | one payload form | none          | `{ kind: command, run: ..., shell?: ... }` or `{ kind: prompt, prompt: ... }`. |
-| `prompt`          | nonblank string or `{ file: relative-path }`               | one payload form | none          | Inline text or UTF-8 prompt file.                                              |
-| `run`             | nonblank shell string, argv array, or `{ command, args? }` | one payload form | none          | Command; argv stays literal and ordered.                                       |
-| `runtimes`        | unique list of `openclaw` / `codex`                        | no               | both          | Runtime applicability.                                                         |
-| `schedule`        | string or object                                           | yes              | none          | Schedule forms below.                                                          |
-| `shell`           | `sh`, `bash`, or `zsh`                                     | no               | `sh`          | Shell strings only; place inside `payload` for long-form commands.             |
-| `thread`          | null, nonblank string, or `{ id?: string, name?: string }` | no               | independent   | Persistent prompt conversation; at least one object field is required.         |
-| `timeout-seconds` | integer, 1–3600                                            | no               | runtime-owned | Job-level only. OpenClaw projection: 1800 seconds; Codex: native default.      |
+| Field             | Type                                                       | Required         | Default                                    | Description                                                                    |
+| ----------------- | ---------------------------------------------------------- | ---------------- | ------------------------------------------ | ------------------------------------------------------------------------------ |
+| `display-name`    | nonblank single-line string, up to 200 UTF-16 code units   | no               | runtime-owned                              | Automation label; independent of the persistent conversation name.             |
+| `enabled`         | boolean                                                    | no               | `true`                                     | Desired enabled state.                                                         |
+| `group`           | nonblank string                                            | no               | `AGENT SYSTEM` for persistent prompt chats | Sidebar destination; normalized to uppercase.                                  |
+| `id`              | lowercase kebab-case string                                | yes              | none                                       | Stable unique ID within the workspace.                                         |
+| `overrides`       | runtime mapping                                            | no               | none                                       | Prompt-only `openclaw` / `codex` settings below.                               |
+| `payload`         | command or prompt object                                   | one payload form | none                                       | `{ kind: command, run: ..., shell?: ... }` or `{ kind: prompt, prompt: ... }`. |
+| `prompt`          | nonblank string or `{ file: relative-path }`               | one payload form | none                                       | Inline text or UTF-8 prompt file.                                              |
+| `run`             | nonblank shell string, argv array, or `{ command, args? }` | one payload form | none                                       | Command; argv stays literal and ordered.                                       |
+| `runtimes`        | unique list of `openclaw` / `codex`                        | no               | both                                       | Runtime applicability.                                                         |
+| `schedule`        | string or object                                           | yes              | none                                       | Schedule forms below.                                                          |
+| `shell`           | `sh`, `bash`, or `zsh`                                     | no               | `sh`                                       | Shell strings only; place inside `payload` for long-form commands.             |
+| `thread`          | null, nonblank string, or `{ id?: string, name?: string }` | no               | independent                                | Persistent prompt conversation; at least one object field is required.         |
+| `timeout-seconds` | integer, 1–3600                                            | no               | runtime-owned                              | Job-level only. OpenClaw projection: 1800 seconds; Codex: native default.      |
 
 Use exactly one of `run`, `prompt`, or `payload`. Commands reuse
 [setup command syntax](#syntax), without setup checks, steps, or timeout defaults.
+
+Set `display-name` to give the automation a readable label, including emoji. Outer
+whitespace is trimmed; NUL and line breaks are rejected. Codex uses the label as its
+native automation `name`; OpenClaw uses native `displayName`, retaining its stable
+job `name`. Without a label, Codex uses `<agent-id>: <automation-id>` and OpenClaw
+uses `Agent System: <automation-id>`. Changing or removing the label through normal
+synchronization updates the existing job or restores that default; it does not
+replace the job, change its schedule, or rename its chat.
+
+```yaml
+automations:
+  - id: nightly-refresh
+    display-name: '🔄 NIGHTLY REFRESH'
+    schedule: every 24 hours
+    prompt: Refresh the workspace summary.
+    thread: { name: NIGHTLY REFRESH }
+```
+
 Each `overrides.openclaw` or `overrides.codex` object accepts only:
 
 | Field    | Type                                              | Required | Default                                |
@@ -188,6 +208,18 @@ recursive inclusion. Missing or invalid references fail validation rather than d
 no jobs.
 
 #### Persistent conversations
+
+Set `group: operations` to place a persistent automation chat under `OPERATIONS` in either
+runtime. Omission uses `AGENT SYSTEM`, including built-in coordinator chats. Group changes
+move the same chat while preserving its title, history, schedule, permissions and project
+membership. Command jobs and effective independent targets cannot declare `group`.
+
+Group names are trimmed and uppercased without changing chat titles or `display-name`.
+Blank names and control characters are rejected. OpenClaw permits at most 512 Unicode
+code points after normalization; Codex applies its native sidebar name validation.
+Exact uppercase destinations are reused; differently cased groups stay untouched.
+Ambiguous exact destinations or uncertain native creation block reconciliation until their
+identity can be verified. Doctor reports drift without moving chats; Install applies it.
 
 Omit `thread` or use `null` for independent runs. A string or `{ name: "Activity" }`
 keeps one named conversation per automation. Matching names never combine jobs.
@@ -229,8 +261,8 @@ An explicit name sets the title; omission preserves it. Conflicting names for on
 conversation are rejected. OpenClaw automatic titles need not be unique, but existing
 explicitly titled chats retain native label-uniqueness rules. Automation names are separate.
 
-An explicit runtime `target` overrides the **entire** shared declaration for that
-runtime. `independent` stays independent; `{ thread: existing-native-id }` requires
+An explicit runtime `target` overrides shared `thread` selection for that
+runtime; `group` still controls placement. `independent` stays independent; `{ thread: existing-native-id }` requires
 an exact existing target and never creates a replacement. Multiple active Codex jobs
 explicitly targeting the same native conversation fail with a conflict.
 

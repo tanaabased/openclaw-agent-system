@@ -5,6 +5,8 @@ import codexRuntimeRequest from './codex-runtime-request.ts';
 import runCodexContinuation from './codex-continuation.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
 import process from 'node:process';
+import { Value } from 'typebox/value';
+import { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
 import assertCodexNodeVersion, { CodexNodeVersionError } from './codex-node-version.ts';
 import codexPermission from './codex-permission.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
@@ -415,14 +417,28 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     const request = input as Record<string, unknown>;
     if (
       Object.keys(request).some(
-        (key) => !['projects', 'threads', 'digest', 'receipt', 'id'].includes(key),
+        (key) =>
+          ![
+            'projects',
+            'threads',
+            'digest',
+            'receipt',
+            'id',
+            'nativeInventory',
+            'placementReceipt',
+          ].includes(key),
       ) ||
-      (request.threads !== undefined && !Array.isArray(request.threads))
+      (request.threads !== undefined && !Array.isArray(request.threads)) ||
+      (request.placementReceipt !== undefined &&
+        !Value.Check(sidebarReceiptSchema, request.placementReceipt))
     )
       throw new Error('invalid automation request');
     const inputs = {
       projects: request.projects,
       threads: request.threads as unknown[] | undefined,
+      nativeInventory: request.nativeInventory,
+      placementReceipt: request.placementReceipt as
+        { digest: string; sectionId: string } | undefined,
     };
     if (action === 'list' || action === 'sync') {
       writeJson(await listCodexAutomations(pluginData, inputs));

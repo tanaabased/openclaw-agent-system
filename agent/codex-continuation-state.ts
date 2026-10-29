@@ -5,6 +5,7 @@ import { Type, type Static } from 'typebox';
 import { implementationResultSchema } from './implementation-result.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { workflowBindingSchema } from './workflow-result.ts';
+import { dispatchRecordProperties } from './dispatch-state.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -55,6 +56,7 @@ export const codexContinuationStateSchema = Type.Object(
     clarificationTurnId: Type.Optional(text),
     blockedTurnId: Type.Optional(text),
     activeTurnId: Type.Optional(text),
+    handoffs: Type.Optional(Type.Array(Type.Required(dispatchRecordProperties.handoff))),
     selection: assessmentSelectionSchema,
     assessmentDigest: Type.Optional(hash),
     assessmentSelectionDigest: Type.Optional(hash),

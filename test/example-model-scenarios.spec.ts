@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { mock } from 'node:test';
 
 import { matchFixture, type ChatCompletionRequest, type ContentPart } from '@copilotkit/aimock';
@@ -59,6 +60,46 @@ function request(
 }
 
 describe('scripts/example-model-scenarios', () => {
+  it('should start native retirement despite unrelated history and recognize replayed native call ids', async () => {
+    const hostRequire = createRequire(
+      createRequire(import.meta.url).resolve('openclaw/plugin-sdk/plugin-entry'),
+    );
+    const { normalizeOpenAIResponsesFunctionCallId } = await import(
+      hostRequire.resolve('@openclaw/ai/transports')
+    );
+    const scenario = resolveExampleModelScenario('openclaw-native-retirement');
+    const replayedId = (id: string) =>
+      normalizeOpenAIResponsesFunctionCallId(`${id}|fc_observed`).split('|')[0]!;
+    const prompt = 'Clean up using explicit unmanaged native retirement.';
+    const input = request('native-retirement', prompt, ['agent_system_dispatch'], {
+      callId: 'unrelated-history',
+      content: '{}',
+    });
+    const first = matchFixture([...scenario.fixtures], input)?.response;
+    assert.ok(first && typeof first !== 'function' && 'toolCalls' in first);
+    assert.deepEqual(JSON.parse(first.toolCalls![0]!.arguments), {
+      action: 'retire',
+      native: 'agent:other:disposable',
+    });
+    for (const { id } of scenario.toolCalls) {
+      const failed = request('native-retirement', prompt, ['agent_system_dispatch'], {
+        callId: replayedId(id),
+        content: JSON.stringify({ status: 'failed', code: 'unexpected-failure' }),
+      });
+      assert.equal(matchFixture([...scenario.fixtures], failed), null);
+    }
+    const refused = request('native-retirement', prompt, ['agent_system_dispatch'], {
+      callId: replayedId(scenario.toolCalls[0]!.id),
+      content: JSON.stringify({ code: 'native-retirement-agent-mismatch' }),
+    });
+    const next = matchFixture([...scenario.fixtures], refused)?.response;
+    assert.ok(next && typeof next !== 'function' && 'toolCalls' in next);
+    assert.deepEqual(JSON.parse(next.toolCalls![0]!.arguments), {
+      action: 'retire',
+      native: 'agent:native-retirement:disposable',
+    });
+  });
+
   it('should resolve the deterministic example scenarios', () => {
     assert.equal(new Set(exampleModelScenarioIds).size, exampleModelScenarioIds.length);
     for (const id of exampleModelScenarioIds) assert.equal(resolveExampleModelScenario(id).id, id);

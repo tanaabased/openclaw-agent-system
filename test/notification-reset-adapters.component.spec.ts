@@ -456,6 +456,7 @@ describe('agent/notification reset runtime adapters', () => {
       }),
     };
     const sections: { sectionId: string; name: string; itemKeys: string[] }[] = [];
+    let placementReceipt: { digest: string; sectionId: string } | undefined;
     const run = () =>
       runCodexNotificationReset(
         pluginData,
@@ -463,6 +464,7 @@ describe('agent/notification reset runtime adapters', () => {
           agent: ['receiver'],
           yes: true,
           purge: true,
+          placementReceipt,
           nativeInventory: {
             schemaVersion: 4,
             sections,
@@ -503,6 +505,8 @@ describe('agent/notification reset runtime adapters', () => {
       name: 'AGENT SYSTEM',
       itemKeys: ['codex:thread:local:old'],
     });
+    assert.ok('digest' in grouping && typeof grouping.digest === 'string');
+    placementReceipt = { digest: grouping.digest, sectionId: 'group' };
     const placing = await run();
     assert.equal(placing.status, 'native-action');
     assert.deepEqual('request' in placing && placing.request, {
@@ -510,6 +514,8 @@ describe('agent/notification reset runtime adapters', () => {
       arguments: { threadId: 'replacement', hostId: 'local', source: 'codex', sectionId: 'group' },
     });
     assert.equal(saved.definition.status, 'PAUSED');
+    assert.ok('digest' in placing && typeof placing.digest === 'string');
+    placementReceipt = { digest: placing.digest, sectionId: 'group' };
     assert.equal((await run()).status, 'incomplete');
     sections[0]!.itemKeys.push('codex:thread:local:replacement');
     const restoring = await run();

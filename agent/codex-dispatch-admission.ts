@@ -1,4 +1,5 @@
 import issueWorkflowMode from './issue-workflow-mode.ts';
+import issueChatTitle from './issue-chat-title.ts';
 import {
   managedPullRequest,
   dispatchAdmission,
@@ -785,7 +786,11 @@ export async function prepareDispatch(
     delete record.capacityObservation;
     delete record.nativeInactive;
     record.request = {
-      title: '#' + intake.issue.number + ': ' + (input.title as string).trim().toUpperCase(),
+      title: issueChatTitle(
+        input.title as string,
+        intake.issue.number,
+        `${intake.repository.owner.login}/${intake.repository.name}`,
+      ),
       prompt: launchPrompt(record, intake),
       model: decision.candidate.model,
       thinking: decision.candidate.thinking,

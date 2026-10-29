@@ -27,6 +27,7 @@ import planCodexAutomations, {
   automationRecordSchema,
   codexAutomationMarker,
   savedMatches,
+  verifyThread,
   type CodexAutomationAction,
   type CodexAutomationInputs,
 } from './codex-automation-plan.ts';
@@ -41,6 +42,14 @@ import {
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
+import CodexSidebarJournal, { type SidebarEffect } from './codex-sidebar-journal.ts';
+import { sidebarSections } from './codex-sidebar-placement.ts';
+
+class SidebarPending extends AutomationError {
+  constructor(readonly effect: Exclude<SidebarEffect, { status: 'done' }>) {
+    super('automation-thread-group-drift');
+  }
+}
 
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const actionSchema = Type.Object(
@@ -249,14 +258,46 @@ async function snapshot(pluginData: string, dependencies: CodexAutomationDepende
   };
 }
 
-async function resolveThreads(selected: Awaited<ReturnType<typeof snapshot>>, apply = false) {
+async function resolveThreads(
+  selected: Awaited<ReturnType<typeof snapshot>>,
+  inputs: CodexAutomationInputs,
+  apply = false,
+) {
   const jobs = selected.jobs.filter(
-    (job) => job.runtimes.includes('codex') && automationThreadSelection(job, 'codex')?.managed,
+    (job) => job.runtimes.includes('codex') && automationThreadSelection(job, 'codex'),
   );
   if (!jobs.length) return new Map<string, { id: string }>();
-  let connection = selected.dependencies.threadAdapter
-    ? undefined
-    : await connectCodexThreads(selected.workspace, selected.codexHome);
+  const explicitIds = new Set<string>();
+  for (const job of jobs) {
+    const selection = automationThreadSelection(job, 'codex')!;
+    if (!selection.managed) {
+      await verifyThread(inputs.threads ?? [], selection.exact!, selected.workspace);
+      explicitIds.add(selection.exact!);
+    }
+  }
+  const sections = sidebarSections(inputs.nativeInventory);
+  const journals = new Map<string, CodexSidebarJournal>();
+  const destinations = new Map<string, string | undefined>();
+  const pendingGroups = new Set<string>();
+  for (const job of jobs) {
+    const selection = automationThreadSelection(job, 'codex')!;
+    const group = selection.group!;
+    if (journals.has(group)) continue;
+    const journal = new CodexSidebarJournal(selected.root, selected.codexHome, group);
+    const { placement, state } = await journal.inspect(
+      inputs.nativeInventory,
+      selection.exact ?? 'pending',
+      inputs.placementReceipt,
+    );
+    if (state.pending) pendingGroups.add(group);
+    journals.set(group, journal);
+    destinations.set(group, placement.sectionId);
+  }
+  let connection =
+    selected.dependencies.threadAdapter ||
+    jobs.every((job) => !automationThreadSelection(job, 'codex')!.managed)
+      ? undefined
+      : await connectCodexThreads(selected.workspace, selected.codexHome);
   try {
     const adapter =
       selected.dependencies.threadAdapter ??
@@ -269,10 +310,52 @@ async function resolveThreads(selected: Awaited<ReturnType<typeof snapshot>>, ap
           return connection.request('thread/resume', { threadId: id });
         },
       );
-    return await new AutomationThreads(
+    const bindings = await new AutomationThreads(
       { root: selected.root, scope: selected.scope, runtime: 'codex' },
-      adapter,
+      {
+        ...adapter,
+        lookup: async (id) => {
+          const native = explicitIds.has(id) ? { id } : await adapter.lookup(id);
+          if (!native) return native;
+          const section = sections.find(
+            (section) =>
+              section.itemKeys.includes(`codex:thread:local:${id}`) &&
+              destinations.get(section.name) === section.sectionId,
+          );
+          return {
+            ...native,
+            group: section && !pendingGroups.has(section.name) ? section.name : undefined,
+          };
+        },
+        setGroup: async (id, group) => {
+          const journal = journals.get(group)!;
+          const state = await journal.read();
+          const receipt =
+            state.pending?.digest === inputs.placementReceipt?.digest
+              ? inputs.placementReceipt
+              : undefined;
+          const effect = await journal.apply(selected.scope, inputs.nativeInventory, id, receipt);
+          if (effect.status !== 'done') throw new SidebarPending(effect);
+          pendingGroups.delete(group);
+        },
+      },
     ).resolve(jobs, apply);
+    if (apply) {
+      // retain the verified destination even when the chat was already correctly placed.
+      for (const job of jobs) {
+        const group = automationThreadSelection(job, 'codex')!.group!;
+        const journal = journals.get(group)!;
+        const state = await journal.read();
+        if (state.sectionId === destinations.get(group) && !state.pending) continue;
+        const effect = await journal.apply(
+          selected.scope,
+          inputs.nativeInventory,
+          bindings.get(job.id)!.id,
+        );
+        if (effect.status !== 'done') throw new SidebarPending(effect);
+      }
+    }
+    return bindings;
   } finally {
     await connection?.close();
   }
@@ -310,10 +393,14 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
   let bindings: Map<string, { id: string }> | undefined;
   let threadCode: string | undefined;
   try {
-    bindings = await resolveThreads(selected);
+    bindings = await resolveThreads(selected, inputs);
   } catch (error) {
     threadCode =
-      error instanceof AutomationError ? error.code : 'automation-thread-inspection-failed';
+      error instanceof AutomationError || error instanceof CodexAutomationError
+        ? error.code
+        : error instanceof Error && error.message.startsWith('automation-sidebar-')
+          ? error.message
+          : 'automation-thread-inspection-failed';
   }
   const result = await planCodexAutomations({
     scope,
@@ -349,6 +436,7 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
       'automation-thread-sync-required',
       'automation-thread-replacement-required',
       'automation-thread-name-drift',
+      'automation-thread-group-drift',
       'automation-missing',
       'automation-drift',
       'automation-healthy',
@@ -360,7 +448,11 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     result.status = result.findings.every((finding) => synchronizable.has(finding.code))
       ? 'requires-native-app-sync'
       : 'blocked';
-    result.digest = automationHash({ plan: result.digest, threadCode });
+    result.digest = automationHash({
+      plan: result.digest,
+      threadCode,
+      nativeInventory: inputs.nativeInventory,
+    });
   }
   if (ledger.pending)
     return {
@@ -512,6 +604,7 @@ export async function syncCodexAutomationThreads(
     const allowed = new Set([
       'automation-thread-sync-required',
       'automation-thread-name-drift',
+      'automation-thread-group-drift',
       'automation-thread-recovery-required',
       'automation-thread-replacement-required',
       'automation-healthy',
@@ -524,7 +617,8 @@ export async function syncCodexAutomationThreads(
     ]);
     if (result.findings.some((finding) => !allowed.has(finding.code)))
       throw new CodexAutomationError('automation-plan-stale-or-blocked');
-    const bindings = await resolveThreads(selected, true).catch((error) => {
+    const bindings = await resolveThreads(selected, inputs, true).catch((error) => {
+      if (error instanceof SidebarPending) return error.effect;
       throw new CodexAutomationError(
         error instanceof AutomationError ? error.code : 'automation-thread-sync-failed',
       );
@@ -532,6 +626,7 @@ export async function syncCodexAutomationThreads(
     const current = await snapshot(pluginData, dependencies);
     if (current.loaded.digest !== selected.loaded.digest)
       throw new CodexAutomationError('automation-plan-stale-or-blocked');
+    if (!(bindings instanceof Map)) return bindings;
     return { status: 'verified', routing: 'per-automation', threads: Object.fromEntries(bindings) };
   });
 }
@@ -599,6 +694,7 @@ export async function replaceCodexNotificationCoordinator(
   pluginData: string,
   before: SavedAutomation,
   dependencies: CodexAutomationDependencies = {},
+  inputs: CodexAutomationInputs = {},
 ) {
   const initial = await snapshot(pluginData, dependencies);
   return withJournal(initial, async () => {
@@ -636,7 +732,12 @@ export async function replaceCodexNotificationCoordinator(
     )
       throw new Error('notification-reset-automation-changed');
     const jobs = selected.jobs.filter(({ id }) => id === intakeAutomationId);
-    const target = (await resolveThreads({ ...selected, jobs }, true)).get(intakeAutomationId)?.id;
+    const bindings = await resolveThreads({ ...selected, jobs }, inputs, true).catch((error) => {
+      if (error instanceof SidebarPending) return error.effect;
+      throw error;
+    });
+    if (!(bindings instanceof Map)) return bindings;
+    const target = bindings.get(intakeAutomationId)?.id;
     if (!target || target === before.definition.targetThreadId)
       throw new Error('notification-reset-coordinator-not-replaced');
     const definition = { ...before.definition, targetThreadId: target };

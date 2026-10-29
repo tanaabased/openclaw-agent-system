@@ -1,4 +1,6 @@
+import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
 import { launchRequestSchema } from './launch-schema.ts';
+import { retirementRequestSchema } from './retirement-schema.ts';
 import { directImplementationRequestSchema } from './implementation-schema.ts';
 import { directAssessmentRequestSchema } from './assessment-schema.ts';
 import { feedbackDecisionSchema } from '../../agent/feedback-work.ts';
@@ -25,7 +27,7 @@ const dispatchRequestVariants = Type.Union([
     pullRequest: Type.String({ minLength: 1, maxLength: 4096 }),
     digest: Type.Optional(id),
   }),
-  object({ action: Type.Literal('retire'), id: Type.Optional(id), digest: Type.Optional(id) }),
+  retirementRequestSchema,
   object({
     action: Type.Literal('check'),
     observation: Type.Optional(
@@ -44,7 +46,12 @@ const dispatchRequestVariants = Type.Union([
     id,
     digest: id,
     assessment: assessmentSchema,
-    title: Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9 -]{2,79}$' }),
+    title: Type.String({
+      minLength: 1,
+      maxLength: 80,
+      description: issueChatTitleGuidance,
+      pattern: '^(?=.*\\S)[^\\u0000-\\u001F\\u007F-\\u009F]+$',
+    }),
     fallback: Type.Optional(Type.Literal('default')),
   }),
   object({ action: Type.Literal('reconcile'), id }),

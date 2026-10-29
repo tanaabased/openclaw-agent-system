@@ -23,6 +23,7 @@ jobs:
       matrix:
         example:
           - openclaw-agent
+          - openclaw-native-retirement
           - openclaw-workspace
           - openclaw-doctor
           - openclaw-tool-access

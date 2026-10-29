@@ -6,6 +6,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 ## What Belongs Here
 
 - Public managed sync/list/run boundaries and repeated sync preserving the same native jobs.
+- Native display-name rename/removal while preserving the job, its completed run state, and separate chat binding.
 - A completed command receipt proving managed Git identity and a completed prompt in the owning agent context.
 - Exact native run IDs and durable completion evidence, rather than treating queued admission as success.
 
@@ -49,6 +50,16 @@ jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-b
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
 
+# should move the persistent chat between normalized categories without replacing its schedule
+cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+chat=$(jq -er '.jobs[] | select(.id == "prompt") | .routing | sub("^session:"; "")' "$TMPDIR/automation-before.json")
+openclaw gateway call sessions.list --params '{"limit":100}' --json | jq -e --arg key "$chat" 'any(.sessions[]; .key == $key and .category == "AGENT SYSTEM")'
+node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); jobs.find(({id})=>id==="prompt").group="  straße ops  "; fs.writeFileSync("automations.yaml",stringify(jobs));'
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
+openclaw gateway call sessions.list --params '{"limit":100}' --json | jq -e --arg key "$chat" 'any(.sessions[]; .key == $key and .category == "STRASSE OPS")'
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
+openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
+
 # should complete one command under the owning managed git identity
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 run_id=$(openclaw agent-system automations run identity --json | jq -er 'select(.status == "queued" and .execution == "unavailable") | .runId | strings')
@@ -62,6 +73,22 @@ run_id=$(openclaw agent-system automations run prompt --json | jq -er 'select(.s
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" prompt "$run_id"
 openclaw-aimock evidence --scenario openclaw-automations --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-automations/expected-evidence.json"
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
+
+# should rename and clear the automation label without replacing its job or chat
+cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
+openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json > "$TMPDIR/label-before.json"
+jq -e '.displayName == "🔄 AUTOMATION STATUS" and .name == "Agent System: prompt"' "$TMPDIR/label-before.json"
+jq -S '{id,name,declarationKey,agentId,schedule,sessionTarget,payload,enabled,history:(.state | {lastRunAtMs,lastRunStatus,lastDurationMs})}' "$TMPDIR/label-before.json" > "$TMPDIR/label-preserved.json"
+for label in '🔄 RENAMED STATUS' ''; do
+  node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); const job=jobs.find(({id})=>id==="prompt"); if(process.argv[1]) job["display-name"]=process.argv[1]; else delete job["display-name"]; fs.writeFileSync("automations.yaml",stringify(jobs));' "$label"
+  openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and any(.outcomes[]; .stepId == "prompt" and .status == "updated")'
+  openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json > "$TMPDIR/label-after.json"
+  jq -e --arg label "$label" '(.displayName // "") == $label' "$TMPDIR/label-after.json"
+  jq -S '{id,name,declarationKey,agentId,schedule,sessionTarget,payload,enabled,history:(.state | {lastRunAtMs,lastRunStatus,lastDurationMs})}' "$TMPDIR/label-after.json" | diff - "$TMPDIR/label-preserved.json"
+  openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
+done
+openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
 ```
 
 ## Cleanup

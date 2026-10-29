@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 
 import {
+  automationPatch,
   effectiveAutomation,
+  nativeAutomationHash,
   projectAutomation,
   type AutomationProjectionContext,
 } from '../agent/automation-projection.ts';
+import type { NativeAutomation } from '../agent/automation-gateway.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
 import normalizeSchedule from '../manifest/automation-schedule.ts';
 
@@ -23,6 +26,56 @@ function job(payload: { prompt: string } | { run: string[] }) {
 }
 
 describe('agent/automation-projection', () => {
+  it('should patch only presentation when labels are added, renamed or removed', () => {
+    const record = {
+      id: 'review',
+      marker: 'fixture',
+      hash: '',
+      triggerHash: '',
+      generation: 1,
+      anchorMs: 0,
+      removed: false,
+    };
+    for (const original of [job({ prompt: 'Review.' }), job({ run: ['node', 'task.js'] })]) {
+      const unlabeled = projectAutomation(original, record, context);
+      assert.equal(unlabeled.name, 'Agent System: review');
+      assert.equal(Object.hasOwn(unlabeled, 'displayName'), false);
+      const nativeFields = {
+        id: 'native-review',
+        declarationKey: record.marker,
+        agentId: context.agentId,
+        configRevision: '1',
+        state: {},
+      };
+      let current: NativeAutomation = { ...unlabeled, ...nativeFields };
+      for (const label of ['🔄 NIGHTLY REFRESH', '🔄 RENAMED', undefined]) {
+        const changed = { ...original, displayName: label };
+        const desired = projectAutomation(changed, record, context);
+        assert.deepEqual(automationPatch(current, desired), {
+          displayName: label ?? null,
+        });
+        assert.notEqual(nativeAutomationHash(current), nativeAutomationHash(desired));
+        assert.deepEqual(
+          effectiveAutomation(changed, context),
+          effectiveAutomation(original, context),
+        );
+        const { displayName, ...withoutLabel } = desired;
+        assert.equal(displayName, label);
+        assert.deepEqual(withoutLabel, unlabeled);
+        current = { ...desired, ...nativeFields };
+      }
+      assert.equal(
+        nativeAutomationHash({ ...unlabeled, displayName: null }),
+        nativeAutomationHash(unlabeled),
+      );
+      assert.deepEqual(
+        automationPatch({ ...unlabeled, ...nativeFields, displayName: null }, unlabeled),
+        {},
+      );
+      assert.deepEqual(automationPatch(current, current), {});
+    }
+  });
+
   it('should project omitted and null zones locally and preserve explicit zones', () => {
     const record = {
       id: 'review',
