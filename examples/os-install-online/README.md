@@ -22,6 +22,7 @@ first attempt's evidence before testing repeat installation.
 - Setup, first Install, and dependent convergence checks share one fail-fast block. A missing prerequisite or failed first Install ends that journey; no shell retry can turn it green or create misleading downstream failures.
 - Session creation uses the shared 120-second budget, subject to earlier cancellation or enclosing deadlines; unrelated requests retain their native timeout. Controlled-time source tests prove the budget, while this scenario proves installed behavior. First-attempt failures remain fatal.
 - Enrollment allows up to 90 seconds for startup or plugin reload, within a 135-second connection deadline including authentication. Terminal reload failure and cancellation stop earlier. Session-creation failures report the automation ID and a safe native reason category; `unclassified` means the native rejection is not yet recognized, not that a timeout occurred.
+- In CI, the first Install enables bounded, redacted native rejection evidence with `OPENCLAW_DEBUG=1`; it retains no request payload or arbitrary error details.
 - Evidence is saved beneath `TMPDIR` before a repeat can change state. A Gateway log observation alone does not establish the failure's cause.
 
 ## Setup
@@ -43,7 +44,7 @@ gateway_log=$(openclaw-gateway log-path)
 gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
 cd "$GITHUB_WORKSPACE/examples/os-install-online"
 first_status=0
-openclaw agent-system install --yes --json >"$TMPDIR/online-first.json" 2>"$TMPDIR/online-first.stderr" || first_status=$?
+OPENCLAW_DEBUG=1 openclaw agent-system install --yes --json >"$TMPDIR/online-first.json" 2>"$TMPDIR/online-first.stderr" || first_status=$?
 printf '%s\n' "$first_status" >"$TMPDIR/online-first.exit"
 cat "$TMPDIR/online-first.json" "$TMPDIR/online-first.stderr"
 if ! tail -n 300 "$gateway_log" | node "$gateway_redactor" >"$TMPDIR/online-first.gateway.log"; then printf '%s\n' 'gateway evidence unavailable' >"$TMPDIR/online-first.gateway.log"; fi

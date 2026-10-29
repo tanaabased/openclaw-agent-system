@@ -1,3 +1,4 @@
+import providerErrorMessage from '../utils/provider-error-message.ts';
 import gatewayErrorDiagnostic, {
   retainGatewayErrorDiagnostic,
   type GatewayErrorDiagnostic,
@@ -7,6 +8,7 @@ import type { AutomationGateway } from './automation-gateway.ts';
 export interface AutomationGatewayDiagnostic extends GatewayErrorDiagnostic {
   method: Parameters<AutomationGateway>[0];
   automationId?: string;
+  nativeRejection?: { message?: string; detailCode?: string };
   reason?:
     | 'agent-unknown'
     | 'agent-session-mismatch'
@@ -52,6 +54,7 @@ export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorD
   method: AutomationGatewayDiagnostic['method'] | null;
   automationId?: string;
   reason?: AutomationGatewayDiagnostic['reason'];
+  nativeRejection?: AutomationGatewayDiagnostic['nativeRejection'];
 } {
   const input = value && typeof value === 'object' ? value : {};
   const method =
@@ -102,12 +105,36 @@ export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorD
     ...diagnostic,
     ...(reason ? { reason } : catalogLoading ? { reason: 'model-catalog-loading' as const } : {}),
     ...(automationId ? { automationId } : {}),
+    ...(diagnostic.category === 'rejected' && 'nativeRejection' in input
+      ? { nativeRejection: rejectionEvidence(input.nativeRejection) }
+      : {}),
   };
+}
+
+function rejectionEvidence(value: unknown, secrets: readonly string[] = []) {
+  if (!value || typeof value !== 'object') return undefined;
+  const message =
+    'message' in value && typeof value.message === 'string'
+      ? providerErrorMessage(
+          value.message.replace(/\b(?:params|request|payload)\s*[:=][\s\S]*/giu, '[redacted]'),
+          secrets,
+        )
+      : undefined;
+  const detailCode =
+    'detailCode' in value &&
+    typeof value.detailCode === 'string' &&
+    /^[A-Z][A-Z0-9_]{0,63}$/.test(value.detailCode)
+      ? value.detailCode
+      : undefined;
+  return message || detailCode
+    ? { ...(message ? { message } : {}), ...(detailCode ? { detailCode } : {}) }
+    : undefined;
 }
 
 export default function automationGatewayDiagnostic(
   method: Parameters<AutomationGateway>[0],
   error: unknown,
+  evidence?: { secrets: readonly string[] },
 ): AutomationGatewayDiagnostic {
   const diagnostic: AutomationGatewayDiagnostic = { method, ...gatewayErrorDiagnostic(error) };
   // classify only known native rejections; never retain identifiers or raw prose.
@@ -179,5 +206,24 @@ export default function automationGatewayDiagnostic(
     error.message === 'model catalog is still loading; retry in a few seconds'
   )
     diagnostic.reason = 'model-catalog-loading';
+  // Opt-in disposable CI evidence excludes arbitrary details and request payloads.
+  if (
+    evidence &&
+    method === 'sessions.create' &&
+    diagnostic.category === 'rejected' &&
+    error instanceof Error
+  ) {
+    const details =
+      'details' in error && error.details && typeof error.details === 'object'
+        ? error.details
+        : undefined;
+    diagnostic.nativeRejection = rejectionEvidence(
+      {
+        message: error.message,
+        detailCode: details && 'code' in details ? details.code : undefined,
+      },
+      evidence.secrets,
+    );
+  }
   return diagnostic;
 }

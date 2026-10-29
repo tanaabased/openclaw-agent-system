@@ -167,7 +167,26 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
         await import('./automation-gateway-diagnostic.ts');
       const { default: automationGatewayUnavailable } =
         await import('./automation-gateway-unavailable.ts');
-      const diagnostic = automationGatewayDiagnostic(method, error);
+      const diagnostic = automationGatewayDiagnostic(
+        method,
+        error,
+        process.env.CI === 'true' && process.env.OPENCLAW_DEBUG === '1'
+          ? {
+              secrets: [
+                ...Object.entries(process.env)
+                  .filter(([key]) =>
+                    /token|secret|password|credential|authorization|api_?key/i.test(key),
+                  )
+                  .map(([, value]) => value!)
+                  .filter(Boolean),
+                JSON.stringify(params),
+                ...Object.values(params).filter(
+                  (value): value is string => typeof value === 'string' && value.length >= 4,
+                ),
+              ],
+            }
+          : undefined,
+      );
       throw new AutomationError(
         automationGatewayUnavailable(error)
           ? 'automation-gateway-unavailable'

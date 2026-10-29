@@ -6,6 +6,44 @@ import automationGatewayDiagnostic, {
 import { AutomationError } from '../agent/automation-gateway.ts';
 
 describe('agent/automation-gateway-diagnostic', () => {
+  it('should retain bounded opt-in rejection evidence without credentials payloads or arbitrary details', () => {
+    const error = Object.assign(
+      new Error('Native snapshot rejected; opaque-secret token=hidden payload={private input}'),
+      {
+        name: 'GatewayClientRequestError',
+        gatewayCode: 'INVALID_REQUEST',
+        retryable: false,
+        details: {
+          code: 'SNAPSHOT_INVALID',
+          secret: 'private-detail',
+          nested: { token: 'hidden' },
+        },
+      },
+    );
+    assert.equal(automationGatewayDiagnostic('sessions.create', error).nativeRejection, undefined);
+    const diagnostic = automationGatewayDiagnostic('sessions.create', error, {
+      secrets: ['opaque-secret'],
+    });
+    assert.equal(diagnostic.reason, 'unclassified');
+    assert.equal(diagnostic.nativeRejection?.detailCode, 'SNAPSHOT_INVALID');
+    assert.match(diagnostic.nativeRejection!.message!, /Native snapshot rejected/);
+    assert.doesNotMatch(
+      JSON.stringify(diagnostic),
+      /opaque-secret|hidden|private input|private-detail|nested/,
+    );
+    assert.deepEqual(retainAutomationGatewayDiagnostic(diagnostic), diagnostic);
+    const long = automationGatewayDiagnostic(
+      'sessions.create',
+      Object.assign(error, { message: 'x'.repeat(4000) }),
+      { secrets: [] },
+    );
+    assert.ok(long.nativeRejection!.message!.length <= 1025);
+    assert.equal(
+      automationGatewayDiagnostic('cron.add', error, { secrets: [] }).nativeRejection,
+      undefined,
+    );
+  });
+
   it('should retain native runtime restrictions and catalog readiness without copying private details', () => {
     for (const [gatewayCode, message, details, expected] of [
       [
