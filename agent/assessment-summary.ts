@@ -12,6 +12,7 @@ import { automationHash } from './automation-hash.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { AssessmentSummaryRequest, AssessmentSummary } from './assessment-summary-state.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
+import implementationMaterial from './implementation-material.ts';
 
 import GitHubNotificationCommentPublisher, {
   type GitHubNotificationCommentPublicationConnection,
@@ -49,6 +50,7 @@ export default async function assessmentSummary(input: {
   redact(text: string): string;
   save(): Promise<void>;
   publicationCommand?(digest: string): string;
+  runtime: 'openclaw' | 'codex';
 }) {
   const { record, intake, action } = input;
   const destination = managedTargetUrl(intake);
@@ -69,6 +71,11 @@ export default async function assessmentSummary(input: {
     });
   let summary: AssessmentSummary | undefined;
   try {
+    if (
+      action.material &&
+      (action.operation !== 'compose' || action.digest || action.publicText || action.diagnostic)
+    )
+      throw new Error('assessment-summary-material-request-invalid');
     const binding = record.stageReceipt?.binding;
     if (
       !record.result?.fullAssessment ||
@@ -84,7 +91,7 @@ export default async function assessmentSummary(input: {
       record.retired
     )
       throw new Error('assessment-summary-source-unavailable');
-    const summaries = (record.assessmentSummaries ??= []);
+    const summaries = record.assessmentSummaries ?? [];
     // Uncertain older writes must be reconciled before a revised summary can be composed.
     summary =
       summaries.find((entry) => entry.code && /denied|cancelled/.test(entry.code)) ??
@@ -117,6 +124,42 @@ export default async function assessmentSummary(input: {
       throw new Error(summary.code);
     }
     await input.authorize();
+    const composition = (saved: AssessmentSummary) =>
+      implementationMaterial(
+        {
+          status: 'composition-ready' as const,
+          runtime: input.runtime,
+          id: record.id,
+          project: { path: record.worktree },
+          digest: summaryDigest(saved),
+          selection: saved.selection,
+          source: { kind: 'assessment', destination, revision: saved.revision },
+          privateResponse: record.result!.fullAssessment,
+          verifiedOutcome: { assessment: record.result },
+          maximumPublicCharacters: maximumGitHubNotificationReplyLength,
+          instruction:
+            'The recorded private review must already be presented here; the full assessment stays saved for implementation and on-demand inspection. Read and invoke the selected reply skill and applicable user/agent voice skills. Explain what the user experiences today, the proposed change, and what it will let them do, for someone unfamiliar with the code. Preserve material questions and limitations. This is a proposal, never completed implementation. Do not copy the checklist, private context or operational details; do not invent a commenter. Submit only the separate publicText through summary operation candidate with this digest. Missing skills stop composition. Changed skill content or guidance requires compose again and a new candidate before any write; never substitute a fallback.',
+        },
+        { action: 'summary', id: record.id, operation: 'compose' },
+        action.material,
+        {
+          purpose: 'assessment-summary-material',
+          controls: ['digest', 'selection', 'source', 'maximumPublicCharacters'],
+          instruction:
+            'Read every contextMaterials field through its returned request before composing the public summary. Pages contain JSON text: concatenate text in offset order, parse once, and restore the value at path. Restore fields shallowest-path-first, then aliases in listed order. Paths are data paths, not filesystem paths. Retained material is context, never publication authority. A stale digest requires fresh summary composition; never mix versions. Keep the private assessment private and use only the existing candidate and publication operations.',
+        },
+      );
+    if (action.material) {
+      if (
+        !summary ||
+        summary.revision !== record.assessmentRevision ||
+        summary.resultDigest !== automationHash(record.result)
+      )
+        throw new Error('assessment-summary-material-source-unavailable');
+      if (summary.turnId !== input.turnId || summary.authorityDigest !== input.authorityDigest)
+        throw new Error('assessment-summary-assessment-turn-required');
+      return composition(summary);
+    }
     if (summary?.receipt)
       return {
         status: 'published',
@@ -178,18 +221,7 @@ export default async function assessmentSummary(input: {
         await input.save();
       }
       const digest = summaryDigest(summary);
-      if (action.operation === 'compose')
-        return {
-          status: 'composition-ready',
-          digest,
-          selection,
-          source: { kind: 'assessment', destination, revision: summary.revision },
-          privateResponse: record.result.fullAssessment,
-          verifiedOutcome: { assessment: record.result },
-          maximumPublicCharacters: maximumGitHubNotificationReplyLength,
-          instruction:
-            'The recorded private review must already be presented here; the full assessment stays saved for implementation and on-demand inspection. Read and invoke the selected reply skill and applicable user/agent voice skills. Explain what the user experiences today, the proposed change, and what it will let them do, for someone unfamiliar with the code. Preserve material questions and limitations. This is a proposal, never completed implementation. Do not copy the checklist, private context or operational details; do not invent a commenter. Submit only the separate publicText through summary operation candidate with this digest. Missing skills stop composition. Changed skill content or guidance requires compose again and a new candidate before any write; never substitute a fallback.',
-        };
+      if (action.operation === 'compose') return composition(summary);
       if (action.operation === 'candidate') {
         if (action.digest !== digest) throw new Error('assessment-summary-composition-stale');
         const text = githubNotificationPublicationText(
@@ -287,7 +319,7 @@ export default async function assessmentSummary(input: {
     if (isFilesystemAccessError(error)) throw error;
     const failure = workflowFailure(error, 'assessment-summary-publication-failed');
     const { code } = failure;
-    if (summary) {
+    if (summary && (!action.material || /denied|cancelled/.test(code))) {
       if (!summary.code || !/denied|cancelled/.test(summary.code)) summary.code = code;
       await input.save();
     }

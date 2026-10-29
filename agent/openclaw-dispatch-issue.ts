@@ -566,19 +566,35 @@ export default class OpenClawDispatchIssue {
           ) {
             if (!record.request || !('key' in record.request))
               throw new Error('dispatch-work-context-mismatch');
+            if (
+              input.material &&
+              (!record.work?.selection ||
+                !record.progression ||
+                record.progression.stage !== 'implementation')
+            )
+              throw new Error('implementation-material-context-required');
             const previous = record.work?.selection;
             const configured = (await this.context.validateLocal(manifest, workspace, record, true))
               .manifest.github?.notifications?.issueAssignment?.implementation;
-            const selected = (
-              await selectWorkflowStage({
-                stage: 'implementation',
-                configuration: { ...configured, ...record.manualIssue?.selections?.implementation },
-                workspace: current.workspace,
-                observedAt: previous?.observedAt ?? now,
-                resolveSkill: (id) =>
-                  openClawSkill(request, record.request as { key: string; agentId: string }, id),
-              })
-            ).selection;
+            const selected = input.material
+              ? (record.work!.contextSelection ?? previous!)
+              : (
+                  await selectWorkflowStage({
+                    stage: 'implementation',
+                    configuration: {
+                      ...configured,
+                      ...record.manualIssue?.selections?.implementation,
+                    },
+                    workspace: current.workspace,
+                    observedAt: previous?.observedAt ?? now,
+                    resolveSkill: (id) =>
+                      openClawSkill(
+                        request,
+                        record.request as { key: string; agentId: string },
+                        id,
+                      ),
+                  })
+                ).selection;
             // retain selection with the context that first enters implementation.
             const response = await openClawWorkAction({
               record,
@@ -594,6 +610,7 @@ export default class OpenClawDispatchIssue {
             });
             if (record.work) {
               record.work.selection ??= selected;
+              if (!input.material) record.work.contextSelection = selected;
               await save();
             }
             return {
@@ -744,6 +761,7 @@ export default class OpenClawDispatchIssue {
           const expected = record.request;
           const recovery = record.resultTurnId !== caller.runId;
           return assessmentSummary({
+            runtime: 'openclaw',
             recovery,
             record,
             intake,

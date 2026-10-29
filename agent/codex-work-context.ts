@@ -21,11 +21,12 @@ export default async function codexWorkContext(
     admitted: ManagedIssue;
     selection: AssessmentSelection;
   },
+  readOnly = false,
 ) {
   const { current, git, signal, save, deps } = context;
   const { client, repo, admitted, selection } = verified;
   const work = record.continuation!;
-  if (work.result?.outcome !== 'done' || work.revisionSource)
+  if (!readOnly && (work.result?.outcome !== 'done' || work.revisionSource))
     await codexIssueBranch({
       record,
       records: context.records,
@@ -37,8 +38,8 @@ export default async function codexWorkContext(
       save,
       prepare: true,
     });
-  if (context.operatorInput && deps.directScope) work.scope = deps.directScope;
-  await save();
+  if (!readOnly && context.operatorInput && deps.directScope) work.scope = deps.directScope;
+  if (!readOnly) await save();
   return {
     ...implementationContext({
       runtime: 'codex',
