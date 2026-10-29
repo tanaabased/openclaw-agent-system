@@ -2,10 +2,128 @@ import assert from 'node:assert/strict';
 
 import {
   assertAutomationRun,
+  assertFailedCommandRun,
+  waitForAutomationRun,
   reportAutomationFailure,
 } from '../scripts/wait-for-automation-run.mjs';
 
 describe('scripts/wait-for-automation-run', () => {
+  it('should retry timed-out status reads for the same run without submitting work', async () => {
+    let elapsed = 0;
+    const calls: string[][] = [];
+    await waitForAutomationRun('maintenance', 'run-1', 'ok', {
+      now: () => elapsed,
+      sleep: async (ms: number) => {
+        elapsed += ms;
+      },
+      run: ((_command: string, args: string[], _input: unknown, timeout: number) => {
+        calls.push(args);
+        assert.equal(timeout, 30_000);
+        if (calls.length === 1) {
+          elapsed += timeout;
+          return { status: null, error: { code: 'ETIMEDOUT' } };
+        }
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            nativeId: 'job-1',
+            entries: calls.length === 2 ? [] : [{ runId: 'run-1', execution: 'ok' }],
+          }),
+        };
+      }) as never,
+      report: () => assert.fail('successful polling should not report a failure'),
+    });
+    assert.equal(calls.length, 3);
+    assert.ok(calls.every((args) => args[2] === 'runs' && args[5] === 'run-1'));
+  });
+
+  it('should bound status reads by one deadline and diagnose exhaustion without retrying work', async () => {
+    let elapsed = 0;
+    const timeouts: number[] = [];
+    const reports: unknown[] = [];
+    await assert.rejects(
+      waitForAutomationRun('maintenance', 'run-1', 'ok', {
+        maxWaitMs: 35_000,
+        now: () => elapsed,
+        sleep: async (ms: number) => {
+          elapsed += ms;
+        },
+        run: ((_command: string, _args: string[], _input: unknown, timeout: number) => {
+          timeouts.push(timeout);
+          elapsed += timeout;
+          return { status: null, error: { code: 'ETIMEDOUT' } };
+        }) as never,
+        report: (nativeId: string, runId: string) => {
+          reports.push({ nativeId, runId });
+        },
+      }),
+      /2 status reads timed out/,
+    );
+    assert.deepEqual(timeouts, [30_000, 3000]);
+    assert.equal(elapsed, 35_000);
+    assert.deepEqual(reports, [{ nativeId: undefined, runId: 'run-1' }]);
+  });
+
+  it('should stop polling on a command error, malformed response, wrong run or failed execution', async () => {
+    for (const result of [
+      { status: 1, stderr: 'permission denied' },
+      { status: null, error: { code: 'ENOENT', message: 'missing executable' } },
+      { status: 0, stdout: 'not json' },
+      { status: 0, stdout: JSON.stringify({ entries: [{ runId: 'other', execution: 'ok' }] }) },
+      { status: 0, stdout: JSON.stringify({ entries: [{ runId: 'run-1', execution: 'error' }] }) },
+    ]) {
+      let calls = 0;
+      let reports = 0;
+      await assert.rejects(
+        waitForAutomationRun('maintenance', 'run-1', 'ok', {
+          run: (() => {
+            calls++;
+            return result;
+          }) as never,
+          sleep: async () => assert.fail('terminal failures must not poll again'),
+          report: () => {
+            reports++;
+          },
+        }),
+      );
+      assert.equal(calls, 1);
+      assert.equal(reports, 1);
+    }
+  });
+
+  it('should distinguish the intended command exit from a scheduler error or missing output', () => {
+    const entry = {
+      jobId: 'job-1',
+      runId: 'run-1',
+      status: 'error',
+      summary: 'retained output',
+      diagnostics: { entries: [{ exitCode: 17 }] },
+    };
+    assertFailedCommandRun({ entries: [entry] }, 'job-1', 'run-1', 17, () =>
+      assert.fail('verified command failure needs no diagnostic'),
+    );
+    for (const changed of [
+      { ...entry, jobId: 'other' },
+      { ...entry, runId: 'other' },
+      { ...entry, status: 'ok' },
+      { ...entry, summary: null },
+      { ...entry, diagnostics: { entries: [{ exitCode: 1 }] } },
+      { ...entry, diagnostics: undefined, error: 'SQLite host admission timed out' },
+    ]) {
+      const reports: unknown[] = [];
+      assert.throws(() =>
+        assertFailedCommandRun(
+          { entries: [changed] },
+          'job-1',
+          'run-1',
+          17,
+          (nativeId: string, runId: string) => reports.push({ nativeId, runId }),
+        ),
+      );
+      assert.deepEqual(reports, [{ nativeId: 'job-1', runId: 'run-1' }]);
+    }
+  });
+
   it('should require the exact expected failure without accepting success or another run', () => {
     const page = { entries: [{ runId: 'requested-run', execution: 'error' }] };
     assert.equal(

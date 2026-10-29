@@ -5,6 +5,8 @@ import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.t
 
 const model = /^(?:aimock\/)?gpt-5\.(?:5|4-nano)$/u;
 const execCall = 'call_runtime_exec';
+// polling may return early on output; native exec owns the three-minute deadline.
+const execPollCalls = Array.from({ length: 16 }, (_, index) => `call_runtime_poll_${index + 1}`);
 const codexExecCall = 'call_runtime_codex_exec';
 const codexPollCalls = [1, 2, 3].map((attempt) => `call_runtime_codex_poll_${attempt}`);
 
@@ -22,6 +24,21 @@ function codexExecSession(request: ChatCompletionRequest): number | undefined {
   const match = initial?.match(/^Process running with session ID ([0-9]+)\r?$/mu);
   const sessionId = match ? Number(match[1]) : undefined;
   return sessionId !== undefined && Number.isSafeInteger(sessionId) ? sessionId : undefined;
+}
+
+function openClawExecResult(request: ChatCompletionRequest) {
+  const ids = [execCall, ...execPollCalls];
+  for (let index = ids.length - 1; index >= 0; index--) {
+    const text = openClawAIMockToolResultText(request.messages, ids[index]!);
+    if (text !== undefined) return { index, text };
+  }
+  return undefined;
+}
+
+function openClawExecSession(request: ChatCompletionRequest) {
+  return openClawAIMockToolResultText(request.messages, execCall)?.match(
+    /Command still running \(session ([A-Za-z0-9_-]+), pid [0-9]+\)/u,
+  )?.[1];
 }
 
 function userIncludes(request: ChatCompletionRequest, signal: string): boolean {
@@ -112,21 +129,66 @@ const fixtures: Fixture[] = [
           arguments: JSON.stringify({
             command: 'agent-system-runtime-probe openclaw',
             host: 'gateway',
-            timeoutSeconds: 60,
-            yieldMs: 120000,
+            timeoutSeconds: 180,
+            yieldMs: 1000,
           }),
         },
       ],
     },
   },
+  ...execPollCalls.map((id, index): Fixture => ({
+    match: {
+      model,
+      hasToolResult: true,
+      toolName: 'process',
+      predicate: (request) => {
+        const latest = openClawExecResult(request);
+        const session = openClawExecSession(request);
+        return (
+          session !== undefined &&
+          latest?.index === index &&
+          (index === 0
+            ? latest.text.includes(`Command still running (session ${session},`)
+            : latest.text.includes('Process still running.') ||
+              latest.text.includes('No new output; this session may be waiting for input.'))
+        );
+      },
+    },
+    response: (request) => ({
+      toolCalls: [
+        {
+          id,
+          name: 'process',
+          arguments: JSON.stringify({
+            action: 'poll',
+            sessionId: openClawExecSession(request),
+            timeout: 30000,
+          }),
+        },
+      ],
+    }),
+  })),
   {
     match: {
       model,
       hasToolResult: true,
-      predicate: (request) =>
-        openClawAIMockToolResultText(request.messages, execCall)?.includes(
-          'runtime-boundary-verified',
-        ) === true,
+      predicate: (request) => {
+        const latest = openClawExecResult(request);
+        const verified = [execCall, ...execPollCalls].some((id) =>
+          /^runtime-boundary-verified\r?$/mu.test(
+            openClawAIMockToolResultText(request.messages, id) ?? '',
+          ),
+        );
+        return (
+          verified &&
+          latest !== undefined &&
+          (latest.index === 0
+            ? openClawExecSession(request) === undefined &&
+              !/Command timed out|Process exited with code [1-9]/u.test(latest.text)
+            : openClawExecSession(request) !== undefined &&
+              /Process exited with code 0\./u.test(latest.text))
+        );
+      },
     },
     response: { content: 'runtime-exec-ready', id: 'runtime-exec-final' },
   },
@@ -140,6 +202,7 @@ export const runtimeBoundaryScenario: OpenClawAIMockScenario = {
   systemPromptSignals: [],
   toolCalls: [
     { id: execCall, name: 'exec' },
+    ...execPollCalls.map((id) => ({ id, name: 'process' })),
     { id: codexExecCall, name: 'exec_command' },
     ...codexPollCalls.map((id) => ({ id, name: 'write_stdin' })),
   ],

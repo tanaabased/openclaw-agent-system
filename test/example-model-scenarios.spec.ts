@@ -221,6 +221,45 @@ describe('scripts/example-model-scenarios', () => {
     }
   });
 
+  it('should poll only the issued openclaw runtime process and require its successful exit', () => {
+    const scenario = resolveExampleModelScenario('openclaw-runtimes');
+    const prompt = 'Run agent-system-runtime-probe openclaw';
+    const input = request('runtime-openclaw', prompt, ['exec', 'process'], {
+      callId: 'call_runtime_exec',
+      content: 'Command still running (session owned-123, pid 42).',
+    });
+    const respond = () => {
+      const fixture = matchFixture([...scenario.fixtures], input);
+      return typeof fixture?.response === 'function' ? fixture.response(input) : fixture?.response;
+    };
+    for (let index = 1; index <= 16; index++) {
+      const response = respond();
+      assert.ok(response && 'toolCalls' in response);
+      assert.equal(response.toolCalls?.length, 1);
+      assert.equal(response.toolCalls![0]!.name, 'process');
+      assert.deepEqual(JSON.parse(response.toolCalls![0]!.arguments), {
+        action: 'poll',
+        sessionId: 'owned-123',
+        timeout: 30000,
+      });
+      input.messages.push({
+        role: 'tool',
+        tool_call_id: `call_runtime_poll_${index}`,
+        content:
+          index === 1
+            ? 'runtime-boundary-verified\nProcess still running.'
+            : 'Process still running.',
+      });
+    }
+    assert.equal(respond(), undefined, 'poll exhaustion must not launch another command');
+    input.messages.at(-1)!.content = 'Process exited with code 1.';
+    assert.equal(respond(), undefined);
+    input.messages.at(-1)!.content = 'Process exited with code 0.';
+    assert.deepEqual(respond(), { content: 'runtime-exec-ready', id: 'runtime-exec-final' });
+    input.messages[3]!.content = 'Command timed out after 180 seconds.';
+    assert.equal(respond(), undefined, 'poll results without a native session must not complete');
+  });
+
   it('should require the matching native execution receipt before completing either shell mode', () => {
     const scenario = resolveExampleModelScenario('os-execution');
     for (const mode of ['pipe', 'pty']) {

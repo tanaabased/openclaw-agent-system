@@ -134,9 +134,17 @@ openclaw agent-system automations list --json > "$TMPDIR/automation-output-job.j
 native=$(jq -er '.jobs[] | select(.id == "failed-output") | .nativeId' "$TMPDIR/automation-output-job.json")
 openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.delivery.mode == "none" and (.payload | has("outputMaxBytes") | not)'
 run_id=$(openclaw agent-system automations run failed-output --json | jq -er 'select(.status == "queued") | .runId | strings')
-printf '%s\n' "$run_id" > "$TMPDIR/failed-output-run-id"
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" failed-output "$run_id" error
-openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg runId "$run_id" '{id:$id,runId:$runId,limit:1}')" --json | jq -e --arg runId "$run_id" 'any(.entries[]; .runId == $runId and .status == "error" and (.summary | contains("stdout-fixture-marker")) and (.summary | contains("stderr-fixture-marker")) and any(.diagnostics.entries[]; .exitCode == 17 and .truncated == true) and any(.summary | split("\n")[] | fromjson?; .id == "failed-output" and .exitCode == 17 and .termination == "exit" and .timedOut == false and .cancelled == false and .truncated == true and .stdoutTruncatedBytes > 0 and .stderrTruncatedBytes > 0))'
+openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg runId "$run_id" '{id:$id,runId:$runId,limit:1}')" --json > "$TMPDIR/failed-output-native-run.json"
+node --input-type=module - "$native" "$run_id" <<'NODE'
+import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+const { assertFailedCommandRun } = await import(pathToFileURL(process.env.GITHUB_WORKSPACE + '/scripts/wait-for-automation-run.mjs'));
+const page = JSON.parse(readFileSync(process.env.TMPDIR + '/failed-output-native-run.json', 'utf8'));
+assertFailedCommandRun(page, process.argv[2], process.argv[3], 17);
+NODE
+jq -e --arg runId "$run_id" 'any(.entries[]; .runId == $runId and .status == "error" and (.summary | contains("stdout-fixture-marker")) and (.summary | contains("stderr-fixture-marker")) and any(.diagnostics.entries[]; .exitCode == 17 and .truncated == true) and any(.summary | split("\n")[] | fromjson?; .id == "failed-output" and .exitCode == 17 and .termination == "exit" and .timedOut == false and .cancelled == false and .truncated == true and .stdoutTruncatedBytes > 0 and .stderrTruncatedBytes > 0))' "$TMPDIR/failed-output-native-run.json"
+printf '%s\n' "$run_id" > "$TMPDIR/failed-output-run-id"
 ```
 
 ```bash

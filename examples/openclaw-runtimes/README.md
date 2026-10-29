@@ -18,7 +18,7 @@ Execute one declared-PATH command through native OpenClaw and OpenClaw-hosted Co
 
 - One Ubuntu job installs one agent per runtime. Native exec uses an issued command capability; hosted Codex uses its configured per-agent home and native thread context.
 - Strict AIMock supplies both authored execution turns with synthetic credentials and no live fallback. Hosted Codex uses direct tool loading; the Gateway and Codex app server are real.
-- A shared workspace probe and conflicting host executable make wrong PATH precedence fail. Turns run once; an active Codex command is polled through its session ID at most three times within the turn timeout.
+- A shared workspace probe and conflicting host executable make wrong PATH precedence fail. Turns run once; an active Codex command is polled through its session ID at most three times within the turn timeout. OpenClaw polls the same native process at most sixteen times under its three-minute execution deadline.
 - Bounded tool results and HTTP error bodies support diagnostics without exposing prompts or transport credentials. Memory search is disabled.
 
 ## Setup
@@ -74,7 +74,7 @@ grep -Fx verified "$GITHUB_WORKSPACE/examples/openclaw-runtimes/openclaw/receipt
 # should complete all authored turns through strict aimock
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/evidence | tee "$TMPDIR/runtime-boundaries-evidence.json"
-jq -e '.scenario == "openclaw-runtimes" and .strictMissCount == 0 and .finalResponseCount == 2 and any(.tools[]; .name == "exec_command" and .callResponseCount == 1 and .resultRequestCount >= 1 and .resultRequestCount <= 4) and any(.tools[]; .name == "exec" and .callResponseCount == 1 and .resultRequestCount == 1)' "$TMPDIR/runtime-boundaries-evidence.json"
+jq -e '.scenario == "openclaw-runtimes" and .strictMissCount == 0 and .finalResponseCount == 2 and any(.tools[]; .name == "exec_command" and .callResponseCount == 1 and .resultRequestCount >= 1 and .resultRequestCount <= 4) and any(.tools[]; .name == "exec" and .callResponseCount == 1 and .resultRequestCount >= 1 and .resultRequestCount <= 17)' "$TMPDIR/runtime-boundaries-evidence.json"
 ```
 
 ## Cleanup
