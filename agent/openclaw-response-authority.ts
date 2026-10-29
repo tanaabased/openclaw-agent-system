@@ -46,26 +46,53 @@ export default async function openClawResponseAuthority(input: {
     if (observed.status !== 'timeout')
       throw new Error('dispatch-assessment-continuation-not-ready');
     // agent.wait is process-local; after restart require the exact native input and terminal reply.
-    await nativeInputEvent({
+    const original = await nativeInputEvent({
       request,
       sessionKey: caller.sessionKey,
       sessionId: caller.sessionId,
       runId: record.resultTurnId,
-      retained: [],
+      retained: [
+        record.assessmentCaller,
+        record.turnEvidence,
+        ...(record.assessmentHistory ?? []).map((entry) =>
+          entry.inputEventId ? { runId: entry.runId, inputEventId: entry.inputEventId } : undefined,
+        ),
+        record.assessmentTurn?.consumedByEventId
+          ? {
+              runId: record.assessmentTurn.runId,
+              inputEventId: record.assessmentTurn.consumedByEventId,
+            }
+          : undefined,
+      ],
     });
-    const history = sessionObject(
+    let history = sessionObject(
       await request('chat.history', {
         sessionKey: caller.sessionKey,
-        inputRunIds: [record.resultTurnId],
+        sessionId: caller.sessionId,
+        messageId: original.inputEventId,
         limit: 200,
         maxChars: 100000,
+        toolResultMaxChars: 1000,
       }),
     );
-    if (
-      history.sessionId !== caller.sessionId ||
-      !Array.isArray(history.messages) ||
-      !issueTurnReply(history.messages, record.resultTurnId)
-    )
-      throw new Error('dispatch-assessment-continuation-not-ready');
+    // follow the host's incarnation-bound cursor, never infer completion from a missing tail entry.
+    const cursors = new Set<string>();
+    for (let page = 0; page < 20; page++) {
+      if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages)) break;
+      if (issueTurnReply(history.messages, record.resultTurnId)) return;
+      const cursor = history.newerCursor;
+      if (typeof cursor !== 'string' || !cursor || cursors.has(cursor)) break;
+      cursors.add(cursor);
+      history = sessionObject(
+        await request('chat.history', {
+          sessionKey: caller.sessionKey,
+          cursor,
+          limit: 200,
+          maxChars: 100000,
+          toolResultMaxChars: 1000,
+        }),
+      );
+    }
+    throw new Error('dispatch-assessment-continuation-not-ready');
   }
 }

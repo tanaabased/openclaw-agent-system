@@ -108,11 +108,12 @@ async function fixture() {
       return {
         sessionId:
           run === record.resultTurnId ? (historical?.sessionId ?? 'incarnation') : 'incarnation',
-        messages: params.messageId
-          ? [entry]
-          : ended || (historical && run === record.resultTurnId)
-            ? [entry, reply]
-            : [entry],
+        messages:
+          params.messageId && params.limit === 1
+            ? [entry]
+            : ended || (historical && run === record.resultTurnId)
+              ? [entry, reply]
+              : [entry],
         inputReceipts:
           historical?.cancelled && run === record.resultTurnId
             ? [

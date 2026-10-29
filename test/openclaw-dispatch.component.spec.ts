@@ -384,6 +384,10 @@ describe('agent/openclaw issue dispatch', () => {
                 : { messages, inputReceipts, active };
               const currentMessages = saved.messages;
               const currentReceipts = saved.inputReceipts;
+              const available = [...anchoredMessages, ...currentMessages];
+              const anchor = available.findIndex(
+                (entry) => (entry.__openclaw as Record<string, unknown>)?.id === params.messageId,
+              );
               return {
                 sessionId:
                   historySessionId ??
@@ -391,10 +395,12 @@ describe('agent/openclaw issue dispatch', () => {
                     ? sessions.get(String(params.sessionKey))?.sessionId
                     : session?.sessionId),
                 messages: params.messageId
-                  ? [...currentMessages, ...anchoredMessages].filter(
-                      (entry) =>
-                        (entry.__openclaw as Record<string, unknown>)?.id === params.messageId,
-                    )
+                  ? Number(params.limit) > 1 && anchor >= 0
+                    ? available.slice(Math.max(0, anchor - 1), anchor + Number(params.limit))
+                    : available.filter(
+                        (entry) =>
+                          (entry.__openclaw as Record<string, unknown>)?.id === params.messageId,
+                      )
                   : params.limit === 1
                     ? currentMessages.slice(-1)
                     : currentMessages,
@@ -4492,6 +4498,81 @@ describe('agent/openclaw issue dispatch', () => {
     assessmentReply(input.id);
     service = new OpenClawDispatch(service.dependencies);
     assert.equal((await assess(input.id)).status, 'assessment-completed');
+    assert.equal(sends().length, 1);
+  });
+
+  it('should revise the original clarification and enter work after its source leaves the history tail', async () => {
+    const input = await next();
+    await prepare(input);
+    await assess(input.id);
+    await context(input.id);
+    const clarification: AssessmentResult = {
+      version: 1,
+      outcome: 'clarification-needed',
+      summary: 'Clarify the caller.',
+      assessment: 'Retain the investigated plan while awaiting caller direction.',
+      questions: ['Should the API caller receive the result?'],
+      fullAssessment: 'The original investigated plan.',
+      evidence: [],
+      progress: { completed: ['Inspected handler.'], remaining: ['Clarify caller.'] },
+    };
+    const saved = await submit(input.id, clarification);
+    assert.ok('previousResultDigest' in saved);
+    assessmentReply(input.id);
+    const oldMessages = [...messages];
+    const before = await record();
+    anchoredMessages = [oldMessages[0]!];
+    messages = [
+      {
+        role: 'user',
+        content: 'Continue the retained plan with the API caller.',
+        idempotencyKey: 'recovery-followup:user',
+        __openclaw: { id: 'recovery-answer', idempotencyKey: 'recovery-followup:user' },
+      },
+    ];
+    active = true;
+    const credential = service.dependencies.credential;
+    service = new OpenClawDispatch({
+      ...service.dependencies,
+      credential: {
+        use: (authority, operation) =>
+          credential.use(authority, (request) =>
+            operation(async (method, params) => {
+              if (
+                method === 'chat.history' &&
+                params.messageId === 'input-event' &&
+                Number(params.limit) > 1
+              )
+                return { sessionId: 'ordinary-id', messages: oldMessages };
+              return request(method, params);
+            }),
+          ),
+      },
+    });
+    const who = assessor(input.id, 'recovery-followup');
+    const fresh = await context(input.id, who);
+    assert.ok('previousResult' in fresh && fresh.previousResult);
+    assert.deepEqual(fresh.previousResult, clarification);
+    assert.equal(
+      (await submit(input.id, plan, saved.previousResultDigest, who)).status,
+      'recorded',
+    );
+    const implementation = await service.run(
+      manifest,
+      root,
+      who,
+      { action: 'implementation-context', id: input.id },
+      true,
+    );
+    assert.ok('issueStage' in implementation && implementation.issueStage === 'implementation');
+    const after = await record();
+    assert.equal(after.threadId, before.threadId);
+    assert.equal(after.worktree, before.worktree);
+    assert.deepEqual(after.sessionCreation, before.sessionCreation);
+    assert.deepEqual(
+      after.assessmentHistory?.map((entry) => entry.result),
+      [clarification, plan],
+    );
     assert.equal(sends().length, 1);
   });
 
