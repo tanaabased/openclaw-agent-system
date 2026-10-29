@@ -3012,7 +3012,11 @@ describe('agent/openclaw issue dispatch', () => {
     });
   }
 
-  async function readyWork(mode: 'plan' | 'work' | 'auto', decision?: 'plan' | 'work') {
+  async function readyWork(
+    mode: 'plan' | 'work' | 'auto',
+    decision?: 'plan' | 'work',
+    assessment = plan,
+  ) {
     const input = await next();
     await prepare(input);
     await assess(input.id);
@@ -3021,10 +3025,10 @@ describe('agent/openclaw issue dispatch', () => {
       input.id,
       decision
         ? {
-            ...plan,
+            ...assessment,
             decision: { mode: decision, reasons: ['Bounded work.'] },
           }
-        : plan,
+        : assessment,
     );
     assessmentReply(input.id);
     assert.equal((await assess(input.id)).status, 'assessment-completed');
@@ -3534,6 +3538,57 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(creates().length, 1);
       assert.equal(sends().length, stage === 'assessment' ? 1 : 2);
     });
+
+  it('should recover oversized assessment refresh material before an auto decision', async () => {
+    const large = 'Retained plan with Unicode 🧭 and evidence.\n'.repeat(600);
+    const retained = { ...plan, plan: large, fullAssessment: large, assessment: large };
+    assert.ok(JSON.stringify(retained).length > 64000);
+    const id = await readyWork('plan', undefined, retained);
+    manifest.github!.notifications!.issueAssignment!.mode = 'auto';
+    assert.equal((await workPass('decision-pass')).status, 'assessment-pending');
+    inputReceipts = [];
+    const who = assessor(id, `${id}:auto-decision`);
+    const request = { action: 'context' as const, id: id };
+    const first = await service.run(manifest, root, who, request);
+    assert.equal(first.status, 'verified');
+    assert.ok('contextMaterials' in first && first.contextMaterials);
+    const before = await record();
+    const restored = await hydrateImplementation(first, async (read) =>
+      service.run(manifest, root, who, read as typeof request),
+    );
+    assert.deepEqual(restored.previousResult, retained);
+    assert.equal(restored.previousResultDigest, automationHash(retained));
+    const after = await record();
+    assert.deepEqual(after.result, before.result);
+    assert.deepEqual(after.stageReceipt, before.stageReceipt);
+    assert.deepEqual(after.progression, before.progression);
+    assert.deepEqual(after.work, before.work);
+    const read = (first.contextMaterials as { fields: Field[] }).fields[0]!.request;
+    await assert.rejects(
+      service.run(manifest, root, coordinator, read as typeof request),
+      /caller-mismatch/,
+    );
+    await assert.rejects(
+      service.run(manifest, root, who, {
+        ...request,
+        material: {
+          ...(read.material as { path: string[]; digest: string; offset: number }),
+          digest: 'f'.repeat(64),
+        },
+      }),
+      /assessment-material-stale/,
+    );
+    const result = await service.run(manifest, root, who, {
+      action: 'result',
+      id: id,
+      previousResultDigest: restored.previousResultDigest as string,
+      result: { ...retained, decision: { mode: 'work', reasons: ['Bounded retained plan.'] } },
+    });
+    assert.equal(result.status, 'recorded', JSON.stringify(result));
+    const saved = (await record()).result;
+    assert.ok(saved?.outcome === 'plan-ready');
+    assert.equal(saved.plan, large);
+  });
 
   for (const decision of ['plan', 'work'] as const)
     it(`should request a missing auto decision in the same plan session and honor ${decision}`, async () => {

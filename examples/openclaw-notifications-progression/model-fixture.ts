@@ -28,6 +28,7 @@ const dispatchStages = [
   'work-result',
   ...Array.from({ length: 64 }, (_, i) => `work-material-${i}`),
   ...Array.from({ length: 64 }, (_, i) => `summary-material-${i}`),
+  ...Array.from({ length: 64 }, (_, i) => `assessment-material-${i}`),
   'recovery-present',
   'summary-compose',
   'summary-candidate',
@@ -105,7 +106,7 @@ function respond(
   };
   const hydrate = (
     context: Record<string, unknown>,
-    owner: 'work' | 'summary',
+    owner: 'work' | 'summary' | 'assessment',
   ): FixtureResponse | undefined => {
     const materials = context.contextMaterials as
       | {
@@ -335,7 +336,10 @@ function respond(
       return { content: 'The decision was interrupted before its result was recorded.' };
     const fresh = result('refresh-context');
     if (!fresh) return dispatch('refresh-context', { action: 'context', id: decisionId });
-    if (fresh.status !== 'verified' || fresh.mode !== 'auto' || !fresh.previousResult) return;
+    if (fresh.status !== 'verified' || fresh.mode !== 'auto') return;
+    const pendingAssessment = hydrate(fresh, 'assessment');
+    if (pendingAssessment) return pendingAssessment;
+    if (!fresh.previousResult) return;
     const saved = result('refresh-result');
     if (!saved)
       return dispatch('refresh-result', {

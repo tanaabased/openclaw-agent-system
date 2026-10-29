@@ -1,3 +1,4 @@
+import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -39,7 +40,7 @@ const schemas = {
     fallback: Type.Optional(Type.Literal('default')),
   }),
   reconcile: object({ id, receipt: Type.Optional(Type.Unknown()) }),
-  context: object({ id }),
+  context: object({ id, material: Type.Optional(implementationMaterialSchema) }),
   present: object({ id, includeDetails: Type.Optional(Type.Boolean()) }),
   summary: object({ id, ...assessmentSummaryRequestProperties }),
   result: object({

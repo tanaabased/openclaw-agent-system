@@ -1,3 +1,4 @@
+import assessmentMaterial from './assessment-material.ts';
 import implementationMaterial from './implementation-material.ts';
 import recoverOpenClawTask from './openclaw-dispatch-recovery.ts';
 import issueLaunch from './issue-launch.ts';
@@ -115,6 +116,7 @@ export default class OpenClawDispatch {
       'material' in input &&
       input.material &&
       !(
+        input.action === 'context' ||
         (input.action === 'implementation-context' && !input.scope) ||
         (input.action === 'summary' &&
           input.operation === 'compose' &&
@@ -151,6 +153,12 @@ export default class OpenClawDispatch {
         return implementationMaterial(response, request, input.material);
       }
     }
+    if (
+      input.action === 'context' &&
+      'resultContract' in response &&
+      response.resultContract === 'assessment-result/v1'
+    )
+      return assessmentMaterial(response, { action: 'context', id: input.id }, input.material);
     return response;
   }
   private async launch(

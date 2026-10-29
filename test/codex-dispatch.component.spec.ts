@@ -1124,10 +1124,11 @@ describe('agent/codex-dispatch', () => {
         ),
       );
       assert.equal(writes, 1);
-      assert.deepEqual(
-        (await request('context', { id: prepared.id }, child)).previousResult,
-        privateResult,
+      const refreshed = await hydrateImplementation(
+        await request('context', { id: prepared.id }, child),
+        async (read) => request('context', { id: read.id, material: read.material }, child),
       );
+      assert.deepEqual(refreshed.previousResult, privateResult);
     });
   }
 
@@ -5097,6 +5098,50 @@ describe('agent/codex-dispatch', () => {
     assert.equal(record.continuation!.assessmentDigest, automationHash(autoResult));
     assert.equal(record.continuation!.assessmentSelectionDigest, automationHash(record.assessment));
     assert.equal(record.continuation!.attempt!.turnId, 'implementation-turn');
+  });
+
+  it('should recover oversized codex assessment refresh material without changing retained authority', async () => {
+    const large = 'Retained plan with Unicode 🧭 and evidence.\n'.repeat(600);
+    const retained = { ...result, plan: large, fullAssessment: large, assessment: large };
+    assert.ok(JSON.stringify(retained).length > 64000);
+    const work = await workIssue(retained, 'Follow the plan.', undefined, 'plan');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    native!.turnId = 'assessment-refresh-turn';
+    const child = { threadId: native!.id };
+    const first = await request('context', { id: work.id }, child);
+    assert.equal(first.status, 'verified');
+    assert.ok(first.contextMaterials);
+    const before = (await store.read()).records[0]!;
+    const restored = await hydrateImplementation(first, async (read) =>
+      request('context', { id: read.id, material: read.material }, child),
+    );
+    assert.deepEqual(restored.previousResult, retained);
+    assert.equal(restored.previousResultDigest, automationHash(retained));
+    const after = (await store.read()).records[0]!;
+    assert.deepEqual(after.result, before.result);
+    assert.deepEqual(after.stageReceipt, before.stageReceipt);
+    assert.deepEqual(after.progression, before.progression);
+    assert.deepEqual(after.continuation, before.continuation);
+    const pageRequest = (first.contextMaterials as { fields: Field[] }).fields[0]!.request;
+    const read = { id: pageRequest.id, material: pageRequest.material };
+    await assert.rejects(
+      request('context', read, { threadId: 'foreign-thread' }),
+      /caller-mismatch/,
+    );
+    const recorded = await request(
+      'result',
+      {
+        id: work.id,
+        previousResultDigest: restored.previousResultDigest,
+        result: { ...retained, summary: 'Revised summary with the complete plan preserved.' },
+      },
+      child,
+    );
+    assert.equal(recorded.status, 'recorded');
+    const saved = (await store.read()).records[0]!.result;
+    assert.ok(saved?.outcome === 'plan-ready');
+    assert.equal(saved.plan, large);
   });
 
   for (const decision of ['plan', 'work'] as const)

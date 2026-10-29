@@ -1,3 +1,4 @@
+import assessmentMaterial from '../agent/assessment-material.ts';
 import summaryFixture from './assessment-summary-fixture.ts';
 import type { AssessmentSummaryRequest } from '../agent/assessment-summary-state.ts';
 import assert from 'node:assert/strict';
@@ -862,6 +863,55 @@ for (const scenario of [
           if (!interrupted) await publishProgressionSummary(input, selected, true);
           assert.equal((await action(input, 'implementation-context', selected)).id, id);
         });
+      it('should reconstruct an oversized assessment before submitting the auto decision', async () => {
+        const input = request(`Refresh agent_system_dispatch action context with id ${id}.`);
+        await action(input, 'context');
+        const retained = {
+          version: 1,
+          outcome: 'plan-ready',
+          summary: 'Ready.',
+          assessment: retainedPlan,
+          fullAssessment: retainedPlan,
+          plan: retainedPlan,
+          evidence: [],
+          progress: { completed: [], remaining: [] },
+        };
+        assert.ok(JSON.stringify(retained).length > 64000);
+        const source = {
+          status: 'verified',
+          runtime: 'openclaw',
+          id,
+          mode: 'auto',
+          previousResult: retained,
+          previousResultDigest: digest,
+        };
+        const ownerRequest = { action: 'context', id };
+        append(input, 'refresh-context', assessmentMaterial(source, ownerRequest));
+        let pages = 0;
+        for (; pages < 64; pages++) {
+          const next = await response(input);
+          assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
+          const args = JSON.parse(next.toolCalls[0]!.arguments);
+          if (!args.material) break;
+          assert.ok(Value.Check(dispatchParameters, args));
+          assert.equal(args.action, 'context');
+          append(
+            input,
+            `assessment-material-${pages}`,
+            assessmentMaterial(source, ownerRequest, args.material),
+          );
+        }
+        assert.ok(pages > 0 && pages < 64);
+        const submitted = await action(input, 'result');
+        assert.equal(submitted.previousResultDigest, digest);
+        assert.deepEqual(submitted.result, {
+          ...retained,
+          decision: {
+            mode: 'work',
+            reasons: ['The retained documentation plan is bounded and actionable.'],
+          },
+        });
+      });
       for (const direct of [false, true])
         it(`should ask clarification during automatic work and resume an answer with direct handoff ${direct}`, async () => {
           const automatic = request(

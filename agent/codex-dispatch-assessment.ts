@@ -1,3 +1,5 @@
+import assessmentMaterial from './assessment-material.ts';
+import type { ImplementationMaterialRead } from './implementation-material.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
@@ -355,7 +357,8 @@ export async function assessDispatch(
     // historical selection remains evidence; each invocation uses live configuration.
     record.assessment ??= assessment;
     await save();
-    return {
+    const context = {
+      runtime: 'codex',
       status: 'verified' as const,
       assignmentObservation: record.assignmentObservation,
       entry: 'managed',
@@ -426,6 +429,11 @@ export async function assessDispatch(
         codexAssessmentInstructions +
         (record.issueMode === 'auto' ? '\n\n' + autoAssessmentInstructions : ''),
     };
+    return assessmentMaterial(
+      context,
+      { action: 'context', id: record.id },
+      input.material as ImplementationMaterialRead | undefined,
+    );
   }
   if (action === 'result') {
     const continuation = record.issueMode === 'auto' ? record.continuation : undefined;

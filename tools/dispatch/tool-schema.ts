@@ -58,7 +58,11 @@ const dispatchRequestVariants = Type.Union([
   object({ action: Type.Literal('reconcile'), id }),
   object({ action: Type.Literal('start'), id }),
   object({ action: Type.Literal('assess'), id }),
-  object({ action: Type.Literal('context'), id }),
+  object({
+    action: Type.Literal('context'),
+    id,
+    material: Type.Optional(implementationMaterialSchema),
+  }),
   object({ action: Type.Literal('present'), id, includeDetails: Type.Optional(Type.Boolean()) }),
   object({ action: Type.Literal('summary'), id, ...assessmentSummaryRequestProperties }),
   object({
