@@ -761,6 +761,7 @@ export default class OpenClawDispatchIssue {
           const expected = record.request;
           const recovery = record.resultTurnId !== caller.runId;
           return assessmentSummary({
+            runtime: 'openclaw',
             recovery,
             record,
             intake,

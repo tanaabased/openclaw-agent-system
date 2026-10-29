@@ -1,3 +1,5 @@
+import summaryFixture from './assessment-summary-fixture.ts';
+import type { AssessmentSummaryRequest } from '../agent/assessment-summary-state.ts';
 import assert from 'node:assert/strict';
 import implementationMaterial, {
   type ImplementationMaterialRead,
@@ -147,18 +149,49 @@ for (const scenario of [
     hold = false,
   ) {
     assert.equal((await action(input, 'summary', selectedScenario)).operation, 'compose');
-    append(input, 'summary-compose', {
-      status: 'composition-ready',
-      digest,
-      selection: { defaultSkill: true, skill: { path: '/tmp/SUMMARY.md' } },
-    });
+    const owner =
+      selectedScenario.id === 'openclaw-notifications-progression' ? summaryFixture() : undefined;
+    if (owner) {
+      owner.record.id = id;
+      owner.retain({ ...owner.result, plan: retainedPlan, fullAssessment: retainedPlan });
+    }
+    const composition = owner
+      ? await owner.run({ operation: 'compose' })
+      : {
+          status: 'composition-ready',
+          digest,
+          selection: { defaultSkill: true, skill: { path: '/tmp/SUMMARY.md' } },
+        };
+    assert.ok('digest' in composition);
+    const compositionDigest = composition.digest;
+    const beforePages = owner && structuredClone(owner.record);
+    assert.ok(JSON.stringify(composition).length < 48000);
+    append(input, 'summary-compose', composition);
+    if (owner) {
+      let pages = 0;
+      for (; pages < 64; pages++) {
+        const next = await response(input, selectedScenario);
+        assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
+        const args = JSON.parse(next.toolCalls[0]!.arguments);
+        if (!args.material) break;
+        assert.ok(Value.Check(dispatchParameters, args));
+        assert.equal(args.action, 'summary');
+        assert.equal(args.operation, 'compose');
+        const page: Record<string, unknown> = await owner.run(args as AssessmentSummaryRequest);
+        assert.equal(page.status, 'material');
+        assert.ok(JSON.stringify(page).length < 48000);
+        append(input, `summary-material-${pages}`, page);
+      }
+      assert.ok(pages > 0 && pages < 64);
+      assert.deepEqual(owner.record, beforePages);
+    }
     const read = await response(input, selectedScenario);
     assert.ok('toolCalls' in read);
     assert.equal(read.toolCalls?.[0]?.name, 'read');
     append(input, 'summary-skill', { text: 'Selected reply guidance' });
     const candidate = await action(input, 'summary', selectedScenario);
     assert.equal(candidate.operation, 'candidate');
-    assert.equal(candidate.digest, digest);
+    assert.equal(candidate.digest, compositionDigest);
     append(input, 'summary-candidate', { status: 'candidate-recorded' });
     assert.equal((await action(input, 'summary', selectedScenario)).digest, undefined);
     append(input, 'summary-preview', { status: 'publication-ready', digest: 'e'.repeat(64) });

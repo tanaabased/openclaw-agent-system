@@ -46,7 +46,12 @@ supplies the current request, required inputs, and recovery instructions.
 | Retire a managed task or exact native chat           | `retire`                              | [Task Retirement](../../skills/task-retirement/SKILL.md)                                      |
 | Update an issue with verified progress               | `reply` with `purpose: status-update` | [Task Update](../../skills/task-update/SKILL.md)                                              |
 
-Large implementation contexts return complete controls with `contextMaterials`: bounded retrieval requests and exact duplicate references. Follow those requests in the same task before implementing; they retrieve the full retained source without renewing implementation approval or changing publication scope. A stale material digest requires refreshing context, not editing private state or recreating the task. This applies to OpenClaw and standalone Codex; the returned requests select the runtime’s transport.
+Large implementation contexts and assessment-summary composition return complete controls
+plus `contextMaterials` when source material needs bounded retrieval. Follow every
+returned request and restore all fields and aliases before implementing or composing
+its public summary. Pages preserve the complete saved assessment and plan; reading them
+does not change the task stage, publication scope, or source receipts. A stale material
+digest requires fresh context from the same operation.
 
 The installed workflow also uses this tool internally. Follow the owning skill and
 returned task context rather than assembling an action sequence. Exact variants are

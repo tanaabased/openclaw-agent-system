@@ -270,6 +270,7 @@ export async function assessDispatch(
       summaryAuthority.schedule ?? record.manualIssue!.initiation,
     );
     return assessmentSummary({
+      runtime: 'codex',
       record,
       intake,
       action: input as unknown as AssessmentSummaryRequest,

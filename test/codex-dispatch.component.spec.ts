@@ -1033,7 +1033,10 @@ describe('agent/codex-dispatch', () => {
       await request('context', { id: prepared.id }, child);
       const privateResult = {
         ...result,
-        fullAssessment: 'The complete private technical plan and its limits.',
+        plan: loseResponse ? result.plan : 'Retained summary evidence.\n'.repeat(1000),
+        fullAssessment: loseResponse
+          ? 'The complete private technical plan and its limits.'
+          : 'Retained summary evidence.\n'.repeat(1000),
       };
       const recorded = await request('result', { id: prepared.id, result: privateResult }, child);
       assert.ok(String(recorded.presentation).includes(privateResult.fullAssessment));
@@ -1075,6 +1078,20 @@ describe('agent/codex-dispatch', () => {
       const composed = await summary({ operation: 'compose' });
       assert.equal(composed.status, 'composition-ready');
       assert.equal((composed.source as { kind: string }).kind, 'assessment');
+      const summaryStore = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      const beforePages = await summaryStore.read();
+      const hydrated = await hydrateImplementation(composed, async (read) => {
+        const { action, ...input } = read;
+        assert.equal(action, 'summary');
+        return request('summary', input, child);
+      });
+      assert.deepEqual(hydrated.verifiedOutcome, { assessment: beforePages.records[0]!.result });
+      assert.equal(hydrated.privateResponse, privateResult.fullAssessment);
+      assert.deepEqual(await summaryStore.read(), beforePages);
+      if (!loseResponse) assert.ok('contextMaterials' in composed);
       assert.equal(
         (
           await summary({

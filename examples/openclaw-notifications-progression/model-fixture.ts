@@ -27,6 +27,7 @@ const dispatchStages = [
   'work-context',
   'work-result',
   ...Array.from({ length: 64 }, (_, i) => `work-material-${i}`),
+  ...Array.from({ length: 64 }, (_, i) => `summary-material-${i}`),
   'recovery-present',
   'summary-compose',
   'summary-candidate',
@@ -102,6 +103,59 @@ function respond(
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
   };
+  const hydrate = (
+    context: Record<string, unknown>,
+    owner: 'work' | 'summary',
+  ): FixtureResponse | undefined => {
+    const materials = context.contextMaterials as
+      | {
+          fields: Array<{
+            path: string[];
+            request: Record<string, unknown>;
+            digest: string;
+            length: number;
+          }>;
+          aliases: Array<{ path: string[]; from: string[] }>;
+        }
+      | undefined;
+    const locate = (path: string[]) => {
+      let parent = context;
+      for (const name of path.slice(0, -1)) {
+        parent[name] ??= {};
+        parent = parent[name] as Record<string, unknown>;
+      }
+      return { parent, name: path.at(-1)! };
+    };
+    let sequence = 0;
+    for (const field of [...(materials?.fields ?? [])].sort(
+      (a, b) => a.path.length - b.path.length,
+    )) {
+      let request: Record<string, unknown> | undefined = field.request;
+      let text = '';
+      while (request) {
+        const stage = `${owner}-material-${sequence++}`;
+        assert.ok(sequence <= 64);
+        const page = result(stage);
+        if (!page) return dispatch(stage, request);
+        assert.equal(page.status, 'material');
+        assert.ok(JSON.stringify(page).length < 64000);
+        const value = page.materialPage as { offset: number; digest: string; text: string };
+        assert.equal(value.offset, text.length);
+        assert.equal(value.digest, field.digest);
+        text += value.text;
+        request = page.next as Record<string, unknown> | undefined;
+      }
+      assert.equal(text.length, field.length);
+      const { parent, name } = locate(field.path);
+      parent[name] = JSON.parse(text);
+    }
+    for (const alias of materials?.aliases ?? []) {
+      const source = locate(alias.from);
+      const destination = locate(alias.path);
+      destination.parent[destination.name] = source.parent[source.name];
+    }
+    delete context.contextMaterials;
+  };
   const summary = (
     id: string,
     presentation?: string,
@@ -127,6 +181,17 @@ function respond(
       !skill?.path
     )
       return;
+    const paged = Boolean(composed.contextMaterials);
+    const pendingMaterial = hydrate(composed, 'summary');
+    if (pendingMaterial) return pendingMaterial;
+    if (holdSummary && paged) {
+      assert.equal(composed.privateResponse, retainedPlan);
+      const assessment = (
+        composed.verifiedOutcome as { assessment: { fullAssessment: string; plan: string } }
+      ).assessment;
+      assert.equal(assessment.fullAssessment, retainedPlan);
+      assert.equal(assessment.plan, retainedPlan);
+    }
     if (openClawAIMockToolResultText(messages, prefix + 'summary-skill') === undefined)
       return call('summary-skill', 'read', { path: skill.path });
     const candidate = result('summary-candidate');
@@ -320,53 +385,8 @@ function respond(
       context.publicationAuthorized !== true
     )
       return;
-    const materials = context.contextMaterials as
-      | {
-          fields: Array<{
-            path: string[];
-            request: Record<string, unknown>;
-            digest: string;
-            length: number;
-          }>;
-          aliases: Array<{ path: string[]; from: string[] }>;
-        }
-      | undefined;
-    const locate = (path: string[]) => {
-      let parent = context;
-      for (const name of path.slice(0, -1)) {
-        parent[name] ??= {};
-        parent = parent[name] as Record<string, unknown>;
-      }
-      return { parent, name: path.at(-1)! };
-    };
-    let sequence = 0;
-    for (const field of [...(materials?.fields ?? [])].sort(
-      (a, b) => a.path.length - b.path.length,
-    )) {
-      let request: Record<string, unknown> | undefined = field.request;
-      let text = '';
-      while (request) {
-        const stage = `work-material-${sequence++}`;
-        assert.ok(sequence <= 64);
-        const page = result(stage);
-        if (!page) return dispatch(stage, request);
-        assert.equal(page.status, 'material');
-        assert.ok(JSON.stringify(page).length < 64000);
-        const value = page.materialPage as { offset: number; digest: string; text: string };
-        assert.equal(value.offset, text.length);
-        assert.equal(value.digest, field.digest);
-        text += value.text;
-        request = page.next as Record<string, unknown> | undefined;
-      }
-      assert.equal(text.length, field.length);
-      const { parent, name } = locate(field.path);
-      parent[name] = JSON.parse(text);
-    }
-    for (const alias of materials?.aliases ?? []) {
-      const source = locate(alias.from);
-      const destination = locate(alias.path);
-      destination.parent[destination.name] = source.parent[source.name];
-    }
+    const pendingMaterial = hydrate(context, 'work');
+    if (pendingMaterial) return pendingMaterial;
     if (holdSummary) assert.equal(context.plan, retainedPlan);
     if (
       context.pendingPublicResponse &&

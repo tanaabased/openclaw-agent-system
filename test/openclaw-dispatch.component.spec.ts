@@ -4036,9 +4036,17 @@ describe('agent/openclaw issue dispatch', () => {
       await prepare(input);
       await assess(input.id);
       await context(input.id);
-      const recorded = await submit(input.id);
+      const retainedPlan =
+        variant === 'default' ? 'Retained summary evidence.\n'.repeat(1000) : plan.plan;
+      const retainedAssessment = {
+        ...plan,
+        plan: retainedPlan,
+        fullAssessment: variant === 'default' ? retainedPlan : plan.fullAssessment,
+      };
+      const recorded = await submit(input.id, retainedAssessment);
       assert.ok(
-        'presentation' in recorded && recorded.presentation?.includes(plan.fullAssessment!),
+        'presentation' in recorded &&
+          recorded.presentation?.includes(retainedAssessment.fullAssessment!),
       );
       const guidance = 'Explain the outcome.\nKeep the uncertainty visible.';
       await writeFile(join(root, 'summary-guidance.md'), guidance);
@@ -4087,7 +4095,7 @@ describe('agent/openclaw issue dispatch', () => {
         } finally {
           service.dependencies.credential.use = use;
         }
-        assert.deepEqual((await record()).result, plan);
+        assert.deepEqual((await record()).result, retainedAssessment);
         assert.ok(
           (await record()).assessmentSummaries?.every((entry) => !entry.attempt && !entry.receipt),
         );
@@ -4168,6 +4176,14 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(composed.status, 'composition-ready', JSON.stringify(composed));
       assert.ok('digest' in composed);
       assert.ok('selection' in composed);
+      const beforePages = await record();
+      const hydrated = await hydrateImplementation(composed, async (read) =>
+        service.run(manifest, root, who, read as Parameters<typeof service.run>[3]),
+      );
+      assert.deepEqual(hydrated.verifiedOutcome, { assessment: beforePages.result });
+      assert.equal(hydrated.privateResponse, retainedAssessment.fullAssessment);
+      assert.deepEqual(await record(), beforePages);
+      if (variant === 'default') assert.ok('contextMaterials' in composed);
       const selected = composed.selection as AssessmentSelection;
       assert.equal(
         selected.skill.name,
@@ -4209,7 +4225,7 @@ describe('agent/openclaw issue dispatch', () => {
       }
       assert.equal((await summary('compose')).status, 'published');
       assert.equal(writes, 1);
-      assert.deepEqual((await record()).result, plan);
+      assert.deepEqual((await record()).result, retainedAssessment);
       assert.equal((await record()).assessmentSummaries?.[0]?.receipt?.nodeId, 'SUMMARY');
     });
   }
