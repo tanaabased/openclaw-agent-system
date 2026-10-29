@@ -102,6 +102,7 @@ root="$TMPDIR/agent-system-codex-automations"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const path=process.env.GITHUB_WORKSPACE+"/examples/codex-automations/threads/agent.yaml"; const manifest=parse(fs.readFileSync(path,"utf8")); manifest.models.default.effort="high"; fs.writeFileSync(path,stringify(manifest));'
+node "$runtime" automations inspect --plugin-data "$root/threads-data" < "$root/sidebar-input.json" | jq -e 'any(.findings[]; .id == "check-builds" and .code == "automation-thread-model-drift" and .settings.requested.effort == "high" and .settings.observed.effort == "medium" and .settings.requested.model == .settings.observed.model)'
 node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/threads-data" "$root/sidebar-input.json" > "$root/threads-updated.json"
 jq -S '.threads | map_values(.id)' "$root/threads-updated.json" | diff - "$root/threads-ids.json"
 jq -e 'all(.threads[]; .settings.requested.model == "gpt-6-luna" and .settings.observed.model == "gpt-6-luna" and .settings.requested.effort == "high" and .settings.observed.effort == "high")' "$root/threads-updated.json"

@@ -16,6 +16,116 @@ const automations: NonNullable<AgentManifest['automations']> = [
 ];
 
 describe('cli/lifecycle-details', () => {
+  it('should lead with identity and omit matching settings from healthy automation details', () => {
+    const raw = {
+      component: 'automations',
+      stepId: 'custom-name',
+      status: 'healthy' as const,
+      message:
+        'requested: selected / high; observed: selected / high; Automation custom-name: healthy (persistent, reused: native-12345678).',
+      settings: {
+        requested: { model: 'selected', effort: 'high' },
+        observed: { model: 'selected', effort: 'high' },
+      },
+    };
+    const before = structuredClone(raw);
+    const row = lifecycleDetails(raw, automations);
+    assert.ok(row.message.startsWith('name: MixedCase Backup /OP_TOKEN'));
+    assert.equal(row.message.includes('requested'), false);
+    assert.equal(row.message.includes('selected'), false);
+    assert.ok(row.message.includes('thread: ***5678'));
+    assert.deepEqual(raw, before);
+  });
+
+  for (const dimension of ['model', 'effort'] as const)
+    it(`should show only ${dimension} drift after the automation identity`, () => {
+      const raw = {
+        component: 'automations',
+        stepId: 'custom-name',
+        status: 'blocked' as const,
+        code: 'automation-thread-model-drift',
+        message: `automation-thread-model-drift; requested: selected / high; observed: ${dimension === 'model' ? 'different / high' : 'selected / different'}`,
+        settings: {
+          requested: { model: 'selected', effort: 'high' },
+          observed: { model: 'selected', effort: 'high', [dimension]: 'different' },
+        },
+      };
+      const row = lifecycleDetails(raw, automations);
+      assert.ok(row.message.startsWith('name: MixedCase Backup /OP_TOKEN'));
+      assert.ok(row.message.includes(`${dimension}: requested: `));
+      assert.ok(row.message.includes('observed: different'));
+      assert.equal(
+        row.message.includes(`${dimension === 'model' ? 'effort' : 'model'}: requested:`),
+        false,
+      );
+      assert.equal(row.message.includes('selected /'), false);
+    });
+
+  it('should retain actionable unsupported settings and unknown observations without inventing drift', () => {
+    const settings = {
+      requested: { model: 'native-model', effort: 'ultra' },
+      observed: { model: 'native-model' },
+    };
+    const row = lifecycleDetails(
+      {
+        component: 'automations',
+        stepId: 'custom-name',
+        status: 'blocked',
+        code: 'automation-effort-unsupported',
+        settings,
+        message:
+          'automation-effort-unsupported; requested: native-model / ultra; observed: native-model / native/unknown',
+      },
+      automations,
+    );
+    assert.ok(row.message.startsWith('name: MixedCase Backup /OP_TOKEN'));
+    assert.ok(row.message.includes('effort: requested: ultra; observed: native/unknown'));
+    assert.equal(row.message.includes('model: requested:'), false);
+    const matching = lifecycleDetails(
+      {
+        component: 'automations',
+        stepId: 'custom-name',
+        status: 'blocked',
+        code: 'automation-model-unsupported',
+        settings: { requested: { model: 'unsupported' }, observed: { model: 'unsupported' } },
+        message: 'automation-model-unsupported',
+      },
+      automations,
+    );
+    assert.ok(matching.message.includes('model: requested: unsupported'));
+  });
+
+  it('should lead with known step, resource, agent, and credential identities without changing evidence', () => {
+    for (const component of ['setup', 'git']) {
+      const row = lifecycleDetails(
+        { component, stepId: 'CaseSensitive', status: 'blocked', message: 'Inspection failed.' },
+        [],
+      );
+      assert.ok(row.message.startsWith('id: CaseSensitive;'));
+      assert.ok(row.message.includes('Inspection failed.'));
+    }
+    const agent = lifecycleDetails(
+      {
+        component: 'agent',
+        status: 'healthy',
+        message: 'OpenClaw identity for CaseSensitive matches.',
+      },
+      [],
+      'CaseSensitive',
+    );
+    assert.ok(agent.message.startsWith('id: CaseSensitive;'));
+    const credential = lifecycleDetails(
+      {
+        component: 'session-dispatch',
+        status: 'blocked',
+        message: 'Session dispatch enrollment is incomplete. Device abcdef1234567890.',
+      },
+      [],
+    );
+    assert.ok(credential.message.startsWith('name: Agent System;'));
+    assert.ok(credential.message.includes('device: ***7890'));
+  });
+
   it('should keep categories stable and names literal without redundant declaration ids', () => {
     const original = {
       component: 'automations',

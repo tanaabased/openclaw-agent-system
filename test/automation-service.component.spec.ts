@@ -970,6 +970,42 @@ describe('agent/automation-service', () => {
     assert.equal(chat?.thinkingLevel, 'medium');
     assert.equal(chat?.model, 'openai/gpt-6-luna');
     const id = native[0]!.id;
+    const healthy = (await service.inspect(manifest, root)).find(
+      ({ stepId }) => stepId === 'prompt',
+    )!;
+    assert.equal(healthy.status, 'healthy');
+    assert.deepEqual(healthy.settings, {
+      requested: { model: 'openai/gpt-6-luna', effort: 'medium' },
+      observed: { model: 'openai/gpt-6-luna', effort: 'medium' },
+    });
+    for (const dimension of ['model', 'effort'] as const) {
+      const field = dimension === 'model' ? 'model' : 'thinkingLevel';
+      const previous = chat![field];
+      chat![field] = dimension === 'model' ? 'openai/other' : 'low';
+      calls = [];
+      const [drift] = await service.inspect(manifest, root);
+      assert.equal(drift?.stepId, 'prompt');
+      assert.equal(drift?.code, 'automation-thread-model-drift');
+      assert.equal(drift?.status, 'blocked');
+      assert.deepEqual(drift?.settings, {
+        requested: { model: 'openai/gpt-6-luna', effort: 'medium' },
+        observed: { model: 'openai/gpt-6-luna', effort: 'medium', [dimension]: chat![field] },
+      });
+      assert.equal(
+        calls.some(({ method }) =>
+          ['sessions.patch', 'sessions.create', 'cron.update'].includes(method),
+        ),
+        false,
+      );
+      assert.equal(chat![field], dimension === 'model' ? 'openai/other' : 'low');
+      chat![field] = previous;
+    }
+    const name = chat!.displayName;
+    chat!.displayName = 'Other';
+    const [nameDrift] = await service.inspect(manifest, root);
+    assert.equal(nameDrift?.stepId, 'prompt');
+    assert.equal(nameDrift?.code, 'automation-thread-name-drift');
+    chat!.displayName = name;
     manifest.models.default.effort = 'high';
     calls = [];
     const findings = await service.inspect(manifest, root);

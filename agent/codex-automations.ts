@@ -276,7 +276,12 @@ async function resolveThreads(
   for (const job of jobs) {
     const selection = automationThreadSelection(job, 'codex')!;
     if (!selection.managed) {
-      await verifyThread(inputs.threads ?? [], selection.exact!, selected.workspace);
+      try {
+        await verifyThread(inputs.threads ?? [], selection.exact!, selected.workspace);
+      } catch (error) {
+        if (error instanceof CodexAutomationError) error.automationId = job.id;
+        throw error;
+      }
       explicitIds.add(selection.exact!);
     }
   }
@@ -408,9 +413,12 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     Map<string, { id: string; settings?: AutomationThreadModelObservation }> | undefined;
   let threadSettings: AutomationThreadModelObservation | undefined;
   let threadCode: string | undefined;
+  let threadAutomationId: string | undefined;
   try {
     bindings = await resolveThreads(selected, inputs);
   } catch (error) {
+    if (error instanceof AutomationError || error instanceof CodexAutomationError)
+      threadAutomationId = error.automationId;
     if (error instanceof AutomationThreadSettingsError) threadSettings = error.settings;
     threadCode =
       error instanceof AutomationError || error instanceof CodexAutomationError
@@ -448,7 +456,7 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
   }
   if (threadCode) {
     result.findings.push({
-      id: 'threads',
+      id: threadAutomationId ?? 'threads',
       code: threadCode,
       ...(threadSettings ? { settings: threadSettings } : {}),
     });

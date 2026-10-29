@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path';
 import { parse, stringify } from 'smol-toml';
 
 import { automationHash } from '../agent/automation-hash.ts';
+import { AutomationError } from '../agent/automation-gateway.ts';
+import type { AutomationThread, AutomationThreadAdapter } from '../agent/automation-threads.ts';
 import {
   acknowledgeCodexAutomation,
   replaceCodexNotificationCoordinator,
@@ -654,6 +656,85 @@ describe('agent/codex-automations', () => {
     }
   });
 
+  it('should identify settings and thread failures while retaining full read-only codex evidence', async () => {
+    await manifest(
+      job(
+        '    thread: {name: Review}\n    overrides:\n      codex: {model: selected, effort: high}\n',
+      ),
+    );
+    const conversations = new Map<string, AutomationThread>();
+    const adapter: AutomationThreadAdapter = {
+      async lookup(id) {
+        return conversations.get(id) ?? null;
+      },
+      async create(_record, save, _fresh, settings) {
+        await save('thread-1');
+        conversations.set('thread-1', { id: 'thread-1', ...settings });
+        return 'thread-1';
+      },
+      async rename(id, name) {
+        conversations.get(id)!.name = name;
+      },
+      async updateSettings() {
+        assert.fail('inspection must not change settings');
+      },
+    };
+    const dependencies = { ...deps(), threadAdapter: adapter };
+    await syncThreads(dependencies);
+    const current = conversations.get('thread-1')!;
+    const plan = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    await prepareCodexAutomation(pluginData, plan.digest, inputs(), dependencies);
+    await nativeWrite(plan.actions[0]!.expected);
+    await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, dependencies);
+    const healthy = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.equal(healthy.status, 'aligned');
+    assert.ok(
+      healthy.findings.some(({ id, code }) => id === 'review' && code === 'automation-healthy'),
+    );
+    assert.deepEqual(healthy.conversations?.[0]?.settings, {
+      requested: { model: 'selected', effort: 'high' },
+      observed: { model: 'selected', effort: 'high' },
+    });
+    const saved = await readCodexAutomations(codexHome);
+    for (const dimension of ['model', 'effort'] as const) {
+      current[dimension] = 'different';
+      const drift = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+      const finding = drift.findings.find(({ code }) => code === 'automation-thread-model-drift');
+      assert.equal(finding?.id, 'review');
+      assert.deepEqual(finding?.settings, {
+        requested: { model: 'selected', effort: 'high' },
+        observed: { model: 'selected', effort: 'high', [dimension]: 'different' },
+      });
+      assert.equal(drift.status, 'requires-native-app-sync');
+      assert.deepEqual(drift.actions, []);
+      assert.equal(current[dimension], 'different');
+      current[dimension] = dimension === 'model' ? 'selected' : 'high';
+    }
+    adapter.validateSettings = async () => {
+      throw new AutomationError('automation-model-unsupported');
+    };
+    const unsupported = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.equal(unsupported.status, 'blocked');
+    assert.ok(
+      unsupported.findings.some(
+        ({ id, code, settings }) =>
+          id === 'review' &&
+          code === 'automation-model-unsupported' &&
+          settings?.requested.model === 'selected',
+      ),
+    );
+    delete adapter.validateSettings;
+    current.name = 'Other';
+    const failed = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.ok(
+      failed.findings.some(
+        ({ id, code }) => id === 'review' && code === 'automation-thread-name-drift',
+      ),
+    );
+    assert.deepEqual(await readCodexAutomations(codexHome), saved);
+    assert.equal(conversations.size, 1);
+  });
+
   it('should list owned state through the planner and report native occurrence gaps without writes', async () => {
     const before = await readdir(pluginData);
     const initial = await listCodexAutomations(pluginData, inputs(), deps());
@@ -801,6 +882,11 @@ describe('agent/codex-automations', () => {
       '\nmodels:\n  default:\n    model: openai/default\n    effort: high\n',
     );
     assert.equal((await inspect()).findings[0]?.code, 'automation-thread-verification-required');
+    assert.ok(
+      (await inspect()).findings
+        .filter(({ code }) => code === 'automation-thread-verification-required')
+        .every(({ id }) => id === 'review'),
+    );
     const threads = [
       JSON.parse((await capture('lookups')).replaceAll('/workspace/fixture', workspace)).thread,
     ];

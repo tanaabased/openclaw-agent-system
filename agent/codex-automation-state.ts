@@ -7,6 +7,7 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 export class CodexAutomationError extends Error {
+  automationId?: string;
   override name = 'CodexAutomationError';
   constructor(
     readonly code: string,
