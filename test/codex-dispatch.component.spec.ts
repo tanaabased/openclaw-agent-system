@@ -662,14 +662,31 @@ describe('agent/codex-dispatch', () => {
     assert.equal(prepared.status, 'prepared');
   });
 
-  it('should normalize redundant issue metadata before creating a native chat', async () => {
-    const prepared = await prepare('OWNER/REPO #3: #3: Fix café: references to #4');
-    const records = (await request('inspect')).records as Array<{
-      request?: { title?: string };
-    }>;
-    assert.equal(prepared.status, 'prepared');
-    assert.equal(records[0]!.request?.title, '#3: FIX CAFÉ: REFERENCES TO #4');
-  });
+  for (const [kind, title, expected] of [
+    [
+      'colon prefixes',
+      'OWNER/REPO #3: #3: Fix café: references to #4',
+      '#3: FIX CAFÉ: REFERENCES TO #4',
+    ],
+    [
+      'mixed prefixes',
+      'REPO #3 - OWNER/REPO #3 – #3 — #3 Fix café: references to #4',
+      '#3: FIX CAFÉ: REFERENCES TO #4',
+    ],
+    ['whitespace prefixes', '#3 Fix login timeout', '#3: FIX LOGIN TIMEOUT'],
+    ['repository words', 'REPO automation fixes', '#3: REPO AUTOMATION FIXES'],
+    ['other issues', '#4 - Review REPO #3', '#3: #4 - REVIEW REPO #3'],
+    ['other repositories', 'other/repo #3 — Fix café', '#3: OTHER/REPO #3 — FIX CAFÉ'],
+    ['metadata only', 'REPO #3 — #3', '#3: ISSUE'],
+  ])
+    it(`should prepare a native chat title with ${kind}`, async () => {
+      const prepared = await prepare(title);
+      const records = (await request('inspect')).records as Array<{
+        request?: { title?: string };
+      }>;
+      assert.equal(prepared.status, 'prepared');
+      assert.equal(records[0]!.request?.title, expected);
+    });
 
   it('should hold a saved pilot claim without preparing work or changing its receipt', async () => {
     const { store, comments } = await claiming();

@@ -6,10 +6,8 @@ export default function issueChatTitle(title: string, number: number, repository
   const repositories = [repository, repository.split('/').at(-1)!]
     .map((name) => name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'))
     .join('|');
-  const prefix = new RegExp(
-    `^(?:(?:${repositories})(?:\\s*#${number})?|#${number})\\s*:\\s*`,
-    'iu',
-  );
+  const issue = `(?:(?:${repositories})\\s*)?#${number}(?:\\s*[:–—-]\\s*|\\s+|$)`;
+  const prefix = new RegExp(`^(?:${issue}|(?:${repositories})\\s*:\\s*)`, 'iu');
   let description = title.trim();
   while (prefix.test(description)) description = description.replace(prefix, '').trim();
   return `#${number}: ${(description || 'issue').toUpperCase()}`;
