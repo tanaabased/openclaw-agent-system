@@ -217,7 +217,7 @@ describe('codex retirement native evidence', () => {
           data: [
             { id: 'current', startedAt: 120, status: 'inProgress', completedAt: null },
             { id: 'prepared', startedAt: 100, status: 'completed', completedAt: 110 },
-          ].slice(0, Number(params.limit)),
+          ].slice(0, typeof params.limit === 'number' ? params.limit : undefined),
           nextCursor: null,
         };
       return {

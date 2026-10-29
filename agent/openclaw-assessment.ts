@@ -22,7 +22,8 @@ import assessmentPresentation from './dispatch-presentation.ts';
 import recordDispatchResult from './dispatch-result.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import issueInputEvent, { issueInputEventId } from './openclaw-session-input.ts';
-import issueTurnReply from './openclaw-session-reply.ts';
+import openClawTurnReply from './openclaw-turn-evidence.ts';
+import { completeOpenClawMessage, openClawHistoryPages } from './openclaw-history.ts';
 import {
   describeIssueSession,
   sessionObject,
@@ -128,16 +129,14 @@ export async function issueAssessmentAction(input: {
       await request('chat.history', {
         sessionKey: record.threadId,
         inputRunIds: [caller.runId],
-        limit: 200,
-        maxChars: 100000,
       }),
     );
     if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
       throw new Error('dispatch-assessment-history-unverified');
     const key = `${caller.runId}:user`;
-    const users = history.messages
-      .map(sessionObject)
-      .filter(
+    let users: Record<string, unknown>[] = [];
+    for await (const messages of openClawHistoryPages(request, caller, { first: history })) {
+      users = messages.filter(
         (entry) =>
           entry.role === 'user' &&
           entry.__openclaw &&
@@ -145,8 +144,10 @@ export async function issueAssessmentAction(input: {
             sessionObject(entry.__openclaw).idempotencyKey === key ||
             entry.idempotencyKey === key),
       );
+      if (users.length) break;
+    }
     if (users.length !== 1) throw new Error('dispatch-assessment-input-unverified');
-    const user = users[0]!;
+    const user = await completeOpenClawMessage(request, caller, users[0]!);
     const meta = sessionObject(user.__openclaw);
     if (typeof meta.id !== 'string' || !meta.id || meta.truncated === true)
       throw new Error('dispatch-assessment-input-unverified');
@@ -158,7 +159,7 @@ export async function issueAssessmentAction(input: {
         throw new Error('dispatch-assessment-input-unverified');
       if (
         record.assessmentTurn.status !== 'completed' &&
-        !issueTurnReply(history.messages, record.assessmentTurn.runId)
+        !(await openClawTurnReply(request, caller, record.assessmentTurn.runId, { first: history }))
       ) {
         if (!record.result) throw new Error('dispatch-assessment-continuation-not-ready');
         await openClawResponseAuthority({ request, record, caller, config: input.config });

@@ -27,9 +27,9 @@ import { feedbackResultSchema } from './feedback-state.ts';
 import redactFeedback from './feedback-redaction.ts';
 import selectFeedbackStage from './feedback-stage.ts';
 import openClawSkill from './openclaw-skill.ts';
-import { reconcileOpenClawTurn, consumedInputEvent } from './openclaw-turn.ts';
+import { reconcileOpenClawTurn, openClawConsumedInput } from './openclaw-turn.ts';
 import { operatorInputEvent } from './openclaw-session-input.ts';
-import issueTurnReply from './openclaw-session-reply.ts';
+import openClawTurnReply from './openclaw-turn-evidence.ts';
 import {
   describeIssueSession,
   sessionObject,
@@ -309,14 +309,19 @@ export default async function openClawFeedback(input: {
           await request('chat.history', {
             sessionKey: caller.sessionKey,
             inputRunIds: [previousTurn.runId],
-            limit: 200,
-            maxChars: 100000,
           }),
         );
         if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
           throw new Error('feedback-resume-terminal-unverified');
-        previousTurn.consumedByEventId = consumedInputEvent(history.messages, previousTurn);
-        const reply = issueTurnReply(history.messages, previousTurn.runId);
+        previousTurn.consumedByEventId = await openClawConsumedInput(
+          request,
+          caller,
+          previousTurn,
+          history,
+        );
+        const reply = await openClawTurnReply(request, caller, previousTurn.runId, {
+          first: history,
+        });
         if (reply) previousTurn.replyEventId = String(sessionObject(reply.__openclaw).id);
         else if (terminal.status === 'error') previousTurn.failed = true;
         else throw new Error('feedback-resume-terminal-unverified');
@@ -395,13 +400,11 @@ export default async function openClawFeedback(input: {
       await request('chat.history', {
         sessionKey: record.threadId,
         inputRunIds: [caller.runId],
-        limit: 200,
-        maxChars: 100000,
       }),
     );
     if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
       throw new Error('feedback-input-unverified');
-    const inputId = consumedInputEvent(history.messages, event.turn);
+    const inputId = await openClawConsumedInput(request, caller, event.turn, history);
     event.turn.consumedByEventId = inputId;
     event.turn.status = 'consumed';
     if (action.operation === 'context' || action.operation === 'implementation-context') {

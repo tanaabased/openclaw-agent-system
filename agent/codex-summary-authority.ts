@@ -1,5 +1,5 @@
 import { nativeObject } from './automation-gateway.ts';
-import { dispatchHistoryPages } from './codex-dispatch-history.ts';
+import { dispatchHistoryPages, dispatchTurn } from './codex-dispatch-history.ts';
 import codexTurnApprovalDenied from './codex-turn-approval.ts';
 import type { CodexThreadRequest } from './codex-thread-client.ts';
 
@@ -25,12 +25,7 @@ export default async function codexSummaryAuthority(
     throw new Error('assessment-summary-turn-ended');
   for (const sourceTurnId of new Set(sourceTurnIds ?? [])) {
     if (sourceTurnId === turnId) continue;
-    const history = await dispatchHistoryPages(request, 'thread/turns/list', {
-      threadId,
-      itemsView: 'notLoaded',
-      sortDirection: 'desc',
-    });
-    const previous = history.find((entry) => entry.id === sourceTurnId);
+    const previous = await dispatchTurn(request, threadId, sourceTurnId);
     if (
       !previous ||
       !['completed', 'failed', 'interrupted'].includes(String(previous.status)) ||
@@ -38,14 +33,7 @@ export default async function codexSummaryAuthority(
       previous.completedAt <= 0
     )
       throw new Error('assessment-summary-turn-unverified');
-    const source = await dispatchHistoryPages(request, 'thread/items/list', {
-      threadId,
-      turnId: sourceTurnId,
-      sortDirection: 'asc',
-    });
-    if (source.some((entry) => entry.turnId !== sourceTurnId || !nativeObject(entry.item)))
-      throw new Error('assessment-summary-turn-unverified');
-    if (codexTurnApprovalDenied(source.map((entry) => entry.item)))
+    if (codexTurnApprovalDenied(previous.items))
       throw new Error('assessment-summary-native-approval-denied');
   }
   const entries = await dispatchHistoryPages(request, 'thread/items/list', {

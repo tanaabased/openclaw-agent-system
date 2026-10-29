@@ -138,7 +138,6 @@ describe('agent/openclaw-session-input', () => {
       { exact: [owner, owner] },
       ...[
         { senderIsOwner: false },
-        { truncated: true },
         { id: 'other' },
         { runId: 'other' },
         { idempotencyKey: 'other:user' },

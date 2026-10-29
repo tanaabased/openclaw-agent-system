@@ -372,7 +372,6 @@ describe('agent/openclaw issue dispatch', () => {
                 assert.equal(params.timeoutMs, 0);
                 return { runId: params.runId, ...waitResult };
               }
-              assert.equal(method, 'chat.history');
               if (historyRejected)
                 throw new GatewayClientRequestError({
                   code: 'INVALID_REQUEST',
@@ -389,6 +388,11 @@ describe('agent/openclaw issue dispatch', () => {
               const anchor = available.findIndex(
                 (entry) => (entry.__openclaw as Record<string, unknown>)?.id === params.messageId,
               );
+              if (method === 'chat.message.get')
+                return anchor < 0
+                  ? { ok: false, unavailableReason: 'not_found' }
+                  : { ok: true, message: available[anchor] };
+              assert.equal(method, 'chat.history');
               return {
                 sessionId:
                   historySessionId ??
@@ -396,8 +400,8 @@ describe('agent/openclaw issue dispatch', () => {
                     ? sessions.get(String(params.sessionKey))?.sessionId
                     : session?.sessionId),
                 messages: params.messageId
-                  ? Number(params.limit) > 1 && anchor >= 0
-                    ? available.slice(Math.max(0, anchor - 1), anchor + Number(params.limit))
+                  ? params.limit !== 1 && anchor >= 0
+                    ? available.slice(Math.max(0, anchor - 1), anchor + Number(params.limit ?? 50))
                     : available.filter(
                         (entry) =>
                           (entry.__openclaw as Record<string, unknown>)?.id === params.messageId,
@@ -2568,6 +2572,54 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await service.check(manifest, root)).changed, true);
   });
 
+  it('should recover truncated completion in the retained workflow without another effect', async () => {
+    const input = await next();
+    await prepare(input);
+    await start(input.id);
+    const original = await record();
+    const complete = {
+      role: 'assistant',
+      stopReason: 'stop',
+      __openclaw: { id: 'long-reply', runId: `${input.id}:first-turn`, runTerminal: true },
+      content: [{ type: 'text', text: 'complete result '.repeat(10000) }],
+    };
+    messages.push({ ...complete, __openclaw: { ...complete.__openclaw, truncated: true } });
+    active = false;
+    inputReceipts = [];
+    let available = false;
+    const credential = service.dependencies.credential;
+    service = new OpenClawDispatch({
+      ...service.dependencies,
+      credential: {
+        use: (authority, operation) =>
+          credential.use(authority, (request) =>
+            operation(async (method, params) => {
+              if (method !== 'chat.message.get') return request(method, params);
+              assert.equal(params.messageId, 'long-reply');
+              return available
+                ? { ok: true, message: complete }
+                : { ok: false, unavailableReason: 'oversized' };
+            }),
+          ),
+      },
+    });
+    const pending = await start(input.id);
+    assert.equal('code' in pending && pending.code, 'workflow-evidence-truncated');
+    assert.equal((await record()).firstTurn?.status, 'consumed');
+    available = true;
+    assert.equal((await start(input.id)).status, 'working-turn-completed');
+    assert.equal((await start(input.id)).status, 'working-turn-completed');
+    const recovered = await record();
+    assert.equal(recovered.threadId, original.threadId);
+    assert.equal(recovered.worktree, original.worktree);
+    assert.deepEqual(recovered.request, original.request);
+    assert.deepEqual(recovered.routing, original.routing);
+    assert.equal(recovered.firstTurn?.runId, original.firstTurn?.runId);
+    assert.equal(recovered.firstTurn?.replyEventId, 'long-reply');
+    assert.equal(creates().length, 1);
+    assert.equal(sends().length, 1);
+  });
+
   it('should recover exact accepted input after a lost send response and restart without sending again', async () => {
     const input = await next();
     await prepare(input);
@@ -4577,7 +4629,7 @@ describe('agent/openclaw issue dispatch', () => {
               if (
                 method === 'chat.history' &&
                 params.messageId === 'input-event' &&
-                Number(params.limit) > 1
+                params.limit !== 1
               )
                 return { sessionId: 'ordinary-id', messages: oldMessages };
               return request(method, params);
@@ -4632,7 +4684,12 @@ describe('agent/openclaw issue dispatch', () => {
       { ...followup, __openclaw: { ...followup.__openclaw, truncated: true } },
     ]) {
       messages.push(changed);
-      await assert.rejects(context(input.id, who), /dispatch-assessment-input-unverified/);
+      await assert.rejects(
+        context(input.id, who),
+        'truncated' in changed.__openclaw
+          ? /workflow-evidence-truncated/
+          : /dispatch-assessment-input-unverified/,
+      );
       messages.pop();
       assert.equal((await record()).assessmentCaller?.runId, `${input.id}:assessment`);
       assert.deepEqual((await record()).result, plan);
