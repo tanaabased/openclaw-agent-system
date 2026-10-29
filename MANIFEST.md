@@ -352,9 +352,11 @@ New automation chats use native `auto_review`, `workspace-write`, and `on-reques
 approvals. Install verifies saved permissions; existing ready chats keep theirs.
 Native review may still deny an action. Install does not add global approval rules.
 
-Save the native review card when creating or changing a schedule with a timezone.
-A proposal alone does not apply the schedule. Unrelated edits preserve its recurrence;
-Codex controls timezones, daylight saving time, and missed runs.
+Install reports `automation-dtstart-create-unsupported` before journaling a proposal
+when a new timezone-qualified schedule requires `DTSTART`. Keep the requested timezone;
+do not replace it with local time. Timezone changes to existing schedules use direct
+updates, and Install verifies the saved schedule and target. Codex controls timezones,
+daylight saving time, and missed runs.
 
 > [!WARNING]
 > In Codex desktop version 26.1021.22027 (21747), named-zone scheduling can use the

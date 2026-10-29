@@ -8,8 +8,11 @@ import { Value } from 'typebox/value';
 
 export class CodexAutomationError extends Error {
   override name = 'CodexAutomationError';
-  constructor(readonly code: string) {
-    super(code);
+  constructor(
+    readonly code: string,
+    message = code,
+  ) {
+    super(message);
   }
 }
 
