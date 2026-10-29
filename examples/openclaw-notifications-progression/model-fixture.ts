@@ -380,13 +380,17 @@ function respond(
   if (operatorId) {
     const context = result('work-context');
     if (!context)
-      return dispatch('work-context', { action: 'implementation-context', id: operatorId });
+      return dispatch('work-context', {
+        action: 'implementation-context',
+        id: operatorId,
+        ...(answerId ? { scope: 'local' } : {}),
+      });
     const path = (context.project as { path?: string } | undefined)?.path;
     if (
       context.status !== 'verified' ||
       context.runtime !== 'openclaw' ||
       !path ||
-      context.publicationAuthorized !== true
+      context.publicationAuthorized !== !answerId
     )
       return;
     const pendingMaterial = hydrate(context, 'work');

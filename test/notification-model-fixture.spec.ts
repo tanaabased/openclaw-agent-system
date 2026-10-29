@@ -944,7 +944,7 @@ for (const scenario of [
             });
             await publishProgressionSummary(automatic, scenario, true);
           }
-          await action(automatic, 'implementation-context');
+          assert.equal((await action(automatic, 'implementation-context')).scope, undefined);
           await appendPagedContext(automatic, {
             id,
             plan: retainedPlan,
@@ -981,14 +981,14 @@ for (const scenario of [
           const answer = request(
             `Answer for managed issue ${id}: Yes, after evidence is captured. Do not push or publish a PR.`,
           );
-          await action(answer, 'implementation-context');
+          assert.equal((await action(answer, 'implementation-context')).scope, 'local');
           await appendPagedContext(answer, {
             id,
             plan: retainedPlan,
             status: 'verified',
             runtime: 'openclaw',
             deliveryOnly: false,
-            publicationAuthorized: true,
+            publicationAuthorized: false,
             project: { path: '/tmp/owned' },
             previousImplementationResult: question.implementationResult,
           });
