@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
+import { mock } from 'node:test';
 import dispatchHistory, {
   dispatchHistoryPages,
-  nativeHistoryPages,
   dispatchTurn,
 } from '../agent/codex-dispatch-history.ts';
 
@@ -74,15 +74,40 @@ describe('agent/codex-dispatch-history', () => {
       ),
       /dispatch-native-response-invalid/,
     );
-    let ticks = 0;
-    const pages = nativeHistoryPages(
-      async () => ({ data: [], nextCursor: 'next' }),
-      'thread/items/list',
-      {},
-      () => ticks++ * 30000,
-    );
-    await assert.rejects(pages.next(), /dispatch-native-history-incomplete/);
   });
+  it('should use the native request deadline instead of a shorter aggregate page budget', async () => {
+    let elapsed = 0;
+    const clock = mock.method(performance, 'now', () => elapsed);
+    try {
+      const entries = await dispatchHistoryPages(
+        async () => {
+          elapsed += 2000;
+          return { data: [{ id: elapsed }], nextCursor: elapsed < 36000 ? String(elapsed) : null };
+        },
+        'thread/items/list',
+        {},
+      );
+      assert.equal(entries.length, 18);
+      assert.equal(elapsed, 36000);
+    } finally {
+      clock.mock.restore();
+    }
+    const timeout = new Error('automation-thread-request-timeout');
+    let reads = 0;
+    await assert.rejects(
+      dispatchHistoryPages(
+        async () => {
+          if (++reads === 2) throw timeout;
+          return { data: [], nextCursor: 'more' };
+        },
+        'thread/items/list',
+        {},
+      ),
+      (error) => error === timeout,
+    );
+    assert.equal(reads, 2);
+  });
+
   it('should exhaust more than twenty pages without imposing a message count', async () => {
     let page = 0;
     const entries = await dispatchHistoryPages(

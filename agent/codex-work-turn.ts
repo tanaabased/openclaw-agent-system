@@ -286,7 +286,7 @@ export default async function advanceCodexWorkTurn(
     ...(work.retries?.map(({ attempt }) => attempt.turnId) ?? []),
     ...(record.feedback?.events.map(({ attempt }) => attempt?.turnId) ?? []),
   ].includes(found.turnId);
-  const revisionInput =
+  const currentInput =
     context.operatorInput ??
     (work.revisionSource?.turnId === found.turnId ? work.revisionSource : undefined) ??
     (input.action === 'context' &&
@@ -296,6 +296,9 @@ export default async function advanceCodexWorkTurn(
     found.turnId !== completedTurnId
       ? await native.operatorInput(record.threadId!)
       : undefined);
+  const revisionInput = currentInput
+    ? { turnId: currentInput.turnId, inputId: currentInput.inputId }
+    : undefined;
   const revision = Boolean(
     !workflowTurn &&
     revisionInput &&

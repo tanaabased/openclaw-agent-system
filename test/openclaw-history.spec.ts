@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { mock } from 'node:test';
 
 import { completeOpenClawMessage, openClawHistoryPages } from '../agent/openclaw-history.ts';
 import { nativeInputEvent } from '../agent/openclaw-session-input.ts';
@@ -158,6 +159,35 @@ describe('agent/openclaw-history', () => {
     assert.deepEqual(reply, terminal);
   });
 
+  it('should preserve the requesting owners budget and abort during pagination', async () => {
+    let elapsed = 0;
+    const clock = mock.method(performance, 'now', () => elapsed);
+    try {
+      const pages = [];
+      for await (const page of openClawHistoryPages(async () => {
+        elapsed += 2000;
+        return {
+          sessionId: scope.sessionId,
+          messages: [input],
+          ...(elapsed < 36000 ? { olderCursor: String(elapsed) } : {}),
+        };
+      }, scope))
+        pages.push(page);
+      assert.equal(pages.length, 18);
+    } finally {
+      clock.mock.restore();
+    }
+    const abort = new Error('workflow-owner-aborted');
+    let reads = 0;
+    const pages = openClawHistoryPages(async () => {
+      if (++reads === 2) throw abort;
+      return { sessionId: scope.sessionId, messages: [], olderCursor: 'more' };
+    }, scope);
+    await pages.next();
+    await assert.rejects(pages.next(), (error) => error === abort);
+    assert.equal(reads, 2);
+  });
+
   it('should distinguish exhaustion from broken pagination or a replaced session', async () => {
     async function read(request: DispatchRequest) {
       const pages = [];
@@ -229,5 +259,166 @@ describe('agent/openclaw-history', () => {
     assert.equal(turn.replyEventId, 'reply');
     await reconcile();
     assert.equal(saved, 2);
+  });
+  it('should continue past oversized intermediate placeholders to a complete terminal reply', async () => {
+    for (const unavailableReason of ['oversized', 'not_found']) {
+      const reply = await openClawTurnReply(
+        async (method, params) => {
+          if (method === 'chat.message.get') return { ok: false, unavailableReason };
+          return params.cursor
+            ? { sessionId: scope.sessionId, messages: [terminal] }
+            : {
+                sessionId: scope.sessionId,
+                messages: [
+                  {
+                    role: 'assistant',
+                    content: '[oversized]',
+                    __openclaw: {
+                      id: 'intermediate',
+                      runId: 'run',
+                      truncated: true,
+                      reason: 'oversized',
+                    },
+                  },
+                ],
+                newerCursor: 'later',
+              };
+        },
+        scope,
+        'run',
+        { messageId: 'input' },
+      );
+      assert.deepEqual(reply, terminal);
+    }
+  });
+
+  it('should preserve native denial and identity conflicts even when a later reply exists', async () => {
+    for (const failure of ['denied', 'conflicting', 'unavailable']) {
+      let laterRead = false;
+      await assert.rejects(
+        openClawTurnReply(
+          async (method, params) => {
+            if (method === 'chat.message.get') {
+              if (failure === 'denied') throw new Error('native-denied');
+              if (failure === 'unavailable') return { ok: false, unavailableReason: 'not_visible' };
+              return {
+                ok: true,
+                message: { ...terminal, __openclaw: { ...terminal.__openclaw, id: 'foreign' } },
+              };
+            }
+            laterRead ||= Boolean(params.cursor);
+            return params.cursor
+              ? { sessionId: scope.sessionId, messages: [terminal] }
+              : { sessionId: scope.sessionId, messages: [shortened], newerCursor: 'later' };
+          },
+          scope,
+          'run',
+          { messageId: 'input' },
+        ),
+        new RegExp(failure),
+      );
+      assert.equal(laterRead, false);
+    }
+  });
+
+  it('should skip unannotated display rows while retaining exact input and completion evidence', async () => {
+    const turn: OpenClawTurn = { runId: 'run', message: input.content, status: 'accepted' };
+    await reconcileOpenClawTurn({
+      ...scope,
+      turn,
+      save: async () => {},
+      request: async (method) => {
+        if (method === 'agent.wait') return { runId: 'run', status: 'ok' };
+        return {
+          sessionId: scope.sessionId,
+          messages: [
+            { role: 'user', content: 'old user row' },
+            { role: 'user', content: 'unannotated row', __openclaw: null },
+            input,
+            terminal,
+            { role: 'assistant', content: '[history unavailable]' },
+            { role: 'assistant', content: '[history unavailable]', __openclaw: null },
+          ],
+          inputReceipts: [],
+          sessionInfo: { hasActiveRun: false },
+        };
+      },
+    });
+    assert.equal(turn.status, 'completed');
+    assert.equal(turn.consumedByEventId, 'input');
+    assert.equal(turn.replyEventId, 'reply');
+    assert.equal(
+      await openClawTurnReply(
+        async () => ({
+          sessionId: scope.sessionId,
+          messages: [
+            { role: 'assistant', content: [{ type: 'text', text: 'done' }], stopReason: 'stop' },
+          ],
+        }),
+        scope,
+        'run',
+      ),
+      undefined,
+    );
+  });
+
+  for (const [active, queued] of [
+    [true, false],
+    [true, true],
+    [false, true],
+  ])
+    it(`should leave ${active ? 'running' : 'idle'} work with queued=${queued} pending without retrieving older history`, async () => {
+      const turn: OpenClawTurn = { runId: 'run', message: input.content, status: 'accepted' };
+      const calls: string[] = [];
+      await reconcileOpenClawTurn({
+        ...scope,
+        turn,
+        save: async () => {},
+        request: async (method, params) => {
+          calls.push(method);
+          if (method === 'agent.wait') return { runId: 'run', status: 'timeout' };
+          assert.equal(params.cursor, undefined);
+          return {
+            sessionId: scope.sessionId,
+            messages: [],
+            olderCursor: 'unavailable',
+            inputReceipts: [
+              {
+                runId: 'run',
+                state: queued ? 'pending' : 'consumed',
+                queued,
+                ...(!queued ? { consumedByEventId: 'input' } : {}),
+              },
+            ],
+            sessionInfo: { hasActiveRun: active },
+          };
+        },
+      });
+      assert.equal(turn.status, queued ? 'accepted' : 'consumed');
+      assert.deepEqual(calls, ['chat.history', 'agent.wait']);
+    });
+
+  it('should preserve cancellation and run errors before considering pending work', async () => {
+    for (const stopReason of ['aborted', undefined]) {
+      const turn: OpenClawTurn = { runId: 'run', message: input.content, status: 'accepted' };
+      await assert.rejects(
+        reconcileOpenClawTurn({
+          ...scope,
+          turn,
+          save: async () => {},
+          request: async (method) => {
+            if (method === 'agent.wait') return { runId: 'run', status: 'error', stopReason };
+            return {
+              sessionId: scope.sessionId,
+              messages: [],
+              olderCursor: 'older',
+              inputReceipts: [{ runId: 'run', state: 'pending', queued: true }],
+              sessionInfo: { hasActiveRun: true },
+            };
+          },
+        }),
+        new RegExp(stopReason ? 'dispatch-turn-cancelled' : 'dispatch-turn-outcome-unverified'),
+      );
+    }
   });
 });

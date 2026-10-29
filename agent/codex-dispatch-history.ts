@@ -1,19 +1,15 @@
-import { metadataCommandTimeoutMs } from '../api/cli-budget.ts';
 import { nativeObject } from './automation-gateway.ts';
 import type { CodexThreadRequest } from './codex-thread-client.ts';
 
-/** traverse native pages within the existing metadata budget, never a message-count window. */
+/** native requests own deadlines and cancellation; page counts do not establish completeness. */
 export async function* nativeHistoryPages(
   request: CodexThreadRequest,
   method: 'thread/items/list' | 'thread/turns/list',
   params: Record<string, unknown>,
-  now: () => number = () => performance.now(),
 ) {
-  const deadline = now() + metadataCommandTimeoutMs;
   const cursors = new Set<string>();
   let cursor = params.cursor;
   while (true) {
-    if (now() >= deadline) throw new Error('dispatch-native-history-incomplete');
     const result = await request(method, { ...params, ...(cursor ? { cursor } : {}) });
     if (!Array.isArray(result.data) || !result.data.every(nativeObject))
       throw new Error('dispatch-native-response-invalid');

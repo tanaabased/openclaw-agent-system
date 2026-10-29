@@ -6454,6 +6454,7 @@ describe('agent/codex-dispatch', () => {
       work.continuation.native!.operatorInput = async () => ({
         turnId: native!.turnId!,
         inputId: 'explicit-input',
+        message: 'Implement locally and hold publication.',
       });
       work.continuation.continuationNative = async (_source, attempt) => ({
         status: 'verified',
@@ -6577,6 +6578,7 @@ describe('agent/codex-dispatch', () => {
       work.continuation.native!.operatorInput = async () => ({
         turnId: 'revision-turn',
         inputId: 'revision-input',
+        message: 'Please revise the completed implementation.',
       });
       work.continuation.continuationNative = async (_source, attempt) =>
         attempt.origin === 'input' && denied
@@ -6605,6 +6607,10 @@ describe('agent/codex-dispatch', () => {
         );
       }
       assert.equal((await store.read()).records[0]!.continuation!.result, undefined);
+      assert.deepEqual((await store.read()).records[0]!.continuation!.revisionSource, {
+        turnId: 'revision-turn',
+        inputId: 'revision-input',
+      });
       assert.equal(codexItemOccupied((await store.read()).records[0]!), true);
       const revised = { ...done, summary: 'Revised.', fullResult: 'Revision checked.' };
       assert.equal((await work.run('result', { result: revised }, true)).status, 'recorded');

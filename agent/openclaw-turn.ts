@@ -39,12 +39,12 @@ export async function openClawConsumedInput(
 ) {
   for await (const messages of openClawHistoryPages(request, scope, { first })) {
     const candidates = messages.filter((entry) => {
+      if (entry.role !== 'user' || entry.__openclaw == null) return false;
       const meta = sessionObject(entry.__openclaw);
       return (
-        entry.role === 'user' &&
-        (meta.runId === turn.runId ||
-          meta.idempotencyKey === `${turn.runId}:user` ||
-          entry.idempotencyKey === `${turn.runId}:user`)
+        meta.runId === turn.runId ||
+        meta.idempotencyKey === `${turn.runId}:user` ||
+        entry.idempotencyKey === `${turn.runId}:user`
       );
     });
     if (candidates.length || turn.consumedByEventId) {
@@ -127,7 +127,11 @@ export async function reconcileOpenClawTurn(input: {
       await save();
       return;
     }
-    const reply = await openClawTurnReply(request, input, turn.runId, { first: history });
+    if (info.hasActiveRun === true || receipt?.queued === true) return;
+    const reply =
+      turn.status === 'consumed' && info.hasActiveRun === false
+        ? await openClawTurnReply(request, input, turn.runId, { first: history })
+        : undefined;
     if (reply && turn.status === 'consumed' && info.hasActiveRun === false) {
       let executionModel: string | undefined;
       if (observed.terminalReceipt) {

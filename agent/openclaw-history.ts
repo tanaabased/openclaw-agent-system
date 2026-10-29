@@ -1,4 +1,3 @@
-import { metadataCommandTimeoutMs } from '../api/cli-budget.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import { sessionObject } from './openclaw-session-create.ts';
 
@@ -7,20 +6,18 @@ export interface HistoryScope {
   sessionId: string;
 }
 
-/** page counts are not completeness evidence; the native cursor and read budget are. */
+/** follow native cursors within the requesting owner's deadline and cancellation. */
 export async function* openClawHistoryPages(
   request: DispatchRequest,
   scope: HistoryScope,
   options: { messageId?: string; first?: Record<string, unknown> } = {},
 ) {
-  const deadline = performance.now() + metadataCommandTimeoutMs;
   const cursors = new Set<string>();
   let params: Record<string, unknown> = options.messageId
     ? { sessionKey: scope.sessionKey, sessionId: scope.sessionId, messageId: options.messageId }
     : { sessionKey: scope.sessionKey };
   let page = options.first;
   while (true) {
-    if (performance.now() >= deadline) throw new Error('workflow-evidence-incomplete');
     page ??= sessionObject(await request('chat.history', params));
     if (page.sessionId !== scope.sessionId || !Array.isArray(page.messages))
       throw new Error('workflow-evidence-conflicting');
