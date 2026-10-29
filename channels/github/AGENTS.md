@@ -45,9 +45,10 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   implementation skills. Both runtimes share push and PR recovery; native adapters own
   execution identity and chat attachment. Resume missing effects from retained receipts.
 - Derive unfinished issue work and status from the same results and delivery receipts.
-  Keep native send reconciliation separate from that calculation. A completed PR,
-  announcement, and supported native presentation receipts determine completion;
-  displaying a card must not require another saved continuation-phase transition.
+  Keep task ownership, native activity, processed input, and pending effects distinct.
+  Idle native turns release capacity without retiring their task. PR publication,
+  announcement, and supported presentation receipts settle a delivery round, not the
+  issue conversation. Displaying a card must not require another saved phase transition.
 - Retain explicit implementation stages across interrupted current workflows, preserving
   the issue, assessment, and execution receipts. A plan, default mode, publication-only
   request, or historical execution payload is not evidence of an implementation stage.
