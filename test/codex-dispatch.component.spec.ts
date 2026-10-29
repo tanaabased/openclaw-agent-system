@@ -652,14 +652,23 @@ describe('agent/codex-dispatch', () => {
     assert.equal(records[0]!.feedback?.admission?.enabled, true);
   });
 
-  it('should preserve punctuation and unicode in the issue session title', async () => {
-    const title = "Fix user's issue: café 東京 2026.10.6";
+  it('should uppercase the issue session title while preserving punctuation and unicode', async () => {
+    const title = "Fix user's issue: café 東京 Straße 2026.10.6";
     const prepared = await prepare(title);
     const records = (await request('inspect')).records as Array<{
       request?: { title?: string };
     }>;
-    assert.equal(records[0]!.request?.title, `#3: ${title}`);
+    assert.equal(records[0]!.request?.title, "#3: FIX USER'S ISSUE: CAFÉ 東京 STRASSE 2026.10.6");
     assert.equal(prepared.status, 'prepared');
+  });
+
+  it('should normalize redundant issue metadata before creating a native chat', async () => {
+    const prepared = await prepare('OWNER/REPO #3: #3: Fix café: references to #4');
+    const records = (await request('inspect')).records as Array<{
+      request?: { title?: string };
+    }>;
+    assert.equal(prepared.status, 'prepared');
+    assert.equal(records[0]!.request?.title, '#3: FIX CAFÉ: REFERENCES TO #4');
   });
 
   it('should hold a saved pilot claim without preparing work or changing its receipt', async () => {

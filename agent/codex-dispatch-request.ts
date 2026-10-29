@@ -1,3 +1,4 @@
+import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { assessmentSummaryRequestProperties } from './assessment-summary-state.ts';
@@ -32,6 +33,7 @@ const schemas = {
     title: Type.String({
       minLength: 1,
       maxLength: 80,
+      description: issueChatTitleGuidance,
       pattern: '^(?=.*\\S)[^\\u0000-\\u001F\\u007F-\\u009F]+$',
     }),
     fallback: Type.Optional(Type.Literal('default')),

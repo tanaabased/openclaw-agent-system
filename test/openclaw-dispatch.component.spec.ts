@@ -1875,7 +1875,7 @@ describe('agent/openclaw issue dispatch', () => {
     const state = await (await service.scope(manifest, root)).journal.read();
     assert.deepEqual(
       creates().map(({ params }) => params.displayName),
-      ['#3: repair the result', '#4: repair the result'],
+      ['#3: REPAIR THE RESULT', '#4: REPAIR THE RESULT'],
     );
     const later = { ...coordinator, runId: 'later-pass' };
     const input = await service.run(manifest, root, later, { action: 'next' });
@@ -1984,7 +1984,7 @@ describe('agent/openclaw issue dispatch', () => {
     };
     const input = await next();
     assert.equal((await prepare(input)).status, 'session-created');
-    assert.equal(creates()[0]!.params.displayName, '#3: repair the result');
+    assert.equal(creates()[0]!.params.displayName, '#3: REPAIR THE RESULT');
     assert.equal(creates()[0]!.params.label, undefined);
     assert.deepEqual(sessions.get('retired-issue'), archived);
     await service.run(manifest, root, coordinator, { action: 'reconcile', id: input.id });
@@ -2000,7 +2000,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(request.model, 'openai/gpt-6.1-sol');
     assert.equal(request.thinkingLevel, 'high');
     assert.equal(request.category, 'REPO');
-    assert.equal(request.displayName, '#3: repair the result');
+    assert.equal(request.displayName, '#3: REPAIR THE RESULT');
     assert.equal(request.label, undefined);
     assert.equal(request.agentId, 'receiver');
     assert.equal(request.cwd, join(root, 'worktree'));
@@ -2027,12 +2027,27 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(preparedWorktrees, 1);
   });
 
-  it('should preserve punctuation and unicode in the issue session display title', async () => {
+  it('should uppercase the issue session display title while preserving punctuation and unicode', async () => {
     const input = await next();
-    const title = "Fix user's issue: café 東京 2026.10.6";
+    const title = "Fix user's issue: café 東京 Straße 2026.10.6";
     const created = await prepare(input, {}, title);
     assert.equal(created.status, 'session-created');
-    assert.equal(creates()[0]!.params.displayName, `#3: ${title}`);
+    assert.equal(
+      creates()[0]!.params.displayName,
+      "#3: FIX USER'S ISSUE: CAFÉ 東京 STRASSE 2026.10.6",
+    );
+  });
+
+  it('should normalize redundant issue metadata without changing worktree title input', async () => {
+    const title = 'REPO #3: #3: Fix café: references to #4';
+    const prepareWorktree = service.dependencies.worktrees.prepareGitHub;
+    service.dependencies.worktrees.prepareGitHub = async (input) => {
+      assert.equal(input.title, title);
+      return prepareWorktree(input);
+    };
+    const created = await prepare(await next(), {}, title);
+    assert.equal(created.status, 'session-created');
+    assert.equal(creates()[0]!.params.displayName, '#3: FIX CAFÉ: REFERENCES TO #4');
   });
 
   it('should reuse one connection and keep gateway reads free of repeated provider authorization', async () => {

@@ -1,3 +1,4 @@
+import issueChatTitle from './issue-chat-title.ts';
 import { dispatchAdmission, managedPullRequest } from './managed-issue.ts';
 import verifyIssuePullRequest from './issue-pr-selection.ts';
 import openClawRoutingInstructions from './openclaw-routing-instructions.ts';
@@ -166,7 +167,11 @@ export default class OpenClawDispatchAdmission {
         key: `agent:${manifest.agent.id}:dashboard:agent-system-issue-${record.id}`,
         idempotencyKey: record.id,
         agentId: manifest.agent.id,
-        label: `#${intake.issue.number}: ${input.title.trim()}`,
+        label: issueChatTitle(
+          input.title,
+          intake.issue.number,
+          `${intake.repository.owner.login}/${intake.repository.name}`,
+        ),
         category: managedGroupName(intake.repository.name, 512),
         cwd: worktree.path,
         model: routing.candidate.model,
