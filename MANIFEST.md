@@ -294,8 +294,9 @@ Rerun Install after changing a command declaration.
 Prompt jobs normally start a separate session for the configured agent. They use its
 native model and effort defaults unless you specify a model and supported thinking
 level. Persistent jobs reuse their verified session and conversation history.
-Results stay in native run history unless you configure delivery. Command summaries
-report status codes without script output or credentials.
+Results stay in native run history unless you configure delivery. Command runs retain
+bounded stdout and stderr, even without delivery. Authorized Gateway operators can
+inspect output and truncation in run details; setup output stays private.
 
 Timeouts include startup and range from 1 to 3600 seconds (default 1800). OpenClaw
 controls overlapping runs of the same job, retries, recovery, and daylight saving time;

@@ -32,7 +32,12 @@ export default class BoundCommandService {
   constructor(protected readonly dependencies: BoundCommandServiceDependencies) {}
   async run(
     command: AgentSetupCommand,
-    target: { agentId: string; workspaceDir: string; mode?: 'check' | 'apply' },
+    target: {
+      agentId: string;
+      workspaceDir: string;
+      mode?: 'check' | 'apply';
+      captureOutput?: boolean;
+    },
     signal?: AbortSignal,
   ): Promise<SetupCommandResult> {
     const dependencies = this.dependencies;
@@ -105,6 +110,7 @@ export default class BoundCommandService {
         command,
         {
           workspaceDir: target.workspaceDir,
+          captureOutput: target.captureOutput,
           executableDirectories: (dependencies.baseEnvironment.PATH ?? '').split(delimiter),
           commandBinding: {
             launcherDirectory: join(dependencies.packageDir, 'bin'),
