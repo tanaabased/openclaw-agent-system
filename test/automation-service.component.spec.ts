@@ -241,22 +241,154 @@ describe('agent/automation-service', () => {
       );
     });
 
-  it('should recover an acknowledged-lost capture migration without replaying its update', async () => {
+  it('should admit scheduled commands on both sides of an output-only native update', async () => {
     await service.reconcile(manifest, root);
-    native[0]!.payload.outputMaxBytes = 12345;
+    native[0]!.payload.outputMaxBytes = 16384;
+    const { store } = await service.scope(manifest, root);
+    const ledger = await store.read();
+    const record = ledger.records[0]!;
+    record.nativeHash = nativeAutomationHash(native[0]!);
+    await store.write(ledger);
+    const original = service.dependencies.request!;
+    let admissions = 0;
+    service.dependencies.request = async (method, params) => {
+      if (method !== 'cron.update') return original(method, params);
+      await service.admit(manifest, root, 'check', record.hash);
+      admissions++;
+      const response = await original(method, params);
+      await service.admit(manifest, root, 'check', record.hash);
+      admissions++;
+      return response;
+    };
+    await service.reconcile(manifest, root);
+    assert.equal(admissions, 2);
+    assert.equal(native[0]!.payload.outputMaxBytes, 16777216);
+  });
+
+  it('should keep the old capture configuration runnable after a rejected update without allowing drift', async () => {
+    await service.reconcile(manifest, root);
+    native[0]!.payload.outputMaxBytes = 16384;
     const { store } = await service.scope(manifest, root);
     const ledger = await store.read();
     ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
     await store.write(ledger);
-    afterWriteFailure = true;
+    fail = 'cron.update';
     await assert.rejects(service.reconcile(manifest, root));
-    assert.equal(native[0]!.payload.outputMaxBytes, 16777216);
-    assert.equal((await store.read()).records[0]!.pending?.kind, 'update');
-    calls = [];
+    const hash = ledger.records[0]!.hash;
+    await service.admit(manifest, root, 'check', hash);
+    const before = structuredClone(native[0]!);
+    for (const change of [
+      { payload: { ...before.payload, outputMaxBytes: 42 } },
+      { payload: { ...before.payload, argv: ['another-command'] } },
+      { schedule: { kind: 'every', everyMs: 1000 } },
+      { enabled: false },
+      { state: { autoDisabled: true } },
+    ]) {
+      native[0] = { ...before, ...change };
+      await assert.rejects(service.admit(manifest, root, 'check', hash), /execution-drift/);
+    }
+    native[0] = before;
+    await service.admit(manifest, root, 'check', hash);
+    native[0]!.enabled = false;
+    native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'ok' };
+    fail = undefined;
     await service.reconcile(manifest, root);
-    assert.deepEqual(mutations(), []);
+    assert.equal(native[0]!.enabled, false);
+    assert.deepEqual(native[0]!.state, { lastRunAtMs: now, lastRunStatus: 'ok' });
+    assert.equal(native[0]!.payload.outputMaxBytes, 16777216);
     assert.equal((await store.read()).records[0]!.pending, undefined);
   });
+
+  for (const changed of ['command', 'schedule'] as const)
+    it(`should keep pending ${changed} changes blocked even when they also migrate capture`, async () => {
+      await service.reconcile(manifest, root);
+      native[0]!.payload.outputMaxBytes = 16384;
+      const { store, context } = await service.scope(manifest, root);
+      const ledger = await store.read();
+      ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+      await store.write(ledger);
+      manifest.automations = jobs([
+        {
+          id: 'check',
+          schedule: changed === 'schedule' ? 'in 2 hours' : 'in 1 hour',
+          run: changed === 'command' ? ['gh', 'api', 'repos'] : ['gh', 'api', 'user'],
+        },
+      ]);
+      afterWriteFailure = true;
+      await assert.rejects(service.reconcile(manifest, root));
+      const hash = effectiveAutomation(manifest.automations[0]!, context).hash;
+      await assert.rejects(service.admit(manifest, root, 'check', hash), /execution-stale/);
+    });
+
+  it('should reject a substantive pending update recorded during native admission readback', async () => {
+    await service.reconcile(manifest, root);
+    const { store } = await service.scope(manifest, root);
+    const ledger = await store.read();
+    const original = service.dependencies.request!;
+    service.dependencies.request = async (method, params) => {
+      const response = await original(method, params);
+      if (method === 'cron.get') {
+        ledger.records[0]!.pending = { kind: 'update', nativeHash: 'a'.repeat(64) };
+        await store.write(ledger);
+      }
+      return response;
+    };
+    await assert.rejects(
+      service.admit(manifest, root, 'check', ledger.records[0]!.hash),
+      /execution-stale/,
+    );
+  });
+
+  for (const observed of ['before', 'after'] as const)
+    it(`should admit when migration completes around the ${observed} native read`, async () => {
+      await service.reconcile(manifest, root);
+      native[0]!.payload.outputMaxBytes = 16384;
+      const { store } = await service.scope(manifest, root);
+      const ledger = await store.read();
+      ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+      await store.write(ledger);
+      const original = service.dependencies.request!;
+      let migrate = true;
+      service.dependencies.request = async (method, params) => {
+        if (method !== 'cron.get' || !migrate) return original(method, params);
+        migrate = false;
+        const before = observed === 'before' ? await original(method, params) : undefined;
+        await service.reconcile(manifest, root);
+        return before ?? original(method, params);
+      };
+      await service.admit(manifest, root, 'check', ledger.records[0]!.hash);
+      assert.equal(native[0]!.payload.outputMaxBytes, 16777216);
+      assert.equal((await store.read()).records[0]!.pending, undefined);
+    });
+
+  for (const completed of [false, true])
+    it(`should recover an acknowledged-lost capture migration without replaying its update with completion ${completed}`, async () => {
+      await service.reconcile(manifest, root);
+      native[0]!.payload.outputMaxBytes = 12345;
+      const { store } = await service.scope(manifest, root);
+      const ledger = await store.read();
+      ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+      await store.write(ledger);
+      afterWriteFailure = true;
+      await assert.rejects(service.reconcile(manifest, root));
+      assert.equal(native[0]!.payload.outputMaxBytes, 16777216);
+      assert.equal((await store.read()).records[0]!.pending?.kind, 'update');
+      await service.admit(manifest, root, 'check', ledger.records[0]!.hash);
+      if (completed) {
+        native[0]!.enabled = false;
+        native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'ok' };
+        await assert.rejects(
+          service.admit(manifest, root, 'check', ledger.records[0]!.hash),
+          /execution-drift/,
+        );
+      }
+      const before = structuredClone(native[0]!);
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.deepEqual(mutations(), []);
+      assert.deepEqual(native[0], before);
+      assert.equal((await store.read()).records[0]!.pending, undefined);
+    });
 
   it('should relabel completed one-shots without rearming them or changing command hashes', async () => {
     await service.reconcile(manifest, root);

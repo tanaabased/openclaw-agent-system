@@ -3,7 +3,7 @@
 - Added `automations[].group` for shared uppercase Codex sections and OpenClaw categories, defaulting to `AGENT SYSTEM`. [#544](https://github.com/tanaabased/openclaw-agent-system/issues/544)
 - Fixed Codex and OpenClaw issue chat titles to stay uppercase without repeated repository or issue prefixes, while allowing punctuation and Unicode. [#546](https://github.com/tanaabased/openclaw-agent-system/pull/546)
 - Fixed direct task handoff to reactivate a finished Codex chat from a verified new user turn while preserving its owner and prior work.
-- Fixed command capture to inherit OpenClaw defaults, migrate existing command automation limits to 16 MiB per stream, and preserve diagnostic tails with explicit truncation evidence. [#566](https://github.com/tanaabased/openclaw-agent-system/issues/566)
+- Fixed command capture to inherit OpenClaw defaults, migrate existing command automation limits to 16 MiB per stream without blocking scheduled execution, and preserve diagnostic tails with explicit truncation evidence. [#566](https://github.com/tanaabased/openclaw-agent-system/issues/566)
 - Fixed explicit Codex implementation requests to resume handed-off issue plans after native verification. [#544](https://github.com/tanaabased/openclaw-agent-system/issues/544)
 - Made ClawHub publication best-effort with a warning on failure, and removed the automatic fallback upload. npm and repository publication remain required.
 - Updated installation guidance to use npm while ClawHub publication is blocked upstream. [actions#65](https://github.com/tanaabased/actions/issues/65)

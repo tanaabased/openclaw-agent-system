@@ -73,6 +73,21 @@ const executionFailureReasons = new Set([
 
 const retirementConfirmationWindowMs = 24 * 60 * 60 * 1000;
 
+/** a completed one-shot may disable itself while a capture-only update awaits acknowledgement. */
+function pendingNativeHash(record: AutomationRecord, native: NativeAutomation): string {
+  if (
+    record.pending?.kind === 'update' &&
+    record.pending.outputLimitOnly &&
+    !native.enabled &&
+    retainedOneShot(native)
+  ) {
+    const beforeCompletion = nativeAutomationHash({ ...native, enabled: true });
+    if (beforeCompletion === record.pending.nativeHash || beforeCompletion === record.nativeHash)
+      return beforeCompletion;
+  }
+  return nativeAutomationHash(native);
+}
+
 /** native failure reasons are bounded protocol values; never copy raw lastError or diagnostics. */
 function executionEvidence(state: NativeAutomation['state']): string {
   const at = state.lastRunAtMs;
@@ -680,8 +695,9 @@ export default class AutomationService {
           if (
             record.pending &&
             native &&
-            nativeAutomationHash(native) !== record.pending.nativeHash &&
-            nativeAutomationHash(native) !== record.nativeHash
+            ![record.pending.nativeHash, record.nativeHash].includes(
+              pendingNativeHash(record, native),
+            )
           ) {
             throw new AutomationError('automation-recovery-diverged');
           }
@@ -764,9 +780,9 @@ export default class AutomationService {
           if (record.pending) {
             if (!native && record.pending.kind !== 'create')
               throw new AutomationError('automation-recovery-required');
-            if (native && nativeAutomationHash(native) === record.pending.nativeHash) {
+            if (native && pendingNativeHash(record, native) === record.pending.nativeHash) {
               record.nativeId = native.id;
-              record.nativeHash = record.pending.nativeHash;
+              record.nativeHash = nativeAutomationHash(native);
               delete record.pending;
               await store.write(ledger);
             }
@@ -931,7 +947,20 @@ export default class AutomationService {
     patch: Record<string, unknown>,
     expectedHash: string,
   ): Promise<NativeAutomation> {
-    record.pending = { kind: 'update', nativeHash: expectedHash };
+    const outputMaxBytes = (patch.payload as Record<string, unknown> | undefined)?.outputMaxBytes;
+    // preserve admission only when both receipts prove that capture is the sole change.
+    const outputLimitOnly =
+      before.payload.kind === 'command' &&
+      typeof outputMaxBytes === 'number' &&
+      outputMaxBytes !== before.payload.outputMaxBytes &&
+      nativeAutomationHash(before) === record.nativeHash &&
+      nativeAutomationHash({ ...before, payload: { ...before.payload, outputMaxBytes } }) ===
+        expectedHash;
+    record.pending = {
+      kind: 'update',
+      nativeHash: expectedHash,
+      ...(outputLimitOnly ? { outputLimitOnly: true } : {}),
+    };
     await store.write(ledger);
     await request('cron.update', {
       id: before.id,
@@ -949,36 +978,50 @@ export default class AutomationService {
 
   async admit(manifest: AgentManifest, workspaceDir: string, id: string, hash: string) {
     const { context, store } = await this.scope(manifest, workspaceDir);
-    const ledger = await store.read();
-    const record = ledger.records.find((entry) => entry.id === id);
     const job = openclawIntakeJobs(manifest).find((entry) => entry.id === id);
-    if (
-      !record ||
-      !job ||
-      record.pending ||
-      record.retired ||
-      record.removed ||
-      !record.nativeId ||
-      !job.enabled ||
-      !job.runtimes.includes('openclaw') ||
-      job.payload.kind !== 'command' ||
-      record.hash !== hash ||
-      effectiveAutomation(job, context).hash !== hash ||
-      !this.dependencies.request
-    ) {
-      throw new AutomationError('automation-execution-stale');
+    // a migration can advance old -> pending -> committed while native state is read.
+    // re-read custody before using the observation; retries never mutate or replay an update.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const record = (await store.read()).records.find((entry) => entry.id === id);
+      const outputLimitOnly =
+        record?.pending?.kind === 'update' && record.pending.outputLimitOnly === true;
+      if (
+        !record ||
+        !job ||
+        (record.pending && !outputLimitOnly) ||
+        record.retired ||
+        record.removed ||
+        !record.nativeId ||
+        !job.enabled ||
+        !job.runtimes.includes('openclaw') ||
+        job.payload.kind !== 'command' ||
+        record.hash !== hash ||
+        effectiveAutomation(job, context).hash !== hash ||
+        !this.dependencies.request
+      ) {
+        throw new AutomationError('automation-execution-stale');
+      }
+      const native = nativeAutomation(
+        await this.dependencies.request('cron.get', { id: record.nativeId }),
+      );
+      const fresh = (await store.read()).records.find((entry) => entry.id === id);
+      if (automationHash(fresh ?? null) !== automationHash(record)) continue;
+      const nativeHash = nativeAutomationHash(native);
+      if (
+        native.id !== record.nativeId ||
+        native.declarationKey !== record.marker ||
+        native.agentId !== context.agentId ||
+        !native.enabled ||
+        native.state.autoDisabled ||
+        (nativeHash !== record.nativeHash &&
+          (!outputLimitOnly || nativeHash !== record.pending!.nativeHash))
+      )
+        throw new AutomationError('automation-execution-drift');
+      return {
+        command: { ...job.payload.run, timeoutSeconds: job.timeoutSeconds ?? 1800 },
+        context,
+      };
     }
-    const native = nativeAutomation(
-      await this.dependencies.request('cron.get', { id: record.nativeId }),
-    );
-    if (
-      native.declarationKey !== record.marker ||
-      native.agentId !== context.agentId ||
-      !native.enabled ||
-      native.state.autoDisabled ||
-      nativeAutomationHash(native) !== record.nativeHash
-    )
-      throw new AutomationError('automation-execution-drift');
-    return { command: { ...job.payload.run, timeoutSeconds: job.timeoutSeconds ?? 1800 }, context };
+    throw new AutomationError('automation-execution-stale');
   }
 }

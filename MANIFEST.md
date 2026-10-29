@@ -301,8 +301,9 @@ inherits OpenClaw capture defaults and forwards captured output without another 
 Install and automation sync migrate existing managed command jobs with an explicit
 `outputMaxBytes` to 16 MiB per stream, preserving their IDs, schedules, routing and
 history. The native update API cannot clear that field, so migrated jobs retain this
-fixed compatibility value; new jobs omit it and inherit OpenClaw defaults. Existing
-unchanged jobs remain runnable before sync.
+fixed compatibility value; new jobs omit it and inherit OpenClaw defaults. Scheduled
+command execution remains available before sync and while an output-limit-only
+update is pending, including after a lost update acknowledgement.
 
 Timeouts include startup and range from 1 to 3600 seconds (default 1800). OpenClaw
 controls overlapping runs of the same job, retries, recovery, and daylight saving time;
