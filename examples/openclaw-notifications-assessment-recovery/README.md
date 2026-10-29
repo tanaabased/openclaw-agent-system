@@ -9,6 +9,7 @@ public summary from its saved revision while keeping the same chat, checkout, an
 - Equivalent permission ordering and operator thinking-level tuning preserving the verified native owner across restart.
 - Fresh private issue facts reaching the retained assessment without leaking into visible messages, with stage-specific debug instructions from the live manifest.
 - An unfinished summary publishing from the saved revision without replacing the assessment, chat, or worktree.
+- Historical source and completion recovery when they no longer appear in the recent history window.
 
 ## What Does Not Belong Here
 
@@ -20,6 +21,7 @@ public summary from its saved revision while keeping the same chat, checkout, an
 
 - Strict AIMock reuses the issue assessment protocol, including its returned schema and revision-specific submission request. GitHub, the Gateway, managed Git, native ownership, and summary receipts remain real; model judgment is not under test.
 - The first restart changes equivalent actor ordering, tunes thinking from medium to high, and refreshes hidden issue facts. The strict model remains unchanged; separate model-only and thinking-only permutations belong to component coverage. The second restart recovers the deliberately uncomposed summary; these are distinct retained-revision assertions.
+- Before summary recovery, 201 short native assistant injections move the saved assessment outside the 200-entry history tail. These writes add no model turns or provider fixtures; they exercise exact-source recovery rather than a volume benchmark.
 - CI owns one disposable issue, two agent workspaces, and its SSH registration. Only Tanaabot is assigned; scoped refreshes and a 24-hour schedule isolate discovery. Cleanup stops the Gateway before external fixture changes.
 
 ## Setup
@@ -133,6 +135,9 @@ openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" 
 # should recover only an uncomposed public summary after restart in the same native issue owner
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-assessment-recovery/tanaabot"
 jq -e '.assessmentRevision as $revision | all(.assessmentSummaries[]?; .revision != $revision)' "$TMPDIR/notification-dispatch-before.json"
+conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
+node --input-type=module -e 'import {callGatewayFromCli} from "openclaw/plugin-sdk/gateway-runtime"; for (let index = 0; index < 201; index++) await callGatewayFromCli("chat.inject", {json:true}, {sessionKey:process.argv[1],message:"Recovery history filler " + index}, {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"});' "$conversation"
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --slurpfile record "$TMPDIR/notification-dispatch-before.json" 'all(.messages[]; .__openclaw.runId != $record[0].resultTurnId)'
 openclaw-gateway stop --timeout 340
 openclaw-gateway start
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
