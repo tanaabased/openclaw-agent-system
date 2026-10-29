@@ -80,19 +80,26 @@ export function reportAutomationFailure(
   }
 }
 
-export function assertAutomationRun(page, runId, id, report = reportAutomationFailure) {
+export function assertAutomationRun(
+  page,
+  runId,
+  id,
+  report = reportAutomationFailure,
+  expected = 'ok',
+) {
   const entry = page.entries[0];
   if (!entry) return false;
   assert.equal(entry.runId, runId);
-  if (entry.execution !== 'ok') report(page.nativeId, runId);
-  assert.equal(entry.execution, 'ok', `${id}: native execution failed`);
+  if (entry.execution !== expected) report(page.nativeId, runId);
+  assert.equal(entry.execution, expected, `${id}: native execution failed`);
   return true;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('GitHub Actions only.');
-  const [id, runId] = process.argv.slice(2);
+  const [id, runId, expected = 'ok'] = process.argv.slice(2);
   assert.ok(id && runId, 'an automation id and native run id are required');
+  assert.ok(['ok', 'error'].includes(expected), 'expected execution must be ok or error');
 
   for (let attempt = 0; attempt < 90; attempt++) {
     const result = runCommand('openclaw', [
@@ -107,7 +114,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       '--json',
     ]);
     assert.equal(result.status, 0, result.error?.message ?? result.stderr);
-    if (assertAutomationRun(JSON.parse(result.stdout), runId, id)) {
+    if (
+      assertAutomationRun(JSON.parse(result.stdout), runId, id, reportAutomationFailure, expected)
+    ) {
       process.stdout.write(`${id}: native run completed\n`);
       process.exit(0);
     }

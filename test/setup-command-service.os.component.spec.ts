@@ -6,6 +6,7 @@ import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import AgentCommandAuthority from '../agent/command-authority.ts';
+import BoundCommandService from '../agent/bound-command-service.ts';
 import SetupCommandService, {
   type SetupCommandServiceDependencies,
 } from '../agent/setup-command-service.ts';
@@ -247,6 +248,29 @@ describe('agent/setup-command-service', function () {
       };
     };
   }
+
+  it('should opt into bound output without changing setup privacy or authority cleanup', async () => {
+    dependencies.runCommandWithTimeout = async () => ({
+      ...success,
+      code: 17,
+      stdout: 'command output',
+      stderr: 'command error',
+    });
+    const target = { agentId: 'emori', workspaceDir };
+    const result = await new BoundCommandService(dependencies).run(command('exit 17'), {
+      ...target,
+      captureOutput: true,
+    });
+    assert.equal(result.exitCode, 17);
+    assert.equal(result.output?.stdout, 'command output');
+    assert.equal(result.output?.stderr, 'command error');
+    assert.deepEqual(await readdir(authorityRoot), []);
+    assert.equal(
+      (await new SetupCommandService(dependencies).run(command('exit 17'), target)).output,
+      undefined,
+    );
+    assert.deepEqual(await readdir(authorityRoot), []);
+  });
 
   it('should run pre-agent commands with host tools and without managed authority or secrets', async () => {
     const service = new SetupCommandService(dependencies);

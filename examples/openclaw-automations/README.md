@@ -34,6 +34,8 @@ openclaw-aimock prepare --scenario openclaw-automations
 # should install the owning workspace before starting the gateway
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 openclaw agent-system install --yes --json
+openclaw config set browser.headless true --strict-json
+openclaw config set browser.noSandbox true --strict-json
 
 # should start the gateway with the installed agent
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
@@ -89,6 +91,28 @@ for label in '🔄 RENAMED STATUS' ''; do
   openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 done
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
+```
+
+```bash
+# should retain both streams and the actual exit of a failed command with notifications disabled
+cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+cat failed-output.yaml >> automations.yaml
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
+openclaw agent-system automations list --json > "$TMPDIR/automation-output-job.json"
+native=$(jq -er '.jobs[] | select(.id == "failed-output") | .nativeId' "$TMPDIR/automation-output-job.json")
+openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.delivery.mode == "none"'
+run_id=$(openclaw agent-system automations run failed-output --json | jq -er 'select(.status == "queued") | .runId | strings')
+node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" failed-output "$run_id" error
+openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg runId "$run_id" '{id:$id,runId:$runId,limit:1}')" --json | tee "$TMPDIR/automation-output-run.json" | jq -e --arg runId "$run_id" 'any(.entries[]; .runId == $runId and .status == "error" and (.summary | contains("stdout-fixture-marker")) and (.summary | contains("stderr-fixture-marker")) and any(.diagnostics.entries[]; .exitCode == 17))'
+```
+
+```bash
+# should display that same failed run in the gateway ui after a full page reload
+cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+openclaw browser start --json
+native=$(jq -er '.entries[0].jobId' "$TMPDIR/automation-output-run.json")
+run_id=$(jq -er '.entries[0].runId' "$TMPDIR/automation-output-run.json")
+node ./verify-output-ui.mjs "$native" "$run_id"
 ```
 
 ## Cleanup

@@ -24,6 +24,7 @@ const shellArguments: Record<AgentSetupShell, readonly string[]> = {
 
 export interface SetupExecutionContext {
   workspaceDir: string;
+  captureOutput?: boolean;
   /** Trusted host search directories, never taken from the manifest or child environment. */
   executableDirectories: readonly string[];
   /** Supplied by the authority owner; this runner never selects or authenticates an agent. */
@@ -41,6 +42,10 @@ export interface SetupCommandResult {
   truncated: boolean;
   termination?: SetupProcessResult['termination'];
   signal?: string | null;
+  output?: Pick<
+    SetupProcessResult,
+    'stdout' | 'stderr' | 'stdoutTruncatedBytes' | 'stderrTruncatedBytes'
+  >;
 }
 
 export interface SetupProcessResult {
@@ -266,6 +271,16 @@ export default function createSetupCommandRunner(dependencies: {
         termination: result.termination,
         signal: result.signal,
         truncated: (result.stdoutTruncatedBytes ?? 0) > 0 || (result.stderrTruncatedBytes ?? 0) > 0,
+        ...(context.captureOutput
+          ? {
+              output: {
+                stdout: result.stdout,
+                stderr: result.stderr,
+                stdoutTruncatedBytes: result.stdoutTruncatedBytes,
+                stderrTruncatedBytes: result.stderrTruncatedBytes,
+              },
+            }
+          : {}),
       };
     } catch (error) {
       if (error instanceof SetupCommandError) throw error;

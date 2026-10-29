@@ -6,6 +6,19 @@ import type BoundCommandService from '../agent/bound-command-service.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type { CliOutput } from './output.ts';
 
+// reserve space for both streams and completion metadata inside native capture's 16 kib limit.
+const maximumStreamBytes = 7_168;
+
+function capturedStream(text: string, name: string, truncatedBytes = 0) {
+  const bytes = Buffer.from(text);
+  const truncated = truncatedBytes > 0 || bytes.length > maximumStreamBytes;
+  const content = new TextDecoder().decode(bytes.subarray(0, maximumStreamBytes), { stream: true });
+  return {
+    text: `${content}${content && !content.endsWith('\n') ? '\n' : ''}${truncated ? `[${name} truncated]\n` : ''}`,
+    truncated,
+  };
+}
+
 /** fixed scheduler entry; operator admission must precede this runner. */
 export default async function executeAutomation(options: {
   id: string;
@@ -51,14 +64,37 @@ export default async function executeAutomation(options: {
     signal.throwIfAborted();
     const result = await options.commands.run(
       command,
-      { agentId: context.agentId, workspaceDir: context.workspaceDir },
+      { agentId: context.agentId, workspaceDir: context.workspaceDir, captureOutput: true },
       signal,
     );
-    const success = result.exitCode === 0 && !result.timedOut && !signal.aborted;
-    options.output.writeStdout(
-      `${JSON.stringify({ id: options.id, status: success ? 'ok' : 'error', code: result.timedOut ? 'automation-timeout' : signal.aborted ? 'automation-cancelled' : 'automation-command-completed', exitCode: result.exitCode })}\n`,
+    const exited =
+      !result.timedOut &&
+      !signal.aborted &&
+      !result.signal &&
+      (!result.termination || result.termination === 'exit');
+    const success = exited && result.exitCode === 0;
+    const stdout = capturedStream(
+      result.output?.stdout ?? '',
+      'stdout',
+      result.output?.stdoutTruncatedBytes,
     );
-    return success ? 0 : 1;
+    const stderr = capturedStream(
+      result.output?.stderr ?? '',
+      'stderr',
+      result.output?.stderrTruncatedBytes,
+    );
+    if (stdout.text) options.output.writeStdout(stdout.text);
+    if (stderr.text) options.output.writeStderr(stderr.text);
+    options.output.writeStdout(
+      `${JSON.stringify({ id: options.id, status: success ? 'ok' : 'error', code: result.timedOut ? 'automation-timeout' : signal.aborted ? 'automation-cancelled' : result.signal || result.termination === 'signal' ? 'automation-command-signalled' : 'automation-command-completed', exitCode: result.exitCode, termination: result.termination, signal: result.signal, truncated: result.truncated || stdout.truncated || stderr.truncated })}\n`,
+    );
+    return exited &&
+      typeof result.exitCode === 'number' &&
+      Number.isInteger(result.exitCode) &&
+      result.exitCode >= 0 &&
+      result.exitCode <= 255
+      ? result.exitCode
+      : 1;
   } catch (error) {
     options.output.writeStdout(
       `${JSON.stringify({ id: options.id, status: 'error', code: controller.signal.aborted ? 'automation-cancelled' : error instanceof AutomationError ? error.code : 'automation-command-failed' })}\n`,
