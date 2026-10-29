@@ -131,7 +131,7 @@ export const dispatchRecordProperties = {
   ),
   handoff: Type.Optional(
     Type.Object(
-      { at: Type.Integer({ minimum: 0 }), by: text, turnId: text },
+      { at: Type.Integer({ minimum: 0 }), by: text, turnId: text, inputId: Type.Optional(text) },
       { additionalProperties: false },
     ),
   ),

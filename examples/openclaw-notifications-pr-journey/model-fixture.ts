@@ -831,7 +831,7 @@ function respond(
       if (isPendingDelivery(published))
         throw new Error(`notification-delivery-reconciliation-exhausted: ${published.code}`);
       if (published.status !== 'published') return;
-      if (!update && published.workflowStatus !== 'partially-delivered')
+      if (!update && published.workflowStatus !== 'delivered-response-pending')
         throw new Error('published pr must retain pending announcement as partial delivery');
     }
     if (!retry && !update) {

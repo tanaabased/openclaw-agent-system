@@ -13,6 +13,8 @@ import {
 import type { DispatchAuthority } from './session-dispatch.ts';
 
 type Probe = { statusCode: number; body: unknown; malformed?: boolean };
+// cold plugin reloads can outlast the native handshake; keep their budget separate.
+export const sessionDispatchReadinessTimeoutMs = 90_000;
 export interface ReadinessOptions extends EventLoopReadyOptions {
   onEvidence?(evidence: ReadinessEvidence): void;
 }
@@ -78,13 +80,14 @@ export default async function waitForSessionDispatchGateway(
   dependencies: Dependencies = nativeDependencies,
 ): Promise<EventLoopReadyResult> {
   const started = dependencies.now();
-  const deadline = started + (options.maxWaitMs ?? 30_000);
+  const maxWaitMs = options.maxWaitMs ?? sessionDispatchReadinessTimeoutMs;
+  const deadline = started + maxWaitMs;
   let checks = 0;
   const observations: ReadinessObservation[] = [];
   const evidence = (): ReadinessEvidence => ({
     state: 'observed',
     elapsedMs: dependencies.now() - started,
-    maxWaitMs: options.maxWaitMs ?? 30_000,
+    maxWaitMs,
     totalObservations: checks,
     droppedObservations: checks - observations.length,
     observations: [...observations],

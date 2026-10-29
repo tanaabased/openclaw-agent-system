@@ -44,6 +44,46 @@ function execute(
 }
 
 describe('api/cli-execution', () => {
+  it('should reject partial preflight data before validation and release resources', async () => {
+    for (const metadata of [
+      { stdoutTruncatedBytes: 1 },
+      { stderrTruncatedBytes: 1 },
+      { signal: 'SIGTERM' },
+    ]) {
+      let disposed = false;
+      let calls = 0;
+      const definition = createToolTestDefinition({
+        acquireResources: () => ({
+          async dispose() {
+            disposed = true;
+          },
+        }),
+      });
+      definition.runner.preflight = () => ({
+        argv: ['identity'],
+        validate() {
+          assert.fail('partial identity must not be validated');
+        },
+      });
+      await assert.rejects(
+        execute(definition, async () => {
+          calls++;
+          return {
+            exitCode: 0,
+            stdout: '{"login":"expected"}',
+            stderr: '',
+            timedOut: false,
+            truncated: false,
+            ...metadata,
+          };
+        }),
+        { code: 'execution_failed' },
+      );
+      assert.equal(calls, 1);
+      assert.equal(disposed, true);
+    }
+  });
+
   for (const phase of ['preflight', 'command'] as const) {
     for (const rejects of [false, true]) {
       it(`should preserve cancellation and clean resources when ${phase} ${rejects ? 'rejects' : 'resolves'}`, async () => {

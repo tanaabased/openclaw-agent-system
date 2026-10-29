@@ -1,3 +1,4 @@
+import workflowStatus from './workflow-status.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   managedTargetUrl,
@@ -25,7 +26,12 @@ import assessmentSummary from './assessment-summary.ts';
 import { automationHash } from './automation-hash.ts';
 import dispatchContext from './dispatch-context.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
-import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
+import {
+  dispatchFailurePhase,
+  dispatchFailureStatus,
+  dispatchRetryDue,
+  scheduleDispatchRetry,
+} from './dispatch-retry.ts';
 import redactFeedback from './feedback-redaction.ts';
 import selectFeedbackStage from './feedback-stage.ts';
 import issueProgression from './issue-progression.ts';
@@ -388,7 +394,7 @@ export default class OpenClawDispatchIssue {
         event.phase = 'blocked';
       await save();
       return {
-        status: event.phase === 'blocked' ? 'blocked' : dispatchFailurePhase(event, code, error),
+        status: event.phase === 'blocked' ? 'blocked' : dispatchFailureStatus(event, code, error),
         id: record.id,
         eventId: event.id,
         nextAction: code === 'feedback-composition-changed' ? 'compose' : 'next',
@@ -725,10 +731,10 @@ export default class OpenClawDispatchIssue {
             signal.throwIfAborted();
             const code = openClawDispatchFailureCode(error);
             return {
-              status: dispatchFailurePhase({}, code, error),
+              status: dispatchFailureStatus({}, code, error),
               workflowStatus: record.work?.delivery?.pullRequest
-                ? 'partially-delivered'
-                : dispatchFailurePhase({}, code, error),
+                ? workflowStatus(record)
+                : dispatchFailureStatus({}, code, error),
               id: record.id,
               ...workflowFailure(error, code),
               code: code === 'dispatch-operation-failed' ? 'delivery-provider-failed' : code,

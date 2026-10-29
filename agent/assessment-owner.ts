@@ -3,7 +3,7 @@ import managedOwner from './managed-owner.ts';
 import { automationHash } from './automation-hash.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 
-/** missing, inactive, or other-session ownership is never absence of managed work. */
+/** missing, retired, or other-session ownership is never absence of managed work. */
 export default function assessmentOwner<
   R extends SharedDispatchRecord & { turnEvidence?: unknown },
 >(
@@ -30,7 +30,6 @@ export default function assessmentOwner<
     record.reset ||
     record.retired ||
     record.retirement ||
-    record.nativeInactive ||
     !record.request ||
     record.threadId !== session ||
     !record.worktree ||
@@ -58,7 +57,6 @@ export default function assessmentOwner<
       reset: record.reset,
       retired: record.retired,
       retirement: record.retirement,
-      nativeInactive: record.nativeInactive,
     }),
   };
 }

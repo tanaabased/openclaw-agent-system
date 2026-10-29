@@ -86,6 +86,7 @@ export const dispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
     preparationObservation: Type.Optional(preparationObservationSchema),
+    implementationPreparationError: Type.Optional(text),
     denial: Type.Optional(intakeDenialSchema),
     recoveredDenials: Type.Optional(
       Type.Array(

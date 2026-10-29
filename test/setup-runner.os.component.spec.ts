@@ -100,13 +100,18 @@ describe('agent/setup-runner', () => {
       assert.equal(options.input, '');
       assert.deepEqual(options.baseEnv, {});
       assert.equal(options.timeoutMs, 7_000);
-      assert.equal(options.maxOutputBytes, 65_536);
-      assert.equal(options.maxCombinedOutputBytes, 65_536);
+      assert.equal(Object.hasOwn(options, 'maxOutputBytes'), false);
+      assert.equal(Object.hasOwn(options, 'maxCombinedOutputBytes'), false);
       assert.equal(options.killProcessTree, true);
       assert.equal(options.killGraceMs, 5_000);
-      assert.equal(options.outputCapture, 'head');
+      assert.equal(Object.hasOwn(options, 'outputCapture'), false);
       assert.equal(options.signal, controller.signal);
-      return { ...success, code: 1, stdout: 'private output', stderr: 'private error' };
+      return {
+        ...success,
+        code: 1,
+        stdout: 'private output'.repeat(10_000),
+        stderr: 'private error'.repeat(10_000),
+      };
     });
     assert.deepEqual(await run(shell(script), context(), controller.signal), {
       exitCode: 1,

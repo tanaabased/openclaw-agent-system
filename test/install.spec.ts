@@ -120,6 +120,43 @@ function createHarness(
 }
 
 describe('cli/install', () => {
+  it('should preserve the automation and safe native reason in first-install failure output', async () => {
+    const diagnostic = {
+      method: 'sessions.create' as const,
+      category: 'rejected' as const,
+      gatewayCode: 'INVALID_REQUEST' as const,
+      closeCode: null,
+      requestDispatched: null,
+      reason: 'model-runtime-unavailable' as const,
+      automationId: 'github-issue-assignment',
+    };
+    for (const json of [false, true]) {
+      const harness = createHarness({
+        json,
+        install: new AgentSystemLifecycleError(
+          'automations',
+          'automation-gateway-rejected',
+          'Automation reconciliation stopped.',
+          {
+            cause: new AutomationError('automation-gateway-rejected', {
+              ...diagnostic,
+              ...{ details: 'private-token' },
+            }),
+          },
+        ),
+      });
+      await harness.run();
+      assert.deepEqual(harness.exitCodes, [1]);
+      assert.doesNotMatch(harness.events.join(''), /private-token/);
+      assert.match(harness.diagnostics.join(''), /github-issue-assignment/);
+      assert.match(harness.diagnostics.join(''), /model-runtime-unavailable/);
+      if (json)
+        assert.deepEqual(
+          JSON.parse(harness.output.join('')).blocked.automationGatewayDiagnostic,
+          diagnostic,
+        );
+    }
+  });
   it('should not invent gateway evidence for unrelated automation failures', async () => {
     const harness = createHarness({
       json: true,

@@ -3,6 +3,41 @@ import assert from 'node:assert/strict';
 import GitWorktreeGitRunnerFactory from '../tools/git/worktree-git-runner.ts';
 
 describe('tools/git/worktree-git-runner', () => {
+  it('should reject partial metadata before exposing git control data', async () => {
+    for (const metadata of [
+      { truncated: true },
+      { stdoutTruncatedBytes: 1 },
+      { stderrTruncatedBytes: 1 },
+      { signal: 'SIGTERM' },
+    ]) {
+      const factory = new GitWorktreeGitRunnerFactory({
+        baseEnvironment: { PATH: '/usr/bin' },
+        async runCli() {
+          return {
+            exitCode: 0,
+            stdout: '/workspace',
+            stderr: '',
+            timedOut: false,
+            truncated: false,
+            ...metadata,
+          };
+        },
+      });
+      const lease = await factory.acquire(
+        { externalExtensions: [], identity: { email: 'data@example.com', name: 'Data' } },
+        { resolveEnvironment: () => undefined, workspaceDir: '/workspace' },
+        { authentication: false },
+      );
+      try {
+        await assert.rejects(
+          lease.git.run({ argv: ['rev-parse', '--show-toplevel'], cwd: '/workspace' }),
+        );
+      } finally {
+        await lease.dispose();
+      }
+    }
+  });
+
   it('should acquire ssh only for remote preparation and redact resource secrets', async () => {
     const events: string[] = [];
     const requests: Array<{ argv: string[]; environment: NodeJS.ProcessEnv }> = [];

@@ -105,6 +105,7 @@ export default async function continueCodexResponse(
   if (record.summaryRecovery)
     (record.previousSummaryAttempts ??= []).push(record.summaryRecovery.attempt);
   delete record.nativeInactive;
+  delete record.capacityObservation;
   record.summaryRecovery = { revision: pending.revision, attempt };
   await save();
   return { status: 'prepared' as const, id: record.id, request: attempt.request };

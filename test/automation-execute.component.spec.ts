@@ -104,20 +104,55 @@ describe('cli/automation-execute', () => {
     }
   });
 
-  it('should bound both streams by bytes and retain inner and outer truncation signals', async () => {
+  it('should forward long streams without clipping late errors or completion metadata', async () => {
+    const stdout = '€'.repeat(400_000) + '\nlate stdout error';
+    const stderr = 'x'.repeat(70_000) + '\nlate stderr error';
+    const run = await execute({
+      exitCode: 17,
+      timedOut: false,
+      truncated: false,
+      termination: 'exit',
+      signal: null,
+      output: { stdout, stderr },
+    });
+    assert.equal(run.code, 17);
+    assert.equal(run.stderr, stderr + '\n');
+    assert.ok(run.stdout.startsWith(stdout + '\n'));
+    const completion = JSON.parse(run.stdout.trimEnd().split('\n').at(-1)!);
+    assert.deepEqual(completion, {
+      id: 'job',
+      status: 'error',
+      code: 'automation-command-completed',
+      exitCode: 17,
+      termination: 'exit',
+      signal: null,
+      timedOut: false,
+      cancelled: false,
+      truncated: false,
+      stdoutTruncatedBytes: 0,
+      stderrTruncatedBytes: 0,
+    });
+  });
+
+  it('should preserve exact native loss facts without inventing more truncation', async () => {
     const run = await execute({
       exitCode: 17,
       timedOut: false,
       truncated: true,
       termination: 'exit',
-      output: { stdout: '€'.repeat(10_000), stderr: 'stderr-marker', stderrTruncatedBytes: 9 },
+      output: {
+        stdout: '€ late stdout',
+        stderr: 'late stderr',
+        stdoutTruncatedBytes: 21,
+        stderrTruncatedBytes: 9,
+      },
     });
-    assert.equal(run.code, 17);
-    assert.ok(Buffer.byteLength(run.stdout) + Buffer.byteLength(run.stderr) < 16_384);
-    assert.ok(!run.stdout.includes('\ufffd'));
-    assert.ok(run.stdout.includes('[stdout truncated]'));
-    assert.ok(run.stderr.includes('stderr-marker\n[stderr truncated]'));
-    assert.equal(JSON.parse(run.stdout.trimEnd().split('\n').at(-1)!).truncated, true);
+    assert.ok(run.stdout.startsWith('€ late stdout\n[stdout truncated: 21 bytes]\n'));
+    assert.equal(run.stderr, 'late stderr\n[stderr truncated: 9 bytes]\n');
+    const completion = JSON.parse(run.stdout.trimEnd().split('\n').at(-1)!);
+    assert.equal(completion.truncated, true);
+    assert.equal(completion.stdoutTruncatedBytes, 21);
+    assert.equal(completion.stderrTruncatedBytes, 9);
   });
 
   it('should not report success for timeout signal or missing exit even with misleading zero status', async () => {

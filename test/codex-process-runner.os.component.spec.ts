@@ -61,6 +61,74 @@ describe('agent/codex-process-runner', () => {
     assert.equal(result.stderrTruncatedBytes, 1);
   });
 
+  it('should retain independent default tails and exact loss counts after large output', async () => {
+    const result = await runCodexSetupProcess(
+      [
+        process.execPath,
+        '-e',
+        'process.stdout.write("x".repeat(600000) + "OUT"); process.stderr.write("y".repeat(600000) + "ERR"); process.exitCode = 17',
+      ],
+      options({
+        maxOutputBytes: undefined,
+        maxCombinedOutputBytes: undefined,
+        outputCapture: undefined,
+      }),
+    );
+    assert.equal(result.code, 17);
+    assert.equal(Buffer.byteLength(result.stdout), 512 * 1024);
+    assert.equal(Buffer.byteLength(result.stderr), 512 * 1024);
+    assert.ok(result.stdout.endsWith('OUT'));
+    assert.ok(result.stderr.endsWith('ERR'));
+    assert.equal(result.stdoutTruncatedBytes, 75715);
+    assert.equal(result.stderrTruncatedBytes, 75715);
+  });
+
+  it('should honor explicit tail and combined budgets', async () => {
+    const result = await runCodexSetupProcess(
+      [process.execPath, '-e', 'process.stdout.write("abcdefghijkl")'],
+      options({ outputCapture: 'tail', maxCombinedOutputBytes: 8 }),
+    );
+    assert.equal(result.stdout, 'efghijkl');
+    assert.equal(result.stdoutTruncatedBytes, 4);
+  });
+
+  it('should preserve split unicode and discard only incomplete capture boundaries', async () => {
+    for (const [mode, expected, lost] of [
+      ['head', 'x€', 4],
+      ['tail', '🦄', 4],
+    ] as const) {
+      const result = await runCodexSetupProcess(
+        [
+          process.execPath,
+          '-e',
+          'const b = Buffer.from("x€🦄"); process.stdout.write(b.subarray(0, 3)); setImmediate(() => process.stdout.write(b.subarray(3)))',
+        ],
+        options({ outputCapture: mode, maxOutputBytes: 5, maxCombinedOutputBytes: undefined }),
+      );
+      assert.equal(result.stdout, expected);
+      assert.equal(result.stdoutTruncatedBytes, lost);
+      assert.ok(!result.stdout.includes('�'));
+    }
+    const complete = await runCodexSetupProcess(
+      [
+        process.execPath,
+        '-e',
+        'const b = Buffer.from("x€🦄"); process.stdout.write(b.subarray(0, 3)); setImmediate(() => process.stdout.write(b.subarray(3)))',
+      ],
+      options({ maxOutputBytes: 8, maxCombinedOutputBytes: undefined }),
+    );
+    assert.equal(complete.stdout, 'x€🦄');
+    assert.equal(complete.stdoutTruncatedBytes, undefined);
+  });
+
+  it('should reject invalid explicit budgets before starting the child', async () => {
+    for (const maxOutputBytes of [0, -1, NaN, Infinity, 1.5])
+      await assert.rejects(
+        runCodexSetupProcess(['/missing-executable'], options({ maxOutputBytes })),
+        RangeError,
+      );
+  });
+
   it('should tolerate a child closing stdin before input is consumed', async () => {
     const result = await runCodexSetupProcess(
       [process.execPath, '-e', 'process.exit(0)'],

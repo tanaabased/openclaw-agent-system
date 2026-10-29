@@ -8,6 +8,26 @@ const original = { turnId: 'first', inputId: 'first-input' };
 const current = { turnId: 'second', inputId: 'second-input' };
 
 describe('agent/implementation-revision', () => {
+  it('should admit a distinct verified input in the same turn and reject its replay', () => {
+    const work = { result, resultSource: original };
+    const steering = { ...original, inputId: 'steering' };
+    assert.equal(implementationRevision(work, steering, true), true);
+    assert.equal(implementationRevision(work, steering, false), false);
+    assert.equal(
+      implementationRevision({ ...work, resultHistory: [{ source: steering }] }, steering, true),
+      false,
+    );
+    assert.equal(implementationRevision({ result }, steering, true, original.turnId), false);
+    assert.equal(
+      implementationRevision(
+        { result, resultSource: { turnId: original.turnId, inputId: original.turnId } },
+        steering,
+        true,
+      ),
+      false,
+    );
+  });
+
   for (const runtime of ['openclaw', 'codex'] as const)
     it(`should keep ${runtime} completed recovery separate from authorized revisions`, () => {
       const work = { result, resultSource: original };

@@ -1,3 +1,4 @@
+import AgentSystemToolError from '../api/error.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -140,6 +141,31 @@ describe('google managed runtime', () => {
     });
     return { tool, runtime, events, requests, logs };
   }
+  it('should reject partial identities without treating retained errors as credential rejection', () => {
+    for (const metadata of [
+      { truncated: true },
+      { stdoutTruncatedBytes: 1 },
+      { stderrTruncatedBytes: 1 },
+      { signal: 'SIGTERM' },
+    ]) {
+      for (const exitCode of [0, 4]) {
+        const partial = {
+          ...result('{"email":"one@example.com","verified_email":true}', exitCode, 'invalid_grant'),
+          ...metadata,
+        };
+        assert.throws(
+          () => assertGoogleIdentity(partial, 'one@example.com'),
+          (error: unknown) => {
+            assert.ok(error instanceof AgentSystemToolError);
+            assert.equal(error.code, 'execution_failed');
+            assert.equal(Boolean(error.credentialRejected), false);
+            return true;
+          },
+        );
+      }
+    }
+  });
+
   it('should execute literal and environment accounts identically with isolated credentials and audit', async () => {
     for (const options of [{}, { environmentAccount: true }, { agentEmail: true, base64: true }]) {
       const f = await fixture(options);

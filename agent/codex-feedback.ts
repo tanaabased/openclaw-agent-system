@@ -454,6 +454,7 @@ export default async function runCodexFeedback(
               if (receipt.ended && found.turnEnded && ['idle', 'notLoaded'].includes(found.status))
                 record.nativeInactive = true;
               else delete record.nativeInactive;
+              delete record.capacityObservation;
               if (receipt.ended && !event.publicationAttempted && input.action === 'next') {
                 event.previousTurnIds = [...(event.previousTurnIds ?? []), receipt.turnId];
                 event.resumed = (event.resumed ?? 0) + 1;
@@ -498,6 +499,7 @@ export default async function runCodexFeedback(
               },
             };
             delete record.nativeInactive;
+            delete record.capacityObservation;
             event.phase = 'prepared';
             await save();
             return {

@@ -18,6 +18,19 @@ const record = (phase: DispatchRecord['phase'], events: FeedbackEvent['phase'][]
     feedback: { baseline: {}, events: events.map((phase) => ({ phase }) as FeedbackEvent) },
   }) as DispatchRecord;
 describe('agent/codex-capacity', () => {
+  it('should distinguish idle unfinished work from an active handed-off task', () => {
+    const item = record('complete');
+    item.continuation = { phase: 'running' } as DispatchRecord['continuation'];
+    item.handoff = { at: 1, by: 'operator', turnId: 'work' };
+    item.nativeInactive = true;
+    assert.equal(codexCapacity([item], 1).occupied, 0);
+    delete item.nativeInactive;
+    item.capacityObservation = { at: 2, code: 'dispatch-capacity-native-active' };
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+    item.continuation!.phase = 'complete';
+    assert.equal(codexCapacity([item], 1).occupied, 1);
+  });
+
   it('should release an unsubmitted initial continuation once feedback owns implementation', () => {
     const item = record('complete', ['published']);
     item.continuation = { phase: 'waiting' } as DispatchRecord['continuation'];
@@ -37,6 +50,8 @@ describe('agent/codex-capacity', () => {
     item.nativeInactive = true;
     assert.equal(codexCapacity([item], 1).occupied, 0);
     item.feedback!.events.push({ phase: 'running' } as FeedbackEvent);
+    assert.equal(codexCapacity([item], 1).occupied, 0);
+    delete item.nativeInactive;
     assert.equal(codexCapacity([item], 1).occupied, 1);
   });
   it('should retain uncertain execution after cancellation or feedback authority loss', () => {

@@ -59,7 +59,7 @@ describe('agent/workflow-status', () => {
     );
     assert.equal(
       workflowStatus({ phase: 'complete', handoff: {}, continuation: { phase: 'cancelled' } }),
-      'running',
+      'cancelled',
     );
   });
   it('should distinguish cancellation policy holds and unfinished delivery from authorization failures', () => {
@@ -107,8 +107,8 @@ describe('agent/workflow-status', () => {
     };
     assert.equal(workflowStatus({ ...record, delivery }), 'delivery');
     delivery.pushedHead = 'new';
-    assert.equal(workflowStatus({ ...record, delivery }), 'complete');
-    assert.equal(workflowStatus({ ...record, work: { delivery } }), 'complete');
+    assert.equal(workflowStatus({ ...record, delivery }), 'delivered');
+    assert.equal(workflowStatus({ ...record, work: { delivery } }), 'delivered');
     event.work.result.outcome = 'blocked';
     assert.equal(workflowStatus({ ...record, delivery }), 'blocked');
   });
@@ -222,17 +222,20 @@ describe('agent/workflow-status', () => {
   });
   it('should preserve published work when delivery remains incomplete in either runtime', () => {
     const delivery = { pullRequest: { pullRequestNumber: 7 }, reconciled: true };
-    assert.equal(workflowStatus({ phase: 'complete', delivery }), 'partially-delivered');
-    assert.equal(workflowStatus({ phase: 'complete', work: { delivery } }), 'partially-delivered');
+    assert.equal(workflowStatus({ phase: 'complete', delivery }), 'delivered-response-pending');
+    assert.equal(
+      workflowStatus({ phase: 'complete', work: { delivery } }),
+      'delivered-response-pending',
+    );
     const completed = {
       ...delivery,
       attached: true,
       announcement: { receipt: { nodeId: 'comment' } },
     };
-    assert.equal(workflowStatus({ phase: 'complete', delivery: completed }), 'complete');
+    assert.equal(workflowStatus({ phase: 'complete', delivery: completed }), 'delivered');
     assert.equal(
       workflowStatus({ phase: 'complete', delivery: { ...completed, attached: false } }),
-      'partially-delivered',
+      'delivered-response-pending',
     );
   });
 });

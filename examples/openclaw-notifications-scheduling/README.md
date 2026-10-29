@@ -17,29 +17,33 @@ Verify that its ID, routing, channel readiness, and dispatch enrollment are pres
 ## Notes
 
 - Direct installed commands need one GitHub identity and native dispatch enrollment, without creating issues, PRs, worktrees, or SSH registrations. No model turn runs.
+- Setup, first Install, and scheduling assertions share one fail-fast block. Failed installation retains its output and automation inspection, then stops before dependent checks. CI enables bounded, redacted native rejection evidence for that first attempt.
 - The 24-hour interval keeps scheduled agent work outside this bounded job. All scheduler and Gateway state belongs to the ephemeral runner.
 
-## Setup
+## Testing
 
 ```bash
-# should prepare the packed plugin and declared identity pins
+# should install and verify pause and resume of the same notification job
+set -euo pipefail
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service
 owner_node=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id)
 receiver_node=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api user --jq 'select(.login == "tanaabot") | .node_id')
 sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__RECEIVER_NODE_ID__|$receiver_node|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
 mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/tanaabot/agent.yaml"
-
-# should install the notification job with native dispatch enrollment
 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/tanaabot"
-openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated")'
+install_status=0
+OPENCLAW_DEBUG=1 openclaw agent-system install --yes --json > "$TMPDIR/scheduling-install.json" 2> "$TMPDIR/scheduling-install.stderr" || install_status=$?
+cat "$TMPDIR/scheduling-install.json" "$TMPDIR/scheduling-install.stderr"
+if test "$install_status" -ne 0; then
+  list_status=0
+  openclaw agent-system automations list --json > "$TMPDIR/scheduling-install-jobs.json" || list_status=$?
+  printf 'automation inspection after failed install exited %s\n' "$list_status" >&2
+  cat "$TMPDIR/scheduling-install-jobs.json" >&2
+  exit "$install_status"
+fi
+jq -e 'any(.outcomes[]; .code == "session-dispatch-enrolled") and any(.outcomes[]; .code == "intake-activated")' "$TMPDIR/scheduling-install.json"
 openclaw agent-system notifications wait --for baseline-ready --timeout 30 --json | jq -e '.status == "completed"'
-```
-
-## Testing
-
-```bash
-# should pause and resume the same scheduler job through native and manifest controls
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/tanaabot"
 openclaw agent-system automations list --json > "$TMPDIR/intake-before-pause.json"
 native=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId' "$TMPDIR/intake-before-pause.json")

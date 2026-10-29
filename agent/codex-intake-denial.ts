@@ -1,6 +1,6 @@
 import { nativeObject } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
-import { dispatchHistoryPages } from './codex-dispatch-history.ts';
+import { dispatchHistoryPages, nativeHistoryPages } from './codex-dispatch-history.ts';
 import validateDispatchRequest from './codex-dispatch-request.ts';
 import type {
   DispatchRecord,
@@ -66,36 +66,27 @@ export default async function intakeDenial(
   const turnId = anchor?.turnId ?? record.preparationTurnId;
   const afterItemId = anchor?.afterItemId ?? record.creationAfterItemId;
   if (!turnId || !afterItemId) return;
-  let cursor: string | undefined;
-  const cursors = new Set<string>();
   let found = recoveryCallId !== undefined;
   const turns: string[] = recoveryCallId ? [turnId] : [];
   const turnIds = new Set<string>();
-  for (let page = 0; page < 20 && !found; page++) {
-    const result = await request('thread/turns/list', {
+  if (!found)
+    for await (const page of nativeHistoryPages(request, 'thread/turns/list', {
       threadId,
       itemsView: 'notLoaded',
       sortDirection: 'desc',
-      limit: 50,
-      ...(cursor ? { cursor } : {}),
-    });
-    if (!Array.isArray(result.data) || !result.data.every(nativeObject))
-      throw new Error('dispatch-denial-history-unavailable');
-    for (const entry of result.data) {
-      if (typeof entry.id !== 'string' || turnIds.has(entry.id))
-        throw new Error('dispatch-denial-history-unavailable');
-      turnIds.add(entry.id);
-      turns.push(entry.id);
-      if (entry.id === turnId) {
-        found = true;
-        break;
+    })) {
+      for (const entry of page) {
+        if (typeof entry.id !== 'string' || turnIds.has(entry.id))
+          throw new Error('dispatch-denial-history-unavailable');
+        turnIds.add(entry.id);
+        turns.push(entry.id);
+        if (entry.id === turnId) {
+          found = true;
+          break;
+        }
       }
+      if (found) break;
     }
-    if (found) break;
-    if (typeof result.nextCursor !== 'string' || cursors.has(result.nextCursor)) break;
-    cursor = result.nextCursor;
-    cursors.add(cursor);
-  }
   if (!found) throw new Error('dispatch-denial-history-unavailable');
   const items: Record<string, unknown>[] = [];
   for (const observedTurn of turns.reverse()) {

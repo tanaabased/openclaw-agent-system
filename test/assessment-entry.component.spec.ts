@@ -386,7 +386,11 @@ describe('agent/assessment-entry', () => {
       () => assessmentOwner([record, record], admitted, 'chat', target),
       /assessment-managed-owner-ambiguous/,
     );
-    for (const field of ['retired', 'retirement', 'reset', 'nativeInactive']) {
+    assert.equal(
+      assessmentOwner([{ ...record, nativeInactive: true }], admitted, 'chat', target)?.record.id,
+      record.id,
+    );
+    for (const field of ['retired', 'retirement', 'reset']) {
       assert.throws(
         () => assessmentOwner([{ ...record, [field]: true }], admitted, 'chat', target),
         /assessment-managed-context-invalid/,

@@ -4,7 +4,7 @@ import type { AssessmentSummary } from './assessment-summary-state.ts';
 import { nativeObject } from './automation-gateway.ts';
 import { automationHash } from './automation-hash.ts';
 import type { CodexContinuationState } from './codex-continuation-state.ts';
-import dispatchHistory, { dispatchHistoryPages } from './codex-dispatch-history.ts';
+import dispatchHistory, { dispatchHistoryPages, dispatchTurn } from './codex-dispatch-history.ts';
 import type { CodexThreadRequest } from './codex-thread-client.ts';
 
 /** an explicit local host selects the same native destination as an omitted host. */
@@ -29,16 +29,14 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
         attempt.turnId !== attempt.sourceTurnId
       )
         throw new Error('continuation-input-origin-invalid');
-      const entries = await dispatchHistoryPages(request, 'thread/items/list', {
-        threadId: attempt.request.threadId,
-        turnId: attempt.sourceTurnId,
-        sortDirection: 'asc',
-      });
-      if (
-        entries.some((entry) => entry.turnId !== attempt.sourceTurnId || !nativeObject(entry.item))
-      )
-        throw new Error('continuation-input-unverified');
-      const items = entries.map((entry) => entry.item).filter(nativeObject);
+      const turn = await dispatchTurn(request, attempt.request.threadId, attempt.sourceTurnId);
+      if (!turn || !Array.isArray(turn.items)) throw new Error('continuation-history-incomplete');
+      const items = turn.items.filter(nativeObject);
+      const ended =
+        ['completed', 'failed', 'interrupted'].includes(String(turn.status)) &&
+        typeof turn.completedAt === 'number' &&
+        Number.isFinite(turn.completedAt) &&
+        turn.completedAt > 0;
       if (
         codexTurnApprovalDenied(
           codexSummaryDenial(items, attempt.request.threadId, attempt.sourceTurnId, summaries),
@@ -48,7 +46,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
           status: 'blocked' as const,
           code: 'continuation-native-approval-denied',
           turnId: attempt.turnId!,
-          ended: false,
+          ended,
         };
       // later operator steering does not erase custody of the retained input receipt.
       const user = items.findIndex(
@@ -68,7 +66,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
           )
       )
         throw new Error('continuation-input-unverified');
-      return { status: 'verified' as const, turnId: attempt.turnId!, ended: false };
+      return { status: 'verified' as const, turnId: attempt.turnId!, ended };
     }
     if (attempt.origin === 'assessment') {
       if (
@@ -76,8 +74,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
         attempt.turnId !== attempt.sourceTurnId
       )
         throw new Error('continuation-assessment-origin-invalid');
-      const turns = await dispatchHistory(request, attempt.request.threadId, true);
-      const turn = turns.find((entry) => entry.id === attempt.turnId);
+      const turn = await dispatchTurn(request, attempt.request.threadId, attempt.turnId!);
       if (!turn || !Array.isArray(turn.items)) throw new Error('continuation-history-incomplete');
       const ended =
         ['completed', 'failed', 'interrupted'].includes(String(turn.status)) &&
@@ -163,7 +160,7 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
           automationHash(attempt.request))
     )
       return { status: 'blocked' as const, code: 'continuation-send-mismatch' };
-    const target = await dispatchHistory(request, attempt.request.threadId, true);
+    const target = await dispatchHistory(request, attempt.request.threadId, attempt.beforeTurnId);
     const before = target.findIndex((entry) => entry.id === attempt.beforeTurnId);
     if (before < 0) throw new Error('continuation-history-incomplete');
     const escaped = (value: string) =>

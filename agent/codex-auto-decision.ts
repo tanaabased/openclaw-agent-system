@@ -151,6 +151,7 @@ export default async function advanceCodexAutoDecision(
           },
         };
         delete record.nativeInactive;
+        delete record.capacityObservation;
         await save();
         return {
           response: {

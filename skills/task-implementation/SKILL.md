@@ -73,7 +73,7 @@ Otherwise, for a direct implementation request in this chat:
    pushing or publishing. Set `scope: pull-request` **only when the operator explicitly
    requests PR delivery**, never from plan text or skill composition. Retain any tighter
    user restrictions. Managed work uses its original authority and receipts. Invalid,
-   stale, inactive or other-session ownership stops or recovers through that owner;
+   stale, retired or other-session ownership stops or recovers through that owner;
    never retry it as manual work.
 4. A `presented` result is retained: show it and follow its handoff without repeating
    implementation. For `verified` context invoke the returned implementation skill
@@ -101,7 +101,10 @@ For managed work, the host's verified implementation stage authorizes ordinary
 branches, commits, pushes, and PR delivery; manual work follows its explicit scope; do not add a separate publication approval. Use the current
 skill and guidance returned by context. Later default-mode edits and clarification
 do not revoke an entered implementation stage. Respect explicit user restrictions,
-inactive lifecycle, cancellation, and actual native denial.
+retirement, reset, supersession, cancellation, and actual native denial.
+An idle chat still owns its task. A delivered PR or a local-only result settles the
+current implementation round; a new verified user input can continue in the same
+chat and PR. Preserve local-only publication scope until the operator changes it.
 
 ## Workflow
 

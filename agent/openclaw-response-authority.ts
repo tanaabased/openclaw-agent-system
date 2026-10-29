@@ -3,7 +3,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { nativeInputEvent } from './openclaw-session-input.ts';
-import issueTurnReply from './openclaw-session-reply.ts';
+import openClawTurnReply from './openclaw-turn-evidence.ts';
 import {
   describeIssueSession,
   sessionObject,
@@ -65,34 +65,12 @@ export default async function openClawResponseAuthority(input: {
           : undefined,
       ],
     });
-    let history = sessionObject(
-      await request('chat.history', {
-        sessionKey: caller.sessionKey,
-        sessionId: caller.sessionId,
+    if (
+      await openClawTurnReply(request, caller, record.resultTurnId, {
         messageId: original.inputEventId,
-        limit: 200,
-        maxChars: 100000,
-        toolResultMaxChars: 1000,
-      }),
-    );
-    // follow the host's incarnation-bound cursor, never infer completion from a missing tail entry.
-    const cursors = new Set<string>();
-    for (let page = 0; page < 20; page++) {
-      if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages)) break;
-      if (issueTurnReply(history.messages, record.resultTurnId)) return;
-      const cursor = history.newerCursor;
-      if (typeof cursor !== 'string' || !cursor || cursors.has(cursor)) break;
-      cursors.add(cursor);
-      history = sessionObject(
-        await request('chat.history', {
-          sessionKey: caller.sessionKey,
-          cursor,
-          limit: 200,
-          maxChars: 100000,
-          toolResultMaxChars: 1000,
-        }),
-      );
-    }
+      })
+    )
+      return;
     throw new Error('dispatch-assessment-continuation-not-ready');
   }
 }

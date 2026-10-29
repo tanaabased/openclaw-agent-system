@@ -57,10 +57,13 @@ describe('agent/reply-owner-context', () => {
   it('should retain both native custody failure and shared lifecycle inactivity', () => {
     const input = fixture();
     assert.equal(replyOwnerContext({ ...input, custodyInvalid: true }).inactive, true);
+    assert.equal(
+      replyOwnerContext({ ...input, record: { ...input.record, nativeInactive: true } }).inactive,
+      false,
+    );
     for (const record of [
       { ...input.record, retired: { at: 1, by: 'operator' } },
       { ...input.record, reset: { at: 1, by: 'operator' } },
-      { ...input.record, nativeInactive: true },
     ])
       assert.equal(replyOwnerContext({ ...input, record }).inactive, true);
   });

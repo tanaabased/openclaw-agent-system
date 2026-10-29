@@ -1,3 +1,4 @@
+import cliOutputComplete from '../../../api/cli-output-complete.ts';
 import githubDiagnostic, { githubCliDiagnostic } from '../../../credentials/github-diagnostic.ts';
 import {
   withProviderDiagnostic,
@@ -167,7 +168,6 @@ export default class GitHubWorkEventApiClient {
           ],
           stdin,
           {
-            maxOutputBytes: 512 * 1024,
             ...options,
             timeoutMs,
           },
@@ -186,6 +186,17 @@ export default class GitHubWorkEventApiClient {
           : githubDiagnostic({}),
       );
     }
+    if (!cliOutputComplete(result)) {
+      throw new GitHubWorkEventClientError(
+        'github-notification-response-bounded',
+        `The GitHub ${label} response exceeded its runtime boundary.`,
+        {},
+        undefined,
+        githubDiagnostic({
+          timedOut: result.timedOut,
+        }),
+      );
+    }
     let response;
     try {
       response = parseGitHubApiResponse(result.stdout);
@@ -197,19 +208,6 @@ export default class GitHubWorkEventApiClient {
         {},
         { cause: error },
         githubCliDiagnostic(result),
-      );
-    }
-    if (result.timedOut || result.truncated) {
-      throw new GitHubWorkEventClientError(
-        'github-notification-response-bounded',
-        `The GitHub ${label} response exceeded its runtime boundary.`,
-        response.rateLimit,
-        undefined,
-        githubDiagnostic({
-          status: response.status,
-          timedOut: result.timedOut,
-          ...response.rateLimit,
-        }),
       );
     }
     // gh reports HTTP 304 as exit 1; it is successful only for our conditional read.

@@ -483,7 +483,7 @@ runCodexRuntime().catch((error: unknown) => {
       ? {
           code: error.code,
           ...(error.pullRequest
-            ? { workflowStatus: 'partially-delivered', pullRequest: error.pullRequest }
+            ? { workflowStatus: 'delivery', pullRequest: error.pullRequest }
             : {}),
         }
       : error instanceof AgentSystemLifecycleError

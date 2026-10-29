@@ -60,6 +60,37 @@ describe('agent/automation-threads', () => {
     const store = new AutomationThreads({ root, scope: runtime, runtime }, adapter);
     return { store, adapter, native, creates: () => creates };
   }
+  for (const runtime of ['openclaw', 'codex'] as const)
+    it(`should preserve a failed create receipt without retrying and attribute only openclaw diagnostics in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      let calls = 0;
+      const diagnostic = {
+        method: 'sessions.create' as const,
+        category: 'rejected' as const,
+        gatewayCode: 'INVALID_REQUEST' as const,
+        reason: 'unclassified' as const,
+        closeCode: null,
+        requestDispatched: null,
+      };
+      f.adapter.create = async (_record, saveId) => {
+        calls++;
+        await saveId('retained-native-id');
+        throw new AutomationError('automation-gateway-rejected', diagnostic);
+      };
+      await assert.rejects(f.store.resolve(jobs('Intake', ['intake']), true), (error: unknown) => {
+        assert.ok(error instanceof AutomationError);
+        assert.equal(error.code, 'automation-gateway-rejected');
+        assert.deepEqual(
+          error.diagnostic,
+          runtime === 'openclaw' ? { ...diagnostic, automationId: 'intake' } : diagnostic,
+        );
+        return true;
+      });
+      assert.equal(calls, 1);
+      const ledger = await f.store.read();
+      assert.equal(ledger.records[0]?.nativeId, 'retained-native-id');
+      assert.equal(ledger.records[0]?.phase, 'materializing');
+    });
   it('should reconcile a declared group, detect drift read-only and preserve native identity', async () => {
     const f = fixture('openclaw');
     const declarations = jobs('Intake', ['intake']);

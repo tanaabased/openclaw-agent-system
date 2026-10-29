@@ -214,6 +214,7 @@ export default class AutomationThreads {
           native: AutomationThread | null;
           settings?: AutomationThreadSettings;
           replace?: boolean;
+          automationId: string;
         }
       >();
       const nativeNames = new Map<string, string>();
@@ -297,7 +298,14 @@ export default class AutomationThreads {
         }
         const settings = selection.managed ? settingsFor(job) : undefined;
         if (native && settings) checkSettings(nativeSettings, native.id, settings);
-        prepared.set(selection.key, { selection, record, native, settings, replace });
+        prepared.set(selection.key, {
+          selection,
+          record,
+          native,
+          settings,
+          replace,
+          automationId: job.id,
+        });
       }
       // Reject unavailable selections before journaling a potentially ambiguous native create.
       if (this.adapter.validateSettings) {
@@ -356,16 +364,29 @@ export default class AutomationThreads {
             await save();
           }
           const pending = record;
-          const id = await this.adapter.create(
-            pending,
-            async (nativeId) => {
-              pending.nativeId = nativeId;
-              pending.phase = 'materializing';
-              await save();
-            },
-            fresh,
-            settings,
-          );
+          const id = await this.adapter
+            .create(
+              pending,
+              async (nativeId) => {
+                pending.nativeId = nativeId;
+                pending.phase = 'materializing';
+                await save();
+              },
+              fresh,
+              settings,
+            )
+            .catch((error: unknown) => {
+              if (
+                this.options.runtime === 'openclaw' &&
+                error instanceof AutomationError &&
+                error.diagnostic?.method === 'sessions.create'
+              )
+                throw new AutomationError(error.code, {
+                  ...error.diagnostic,
+                  automationId: entry.automationId,
+                });
+              throw error;
+            });
           native = await this.adapter.lookup(id);
           if (!native || native.archived || native.id !== id)
             throw new AutomationError('automation-thread-readback-diverged');

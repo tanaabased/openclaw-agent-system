@@ -944,7 +944,7 @@ for (const scenario of [
             });
             await publishProgressionSummary(automatic, scenario, true);
           }
-          await action(automatic, 'implementation-context');
+          assert.equal((await action(automatic, 'implementation-context')).scope, undefined);
           await appendPagedContext(automatic, {
             id,
             plan: retainedPlan,
@@ -981,14 +981,14 @@ for (const scenario of [
           const answer = request(
             `Answer for managed issue ${id}: Yes, after evidence is captured. Do not push or publish a PR.`,
           );
-          await action(answer, 'implementation-context');
+          assert.equal((await action(answer, 'implementation-context')).scope, 'local');
           await appendPagedContext(answer, {
             id,
             plan: retainedPlan,
             status: 'verified',
             runtime: 'openclaw',
             deliveryOnly: false,
-            publicationAuthorized: true,
+            publicationAuthorized: false,
             project: { path: '/tmp/owned' },
             previousImplementationResult: question.implementationResult,
           });
@@ -1112,7 +1112,7 @@ for (const scenario of [
           assert.equal(linkageRetry.id, id);
           append(input, 'delivery-link-publish-0', {
             status: 'published',
-            workflowStatus: 'partially-delivered',
+            workflowStatus: 'delivered-response-pending',
           });
           assert.equal((await action(input, 'delivery')).operation, 'compose');
           append(input, 'delivery-compose', {
@@ -1239,7 +1239,7 @@ for (const scenario of [
         assert.equal((await action(input, 'delivery')).digest, refreshedDigest);
         append(input, 'delivery-link-publish-0', {
           status: 'published',
-          workflowStatus: 'partially-delivered',
+          workflowStatus: 'delivered-response-pending',
         });
         assert.equal((await action(input, 'delivery')).operation, 'announce');
         append(input, 'delivery-repeat', { status: 'announced' });

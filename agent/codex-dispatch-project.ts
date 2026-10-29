@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import { realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+import cliOutputComplete from '../api/cli-output-complete.ts';
 import gitCommandTimeout from '../tools/git/command-timeout.ts';
 import { commandTerminationGraceMs } from '../api/cli-budget.ts';
 import { nativeObject } from './automation-gateway.ts';
@@ -27,14 +28,13 @@ export const dispatchGit: DispatchGit = async (cwd, argv, signal) => {
     input: '',
     ...(signal ? { signal } : {}),
     timeoutMs: gitCommandTimeout(argv),
-    maxOutputBytes: 65536,
-    maxCombinedOutputBytes: 131072,
     killGraceMs: commandTerminationGraceMs,
     killProcessTree: true,
-    outputCapture: 'head',
   });
-  if (result.code !== 0 || result.termination !== 'exit' || result.stdoutTruncatedBytes) {
+  const complete = cliOutputComplete(result);
+  if (result.code !== 0 || !complete) {
     const authentication =
+      complete &&
       /authentication failed|could not read (?:Username|Password)|terminal prompts disabled|Permission denied \(publickey\)/iu.test(
         result.stderr,
       );
@@ -44,7 +44,12 @@ export const dispatchGit: DispatchGit = async (cwd, argv, signal) => {
           ? 'dispatch-project-git-auth-unavailable'
           : 'dispatch-project-git-unavailable',
       ),
-      { providerDiagnostic: gitDiagnostic(result.stderr, result.termination !== 'exit') },
+      {
+        providerDiagnostic: gitDiagnostic(
+          complete ? result.stderr : '',
+          result.termination === 'timeout' || result.termination === 'no-output-timeout',
+        ),
+      },
     );
   }
   return result.stdout.trim();

@@ -221,12 +221,10 @@ export default async function issueLaunch<
       own?.reset ||
       own?.supersededBy ||
       own?.retirement ||
-      own?.nativeInactive ||
       record?.retirement ||
       record?.retired ||
       record?.reset ||
-      record?.supersededBy ||
-      record?.nativeInactive
+      record?.supersededBy
     )
       throw new Error('launch-owner-inactive');
     if (action.id && record?.id !== action.id) throw new Error('launch-receipt-mismatch');
