@@ -152,8 +152,11 @@ export function automationThreadNames(jobs: ResolvedAutomation[], runtime: Autom
     const selection = automationThreadSelection(job, runtime);
     if (!selection?.name) continue;
     const previous = names.get(selection.key);
-    if (previous !== undefined && previous !== selection.name)
-      throw new AutomationError('automation-thread-name-conflict');
+    if (previous !== undefined && previous !== selection.name) {
+      const error = new AutomationError('automation-thread-name-conflict');
+      error.automationId = job.id;
+      throw error;
+    }
     names.set(selection.key, selection.name);
   }
   return names;
@@ -196,6 +199,7 @@ export default class AutomationThreads {
     }
   }
   async resolve(jobs: ResolvedAutomation[], apply = false) {
+    let automationId: string | undefined;
     const run = async () => {
       const ledger = await this.read();
       const save = () => this.file.write(JSON.stringify(ledger));
@@ -219,7 +223,8 @@ export default class AutomationThreads {
       >();
       const nativeNames = new Map<string, string>();
       const groups = new Map<string, string>();
-      for (const { selection } of selected) {
+      for (const { job, selection } of selected) {
+        automationId = job.id;
         const previous = groups.get(selection.key);
         if (previous !== undefined && previous !== selection.group)
           throw new AutomationError('automation-thread-group-conflict');
@@ -246,6 +251,7 @@ export default class AutomationThreads {
         map.set(key, settings);
       };
       for (const { job, selection } of selected) {
+        automationId = job.id;
         const settings = settingsFor(job);
         if (!selection.managed && (settings.model || settings.effort))
           throw new AutomationError('automation-thread-settings-unowned');
@@ -253,6 +259,7 @@ export default class AutomationThreads {
       }
       // verify every existing target and all aliases before the first mutation.
       for (const { job, selection } of selected) {
+        automationId = job.id;
         if (prepared.has(selection.key)) continue;
         const record = ledger.records.find((r) => r.key === selection.key);
         const id = record?.nativeId ?? selection.exact;
@@ -309,7 +316,8 @@ export default class AutomationThreads {
       }
       // Reject unavailable selections before journaling a potentially ambiguous native create.
       if (this.adapter.validateSettings) {
-        for (const { settings, native, record } of prepared.values()) {
+        for (const { settings, native, record, automationId: id } of prepared.values()) {
+          automationId = id;
           if (!settings || (!settings.model && !settings.effort) || record?.settingsUpdate)
             continue;
           try {
@@ -327,6 +335,7 @@ export default class AutomationThreads {
       if (this.options.runtime === 'codex') {
         const active = new Set<string>();
         for (const { job, selection } of selected) {
+          automationId = job.id;
           const id = prepared.get(selection.key)?.native?.id;
           if (id && job.enabled && active.has(id))
             throw new AutomationError('automation-thread-schedule-conflict');
@@ -344,6 +353,7 @@ export default class AutomationThreads {
       >();
       const reconciledNative = new Map<string, AutomationThread>();
       for (const [key, entry] of prepared) {
+        automationId = entry.automationId;
         const { selection, settings } = entry;
         let { record, native } = entry;
         if (native) native = reconciledNative.get(native.id) ?? native;
@@ -530,7 +540,21 @@ export default class AutomationThreads {
       }
       return new Map(selected.map(({ job, selection }) => [job.id, resolved.get(selection.key)!]));
     };
-    if (!apply) return run();
+    const resolve = async () => {
+      try {
+        return await run();
+      } catch (error) {
+        // retain the original subtype, settings observation, code, and safe diagnostic.
+        if (error instanceof AutomationError) error.automationId ??= automationId;
+        else if (!apply && automationId) {
+          const failure = new AutomationError('automation-thread-inspection-failed');
+          failure.automationId = automationId;
+          throw failure;
+        }
+        throw error;
+      }
+    };
+    if (!apply) return resolve();
     await ensurePrivateStateDirectories({
       directories: [this.options.root],
       currentUid: process.getuid?.(),
@@ -541,7 +565,7 @@ export default class AutomationThreads {
       staleMs: 30000,
     });
     try {
-      return await run();
+      return await resolve();
     } finally {
       await lock.release();
     }

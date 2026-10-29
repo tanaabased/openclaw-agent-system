@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { AutomationError } from '../agent/automation-gateway.ts';
 import AutomationThreads, {
   automationThreadSelection,
+  AutomationThreadSettingsError,
   type AutomationThread,
   type AutomationThreadSettings,
 } from '../agent/automation-threads.ts';
@@ -60,6 +61,67 @@ describe('agent/automation-threads', () => {
     const store = new AutomationThreads({ root, scope: runtime, runtime }, adapter);
     return { store, adapter, native, creates: () => creates };
   }
+  for (const runtime of ['openclaw', 'codex'] as const)
+    it(`should retain affected identity and full settings without inspection writes in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const declarations = jobs('Activity', ['first', 'affected']);
+      for (const job of declarations)
+        job.overrides[runtime] = { model: 'selected', effort: 'high' };
+      const bindings = await f.store.resolve(declarations, true);
+      const id = bindings.get('affected')!.id;
+      const before = await readFile(f.store.path, 'utf8');
+      assert.deepEqual((await f.store.resolve(declarations)).get('affected')!.settings, {
+        requested: { model: 'selected', effort: 'high' },
+        observed: { model: 'selected', effort: 'high' },
+      });
+      for (const dimension of ['model', 'effort'] as const) {
+        f.native.get(id)![dimension] = 'different';
+        await assert.rejects(f.store.resolve(declarations), (error: unknown) => {
+          assert.ok(error instanceof AutomationThreadSettingsError);
+          assert.equal(error.automationId, 'affected');
+          assert.equal(error.code, 'automation-thread-model-drift');
+          assert.deepEqual(error.settings, {
+            requested: { model: 'selected', effort: 'high' },
+            observed: { model: 'selected', effort: 'high', [dimension]: 'different' },
+          });
+          return true;
+        });
+        assert.equal(f.native.get(id)![dimension], 'different');
+        f.native.get(id)![dimension] = dimension === 'model' ? 'selected' : 'high';
+      }
+      f.native.get(id)!.name = 'Renamed';
+      await assert.rejects(f.store.resolve(declarations), (error: unknown) => {
+        assert.ok(error instanceof AutomationError);
+        assert.equal(error.automationId, 'affected');
+        assert.equal(error.code, 'automation-thread-name-drift');
+        return true;
+      });
+      f.store.adapter.validateSettings = async (_settings, current) => {
+        if (current?.id === id) throw new AutomationError('automation-model-unsupported');
+      };
+      await assert.rejects(f.store.resolve(declarations), (error: unknown) => {
+        assert.ok(error instanceof AutomationThreadSettingsError);
+        assert.equal(error.automationId, 'affected');
+        assert.equal(error.code, 'automation-model-unsupported');
+        assert.equal(error.settings.requested.model, 'selected');
+        assert.equal(error.settings.observed.effort, 'high');
+        return true;
+      });
+      delete f.store.adapter.validateSettings;
+      f.adapter.lookup = async (target) => {
+        if (target === id) throw new Error('private provider error');
+        return f.native.get(target) ?? null;
+      };
+      await assert.rejects(f.store.resolve(declarations), (error: unknown) => {
+        assert.ok(error instanceof AutomationError);
+        assert.equal(error.automationId, 'affected');
+        assert.equal(error.code, 'automation-thread-inspection-failed');
+        assert.equal(error.message.includes('private provider'), false);
+        return true;
+      });
+      assert.equal(await readFile(f.store.path, 'utf8'), before);
+      assert.equal(f.creates(), 2);
+    });
   for (const runtime of ['openclaw', 'codex'] as const)
     it(`should preserve a failed create receipt without retrying and attribute only openclaw diagnostics in ${runtime}`, async () => {
       const f = fixture(runtime);

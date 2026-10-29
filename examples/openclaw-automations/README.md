@@ -74,6 +74,9 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 chat=$(jq -er '.jobs[] | select(.id == "prompt") | .routing | sub("^session:"; "")' "$TMPDIR/automation-before.json")
 openclaw gateway call sessions.list --params '{"limit":100}' --json | jq -e --arg key "$chat" 'any(.sessions[]; .key == $key and .thinkingLevel == "medium")'
 node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); jobs.find(({id})=>id==="prompt").effort="high"; fs.writeFileSync("automations.yaml",stringify(jobs));'
+if output=$(NO_COLOR=1 openclaw agent-system doctor 2>&1); then exit 1; fi
+printf '%s\n' "$output" | grep -F 'name: Automation status'
+printf '%s\n' "$output" | grep -F 'automation-thread-model-drift'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 openclaw gateway call sessions.list --params '{"limit":100}' --json | jq -e --arg key "$chat" 'any(.sessions[]; .key == $key and .thinkingLevel == "high" and (.model == "gpt-5.5" or .model == "aimock/gpt-5.5"))'
 native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")

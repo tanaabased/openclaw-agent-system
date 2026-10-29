@@ -430,6 +430,9 @@ export default class AutomationService {
       stepId: id,
       status,
       code,
+      ...(context.threads?.get(id)?.settings
+        ? { settings: context.threads.get(id)!.settings }
+        : {}),
       message: `${context.threads?.get(id)?.settings ? automationSettingsMessage(context.threads.get(id)!.settings!) + '; ' : ''}Automation ${id}: ${code.replace(/^automation-/u, '')}${execution ? executionEvidence(execution) : ''}${context.threads?.has(id) ? ` (persistent, ${context.threads.get(id)!.outcome}: ${context.threads.get(id)!.id})` : ''}.`,
       ...(status === 'healthy'
         ? {}
@@ -460,12 +463,15 @@ export default class AutomationService {
         ...findings,
         {
           ...finding(
-            'threads',
+            error instanceof AutomationError ? (error.automationId ?? 'threads') : 'threads',
             'blocked',
             error instanceof AutomationError ? error.code : 'automation-thread-inspection-failed',
           ),
           ...(error instanceof AutomationThreadSettingsError
-            ? { message: `${error.code}; ${automationSettingsMessage(error.settings)}` }
+            ? {
+                message: `${error.code}; ${automationSettingsMessage(error.settings)}`,
+                settings: error.settings,
+              }
             : {}),
         },
       ];

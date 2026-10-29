@@ -45,6 +45,23 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 
 ## Workflow
 
+In either runtime, lead each finding with its known name, ID, or resource before
+the condition and settings. Preserve configured names and existing identifier
+masking. Use the affected automation ID on thread/settings failures; use a generic
+threads finding only when the result supplies no affected automation.
+
+Keep healthy automation entries quiet: omit routine model/effort comparisons.
+Show settings only for drift, unsupported selections, or another actionable
+settings condition. For drift, report only explicitly requested settings that
+differ; an omitted request is not drift, and an unknown observation stays unknown.
+Do not discard complete machine-readable evidence when shortening human details.
+
+For example: healthy — `ISSUE ASSIGNMENTS: thread ***9c31, reused`;
+effort-only drift — `ISSUE ASSIGNMENTS: effort requested high, observed medium`.
+Omit the matching model from the drift example. OpenClaw keeps its
+component/status/details table and wrapping; standalone Codex uses readable chat,
+without terminal padding or ANSI formatting. Saved settings do not prove execution.
+
 ### OpenClaw
 
 1. Call `agent_system_doctor` with `{"timeoutMs":600000}` for a ten-minute OpenClaw-hosted Codex tool-call budget. Do not supply an agent id, workspace override, or repair option. Approval and setup-command deadlines remain separate.

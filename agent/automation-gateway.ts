@@ -24,6 +24,8 @@ export type AutomationGateway = (
 ) => Promise<Record<string, unknown>>;
 
 export class AutomationError extends Error {
+  automationId?: string;
+
   constructor(
     readonly code: string,
     readonly diagnostic?: AutomationGatewayDiagnostic,
