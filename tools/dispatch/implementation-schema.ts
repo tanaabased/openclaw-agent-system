@@ -1,3 +1,4 @@
+import { implementationMaterialSchema } from './implementation-material-schema.ts';
 import { Value } from 'typebox/value';
 import { Type } from 'typebox';
 
@@ -15,6 +16,7 @@ export const directImplementationRequestSchema = Type.Object(
       Type.Literal('delivery'),
     ]),
     id: Type.Optional(hash),
+    material: Type.Optional(implementationMaterialSchema),
     scope: Type.Optional(Type.Union([Type.Literal('local'), Type.Literal('pull-request')])),
     deliveryOperation: Type.Optional(
       Type.Union([
@@ -39,6 +41,11 @@ export const directImplementationRequestSchema = Type.Object(
 export function parseDirectImplementationRequest(input: unknown) {
   if (
     !Value.Check(directImplementationRequestSchema, input) ||
+    (input.material !== undefined &&
+      (input.operation !== 'context' ||
+        !input.id ||
+        input.scope !== undefined ||
+        input.plan !== undefined)) ||
     (input.result !== undefined && input.operation !== 'result') ||
     (input.operation === 'result' && !input.result) ||
     (input.operation === 'delivery' && !input.deliveryOperation) ||

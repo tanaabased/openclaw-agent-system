@@ -4,6 +4,7 @@ import { isAlias, parseDocument, visit } from 'yaml';
 
 import normalizeAutomations, {
   automationFileSchema,
+  automationProfileDiagnostics,
   externalAutomationsSchema,
 } from './automation-schema.ts';
 import {
@@ -386,6 +387,12 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
       : normalizeAutomations(automationValue);
   const declarationDiagnostics = [
     ...(automations?.status === 'invalid' ? automations.diagnostics : []),
+    ...(automations?.status === 'valid'
+      ? automationProfileDiagnostics(
+          automations.automations,
+          isRecord(value) ? value.models : undefined,
+        )
+      : []),
     ...declarations.flatMap(({ setup, fileDiagnostics }) => [
       ...(setup?.status === 'invalid' ? setup.diagnostics : []),
       ...fileDiagnostics,

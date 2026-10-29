@@ -131,7 +131,13 @@ describe('agent/automation-gateway', () => {
         { id: 'fixture' },
         {
           progress: false,
-          scopes: [readOnly ? 'operator.read' : 'operator.admin'],
+          scopes: [
+            readOnly
+              ? 'operator.read'
+              : method.startsWith('sessions.')
+                ? 'operator.write'
+                : 'operator.admin',
+          ],
           ...(readOnly ? { sharedStateMode: 'read-only' } : {}),
         },
       ]);

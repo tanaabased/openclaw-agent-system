@@ -9,6 +9,8 @@ import { Value } from 'typebox/value';
 
 import { AutomationError } from './automation-gateway.ts';
 import AutomationThreads, {
+  AutomationThreadSettingsError,
+  type AutomationThreadModelObservation,
   automationThreadSelection,
   type AutomationThreadAdapter,
 } from './automation-threads.ts';
@@ -239,7 +241,10 @@ async function snapshot(pluginData: string, dependencies: CodexAutomationDepende
       });
     } catch (error) {
       cleanupOnly = true;
-      policyBlocker = error instanceof IntakeError ? error.code : 'intake-policy-invalid';
+      policyBlocker =
+        error instanceof IntakeError || error instanceof AutomationError
+          ? error.code
+          : 'intake-policy-invalid';
     }
   }
   return {
@@ -309,24 +314,33 @@ async function resolveThreads(
           connection = await connectCodexThreads(selected.workspace, selected.codexHome);
           return connection.request('thread/resume', { threadId: id });
         },
+        async (id) => {
+          await connection!.close();
+          connection = await connectCodexThreads(selected.workspace, selected.codexHome);
+          return connection.request('thread/read', { threadId: id, includeTurns: false });
+        },
       );
+    const lookup = async (id: string, fresh = false) => {
+      const native = explicitIds.has(id)
+        ? { id }
+        : await (fresh && adapter.lookupFresh ? adapter.lookupFresh(id) : adapter.lookup(id));
+      if (!native) return native;
+      const section = sections.find(
+        (section) =>
+          section.itemKeys.includes(`codex:thread:local:${id}`) &&
+          destinations.get(section.name) === section.sectionId,
+      );
+      return {
+        ...native,
+        group: section && !pendingGroups.has(section.name) ? section.name : undefined,
+      };
+    };
     const bindings = await new AutomationThreads(
       { root: selected.root, scope: selected.scope, runtime: 'codex' },
       {
         ...adapter,
-        lookup: async (id) => {
-          const native = explicitIds.has(id) ? { id } : await adapter.lookup(id);
-          if (!native) return native;
-          const section = sections.find(
-            (section) =>
-              section.itemKeys.includes(`codex:thread:local:${id}`) &&
-              destinations.get(section.name) === section.sectionId,
-          );
-          return {
-            ...native,
-            group: section && !pendingGroups.has(section.name) ? section.name : undefined,
-          };
-        },
+        lookup,
+        lookupFresh: (id) => lookup(id, true),
         setGroup: async (id, group) => {
           const journal = journals.get(group)!;
           const state = await journal.read();
@@ -390,11 +404,14 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
   const defaults = needsDefaults
     ? await readCodexAutomationDefaults(codexHome).catch(() => undefined)
     : undefined;
-  let bindings: Map<string, { id: string }> | undefined;
+  let bindings:
+    Map<string, { id: string; settings?: AutomationThreadModelObservation }> | undefined;
+  let threadSettings: AutomationThreadModelObservation | undefined;
   let threadCode: string | undefined;
   try {
     bindings = await resolveThreads(selected, inputs);
   } catch (error) {
+    if (error instanceof AutomationThreadSettingsError) threadSettings = error.settings;
     threadCode =
       error instanceof AutomationError || error instanceof CodexAutomationError
         ? error.code
@@ -430,12 +447,19 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     if (!result.actions.length) result.status = 'blocked';
   }
   if (threadCode) {
-    result.findings.push({ id: 'threads', code: threadCode });
+    result.findings.push({
+      id: 'threads',
+      code: threadCode,
+      ...(threadSettings ? { settings: threadSettings } : {}),
+    });
     result.actions = [];
     const synchronizable = new Set([
       'automation-thread-sync-required',
       'automation-thread-replacement-required',
       'automation-thread-name-drift',
+      'automation-thread-model-drift',
+      'automation-thread-settings-busy',
+      'automation-thread-settings-unsupported',
       'automation-thread-group-drift',
       'automation-missing',
       'automation-drift',
@@ -604,6 +628,9 @@ export async function syncCodexAutomationThreads(
     const allowed = new Set([
       'automation-thread-sync-required',
       'automation-thread-name-drift',
+      'automation-thread-model-drift',
+      'automation-thread-settings-busy',
+      'automation-thread-settings-unsupported',
       'automation-thread-group-drift',
       'automation-thread-recovery-required',
       'automation-thread-replacement-required',
@@ -865,6 +892,11 @@ export async function prepareCodexAutomation(
       throw new CodexAutomationError('automation-plan-stale-or-blocked');
     }
     const action = result.actions[0];
+    if (action.mode === 'create' && /^DTSTART[:;]/u.test(action.expected.rrule))
+      throw new CodexAutomationError(
+        'automation-dtstart-create-unsupported',
+        'Codex direct creation does not support DTSTART recurrences. Keep the requested timezone and use a schedule without DTSTART only if it preserves the intended timing.',
+      );
     if (action.manifestId === intakeAutomationId && action.expected.status === 'ACTIVE') {
       const verified = await preflightCodexIntake(pluginData, {
         ...dependencies.intake,

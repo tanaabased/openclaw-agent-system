@@ -6,6 +6,42 @@ import automationGatewayDiagnostic, {
 import { AutomationError } from '../agent/automation-gateway.ts';
 
 describe('agent/automation-gateway-diagnostic', () => {
+  it('should retain bounded create and patch rejection reasons without model values or raw payloads', () => {
+    for (const method of ['sessions.create', 'sessions.patch'] as const) {
+      for (const [message, reason] of [
+        [`invalid ${method} params: secret-payload`, 'parameters-invalid'],
+        ['model not allowed: secret-model', 'model-not-allowed'],
+        ['invalid model: secret-model', 'model-invalid'],
+        ['invalid thinkingLevel (use secret-levels)', 'effort-invalid'],
+        [
+          'thinkingLevel "secret-effort" is not supported for secret-provider/secret-model (use secret-levels)',
+          'effort-unsupported',
+        ],
+      ]) {
+        const error = Object.assign(new Error(message), {
+          name: 'GatewayClientRequestError',
+          gatewayCode: 'INVALID_REQUEST',
+          retryable: false,
+        });
+        const diagnostic = automationGatewayDiagnostic(method, error);
+        assert.equal(diagnostic.reason, reason);
+        assert.deepEqual(retainAutomationGatewayDiagnostic(diagnostic), diagnostic);
+        assert.ok(
+          !new AutomationError('automation-gateway-rejected', diagnostic).message.includes(
+            'secret',
+          ),
+        );
+        assert.ok(!JSON.stringify(diagnostic).includes('secret'));
+        assert.equal(automationGatewayDiagnostic('cron.add', error).reason, undefined);
+        error.gatewayCode = 'FORBIDDEN';
+        assert.equal(automationGatewayDiagnostic(method, error).reason, undefined);
+        assert.equal(
+          retainAutomationGatewayDiagnostic({ ...diagnostic, category: 'timeout' }).reason,
+          undefined,
+        );
+      }
+    }
+  });
   it('should rebuild retained evidence without extra fields or serialization hooks', () => {
     const value = {
       method: 'sessions.resolve',

@@ -46,6 +46,13 @@ supplies the current request, required inputs, and recovery instructions.
 | Retire a managed task or exact native chat           | `retire`                              | [Task Retirement](../../skills/task-retirement/SKILL.md)                                      |
 | Update an issue with verified progress               | `reply` with `purpose: status-update` | [Task Update](../../skills/task-update/SKILL.md)                                              |
 
+Large implementation contexts and assessment-summary composition return complete controls
+plus `contextMaterials` when source material needs bounded retrieval. Follow every
+returned request and restore all fields and aliases before implementing or composing
+its public summary. Pages preserve the complete saved assessment and plan; reading them
+does not change the task stage, publication scope, or source receipts. A stale material
+digest requires fresh context from the same operation.
+
 The installed workflow also uses this tool internally. Follow the owning skill and
 returned task context rather than assembling an action sequence. Exact variants are
 in the [tool schema](./tool-schema.ts); shared behavior and recovery are in the

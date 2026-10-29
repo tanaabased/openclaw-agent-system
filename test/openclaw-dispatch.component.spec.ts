@@ -1,3 +1,4 @@
+import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 import {
   fixturePullRequest,
   baseline,
@@ -356,7 +357,10 @@ describe('agent/openclaw issue dispatch', () => {
                       content: params.message,
                       idempotencyKey: `${params.idempotencyKey}:user`,
                       __openclaw: {
-                        id: workTurn ? `${params.idempotencyKey}:input` : 'input-event',
+                        id:
+                          workTurn || feedbackTurn
+                            ? `${params.idempotencyKey}:input`
+                            : 'input-event',
                         idempotencyKey: `${params.idempotencyKey}:user`,
                       },
                     },
@@ -3063,7 +3067,11 @@ describe('agent/openclaw issue dispatch', () => {
     });
   }
 
-  async function readyWork(mode: 'plan' | 'work' | 'auto', decision?: 'plan' | 'work') {
+  async function readyWork(
+    mode: 'plan' | 'work' | 'auto',
+    decision?: 'plan' | 'work',
+    assessment = plan,
+  ) {
     const input = await next();
     await prepare(input);
     await assess(input.id);
@@ -3072,10 +3080,10 @@ describe('agent/openclaw issue dispatch', () => {
       input.id,
       decision
         ? {
-            ...plan,
+            ...assessment,
             decision: { mode: decision, reasons: ['Bounded work.'] },
           }
-        : plan,
+        : assessment,
     );
     assessmentReply(input.id);
     assert.equal((await assess(input.id)).status, 'assessment-completed');
@@ -3085,6 +3093,61 @@ describe('agent/openclaw issue dispatch', () => {
   }
   const workPass = (runId: string) =>
     service.run(manifest, root, { ...coordinator, runId }, { action: 'next' });
+
+  it('should recover oversized retained implementation context within budget under later plan mode', async () => {
+    const input = await next();
+    await prepare(input);
+    await assess(input.id);
+    await context(input.id);
+    const large = 'Complete retained engineering assessment.\n'.repeat(700);
+    const result = { ...plan, fullAssessment: large, plan: large };
+    await submit(input.id, result);
+    assessmentReply(input.id);
+    await retainConfirmedSummary(input.id);
+    manifest.github!.notifications!.issueAssignment!.mode = 'work';
+    const request = { action: 'implementation-context' as const, id: input.id };
+    await service.run(manifest, root, assessor(input.id), request);
+    const blocker = {
+      outcome: 'blocked' as const,
+      summary: 'Delivery interrupted.',
+      fullResult: 'Distinct previous blocker evidence.\n'.repeat(1300),
+    };
+    await service.run(manifest, root, assessor(input.id), {
+      action: 'implementation-result',
+      id: input.id,
+      implementationResult: blocker,
+    });
+    const first = await service.run(manifest, root, assessor(input.id), request);
+    assert.equal(first.status, 'verified');
+    assert.ok('contextMaterials' in first && first.contextMaterials);
+    manifest.github!.notifications!.issueAssignment!.mode = 'plan';
+    const before = await record();
+    const restored = await hydrateImplementation(first, async (read) =>
+      service.run(manifest, root, assessor(input.id), read as typeof request),
+    );
+    assert.deepEqual(restored.assessment, result);
+    assert.deepEqual(restored.previousResult, blocker);
+    assert.deepEqual(restored.previousImplementationResult, blocker);
+    assert.equal(restored.plan, large);
+    assert.equal(restored.publicationAuthorized, true);
+    const after = await record();
+    assert.deepEqual(after.result, before.result);
+    assert.deepEqual(after.stageReceipt, before.stageReceipt);
+    assert.deepEqual(after.progression, before.progression);
+    assert.deepEqual(after.work, before.work);
+    assert.equal(after.worktree, before.worktree);
+    assert.equal(creates().length, 1);
+    const read = (first.contextMaterials as { fields: Field[] }).fields[0]!.request;
+    await assert.rejects(
+      service.run(
+        manifest,
+        root,
+        { ...assessor(input.id), sessionId: 'foreign' },
+        read as typeof request,
+      ),
+      /mismatch|session|caller/,
+    );
+  });
 
   it('should carry scoped work from admission through assessment and continuation', async () => {
     const selected = await service.scope(manifest, root);
@@ -3486,8 +3549,8 @@ describe('agent/openclaw issue dispatch', () => {
           { action: 'implementation-context', id: input.id },
         );
         assert.equal(answer.status, 'verified', JSON.stringify(answer));
-        assert.ok('previousImplementationResult' in answer);
-        assert.equal(answer.previousImplementationResult?.outcome, 'clarification-needed');
+        assert.ok('previousResult' in answer);
+        assert.equal(answer.previousResult?.outcome, 'clarification-needed');
       }
       assert.deepEqual((await record()).result, plan);
       assert.equal((await record()).progression!.stage, 'implementation');
@@ -3530,6 +3593,57 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(creates().length, 1);
       assert.equal(sends().length, stage === 'assessment' ? 1 : 2);
     });
+
+  it('should recover oversized assessment refresh material before an auto decision', async () => {
+    const large = 'Retained plan with Unicode 🧭 and evidence.\n'.repeat(600);
+    const retained = { ...plan, plan: large, fullAssessment: large, assessment: large };
+    assert.ok(JSON.stringify(retained).length > 64000);
+    const id = await readyWork('plan', undefined, retained);
+    manifest.github!.notifications!.issueAssignment!.mode = 'auto';
+    assert.equal((await workPass('decision-pass')).status, 'assessment-pending');
+    inputReceipts = [];
+    const who = assessor(id, `${id}:auto-decision`);
+    const request = { action: 'context' as const, id: id };
+    const first = await service.run(manifest, root, who, request);
+    assert.equal(first.status, 'verified');
+    assert.ok('contextMaterials' in first && first.contextMaterials);
+    const before = await record();
+    const restored = await hydrateImplementation(first, async (read) =>
+      service.run(manifest, root, who, read as typeof request),
+    );
+    assert.deepEqual(restored.previousResult, retained);
+    assert.equal(restored.previousResultDigest, automationHash(retained));
+    const after = await record();
+    assert.deepEqual(after.result, before.result);
+    assert.deepEqual(after.stageReceipt, before.stageReceipt);
+    assert.deepEqual(after.progression, before.progression);
+    assert.deepEqual(after.work, before.work);
+    const read = (first.contextMaterials as { fields: Field[] }).fields[0]!.request;
+    await assert.rejects(
+      service.run(manifest, root, coordinator, read as typeof request),
+      /caller-mismatch/,
+    );
+    await assert.rejects(
+      service.run(manifest, root, who, {
+        ...request,
+        material: {
+          ...(read.material as { path: string[]; digest: string; offset: number }),
+          digest: 'f'.repeat(64),
+        },
+      }),
+      /assessment-material-stale/,
+    );
+    const result = await service.run(manifest, root, who, {
+      action: 'result',
+      id: id,
+      previousResultDigest: restored.previousResultDigest as string,
+      result: { ...retained, decision: { mode: 'work', reasons: ['Bounded retained plan.'] } },
+    });
+    assert.equal(result.status, 'recorded', JSON.stringify(result));
+    const saved = (await record()).result;
+    assert.ok(saved?.outcome === 'plan-ready');
+    assert.equal(saved.plan, large);
+  });
 
   for (const decision of ['plan', 'work'] as const)
     it(`should request a missing auto decision in the same plan session and honor ${decision}`, async () => {
@@ -4032,9 +4146,17 @@ describe('agent/openclaw issue dispatch', () => {
       await prepare(input);
       await assess(input.id);
       await context(input.id);
-      const recorded = await submit(input.id);
+      const retainedPlan =
+        variant === 'default' ? 'Retained summary evidence.\n'.repeat(1000) : plan.plan;
+      const retainedAssessment = {
+        ...plan,
+        plan: retainedPlan,
+        fullAssessment: variant === 'default' ? retainedPlan : plan.fullAssessment,
+      };
+      const recorded = await submit(input.id, retainedAssessment);
       assert.ok(
-        'presentation' in recorded && recorded.presentation?.includes(plan.fullAssessment!),
+        'presentation' in recorded &&
+          recorded.presentation?.includes(retainedAssessment.fullAssessment!),
       );
       const guidance = 'Explain the outcome.\nKeep the uncertainty visible.';
       await writeFile(join(root, 'summary-guidance.md'), guidance);
@@ -4083,7 +4205,7 @@ describe('agent/openclaw issue dispatch', () => {
         } finally {
           service.dependencies.credential.use = use;
         }
-        assert.deepEqual((await record()).result, plan);
+        assert.deepEqual((await record()).result, retainedAssessment);
         assert.ok(
           (await record()).assessmentSummaries?.every((entry) => !entry.attempt && !entry.receipt),
         );
@@ -4164,6 +4286,14 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(composed.status, 'composition-ready', JSON.stringify(composed));
       assert.ok('digest' in composed);
       assert.ok('selection' in composed);
+      const beforePages = await record();
+      const hydrated = await hydrateImplementation(composed, async (read) =>
+        service.run(manifest, root, who, read as Parameters<typeof service.run>[3]),
+      );
+      assert.deepEqual(hydrated.verifiedOutcome, { assessment: beforePages.result });
+      assert.equal(hydrated.privateResponse, retainedAssessment.fullAssessment);
+      assert.deepEqual(await record(), beforePages);
+      if (variant === 'default') assert.ok('contextMaterials' in composed);
       const selected = composed.selection as AssessmentSelection;
       assert.equal(
         selected.skill.name,
@@ -4205,7 +4335,7 @@ describe('agent/openclaw issue dispatch', () => {
       }
       assert.equal((await summary('compose')).status, 'published');
       assert.equal(writes, 1);
-      assert.deepEqual((await record()).result, plan);
+      assert.deepEqual((await record()).result, retainedAssessment);
       assert.equal((await record()).assessmentSummaries?.[0]?.receipt?.nodeId, 'SUMMARY');
     });
   }
@@ -6195,6 +6325,75 @@ describe('agent/openclaw issue dispatch', () => {
     });
   }
 
+  it('should retrieve oversized approved feedback material without changing its source or decision', async () => {
+    const { id, comments } = await feedbackOwner(false);
+    comments[0]!.body = '@receiver Please implement the agreed plan.';
+    consumeSend = true;
+    await service.check(manifest, root);
+    await service.run(manifest, root, coordinator, { action: 'reconcile', id });
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const event = (await record()).feedback!.events[0]!;
+    const who = assessor(id, event.turn!.runId);
+    let exactReads = 0;
+    const use = service.dependencies.credential.use;
+    service.dependencies.credential.use = (authority, operation) =>
+      use(authority, (request) =>
+        operation(async (method, params) => {
+          const response = await request(method, params);
+          if (method === 'chat.message.get') exactReads++;
+          if (method !== 'chat.history') return response;
+          const history = response as { messages: Record<string, unknown>[] };
+          return {
+            ...history,
+            messages: history.messages.map((entry) => {
+              const meta = entry.__openclaw as Record<string, unknown> | undefined;
+              return entry.role === 'user' && meta
+                ? { ...entry, content: '[shortened]', __openclaw: { ...meta, truncated: true } }
+                : entry;
+            }),
+          };
+        }),
+      );
+    const large = 'Approved feedback implementation plan.\n'.repeat(700);
+    const first = await service.run(
+      manifest,
+      root,
+      who,
+      {
+        action: 'feedback',
+        operation: 'implementation-context',
+        id,
+        eventId: event.id,
+        decision: { mode: 'work', reasons: ['Approved bounded repair.'], plan: large },
+      },
+      true,
+    );
+    assert.equal(first.status, 'verified', JSON.stringify(first));
+    assert.ok(exactReads > 0);
+    const initialReads = exactReads;
+    const before = await record();
+    const restored = await hydrateImplementation(first, async (request) =>
+      service.run(
+        manifest,
+        root,
+        who,
+        request as {
+          action: 'feedback';
+          operation: 'implementation-context';
+          id: string;
+          eventId: string;
+        },
+        true,
+      ),
+    );
+    assert.ok(exactReads > initialReads);
+    assert.equal(restored.plan, large);
+    const after = await record();
+    assert.deepEqual(after.feedback!.events[0], before.feedback!.events[0]);
+    assert.deepEqual(after.progression, before.progression);
+    assert.deepEqual(after.result, before.result);
+  });
+
   it('should answer question-only plan feedback without implementation despite owner metadata', async () => {
     const { id } = await feedbackOwner(false);
     consumeSend = true;
@@ -6321,7 +6520,7 @@ describe('agent/openclaw issue dispatch', () => {
     const initialSkill = (await record()).work!.selection!.skill;
     await writeFile(join(root, 'SKILL.md'), '# updated implementation guidance');
     manifest.github!.notifications!.issueAssignment!.implementation = {
-      guidance: 'Use the new implementation guidance.',
+      guidance: 'Use the new implementation guidance.\n'.repeat(400),
     };
     const answer = { ...who, runId: 'answer' };
     const resumed = await service.run(
@@ -6332,14 +6531,33 @@ describe('agent/openclaw issue dispatch', () => {
       false,
     );
     assert.equal(resumed.status, 'verified');
-    assert.ok('previousImplementationResult' in resumed);
-    assert.deepEqual(resumed.previousImplementationResult, question);
+    assert.ok('previousResult' in resumed);
+    assert.deepEqual(resumed.previousResult, question);
+    assert.ok(
+      'contextMaterials' in resumed &&
+        resumed.contextMaterials?.aliases.some(
+          ({ path, from }) =>
+            path[0] === 'previousImplementationResult' && from[0] === 'previousResult',
+        ),
+    );
     assert.ok('implementation' in resumed);
-    const resumedSelection = resumed.implementation as {
+    const hydrated = await hydrateImplementation(resumed, async (request) =>
+      service.run(
+        manifest,
+        root,
+        answer,
+        request as { action: 'implementation-context'; id: string },
+        false,
+      ),
+    );
+    const resumedSelection = hydrated.implementation as {
       skill: { digest: string };
       guidance: { content: string };
     };
-    assert.equal(resumedSelection.guidance.content, 'Use the new implementation guidance.');
+    assert.equal(
+      resumedSelection.guidance.content,
+      'Use the new implementation guidance.\n'.repeat(400),
+    );
     assert.notEqual(resumedSelection.skill.digest, initialSkill.digest);
     assert.deepEqual((await record()).work!.selection!.skill, initialSkill);
     await service.run(

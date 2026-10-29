@@ -108,6 +108,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
   try {
     const work = record.continuation;
     if (
+      !input.material &&
       work?.phase === 'blocked' &&
       ['continuation-auto-wait', 'continuation-assessment-not-actionable'].includes(
         work.code ?? '',
@@ -118,7 +119,12 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       delete work.code;
       delete work.retryAfter;
     }
-    if (work?.phase === 'blocked' && work.code === 'continuation-turn-ended' && !retry) {
+    if (
+      !input.material &&
+      work?.phase === 'blocked' &&
+      work.code === 'continuation-turn-ended' &&
+      !retry
+    ) {
       work.phase =
         work.result?.outcome === 'done'
           ? 'delivery'
@@ -202,6 +208,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     };
     if (!['reconcile', 'cancel', 'result'].includes(input.action)) await authorizeLive();
     if (
+      !input.material &&
       !work.attempt &&
       !work.binding &&
       (input.action === 'next' ||
@@ -222,7 +229,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       });
       work.selection = selected.selection;
     }
-    delete work.policyHeld;
+    if (!input.material) delete work.policyHeld;
     if (enteringImplementation && liveMode === 'auto' && !context.operatorInput) {
       if (!record.result.decision) throw new WorkflowPolicyHeld('auto-decision-required');
       if (
@@ -281,6 +288,16 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       git,
       work.attempt || record.handoff ? 'handoff' : undefined,
     );
+    if (input.material) {
+      if (!retainedIssueProgression(record))
+        throw new Error('implementation-material-context-required');
+      return codexWorkContext(
+        record,
+        context,
+        { client, repo, admitted, selection: work.selection },
+        true,
+      );
+    }
     record.effective = codexSessionSettings(record, found);
     await save();
     if (input.action === 'cancel') {

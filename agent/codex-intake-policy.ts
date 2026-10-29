@@ -1,3 +1,4 @@
+import automationModels from './automation-models.ts';
 import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import { assessmentSummaryConsent } from './assessment-summary-state.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
@@ -20,9 +21,10 @@ export function codexIntakeJobs(
   manifest: AgentManifest,
   runtime?: { entrypoint: string; pluginData: string },
 ): ResolvedAutomation[] {
-  const jobs = manifest.automations ?? [];
-  if (jobs.some((job) => job.id === intakeAutomationId))
+  const declarations = manifest.automations ?? [];
+  if (declarations.some((job) => job.id === intakeAutomationId))
     throw new IntakeError('intake-automation-id-reserved');
+  const jobs = automationModels(declarations, manifest.models, 'codex');
   const selected = codexIntakePolicy(manifest);
   if (!selected) return jobs;
   if (!manifest.models?.low) throw new IntakeError('intake-low-profile-required');

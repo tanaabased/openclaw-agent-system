@@ -11,8 +11,27 @@ export interface AutomationGatewayDiagnostic extends GatewayErrorDiagnostic {
     | 'agent-session-mismatch'
     | 'session-key-malformed'
     | 'agent-retired'
-    | 'parameters-invalid';
+    | 'parameters-invalid'
+    | 'model-not-allowed'
+    | 'model-invalid'
+    | 'effort-invalid'
+    | 'effort-unsupported';
 }
+
+const resolverReasons = [
+  'agent-unknown',
+  'agent-session-mismatch',
+  'session-key-malformed',
+  'agent-retired',
+  'parameters-invalid',
+] as const;
+const settingsReasons = [
+  'parameters-invalid',
+  'model-not-allowed',
+  'model-invalid',
+  'effort-invalid',
+  'effort-unsupported',
+] as const;
 
 /** missing method evidence is unknown, never copied from arbitrary upstream text. */
 export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorDiagnostic & {
@@ -40,18 +59,14 @@ export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorD
       : null;
   const diagnostic = { method, ...retainGatewayErrorDiagnostic(input) };
   const reason =
-    method === 'sessions.resolve' &&
     diagnostic.category === 'rejected' &&
     diagnostic.gatewayCode === 'INVALID_REQUEST' &&
     'reason' in input
-      ? (
-          [
-            'agent-unknown',
-            'agent-session-mismatch',
-            'session-key-malformed',
-            'agent-retired',
-            'parameters-invalid',
-          ] as const
+      ? (method === 'sessions.resolve'
+          ? resolverReasons
+          : method === 'sessions.create' || method === 'sessions.patch'
+            ? settingsReasons
+            : []
         ).find((reason) => reason === input.reason)
       : undefined;
   return { ...diagnostic, ...(reason ? { reason } : {}) };
@@ -62,7 +77,7 @@ export default function automationGatewayDiagnostic(
   error: unknown,
 ): AutomationGatewayDiagnostic {
   const diagnostic: AutomationGatewayDiagnostic = { method, ...gatewayErrorDiagnostic(error) };
-  // Classify only known resolver rejections; never retain their identifiers or raw prose.
+  // classify only known native rejections; never retain identifiers or raw prose.
   if (
     method === 'sessions.resolve' &&
     diagnostic.category === 'rejected' &&
@@ -79,6 +94,26 @@ export default function automationGatewayDiagnostic(
       diagnostic.reason = 'agent-retired';
     else if (message.startsWith('invalid sessions.resolve params:'))
       diagnostic.reason = 'parameters-invalid';
+  }
+  if (
+    (method === 'sessions.create' || method === 'sessions.patch') &&
+    diagnostic.category === 'rejected' &&
+    diagnostic.gatewayCode === 'INVALID_REQUEST' &&
+    error instanceof Error
+  ) {
+    if (error.message.startsWith(`invalid ${method} params:`))
+      diagnostic.reason = 'parameters-invalid';
+    else if (/^model not allowed: [^\r\n]+$/.test(error.message))
+      diagnostic.reason = 'model-not-allowed';
+    else if (/^invalid model: [^\r\n]+$/.test(error.message)) diagnostic.reason = 'model-invalid';
+    else if (/^invalid thinkingLevel \(use [^\r\n]+\)$/.test(error.message))
+      diagnostic.reason = 'effort-invalid';
+    else if (
+      /^thinkingLevel "[^"\r\n]+" is not supported for [^\r\n]+ \(use [^\r\n]+\)$/.test(
+        error.message,
+      )
+    )
+      diagnostic.reason = 'effort-unsupported';
   }
   return diagnostic;
 }

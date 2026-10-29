@@ -37,6 +37,12 @@ describe('agent/codex-thread-client', () => {
     const calls: string[] = [];
     const request: CodexThreadRequest = async (method, params) => {
       calls.push(method);
+      if (method === 'model/list')
+        return {
+          data: [
+            { model: 'gpt-6-luna', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }] },
+          ],
+        };
       if (method === 'thread/start') {
         assert.equal(params.model, 'gpt-6-luna');
         assert.deepEqual(params.config, { model_reasoning_effort: 'medium' });
@@ -60,11 +66,13 @@ describe('agent/codex-thread-client', () => {
       'native',
     );
     assert.deepEqual(calls, [
+      'model/list',
       'thread/start',
       'journal',
       'thread/inject_items',
       'thread/unsubscribe',
       'thread/resume',
+      'thread/unsubscribe',
     ]);
     assert.ok(!calls.includes('turn/start'));
   });
@@ -132,5 +140,89 @@ describe('agent/codex-thread-client', () => {
       { ...archived, path: '/sessions/rollout.jsonl' },
     ])
       await assert.rejects(codexThreadAdapter(async () => ({ thread }), cwd).lookup('native'));
+  });
+  it('should update only model settings under native custody and read through a fresh connection', async () => {
+    const cwd = await realpath('.');
+    const thread = {
+      id: 'native',
+      cwd,
+      path: '/sessions/fixture',
+      status: { type: 'idle' },
+      model: 'selected',
+      reasoningEffort: 'medium',
+    };
+    const calls: { method: string; params: Record<string, unknown> }[] = [];
+    let freshReads = 0;
+    const adapter = codexThreadAdapter(
+      async (method, params) => {
+        calls.push({ method, params });
+        if (method === 'model/list')
+          return {
+            data: [{ model: 'selected', supportedReasoningEfforts: [{ reasoningEffort: 'high' }] }],
+          };
+        if (method === 'thread/read') return { thread: { ...thread } };
+        if (method === 'thread/settings/update') thread.reasoningEffort = String(params.effort);
+        return {};
+      },
+      cwd,
+      undefined,
+      async () => {
+        freshReads++;
+        return { thread: { ...thread } };
+      },
+    );
+    const current = (await adapter.lookup('native'))!;
+    await adapter.updateSettings!(current, { effort: 'high' });
+    assert.deepEqual(calls.find((call) => call.method === 'thread/resume')!.params, {
+      threadId: 'native',
+    });
+    assert.deepEqual(calls.find((call) => call.method === 'thread/settings/update')!.params, {
+      threadId: 'native',
+      effort: 'high',
+    });
+    assert.equal((await adapter.lookupFresh!('native'))!.effort, 'high');
+    assert.equal(freshReads, 1);
+    assert.ok(
+      !calls.some((call) =>
+        ['turn/start', 'thread/start', 'thread/inject_items'].includes(call.method),
+      ),
+    );
+  });
+  it('should report native writer contention without updating or overriding permissions', async () => {
+    const calls: string[] = [];
+    const adapter = codexThreadAdapter(
+      async (method) => {
+        calls.push(method);
+        if (method === 'model/list')
+          return {
+            data: [{ model: 'selected', supportedReasoningEfforts: [{ reasoningEffort: 'high' }] }],
+          };
+        throw new CodexThreadRpcError(-32600, 'thread native already has an active writer');
+      },
+      '/workspace',
+      undefined,
+      async () => ({}),
+    );
+    await assert.rejects(
+      adapter.updateSettings!({ id: 'native', model: 'selected' }, { effort: 'high' }),
+      rejects('automation-thread-settings-busy'),
+    );
+    assert.deepEqual(calls, ['model/list', 'thread/resume']);
+  });
+  it('should reject absent catalog models and unsupported efforts before creating a thread', async () => {
+    for (const settings of [{ model: 'absent' }, { model: 'selected', effort: 'ultra' }]) {
+      const calls: string[] = [];
+      const adapter = codexThreadAdapter(async (method) => {
+        calls.push(method);
+        return {
+          data: [{ model: 'selected', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }] }],
+        };
+      }, '/workspace');
+      await assert.rejects(
+        adapter.create({ key: 'fixture', phase: 'creating' }, async () => {}, true, settings),
+        rejects(settings.effort ? 'automation-effort-unsupported' : 'automation-model-unsupported'),
+      );
+      assert.deepEqual(calls, ['model/list']);
+    }
   });
 });

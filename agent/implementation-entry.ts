@@ -1,3 +1,4 @@
+import implementationMaterial from './implementation-material.ts';
 import { realpath } from 'node:fs/promises';
 
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
@@ -33,6 +34,7 @@ export default async function implementationEntry(
       input.id ? entry.id === input.id : entry.target.toLowerCase() === input.target?.toLowerCase(),
     ),
   );
+  if (input.material && !retained) throw new Error('implementation-entry-unavailable');
   const target = input.target ?? retained?.target ?? deps.currentTarget;
   if (!target)
     return {
@@ -91,19 +93,25 @@ export default async function implementationEntry(
       throw new Error('implementation-result-conflict');
     await deps.assertCurrent();
     if (input.operation === 'present') return implementationReadback(retained.id, retained.result);
-    return {
-      status: 'presented',
-      id: retained.id,
-      retained: true,
-      deliveryOnly: retained.result.outcome === 'done',
-      previousResult: retained.result,
-      presentation: implementationPresentation(retained.result),
-      handoff: implementationHandoff(retained.id, retained.result.outcome, deps.binding.runtime, {
-        publication: retained.scope === 'pull-request',
-      }),
-      instruction:
-        'Show the retained result. Do not repeat completed edits or commits. Follow the retained scope-aware handoff and original publication receipts; never infer publication authority from the plan.',
-    };
+    return implementationMaterial(
+      {
+        status: 'presented',
+        runtime: deps.binding.runtime,
+        project: { path: checkout.path },
+        id: retained.id,
+        retained: true,
+        deliveryOnly: retained.result.outcome === 'done',
+        previousResult: retained.result,
+        presentation: implementationPresentation(retained.result),
+        handoff: implementationHandoff(retained.id, retained.result.outcome, deps.binding.runtime, {
+          publication: retained.scope === 'pull-request',
+        }),
+        instruction:
+          'Show the retained result. Do not repeat completed edits or commits. Follow the retained scope-aware handoff and original publication receipts; never infer publication authority from the plan.',
+      },
+      { action: 'implementation', operation: 'context', id: retained.id },
+      input.material,
+    );
   }
   const provider = await deps.connectProvider();
   const repo = await provider.getRepository(locator.owner, locator.name);
@@ -132,6 +140,8 @@ export default async function implementationEntry(
       throw new Error('implementation-managed-context-changed');
     await deps.assertCurrent();
     if (input.operation === 'context') {
+      if (input.material && (!entry?.progression || !entry.selection || !entry.plan))
+        throw new Error('implementation-material-context-required');
       if (!entry) {
         if (entries.length >= 20) throw new Error('implementation-entry-capacity');
         entry = {
@@ -192,6 +202,7 @@ export default async function implementationEntry(
         };
       }
       if (
+        !input.material &&
         entry.result?.outcome === 'clarification-needed' &&
         automationHash(entry.resultSource) === automationHash(source)
       )
@@ -200,28 +211,30 @@ export default async function implementationEntry(
           id: entry.id,
           presentation: implementationPresentation(entry.result),
         };
-      const transition = issueProgression(entry, {
-        mode: 'plan',
-        operator: true,
-        actionablePlan: entry.plan,
-        now: deps.now,
-      });
-      if (transition.status !== 'ready') throw new Error(transition.reason);
-      await save();
-      entry.selection ??= (
-        await selectWorkflowStage({
-          stage: 'implementation',
-          configuration: deps.manifest.github?.notifications?.issueAssignment?.implementation,
-          workspace: deps.binding.workspace,
-          observedAt: deps.now,
-          resolveSkill: deps.resolveSkill,
-        })
-      ).selection;
-      entry.progression = transition.progression;
-      entry.caller = source;
-      await deps.assertCurrent();
-      await save();
-      return {
+      if (!input.material) {
+        const transition = issueProgression(entry, {
+          mode: 'plan',
+          operator: true,
+          actionablePlan: entry.plan,
+          now: deps.now,
+        });
+        if (transition.status !== 'ready') throw new Error(transition.reason);
+        await save();
+        entry.selection ??= (
+          await selectWorkflowStage({
+            stage: 'implementation',
+            configuration: deps.manifest.github?.notifications?.issueAssignment?.implementation,
+            workspace: deps.binding.workspace,
+            observedAt: deps.now,
+            resolveSkill: deps.resolveSkill,
+          })
+        ).selection;
+        entry.progression = transition.progression;
+        entry.caller = source;
+        await deps.assertCurrent();
+        await save();
+      }
+      const response = {
         ...implementationContext({
           runtime: deps.binding.runtime,
           id: entry.id,
@@ -239,6 +252,11 @@ export default async function implementationEntry(
         instructions:
           'Execute the selected implementation body once using this verified context; never invoke its bootstrap again. Preserve partial files, consumed plan and selection. Reconcile current operator input with this plan. Do not assess, create another chat/worktree, activate notifications or change session settings. Respect the retained publicationAuthorized scope. Local scope forbids push and PR publication. A plan and skill composition grant no publication authority; pull-request scope is collected only from an explicit operator publication request, not inferred from the plan. For requested publication use the host-owned delivery handoff, never publish independently. Built-in and custom skills return their ordinary complete substantive output without Agent System fields or commands. You, the calling agent, preserve that output unchanged inside fullResult and construct result matching resultSchema: outcome done|blocked|clarification-needed, summary, fullResult, and questions only when clarification-needed. Submit dispatch implementation operation result with the returned id and that result object; do not submit the prose itself as result. Only the runtime acknowledgment proves recording. After an uncertain submission, refresh this same context and reconcile its retained previousResult before retrying; never repeat completed implementation. On clarification, retain questions and partial work, then wait for a new native input. Refresh this same context on the answer; do not request stage approval again. Existing publication effects must resume through their original owner and receipts, never a substitute publication.',
       };
+      return implementationMaterial(
+        response,
+        { action: 'implementation', operation: 'context', id: entry.id },
+        input.material,
+      );
     }
     if (
       !entry?.progression ||

@@ -23,6 +23,8 @@ import {
 } from './automation-projection.ts';
 import automationThreadGateway from './automation-thread-gateway.ts';
 import AutomationThreads, {
+  automationSettingsMessage,
+  AutomationThreadSettingsError,
   automationThreadNames,
   automationThreadSelection,
 } from './automation-threads.ts';
@@ -408,7 +410,7 @@ export default class AutomationService {
       stepId: id,
       status,
       code,
-      message: `Automation ${id}: ${code.replace(/^automation-/u, '')}${execution ? executionEvidence(execution) : ''}${context.threads?.has(id) ? ` (persistent, ${context.threads.get(id)!.outcome}: ${context.threads.get(id)!.id})` : ''}.`,
+      message: `${context.threads?.get(id)?.settings ? automationSettingsMessage(context.threads.get(id)!.settings!) + '; ' : ''}Automation ${id}: ${code.replace(/^automation-/u, '')}${execution ? executionEvidence(execution) : ''}${context.threads?.has(id) ? ` (persistent, ${context.threads.get(id)!.outcome}: ${context.threads.get(id)!.id})` : ''}.`,
       ...(status === 'healthy'
         ? {}
         : {
@@ -436,11 +438,16 @@ export default class AutomationService {
     } catch (error) {
       return [
         ...findings,
-        finding(
-          'threads',
-          'blocked',
-          error instanceof AutomationError ? error.code : 'automation-thread-inspection-failed',
-        ),
+        {
+          ...finding(
+            'threads',
+            'blocked',
+            error instanceof AutomationError ? error.code : 'automation-thread-inspection-failed',
+          ),
+          ...(error instanceof AutomationThreadSettingsError
+            ? { message: `${error.code}; ${automationSettingsMessage(error.settings)}` }
+            : {}),
+        },
       ];
     }
     for (const job of declarations) {

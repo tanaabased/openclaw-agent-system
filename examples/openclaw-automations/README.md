@@ -1,11 +1,12 @@
 # OpenClaw Automations Example
 
-Install one command job and one prompt job, then run each as its configured agent.
+Install one command job and one prompt job, then execute each as its configured agent.
 Verify that both finish and repeat installation preserves their IDs and routing.
 
 ## What Belongs Here
 
 - Public managed sync/list/run boundaries and repeated sync preserving the same native jobs.
+- Shared model/effort creation and same-chat updates, followed by a timer-fired occurrence with native execution evidence.
 - Native display-name rename/removal while preserving the job, its completed run state, and separate chat binding.
 - A completed command receipt proving managed Git identity and a completed prompt in the owning agent context.
 - Failed command stdout, stderr, and exit status reaching the exact native run record with delivery disabled.
@@ -21,8 +22,9 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 
 - The command uses an explicit command/args object; the prompt explicitly enables its default-enabled behavior while the command leaves that default implicit.
 
-- Both jobs recur hourly; explicit run requests exercise them immediately. Command receipts are written beside the checked-in manifest on the disposable runner.
+- Jobs initially recur hourly. Run the command explicitly; after updating prompt settings, change its schedule to one minute from now and wait for the native timer. This adds a bounded wait, not another model turn. Command receipts are written beside the checked-in manifest on the disposable runner.
 - Strict AIMock supplies one prompt completion; scheduling, the Gateway, and command execution remain real. No hosted provider credential or remote SSH is needed.
+- AIMock normalizes away request reasoning effort. Verify effort through the native embedded-run diagnostic correlated with the completed occurrence's session, not through the mock response or saved settings alone.
 - Source tests cover option/offline variants, one-shot retention, unmanaged jobs, stale authority, containment, timeout/cancellation cleanup, and thread-selection permutations.
 - The output check reads `cron.runs`, the Gateway API supplying run cards. It verifies output propagation, not browser rendering or OpenClaw restart persistence.
 
@@ -36,6 +38,10 @@ openclaw-aimock prepare --scenario openclaw-automations
 # should install the owning workspace before starting the gateway
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 openclaw agent-system install --yes --json
+
+# should keep automation session choices local even when native sticky selection is global
+openclaw config set agents.defaults.modelSelectionScope global
+openclaw config get agents.defaults.model --json > "$TMPDIR/automation-global-model.json"
 
 # should start the gateway with the installed agent
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
@@ -62,6 +68,19 @@ openclaw gateway call sessions.list --params '{"limit":100}' --json | jq -e --ar
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
 
+# should save changed effort on the same chat and scheduled job
+cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+chat=$(jq -er '.jobs[] | select(.id == "prompt") | .routing | sub("^session:"; "")' "$TMPDIR/automation-before.json")
+openclaw gateway call sessions.list --params '{"limit":100}' --json | jq -e --arg key "$chat" 'any(.sessions[]; .key == $key and .thinkingLevel == "medium")'
+node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); jobs.find(({id})=>id==="prompt").effort="high"; fs.writeFileSync("automations.yaml",stringify(jobs));'
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
+openclaw gateway call sessions.list --params '{"limit":100}' --json | jq -e --arg key "$chat" 'any(.sessions[]; .key == $key and .thinkingLevel == "high" and (.model == "gpt-5.5" or .model == "aimock/gpt-5.5"))'
+native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
+openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.payload.model == "aimock/gpt-5.5" and .payload.thinking == "high"'
+openclaw config get agents.defaults.model --json | diff - "$TMPDIR/automation-global-model.json"
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
+openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
+
 # should complete one command under the owning managed git identity
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 run_id=$(openclaw agent-system automations run identity --json | jq -er 'select(.status == "queued" and .execution == "unavailable") | .runId | strings')
@@ -69,10 +88,19 @@ node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" identity "$run_id"
 grep -F 'Tanaabot <tanaabot@tanaab.dev>' identity.git
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 
-# should complete a prompt in the owning agent context
+# should execute the next timer-fired prompt with the saved model and effort
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
-run_id=$(openclaw agent-system automations run prompt --json | jq -er 'select(.status == "queued" and .execution == "unavailable") | .runId | strings')
-node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" prompt "$run_id"
+node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); jobs.find(({id})=>id==="prompt").schedule="in 1 minute"; fs.writeFileSync("automations.yaml",stringify(jobs));'
+openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
+native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
+due=$(openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -er '.state.nextRunAtMs | numbers')
+for attempt in $(seq 1 90); do
+  openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" '{id:$id,limit:1,offset:0}')" --json > "$TMPDIR/automation-timer-run.json"
+  if jq -e --arg id "$native" --argjson due "$due" 'any(.entries[]; .jobId == $id and .runAtMs >= $due)' "$TMPDIR/automation-timer-run.json" >/dev/null; then break; fi
+  sleep 2
+done
+run_session=$(jq -er --arg id "$native" --argjson due "$due" '.entries[] | select(.jobId == $id and .runAtMs >= $due and .status == "ok" and .provider == "aimock" and .model == "gpt-5.5") | .sessionId | strings' "$TMPDIR/automation-timer-run.json")
+grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "sessionId=$run_session " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
 openclaw-aimock evidence --scenario openclaw-automations --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-automations/expected-evidence.json"
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 

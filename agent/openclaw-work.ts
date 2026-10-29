@@ -151,7 +151,10 @@ export default async function openClawWorkAction(input: {
   const completedTurnId = record.work?.resultSource?.turnId ?? record.work?.caller?.runId;
   const resultSource = { turnId: source.runId, inputId: source.inputEventId };
   if (action.action === 'implementation-context') {
+    if (action.material && (!record.work?.implementation || !record.work.caller))
+      throw new Error('implementation-material-context-required');
     const revision =
+      !action.material &&
       record.work &&
       implementationRevision(
         record.work,
@@ -167,6 +170,7 @@ export default async function openClawWorkAction(input: {
       delete work.resultSource;
     }
     if (
+      !action.material &&
       record.work?.result?.outcome === 'clarification-needed' &&
       record.work.clarificationInput?.runId === source.runId
     )
@@ -175,22 +179,25 @@ export default async function openClawWorkAction(input: {
         id: record.id,
         presentation: implementationPresentation(record.work.result),
       };
-    record.progression = { ...input.progression, workOwner: 'issue' };
-    record.work ??= { assessmentDigest };
-    if (action.scope) record.work.scope = action.scope;
-    record.handoff ??= { at: input.now, by: input.caller.sessionKey, turnId: source.runId };
-    record.work.implementation ??= source;
-    record.work.caller = source;
-    if (!record.work.turn && input.message) {
-      record.work.turn = {
-        origin: record.resultTurnId === source.runId ? 'assessment' : 'input',
-        runId: source.runId,
-        message: input.message,
-        status: 'consumed',
-        consumedByEventId: source.inputEventId,
-      };
+    if (!action.material) {
+      record.progression = { ...input.progression, workOwner: 'issue' };
+      record.work ??= { assessmentDigest };
+      if (action.scope) record.work.scope = action.scope;
+      record.handoff ??= { at: input.now, by: input.caller.sessionKey, turnId: source.runId };
+      record.work.implementation ??= source;
+      record.work.caller = source;
+      if (!record.work.turn && input.message) {
+        record.work.turn = {
+          origin: record.resultTurnId === source.runId ? 'assessment' : 'input',
+          runId: source.runId,
+          message: input.message,
+          status: 'consumed',
+          consumedByEventId: source.inputEventId,
+        };
+      }
+      await input.save();
     }
-    await input.save();
+    if (!record.work) throw new Error('implementation-material-context-required');
     return {
       ...implementationContext({
         runtime: 'openclaw',

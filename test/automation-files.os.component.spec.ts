@@ -44,6 +44,24 @@ describe('manifest/automation-files', () => {
     await writeFile(join(root, 'prompts/review.md'), 'Review the workspace.\n');
   }
 
+  it('should retain shared settings and reject missing profiles in external declarations', async () => {
+    await fixture();
+    await writeFile(
+      join(root, '.agent-system/jobs.yaml'),
+      '- id: review\n  schedule: every 1 hour\n  payload: {kind: prompt, prompt: Review.}\n  model: default\n  effort: high\n',
+    );
+    assert.equal((await load()).status, 'invalid');
+    await writeFile(
+      join(root, '.agent-system/agent.yaml'),
+      'schema-version: 1\nagent: {id: test}\nmodels: {default: {model: openai/selected, effort: medium}}\nautomations: {file: ./jobs.yaml}\n',
+    );
+    const result = await load();
+    assert.equal(result.status, 'loaded');
+    if (result.status !== 'loaded') return;
+    assert.equal(result.manifest.automations![0]!.model, 'default');
+    assert.equal(result.manifest.automations![0]!.effort, 'high');
+  });
+
   it('should resolve yaml and prompt paths from their containing files without executing content', async () => {
     await fixture();
     await writeFile(
