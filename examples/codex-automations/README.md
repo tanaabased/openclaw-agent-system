@@ -18,7 +18,7 @@ those same conversations.
 
 ## Notes
 
-- The named-zone declaration maps to a native timezone-qualified recurrence. Native review is required before saving it; native timing limitations are documented in [Codex automations](../../MANIFEST.md#codex-execution-and-ownership).
+- The named-zone declaration maps to a native timezone-qualified recurrence. Codex direct creation does not accept `DTSTART`, so a new named-zone schedule reports `automation-dtstart-create-unsupported` before journaling a proposal. Timezone edits to existing schedules use direct updates. Native timing limitations are documented in [Codex automations](../../MANIFEST.md#codex-execution-and-ownership).
 - Sidebar inventories and responses are explicit headless fixtures; native sidebar behavior requires desktop verification. Lookup inventories are explicit fixtures. `list` and `sync` inspect or plan native app actions; they do not write scheduler files. `threads-sync` creates/resumes real conversations through `codex app-server` under installation authorization and a fresh digest.
 - Native readback checks `auto_review`, `on-request`, and `workspace-write`. No model generation or provider credentials are used; run only in GitHub Actions.
 - Pending relocation: prepare/cancel retains a pending journal until verification and permits cancellation only while the failed target is unchanged. Pending creates also require no new native IDs; an unmarked job may be a partial create.
@@ -49,7 +49,7 @@ node "$runtime" binding bind --plugin-data "$root/automation-data" --workspace "
 jq -n --arg workspace "$workspace" '{projects:{schemaVersion:2,projects:[{projectId:"fixture-project",projectKind:"local",hostId:"local",path:$workspace}]}}' > "$root/automation-input.json"
 node "$runtime" automations plan --plugin-data "$root/automation-data" < "$root/automation-input.json" \
   | tee "$root/automation-plan.json" \
-  | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create" and .actions[0].review == true and (.actions[0].expected.rrule | startswith("DTSTART;TZID=America/New_York:")) and .actions[0].expected.projectId == "fixture-project" and .actions[0].expected.status == "PAUSED"'
+  | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create" and (.actions[0].expected.rrule | startswith("DTSTART;TZID=America/New_York:")) and .actions[0].expected.projectId == "fixture-project" and .actions[0].expected.status == "PAUSED"'
 node "$runtime" setup install --plugin-data "$root/automation-data" \
   | jq -e '.status == "requires-native-app-sync"'
 test ! -d "$CODEX_HOME/automations"
@@ -67,19 +67,16 @@ if printf '%s\n' '{"id":"review"}' | node "$runtime" automations runs --plugin-d
 jq -e '.code == "automation-history-unavailable" and .telemetry.execution == "unavailable"' "$root/history-gap.json"
 test ! -d "$CODEX_HOME/automations"
 
-# should retain a pending native action and cancel only an unchanged failed write
+# should reject unsupported timezone creation without preparing a native proposal
 root="$TMPDIR/agent-system-codex-automations"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 digest=$(jq -r .digest "$root/automation-plan.json")
-jq --arg digest "$digest" '. + {digest:$digest}' "$root/automation-input.json" \
-  | node "$runtime" automations prepare --plugin-data "$root/automation-data" \
-  | jq -e '.status == "prepared" and .request.mode == "suggested_create"'
+jq --arg digest "$digest" '. + {digest:$digest}' "$root/automation-input.json" > "$root/prepare-input.json"
+if node "$runtime" automations prepare --plugin-data "$root/automation-data" < "$root/prepare-input.json" 2> "$root/unsupported-create.json"; then exit 1; fi
+jq -e '.code == "automation-dtstart-create-unsupported" and (.message | contains("does not support DTSTART recurrences"))' "$root/unsupported-create.json"
 node "$runtime" automations inspect --plugin-data "$root/automation-data" < "$root/automation-input.json" \
-  | jq -e '.status == "blocked" and ([.findings[].code] | index("automation-pending-readback-required") != null)'
-jq -n --arg digest "$digest" '{digest:$digest}' \
-  | node "$runtime" automations cancel --plugin-data "$root/automation-data" \
-  | jq -e '.status == "cancelled"'
+  | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create"'
 test ! -d "$CODEX_HOME/automations"
 
 # should create durable conversations with selected models and verified auto review

@@ -865,6 +865,11 @@ export async function prepareCodexAutomation(
       throw new CodexAutomationError('automation-plan-stale-or-blocked');
     }
     const action = result.actions[0];
+    if (action.mode === 'create' && /^DTSTART[:;]/u.test(action.expected.rrule))
+      throw new CodexAutomationError(
+        'automation-dtstart-create-unsupported',
+        'Codex direct creation does not support DTSTART recurrences. Keep the requested timezone and use a schedule without DTSTART only if it preserves the intended timing.',
+      );
     if (action.manifestId === intakeAutomationId && action.expected.status === 'ACTIVE') {
       const verified = await preflightCodexIntake(pluginData, {
         ...dependencies.intake,
