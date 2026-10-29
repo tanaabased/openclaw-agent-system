@@ -177,6 +177,9 @@ export default function automationGatewayDiagnostic(
     else if (
       /^Model [^\r\n]+ requires agent harness "[^"\r\n]+", but no enabled plugin provides it\. Install and enable its plugin, restart the Gateway, then select the model again\.$/.test(
         error.message,
+      ) ||
+      /^(?:A runtime|Runtime "[^"\r\n]+") is not available for [^\r\n]+\. Refresh the model catalog and choose again\.$/.test(
+        error.message,
       )
     )
       diagnostic.reason = 'model-runtime-unavailable';

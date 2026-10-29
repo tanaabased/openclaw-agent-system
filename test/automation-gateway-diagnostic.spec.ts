@@ -119,6 +119,15 @@ describe('agent/automation-gateway-diagnostic', () => {
         ],
         ['Model selection is locked for this session.', 'model-selection-locked'],
         [
+          'A runtime is not available for secret-provider/secret-model. Refresh the model catalog and choose again.',
+          'model-runtime-unavailable',
+        ],
+        [
+          'Runtime "secret-runtime" is not available for secret-provider/secret-model. Refresh the model catalog and choose again.',
+          'model-runtime-unavailable',
+        ],
+        ['A runtime is not available for secret-model for another reason.', 'unclassified'],
+        [
           'Session key namespace is reserved for agent harness-owned sessions.',
           'session-key-reserved',
         ],
