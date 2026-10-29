@@ -172,7 +172,8 @@ export default async function openClawWorkAction(input: {
     if (
       !action.material &&
       record.work?.result?.outcome === 'clarification-needed' &&
-      record.work.clarificationInput?.runId === source.runId
+      record.work.clarificationInput?.runId === source.runId &&
+      record.work.clarificationInput.inputEventId === source.inputEventId
     )
       return {
         status: 'clarification-needed',
@@ -230,6 +231,7 @@ export default async function openClawWorkAction(input: {
   if (
     record.work.result?.outcome === 'clarification-needed' &&
     record.work.clarificationInput?.runId === source.runId &&
+    record.work.clarificationInput.inputEventId === source.inputEventId &&
     automationHash(record.work.result) !== automationHash(action.implementationResult)
   )
     throw new Error('implementation-answer-required');

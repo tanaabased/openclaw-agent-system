@@ -7,18 +7,19 @@ function reserved(record: DispatchRecord): boolean {
   if (record.retirement && record.nativeInactive !== undefined) return !record.nativeInactive;
   if (record.denial) return false;
   if (record.supersededBy || record.reset || !record.request) return false;
+  if (record.nativeInactive) return false;
+  // native activity and unresolved custody reserve a slot regardless of workflow progress.
+  if (record.capacityObservation) return true;
   const progress = issueWorkflowProgress(record);
   const { action } = progress;
   return (
+    Boolean(record.handoff) ||
     Boolean(record.summaryRecovery && !record.summaryRecovery.ended && !record.nativeInactive) ||
     Boolean(record.autoDecision && !record.autoDecision.ended && !record.nativeInactive) ||
-    (!record.handoff &&
-      !(record.retired && record.nativeInactive) &&
-      (record.phase === 'creating' ||
-        record.phase === 'assessing' ||
-        (['blocked', 'waiting', 'retrying'].includes(record.phase) && !record.nativeInactive))) ||
+    record.phase === 'creating' ||
+    record.phase === 'assessing' ||
+    (['blocked', 'waiting', 'retrying'].includes(record.phase) && !record.nativeInactive) ||
     Boolean(
-      !record.handoff &&
       record.continuation &&
       (!feedbackWorkStarted(record) ||
         record.continuation.attempt ||

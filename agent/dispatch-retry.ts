@@ -59,6 +59,7 @@ export function scheduleDispatchRetry(
       : transient.has(code) || /^git-(?:fetch|clone)-(?:(?:dns|timeout|connection)-)/.test(code));
   if (!retryable) {
     delete record.retry;
+    delete record.retryAfter;
     return false;
   }
   const attempts = Math.min(5, (record.retry?.attempts ?? 0) + 1);
@@ -114,4 +115,10 @@ export function dispatchFailurePhase(record: RetryState, code: string, error?: u
   )
     return 'blocked' as const;
   return record.retry ? ('retrying' as const) : ('waiting' as const);
+}
+
+/** Waiting after an unclassified failure has no automatic wake-up contract. */
+export function dispatchFailureStatus(record: RetryState, code: string, error?: unknown) {
+  const phase = dispatchFailurePhase(record, code, error);
+  return phase === 'waiting' ? 'needs-attention' : phase;
 }

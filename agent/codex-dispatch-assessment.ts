@@ -1,3 +1,4 @@
+import { observeCodexActivity } from './codex-capacity-reconcile.ts';
 import assessmentMaterial from './assessment-material.ts';
 import type { ImplementationMaterialRead } from './implementation-material.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
@@ -155,6 +156,7 @@ export async function handoffDispatch(
     );
     if (
       !native ||
+      native.archived ||
       native.id !== record.threadId ||
       (await realpath(native.cwd)) !== (await realpath(record.worktree))
     )
@@ -167,15 +169,6 @@ export async function handoffDispatch(
       'handoff',
     );
     const retainedAssessment = record.result ? { previousResult: record.result } : {};
-    if (record.handoff && !record.nativeInactive)
-      return {
-        status: 'handed-off' as const,
-        changed: false,
-        id: record.id,
-        threadId: record.threadId,
-        issueBranch: record.issueBranch?.name,
-        ...retainedAssessment,
-      };
     if (record.continuation?.phase === 'cancelled') throw new Error('implementation-cancelled');
     if (
       record.continuation?.phase === 'blocked' &&
@@ -190,22 +183,24 @@ export async function handoffDispatch(
                 record.continuation.binding?.turnId))))
     )
       throw new Error(record.continuation.code ?? 'continuation-implementation-blocked');
-    // capacity observations describe an earlier turn, not permanent lifecycle retirement.
-    // only a fresh user turn in the verified owning chat can reactivate that custody.
-    if (
-      record.nativeInactive &&
-      (caller !== record.threadId ||
-        native.archived ||
-        !native.followUpUserTurn ||
-        !native.turnId ||
-        native.turnEnded !== false ||
-        native.turnId === record.capacityObservation?.turnId)
-    )
-      throw new Error('dispatch-handoff-native-inactive');
+    if (record.handoff)
+      return {
+        status: 'handed-off' as const,
+        changed: false,
+        id: record.id,
+        threadId: record.threadId,
+        issueBranch: record.issueBranch?.name,
+        ...retainedAssessment,
+      };
+    const operatorInput = native.followUpUserTurn
+      ? await withNative(current, deps, (host) => host.operatorInput(record.threadId!))
+      : undefined;
+    if (operatorInput && operatorInput.turnId !== native.turnId)
+      throw new Error('dispatch-native-readback-diverged');
     const transition = issueProgression(record, {
       mode: issueWorkflowMode(current.manifest.github?.notifications, record),
       now: (deps.now ?? Date.now)(),
-      operator: native.followUpUserTurn,
+      operator: Boolean(operatorInput),
     });
     if (!native.turnId || (!native.followUpUserTurn && transition.status !== 'ready'))
       throw new WorkflowPolicyHeld(
@@ -218,8 +213,12 @@ export async function handoffDispatch(
         feedback: undefined,
         intakeReportedAt: undefined,
         renameRequested: undefined,
+        nativeInactive: undefined,
+        capacityObservation: undefined,
+        reservationVersion: undefined,
       },
       turnId: native.turnId,
+      inputId: operatorInput?.inputId,
     });
     if (input.digest === undefined)
       return {
@@ -244,17 +243,13 @@ export async function handoffDispatch(
       save,
       prepare: true,
     });
-    record.handoff ??= { at: (deps.now ?? Date.now)(), by: caller, turnId: native.turnId };
-    if (record.nativeInactive) {
-      delete record.nativeInactive;
-      record.reservationVersion = 1;
-      record.capacityObservation = {
-        at: (deps.now ?? Date.now)(),
-        code: 'dispatch-capacity-native-active',
-        threadId: native.id,
-        turnId: native.turnId,
-      };
-    }
+    record.handoff = {
+      at: (deps.now ?? Date.now)(),
+      by: caller,
+      turnId: native.turnId,
+      ...(operatorInput ? { inputId: operatorInput.inputId } : {}),
+    };
+    observeCodexActivity(record, native, (deps.now ?? Date.now)());
     const response = notice(record, intake);
     await save();
     return { ...response, issueBranch: record.issueBranch?.name, ...retainedAssessment };

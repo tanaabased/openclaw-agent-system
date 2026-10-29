@@ -65,6 +65,13 @@ describe('agent/managed-owner', () => {
       'status-update',
     );
 
+  it('should preserve the same task owner and context digest while its native chat is idle', () => {
+    const idle = { ...current, nativeInactive: true };
+    assert.equal(assess([idle])?.record, idle);
+    assert.equal(assess([idle])?.digest, assess([current])?.digest);
+    assert.ok(reply([idle]));
+  });
+
   it('should resolve current work independently of retained history and record order', () => {
     for (const records of [
       [retired, reset, current],
@@ -104,7 +111,7 @@ describe('agent/managed-owner', () => {
     const competing = { ...current, id: 'competing', threadId: 'other-chat' };
     assert.throws(() => assess([current, competing]), /assessment-managed-owner-ambiguous/);
     assert.throws(() => reply([current, competing]), /reply-managed-owner-ambiguous/);
-    for (const changes of [{ nativeInactive: true }, { retirement: {} }, { request: undefined }]) {
+    for (const changes of [{ retirement: {} }, { request: undefined }]) {
       const invalid = { ...current, ...changes } as SharedDispatchRecord;
       assert.throws(() => assess([retired, invalid]), /assessment-managed-context-invalid/);
       assert.throws(() => reply([retired, invalid]), /reply-managed-context-invalid/);

@@ -10,9 +10,7 @@ function recoveryBlockers(
   return Object.entries({
     nativeTaskMissing: !record.threadId || !record.worktree || !record.request,
     assessmentMissing: !record.result,
-    inactiveLifecycle: Boolean(
-      record.reset || record.retired || record.retirement || record.nativeInactive,
-    ),
+    inactiveLifecycle: Boolean(record.reset || record.retired || record.retirement),
     uncertainAssessmentSummary: record.assessmentSummaries?.some(
       (summary) => summary.attempt && !summary.receipt,
     ),

@@ -5951,7 +5951,7 @@ describe('agent/codex-dispatch', () => {
   });
 
   for (const handedOff of [false, true])
-    it(`should reactivate an inactive task through its existing implementation owner with retained handoff ${handedOff}`, async () => {
+    it(`should continue an idle task through its existing implementation owner with retained handoff ${handedOff}`, async () => {
       const assessment = { ...result, decision: { mode: 'plan', reasons: ['Await direction.'] } };
       const work = await workIssue(assessment, 'Follow the plan.', 'company:implement', 'auto');
       native!.followUpUserTurn = true;
@@ -5985,18 +5985,20 @@ describe('agent/codex-dispatch', () => {
       });
       const inactive = (await store.read()).records[0]!;
       const preview = await request('handoff', { id: work.id }, child);
-      assert.equal(preview.status, 'handoff-available');
+      assert.equal(preview.status, handedOff ? 'handed-off' : 'handoff-available');
       assert.deepEqual((await store.read()).records[0], inactive);
 
       await request('handoff', { id: work.id, digest: preview.digest }, child);
       const before = (await store.read()).records[0]!;
       assert.ok(before.handoff);
-      assert.equal(before.nativeInactive, undefined);
-      assert.equal(before.capacityObservation?.turnId, native!.turnId);
+      assert.equal(before.nativeInactive, handedOff ? true : undefined);
+      assert.equal(
+        before.capacityObservation?.turnId,
+        handedOff ? 'previous-ended-turn' : native!.turnId,
+      );
       assert.equal(before.reservationVersion, 1);
       if (handedOff) assert.deepEqual(before.handoff, inactive.handoff);
-      assert.equal((await work.run('next')).status, 'idle');
-      await assert.rejects(work.run('context', {}, true), /continuation-managed-issue-required/);
+
       const resumed = await runCodexDispatch(
         pluginData,
         'implementation',
@@ -6023,17 +6025,8 @@ describe('agent/codex-dispatch', () => {
       assert.equal((await work.run('context', {}, true)).status, 'verified');
     });
 
-  for (const stale of [
-    'ended',
-    'unknown',
-    'same-turn',
-    'not-user',
-    'archived',
-    'wrong-caller',
-    'cancelled',
-    'denied',
-  ] as const)
-    it(`should preserve inactive custody when reactivation evidence is ${stale}`, async () => {
+  for (const stale of ['archived', 'cancelled', 'denied'] as const)
+    it(`should preserve retained ownership when the native task is ${stale}`, async () => {
       const work = await workIssue();
       native!.followUpUserTurn = true;
       native!.turnId = 'fresh-user-turn';
@@ -6062,10 +6055,6 @@ describe('agent/codex-dispatch', () => {
           };
         await save();
       });
-      if (stale === 'ended') native!.turnEnded = true;
-      if (stale === 'unknown') delete native!.turnEnded;
-      if (stale === 'same-turn') native!.turnId = 'previous-turn';
-      if (stale === 'not-user') native!.followUpUserTurn = false;
       if (stale === 'archived') native!.archived = true;
       const before = await store.read();
       await assert.rejects(
@@ -6073,10 +6062,10 @@ describe('agent/codex-dispatch', () => {
           'handoff',
           { id: work.id },
           {
-            threadId: stale === 'wrong-caller' ? 'other-operator' : native!.id,
+            threadId: native!.id,
           },
         ),
-        /dispatch-handoff-native-inactive|implementation-cancelled|continuation-native-approval-denied/,
+        /dispatch-native-readback-diverged|implementation-cancelled|continuation-native-approval-denied/,
       );
       assert.deepEqual(await store.read(), before);
     });

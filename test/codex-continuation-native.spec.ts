@@ -30,6 +30,8 @@ describe('agent/codex-continuation-native', () => {
     let available = false;
     let denied = false;
     const verify = codexContinuationNative(async (method, params) => {
+      if (method === 'thread/turns/list')
+        return { data: [{ id: direct.sourceTurnId, status: 'inProgress' }] };
       assert.equal(method, 'thread/items/list');
       assert.equal(params.turnId, direct.sourceTurnId);
       if (params.cursor && !available) throw unavailable;
@@ -84,9 +86,22 @@ describe('agent/codex-continuation-native', () => {
         content: [{ type: 'text', text: 'Implement the plan.' }],
       },
     ];
-    const verify = codexContinuationNative(async () => ({
-      data: items.map((item) => ({ turnId: 'operator-turn', item })),
+    let ended = false;
+    const verify = codexContinuationNative(async (method) => ({
+      data:
+        method === 'thread/turns/list'
+          ? [
+              {
+                id: 'operator-turn',
+                status: ended ? 'completed' : 'inProgress',
+                completedAt: ended ? 10 : null,
+              },
+            ]
+          : items.map((item) => ({ turnId: 'operator-turn', item })),
     }));
+    assert.equal((await verify('intake', direct)).ended, false);
+    ended = true;
+    assert.equal((await verify('intake', direct)).ended, true);
     assert.equal((await verify('intake', direct)).status, 'verified');
     items.push({
       id: 'later-operator-input',

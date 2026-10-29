@@ -20,25 +20,44 @@ export const implementationRevisionProperties = {
   ),
 };
 
+export function sameImplementationInput(
+  a: ImplementationSource | undefined,
+  b: ImplementationSource,
+) {
+  return a?.turnId === b.turnId && a.inputId === b.inputId;
+}
+
 /** owners verify authority before admitting an input; history never reopens completed work. */
-export default function implementationRevision(
+export function unprocessedImplementationInput(
   work: {
     result?: ImplementationResult;
     resultSource?: ImplementationSource;
     resultHistory?: Array<{ source?: ImplementationSource }>;
   },
   input: ImplementationSource,
-  authorized: boolean,
   completedTurnId = work.resultSource?.turnId,
 ) {
   if (
-    !authorized ||
     !completedTurnId ||
-    completedTurnId === input.turnId ||
-    work.result?.outcome !== 'done' ||
-    work.resultSource?.turnId === input.turnId ||
-    work.resultHistory?.some(({ source }) => source?.turnId === input.turnId)
+    ((!work.resultSource || work.resultSource.inputId === work.resultSource.turnId) &&
+      completedTurnId === input.turnId) ||
+    sameImplementationInput(work.resultSource, input) ||
+    work.resultHistory?.some(({ source }) => sameImplementationInput(source, input))
   )
     return false;
   return true;
+}
+
+/** A new verified input may reopen a delivered implementation round, not retire its task. */
+export default function implementationRevision(
+  work: Parameters<typeof unprocessedImplementationInput>[0],
+  input: ImplementationSource,
+  authorized: boolean,
+  completedTurnId = work.resultSource?.turnId,
+) {
+  return (
+    authorized &&
+    work.result?.outcome === 'done' &&
+    unprocessedImplementationInput(work, input, completedTurnId)
+  );
 }

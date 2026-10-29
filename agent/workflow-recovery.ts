@@ -19,6 +19,10 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     };
   }
   const reasons: Record<string, [string, string]> = {
+    'continuation-handoff-input-unverified': [
+      'This older handoff does not retain the input needed to resume it automatically.',
+      'Continue in the original issue chat with a fresh authorized input and refresh implementation context. Preserve the existing work, scope and receipts; do not create a replacement chat or resend the old request.',
+    ],
     'dispatch-state-capacity': [
       'This save exceeds the 64 MiB working-content or 65 MiB total journal ceiling. The committed state is preserved.',
       'Retry context/reconciliation in the same chat to offload verified retired history, then resubmit the complete result. If protected active work still fills the emergency budget, reduce pressure through supported retirement. Do not delete the journal, reset intake, or manufacture completion flags.',

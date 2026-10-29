@@ -274,12 +274,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         entry.request &&
         !entry.supersededBy &&
         !entry.denial &&
-        !entry.handoff &&
-        (codexUnresolvedRetirement(entry) ||
-          ((entry.threadId || entry.receiptThreadId) &&
-            (['blocked', 'waiting', 'retrying'].includes(entry.phase) ||
-              (entry.continuation && ['blocked', 'cancelled'].includes(entry.continuation.phase)) ||
-              entry.feedback?.events.some((event) => event.phase === 'blocked' && event.attempt)))),
+        (codexUnresolvedRetirement(entry) || entry.threadId || entry.receiptThreadId),
     )
     .sort((a, b) => (a.capacityObservation?.at ?? 0) - (b.capacityObservation?.at ?? 0))
     .filter(
@@ -318,6 +313,9 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
       (record.phase !== 'blocked' ||
         (record.result?.outcome === 'operator-setup-blocker' &&
           record.result.code === 'dispatch-assignment-superseded')) &&
+      (record.result?.outcome !== 'operator-setup-blocker' ||
+        Boolean(record.retry) ||
+        record.result.code === 'dispatch-assignment-superseded') &&
       (record.retryAfter ?? 0) <= now,
   )) {
     const intake = dispatchAdmission(pending, admitted.records);
@@ -419,6 +417,9 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         !record?.request &&
         (!deps.claims || record?.claimPass !== (tx.operatorInput?.turnId ?? state.run!.id)) &&
         (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
+        (record?.result?.outcome !== 'operator-setup-blocker' ||
+          Boolean(record.retry) ||
+          record.intakeId !== intake.id) &&
         (record?.retryAfter ?? 0) <= now,
     )?.intake;
   if (!intake) return checked('idle');
