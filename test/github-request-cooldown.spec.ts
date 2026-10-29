@@ -46,6 +46,19 @@ describe('core/github-request-cooldown', () => {
     assert.equal(cooldown.inspect('account', ['api', '/user']), undefined);
   });
 
+  it('should not retain cooldowns from incomplete responses', () => {
+    for (const metadata of [
+      { truncated: true },
+      { stdoutTruncatedBytes: 1 },
+      { stderrTruncatedBytes: 1 },
+      { signal: 'SIGTERM' },
+    ]) {
+      const cooldown = new GitHubRequestCooldown(() => 100000);
+      cooldown.observe('account', { ...response(429, ['retry-after: 120']), ...metadata });
+      assert.equal(cooldown.inspect('account', ['api', '/user']), undefined);
+    }
+  });
+
   it('should honor retry-after without confusing a permission denial with throttling', () => {
     const cooldown = new GitHubRequestCooldown(() => 100000);
     cooldown.observe(

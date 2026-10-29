@@ -1,3 +1,4 @@
+import cliOutputComplete from '../../api/cli-output-complete.ts';
 import defineAgentSystemCliTool from '../../api/define-cli-tool.ts';
 import AgentSystemToolError, { type AgentSystemToolErrorCode } from '../../api/error.ts';
 import githubCredentialRejected from '../../credentials/github-rejection.ts';
@@ -156,7 +157,6 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
         };
       },
       executable: 'gh',
-      maxOutputBytes: 65_536,
       prepareRequest(input, configuration, scope) {
         const key = scope.credentialScope
           ? JSON.stringify([scope.credentialScope, configuration.host, configuration.username])
@@ -168,7 +168,7 @@ export function createGitHubTool(dependencies: GitHubToolDependencies) {
             if (!pending) {
               pending = (async () => {
                 const result = await scope.run(['api', 'user']);
-                if (result.exitCode !== 0 || result.truncated || result.timedOut)
+                if (result.exitCode !== 0 || !cliOutputComplete(result))
                   toolError('execution_failed', 'GitHub account identity could not be verified.');
                 let identity: unknown;
                 try {

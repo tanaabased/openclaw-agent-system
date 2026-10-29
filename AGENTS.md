@@ -26,6 +26,10 @@
 - Treat preventing obvious cross-agent impersonation as a core product goal. Managed agents share an OS user, so provide practical agent-context and workspace guardrails without claiming complete isolation.
 - Keep the central native-tool instruction in `before_prompt_build`, inject descendant authority through `resolve_exec_env` for native execution, verify the configured per-agent `CODEX_HOME` for OpenClaw-hosted Codex execution, and keep the high-confidence operator-command gate in `before_tool_call`. Block with an actionable native retry instead of claiming transparent cross-tool rewriting, and never log the inspected raw command.
 
+## Runtime defaults
+
+- Inherit supported runtime and provider defaults unless a concrete Agent System invariant requires an override. Do not duplicate upstream constants or add arbitrary local caps. Document the invariant and verification for any exception; adapters without a host default must keep their own bounded, justified behavior.
+
 ## Policy design
 
 - Treat policy as manifest-configurable control over what a contained tool may do, not as the implementation of Agent System's non-configurable product invariants.

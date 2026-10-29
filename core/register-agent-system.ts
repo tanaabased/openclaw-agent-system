@@ -430,8 +430,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
           timeoutMs: 120_000,
           killGraceMs: commandTerminationGraceMs,
           killProcessTree: true,
-          maxCombinedOutputBytes: 1_048_576,
-          outputCapture: 'head',
           ...(signal ? { signal } : {}),
         });
       },

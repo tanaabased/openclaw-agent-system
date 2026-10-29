@@ -302,7 +302,6 @@ export function createGitToolDefinition(
         };
       },
       executable: 'git',
-      maxOutputBytes: 65_536,
       stdin(input) {
         return input.stdin;
       },

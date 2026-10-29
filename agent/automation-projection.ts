@@ -115,7 +115,6 @@ export function projectAutomation(
             input: '',
             timeoutSeconds,
             noOutputTimeoutSeconds: 3600,
-            outputMaxBytes: 16384,
           }
         : {
             kind: 'agentTurn',
@@ -171,6 +170,15 @@ export function automationPatch(
   current: NativeAutomation,
   desired: NativeAutomationSpec,
 ): Record<string, unknown> {
+  // the supported native update merges command payloads and cannot clear this field.
+  // refuse before mutation rather than leave an old cap installed or recreate its history.
+  if (
+    current.payload.kind === 'command' &&
+    desired.payload.kind === 'command' &&
+    current.payload.outputMaxBytes !== undefined &&
+    desired.payload.outputMaxBytes === undefined
+  )
+    throw new AutomationError('automation-output-limit-reset-unsupported');
   const patch: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(desired)) {
     if (automationHash(current[key] ?? null) !== automationHash(value)) patch[key] = value;

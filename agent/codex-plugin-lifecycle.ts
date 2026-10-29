@@ -1,5 +1,6 @@
 import { satisfies, valid, validRange } from 'semver';
 
+import cliOutputComplete from '../api/cli-output-complete.ts';
 import {
   assertPrivateStateLocksHeld,
   privateStateLockSignal,
@@ -19,6 +20,11 @@ interface CommandResult {
   code: number | null;
   stdout: string;
   stderr: string;
+  termination?: 'exit' | 'signal' | 'timeout' | 'no-output-timeout';
+  signal?: string | null;
+  killed?: boolean;
+  stdoutTruncatedBytes?: number;
+  stderrTruncatedBytes?: number;
 }
 interface PluginRecord {
   id: string;
@@ -115,7 +121,7 @@ export default function createCodexPluginLifecycleContribution(
     context.signal?.throwIfAborted();
     await context.assertCurrent?.();
     assertPrivateStateLocksHeld();
-    if (result.code !== 0) throw commandFailure(operation, result);
+    if (result.code !== 0 || !cliOutputComplete(result)) throw commandFailure(operation, result);
     return result;
   }
 

@@ -1,3 +1,4 @@
+import cliOutputComplete from '../../api/cli-output-complete.ts';
 import { managedCommandTimeoutMs, metadataCommandTimeoutMs } from '../../api/cli-budget.ts';
 import AgentSystemToolError from '../../api/error.ts';
 import type { AgentSystemCliResult, AgentSystemCliRunner } from '../../api/types.ts';
@@ -13,6 +14,7 @@ export const googleIdentityArgv = [
 ];
 
 export function googleFailureStatus(result: AgentSystemCliResult) {
+  if (!cliOutputComplete(result)) return 'failed';
   if (result.exitCode !== 0 && /API is not enabled/u.test(result.stderr)) return 'api-disabled';
   if (
     result.exitCode !== 0 &&
@@ -30,7 +32,9 @@ export function googleFailureStatus(result: AgentSystemCliResult) {
 export function assertGoogleResult(result: AgentSystemCliResult): void {
   if (result.timedOut)
     throw new AgentSystemToolError('execution_timed_out', 'Google request timed out.');
-  if (result.exitCode === 0 && !result.truncated) return;
+  if (!cliOutputComplete(result))
+    throw new AgentSystemToolError('execution_failed', 'Google returned an incomplete response.');
+  if (result.exitCode === 0) return;
   if (googleFailureStatus(result) === 'api-disabled')
     throw new AgentSystemToolError(
       'configuration_unavailable',
@@ -128,7 +132,6 @@ export default class GoogleClient {
         },
         excludedExecutableDirectories: [...this.excludedDirectories, cwd + '/bin'],
         ...(this.signal ? { signal: this.signal } : {}),
-        maxOutputBytes: 65536,
         timeoutMs:
           argv[0] === '--version' || (argv[0] === 'auth' && argv[1] === 'status')
             ? metadataCommandTimeoutMs

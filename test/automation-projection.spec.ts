@@ -76,6 +76,37 @@ describe('agent/automation-projection', () => {
     }
   });
 
+  it('should inherit capture for new commands and refuse an unresettable native override', () => {
+    const record = {
+      id: 'review',
+      marker: 'fixture',
+      hash: '',
+      triggerHash: '',
+      generation: 1,
+      anchorMs: 0,
+      removed: false,
+    };
+    const desired = projectAutomation(job({ run: ['node', 'task.js'] }), record, context);
+    assert.equal(Object.hasOwn(desired.payload, 'outputMaxBytes'), false);
+    const current = {
+      ...desired,
+      id: 'native',
+      configRevision: '1',
+      declarationKey: 'fixture',
+      agentId: context.agentId,
+      state: {},
+    };
+    assert.deepEqual(automationPatch(current, desired), {});
+    for (const outputMaxBytes of [16384, 12345]) {
+      const limited = { ...current, payload: { ...current.payload, outputMaxBytes } };
+      const original = structuredClone(limited);
+      assert.throws(() => automationPatch(limited, desired), {
+        code: 'automation-output-limit-reset-unsupported',
+      });
+      assert.deepEqual(limited, original);
+    }
+  });
+
   it('should project omitted and null zones locally and preserve explicit zones', () => {
     const record = {
       id: 'review',

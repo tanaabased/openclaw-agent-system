@@ -1,3 +1,4 @@
+import cliOutputComplete from '../api/cli-output-complete.ts';
 import GitHubRequestCooldown from '../core/github-request-cooldown.ts';
 import {
   GitHubAccountClientError,
@@ -51,18 +52,21 @@ export default async function connectCodexGitHubAccount(
       env: { GH_PROMPT_DISABLED: '1', GH_PAGER: 'cat' },
       input: stdin ?? '',
       timeoutMs: options?.timeoutMs ?? 30_000,
-      maxOutputBytes: options?.maxOutputBytes ?? 512 * 1024,
-      maxCombinedOutputBytes: options?.maxOutputBytes ?? 512 * 1024,
+      ...(options?.maxOutputBytes === undefined ? {} : { maxOutputBytes: options.maxOutputBytes }),
       killGraceMs: 1000,
       killProcessTree: true,
-      outputCapture: 'head',
       signal,
     });
     const captured = {
       stdout: result.stdout,
       stderr: result.stderr,
       exitCode: result.code,
-      timedOut: result.termination !== 'exit',
+      termination: result.termination,
+      signal: result.signal,
+      killed: result.killed,
+      stdoutTruncatedBytes: result.stdoutTruncatedBytes,
+      stderrTruncatedBytes: result.stderrTruncatedBytes,
+      timedOut: result.termination === 'timeout' || result.termination === 'no-output-timeout',
       truncated: Boolean(result.stdoutTruncatedBytes || result.stderrTruncatedBytes),
     };
     cooldown.observe('github.com:codex-host', captured);
@@ -75,7 +79,7 @@ export default async function connectCodexGitHubAccount(
     '--jq',
     '{login,nodeId:.node_id,type}',
   ]);
-  if (result.exitCode !== 0 || result.timedOut || result.truncated)
+  if (result.exitCode !== 0 || !cliOutputComplete(result))
     throw new GitHubAccountClientError(
       'intake-github-auth-unavailable',
       'The native GitHub identity check failed.',

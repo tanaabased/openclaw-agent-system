@@ -2,6 +2,7 @@ import type { Static, TSchema } from 'typebox';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 
+import cliOutputComplete from './cli-output-complete.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import resolveToolWorkingDirectory from './resolve-working-directory.ts';
 import { excludedToolExecutableDirectories } from './executable-requirements.ts';
@@ -260,12 +261,19 @@ export default async function executeAgentSystemCliTool<
           workspaceDir,
           options.excludedExecutableDirectories,
         ),
-        maxOutputBytes: options.definition.runner.maxOutputBytes ?? 65_536,
+        ...(options.definition.runner.maxOutputBytes === undefined
+          ? {}
+          : { maxOutputBytes: options.definition.runner.maxOutputBytes }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         ...(stdin === undefined ? {} : { stdin }),
         timeoutMs: control ? Math.min(metadataCommandTimeoutMs, remaining) : remaining,
       });
       throwIfCancelled();
+      if (control && !result.timedOut && !cliOutputComplete(result))
+        throw new AgentSystemToolError(
+          'execution_failed',
+          'The command returned incomplete control data.',
+        );
       return result;
     };
     const sanitize = (result: AgentSystemCliResult): AgentSystemCliResult => ({

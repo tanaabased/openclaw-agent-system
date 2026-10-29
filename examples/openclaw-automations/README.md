@@ -8,7 +8,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 - Public managed sync/list/run boundaries and repeated sync preserving the same native jobs.
 - Native display-name rename/removal while preserving the job, its completed run state, and separate chat binding.
 - A completed command receipt proving managed Git identity and a completed prompt in the owning agent context.
-- Failed command stdout, stderr, and exit status reaching the exact native run record with delivery disabled.
+- Failed command tails, truncation evidence, and exit status reaching the exact native run record with delivery disabled.
 - Exact native run IDs and durable completion evidence, rather than treating queued admission as success.
 
 ## What Does Not Belong Here
@@ -24,6 +24,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 - Both jobs recur hourly; explicit run requests exercise them immediately. Command receipts are written beside the checked-in manifest on the disposable runner.
 - Strict AIMock supplies one prompt completion; scheduling, the Gateway, and command execution remain real. No hosted provider credential or remote SSH is needed.
 - Source tests cover option/offline variants, one-shot retention, unmanaged jobs, stale authority, containment, timeout/cancellation cleanup, and thread-selection permutations.
+- The failure fixture emits 32 MiB per stream to exercise native truncation on the pinned host, then emits late markers and exits 17. It adds no model turn or provider call.
 - The output check reads `cron.runs`, the Gateway API supplying run cards. It verifies output propagation, not browser rendering or OpenClaw restart persistence.
 
 ## Setup
@@ -94,16 +95,16 @@ openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId,
 ```
 
 ```bash
-# should retain both streams and the actual exit of a failed command with notifications disabled
+# should retain late diagnostics and truncation evidence for a failed command with notifications disabled
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 cat failed-output.yaml >> automations.yaml
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 openclaw agent-system automations list --json > "$TMPDIR/automation-output-job.json"
 native=$(jq -er '.jobs[] | select(.id == "failed-output") | .nativeId' "$TMPDIR/automation-output-job.json")
-openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.delivery.mode == "none"'
+openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.delivery.mode == "none" and (.payload | has("outputMaxBytes") | not)'
 run_id=$(openclaw agent-system automations run failed-output --json | jq -er 'select(.status == "queued") | .runId | strings')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" failed-output "$run_id" error
-openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg runId "$run_id" '{id:$id,runId:$runId,limit:1}')" --json | jq -e --arg runId "$run_id" 'any(.entries[]; .runId == $runId and .status == "error" and (.summary | contains("stdout-fixture-marker")) and (.summary | contains("stderr-fixture-marker")) and any(.diagnostics.entries[]; .exitCode == 17))'
+openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg runId "$run_id" '{id:$id,runId:$runId,limit:1}')" --json | jq -e --arg runId "$run_id" 'any(.entries[]; .runId == $runId and .status == "error" and (.summary | contains("stdout-fixture-marker")) and (.summary | contains("stderr-fixture-marker")) and any(.diagnostics.entries[]; .exitCode == 17 and .truncated == true) and any(.summary | split("\n")[] | fromjson?; .id == "failed-output" and .exitCode == 17 and .termination == "exit" and .timedOut == false and .cancelled == false and .truncated == true and .stdoutTruncatedBytes > 0 and .stderrTruncatedBytes > 0))'
 ```
 
 ## Cleanup

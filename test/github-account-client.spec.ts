@@ -158,6 +158,16 @@ describe('core/github-account-client', () => {
       { exitCode: 1, stderr: 'HTTP 503', stdout: '', timedOut: false, truncated: false },
       { exitCode: 0, stderr: '', stdout: '{', timedOut: false, truncated: true },
       { exitCode: 0, stderr: '', stdout: '{}', timedOut: false, truncated: false },
+      ...[{ stdoutTruncatedBytes: 1 }, { stderrTruncatedBytes: 1 }, { signal: 'SIGTERM' }].map(
+        (metadata) => ({
+          exitCode: 0,
+          stdout: '{"login":"tanaabot","nodeId":"U_agent"}',
+          stderr: 'Bad credentials (HTTP 401)',
+          timedOut: false,
+          truncated: false,
+          ...metadata,
+        }),
+      ),
       new Error('private-network-error'),
     ]) {
       let executions = 0;
@@ -386,6 +396,7 @@ describe('core/github-account-client', () => {
       `${workspaceDir}/commands`,
       '/package/bin',
     ]);
+    assert.ok(requests.every((request) => !Object.hasOwn(request, 'maxOutputBytes')));
     assert.equal(requests[2]?.stdin, undefined);
     assert.equal(requests[2]?.environment.GH_TOKEN, '');
     assert.equal(requests[2]?.environment.GITHUB_TOKEN, '');

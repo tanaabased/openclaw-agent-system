@@ -904,7 +904,9 @@ export default class AutomationService {
       throw new AgentSystemLifecycleError(
         'automations',
         code,
-        `Automation reconciliation stopped (${code}).`,
+        code === 'automation-output-limit-reset-unsupported'
+          ? 'The native command job retains an output limit that this OpenClaw API cannot clear. Its schedule and history were preserved. Native support for clearing outputMaxBytes is required before this job can inherit capture defaults.'
+          : `Automation reconciliation stopped (${code}).`,
         error instanceof AutomationError ? { cause: error } : undefined,
         undefined,
         undefined,

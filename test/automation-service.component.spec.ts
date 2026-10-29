@@ -171,6 +171,25 @@ describe('agent/automation-service', () => {
   const mutations = () =>
     calls.filter(({ method }) => ['cron.add', 'cron.update'].includes(method));
 
+  it('should refuse legacy capture migration before changing native state or its receipt', async () => {
+    await service.reconcile(manifest, root);
+    native[0]!.payload.outputMaxBytes = 16384;
+    native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'ok' };
+    const { store } = await service.scope(manifest, root);
+    const ledger = await store.read();
+    ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+    await store.write(ledger);
+    const before = structuredClone(native);
+    const receipt = await store.read();
+    calls = [];
+    await assert.rejects(service.reconcile(manifest, root), {
+      code: 'automation-output-limit-reset-unsupported',
+    });
+    assert.deepEqual(mutations(), []);
+    assert.deepEqual(native, before);
+    assert.deepEqual(await store.read(), receipt);
+  });
+
   it('should relabel completed one-shots without rearming them or changing command hashes', async () => {
     await service.reconcile(manifest, root);
     native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'ok' };

@@ -1,3 +1,4 @@
+import cliOutputComplete from '../api/cli-output-complete.ts';
 import type { AgentSystemCliResult } from '../api/types.ts';
 import { parseGitHubApiResponse } from '../channels/github/provider/api-response.ts';
 import { githubCliDiagnostic } from '../credentials/github-diagnostic.ts';
@@ -30,6 +31,7 @@ export default class GitHubRequestCooldown {
   }
 
   observe(account: string, result: AgentSystemCliResult) {
+    if (!cliOutputComplete(result)) return;
     const diagnostic = githubCliDiagnostic(result);
     let rate;
     try {

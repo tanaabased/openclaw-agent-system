@@ -296,7 +296,12 @@ native model and effort defaults unless you specify a model and supported thinki
 level. Persistent jobs reuse their verified session and conversation history.
 Results stay in native run history unless you configure delivery. Command runs retain
 bounded stdout and stderr, even without delivery. Authorized Gateway operators can
-inspect output and truncation in run details; setup output stays private.
+inspect output and truncation in run details; setup output stays private. Agent System
+inherits OpenClaw capture defaults and forwards captured output without another cap.
+Existing native command jobs with an explicit `outputMaxBytes` cannot inherit those
+defaults through the supported native update API. Sync reports
+`automation-output-limit-reset-unsupported` and preserves the job and its history;
+migration requires native support for clearing that field.
 
 Timeouts include startup and range from 1 to 3600 seconds (default 1800). OpenClaw
 controls overlapping runs of the same job, retries, recovery, and daylight saving time;
@@ -743,8 +748,10 @@ command defaults to a 600-second timeout. Only the direct command object accepts
 `timeout-seconds`, an integer from `1` through `3600`; strings and arrays retain
 the default.
 
-Commands start in the bound workspace with closed stdin and a 64 KiB combined
-output capture limit. Timeouts terminate the command's process tree. Ordinary
+Commands start in the bound workspace with closed stdin. OpenClaw owns command
+capture defaults. Standalone Codex has no host capture API, so its process adapter
+retains the last 512 KiB per stream independently (at most 1 MiB of raw output),
+with truncation counts. Timeouts terminate the command's process tree. Ordinary
 runs report step ids, setup owner (`setup-host` or `setup-agent`), check/apply
 phase (including checks after apply), and known exit codes, timeouts, signals, or
 execution failures. Unavailable termination details stay unknown; command

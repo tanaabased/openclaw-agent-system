@@ -1,6 +1,7 @@
 import { chmod, lstat, mkdir, realpath } from 'node:fs/promises';
 import { relative } from 'node:path';
 
+import cliOutputComplete from '../../api/cli-output-complete.ts';
 import type { AgentSystemCliRunner } from '../../api/types.ts';
 import WorkspaceGitignoreService from '../../paths/workspace-gitignore-service.ts';
 import isPathContained from '../../utils/is-path-contained.ts';
@@ -225,7 +226,7 @@ export default class GitWorktreeLayoutService {
 
   async #runGit(argv: string[], cwd: string) {
     try {
-      return await this.#runCli({
+      const result = await this.#runCli({
         argv,
         cwd,
         environment: {
@@ -235,9 +236,9 @@ export default class GitWorktreeLayoutService {
         },
         executable: 'git',
         excludedExecutableDirectories: [...this.#excludedExecutableDirectories],
-        maxOutputBytes: 65_536,
         timeoutMs: 30_000,
       });
+      return cliOutputComplete(result) ? result : undefined;
     } catch {
       return undefined;
     }

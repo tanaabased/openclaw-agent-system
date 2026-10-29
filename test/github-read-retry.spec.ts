@@ -87,6 +87,9 @@ describe('github read retry', () => {
       ...[401, 403, 404, 429, 500, 422].map(reply),
       { ...reply(502), timedOut: true },
       { ...reply(502), truncated: true },
+      { ...reply(502), stdoutTruncatedBytes: 1 },
+      { ...reply(502), stderrTruncatedBytes: 1 },
+      { ...reply(502), signal: 'SIGTERM' },
       { ...reply(200), stdout: 'invalid JSON' },
       { ...reply(200), exitCode: 1, stderr: 'unknown error', stdout: '' },
     ]) {

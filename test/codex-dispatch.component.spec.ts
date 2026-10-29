@@ -741,6 +741,45 @@ describe('agent/codex-dispatch', () => {
     assert.doesNotMatch(comments[0]!.body, /Assignment accepted/u);
   });
 
+  it('should inherit native adapter capture and preserve signal versus timeout metadata', async () => {
+    const bin = join(root, 'bin');
+    await mkdir(bin);
+    await writeFile(join(bin, 'gh'), '', { mode: 0o700 });
+    const previousPath = process.env.PATH;
+    try {
+      process.env.PATH = bin;
+      for (const termination of ['signal', 'timeout', 'no-output-timeout'] as const) {
+        const connection = await connectCodexGitHubAccount(
+          workspace,
+          new AbortController().signal,
+          async (argv, options) => {
+            for (const field of ['maxOutputBytes', 'maxCombinedOutputBytes', 'outputCapture'])
+              assert.equal(Object.hasOwn(options, field), false);
+            const identity = argv.includes('/user');
+            return {
+              code: identity ? 0 : null,
+              stdout: identity ? JSON.stringify(fixture.client.identity) : 'tail',
+              stderr: '',
+              killed: !identity,
+              signal: identity ? null : 'SIGTERM',
+              termination: identity ? 'exit' : termination,
+              ...(identity ? {} : { stdoutTruncatedBytes: 7 }),
+            };
+          },
+        );
+        const result = await connection.account.execute(['api', '/fixture']);
+        assert.equal(result.termination, termination);
+        assert.equal(result.signal, 'SIGTERM');
+        assert.equal(result.timedOut, termination !== 'signal');
+        assert.equal(result.stdoutTruncatedBytes, 7);
+        assert.equal(result.truncated, true);
+        assert.equal(result.stdout, 'tail');
+      }
+    } finally {
+      process.env.PATH = previousPath;
+    }
+  });
+
   it('should claim through the native github connection before preparing and accepting a verified chat', async () => {
     const comments: Array<GitHubCanonicalIssueComment & { bodyLength: number; issueUrl: string }> =
       [];
