@@ -8,7 +8,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 - Public managed sync/list/run boundaries and repeated sync preserving the same native jobs.
 - Shared model/effort creation and same-chat updates, followed by a timer-fired occurrence with native execution evidence.
 - Native display-name rename/removal while preserving the job, its completed run state, and separate chat binding.
-- A completed command receipt proving managed Git identity and a completed prompt in the owning agent context.
+- Completed same-agent Install/Doctor through a command descendant and native prompt tools, including default setup, without per-occurrence approval.
 - Failed command stdout, stderr, and exit status reaching the exact native run record with delivery disabled.
 - Exact native run IDs and durable completion evidence, rather than treating queued admission as success.
 
@@ -23,7 +23,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 - The command uses an explicit command/args object; the prompt explicitly enables its default-enabled behavior while the command leaves that default implicit.
 
 - Jobs initially recur hourly. Run the command explicitly; after updating prompt settings, change its schedule to one minute from now and wait for the native timer. This adds a bounded wait, not another model turn. Command receipts are written beside the checked-in manifest on the disposable runner.
-- Strict AIMock supplies one prompt completion; scheduling, the Gateway, and command execution remain real. No hosted provider credential or remote SSH is needed.
+- Strict AIMock supplies Install, Doctor, and the final response; scheduling, native lifecycle authorization, setup, and command execution remain real. No hosted provider credential or remote SSH is needed. Native lifecycle approval is not automatically allowed; an unexpected approval stalls and fails the occurrence.
 - AIMock normalizes away request reasoning effort. Verify effort through the native embedded-run diagnostic correlated with the completed occurrence's session, not through the mock response or saved settings alone.
 - Source tests cover option/offline variants, one-shot retention, unmanaged jobs, stale authority, containment, timeout/cancellation cleanup, and thread-selection permutations.
 - The output check reads `cron.runs`, the Gateway API supplying run cards. It verifies output propagation, not browser rendering or OpenClaw restart persistence.
@@ -32,12 +32,12 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 
 ```bash
 # should prepare the packed plugin and strict scheduled-prompt fixture
-openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
+openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --yolo
 openclaw-aimock prepare --scenario openclaw-automations
 
 # should install the owning workspace before starting the gateway
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
-openclaw agent-system install --yes --json
+openclaw agent-system install --skip-setup --yes --json
 
 # should keep automation session choices local even when native sticky selection is global
 openclaw config set agents.defaults.modelSelectionScope global
@@ -86,10 +86,12 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 run_id=$(openclaw agent-system automations run identity --json | jq -er 'select(.status == "queued" and .execution == "unavailable") | .runId | strings')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" identity "$run_id"
 grep -F 'Tanaabot <tanaabot@tanaab.dev>' identity.git
+grep -Fx installed maintenance.installed
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 
 # should execute the next timer-fired prompt with the saved model and effort
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+rm maintenance.installed
 node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); jobs.find(({id})=>id==="prompt").schedule="in 1 minute"; fs.writeFileSync("automations.yaml",stringify(jobs));'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 native=$(jq -er '.jobs[] | select(.id == "prompt") | .nativeId' "$TMPDIR/automation-before.json")
@@ -102,6 +104,7 @@ done
 run_session=$(jq -er --arg id "$native" --argjson due "$due" '.entries[] | select(.jobId == $id and .runAtMs >= $due and .status == "ok" and .provider == "aimock" and .model == "gpt-5.5") | .sessionId | strings' "$TMPDIR/automation-timer-run.json")
 grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "sessionId=$run_session " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
 openclaw-aimock evidence --scenario openclaw-automations --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-automations/expected-evidence.json"
+grep -Fx installed maintenance.installed
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 
 # should rename and clear the automation label without replacing its job or chat

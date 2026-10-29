@@ -313,6 +313,20 @@ launchers, which check tool policy before loading credentials. Other executables
 as host commands under the same [containment limits](./CLI.md#trust-boundary) as setup.
 Rerun Install after changing a command declaration.
 
+Approving and activating an owned automation also authorizes its same-agent Install
+and Doctor calls for that occurrence, without another permission setting or recurring
+chat approval. Command jobs can call `openclaw agent-system install` and
+`openclaw agent-system doctor` (or `status`); prompt jobs use the native lifecycle tools,
+including OpenClaw-hosted Codex. The target comes from the verified job binding, never
+`--agent`, a replacement workspace, or prompt text. Ordinary setup children and later
+interactive turns do not inherit this authority. Expired, cancelled, changed, or
+unverifiable runs are refused; correct the reported condition before requesting another run.
+Install runs normal applicable setup unless the author chooses its supported skip
+options. Doctor runs checks without repairs. Activation does not override provider
+permissions, enrollment/pairing requirements, shared prerequisites, or the native
+prompt tools' operator-only scheduler-sync limitation. Standalone Codex retains its
+[native approval boundary](#codex-execution-and-ownership).
+
 Prompt jobs normally start a separate session for the configured agent. They use its
 resolved shared model and effort, then runtime overrides; absent settings inherit
 native defaults. Persistent jobs reuse their verified session and conversation history.

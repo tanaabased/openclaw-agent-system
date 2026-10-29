@@ -4,6 +4,7 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import executeAutomation from '../cli/automation-execute.ts';
 import type { SetupCommandResult } from '../agent/setup-runner.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
+import type { AutomationLifecycleCommandScope } from '../agent/automation-lifecycle-authority.ts';
 
 describe('cli/automation-execute', () => {
   async function execute(result: SetupCommandResult) {
@@ -20,6 +21,7 @@ describe('cli/automation-execute', () => {
     let stdout = '';
     let stderr = '';
     let retained = false;
+    let authority: AutomationLifecycleCommandScope | undefined;
     try {
       const code = await executeAutomation({
         id: 'job',
@@ -36,8 +38,14 @@ describe('cli/automation-execute', () => {
           }),
         } as never,
         commands: {
-          async run(_command: unknown, target: { captureOutput?: boolean }) {
+          async run(
+            _command: unknown,
+            target: { captureOutput?: boolean; automation?: AutomationLifecycleCommandScope },
+          ) {
             retained = target.captureOutput === true;
+            authority = target.automation;
+            assert.ok(authority);
+            await authority.assertCurrent();
             return result;
           },
         } as never,
@@ -50,6 +58,9 @@ describe('cli/automation-execute', () => {
           },
         },
       });
+      assert.ok(authority);
+      assert.throws(() => authority!.assertActive());
+      await assert.rejects(authority.assertCurrent());
       return { code, stdout, stderr, retained };
     } finally {
       await rm(workspaceDir, { recursive: true, force: true });

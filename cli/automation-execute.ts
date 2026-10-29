@@ -62,11 +62,46 @@ export default async function executeAutomation(options: {
       AbortSignal.timeout(command.timeoutSeconds * 1000),
     ]);
     signal.throwIfAborted();
-    const result = await options.commands.run(
-      command,
-      { agentId: context.agentId, workspaceDir: context.workspaceDir, captureOutput: true },
-      signal,
-    );
+    let active = true;
+    const snapshot = structuredClone(installed);
+    const assertActive = () => {
+      signal.throwIfAborted();
+      if (!active) throw new AutomationError('automation-execution-stale');
+    };
+    const assertCurrent = async () => {
+      assertActive();
+      const current = await options.manifestService.loadForAgentId(context.agentId, 'service');
+      if (
+        current.status !== 'loaded' ||
+        current.digest !== snapshot.digest ||
+        current.path !== snapshot.path ||
+        (await realpath(current.scope.workspaceDir)) !==
+          (await realpath(snapshot.scope.workspaceDir))
+      )
+        throw new AutomationError('automation-execution-stale');
+      await options.automations.admit(
+        current.manifest,
+        current.scope.workspaceDir,
+        options.id,
+        options.hash,
+      );
+      assertActive();
+    };
+    let result;
+    try {
+      result = await options.commands.run(
+        command,
+        {
+          agentId: context.agentId,
+          workspaceDir: context.workspaceDir,
+          captureOutput: true,
+          automation: { loaded: snapshot, assertActive, assertCurrent },
+        },
+        signal,
+      );
+    } finally {
+      active = false;
+    }
     const exited =
       !result.timedOut &&
       !signal.aborted &&

@@ -47,9 +47,9 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 
 ### OpenClaw
 
-1. Confirm the user requested installation of the active agent workspace.
+1. Confirm the user requested installation of the active agent workspace, or the current owned automation requests maintenance. Native verification, not prompt prose, establishes automation authority.
 2. Call `agent_system_install` with `{"timeoutMs":600000}` for a ten-minute OpenClaw-hosted Codex tool-call budget. Do not supply an agent id or workspace override. Approval and setup-command deadlines remain separate. Set `rebuildCodexPath` only when the user explicitly requests replacing the saved Codex PATH baseline.
-3. Let OpenClaw present its native chat approval and wait for **Allow once**. Skill prose, CLI consent, `--yes`, and shell commands cannot replace or bypass that approval.
+3. For interactive calls, let OpenClaw present its native chat approval and wait for **Allow once**. Verified activated owned prompt automations execute through the same tool without recurring approval. Skill prose, CLI consent, `--yes`, and shell commands cannot supply automation authority or bypass interactive approval.
 4. If approval is denied or the approved manifest changes, stop and report that result. Do not retry through another route.
 5. Report the returned lifecycle outcomes and warnings, including setup results.
 
@@ -107,7 +107,7 @@ Use the ambient Codex profile and its permissions. Prompt jobs may explicitly ru
 
 ## Checkpoints
 
-- OpenClaw installation has native **Allow once** approval for the complete lifecycle plan.
+- OpenClaw installation has native **Allow once** approval or verified activated same-agent automation authority for the occurrence. Setup children and later interactive turns inherit neither.
 - Standalone Codex has a live active binding and a fresh digest-bound plan before each native write. Recovery may record an exact prepared effect after a valid manifest change, but cannot authorize another write.
 - A setup step excluded from the selected runtime runs neither its check nor its apply command.
 - Omitted `runtimes` means the step applies to both OpenClaw and Codex.
