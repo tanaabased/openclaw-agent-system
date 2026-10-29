@@ -73,7 +73,7 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 digest=$(jq -r .digest "$root/automation-plan.json")
 jq --arg digest "$digest" '. + {digest:$digest}' "$root/automation-input.json" > "$root/prepare-input.json"
-if node "$runtime" automations prepare --plugin-data "$root/automation-data" < "$root/prepare-input.json" > "$root/unsupported-create.json"; then exit 1; fi
+if node "$runtime" automations prepare --plugin-data "$root/automation-data" < "$root/prepare-input.json" 2> "$root/unsupported-create.json"; then exit 1; fi
 jq -e '.code == "automation-dtstart-create-unsupported" and (.message | contains("does not support DTSTART recurrences"))' "$root/unsupported-create.json"
 node "$runtime" automations inspect --plugin-data "$root/automation-data" < "$root/automation-input.json" \
   | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create"'
