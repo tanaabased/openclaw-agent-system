@@ -1,3 +1,4 @@
+import type { dispatchStorageNotice } from '../../../agent/dispatch-storage.ts';
 import type { GitHubNotificationRuntimeDiagnostic } from '../notification-policy.ts';
 import {
   githubNotificationItemMatchesSelector,
@@ -50,6 +51,7 @@ export interface GitHubNotificationStatusItem {
 }
 
 export interface GitHubNotificationStatusResult {
+  storage?: ReturnType<typeof dispatchStorageNotice>;
   scan?: { completedAt?: number; attemptedAt?: number };
   agentId: string;
   baseline: { observedAt?: number; status: 'pending' | 'ready' };

@@ -76,6 +76,10 @@
 - Bind managed GitHub reply candidates to their native workflow and exact authorized source across process and runtime boundaries. Direct operator-invoked replies retain their verified operator context and exact destination through the shared reply owner; do not require a fabricated managed workflow or an additional approval step beyond the existing publication contract. Staging text alone never authorizes publication.
 - Keep the issue as the conversation owner after delivery, freeze each admitted comment's exact source, and reauthorize that source before publishing its reply. Preserve raw provider prose separately from visible mention substitution and treat it as untrusted context.
 
+## Storage design
+
+- Agent System-owned storage must distinguish routine cleanup, new-work admission pressure, and emergency protection. Justify limits with concrete invariants and measurements, reserve headroom for admitted work to progress and retire, and preserve committed state when a proposed save exceeds its budget.
+
 ## Test design
 
 - Deliberately vary equivalent supported schema forms across existing fixtures when their normal behavior exercises them. Keep the variation deterministic and readable, preserve it through setup helpers, and supplement focused schema tests without adding a combinatorial matrix.

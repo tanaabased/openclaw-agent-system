@@ -1,9 +1,10 @@
+import { omit } from 'lodash-es';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
-import issueWorkflowProgress from './issue-workflow-progress.ts';
-import pendingPublicResponse from './pending-public-response.ts';
+import { automationHash } from './automation-hash.ts';
+import type { TerminalEffect } from './history-state.ts';
 
 type Record = OpenClawDispatchRecord & DispatchRecord;
 const terminalKeys = new Set([
@@ -19,6 +20,7 @@ const terminalKeys = new Set([
   'manifestDigest',
   'threadId',
   'worktree',
+  'worktreeAttemptId',
   'retired',
   'retirement',
   'nativeInactive',
@@ -26,19 +28,123 @@ const terminalKeys = new Set([
   'retainedHistory',
 ]);
 
+export function verifiedTerminalCleanup(record: SharedDispatchRecord) {
+  const cleanup = record.retirement;
+  return Boolean(
+    record.retired &&
+    cleanup &&
+    record.nativeInactive !== false &&
+    cleanup.worktreeRemovedAt !== undefined &&
+    (cleanup.archivedAt !== undefined || cleanup.sessionUnavailableObserved) &&
+    !cleanup.code &&
+    !cleanup.deadlinePending &&
+    cleanup.worktreeRemovedAt >= cleanup.at &&
+    (cleanup.archivedAt ?? cleanup.sessionUnavailableObserved!.at) >= cleanup.at &&
+    (!cleanup.archiveAttempt ||
+      (cleanup.archivedAt ?? cleanup.sessionUnavailableObserved!.at) >=
+        cleanup.archiveAttempt.at) &&
+    (!cleanup.worktreeRemovalAttemptedAt ||
+      cleanup.worktreeRemovedAt >= cleanup.worktreeRemovalAttemptedAt),
+  );
+}
+
 export function validTerminalRecord(record: SharedDispatchRecord) {
   return Boolean(
     record.retainedHistory?.terminal &&
-    record.retired &&
-    record.retirement &&
+    verifiedTerminalCleanup(record) &&
     Boolean(record.intakeId) !== Boolean(record.manualIssue) &&
-    record.retirement.worktreeRemovedAt !== undefined &&
-    (record.retirement.archivedAt !== undefined || record.retirement.sessionUnavailableObserved) &&
-    !record.retirement.code &&
-    !record.retirement.deadlinePending &&
-    record.nativeInactive !== false &&
     Object.keys(record).every((key) => terminalKeys.has(key)),
   );
+}
+
+function terminalEffects(record: Record): TerminalEffect[] {
+  const effects: TerminalEffect[] = [];
+  if (record.denial)
+    effects.push({
+      kind: 'native-denial',
+      id: record.denial.callId,
+      status: 'held',
+      hold: record.denial.reason ?? record.denial.operation,
+    });
+  for (const summary of record.assessmentSummaries ?? []) {
+    if (!summary.receipt && !summary.attempt && !summary.code && !summary.nativeDenial) continue;
+    effects.push({
+      kind: 'assessment-summary',
+      id: summary.resultDigest,
+      revision: String(summary.revision),
+      status: summary.receipt
+        ? 'published'
+        : summary.code || summary.nativeDenial
+          ? 'held'
+          : 'uncertain',
+      receipt: summary.receipt,
+      attempt: summary.attempt,
+      code: summary.code,
+      previewDigest: summary.previewDigest,
+      nativeDenial: summary.nativeDenial,
+    });
+  }
+  for (const event of record.feedback?.events ?? []) {
+    if (event.receipt || event.publicationAttempted || event.policyHeld || event.code || event.work)
+      effects.push({
+        kind: 'feedback',
+        id: event.id,
+        sourceId: event.sourceId,
+        revision: event.revision,
+        nodeId: event.nodeId,
+        status: event.receipt
+          ? 'published'
+          : event.policyHeld || event.code
+            ? 'held'
+            : event.publicationAttempted
+              ? 'uncertain'
+              : event.phase,
+        outcome: event.work?.result?.outcome,
+        receipt: event.receipt,
+        attempt: event.publicationAttempted ? event.id : undefined,
+        reported: event.reported,
+        hold: event.policyHeld,
+        code: event.code,
+      });
+  }
+  for (const event of record.feedback?.completed ?? [])
+    effects.push({ kind: 'feedback', ...event, status: 'published', reported: true });
+  const deliveries = [
+    record.delivery,
+    record.work?.delivery,
+    ...(record.feedback?.events ?? []).map((event) => event.workDelivery),
+  ];
+  for (const delivery of deliveries) {
+    if (!delivery) continue;
+    effects.push({
+      kind: 'delivery',
+      id: delivery.id,
+      status: delivery.reconciled
+        ? 'reconciled'
+        : delivery.creationAttempted
+          ? 'uncertain'
+          : 'prepared',
+      repositoryId: delivery.binding.repositoryId,
+      issueId: delivery.binding.issueId,
+      branch: delivery.binding.branch,
+      head: delivery.binding.head,
+      pushedHead: delivery.pushedHead,
+      pendingPush: delivery.pendingPush,
+      contentDigest: delivery.contentUpdate ? automationHash(delivery.contentUpdate) : undefined,
+      pullRequest: delivery.pullRequest,
+    });
+    const announcement = delivery.announcement;
+    if (announcement && (announcement.receipt || announcement.attempted || announcement.code))
+      effects.push({
+        kind: 'delivery-announcement',
+        id: announcement.publicationId,
+        status: announcement.receipt ? 'published' : announcement.code ? 'held' : 'uncertain',
+        receipt: announcement.receipt,
+        attempt: announcement.attempted ? announcement.publicationId : undefined,
+        code: announcement.code,
+      });
+  }
+  return effects;
 }
 
 function deliverySettled(delivery: Record['delivery'] | NonNullable<Record['work']>['delivery']) {
@@ -75,13 +181,12 @@ export function settledFeedback(event: FeedbackSourceEvent) {
   );
 }
 
-/** project only settled detail; callers archive the original before committing this clone. */
+/** project terminal or settled detail; archive the original before committing this clone. */
 export default function retainDispatchHistory<R extends SharedDispatchRecord>(
   source: R,
 ): R | undefined {
   if (source.retainedHistory?.terminal) return;
   const record = structuredClone(source) as unknown as Record;
-  const live = { ...record, retired: undefined, retirement: undefined, reset: undefined };
   const events = record.feedback?.events ?? [];
   const nativeTurns = [
     record.firstTurn,
@@ -93,28 +198,33 @@ export default function retainDispatchHistory<R extends SharedDispatchRecord>(
     record.work?.turn,
     record.work?.deliveryTurn,
   ];
-  const terminal = Boolean(
-    record.retired &&
-    record.retirement &&
-    record.nativeInactive !== false &&
-    (record.directAssessments ?? []).every((entry) => entry.result?.outcome === 'plan-ready') &&
-    record.retirement.worktreeRemovedAt !== undefined &&
-    (record.retirement.archivedAt !== undefined || record.retirement.sessionUnavailableObserved) &&
-    !record.retirement.code &&
-    !record.retirement.deadlinePending &&
-    !pendingPublicResponse(live) &&
-    (!record.result || record.result.outcome === 'plan-ready') &&
-    (!record.request || record.phase === 'complete') &&
-    nativeTurns.every((turn) => !turn || turn.status === 'completed') &&
-    ((!record.work && !record.continuation) || issueWorkflowProgress(live).action === 'complete') &&
-    deliverySettled(record.delivery ?? record.work?.delivery) &&
-    events.every(settledFeedback),
-  );
-  if (terminal) {
+  if (verifiedTerminalCleanup(record)) {
     const retainedHistory = {
       ...record.retainedHistory,
       entries: record.retainedHistory?.entries ?? [],
       terminal: true as const,
+      outcome: {
+        assessment: record.result?.outcome ?? 'missing',
+        implementation: (record.work?.result ?? record.continuation?.result)?.outcome ?? 'missing',
+        continuation: record.continuation?.phase,
+        code:
+          record.blocker ??
+          record.retry?.code ??
+          record.work?.code ??
+          (record.result?.outcome === 'operator-setup-blocker' ? record.result.code : undefined),
+        turns: [
+          ...nativeTurns,
+          ...(record.work?.previousTurns ?? []).map((entry) => entry.turn),
+          ...(record.feedback?.events ?? []).map((event) => event.turn),
+        ]
+          .filter((turn) => turn !== undefined)
+          .map((turn) => omit(turn, ['message', 'executionModel'])),
+        assessments: (record.directAssessments ?? []).map((entry) => ({
+          id: entry.id,
+          outcome: entry.result?.outcome ?? 'missing',
+        })),
+      },
+      effects: terminalEffects(record),
       ...(record.sessionCreation?.sessionId ? { sessionId: record.sessionCreation.sessionId } : {}),
       ...((record.delivery ?? record.work?.delivery)?.pullRequest
         ? { pullRequest: (record.delivery ?? record.work?.delivery)!.pullRequest }

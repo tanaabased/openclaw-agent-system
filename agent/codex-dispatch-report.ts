@@ -1,3 +1,4 @@
+import { dispatchStorageNotice } from './dispatch-storage.ts';
 import { dispatchAdmission, type ManagedIssueState as IntakeState } from './managed-issue.ts';
 import providerErrorMessage from '../utils/provider-error-message.ts';
 import intakeDebug from './intake-debug.ts';
@@ -30,6 +31,7 @@ export default function prepareDispatchReport(input: {
   currentTimeIso: string;
 }) {
   const { state, intake } = input;
+  const storage = dispatchStorageNotice(state);
   const discovery = discoveryNotice(state.discoveryProgress);
   const active = state.records.filter(
     (record) => !record.retired && !record.retirement && !record.reset,
@@ -158,7 +160,14 @@ export default function prepareDispatchReport(input: {
   const failures = observations.filter(
     (entry, index) => !entry.code.startsWith('retirement-') || notices[index]!.severity !== 'info',
   );
-  const health = failures.length || history.length ? automationHash({ failures, history }) : '';
+  const health =
+    failures.length || history.length || storage.level !== 'normal'
+      ? automationHash({
+          failures,
+          history,
+          ...(storage.level !== 'normal' ? { storage: storage.key } : {}),
+        })
+      : '';
   // older opaque hashes mixed historical diagnostics with failures; they cannot prove recovery.
   const recovered = !health && state.intakeHealthVersion === 1 && Boolean(state.intakeHealth);
   const severity = notices.some((notice) => notice.severity === 'error')
@@ -205,6 +214,14 @@ export default function prepareDispatchReport(input: {
                   ? `💡 Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
                   : '💡 Intake checked';
   const lines = ['## ' + title, ''];
+  if (storage.level !== 'normal' || recovered)
+    lines.push(
+      storage.message,
+      storage.level === 'normal'
+        ? 'Journal pressure is clear.'
+        : 'Reconcile retired history. New admissions pause at 32 MiB; existing tasks can continue within the emergency budget.',
+      '',
+    );
   if (recovered) lines.push('The earlier intake problem has cleared.', '');
   for (const record of started)
     lines.push(

@@ -51,7 +51,7 @@ describe('agent/history retention filesystem', () => {
 
   for (const Store of [CodexDispatchStore, OpenClawDispatchStore]) {
     const runtime = Store === CodexDispatchStore ? 'codex' : 'openclaw';
-    it(`should offload above two mib and cross cumulative four mib in ${runtime} without losing identities`, async () => {
+    it(`should offload retirement immediately and cross cumulative four mib in ${runtime} without losing identities`, async () => {
       const store = new Store(root, scope) as DispatchStore<
         DispatchRecord | OpenClawDispatchRecord
       >;
@@ -59,7 +59,7 @@ describe('agent/history retention filesystem', () => {
         state.records.push(retired(1));
         await save();
       });
-      assert.equal((await store.read()).records[0]!.retainedHistory, undefined);
+      assert.equal((await store.read()).records[0]!.retainedHistory?.terminal, true);
       const originals = Array.from({ length: 36 }, (_, i) => retired(i + 2));
       const pending = { ...retired(99), retired: undefined, retirement: undefined };
       await store.transaction(async (state, save) => {
@@ -93,6 +93,24 @@ describe('agent/history retention filesystem', () => {
         'history-unavailable',
       );
       assert.deepEqual(await restarted.read(), saved);
+    });
+
+    it(`should recover existing retired detail on same-store reconciliation in ${runtime}`, async () => {
+      const store = new Store(root, scope);
+      const original = retired(1);
+      await writeFile(
+        store.path,
+        JSON.stringify({ version: 1, scope, resetGeneration: 'initial', records: [original] }),
+        { mode: 0o600 },
+      );
+      assert.equal((await store.read()).records[0]!.context, original.context);
+      await store.reconcile();
+      const saved = (await store.read()).records[0]!;
+      assert.ok(saved.retainedHistory?.terminal);
+      assert.equal(saved.id, original.id);
+      const cold = await store.history.read(saved.retainedHistory!.entries[0]!, Date.now());
+      assert.equal(cold.status, 'available');
+      if (cold.status === 'available') assert.deepEqual(cold.value, original);
     });
 
     it(`should keep completed feedback out of the runnable limit across restart in ${runtime}`, async () => {
@@ -194,7 +212,7 @@ describe('agent/history retention filesystem', () => {
       assert.ok(saved.records.every((r) => r.retainedHistory?.terminal));
     });
 
-    it(`should preserve protected-only exhaustion and reject stale resurrection in ${runtime}`, async () => {
+    it(`should allow previously exhausted active work and reject stale resurrection in ${runtime}`, async () => {
       const store = new Store(root, scope) as DispatchStore<
         DispatchRecord | OpenClawDispatchRecord
       >;
@@ -211,21 +229,19 @@ describe('agent/history retention filesystem', () => {
         stale.context = 'late edit';
         await assert.rejects(save(), /snapshot-conflict|dispatch-state-invalid/);
       });
-      const before = await readFile(store.path, 'utf8');
-      await assert.rejects(
-        store.exclusive(async (state, save) => {
-          state.records.push(
-            ...Array.from({ length: 40 }, (_, i) => ({
-              ...retired(i + 100),
-              retired: undefined,
-              retirement: undefined,
-            })),
-          );
-          await save();
-        }),
-        /dispatch-state-capacity/,
-      );
-      assert.equal(await readFile(store.path, 'utf8'), before);
+      await store.exclusive(async (state, save) => {
+        state.records.push(
+          ...Array.from({ length: 40 }, (_, i) => ({
+            ...retired(i + 100),
+            retired: undefined,
+            retirement: undefined,
+          })),
+        );
+        await save();
+      });
+      const saved = await store.read();
+      assert.equal(saved.records.length, 61);
+      assert.ok(Buffer.byteLength(JSON.stringify(saved)) > 4 * 1024 * 1024);
     });
 
     for (const mutation of ['update', 'reset'] as const) {
@@ -246,7 +262,7 @@ describe('agent/history retention filesystem', () => {
             if (mutation === 'reset') await concurrent.reset('new-generation');
             else
               await concurrent.exclusive(async (state, save) => {
-                state.records[0]!.context = 'newer evidence';
+                state.records[0]!.intakeReportedAt = 123;
                 await save();
               });
           }
@@ -266,7 +282,7 @@ describe('agent/history retention filesystem', () => {
           assert.deepEqual(saved.records, []);
         } else {
           assert.equal(saved.records.length, 1);
-          assert.equal(saved.records[0]!.context, 'newer evidence');
+          assert.equal(saved.records[0]!.intakeReportedAt, 123);
         }
       });
     }

@@ -3459,16 +3459,16 @@ describe('agent/codex-dispatch', () => {
       await next();
       const retired = (await store.read()).records[0]!;
       assert.equal(retired.retired?.at, now);
-      assert.equal(retired.result?.summary, result.summary);
+      assert.equal(retired.retainedHistory?.outcome?.assessment, result.outcome);
+      assert.equal(retired.result, undefined);
       if (reason === 'operator request') {
         assert.equal((await request('retire', { id: prepared.id }, operator)).status, 'retired');
-        await store.exclusive(async (state, save) => {
-          delete state.records[0]!.retirement!.archivedAt;
-          await save();
-        });
-        assert.equal(
-          (await request('retire', { id: prepared.id }, operator)).status,
-          'retirement-unverified',
+        await assert.rejects(
+          store.exclusive(async (state, save) => {
+            delete state.records[0]!.retirement!.archivedAt;
+            await save();
+          }),
+          /dispatch-state-invalid/,
         );
       }
     });
