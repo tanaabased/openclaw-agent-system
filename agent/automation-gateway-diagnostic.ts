@@ -6,6 +6,7 @@ import type { AutomationGateway } from './automation-gateway.ts';
 
 export interface AutomationGatewayDiagnostic extends GatewayErrorDiagnostic {
   method: Parameters<AutomationGateway>[0];
+  automationId?: string;
   reason?:
     | 'agent-unknown'
     | 'agent-session-mismatch'
@@ -14,6 +15,13 @@ export interface AutomationGatewayDiagnostic extends GatewayErrorDiagnostic {
     | 'parameters-invalid'
     | 'model-not-allowed'
     | 'model-invalid'
+    | 'model-runtime-unavailable'
+    | 'model-selection-locked'
+    | 'runtime-restricted'
+    | 'session-key-reserved'
+    | 'workspace-invalid'
+    | 'model-catalog-loading'
+    | 'unclassified'
     | 'effort-invalid'
     | 'effort-unsupported';
 }
@@ -26,16 +34,23 @@ const resolverReasons = [
   'parameters-invalid',
 ] as const;
 const settingsReasons = [
-  'parameters-invalid',
+  ...resolverReasons,
   'model-not-allowed',
   'model-invalid',
   'effort-invalid',
   'effort-unsupported',
+  'model-runtime-unavailable',
+  'model-selection-locked',
+  'runtime-restricted',
+  'session-key-reserved',
+  'workspace-invalid',
+  'unclassified',
 ] as const;
 
 /** missing method evidence is unknown, never copied from arbitrary upstream text. */
 export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorDiagnostic & {
   method: AutomationGatewayDiagnostic['method'] | null;
+  automationId?: string;
   reason?: AutomationGatewayDiagnostic['reason'];
 } {
   const input = value && typeof value === 'object' ? value : {};
@@ -69,7 +84,25 @@ export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorD
             : []
         ).find((reason) => reason === input.reason)
       : undefined;
-  return { ...diagnostic, ...(reason ? { reason } : {}) };
+  const catalogLoading =
+    diagnostic.category === 'rejected' &&
+    diagnostic.gatewayCode === 'UNAVAILABLE' &&
+    (method === 'sessions.create' || method === 'sessions.patch') &&
+    'reason' in input &&
+    input.reason === 'model-catalog-loading';
+  const automationId =
+    method === 'sessions.create' &&
+    'automationId' in input &&
+    typeof input.automationId === 'string' &&
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.automationId) &&
+    input.automationId.length <= 128
+      ? input.automationId
+      : undefined;
+  return {
+    ...diagnostic,
+    ...(reason ? { reason } : catalogLoading ? { reason: 'model-catalog-loading' as const } : {}),
+    ...(automationId ? { automationId } : {}),
+  };
 }
 
 export default function automationGatewayDiagnostic(
@@ -79,7 +112,7 @@ export default function automationGatewayDiagnostic(
   const diagnostic: AutomationGatewayDiagnostic = { method, ...gatewayErrorDiagnostic(error) };
   // classify only known native rejections; never retain identifiers or raw prose.
   if (
-    method === 'sessions.resolve' &&
+    ['sessions.resolve', 'sessions.create', 'sessions.patch'].includes(method) &&
     diagnostic.category === 'rejected' &&
     diagnostic.gatewayCode === 'INVALID_REQUEST' &&
     error instanceof Error
@@ -114,6 +147,37 @@ export default function automationGatewayDiagnostic(
       )
     )
       diagnostic.reason = 'effort-unsupported';
+    else if (
+      /^Model [^\r\n]+ requires agent harness "[^"\r\n]+", but no enabled plugin provides it\. Install and enable its plugin, restart the Gateway, then select the model again\.$/.test(
+        error.message,
+      )
+    )
+      diagnostic.reason = 'model-runtime-unavailable';
+    else if (error.message === 'Model selection is locked for this session.')
+      diagnostic.reason = 'model-selection-locked';
+    else if (
+      error.message === 'Session key namespace is reserved for agent harness-owned sessions.'
+    )
+      diagnostic.reason = 'session-key-reserved';
+    else if (error.message === 'sessions.create cwd must be absolute')
+      diagnostic.reason = 'workspace-invalid';
+    else if (
+      'details' in error &&
+      error.details &&
+      typeof error.details === 'object' &&
+      'code' in error.details &&
+      error.details.code === 'AGENT_RUNTIME_RESTRICTED'
+    )
+      diagnostic.reason = 'runtime-restricted';
+    diagnostic.reason ??= 'unclassified';
   }
+  if (
+    (method === 'sessions.create' || method === 'sessions.patch') &&
+    diagnostic.category === 'rejected' &&
+    diagnostic.gatewayCode === 'UNAVAILABLE' &&
+    error instanceof Error &&
+    error.message === 'model catalog is still loading; retry in a few seconds'
+  )
+    diagnostic.reason = 'model-catalog-loading';
   return diagnostic;
 }

@@ -14,7 +14,7 @@ function fixture(
     now: number,
   ) => { statusCode: number; body: unknown; malformed?: boolean },
   authority: DispatchAuthority = {},
-  maxWaitMs = 30_000,
+  maxWaitMs = 90_000,
   requestElapsedMs = 0,
 ) {
   let now = 0;
@@ -49,7 +49,7 @@ function fixture(
           async request(port, path, timeoutMs, signal) {
             assert.equal(port, 23456);
             assert.equal(signal, controller.signal);
-            assert.ok(timeoutMs > 0 && timeoutMs <= 2_000 && timeoutMs <= 30_000 - now);
+            assert.ok(timeoutMs > 0 && timeoutMs <= 2_000 && timeoutMs <= maxWaitMs - now);
             calls.push({ path, timeoutMs, at: now });
             try {
               return response(path, now);
@@ -74,6 +74,18 @@ const loading = (phase = 'reloading') => ({
 });
 
 describe('credentials/session-dispatch-readiness', () => {
+  it('should finish a cold reload beyond the old budget without restarting its deadline', async () => {
+    const f = fixture((path, now) =>
+      path === '/startupz'
+        ? started
+        : now < 45_000
+          ? loading(now < 30_000 ? 'reloading' : 'recovering')
+          : ready,
+    );
+    assert.equal((await f.run()).ready, true);
+    assert.equal(f.now(), 45_000);
+    assert.equal(f.evidence()?.maxWaitMs, 90_000);
+  });
   it('should wait through gateway startup and plugin replacement before starting authentication', async () => {
     const f = fixture((path, now) => {
       if (path === '/startupz')
@@ -150,8 +162,8 @@ describe('credentials/session-dispatch-readiness', () => {
           phase: 'connection',
           reasonCode: 'gateway-readiness-deadline',
         });
-        assert.equal(readinessEvidence?.elapsedMs, 30_000);
-        assert.equal(readinessEvidence?.maxWaitMs, 30_000);
+        assert.equal(readinessEvidence?.elapsedMs, 90_000);
+        assert.equal(readinessEvidence?.maxWaitMs, 90_000);
         assert.equal(readinessEvidence?.totalObservations, f.calls.length);
         assert.equal(readinessEvidence?.observations.length, readinessObservationLimit);
         assert.equal(
@@ -168,8 +180,8 @@ describe('credentials/session-dispatch-readiness', () => {
         assert.ok(!JSON.stringify(error).includes('private-token'));
         return true;
       });
-      assert.equal(f.now(), 30_000);
-      assert.ok(f.calls.every((call) => call.at < 30_000));
+      assert.equal(f.now(), 90_000);
+      assert.ok(f.calls.every((call) => call.at < 90_000));
     }
   });
 

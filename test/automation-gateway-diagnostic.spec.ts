@@ -6,6 +6,67 @@ import automationGatewayDiagnostic, {
 import { AutomationError } from '../agent/automation-gateway.ts';
 
 describe('agent/automation-gateway-diagnostic', () => {
+  it('should retain native runtime restrictions and catalog readiness without copying private details', () => {
+    for (const [gatewayCode, message, details, expected] of [
+      [
+        'INVALID_REQUEST',
+        'secret message',
+        {
+          code: 'AGENT_RUNTIME_RESTRICTED',
+          runtimeId: 'secret-runtime',
+          recovery: { sessionId: 'secret-id' },
+        },
+        'runtime-restricted',
+      ],
+      [
+        'UNAVAILABLE',
+        'model catalog is still loading; retry in a few seconds',
+        { token: 'secret-token' },
+        'model-catalog-loading',
+      ],
+    ] as const) {
+      const error = Object.assign(new Error(message), {
+        name: 'GatewayClientRequestError',
+        gatewayCode,
+        retryable: false,
+        details,
+      });
+      const diagnostic = automationGatewayDiagnostic('sessions.create', error);
+      assert.equal(diagnostic.reason, expected);
+      assert.deepEqual(retainAutomationGatewayDiagnostic(diagnostic), diagnostic);
+      assert.doesNotMatch(JSON.stringify(diagnostic), /secret/);
+      assert.equal(
+        retainAutomationGatewayDiagnostic({ ...diagnostic, method: 'cron.add' }).reason,
+        undefined,
+      );
+    }
+  });
+  it('should retain only bounded automation identity for session creation diagnostics', () => {
+    const diagnostic = {
+      method: 'sessions.create',
+      category: 'rejected',
+      gatewayCode: 'INVALID_REQUEST',
+      reason: 'unclassified',
+    };
+    assert.equal(
+      retainAutomationGatewayDiagnostic({ ...diagnostic, automationId: 'github-issue-assignment' })
+        .automationId,
+      'github-issue-assignment',
+    );
+    for (const automationId of ['private/token', 'token\nvalue', 'a'.repeat(129), {}, null])
+      assert.equal(
+        retainAutomationGatewayDiagnostic({ ...diagnostic, automationId }).automationId,
+        undefined,
+      );
+    assert.equal(
+      retainAutomationGatewayDiagnostic({
+        ...diagnostic,
+        method: 'cron.add',
+        automationId: 'intake',
+      }).automationId,
+      undefined,
+    );
+  });
   it('should retain bounded create and patch rejection reasons without model values or raw payloads', () => {
     for (const method of ['sessions.create', 'sessions.patch'] as const) {
       for (const [message, reason] of [
@@ -13,6 +74,18 @@ describe('agent/automation-gateway-diagnostic', () => {
         ['model not allowed: secret-model', 'model-not-allowed'],
         ['invalid model: secret-model', 'model-invalid'],
         ['invalid thinkingLevel (use secret-levels)', 'effort-invalid'],
+        ['Unknown agent id "secret-agent"', 'agent-unknown'],
+        [
+          'Model secret/model requires agent harness "secret-runtime", but no enabled plugin provides it. Install and enable its plugin, restart the Gateway, then select the model again.',
+          'model-runtime-unavailable',
+        ],
+        ['Model selection is locked for this session.', 'model-selection-locked'],
+        [
+          'Session key namespace is reserved for agent harness-owned sessions.',
+          'session-key-reserved',
+        ],
+        ['sessions.create cwd must be absolute', 'workspace-invalid'],
+        ['new native rejection containing secret-token', 'unclassified'],
         [
           'thinkingLevel "secret-effort" is not supported for secret-provider/secret-model (use secret-levels)',
           'effort-unsupported',
@@ -145,7 +218,7 @@ describe('agent/automation-gateway-diagnostic', () => {
       assert.ok(retained.message.includes(`sessions.resolve: ${reason}`));
       assert.ok(!JSON.stringify(diagnostic).includes('secret'));
       assert.ok(!retained.message.includes('secret'));
-      assert.equal(automationGatewayDiagnostic('sessions.create', error).reason, undefined);
+      assert.equal(automationGatewayDiagnostic('sessions.create', error).reason, reason);
       error.gatewayCode = 'UNAVAILABLE';
       assert.equal(automationGatewayDiagnostic('sessions.resolve', error).reason, undefined);
       assert.equal(
@@ -168,6 +241,7 @@ describe('agent/automation-gateway-diagnostic', () => {
       gatewayCode: 'INVALID_REQUEST',
       closeCode: null,
       requestDispatched: null,
+      reason: 'unclassified',
     });
     error.gatewayCode = 'SECRET_PROVIDER_CODE';
     const unknown = automationGatewayDiagnostic('sessions.patch', error);

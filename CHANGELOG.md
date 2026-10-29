@@ -4,6 +4,7 @@
 - Added `automations[].group` for shared uppercase Codex sections and OpenClaw categories, defaulting to `AGENT SYSTEM`. [#544](https://github.com/tanaabased/openclaw-agent-system/issues/544)
 - Added shared automation model/profile and effort selection, with verified updates to existing managed chats. [#556](https://github.com/tanaabased/openclaw-agent-system/issues/556)
 - Changed omitted automation models to inherit `models.default` when configured. Review effective settings before Install. [#556](https://github.com/tanaabased/openclaw-agent-system/issues/556)
+- Extended OpenClaw cold-install reload readiness to 90 seconds with a coordinated connection deadline, and added safe session-creation rejection reasons and the affected automation ID to Install diagnostics. [#568](https://github.com/tanaabased/openclaw-agent-system/issues/568)
 - Fixed Codex and OpenClaw issue chat titles to stay uppercase without repeated repository or issue prefixes, while allowing punctuation and Unicode. [#546](https://github.com/tanaabased/openclaw-agent-system/pull/546)
 - Fixed direct task handoff to reactivate a finished Codex chat from a verified new user turn while preserving its owner and prior work.
 - Fixed command capture to inherit OpenClaw defaults, migrate existing command automation limits to 16 MiB per stream without blocking scheduled execution, and preserve diagnostic tails with explicit truncation evidence. [#566](https://github.com/tanaabased/openclaw-agent-system/issues/566)

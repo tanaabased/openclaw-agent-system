@@ -21,6 +21,7 @@ first attempt's evidence before testing repeat installation.
 - Reuse the enrollment example's synthetic GitHub provider. Enrollment and native storage remain real; neither hosted credentials nor a model turn is needed. Both jobs stay disabled.
 - Setup, first Install, and dependent convergence checks share one fail-fast block. A missing prerequisite or failed first Install ends that journey; no shell retry can turn it green or create misleading downstream failures.
 - Session creation uses the shared 120-second budget, subject to earlier cancellation or enclosing deadlines; unrelated requests retain their native timeout. Controlled-time source tests prove the budget, while this scenario proves installed behavior. First-attempt failures remain fatal.
+- Enrollment allows up to 90 seconds for startup or plugin reload, within a 135-second connection deadline including authentication. Terminal reload failure and cancellation stop earlier. Session-creation failures report the automation ID and a safe native reason category; `unclassified` means the native rejection is not yet recognized, not that a timeout occurred.
 - Evidence is saved beneath `TMPDIR` before a repeat can change state. A Gateway log observation alone does not establish the failure's cause.
 
 ## Setup
