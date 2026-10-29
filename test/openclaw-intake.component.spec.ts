@@ -507,7 +507,7 @@ describe('openclaw v2 intake slice', () => {
       configRevision: '1',
       state: {},
     } as NativeAutomation;
-    assert.equal(desired.name, 'Agent System: github-issue-assignment');
+    assert.equal(desired.name, 'AGENT SYSTEM: github-issue-assignment');
     assert.deepEqual(desired.payload.toolsAllow, ['*']);
     const restricted = {
       ...current,

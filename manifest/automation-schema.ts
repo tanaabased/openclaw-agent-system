@@ -114,6 +114,8 @@ export interface AgentAutomation {
   overrides: Partial<Record<AutomationRuntime, AutomationOverride>>;
 }
 export type ResolvedAutomation = Omit<AgentAutomation, 'payload'> & {
+  /** trusted declaration origin; omitted for manifest-owned jobs, never accepted from yaml. */
+  origin?: 'builtin';
   /** Trusted runtime-derived settings; not accepted by the external manifest schema. */
   internalOpenClaw?: {
     trigger: { script: string };
