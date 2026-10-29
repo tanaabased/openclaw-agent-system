@@ -939,10 +939,14 @@ checks still apply. See the [Git](./tools/git/README.md#launcher-bindings) and
 
 ### Chat Approval
 
-The `install`, `doctor`, and `status` CLI routes remain operator-only, including
-setup descendants. Agents use the native [Install](./tools/install/README.md) or
-[Doctor](./tools/doctor/README.md) tool. CLI consent flags, a missing TTY, skill
-prose, and earlier approvals cannot substitute for native **Allow once**.
+Interactive agents use the native [Install](./tools/install/README.md) or
+[Doctor](./tools/doctor/README.md) tool. The CLI routes remain unavailable to
+ordinary agent and setup descendants. An admitted, activated same-agent command
+automation can use `install`, `doctor`, or `status` through its managed descendant;
+its target cannot be overridden. Verified owned prompt automations use the native
+tools without recurring approval. See [automation authorization](./MANIFEST.md#openclaw-execution-and-ownership).
+CLI consent flags, a missing TTY, skill prose, and earlier approvals do not grant
+this authority or substitute for interactive **Allow once**.
 
 OpenClaw displays the operation, agent, workspace, manifest digest, and setup
 scope before inspection, commands, or credential resolution. Select **Allow

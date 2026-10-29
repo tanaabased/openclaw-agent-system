@@ -13,3 +13,9 @@ setup-agent:
     printf 'checked\n' >> "$TMPDIR/agent-system-approval-check"
     test -f "$TMPDIR/agent-system-approval-apply"
   apply: printf 'applied\n' >> "$TMPDIR/agent-system-approval-apply"
+automations:
+  - id: maintenance
+    runtimes: [openclaw]
+    schedule: every 1 hour
+    timeout-seconds: 600
+    prompt: Scheduled same-agent maintenance. Use agent_system_install with default setup, then agent_system_doctor, once each, and report their completed results.

@@ -4,6 +4,8 @@ import { delimiter, join } from 'node:path';
 import AgentCommandAuthority, {
   agentCommandAuthorityEnvironmentName,
   agentCommandCapabilityEnvironmentName,
+  type AgentBoundCommand,
+  type AgentBoundCommandResult,
 } from './command-authority.ts';
 import createSetupCommandRunner, {
   SetupCommandError,
@@ -14,6 +16,7 @@ import type AgentSystemToolRegistry from '../api/registry.ts';
 import type AgentSystemToolRuntime from '../api/runtime.ts';
 import type { AgentSetupCommand } from '../manifest/setup-schema.ts';
 import type AgentManifestService from '../manifest/service.ts';
+import type { AutomationLifecycleCommandScope } from './automation-lifecycle-authority.ts';
 
 export interface BoundCommandServiceDependencies {
   authorityRoot?: string;
@@ -25,6 +28,11 @@ export interface BoundCommandServiceDependencies {
   temporaryDirectory?: string;
   toolRegistry: Pick<AgentSystemToolRegistry, 'invoke' | 'launcherBindings'>;
   toolRuntime: AgentSystemToolRuntime;
+  executeLifecycle?(
+    command: AgentBoundCommand,
+    scope: AutomationLifecycleCommandScope,
+    signal: AbortSignal,
+  ): Promise<AgentBoundCommandResult>;
 }
 
 /** own one bounded command authority; setup and scheduled jobs supply their own admission. */
@@ -37,6 +45,7 @@ export default class BoundCommandService {
       workspaceDir: string;
       mode?: 'check' | 'apply';
       captureOutput?: boolean;
+      automation?: AutomationLifecycleCommandScope;
     },
     signal?: AbortSignal,
   ): Promise<SetupCommandResult> {
@@ -51,6 +60,25 @@ export default class BoundCommandService {
       async executeCommand(input, binding, commandSignal) {
         try {
           commandSignal.throwIfAborted();
+          if (input.command === 'lifecycle') {
+            if (
+              !target.automation ||
+              target.mode ||
+              !dependencies.executeLifecycle ||
+              binding.agentId !== target.agentId
+            )
+              return {
+                exitCode: 1,
+                stdout: '',
+                stderr:
+                  'agent system operator commands are unavailable to ordinary agent or setup descendants without verified automation lifecycle authority. code=operator-command-denied\n',
+              };
+            return await dependencies.executeLifecycle(
+              input,
+              target.automation,
+              signal ? AbortSignal.any([signal, commandSignal]) : commandSignal,
+            );
+          }
           const result = await dependencies.toolRegistry.invoke(
             input.command,
             dependencies.toolRuntime,

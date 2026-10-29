@@ -5,7 +5,9 @@
 </p>
 
 Install applies the active agent's configuration and setup after native chat
-approval, using the same service as the operator CLI.
+approval, using the same service as the operator CLI. A verified activated owned
+prompt automation uses the same tool without recurring approval; see
+[automation authorization](../../MANIFEST.md#openclaw-execution-and-ownership).
 
 Approval also covers provisioning or enabling the release-pinned shared Codex
 prerequisite in this OpenClaw profile. If an existing shared version conflicts, an
@@ -29,7 +31,7 @@ when this step is needed.
 
 ## `agent_system_install`
 
-Request approval, then apply the active workspace's configuration and setup. See
+For interactive calls, request approval, then apply the active workspace's configuration and setup. See
 [chat approval](../../CLI.md#chat-approval) for consent lifetime, cancellation, and
 supported chat surfaces.
 
