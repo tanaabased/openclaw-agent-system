@@ -5853,50 +5853,136 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await work.run('next')).status, 'pending');
   });
 
-  it('should resume an explicit handoff through the existing implementation owner', async () => {
-    const assessment = { ...result, decision: { mode: 'plan', reasons: ['Await direction.'] } };
-    const work = await workIssue(assessment, 'Follow the plan.', 'company:implement', 'auto');
-    native!.followUpUserTurn = true;
-    native!.turnId = 'operator-' + now;
-    native!.status = 'active';
-    native!.turnStatus = 'inProgress';
-    work.continuation.continuationNative = async (_source, attempt) => {
-      assert.equal(attempt.origin, 'input');
-      assert.equal(attempt.inputId, 'operator-input');
-      return { status: 'verified', turnId: native!.turnId!, ended: false };
-    };
-    const child = { ...work.continuation, threadId: native!.id };
-    const preview = await request('handoff', { id: work.id }, child);
-    await request('handoff', { id: work.id, digest: preview.digest }, child);
-    const current = await selectCodexIntake(pluginData, deps);
-    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
-    const before = (await store.read()).records[0]!;
-    assert.ok(before.handoff);
-    assert.equal((await work.run('next')).status, 'idle');
-    await assert.rejects(work.run('context', {}, true), /continuation-managed-issue-required/);
-    const resumed = await runCodexDispatch(
-      pluginData,
-      'implementation',
-      {
-        action: 'implementation',
-        operation: 'context',
-        id: work.id,
-      },
-      child,
-    );
-    assert.ok(resumed && 'status' in resumed);
-    assert.equal(resumed.status, 'verified', JSON.stringify(resumed));
-    const after = (await store.read()).records[0]!;
-    assert.equal(after.handoff, undefined);
-    assert.deepEqual(after.continuation!.handoffs, [before.handoff]);
-    assert.deepEqual(after.result, before.result);
-    assert.equal(after.threadId, before.threadId);
-    assert.equal(after.worktree, before.worktree);
-    assert.equal(after.continuation!.attempt!.origin, 'input');
-    assert.equal(after.continuation!.attempt!.inputId, 'operator-input');
-    assert.equal(after.progression!.stage, 'implementation');
-    assert.equal((await work.run('context', {}, true)).status, 'verified');
-  });
+  for (const handedOff of [false, true])
+    it(`should reactivate an inactive task through its existing implementation owner with retained handoff ${handedOff}`, async () => {
+      const assessment = { ...result, decision: { mode: 'plan', reasons: ['Await direction.'] } };
+      const work = await workIssue(assessment, 'Follow the plan.', 'company:implement', 'auto');
+      native!.followUpUserTurn = true;
+      native!.turnId = 'operator-' + now;
+      native!.status = 'active';
+      native!.turnStatus = 'inProgress';
+      work.continuation.continuationNative = async (_source, attempt) => {
+        assert.equal(attempt.origin, 'input');
+        assert.equal(attempt.inputId, 'operator-input');
+        return { status: 'verified', turnId: native!.turnId!, ended: false };
+      };
+      const child = { ...work.continuation, threadId: native!.id };
+      const current = await selectCodexIntake(pluginData, deps);
+      const store = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      native!.turnEnded = false;
+      await store.exclusive(async (state, save) => {
+        const record = state.records[0]!;
+        record.nativeInactive = true;
+        record.capacityObservation = {
+          at: now - 1000,
+          code: 'dispatch-capacity-native-ended',
+          threadId: native!.id,
+          turnId: 'previous-ended-turn',
+        };
+        if (handedOff)
+          record.handoff = { at: now - 2000, by: native!.id, turnId: 'earlier-handoff' };
+        await save();
+      });
+      const inactive = (await store.read()).records[0]!;
+      const preview = await request('handoff', { id: work.id }, child);
+      assert.equal(preview.status, 'handoff-available');
+      assert.deepEqual((await store.read()).records[0], inactive);
+
+      await request('handoff', { id: work.id, digest: preview.digest }, child);
+      const before = (await store.read()).records[0]!;
+      assert.ok(before.handoff);
+      assert.equal(before.nativeInactive, undefined);
+      assert.equal(before.capacityObservation?.turnId, native!.turnId);
+      assert.equal(before.reservationVersion, 1);
+      if (handedOff) assert.deepEqual(before.handoff, inactive.handoff);
+      assert.equal((await work.run('next')).status, 'idle');
+      await assert.rejects(work.run('context', {}, true), /continuation-managed-issue-required/);
+      const resumed = await runCodexDispatch(
+        pluginData,
+        'implementation',
+        {
+          action: 'implementation',
+          operation: 'context',
+          id: work.id,
+          scope: 'local',
+        },
+        child,
+      );
+      assert.ok(resumed && 'status' in resumed);
+      assert.equal(resumed.status, 'verified', JSON.stringify(resumed));
+      const after = (await store.read()).records[0]!;
+      assert.equal(after.handoff, undefined);
+      assert.equal(after.continuation?.scope, 'local');
+      assert.deepEqual(after.continuation!.handoffs, [before.handoff]);
+      assert.deepEqual(after.result, before.result);
+      assert.equal(after.threadId, before.threadId);
+      assert.equal(after.worktree, before.worktree);
+      assert.equal(after.continuation!.attempt!.origin, 'input');
+      assert.equal(after.continuation!.attempt!.inputId, 'operator-input');
+      assert.equal(after.progression!.stage, 'implementation');
+      assert.equal((await work.run('context', {}, true)).status, 'verified');
+    });
+
+  for (const stale of [
+    'ended',
+    'unknown',
+    'same-turn',
+    'not-user',
+    'archived',
+    'wrong-caller',
+    'cancelled',
+    'denied',
+  ] as const)
+    it(`should preserve inactive custody when reactivation evidence is ${stale}`, async () => {
+      const work = await workIssue();
+      native!.followUpUserTurn = true;
+      native!.turnId = 'fresh-user-turn';
+      native!.turnEnded = false;
+      const current = await selectCodexIntake(pluginData, deps);
+      const store = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      await store.exclusive(async (state, save) => {
+        const record = state.records[0]!;
+        record.nativeInactive = true;
+        record.capacityObservation = {
+          at: now,
+          code: 'dispatch-capacity-native-ended',
+          threadId: native!.id,
+          turnId: 'previous-turn',
+        };
+        record.handoff = { at: now, by: native!.id, turnId: 'old-handoff' };
+        if (stale === 'cancelled' || stale === 'denied')
+          record.continuation = {
+            phase: stale === 'cancelled' ? 'cancelled' : 'blocked',
+            selection: record.assessment!,
+            policyDigest: 'a'.repeat(64),
+            ...(stale === 'denied' ? { code: 'continuation-native-approval-denied' } : {}),
+          };
+        await save();
+      });
+      if (stale === 'ended') native!.turnEnded = true;
+      if (stale === 'unknown') delete native!.turnEnded;
+      if (stale === 'same-turn') native!.turnId = 'previous-turn';
+      if (stale === 'not-user') native!.followUpUserTurn = false;
+      if (stale === 'archived') native!.archived = true;
+      const before = await store.read();
+      await assert.rejects(
+        request(
+          'handoff',
+          { id: work.id },
+          {
+            threadId: stale === 'wrong-caller' ? 'other-operator' : native!.id,
+          },
+        ),
+        /dispatch-handoff-native-inactive|implementation-cancelled|continuation-native-approval-denied/,
+      );
+      assert.deepEqual(await store.read(), before);
+    });
 
   for (const stopped of ['cancelled', 'denied', 'wrong-checkout'] as const)
     it(`should preserve a handoff when explicit resumption is ${stopped}`, async () => {

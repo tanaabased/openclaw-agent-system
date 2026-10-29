@@ -118,7 +118,9 @@ describe('agent/automation-service', () => {
           delete job.deleteAfterRun;
       }
       if (patch.payload) {
-        patch.payload = { ...job.payload, ...(patch.payload as object) };
+        const payload = patch.payload as Record<string, unknown>;
+        patch.payload =
+          payload.kind === job.payload.kind ? { ...job.payload, ...payload } : payload;
         for (const [key, value] of Object.entries(patch.payload as object))
           if (value === null) delete (patch.payload as Record<string, unknown>)[key];
       }
@@ -171,23 +173,89 @@ describe('agent/automation-service', () => {
   const mutations = () =>
     calls.filter(({ method }) => ['cron.add', 'cron.update'].includes(method));
 
-  it('should refuse legacy capture migration before changing native state or its receipt', async () => {
+  for (const state of ['recurring', 'disabled', 'completed'] as const)
+    it(`should migrate legacy capture for ${state} jobs without replacing or rescheduling them`, async () => {
+      if (state !== 'completed')
+        manifest.automations = jobs([
+          {
+            id: 'check',
+            schedule: 'every 1 hour',
+            enabled: state !== 'disabled',
+            run: ['gh', 'api', 'user'],
+          },
+        ]);
+      await service.reconcile(manifest, root);
+      assert.equal(native[0]!.payload.outputMaxBytes, undefined);
+      native[0]!.payload.outputMaxBytes = 16384;
+      native[0]!.state = {
+        lastRunAtMs: now,
+        lastRunStatus: 'ok',
+        ...(state === 'completed' ? {} : { nextRunAtMs: now + 3600000 }),
+      };
+      if (state === 'completed') native[0]!.enabled = false;
+      const { store } = await service.scope(manifest, root);
+      const ledger = await store.read();
+      ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+      await store.write(ledger);
+      const before = structuredClone(native[0]!);
+      const record = structuredClone(ledger.records[0]!);
+      if (state === 'recurring') {
+        await service.admit(manifest, root, 'check', record.hash);
+        await service.run(manifest, root, 'check');
+      }
+      assert.ok(
+        (await service.inspect(manifest, root)).some(({ code }) => code === 'automation-drift'),
+      );
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.equal(native.length, 1);
+      assert.deepEqual(native[0], {
+        ...before,
+        configRevision: native[0]!.configRevision,
+        payload: { ...before.payload, outputMaxBytes: 16777216 },
+      });
+      assert.deepEqual(
+        mutations().map(({ params }) => params.patch),
+        [{ payload: { ...before.payload, outputMaxBytes: 16777216, toolsAllow: null } }],
+      );
+      const after = (await store.read()).records[0]!;
+      assert.deepEqual(after, {
+        ...record,
+        nativeHash: nativeAutomationHash(native[0]!),
+        ...(state === 'completed' ? { completion: 'ok' } : {}),
+      });
+      if (state === 'recurring') {
+        await service.admit(manifest, root, 'check', after.hash);
+        await service.run(manifest, root, 'check');
+        native[0]!.payload.outputMaxBytes = 42;
+        await assert.rejects(service.run(manifest, root, 'check'), /execution-drift/);
+        await assert.rejects(service.admit(manifest, root, 'check', after.hash), /execution-drift/);
+        native[0]!.payload.outputMaxBytes = 16777216;
+      }
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.deepEqual(mutations(), []);
+      assert.equal(
+        (await service.inspect(manifest, root)).some(({ code }) => code === 'automation-drift'),
+        false,
+      );
+    });
+
+  it('should recover an acknowledged-lost capture migration without replaying its update', async () => {
     await service.reconcile(manifest, root);
-    native[0]!.payload.outputMaxBytes = 16384;
-    native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'ok' };
+    native[0]!.payload.outputMaxBytes = 12345;
     const { store } = await service.scope(manifest, root);
     const ledger = await store.read();
     ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
     await store.write(ledger);
-    const before = structuredClone(native);
-    const receipt = await store.read();
+    afterWriteFailure = true;
+    await assert.rejects(service.reconcile(manifest, root));
+    assert.equal(native[0]!.payload.outputMaxBytes, 16777216);
+    assert.equal((await store.read()).records[0]!.pending?.kind, 'update');
     calls = [];
-    await assert.rejects(service.reconcile(manifest, root), {
-      code: 'automation-output-limit-reset-unsupported',
-    });
+    await service.reconcile(manifest, root);
     assert.deepEqual(mutations(), []);
-    assert.deepEqual(native, before);
-    assert.deepEqual(await store.read(), receipt);
+    assert.equal((await store.read()).records[0]!.pending, undefined);
   });
 
   it('should relabel completed one-shots without rearming them or changing command hashes', async () => {
@@ -509,8 +577,15 @@ describe('agent/automation-service', () => {
     const ledger = await store.read();
     const oldJob = structuredClone(openclawIntakeJobs(manifest)[0]!);
     delete native[0]!.displayName;
-    oldJob.payload = { kind: 'prompt', prompt: 'Advance at most one issue per run.' };
-    native[0]!.payload.message = oldJob.payload.prompt;
+    oldJob.payload = {
+      kind: 'command',
+      run: { kind: 'exec', executable: 'node', args: ['legacy-intake.js'] },
+    };
+    native[0]!.payload = {
+      kind: 'command',
+      argv: ['node', 'legacy-intake.js'],
+      outputMaxBytes: 16384,
+    };
     ledger.records[0]!.hash = effectiveAutomation(oldJob, context).hash;
     ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
     await store.write(ledger);
@@ -521,6 +596,8 @@ describe('agent/automation-service', () => {
     assert.equal(native[0]!.sessionTarget, coordinator);
     assert.equal(sessions.size, 1);
     assert.match(String(native[0]!.payload.message), /Fill initially available intake slots/);
+    assert.equal(native[0]!.payload.kind, 'agentTurn');
+    assert.equal(native[0]!.payload.outputMaxBytes, undefined);
     assert.equal(calls.filter((call) => call.method === 'cron.update').length, 1);
     calls = [];
     await service.reconcile(manifest, root);

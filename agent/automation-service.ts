@@ -322,10 +322,15 @@ export default class AutomationService {
     )
       throw new AutomationError('automation-run-disabled');
     const effective = effectiveAutomation(job, context);
+    const desired = projectAutomation(job, record, context, native);
+    // an unchanged installed legacy job stays runnable until explicit reconciliation.
+    // the retained native hash below still rejects externally modified settings.
+    if (desired.payload.outputMaxBytes !== undefined)
+      desired.payload.outputMaxBytes = native.payload.outputMaxBytes;
     if (
       record.hash !== effective.hash ||
       nativeAutomationHash(native) !== record.nativeHash ||
-      nativeAutomationHash(native) !== nativeAutomationHash(projectAutomation(job, record, context))
+      nativeAutomationHash(native) !== nativeAutomationHash(desired)
     )
       throw new AutomationError('automation-execution-drift');
     const loaded = await this.dependencies.manifestService.loadForAgentId(
@@ -471,7 +476,7 @@ export default class AutomationService {
           findings.push(finding(job.id, 'blocked', 'automation-native-safety-disabled'));
           continue;
         }
-        const desired = projectAutomation(job, record, context);
+        const desired = projectAutomation(job, record, context, native);
         if (
           retainedOneShot(native) &&
           record.triggerHash === effectiveAutomation(job, context).triggerHash
@@ -775,7 +780,7 @@ export default class AutomationService {
             record.triggerHash = effective.triggerHash;
           }
           record.hash = effective.hash;
-          const desired = projectAutomation(job, record, context);
+          const desired = projectAutomation(job, record, context, native);
           if (
             native &&
             automationHash(native.schedule) === automationHash(desired.schedule) &&
@@ -904,9 +909,7 @@ export default class AutomationService {
       throw new AgentSystemLifecycleError(
         'automations',
         code,
-        code === 'automation-output-limit-reset-unsupported'
-          ? 'The native command job retains an output limit that this OpenClaw API cannot clear. Its schedule and history were preserved. Native support for clearing outputMaxBytes is required before this job can inherit capture defaults.'
-          : `Automation reconciliation stopped (${code}).`,
+        `Automation reconciliation stopped (${code}).`,
         error instanceof AutomationError ? { cause: error } : undefined,
         undefined,
         undefined,

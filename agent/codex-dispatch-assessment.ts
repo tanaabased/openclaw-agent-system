@@ -165,7 +165,7 @@ export async function handoffDispatch(
       'handoff',
     );
     const retainedAssessment = record.result ? { previousResult: record.result } : {};
-    if (record.handoff)
+    if (record.handoff && !record.nativeInactive)
       return {
         status: 'handed-off' as const,
         changed: false,
@@ -188,6 +188,18 @@ export async function handoffDispatch(
                 record.continuation.binding?.turnId))))
     )
       throw new Error(record.continuation.code ?? 'continuation-implementation-blocked');
+    // capacity observations describe an earlier turn, not permanent lifecycle retirement.
+    // only a fresh user turn in the verified owning chat can reactivate that custody.
+    if (
+      record.nativeInactive &&
+      (caller !== record.threadId ||
+        native.archived ||
+        !native.followUpUserTurn ||
+        !native.turnId ||
+        native.turnEnded !== false ||
+        native.turnId === record.capacityObservation?.turnId)
+    )
+      throw new Error('dispatch-handoff-native-inactive');
     const transition = issueProgression(record, {
       mode: issueWorkflowMode(current.manifest.github?.notifications, record),
       now: (deps.now ?? Date.now)(),
@@ -230,7 +242,17 @@ export async function handoffDispatch(
       save,
       prepare: true,
     });
-    record.handoff = { at: (deps.now ?? Date.now)(), by: caller, turnId: native.turnId };
+    record.handoff ??= { at: (deps.now ?? Date.now)(), by: caller, turnId: native.turnId };
+    if (record.nativeInactive) {
+      delete record.nativeInactive;
+      record.reservationVersion = 1;
+      record.capacityObservation = {
+        at: (deps.now ?? Date.now)(),
+        code: 'dispatch-capacity-native-active',
+        threadId: native.id,
+        turnId: native.turnId,
+      };
+    }
     const response = notice(record, intake);
     await save();
     return { ...response, issueBranch: record.issueBranch?.name, ...retainedAssessment };

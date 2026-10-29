@@ -298,10 +298,11 @@ Results stay in native run history unless you configure delivery. Command runs r
 bounded stdout and stderr, even without delivery. Authorized Gateway operators can
 inspect output and truncation in run details; setup output stays private. Agent System
 inherits OpenClaw capture defaults and forwards captured output without another cap.
-Existing native command jobs with an explicit `outputMaxBytes` cannot inherit those
-defaults through the supported native update API. Sync reports
-`automation-output-limit-reset-unsupported` and preserves the job and its history;
-migration requires native support for clearing that field.
+Install and automation sync migrate existing managed command jobs with an explicit
+`outputMaxBytes` to 16 MiB per stream, preserving their IDs, schedules, routing and
+history. The native update API cannot clear that field, so migrated jobs retain this
+fixed compatibility value; new jobs omit it and inherit OpenClaw defaults. Existing
+unchanged jobs remain runnable before sync.
 
 Timeouts include startup and range from 1 to 3600 seconds (default 1800). OpenClaw
 controls overlapping runs of the same job, retries, recovery, and daylight saving time;

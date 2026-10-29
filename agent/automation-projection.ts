@@ -48,6 +48,7 @@ export function projectAutomation(
   job: ResolvedAutomation,
   record: AutomationRecord,
   context: AutomationProjectionContext,
+  current?: NativeAutomation,
 ): NativeAutomationSpec {
   const effective = effectiveAutomation(job, context);
   const schedule = job.schedule;
@@ -115,6 +116,11 @@ export function projectAutomation(
             input: '',
             timeoutSeconds,
             noOutputTimeoutSeconds: 3600,
+            // native updates cannot clear an existing command cap. migrate it once to
+            // OpenClaw 2026.10.6's 16 MiB per-stream budget; new jobs inherit defaults.
+            ...(current?.payload.kind === 'command' && current.payload.outputMaxBytes !== undefined
+              ? { outputMaxBytes: 16 * 1024 * 1024 }
+              : {}),
           }
         : {
             kind: 'agentTurn',
@@ -170,15 +176,6 @@ export function automationPatch(
   current: NativeAutomation,
   desired: NativeAutomationSpec,
 ): Record<string, unknown> {
-  // the supported native update merges command payloads and cannot clear this field.
-  // refuse before mutation rather than leave an old cap installed or recreate its history.
-  if (
-    current.payload.kind === 'command' &&
-    desired.payload.kind === 'command' &&
-    current.payload.outputMaxBytes !== undefined &&
-    desired.payload.outputMaxBytes === undefined
-  )
-    throw new AutomationError('automation-output-limit-reset-unsupported');
   const patch: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(desired)) {
     if (automationHash(current[key] ?? null) !== automationHash(value)) patch[key] = value;

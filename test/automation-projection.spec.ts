@@ -76,7 +76,7 @@ describe('agent/automation-projection', () => {
     }
   });
 
-  it('should inherit capture for new commands and refuse an unresettable native override', () => {
+  it('should inherit capture for new commands and migrate retained overrides in place', () => {
     const record = {
       id: 'review',
       marker: 'fixture',
@@ -97,12 +97,20 @@ describe('agent/automation-projection', () => {
       state: {},
     };
     assert.deepEqual(automationPatch(current, desired), {});
-    for (const outputMaxBytes of [16384, 12345]) {
+    for (const outputMaxBytes of [16384, 12345, 16777216]) {
       const limited = { ...current, payload: { ...current.payload, outputMaxBytes } };
       const original = structuredClone(limited);
-      assert.throws(() => automationPatch(limited, desired), {
-        code: 'automation-output-limit-reset-unsupported',
-      });
+      const migrated = projectAutomation(
+        job({ run: ['node', 'task.js'] }),
+        record,
+        context,
+        limited,
+      );
+      assert.equal(migrated.payload.outputMaxBytes, 16777216);
+      assert.deepEqual(
+        automationPatch(limited, migrated),
+        outputMaxBytes === 16777216 ? {} : { payload: { ...migrated.payload, toolsAllow: null } },
+      );
       assert.deepEqual(limited, original);
     }
   });
