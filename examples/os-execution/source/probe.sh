@@ -3,6 +3,11 @@
 set -eu
 
 mode=$1
+started=$(date +%s)
+stage() {
+  printf 'os-execution mode=%s stage=%s elapsed=%ss\n' "$mode" "$1" "$(($(date +%s) - started))"
+}
+stage native-io
 root=$(pwd -P)
 test "$root" = "$(cd "$TMPDIR/os execution/source" && pwd -P)"
 if [ "$mode" = pty ]; then
@@ -17,12 +22,15 @@ fi
 test "$status" -eq 7
 grep -Fx os-stdout-ready "$root/$mode.stdout"
 grep -Fx os-stderr-ready "$root/$mode.stderr"
+stage source-identity
 identity=$(agent-system-git var GIT_AUTHOR_IDENT)
 printf '%s\n' "$identity" | grep -F 'OS Execution <os-execution@example.invalid>'
+stage cross-agent-rejection
 cd ../peer
 if agent-system-git var GIT_AUTHOR_IDENT >"$root/$mode.cross-identity" 2>"$root/$mode.denied"; then
   exit 1
 fi
 grep -F 'code=agent_not_resolved' "$root/$mode.denied"
+stage complete
 printf '%s\n' verified >"$root/$mode.result"
 printf '%s\n' os-execution-verified

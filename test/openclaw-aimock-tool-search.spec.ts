@@ -592,7 +592,7 @@ describe('scripts/aimock-tool-search', () => {
       append(input, (await reply(scenario, input)).response, searchResult(['exec', 'process']));
       const call = (await reply(scenario, input)).response;
       assert.ok('toolCalls' in call);
-      assert.equal(JSON.parse(call.toolCalls![0]!.arguments).args.timeoutSeconds, 120);
+      assert.equal(JSON.parse(call.toolCalls![0]!.arguments).args.timeoutSeconds, 300);
       append(input, call, {
         tool: { id: 'openclaw:exec', name: 'exec' },
         result: {
@@ -642,6 +642,8 @@ describe('scripts/aimock-tool-search', () => {
           for (const text of [
             'Process timed out.',
             'Process killed by signal SIGTERM.',
+            'Process exited with signal SIGTERM.',
+            'Process exited with code 143.',
             'Unknown session.',
           ]) {
             failed.messages.at(-1)!.content = JSON.stringify({
