@@ -6897,7 +6897,7 @@ describe('agent/codex-dispatch', () => {
       return {
         status: 'linked',
         retained: true,
-        workflowStatus: 'partially-delivered',
+        workflowStatus: 'delivered-response-pending',
         instruction: 'Present the card.',
         notices: [],
         url: 'https://github.com/owner/repo/pull/7',

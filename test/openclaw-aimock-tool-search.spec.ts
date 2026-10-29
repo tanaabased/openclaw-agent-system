@@ -449,7 +449,7 @@ describe('scripts/aimock-tool-search', () => {
       (
         await step('delivery-publish', 'agent_system_dispatch', {
           status: 'published',
-          workflowStatus: 'partially-delivered',
+          workflowStatus: 'delivered-response-pending',
         })
       ).digest,
       digest,

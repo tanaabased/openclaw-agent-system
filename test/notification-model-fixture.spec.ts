@@ -1112,7 +1112,7 @@ for (const scenario of [
           assert.equal(linkageRetry.id, id);
           append(input, 'delivery-link-publish-0', {
             status: 'published',
-            workflowStatus: 'partially-delivered',
+            workflowStatus: 'delivered-response-pending',
           });
           assert.equal((await action(input, 'delivery')).operation, 'compose');
           append(input, 'delivery-compose', {
@@ -1239,7 +1239,7 @@ for (const scenario of [
         assert.equal((await action(input, 'delivery')).digest, refreshedDigest);
         append(input, 'delivery-link-publish-0', {
           status: 'published',
-          workflowStatus: 'partially-delivered',
+          workflowStatus: 'delivered-response-pending',
         });
         assert.equal((await action(input, 'delivery')).operation, 'announce');
         append(input, 'delivery-repeat', { status: 'announced' });

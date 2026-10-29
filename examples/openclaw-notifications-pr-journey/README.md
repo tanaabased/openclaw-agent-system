@@ -146,7 +146,7 @@ openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$n
 # should derive completion from receipts without a separate delivery wakeup
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-journey/tanaabot"
 jq -e '.work.deliveryTurn == null and .work.delivery.announcement.receipt.nodeId != null' "$TMPDIR/notification-delivery.json"
-openclaw agent-system notifications status --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")" --json | jq -e '.items[0].workflow.phase == "complete"'
+openclaw agent-system notifications status --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")" --json | jq -e '.items[0].workflow.phase == "delivered"'
 
 # should verify the actual pull request issue link and recipients
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-pr-journey/tanaabot"
