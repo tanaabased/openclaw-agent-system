@@ -24,7 +24,7 @@ const reportFixture: Fixture = {
   match: { model, predicate: (request) => Boolean(reportInput(request)) },
   response: (request) => ({
     id: 'recovered-report',
-    content: `> ## ✅ Identity completed\n>\n> ${reportInput(request)!.runLine}\n>\n> The command completed before the reporting connection restarted.`,
+    content: `> ## ✅ Identity completed\n>\n> ${reportInput(request)!.runLine}\n>\n> The command completed successfully.`,
   }),
 };
 

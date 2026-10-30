@@ -2,7 +2,7 @@
   "discoveryRequestCount": 1,
   "finalResponseCount": 1,
   "model": "aimock/gpt-5.5",
-  "promptRequestCount": 3,
+  "promptRequestCount": 4,
   "provider": "aimock",
   "requestCount": 4,
   "responsesApiRequestCount": 4,

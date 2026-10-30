@@ -1,12 +1,12 @@
 # OpenClaw command-to-chat automation
 
-Run four output cases into one saved chat and inspect the real model's reports:
-Markdown, JSON, plain text, and failure with misleading success output.
+Run a successful command and a failing command into one saved chat, with a mock
+provider returning reports through the real Gateway response path.
 
 ## What belongs here
 
 - Shared persistent destination creation and reuse by command automations.
-- Four real formatter turns using captured stdout, stderr, and process outcome.
+- Captured stdout, stderr, and process outcome reaching the formatter request.
 - Corresponding durable reports after reconnect, without repeating commands.
 
 ## What does not belong here
@@ -17,16 +17,17 @@ Markdown, JSON, plain text, and failure with misleading success output.
 
 ## Notes
 
-- Uses the CI `OPENAI_API_KEY` secret and a small live model because formatting interpretation is the behavior under test. It does not use AIMock.
-- Assertions require the original run identity, process outcome, a quoted report, and the relevant archive name—not exact wording or layout. Native history does not prove browser rendering.
-- All declarations call one script with a mode flag. Install runs once; each command runs once. Empty-output and timeout permutations remain in source tests.
-- Assistant text is printed for human review. Observation deadlines include CLI startup and RPC time.
+- Strict AIMock supplies the provider response only. Commands, chat creation, report delivery, and history remain real; no live-model credential is required.
+- The fixture accepts only the expected captured streams and process outcome. Assertions verify the returned message in native history, not prose quality or browser rendering.
+- Both declarations call one script with a mode flag. Each command runs once. Output-format, empty-output, and timeout permutations remain in source tests.
+- Observation deadlines include CLI startup and RPC time.
 
 ## Setup
 
 ```bash
-# should create one shared reporting chat for all four command declarations
-openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --model openai/gpt-5.4-nano
+# should create one shared reporting chat for both command declarations
+openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service
+openclaw-aimock prepare --scenario openclaw-automation-command-chat
 openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true --strict-json
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat"
@@ -38,10 +39,10 @@ jq -e '([.jobs[].routing] | unique | length) == 1 and all(.jobs[]; .routing | st
 ## Testing
 
 ```bash
-# should retain four truthful model-formatted reports without rerunning their commands
+# should retain both mock-formatted reports without rerunning their commands
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat"
 chat=$(jq -er '.jobs[0].routing | sub("^session:"; "")' "$TMPDIR/chat-jobs.json")
-for mode in markdown json text failure; do
+for mode in success failure; do
   expected=ok
   reason='Exit 0'
   if test "$mode" = failure; then expected=error; reason='Exit 17'; fi
@@ -63,17 +64,16 @@ for mode in markdown json text failure; do
   grep -F '> ##' "$TMPDIR/card-$mode.md"
   grep -F "$reason" "$TMPDIR/card-$mode.md"
 done
-grep -Fi alpha "$TMPDIR/card-markdown.md"
-grep -Fi bravo "$TMPDIR/card-json.md"
-grep -Fi charlie "$TMPDIR/card-text.md"
+grep -Fi alpha "$TMPDIR/card-success.md"
 grep -Fi delta "$TMPDIR/card-failure.md"
 grep -F '❌' "$TMPDIR/card-failure.md"
-test "$(wc -l < command.runs | tr -d ' ')" = 4
+test "$(wc -l < command.runs | tr -d ' ')" = 2
+openclaw-aimock evidence --scenario openclaw-automation-command-chat --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat/expected-evidence.json"
 
 # should retain the same report messages through a fresh history connection
 chat=$(jq -er '.jobs[0].routing | sub("^session:"; "")' "$TMPDIR/chat-jobs.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json > "$TMPDIR/chat-reconnected.json"
-for mode in markdown json text failure; do
+for mode in success failure; do
   message_id=$(jq -er '.reports[0].messageId' "$TMPDIR/report-$mode.json")
   jq -e --arg id "$message_id" 'any(.messages[]; .__openclaw.id == $id and .role == "assistant")' "$TMPDIR/chat-reconnected.json"
 done
