@@ -385,7 +385,7 @@ describe('scripts/example-model-scenarios', () => {
     assert.equal(matchFixture([...scenario.fixtures], input(history, 'another-call')), null);
   });
 
-  for (const scenarioId of ['openclaw-automations', 'openclaw-automation-recovery']) {
+  for (const scenarioId of ['openclaw-automation-prompt', 'openclaw-automation-recovery']) {
     it(`should keep ${scenarioId} ownership strict and report only failed match booleans`, () => {
       const scenario = resolveExampleModelScenario(scenarioId);
       const diagnostic = mock.method(process.stderr, 'write', () => true);
@@ -395,14 +395,16 @@ describe('scripts/example-model-scenarios', () => {
       valid.messages.push({
         role: 'assistant',
         content:
-          scenarioId === 'openclaw-automations'
+          scenarioId === 'openclaw-automation-prompt'
             ? '> ## ✅ identity completed'
             : '> ## ✅ Identity completed',
       });
       try {
         assert.ok(matchFixture([...scenario.fixtures], valid));
         assert.equal(diagnostic.mock.callCount(), 0);
-        for (const field of ['model', 'identity', 'prompt', 'noToolResult', 'reportHistory']) {
+        const fields = ['model', 'identity', 'prompt', 'noToolResult'];
+        if (scenarioId === 'openclaw-automation-recovery') fields.push('reportHistory');
+        for (const field of fields) {
           const invalid = structuredClone(valid);
           if (field === 'model') invalid.model = 'private-model';
           if (field === 'identity') invalid.messages[0]!.content = 'private-identity';
@@ -426,7 +428,9 @@ describe('scripts/example-model-scenarios', () => {
             identity: field !== 'identity',
             prompt: field !== 'prompt',
             noToolResult: field !== 'noToolResult',
-            reportHistory: field !== 'reportHistory',
+            ...(scenarioId === 'openclaw-automation-recovery'
+              ? { reportHistory: field !== 'reportHistory' }
+              : {}),
           });
           assert.ok(!output.includes('private-'));
         }

@@ -44,7 +44,7 @@ describe('agent/automation-report-delivery', () => {
       drift?: boolean;
       badCard?: boolean;
       denied?: boolean;
-      hookDenied?: boolean;
+      unguarded?: boolean;
       settledBeforeAck?: boolean;
       requestGuard?: boolean;
     } = {},
@@ -87,16 +87,6 @@ describe('agent/automation-report-delivery', () => {
         if (options.revoked) throw Error('revoked');
         const request = async (method: string, params: Record<string, unknown>) => {
           calls.push(method);
-          if (method === 'plugins.inspect')
-            return {
-              plugin: { id: 'agent-system', enabled: true },
-              grants: {
-                hooks: {
-                  allowConversationAccess: { effective: !options.hookDenied },
-                  allowPromptInjection: { effective: true },
-                },
-              },
-            };
           if (method === 'sessions.resolve')
             return { ok: true, key: target.sessionKey, agentId: 'a' };
           if (method === 'sessions.list')
@@ -132,8 +122,10 @@ describe('agent/automation-report-delivery', () => {
             sessionId: 'incarnation',
             runId: params.idempotencyKey,
           };
-          const guard = await hooks.get('before_prompt_build')!({}, context);
-          assert.deepEqual(guard?.toolsAllow, []);
+          if (!options.unguarded) {
+            const guard = await hooks.get('before_prompt_build')!({}, context);
+            assert.deepEqual(guard?.toolsAllow, []);
+          }
           assert.equal(
             (await hooks.get('before_tool_call')!({ toolName: 'exec' }, context))?.block,
             true,
@@ -239,18 +231,19 @@ describe('agent/automation-report-delivery', () => {
     assert.equal(f.messages.length, 1);
     assert.equal((await f.store.read(input.executionId))?.input.outcome, 'error');
   });
-  it('should inspect reporting grants through the enrolled request guard before sending', async () => {
-    for (const hookDenied of [false, true]) {
-      const f = fixture({ requestGuard: true, hookDenied });
-      const result = await f.deliver(randomUUID());
-      assert.equal(result.status, hookDenied ? 'pending' : 'delivered');
-      assert.equal(
-        result.code,
-        hookDenied ? 'automation-report-hook-permission-required' : undefined,
-      );
-      assert.ok(f.calls.includes('plugins.inspect'));
-      assert.equal(f.messages.length, hookDenied ? 0 : 1);
-    }
+  it('should deliver through the enrolled request guard without a plugin inspection', async () => {
+    const f = fixture({ requestGuard: true });
+    assert.equal((await f.deliver()).status, 'delivered');
+    assert.ok(!f.calls.includes('plugins.inspect'));
+    assert.equal(f.messages.length, 1);
+  });
+  it('should diagnose unobserved formatter hooks without claiming delivery or replaying', async () => {
+    const f = fixture({ unguarded: true });
+    const result = await f.deliver();
+    assert.equal(result.status, 'failed');
+    assert.equal(result.code, 'automation-report-hooks-not-observed');
+    assert.equal((await f.recover()).status, 'failed');
+    assert.equal(f.messages.length, 1);
   });
   it('should preserve uncertain sends and reconcile the same durable identity after restart', async () => {
     const f = fixture({ lostAck: true });
@@ -285,7 +278,6 @@ describe('agent/automation-report-delivery', () => {
       { revoked: true },
       { stale: true },
       { drift: true },
-      { hookDenied: true },
     ]) {
       const f = fixture(options);
       const id = randomUUID();

@@ -1,0 +1,28 @@
+- id: markdown
+  runtimes: [openclaw]
+  schedule: every 1 hour
+  timeout-seconds: 120
+  run: [sh, ./report.sh, markdown]
+  group: REPORTS
+  thread: { id: reports, name: Automation reports }
+- id: json
+  runtimes: [openclaw]
+  schedule: every 1 hour
+  timeout-seconds: 120
+  run: [sh, ./report.sh, json]
+  group: REPORTS
+  thread: { id: reports, name: Automation reports }
+- id: text
+  runtimes: [openclaw]
+  schedule: every 1 hour
+  timeout-seconds: 120
+  run: [sh, ./report.sh, text]
+  group: REPORTS
+  thread: { id: reports, name: Automation reports }
+- id: failure
+  runtimes: [openclaw]
+  schedule: every 1 hour
+  timeout-seconds: 120
+  run: [sh, ./report.sh, failure]
+  group: REPORTS
+  thread: { id: reports, name: Automation reports }

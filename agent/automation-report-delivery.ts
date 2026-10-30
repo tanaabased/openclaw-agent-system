@@ -89,28 +89,6 @@ export async function reconcileAutomationReport(options: {
         )
           throw new Error('automation-report-settings-drift');
         await options.assertCurrent(record!);
-        if (record!.state === 'pending') {
-          const inspection = await request('plugins.inspect', { pluginId: 'agent-system' });
-          const plugin =
-            nativeObject(inspection) && nativeObject(inspection.plugin)
-              ? inspection.plugin
-              : undefined;
-          const grants =
-            nativeObject(inspection) &&
-            nativeObject(inspection.grants) &&
-            nativeObject(inspection.grants.hooks)
-              ? inspection.grants.hooks
-              : undefined;
-          if (
-            plugin?.id !== 'agent-system' ||
-            plugin.enabled !== true ||
-            !nativeObject(grants?.allowConversationAccess) ||
-            grants.allowConversationAccess.effective !== true ||
-            !nativeObject(grants?.allowPromptInjection) ||
-            grants.allowPromptInjection.effective !== true
-          )
-            throw new Error('automation-report-hook-permission-required');
-        }
         // claim only pending work. a second process observes the same send without repeating it.
         record = await store.update(executionId, (current) => {
           if (current.state !== 'pending') return;
@@ -157,7 +135,12 @@ export async function reconcileAutomationReport(options: {
             .map((part) => part.text ?? '')
             .join('\n');
           record = await store.update(executionId, (current) => {
-            if (!current.guarded || !automationReportCardValid(body, current.input)) {
+            if (!current.guarded) {
+              current.state = 'failed';
+              current.code = 'automation-report-hooks-not-observed';
+              return;
+            }
+            if (!automationReportCardValid(body, current.input)) {
               current.state = 'failed';
               current.code = 'automation-report-card-invalid';
               return;

@@ -10,12 +10,12 @@ preserving the unrelated prompt.
 - Offline diagnostics with an actionable connectivity recovery.
 - Read-only drift inspection, explicit repair, and preservation of both changed and unrelated native job identities.
 - Restored routing after restart and a completed prompt in the owning native context.
-- A captured command report held by missing hook permission, then delivered after restart without rerunning the command.
+- A captured command report held by changed chat settings, then delivered after restart without rerunning the command.
 - Retirement after declaration removal and native deletion, without recreating the job or blocking the unrelated prompt.
 
 ## What Does Not Belong Here
 
-- Ordinary command/prompt execution and repeat synchronization: [automations](../openclaw-automations/README.md).
+- Ordinary command/prompt execution and repeat synchronization: [automations](../openclaw-automation-command/README.md).
 - Notification pause/resume: [notification scheduling](../openclaw-notifications-scheduling/README.md).
 
 ## Notes
@@ -48,7 +48,7 @@ grep -F 'restore gateway connectivity' "$TMPDIR/offline-sync.stderr"
 
 
 # should start the gateway for native recovery checks
-openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess false --strict-json
+openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true --strict-json
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 
 # should enroll command reporting only after the offline scheduler diagnostic is complete
@@ -79,25 +79,32 @@ openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .component 
 openclaw agent-system automations list --json | tee "$TMPDIR/automation-reconciled.json" | jq -e '.status == "aligned"'
 jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-reconciled.json" | diff - "$TMPDIR/automation-identities.json"
 
-# should retain a successful command when reporting lacks native hook permission
+# should retain a successful command when its reporting chat settings have drifted
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
+chat=$(jq -er '.jobs[] | select(.id == "identity") | .routing | sub("^session:"; "")' "$TMPDIR/automation-before.json")
+openclaw gateway call sessions.patch --params "$(jq -nc --arg key "$chat" '{key:$key,thinkingLevel:"high"}')" --json
 run_id=$(openclaw agent-system automations run identity --json | jq -er 'select(.status == "queued") | .runId | strings')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" identity "$run_id"
-openclaw agent-system automations runs identity --json | jq -e --argjson expected '{"status":"pending","reason":"Exit 0","code":"automation-report-hook-permission-required"}' -f "$GITHUB_WORKSPACE/scripts/assert-automation-report.jq"
+openclaw agent-system automations runs identity --json | jq -e --argjson expected '{"status":"pending","reason":"Exit 0","code":"automation-report-settings-drift"}' -f "$GITHUB_WORKSPACE/scripts/assert-automation-report.jq"
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 
 # should recover the report across restart and complete a prompt in the owning agent context
+cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
+chat=$(jq -er '.jobs[] | select(.id == "identity") | .routing | sub("^session:"; "")' "$TMPDIR/automation-before.json")
+openclaw gateway call sessions.patch --params "$(jq -nc --arg key "$chat" '{key:$key,thinkingLevel:"medium"}')" --json
 gateway_log=$(openclaw-gateway log-path)
 gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
 shutdown_status=0
 openclaw-gateway stop --timeout 340 || shutdown_status=$?
 tail -n 1000 "$gateway_log" | node "$gateway_redactor" | tee "$TMPDIR/openclaw-automation-recovery-before-restart.log"
 test "$shutdown_status" -eq 0
-openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true --strict-json
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
-for attempt in $(seq 1 60); do
-  openclaw agent-system automations runs identity --json > "$TMPDIR/recovered-report.json"
+deadline=$((SECONDS + 120))
+while test "$SECONDS" -lt "$deadline"; do
+  remaining=$((deadline - SECONDS))
+  test "$remaining" -gt 0 || break
+  timeout --signal=TERM --kill-after=5 "$remaining" openclaw agent-system automations runs identity --json > "$TMPDIR/recovered-report.json"
   if jq -e 'any(.reports[]; .status == "delivered" and (.messageId | type == "string"))' "$TMPDIR/recovered-report.json" >/dev/null; then break; fi
   sleep 2
 done

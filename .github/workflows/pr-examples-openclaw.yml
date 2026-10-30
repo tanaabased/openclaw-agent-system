@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # temporary #575 diagnostic run; restore the full matrix before final validation.
+        # temporary #575 four-scenario diagnostic run; restore the full matrix before final validation.
         example:
           # - openclaw-agent
           # - openclaw-native-retirement
@@ -43,7 +43,9 @@ jobs:
           # - openclaw-backup
           # - openclaw-backup-cleanup
           # - openclaw-credentials
-          - openclaw-automations
+          - openclaw-automation-prompt
+          - openclaw-automation-command
+          - openclaw-automation-command-chat
           - openclaw-automation-recovery
           # - openclaw-runtimes
           # - openclaw-lifecycle-approvals
@@ -96,6 +98,7 @@ jobs:
           GOG_HOME: ${{ runner.temp }}/gog-home
           XDG_CONFIG_HOME: ${{ runner.temp }}/agent-system-config
           GH_TOKEN_TANAABOT: ${{ secrets.GH_TOKEN_TANAABOT }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.TANAAB_OP_TESTVAULT }}
         run: leia "examples/${{ matrix.example }}/README.md" --stdin --retry 0
       - name: RUNNING A LEVEL THREE DIAGNOSTICS

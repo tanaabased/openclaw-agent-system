@@ -1,0 +1,5 @@
+- id: identity
+  runtimes: [openclaw]
+  schedule: every 1 hour
+  timeout-seconds: 120
+  run: [sh, ./probe.sh]

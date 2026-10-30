@@ -1,12 +1,3 @@
-- id: identity
-  runtimes: [openclaw]
-  schedule: every 1 hour
-  thread: { id: automation-status, name: Automation status }
-  # the native deadline includes openclaw startup as well as the managed command.
-  timeout-seconds: 120
-  run:
-    command: sh
-    args: [./probe.sh]
 - id: prompt
   display-name: '🔄 AUTOMATION STATUS'
   enabled: true

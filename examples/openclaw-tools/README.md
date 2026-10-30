@@ -13,7 +13,7 @@ and assignment protections.
 ## What Does Not Belong Here
 
 - Setup-script and scheduled-command descendants: [tool descendants](../openclaw-tool-descendants/README.md).
-- Full scheduler lifecycle: [automations](../openclaw-automations/README.md). Model-facing two-account identity: [GitHub](../openclaw-github/README.md).
+- Full scheduler lifecycle: [automations](../openclaw-automation-command/README.md). Model-facing two-account identity: [GitHub](../openclaw-github/README.md).
 - Signed commits and native storage protections: [OS credentials](../os-credentials/README.md).
 
 ## Notes

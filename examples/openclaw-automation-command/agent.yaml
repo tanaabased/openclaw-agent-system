@@ -1,0 +1,13 @@
+schema-version: 1
+agent:
+  id: command-tanaabot
+  name: Tanaabot
+  email: tanaabot@tanaab.dev
+git: {}
+setup:
+  steps:
+    - id: maintenance-receipt
+      check: test -f maintenance.installed
+      apply: printf installed > maintenance.installed
+automations:
+  file: ./automations.yaml

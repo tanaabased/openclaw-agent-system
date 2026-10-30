@@ -320,7 +320,10 @@ automations:
 
 Run Install and approve session access (`operator.read` and `operator.write`) when
 requested. Enable `plugins.entries.agent-system.hooks.allowConversationAccess` in
-OpenClaw and leave `allowPromptInjection` enabled; missing grants leave reports pending.
+OpenClaw and leave `allowPromptInjection` enabled. Reporting does not inspect plugin
+permissions before sending. If the formatter hook was not observed, `automations runs`
+reports `automation-report-hooks-not-observed`; restore these grants before the next run.
+The failed report is not automatically replayed.
 
 The automation's model and effort format stdout and stderr into a success, warning,
 or error card. Markdown, JSON, plain text, and empty output are supported. Reports
