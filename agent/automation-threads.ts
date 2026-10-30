@@ -446,7 +446,11 @@ export default class AutomationThreads {
           const pendingMatch =
             (pending.desired.model === undefined || native.model === pending.desired.model) &&
             (pending.desired.effort === undefined || native.effort === pending.desired.effort);
-          if (!pendingMatch) {
+          // withdrawing a denied change needs no native write; uncertain writes still need proof.
+          const withdrawnDenial =
+            !pendingMatch && pending.phase === 'denied' && settingsMatch(native);
+          if (withdrawnDenial && !apply) throw settingsError('automation-thread-sync-required');
+          if (!pendingMatch && !withdrawnDenial) {
             const retrySafe = pending.phase === 'busy' || pending.phase === 'unsupported';
             if (!apply || !retrySafe)
               throw new AutomationThreadSettingsError(

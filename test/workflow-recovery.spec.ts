@@ -23,6 +23,18 @@ describe('agent/workflow-recovery', () => {
     assert.match(recovery.next, /fullAssessment.*resubmit/);
     assert.match(recovery.next, /previous saved result/);
   });
+  it('should explain unfinished delivery without suggesting publication retries', () => {
+    for (const code of [
+      'delivery-implementation-incomplete',
+      'continuation-implementation-required',
+      'delivery-continuation-stopped',
+    ]) {
+      const recovery = workflowRecovery(code)!;
+      assert.match(recovery.summary, /implementation/);
+      assert.match(recovery.next, /implementation context/);
+      assert.match(recovery.next, /[Dd]o not retry publication/);
+    }
+  });
   it('should explain how to recover from a malformed dispatch receipt id', () => {
     const recovery = workflowRecovery('dispatch-receipt-id-invalid')!;
     assert.match(recovery.summary, /not looked up/);

@@ -67,11 +67,17 @@ against a task worktree is expected; it does not require `bun run codex:sync` or
 Agent System Install. Use the isolated package validation flow below for native
 installation and discovery checks.
 
-For Me-managed installations, deliberately update the designated source checkouts
-to merged `main`, then request Agent System Install against the trusted Me binding.
-Install checks the declared plugins and builds or syncs those needing repair;
-installation inputs must be unchanged. The authorized nightly refresh uses the same
-Install flow. Changed plugin contents may require renewed hook review.
+To deliberately install this checkout into your live Codex installation, preview
+and apply the source installation:
+
+```sh
+./node_modules/.bin/codex-tools install . --dry-run --json
+./node_modules/.bin/codex-tools install .
+```
+
+When deliberately adopting changes to installed Codex runtime or skill paths, run
+`bun run codex:sync` and `bun run codex:check` to update and verify the cache. Changed plugin contents
+may require renewed hook review.
 
 If a development build writes a changed persistent format, verify that any runtime
 restored during cleanup can read the retained state. Cache equality alone does not

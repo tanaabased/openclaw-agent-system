@@ -321,31 +321,34 @@ describe('agent/codex-automations', () => {
     }
   });
 
-  it('should reject timezone-qualified creates before journaling a native proposal', async () => {
-    const zoned = (zone = 'Europe/London', hour = 8) =>
-      job().replace('every 1 hour', `{ cron: "0 ${hour} * * *", timezone: "${zone}" }`);
-    await manifest(zoned());
-    await assert.rejects(
-      prepareCodexAutomation(pluginData, (await inspect()).digest, inputs(), deps()),
-      (error: unknown) =>
-        !!error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        error.code === 'automation-dtstart-create-unsupported' &&
-        error instanceof Error &&
-        error.message.includes('does not support DTSTART recurrences'),
-    );
-    const afterFailure = await inspect();
-    assert.equal(afterFailure.status, 'requires-native-app-sync');
-    assert.equal(afterFailure.actions.length, 1);
-    assert.deepEqual(await readCodexAutomations(codexHome), []);
-    assert.deepEqual(
-      (await readdir(pluginData)).filter((name) =>
-        /^codex-automations-[a-f0-9]{64}\.json$/u.test(name),
-      ),
-      [],
-    );
-  });
+  for (const zone of ['Europe/London', 'UTC']) {
+    it(`should require review only when creating a new timezone schedule in ${zone.toLowerCase()}`, async () => {
+      await manifest(job().replace('every 1 hour', `{ cron: "0 8 * * *", timezone: "${zone}" }`));
+      const plan = await inspect();
+      const action = plan.actions[0]!;
+      assert.equal(action.mode, 'create');
+      assert.equal(action.review, true);
+      const prepared = await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+      assert.deepEqual(prepared.request, { mode: 'suggested_create', ...action.expected });
+      assert.deepEqual(await readCodexAutomations(codexHome), []);
+      await assert.rejects(
+        acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps()),
+        rejectsCode('automation-review-pending'),
+      );
+      await assert.rejects(
+        prepareCodexAutomation(pluginData, plan.digest, inputs(), deps()),
+        rejectsCode('automation-plan-stale-or-blocked'),
+      );
+      await nativeWrite({ ...action.expected, rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0' });
+      await assert.rejects(
+        acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps()),
+        rejectsCode('automation-readback-diverged'),
+      );
+      await nativeWrite(action.expected);
+      await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
+      assert.equal((await inspect()).status, 'aligned');
+    });
+  }
 
   it('should directly create supported local-time cron schedules', async () => {
     await manifest(job().replace('every 1 hour', '{ cron: "0 9 * * *" }'));
@@ -393,6 +396,20 @@ describe('agent/codex-automations', () => {
     assert.ok(saved!.definition.kind === 'cron');
     assert.equal(saved!.definition.projectId, 'fixture-project');
     assert.equal(saved!.definition.status, edit.actions[0]!.expected.status);
+
+    for (const declaration of [
+      zoned('Europe/London'),
+      zoned('UTC'),
+      job().replace('every 1 hour', '{ cron: "0 9 * * *" }'),
+    ]) {
+      await manifest(declaration);
+      const next = await inspect();
+      assert.equal(next.actions[0]!.mode, 'update');
+      assert.equal(next.actions[0]!.review, undefined);
+      assert.equal(next.actions[0]!.id, 'fixture-native');
+      await syncOne();
+      assert.equal((await inspect()).status, 'aligned');
+    }
   });
 
   it('should cancel a failed direct create only when no partial saved create exists', async () => {
