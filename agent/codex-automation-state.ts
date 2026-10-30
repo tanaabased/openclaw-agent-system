@@ -148,7 +148,10 @@ export async function readCodexFile(path: string): Promise<string> {
   }
 }
 
-export async function readCodexAutomations(codexHome: string): Promise<SavedAutomation[]> {
+export async function readCodexAutomations(
+  codexHome: string,
+  options: { requireComplete?: boolean } = {},
+): Promise<SavedAutomation[]> {
   const root = join(codexHome, 'automations');
   try {
     if (!(await lstat(root)).isDirectory()) throw new Error('invalid directory');
@@ -157,13 +160,20 @@ export async function readCodexAutomations(codexHome: string): Promise<SavedAuto
     const result: SavedAutomation[] = [];
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.isSymbolicLink()) throw new Error('symlink');
-      if (!entry.isDirectory()) continue;
+      if (!entry.isDirectory()) {
+        if (options.requireComplete) throw new Error('unknown inventory entry');
+        continue;
+      }
       let contents: string;
       try {
         contents = await readCodexFile(join(root, entry.name, 'automation.toml'));
       } catch (error) {
         // native deletion retains run memory without a definition.
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          if (options.requireComplete && !(await lstat(join(root, entry.name))).isDirectory())
+            throw new Error('incomplete inventory', { cause: error });
+          continue;
+        }
         throw error;
       }
       const saved = parseSavedAutomation(contents, entry.name);
@@ -173,7 +183,7 @@ export async function readCodexAutomations(codexHome: string): Promise<SavedAuto
     }
     return result;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    if (!options.requireComplete && (error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     if (error instanceof CodexAutomationError) throw error;
     throw new CodexAutomationError('automation-saved-inspection-failed');
   }
