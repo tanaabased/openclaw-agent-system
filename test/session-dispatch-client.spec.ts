@@ -567,6 +567,7 @@ describe('credentials/session-dispatch-client', () => {
       'health',
       'status',
       'logs.tail',
+      'plugins.inspect',
       'sessions.futureOperation',
     ]) {
       const params = { sessionKey: 'issue', idempotencyKey: 'retained-attempt' };
@@ -614,6 +615,9 @@ describe('credentials/session-dispatch-client', () => {
       '',
       'config.apply',
       'device.token.rotate',
+      'plugins.install',
+      'plugins.uninstall',
+      'plugins.update',
       'update.run',
       'node.invoke',
       'exec.approvals.set',

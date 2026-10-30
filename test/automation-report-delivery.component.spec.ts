@@ -9,6 +9,7 @@ import deliverAutomationReport, {
 import AutomationReportStore from '../agent/automation-report-store.ts';
 import type { AutomationReportInput } from '../agent/automation-report.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
+import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
 import registerAutomationReportHooks from '../core/automation-report-hook.ts';
 
 const input: AutomationReportInput = {
@@ -45,6 +46,7 @@ describe('agent/automation-report-delivery', () => {
       denied?: boolean;
       hookDenied?: boolean;
       settledBeforeAck?: boolean;
+      requestGuard?: boolean;
     } = {},
   ) {
     const calls: string[] = [];
@@ -83,7 +85,7 @@ describe('agent/automation-report-delivery', () => {
         assert.equal(authority.signal?.aborted, false);
         await authority.assertCurrent?.();
         if (options.revoked) throw Error('revoked');
-        return operation(async (method: string, params: Record<string, unknown>) => {
+        const request = async (method: string, params: Record<string, unknown>) => {
           calls.push(method);
           if (method === 'plugins.inspect')
             return {
@@ -172,7 +174,10 @@ describe('agent/automation-report-delivery', () => {
             throw Error('acknowledgment lost after terminal hook');
           }
           return options.malformed ? {} : { status: 'started', runId: params.idempotencyKey };
-        });
+        };
+        return operation(
+          options.requestGuard ? sessionDispatchRequest(request, authority) : request,
+        );
       },
     };
     const deliver = (executionId = input.executionId) =>
@@ -233,6 +238,19 @@ describe('agent/automation-report-delivery', () => {
     assert.equal((await f.recover()).status, 'pending');
     assert.equal(f.messages.length, 1);
     assert.equal((await f.store.read(input.executionId))?.input.outcome, 'error');
+  });
+  it('should inspect reporting grants through the enrolled request guard before sending', async () => {
+    for (const hookDenied of [false, true]) {
+      const f = fixture({ requestGuard: true, hookDenied });
+      const result = await f.deliver(randomUUID());
+      assert.equal(result.status, hookDenied ? 'pending' : 'delivered');
+      assert.equal(
+        result.code,
+        hookDenied ? 'automation-report-hook-permission-required' : undefined,
+      );
+      assert.ok(f.calls.includes('plugins.inspect'));
+      assert.equal(f.messages.length, hookDenied ? 0 : 1);
+    }
   });
   it('should preserve uncertain sends and reconcile the same durable identity after restart', async () => {
     const f = fixture({ lostAck: true });

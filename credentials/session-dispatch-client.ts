@@ -256,7 +256,7 @@ export function sessionDispatchRequest(
     'exec.approval',
     'usage',
   ];
-  const methods = new Set(['agent', 'health', 'status', 'logs.tail']);
+  const methods = new Set(['agent', 'health', 'status', 'logs.tail', 'plugins.inspect']);
   return async (method, params) => {
     assertCurrent();
     await authority.assertCurrent?.();
