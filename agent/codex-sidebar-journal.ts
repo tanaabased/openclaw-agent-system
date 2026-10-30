@@ -166,8 +166,7 @@ export default class CodexSidebarJournal {
         await save();
         return { status: 'done', sectionId: placement.sectionId! };
       }
-      if (placement.request.tool === 'create_sidebar_section' && state.sectionId)
-        return incomplete('automation-sidebar-retained-section-missing');
+      if (placement.request.tool === 'create_sidebar_section') delete state.sectionId;
       const intent = {
         owner,
         threadId,

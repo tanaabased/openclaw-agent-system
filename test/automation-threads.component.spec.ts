@@ -299,11 +299,61 @@ describe('agent/automation-threads', () => {
           );
           return rejects(`automation-thread-settings-${state}`)(error);
         });
+        if (state === 'uncertain') {
+          changed[0]!.overrides[runtime]!.effort = 'medium';
+          await assert.rejects(
+            f.store.resolve(changed, true),
+            rejects('automation-thread-settings-uncertain'),
+          );
+          assert.equal(await readFile(f.store.path, 'utf8'), before);
+          assert.equal(writes, 1);
+        }
         f.native.get(id)!.effort = 'high';
         await f.store.resolve(declarations, true);
         assert.equal(writes, 1);
         assert.equal(f.creates(), 1);
       });
+    it(`should settle a withdrawn denied update without changing the ${runtime} chat`, async () => {
+      const f = fixture(runtime);
+      const declarations = jobs('Activity', ['activity']);
+      declarations[0]!.overrides[runtime] = { model: 'original', effort: 'medium' };
+      const id = (await f.store.resolve(declarations, true)).get('activity')!.id;
+      f.native.get(id)!.incarnation = 'original-session';
+      declarations[0]!.overrides[runtime] = { model: 'requested', effort: 'high' };
+      let writes = 0;
+      f.adapter.updateSettings = async () => {
+        writes++;
+        throw new AutomationError('automation-thread-settings-denied');
+      };
+      await assert.rejects(
+        f.store.resolve(declarations, true),
+        rejects('automation-thread-settings-denied'),
+      );
+      const saved = await readFile(f.store.path, 'utf8');
+      declarations[0]!.overrides[runtime] = { model: 'original', effort: 'medium' };
+      await assert.rejects(
+        f.store.resolve(declarations),
+        rejects('automation-thread-sync-required'),
+      );
+      assert.equal(await readFile(f.store.path, 'utf8'), saved);
+      f.native.get(id)!.incarnation = 'replacement-session';
+      await assert.rejects(
+        f.store.resolve(declarations, true),
+        rejects('automation-thread-settings-conflict'),
+      );
+      assert.equal(await readFile(f.store.path, 'utf8'), saved);
+      f.native.get(id)!.incarnation = 'original-session';
+      const before = structuredClone(f.native.get(id));
+      assert.equal((await f.store.resolve(declarations, true)).get('activity')!.id, id);
+      assert.equal((await f.store.resolve(declarations)).get('activity')!.id, id);
+      assert.deepEqual(f.native.get(id), before);
+      assert.equal(writes, 1);
+      assert.equal(f.creates(), 1);
+      assert.equal(
+        JSON.parse(await readFile(f.store.path, 'utf8')).records[0].settingsUpdate,
+        undefined,
+      );
+    });
   }
   it('should reject incompatible settings for a shared chat before creating it', async () => {
     const f = fixture('openclaw');

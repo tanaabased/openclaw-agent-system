@@ -18,7 +18,7 @@ those same conversations.
 
 ## Notes
 
-- The named-zone declaration maps to a native timezone-qualified recurrence. Codex direct creation does not accept `DTSTART`, so a new named-zone schedule reports `automation-dtstart-create-unsupported` before journaling a proposal. Timezone edits to existing schedules use direct updates. Native timing limitations are documented in [Codex automations](../../MANIFEST.md#codex-execution-and-ownership).
+- The named-zone declaration maps to a native timezone-qualified recurrence. Codex direct creation does not accept `DTSTART`, so only a new timezone-qualified schedule prepares a native review card and waits for verified saved settings. Timezone edits to existing schedules use direct updates. Native timing limitations are documented in [Codex automations](../../MANIFEST.md#codex-execution-and-ownership).
 - Sidebar inventories and responses are explicit headless fixtures; native sidebar behavior requires desktop verification. Lookup inventories are explicit fixtures. `list` and `sync` inspect or plan native app actions; they do not write scheduler files. `threads-sync` creates/resumes real conversations through `codex app-server` under installation authorization and a fresh digest.
 - Native readback checks `auto_review`, `on-request`, and `workspace-write`. No model generation or provider credentials are used; run only in GitHub Actions.
 - Pending relocation: prepare/cancel retains a pending journal until verification and permits cancellation only while the failed target is unchanged. Pending creates also require no new native IDs; an unmarked job may be a partial create.
@@ -67,16 +67,16 @@ if printf '%s\n' '{"id":"review"}' | node "$runtime" automations runs --plugin-d
 jq -e '.code == "automation-history-unavailable" and .telemetry.execution == "unavailable"' "$root/history-gap.json"
 test ! -d "$CODEX_HOME/automations"
 
-# should reject unsupported timezone creation without preparing a native proposal
+# should prepare timezone creation for review without writing a native schedule
 root="$TMPDIR/agent-system-codex-automations"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 digest=$(jq -r .digest "$root/automation-plan.json")
 jq --arg digest "$digest" '. + {digest:$digest}' "$root/automation-input.json" > "$root/prepare-input.json"
-if node "$runtime" automations prepare --plugin-data "$root/automation-data" < "$root/prepare-input.json" 2> "$root/unsupported-create.json"; then exit 1; fi
-jq -e '.code == "automation-dtstart-create-unsupported" and (.message | contains("does not support DTSTART recurrences"))' "$root/unsupported-create.json"
-node "$runtime" automations inspect --plugin-data "$root/automation-data" < "$root/automation-input.json" \
-  | jq -e '.status == "requires-native-app-sync" and .actions[0].mode == "create"'
+node "$runtime" automations prepare --plugin-data "$root/automation-data" < "$root/prepare-input.json" \
+  | jq -e '.status == "prepared" and .request.mode == "suggested_create" and (.request.rrule | startswith("DTSTART;TZID=America/New_York:")) and .request.status == "PAUSED"'
+if node "$runtime" automations acknowledge --plugin-data "$root/automation-data" < "$root/prepare-input.json" 2> "$root/review-pending.json"; then exit 1; fi
+jq -e '.code == "automation-review-pending"' "$root/review-pending.json"
 test ! -d "$CODEX_HOME/automations"
 
 # should create durable conversations with selected models and verified auto review
@@ -87,10 +87,12 @@ node "$runtime" binding bind --plugin-data "$root/threads-data" --workspace "$GI
 node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/threads-data" "$root/sidebar-input.json" | tee "$root/threads-created.json" | jq -e '.status == "verified" and ([.threads[].id] | unique | length) == 2'
 node "$runtime" automations plan --plugin-data "$root/threads-data" < "$root/sidebar-input.json" | tee "$root/threads-plan.json" | jq -e '.status == "requires-native-app-sync" and ([.actions[].expected.targetThreadId] | unique | length) == 2 and all(.actions[]; .expected.kind == "heartbeat")'
 
-# should retain conversation identities and model settings after the creating process exits
+# should restore a deleted sidebar group while retaining conversation identities and model settings
 root="$TMPDIR/agent-system-codex-automations"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
+jq '.nativeInventory.sections |= map(select(.name != "AGENT SYSTEM"))' "$root/sidebar-input.json" > "$root/sidebar-deleted.json"
+mv "$root/sidebar-deleted.json" "$root/sidebar-input.json"
 node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/threads-data" "$root/sidebar-input.json" > "$root/threads-reused.json"
 jq -S '.threads | map_values(.id)' "$root/threads-created.json" > "$root/threads-ids.json"
 jq -S '.threads | map_values(.id)' "$root/threads-reused.json" | diff - "$root/threads-ids.json"

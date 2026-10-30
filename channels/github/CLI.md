@@ -156,20 +156,16 @@ Use Doctor for missing or disabled schedules and Install to reconcile drift. Res
 interrupted work in its [existing chat](./README.md#chatting), rather than resetting
 tracking to force a retry.
 
-Doctor, notification status, and intake reports show journal content size, thresholds,
-bytes reclaimed by the last offload, and reasons records remain protected. Both runtimes
-warn at 16 MiB and pause new scheduled or manual tasks at 32 MiB. Intake reports notify
-on pressure transitions or substantial growth, not every scan. Existing tasks can
-continue within the 64 MiB content ceiling, with 1 MiB of additional reporting space.
-These limits are fixed; raising them is not a supported recovery setting.
+Doctor, notification status, and intake reports show journal pressure and protected
+records. Both runtimes warn at 16 MiB and pause new scheduled or manual tasks at
+32 MiB. Existing tasks can continue within the 64 MiB content ceiling. These fixed
+limits are not configurable recovery settings.
 
-Normal dispatch reconciliation offloads verified retired detail, including failed tasks
-and stale historical turns, before new work. Retry context and the complete assessment
-in the same chat after reconciliation. Admission resumes below 32 MiB with room for the
-proposed task. Oversized saves preserve the committed journal; active work may still
-exhaust the finite emergency budget. Do not delete state or mark work successful to
-free space. Cold detail expires after 30 days or eviction from its 64 MiB budget;
-compact terminal identity and effect receipts remain and never restore authority.
+Normal dispatch reconciliation offloads verified retired detail. Retry the reported
+operation in the same chat after reconciliation; admission resumes below 32 MiB
+when there is room for the task. Active work can still exhaust capacity. Do not
+delete state or mark work successful to free space. Offloaded detail expires after
+30 days or eviction from its 64 MiB budget.
 
 For an OpenClaw readiness probe, use:
 

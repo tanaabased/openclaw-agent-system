@@ -64,7 +64,7 @@ baseline excludes existing assignments; assign new work after verifying the firs
 
 | Runtime  | Schedule                                                                                                           | Intake chat                                |
 | -------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
-| OpenClaw | `github-issue-assignment`, visible through [automations list](../../CLI.md#openclaw-agent-system-automations-list) | `ISSUE ASSIGNMENTS` in **Agent System**    |
+| OpenClaw | `github-issue-assignment`, visible through [automations list](../../CLI.md#openclaw-agent-system-automations-list) | `ISSUE ASSIGNMENTS` in **AGENT SYSTEM**    |
 | Codex    | **📥 ISSUE ASSIGNMENTS** in native automations                                                                     | `ISSUE ASSIGNMENTS` under **AGENT SYSTEM** |
 
 The intake chat reports started issues, pending assignments, capacity, and obstacles.

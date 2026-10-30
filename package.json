@@ -173,7 +173,7 @@
     "@types/node": "^26.0.0",
     "@types/proper-lockfile": "4.1.4",
     "@types/semver": "7.7.1",
-    "clawhub": "0.23.3",
+    "clawhub": "0.24.1",
     "commander": "15.0.0",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
