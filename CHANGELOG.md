@@ -1,18 +1,43 @@
 ## {{ UNRELEASED_VERSION }} - [{{ UNRELEASED_DATE }}]({{ UNRELEASED_LINK }})
 
-- Added `automations[].group` for shared uppercase Codex sections and OpenClaw categories, defaulting to `AGENT SYSTEM`. [#544](https://github.com/tanaabased/openclaw-agent-system/issues/544)
-- Added journal pressure warnings and admission headroom for existing work in Codex and OpenClaw. [#565](https://github.com/tanaabased/openclaw-agent-system/issues/565)
-- Added shared automation model/profile and effort selection, with verified updates to existing managed chats. [#556](https://github.com/tanaabased/openclaw-agent-system/issues/556)
-- Changed omitted automation models to inherit `models.default` when configured. Review effective settings before Install. [#556](https://github.com/tanaabased/openclaw-agent-system/issues/556)
-- Extended OpenClaw cold-install reload readiness to 90 seconds with a coordinated connection deadline, and added safe session-creation rejection reasons and the affected automation ID to Install diagnostics. [#568](https://github.com/tanaabased/openclaw-agent-system/issues/568)
-- Fixed Codex and OpenClaw issue chat titles to stay uppercase without repeated repository or issue prefixes, while allowing punctuation and Unicode. [#546](https://github.com/tanaabased/openclaw-agent-system/pull/546)
-- Fixed command capture to inherit OpenClaw defaults, migrate existing command automation limits to 16 MiB per stream without blocking scheduled execution, and preserve diagnostic tails with explicit truncation evidence. [#566](https://github.com/tanaabased/openclaw-agent-system/issues/566)
+### Features
+
+- Added `automations[].display-name` for readable native automation labels. [#542](https://github.com/tanaabased/openclaw-agent-system/issues/542)
+- Added `automations[].group` for shared uppercase Codex sections and OpenClaw categories. [#544](https://github.com/tanaabased/openclaw-agent-system/issues/544)
+- Added explicit unmanaged native chat cleanup in Codex and OpenClaw. [#508](https://github.com/tanaabased/openclaw-agent-system/issues/508)
+- Added manual launch from an existing same-repository PR, retaining its branch and original PR. [#507](https://github.com/tanaabased/openclaw-agent-system/issues/507)
+- Added shared automation model/profile and effort selection, including updates to existing managed chats. [#556](https://github.com/tanaabased/openclaw-agent-system/issues/556)
+
+### Bug Fixes
+
+- Fixed Codex automation updates to run directly; only creating a timezone-qualified job requires a review card. [#552](https://github.com/tanaabased/openclaw-agent-system/issues/552)
+- Fixed Codex intake checks to isolate each automation's pending work. [#555](https://github.com/tanaabased/openclaw-agent-system/issues/555)
+- Fixed Codex sidebar placement recovery when a previously confirmed group is deleted or renamed.
+- Fixed denied automation settings updates to clear when the requested change is withdrawn.
 - Fixed explicit Codex implementation requests to resume handed-off issue plans after native verification. [#544](https://github.com/tanaabased/openclaw-agent-system/issues/544)
-- Fixed idle Codex chats losing task access or holding capacity, and resumed interrupted handoffs through their retained input. [#571](https://github.com/tanaabased/openclaw-agent-system/pull/571)
-- Fixed retired-task history retention to offload unsuccessful and stale work after verified cleanup. [#565](https://github.com/tanaabased/openclaw-agent-system/issues/565)
-- Fixed verified follow-up input to resume implementation without repeating processed requests or lifting local publication holds. [#571](https://github.com/tanaabased/openclaw-agent-system/pull/571)
-- Made ClawHub publication best-effort with a warning on failure, and removed the automatic fallback upload. npm and repository publication remain required.
-- Separated local publication holds, delivered PRs, pending responses, and failures needing attention in workflow status. [#571](https://github.com/tanaabased/openclaw-agent-system/pull/571)
+- Fixed idle Codex chats losing task access or holding capacity, and resumed interrupted handoffs through retained input. [#571](https://github.com/tanaabased/openclaw-agent-system/pull/571)
+- Fixed issue chat titles to remain uppercase without duplicate prefixes while allowing punctuation and Unicode. [#546](https://github.com/tanaabased/openclaw-agent-system/pull/546) [#553](https://github.com/tanaabased/openclaw-agent-system/pull/553)
+- Fixed large implementation and assessment contexts to retain complete material through bounded retrieval. [#557](https://github.com/tanaabased/openclaw-agent-system/issues/557)
+- Fixed recovery of retained assessments outside recent native chat history. [#550](https://github.com/tanaabased/openclaw-agent-system/issues/550)
+- Fixed retired-task history retention after verified cleanup, including unsuccessful and stale work. [#565](https://github.com/tanaabased/openclaw-agent-system/issues/565)
+- Fixed verified follow-up input to resume implementation without repeating requests or lifting publication holds. [#571](https://github.com/tanaabased/openclaw-agent-system/pull/571)
+- Updated implementation guidance to retain unfinished work before PR delivery while preserving the delivery guard.
+
+### Improvements
+
+- Added journal pressure warnings and admission headroom for existing work in both runtimes. [#565](https://github.com/tanaabased/openclaw-agent-system/issues/565)
+- Added same-agent Install and Doctor access during authorized automation runs. [#551](https://github.com/tanaabased/openclaw-agent-system/issues/551)
+- Extended OpenClaw cold-install readiness to 90 seconds and improved session-creation failure diagnostics. [#568](https://github.com/tanaabased/openclaw-agent-system/issues/568)
+- Retained command automation output in native run history, inheriting capture defaults and migrating existing limits to 16 MiB per stream. [#549](https://github.com/tanaabased/openclaw-agent-system/issues/549) [#566](https://github.com/tanaabased/openclaw-agent-system/issues/566)
+- Separated publication holds, delivered PRs, pending responses, and failures needing attention in workflow status. [#571](https://github.com/tanaabased/openclaw-agent-system/pull/571)
+- Updated Doctor findings to identify affected automations and omit healthy automation detail. [#572](https://github.com/tanaabased/openclaw-agent-system/issues/572)
+- Updated OpenClaw automation names to identify their owning agent or built-in source. [#564](https://github.com/tanaabased/openclaw-agent-system/issues/564)
+
+### Notes
+
+- Added validation for `github.project-pickup` declarations; scheduled pickup is not yet available in either runtime. [#525](https://github.com/tanaabased/openclaw-agent-system/issues/525)
+- Changed omitted automation models to inherit `models.default` when configured. Review effective settings before Install. [#556](https://github.com/tanaabased/openclaw-agent-system/issues/556)
+- Made ClawHub publication best-effort, with a warning on failure; npm and repository publication remain required. [#518](https://github.com/tanaabased/openclaw-agent-system/issues/518)
 - Updated installation guidance to use npm while ClawHub publication is blocked upstream. [actions#65](https://github.com/tanaabased/actions/issues/65)
 
 ## v0.9.2 - [October 28, 2026](https://github.com/tanaabased/openclaw-agent-system/releases/tag/v0.9.2)

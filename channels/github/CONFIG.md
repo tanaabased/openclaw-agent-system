@@ -103,13 +103,6 @@ or approved assignment and feedback authors.
 | `selection.guidance` | no       | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                   |
 | `projects`           | yes      | Exactly one entry with `repository: owner/name` and `milestone: {number: 10, policy: only}`. The milestone number must be positive. Other policies and multi-project selection are rejected.   |
 
-The shared policy checks open issues against the exact repository and an open
-milestone. Missing, inaccessible, or closed milestones produce diagnostics; an empty
-backlog supplies no pickup. Runtime-owned enrollment and assignment evidence are
-required before a new scoped assignment can receive Work. Existing actor checks,
-work-size assessment, capacity, cancellation, merge, and release boundaries remain
-in force. The policy does not add a new numeric work-size limit.
-
 ## `github.issue-assignment`
 
 Declares assignment intake and the workflow it starts. This object is optional;

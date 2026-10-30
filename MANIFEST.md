@@ -164,8 +164,9 @@ Set `display-name` to give the automation a readable label, including emoji. Out
 whitespace is trimmed; NUL and line breaks are rejected. Codex uses the label as its
 native automation `name`; OpenClaw uses native `displayName`, retaining its stable
 job `name`. Without a label, Codex uses `<agent-id>: <automation-id>` and OpenClaw
-uses `Agent System: <automation-id>`. Changing or removing the label through normal
-synchronization updates the existing job or restores that default; it does not
+uses `<UPPERCASE-AGENT-ID>: <automation-id>` (`AGENT SYSTEM` for built-in jobs).
+Changing or removing the label through normal synchronization updates the existing
+job or restores that default; it does not
 replace the job, change its schedule, or rename its chat.
 
 ```yaml
@@ -313,18 +314,12 @@ launchers, which check tool policy before loading credentials. Other executables
 as host commands under the same [containment limits](./CLI.md#trust-boundary) as setup.
 Rerun Install after changing a command declaration.
 
-Approving and activating an owned automation also authorizes its same-agent Install
-and Doctor calls for that occurrence, without another permission setting or recurring
-chat approval. Command jobs can call `openclaw agent-system install` and
-`openclaw agent-system doctor` (or `status`); prompt jobs use the native lifecycle tools,
-including OpenClaw-hosted Codex. The target comes from the verified job binding, never
-`--agent`, a replacement workspace, or prompt text. Ordinary setup children and later
-interactive turns do not inherit this authority. Expired, cancelled, changed, or
-unverifiable runs are refused; correct the reported condition before requesting another run.
-Install runs normal applicable setup unless the author chooses its supported skip
-options. Doctor runs checks without repairs. Activation does not override provider
-permissions, enrollment/pairing requirements, shared prerequisites, or the native
-prompt tools' operator-only scheduler-sync limitation. Standalone Codex retains its
+Activating an owned automation authorizes same-agent Install and Doctor calls for
+that run. Command jobs use `openclaw agent-system install` and `doctor` (or `status`);
+prompt jobs use native lifecycle tools. The job cannot select another agent or
+workspace, and later interactive turns retain their normal approval requirements.
+Provider permissions, enrollment, and prerequisites still apply; native prompt tools
+cannot synchronize schedules. Standalone Codex retains its
 [native approval boundary](#codex-execution-and-ownership).
 
 Prompt jobs normally start a separate session for the configured agent. They use its
@@ -334,12 +329,8 @@ Results stay in native run history unless you configure delivery. Command runs r
 bounded stdout and stderr, even without delivery. Authorized Gateway operators can
 inspect output and truncation in run details; setup output stays private. Agent System
 inherits OpenClaw capture defaults and forwards captured output without another cap.
-Install and automation sync migrate existing managed command jobs with an explicit
-`outputMaxBytes` to 16 MiB per stream, preserving their IDs, schedules, routing and
-history. The native update API cannot clear that field, so migrated jobs retain this
-fixed compatibility value; new jobs omit it and inherit OpenClaw defaults. Scheduled
-command execution remains available before sync and while an output-limit-only
-update is pending, including after a lost update acknowledgement.
+Install and automation sync update existing managed command jobs with an explicit
+`outputMaxBytes` to 16 MiB per stream; new jobs inherit OpenClaw defaults.
 
 Timeouts include startup and range from 1 to 3600 seconds (default 1800). OpenClaw
 controls overlapping runs of the same job, retries, recovery, and daylight saving time;
