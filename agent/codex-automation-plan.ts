@@ -270,6 +270,7 @@ export default async function planCodexAutomations(options: {
           manifestId: job.id,
           mode: actual ? 'update' : 'create',
           ...(actual ? { id: actual.id } : {}),
+          ...(!actual && /^DTSTART[:;]/u.test(rrule) ? { review: true } : {}),
           expected,
           removed: false,
         });
