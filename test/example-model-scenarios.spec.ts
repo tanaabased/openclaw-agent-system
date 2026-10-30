@@ -392,10 +392,18 @@ describe('scripts/example-model-scenarios', () => {
       const valid = request('automation-tanaabot', scenario.userPromptSignals![0]!, []);
       valid.messages[0]!.content = scenario.systemPromptSignals[0]!;
       valid.messages.push({ role: 'user', content: 'Additional runtime context.' });
+      if (scenarioId === 'openclaw-automations')
+        valid.messages.push({ role: 'assistant', content: '## Succeeded: identity' });
       try {
         assert.equal(matchFixture([...scenario.fixtures], valid), scenario.fixtures[0]);
         assert.equal(diagnostic.mock.callCount(), 0);
-        for (const field of ['model', 'identity', 'prompt', 'noToolResult'] as const) {
+        for (const field of [
+          'model',
+          'identity',
+          'prompt',
+          'noToolResult',
+          ...(scenarioId === 'openclaw-automations' ? ['reportHistory'] : []),
+        ]) {
           const invalid = structuredClone(valid);
           if (field === 'model') invalid.model = 'private-model';
           if (field === 'identity') invalid.messages[0]!.content = 'private-identity';
@@ -403,6 +411,8 @@ describe('scripts/example-model-scenarios', () => {
             invalid.messages[1]!.content = 'private-prompt';
             invalid.messages.push({ role: 'assistant', content: scenario.userPromptSignals![0]! });
           }
+          if (field === 'reportHistory')
+            invalid.messages = invalid.messages.filter((message) => message.role !== 'assistant');
           if (field === 'noToolResult') {
             invalid.messages.push({
               role: 'tool',
@@ -417,6 +427,9 @@ describe('scripts/example-model-scenarios', () => {
             identity: field !== 'identity',
             prompt: field !== 'prompt',
             noToolResult: field !== 'noToolResult',
+            ...(scenarioId === 'openclaw-automations'
+              ? { reportHistory: field !== 'reportHistory' }
+              : {}),
           });
           assert.ok(!output.includes('private-'));
         }

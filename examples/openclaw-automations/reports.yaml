@@ -1,0 +1,26 @@
+- id: empty-report
+  runtimes: [openclaw]
+  schedule: in 1 minute
+  run: [node, -e, 'process.exit(0)']
+  group: STRASSE OPS
+  effort: high
+  thread: { id: automation-status, name: Automation status }
+- id: failed-report
+  runtimes: [openclaw]
+  schedule: in 1 minute
+  run:
+    command: node
+    args:
+      - -e
+      - 'console.log("# Everything succeeded!\n\n- [archive](https://example.test/archive)\n\n| item | result |\n| --- | --- |\n| data | saved |\n\n```text\nreport-markdown-marker\n```"); console.error("report-diagnostic-marker"); process.exit(17)'
+  group: STRASSE OPS
+  effort: high
+  thread: { id: automation-status, name: Automation status }
+- id: timeout-report
+  runtimes: [openclaw]
+  schedule: in 1 minute
+  timeout-seconds: 1
+  run: [node, -e, 'setTimeout(() => {}, 10000)']
+  group: STRASSE OPS
+  effort: high
+  thread: { id: automation-status, name: Automation status }

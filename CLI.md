@@ -131,6 +131,11 @@ openclaw agent-system automations runs <id> [--agent <id>] [--json] [--limit <co
 openclaw agent-system automations runs review --limit 20 --json
 ```
 
+Native delivery status describes OpenClaw channel delivery, not a persistent chat report.
+For command reports, native run output also retains a `reporting` completion field with
+`delivered`, `not-delivered`, or `uncertain`, the wrapper execution ID, and a message ID
+when acknowledged. These details are not included in this bounded history listing.
+
 Each entry reports execution and delivery independently. Missing telemetry is `unavailable`; raw output and errors are omitted. The result includes `total`, `offset`, `limit`, `hasMore`, and `nextOffset`. Pass `nextOffset` to read another page. Native history clamps an offset beyond the result count to that count.
 
 ## `openclaw agent-system automations sync`

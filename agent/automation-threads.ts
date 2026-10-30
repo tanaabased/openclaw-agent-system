@@ -116,7 +116,7 @@ export function automationThreadSelection(
   job: ResolvedAutomation,
   runtime: AutomationRuntime,
 ): AutomationThreadSelection | undefined {
-  if (job.payload.kind !== 'prompt') return;
+  if (job.payload.kind === 'command' && runtime !== 'openclaw') return;
   const target = job.overrides[runtime]?.target;
   if (target === 'independent') return;
   const group = managedGroupName(

@@ -1,5 +1,6 @@
 import { Value } from 'typebox/value';
 
+import { automationThreadSelection } from './automation-threads.ts';
 import { AutomationError } from './automation-gateway.ts';
 import {
   projectRoutingProfile,
@@ -19,11 +20,13 @@ export default function automationModels(
   models: AgentModelsConfiguration | undefined,
   runtime: AutomationRuntime,
 ): ResolvedAutomation[] {
-  if (!jobs.some((job) => job.payload.kind === 'prompt' && job.runtimes.includes(runtime)))
-    return jobs;
+  const consumesModel = (job: ResolvedAutomation) =>
+    job.runtimes.includes(runtime) &&
+    (job.payload.kind === 'prompt' || Boolean(automationThreadSelection(job, runtime)));
+  if (!jobs.some(consumesModel)) return jobs;
   if (models) validateRoutingProfiles(models);
   return jobs.map((job) => {
-    if (job.payload.kind !== 'prompt' || !job.runtimes.includes(runtime)) return job;
+    if (!consumesModel(job)) return job;
     const override = job.overrides[runtime];
     if (override?.target && override.target !== 'independent') {
       if (

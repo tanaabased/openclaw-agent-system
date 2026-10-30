@@ -1,5 +1,6 @@
 import { realpath } from 'node:fs/promises';
 
+import type { AutomationReportTarget } from './automation-report-delivery.ts';
 import openclawIntakeJobs from './openclaw-intake-policy.ts';
 
 import {
@@ -1030,9 +1031,22 @@ export default class AutomationService {
           (!outputLimitOnly || nativeHash !== record.pending!.nativeHash))
       )
         throw new AutomationError('automation-execution-drift');
+      const selection = automationThreadSelection(job, 'openclaw');
+      const reportTarget: AutomationReportTarget | undefined =
+        selection &&
+        typeof native.sessionTarget === 'string' &&
+        native.sessionTarget.startsWith('session:')
+          ? {
+              sessionKey: native.sessionTarget.slice(8),
+              agentId: context.agentId,
+              workspaceDir: context.workspaceDir,
+              scope: store.scope,
+            }
+          : undefined;
       return {
         command: { ...job.payload.run, timeoutSeconds: job.timeoutSeconds ?? 1800 },
         context,
+        reportTarget,
       };
     }
     throw new AutomationError('automation-execution-stale');

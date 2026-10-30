@@ -7,6 +7,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 
 - Public managed sync/list/run boundaries and repeated sync preserving the same native jobs, including migration of legacy native names and command output limits.
 - Shared model/effort creation and same-chat updates, followed by a timer-fired occurrence with native execution evidence.
+- Command reporting and a scheduled prompt share one persistent chat; the prompt receives the preceding report as history.
 - Native display-name rename/removal while preserving the job, its completed run state, and separate chat binding.
 - Completed same-agent Install/Doctor through a command descendant and native prompt tools, including default setup, without per-occurrence approval.
 - Failed command output beyond the former local caps and exit status reaching the exact native run record with delivery disabled.
@@ -27,25 +28,24 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 - AIMock normalizes away request reasoning effort. Verify effort through the native embedded-run diagnostic correlated with the completed occurrence's session, not through the mock response or saved settings alone.
 - Source tests cover option/offline variants, one-shot retention, unmanaged jobs, stale authority, containment, timeout/cancellation cleanup, and thread-selection permutations.
 - The failure fixture emits 64 KiB per stream, then late markers and exit 17. This exceeds the former local caps while keeping native diagnostic redaction within its transaction admission budget. Component tests cover forwarding native truncation metadata; this installed case verifies default capture without truncation. It adds no model turn or provider call.
+- Reporting adds three deterministic timer-fired commands, one repeated Install, and fresh history reads; no extra model turn or Gateway restart is needed. Component tests own delivery failures and sanitization. Browser rendering remains a separate visual check.
 - The output check reads `cron.runs`, the Gateway API supplying run cards. It verifies output propagation, not browser rendering or OpenClaw restart persistence.
 
 ## Setup
 
 ```bash
 # should prepare the packed plugin and strict scheduled-prompt fixture
-openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --yolo
+openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --yolo
 openclaw-aimock prepare --scenario openclaw-automations
-
-# should install the owning workspace before starting the gateway
-cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
-openclaw agent-system install --skip-setup --yes --json
 
 # should keep automation session choices local even when native sticky selection is global
 openclaw config set agents.defaults.modelSelectionScope global
 openclaw config get agents.defaults.model --json > "$TMPDIR/automation-global-model.json"
 
-# should start the gateway with the installed agent
+# should install the owning workspace with reporting enrollment
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
+cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+openclaw agent-system install --skip-setup --yes --json
 ```
 
 ## Testing
@@ -63,7 +63,7 @@ openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId,
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 chat=$(jq -er '.jobs[] | select(.id == "prompt") | .routing | sub("^session:"; "")' "$TMPDIR/automation-before.json")
 openclaw gateway call sessions.list --params '{"limit":100}' --json | jq -e --arg key "$chat" 'any(.sessions[]; .key == $key and .category == "AGENT SYSTEM")'
-node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); jobs.find(({id})=>id==="prompt").group="  straße ops  "; fs.writeFileSync("automations.yaml",stringify(jobs));'
+node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); for(const job of jobs) job.group="  straße ops  "; fs.writeFileSync("automations.yaml",stringify(jobs));'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized"'
 openclaw gateway call sessions.list --params '{"limit":100}' --json | jq -e --arg key "$chat" 'any(.sessions[]; .key == $key and .category == "STRASSE OPS")'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
@@ -73,7 +73,7 @@ openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId,
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 chat=$(jq -er '.jobs[] | select(.id == "prompt") | .routing | sub("^session:"; "")' "$TMPDIR/automation-before.json")
 openclaw gateway call sessions.list --params '{"limit":100}' --json | jq -e --arg key "$chat" 'any(.sessions[]; .key == $key and .thinkingLevel == "medium")'
-node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); jobs.find(({id})=>id==="prompt").effort="high"; fs.writeFileSync("automations.yaml",stringify(jobs));'
+node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); for(const job of jobs) job.effort="high"; fs.writeFileSync("automations.yaml",stringify(jobs));'
 if output=$(NO_COLOR=1 openclaw agent-system doctor 2>&1); then exit 1; fi
 printf '%s\n' "$output" | grep -F 'name: Automation status'
 printf '%s\n' "$output" | grep -F 'automation-thread-model-drift'
@@ -186,6 +186,39 @@ jq -S '{id,name,declarationKey,agentId,enabled,schedule,sessionTarget,delivery,p
 openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg runId "$run_id" '{id:$id,runId:$runId,limit:1}')" --json | jq -e --arg runId "$run_id" 'any(.entries[]; .runId == $runId and .status == "error" and (.summary | contains("stderr-fixture-marker")))'
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 ```
+
+````bash
+# should enroll timer-fired reports into the existing shared chat without replacing it
+cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+cat reports.yaml >> automations.yaml
+openclaw agent-system install --skip-setup --yes --json
+openclaw agent-system automations list --json > "$TMPDIR/report-jobs.json"
+chat=$(jq -er '.jobs[] | select(.id == "prompt") | .routing' "$TMPDIR/automation-before.json")
+jq -e --arg chat "$chat" 'all(.jobs[] | select(.id | endswith("-report")); .routing == $chat)' "$TMPDIR/report-jobs.json"
+openclaw agent-system install --skip-setup --yes --json
+openclaw agent-system automations list --json | jq -S '[.jobs[] | {id,nativeId,routing}] | sort_by(.id)' > "$TMPDIR/report-reinstalled.json"
+jq -S '[.jobs[] | {id,nativeId,routing}] | sort_by(.id)' "$TMPDIR/report-jobs.json" | diff - "$TMPDIR/report-reinstalled.json"
+
+# should deliver truthful timer-fired empty failure and timeout reports
+cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
+for job in empty-report failed-report timeout-report; do
+  native=$(jq -er --arg job "$job" '.jobs[] | select(.id == $job) | .nativeId' "$TMPDIR/report-jobs.json")
+  for attempt in $(seq 1 90); do
+    openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" '{id:$id,limit:1}')" --json > "$TMPDIR/$job-run.json"
+    if jq -e '.entries | length > 0' "$TMPDIR/$job-run.json" >/dev/null; then break; fi
+    sleep 2
+  done
+  jq -e --arg job "$job" 'any(.entries[]; (.runId | type == "string") and .status == (if $job == "empty-report" then "ok" else "error" end) and any(.summary | split("\n")[] | fromjson?; .id == $job and .reporting.status == "delivered" and (.reporting.messageId | type == "string")))' "$TMPDIR/$job-run.json"
+done
+
+# should retain markdown and diagnostics across fresh history connections without report model turns
+chat=$(jq -er '.jobs[] | select(.id == "prompt") | .routing | sub("^session:"; "")' "$TMPDIR/report-jobs.json")
+for connection in 1 2; do
+  openclaw gateway call chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json > "$TMPDIR/report-history-$connection.json"
+  jq -e '([.messages[].content[]? | select(.type == "text") | .text] | join("\n")) as $text | ($text | contains("Succeeded: empty-report")) and ($text | contains("Command completed without stdout.")) and ($text | contains("Failed: failed-report")) and ($text | contains("exit code 17")) and ($text | contains("report-diagnostic-marker")) and ($text | contains("```text\nreport-markdown-marker\n```")) and ($text | contains("Failed: timeout-report")) and ($text | contains("timed out"))' "$TMPDIR/report-history-$connection.json"
+done
+openclaw-aimock evidence --scenario openclaw-automations --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-automations/expected-evidence.json"
+````
 
 ## Cleanup
 

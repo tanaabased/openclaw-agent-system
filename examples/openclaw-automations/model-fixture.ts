@@ -20,6 +20,11 @@ function matchesPrompt(request: ChatCompletionRequest): boolean {
     model: model.test(request.model),
     identity: systemText.includes(identity),
     prompt: hasPrompt,
+    reportHistory: request.messages.some(
+      (message) =>
+        message.role === 'assistant' &&
+        (getTextContent(message.content) ?? '').includes('## Succeeded: identity'),
+    ),
     noToolResult: !request.messages.some((message) => message.role === 'tool'),
   };
   const matches = Object.values(checks).every(Boolean);

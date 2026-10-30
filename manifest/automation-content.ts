@@ -49,7 +49,8 @@ export default function automationContent(
     schedule: job.schedule,
     payload: job.payload,
     timeoutSeconds,
-    ...(job.payload.kind === 'prompt'
+    ...(job.payload.kind === 'prompt' ||
+    (override?.target !== 'independent' && (job.thread || override?.target))
       ? {
           context: {
             model: override?.model ?? defaults.model ?? 'native',

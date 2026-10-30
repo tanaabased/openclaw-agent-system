@@ -1,3 +1,5 @@
+import { automationReportTimeoutMs } from './automation-report-delivery.ts';
+import { commandTerminationGraceMs } from '../api/cli-budget.ts';
 import type { AutomationThreadModelObservation } from './automation-threads.ts';
 import { AutomationError, type NativeAutomation } from './automation-gateway.ts';
 import { automationHash, type AutomationRecord } from './automation-store.ts';
@@ -116,7 +118,11 @@ export function projectAutomation(
             cwd: context.workspaceDir,
             env: context.environment,
             input: '',
-            timeoutSeconds,
+            timeoutSeconds:
+              timeoutSeconds +
+              (context.threads?.has(job.id)
+                ? (automationReportTimeoutMs + commandTerminationGraceMs) / 1000
+                : 0),
             noOutputTimeoutSeconds: 3600,
             // native updates cannot clear an existing command cap. migrate it once to
             // OpenClaw 2026.10.6's 16 MiB per-stream budget; new jobs inherit defaults.

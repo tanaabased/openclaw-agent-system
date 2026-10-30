@@ -857,6 +857,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       installService: operatorInstall,
       instanceStore,
       automations,
+      reportCredential: sessionDispatch,
       boundCommands,
       manifestService,
       nativeNotifications: new OpenClawNotifications({
