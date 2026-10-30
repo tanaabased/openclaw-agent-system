@@ -1,8 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 
+import deliverAutomationReport from '../agent/automation-report-delivery.ts';
 import { AutomationError } from '../agent/automation-gateway.ts';
 import type AutomationService from '../agent/automation-service.ts';
+import type { SetupCommandResult } from '../agent/setup-runner.ts';
 import type BoundCommandService from '../agent/bound-command-service.ts';
+import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type { CliOutput } from './output.ts';
 
@@ -20,6 +24,7 @@ export default async function executeAutomation(options: {
   commands: BoundCommandService;
   output: CliOutput;
   signal?: AbortSignal;
+  reportCredential?: Pick<SessionDispatchCredential, 'use'>;
 }): Promise<number> {
   const controller = new AbortController();
   const cancel = () => controller.abort();
@@ -41,7 +46,7 @@ export default async function executeAutomation(options: {
       (await realpath(installed.scope.workspaceDir)) !== (await realpath(options.workspaceDir))
     )
       throw new AutomationError('automation-agent-not-installed');
-    const { command, context } = await options.automations.admit(
+    const { command, context, reportTarget } = await options.automations.admit(
       installed.manifest,
       installed.scope.workspaceDir,
       options.id,
@@ -78,7 +83,9 @@ export default async function executeAutomation(options: {
       );
       assertActive();
     };
-    let result;
+    const executionId = randomUUID();
+    const startedAt = new Date().toISOString();
+    let result: SetupCommandResult;
     try {
       result = await options.commands.run(
         command,
@@ -90,12 +97,20 @@ export default async function executeAutomation(options: {
         },
         signal,
       );
+    } catch (error) {
+      if (!reportTarget) throw error;
+      result = {
+        exitCode: null,
+        timedOut: signal.aborted && !controller.signal.aborted && !options.signal?.aborted,
+        truncated: false,
+      };
     } finally {
       active = false;
     }
+    const cancelled = signal.aborted;
     const exited =
       !result.timedOut &&
-      !signal.aborted &&
+      !cancelled &&
       !result.signal &&
       (!result.termination || result.termination === 'exit');
     const success = exited && result.exitCode === 0;
@@ -111,8 +126,50 @@ export default async function executeAutomation(options: {
     );
     if (stdout) options.output.writeStdout(stdout);
     if (stderr) options.output.writeStderr(stderr);
+    const reporting = reportTarget
+      ? await deliverAutomationReport({
+          target: reportTarget,
+          store: options.automations.reports,
+          hash: options.hash,
+          manifestDigest: snapshot.digest,
+          input: {
+            id: options.id,
+            executionId,
+            startedAt,
+            durationMs: Date.now() - Date.parse(startedAt),
+            result,
+            cancelled,
+          },
+          credential: options.reportCredential,
+          async assertCurrent() {
+            const current = await options.manifestService.loadForAgentId(
+              context.agentId,
+              'service',
+            );
+            if (
+              current.status !== 'loaded' ||
+              current.digest !== snapshot.digest ||
+              current.path !== snapshot.path ||
+              (await realpath(current.scope.workspaceDir)) !== context.workspaceDir
+            )
+              throw new AutomationError('automation-execution-stale');
+            const admitted = await options.automations.admit(
+              current.manifest,
+              current.scope.workspaceDir,
+              options.id,
+              options.hash,
+            );
+            if (admitted.reportTarget?.sessionKey !== reportTarget.sessionKey)
+              throw new AutomationError('automation-report-target-changed');
+          },
+        }).catch(() => ({
+          status: 'not-delivered',
+          executionId,
+          code: 'automation-report-capture-failed',
+        }))
+      : undefined;
     options.output.writeStdout(
-      `${JSON.stringify({ id: options.id, status: success ? 'ok' : 'error', code: result.timedOut ? 'automation-timeout' : signal.aborted ? 'automation-cancelled' : result.signal || result.termination === 'signal' ? 'automation-command-signalled' : 'automation-command-completed', exitCode: result.exitCode, termination: result.termination, signal: result.signal, timedOut: result.timedOut, cancelled: signal.aborted, truncated: result.truncated, stdoutTruncatedBytes: result.output?.stdoutTruncatedBytes ?? 0, stderrTruncatedBytes: result.output?.stderrTruncatedBytes ?? 0 })}\n`,
+      `${JSON.stringify({ id: options.id, status: success ? 'ok' : 'error', code: result.timedOut ? 'automation-timeout' : cancelled ? 'automation-cancelled' : result.signal || result.termination === 'signal' ? 'automation-command-signalled' : 'automation-command-completed', exitCode: result.exitCode, termination: result.termination, signal: result.signal, timedOut: result.timedOut, cancelled, truncated: result.truncated, stdoutTruncatedBytes: result.output?.stdoutTruncatedBytes ?? 0, stderrTruncatedBytes: result.output?.stderrTruncatedBytes ?? 0, ...(reporting ? { reporting } : {}) })}\n`,
     );
     return exited &&
       typeof result.exitCode === 'number' &&

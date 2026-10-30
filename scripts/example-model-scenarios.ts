@@ -1,7 +1,8 @@
 import { openClawCollaborationScenario } from '../examples/openclaw-collaboration/model-fixture.ts';
 import { automationRecoveryScenario } from '../examples/openclaw-automation-recovery/model-fixture.ts';
+import { automationCommandChatScenario } from '../examples/openclaw-automation-command-chat/model-fixture.ts';
 import { lifecycleApprovalScenario } from '../examples/openclaw-lifecycle-approvals/model-fixture.ts';
-import { automationExampleScenario } from '../examples/openclaw-automations/model-fixture.ts';
+import { automationExampleScenario } from '../examples/openclaw-automation-prompt/model-fixture.ts';
 import { agentExampleScenario } from '../examples/openclaw-agent/model-fixture.ts';
 import { credentialExampleScenario as openClawCredentialScenario } from '../examples/openclaw-credentials/model-fixture.ts';
 import { githubExampleScenario } from '../examples/openclaw-github/model-fixture.ts';
@@ -42,6 +43,7 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [openClawCollaborationScenario.id, openClawCollaborationScenario],
   [automationExampleScenario.id, automationExampleScenario],
   [automationRecoveryScenario.id, automationRecoveryScenario],
+  [automationCommandChatScenario.id, automationCommandChatScenario],
   [openClawCredentialScenario.id, openClawCredentialScenario],
   [githubExampleScenario.id, githubExampleScenario],
   [osExecutionExampleScenario.id, osExecutionExampleScenario],

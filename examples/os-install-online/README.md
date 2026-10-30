@@ -13,7 +13,7 @@ first attempt's evidence before testing repeat installation.
 ## What Does Not Belong Here
 
 - Offline enrollment recovery, consent refusal, and device-only restart: [dispatch enrollment](../os-dispatch-enrollment/README.md).
-- Gateway-free installation: [OS install](../os-install/README.md). Automation execution: [automations](../openclaw-automations/README.md).
+- Gateway-free installation: [OS install](../os-install/README.md). Automation execution: [automations](../openclaw-automation-command/README.md).
 
 ## Notes
 

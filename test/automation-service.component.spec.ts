@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+
+import { prepareAutomationReport } from '../agent/automation-report.ts';
 import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -1267,6 +1270,53 @@ describe('agent/automation-service', () => {
     await assert.rejects(service.run(manifest, root, 'check'), /ownership-conflict/u);
     assert.equal(calls.filter(({ method }) => method === 'cron.run').length, 0);
   });
+  it('should keep job-wide report state separate from native history without exposing captured output', async () => {
+    await service.reconcile(manifest, root);
+    const { store } = await service.scope(manifest, root);
+    const ledger = await store.read();
+    const executionId = randomUUID();
+    const report = {
+      version: 1 as const,
+      executionId,
+      hash: ledger.records[0]!.hash,
+      manifestDigest: 'fixture',
+      target: {
+        scope: store.scope,
+        agentId: 'tanaabot',
+        workspaceDir: root,
+        sessionKey: 'agent:tanaabot:reports',
+      },
+      input: prepareAutomationReport({
+        id: 'check',
+        executionId,
+        startedAt: '2026-10-30T00:00:00Z',
+        cancelled: false,
+        result: {
+          exitCode: 17,
+          timedOut: false,
+          truncated: false,
+          output: { stdout: 'private output', stderr: '' },
+        },
+      }),
+      state: 'pending' as const,
+    };
+    await service.reports.withLock(executionId, () => service.reports.write(report));
+    await service.assertReportCurrent(report);
+    const history = await service.runs(manifest, root, 'check', {
+      limit: 10,
+      offset: 0,
+      runId: 'run-1',
+    });
+    assert.equal(history.reportsTotal, 1);
+    assert.equal(history.reports[0]!.executionId, executionId);
+    assert.equal(history.reports[0]!.execution, 'error');
+    assert.equal(history.reports[0]!.status, 'pending');
+    assert.equal(history.entries[0]!.execution, 'ok');
+    assert.ok(!JSON.stringify(history).includes('private output'));
+    loaded = false;
+    await assert.rejects(service.assertReportCurrent(report), /declaration-changed/);
+  });
+
   it('should reject invalid history options and report transport failure without replay', async () => {
     await service.reconcile(manifest, root);
     for (const options of [

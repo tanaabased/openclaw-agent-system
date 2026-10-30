@@ -26,6 +26,35 @@ function job(payload: { prompt: string } | { run: string[] }) {
 }
 
 describe('agent/automation-projection', () => {
+  it('should reserve report delivery time without adding a model turn or changing schedule anchors', () => {
+    const command = job({ run: ['true'] });
+    command.thread = { id: 'reports', name: 'UPDATES' };
+    command.timeoutSeconds = 10;
+    command.overrides.openclaw = { model: 'openai/report-chat', effort: 'high' };
+    const record = {
+      id: command.id,
+      marker: 'fixture',
+      hash: '',
+      triggerHash: '',
+      generation: 1,
+      anchorMs: 123,
+      removed: false,
+    };
+    const reportingContext = {
+      ...context,
+      threads: new Map([[command.id, { id: 'agent:tanaabot:reports', outcome: 'reused' }]]),
+    };
+    const projected = projectAutomation(command, record, reportingContext);
+    assert.equal(projected.payload.kind, 'command');
+    assert.equal(projected.payload.timeoutSeconds, 45);
+    assert.equal(projected.payload.model, undefined);
+    assert.equal(projected.sessionTarget, 'session:agent:tanaabot:reports');
+    assert.deepEqual(projected.delivery, { mode: 'none', bestEffort: false });
+    const hash = effectiveAutomation(command, reportingContext).triggerHash;
+    command.thread = { id: 'other' };
+    assert.equal(effectiveAutomation(command, reportingContext).triggerHash, hash);
+    assert.equal(projectAutomation(command, record, context).payload.timeoutSeconds, 10);
+  });
   it('should name jobs by trusted origin and migrate only their native name', () => {
     const record = {
       id: 'github-declared-job',

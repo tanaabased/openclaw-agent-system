@@ -131,6 +131,11 @@ openclaw agent-system automations runs <id> [--agent <id>] [--json] [--limit <co
 openclaw agent-system automations runs review --limit 20 --json
 ```
 
+Command-report status is separate in `reports`, with count `reportsTotal`.
+`--offset` and `--limit` page both lists; `--run-id` filters native entries only.
+Observed model settings may be absent. History reads never retry work; completion
+snapshots may still say pending after delivery. See [reporting and recovery](./MANIFEST.md#openclaw-execution-and-ownership).
+
 Each entry reports execution and delivery independently. Missing telemetry is `unavailable`; raw output and errors are omitted. The result includes `total`, `offset`, `limit`, `hasMore`, and `nextOffset`. Pass `nextOffset` to read another page. Native history clamps an offset beyond the result count to that count.
 
 ## `openclaw agent-system automations sync`

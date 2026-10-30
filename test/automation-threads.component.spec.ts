@@ -61,6 +61,29 @@ describe('agent/automation-threads', () => {
     const store = new AutomationThreads({ root, scope: runtime, runtime }, adapter);
     return { store, adapter, native, creates: () => creates };
   }
+  it('should share and reuse one chat for commands and prompts with the same explicit id', async () => {
+    const f = fixture('openclaw');
+    const declarations = jobs({ id: 'reports', name: 'UPDATES' }, ['first', 'second', 'prompt']);
+    for (const job of declarations.slice(0, 2))
+      job.payload = { kind: 'command', run: { kind: 'exec', executable: 'true', args: [] } };
+    for (const job of declarations) job.group = 'REPORTS';
+    const first = await f.store.resolve(declarations, true);
+    assert.equal(new Set([...first.values()].map(({ id }) => id)).size, 1);
+    assert.equal(f.creates(), 1);
+    const reused = await f.store.resolve(declarations, true);
+    assert.deepEqual(
+      [...reused.values()].map(({ id }) => id),
+      [...first.values()].map(({ id }) => id),
+    );
+    assert.ok([...reused.values()].every(({ outcome }) => outcome === 'reused'));
+    assert.equal(f.creates(), 1);
+    declarations[1]!.group = 'OTHER';
+    await assert.rejects(f.store.resolve(declarations, true));
+    assert.equal(f.creates(), 1);
+    assert.equal([...f.native.values()][0]!.group, 'REPORTS');
+    assert.equal(automationThreadSelection(declarations[0]!, 'codex'), undefined);
+  });
+
   for (const runtime of ['openclaw', 'codex'] as const)
     it(`should retain affected identity and full settings without inspection writes in ${runtime}`, async () => {
       const f = fixture(runtime);

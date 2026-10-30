@@ -12,7 +12,7 @@ Verify that its ID, routing, channel readiness, and dispatch enrollment are pres
 ## What Does Not Belong Here
 
 - Issue admission, concurrent assessment, and duplicate prevention: [intake](../openclaw-notifications-intake/README.md).
-- Assignment failures and authority: [assignment policy](../openclaw-notifications-assignment-policy/README.md). Generic prompt/command scheduling: [automations](../openclaw-automations/README.md).
+- Assignment failures and authority: [assignment policy](../openclaw-notifications-assignment-policy/README.md). Generic prompt/command scheduling: [automations](../openclaw-automation-command/README.md).
 
 ## Notes
 

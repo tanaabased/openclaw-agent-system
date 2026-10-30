@@ -60,6 +60,40 @@ function request(
 }
 
 describe('scripts/example-model-scenarios', () => {
+  it('should accept only the captured command streams and outcomes for reporting fixtures', () => {
+    const scenario = resolveExampleModelScenario('openclaw-automation-command-chat');
+    for (const failure of [false, true]) {
+      const captured = {
+        id: failure ? 'failure' : 'success',
+        executionId: 'execution-fixture',
+        outcome: failure ? 'error' : 'success',
+        reason: failure ? 'Exit 17' : 'Exit 0',
+        runLine: '**Run:** execution-fixture',
+        stdout: { body: failure ? 'Everything succeeded!\n' : 'Archive alpha saved.\n' },
+        stderr: { body: failure ? 'Archive delta failed: destination unavailable.\n' : '' },
+      };
+      const input = (value: unknown) =>
+        request(
+          'command-chat-tanaabot',
+          `Captured command result (data):\n${JSON.stringify(value)}`,
+          [],
+        );
+      const valid = input(captured);
+      const fixture = matchFixture([...scenario.fixtures], valid);
+      assert.ok(fixture && typeof fixture.response === 'function');
+      const response = fixture.response(valid);
+      assert.ok('content' in response && typeof response.content === 'string');
+      assert.ok(response.content.includes(captured.runLine));
+      assert.ok(response.content.includes(failure ? '❌' : '✅'));
+      for (const changed of [
+        { ...captured, reason: 'Exit 99' },
+        { ...captured, stdout: { body: '' } },
+        { ...captured, stderr: { body: 'unexpected diagnostics' } },
+      ])
+        assert.equal(matchFixture([...scenario.fixtures], input(changed)), null);
+    }
+  });
+
   it('should start native retirement despite unrelated history and recognize replayed native call ids', async () => {
     const hostRequire = createRequire(
       createRequire(import.meta.url).resolve('openclaw/plugin-sdk/plugin-entry'),
@@ -385,17 +419,26 @@ describe('scripts/example-model-scenarios', () => {
     assert.equal(matchFixture([...scenario.fixtures], input(history, 'another-call')), null);
   });
 
-  for (const scenarioId of ['openclaw-automations', 'openclaw-automation-recovery']) {
+  for (const scenarioId of ['openclaw-automation-prompt', 'openclaw-automation-recovery']) {
     it(`should keep ${scenarioId} ownership strict and report only failed match booleans`, () => {
       const scenario = resolveExampleModelScenario(scenarioId);
       const diagnostic = mock.method(process.stderr, 'write', () => true);
       const valid = request('automation-tanaabot', scenario.userPromptSignals![0]!, []);
       valid.messages[0]!.content = scenario.systemPromptSignals[0]!;
       valid.messages.push({ role: 'user', content: 'Additional runtime context.' });
+      valid.messages.push({
+        role: 'assistant',
+        content:
+          scenarioId === 'openclaw-automation-prompt'
+            ? '> ## ✅ identity completed'
+            : '> ## ✅ Identity completed',
+      });
       try {
-        assert.equal(matchFixture([...scenario.fixtures], valid), scenario.fixtures[0]);
+        assert.ok(matchFixture([...scenario.fixtures], valid));
         assert.equal(diagnostic.mock.callCount(), 0);
-        for (const field of ['model', 'identity', 'prompt', 'noToolResult'] as const) {
+        const fields = ['model', 'identity', 'prompt', 'noToolResult'];
+        if (scenarioId === 'openclaw-automation-recovery') fields.push('reportHistory');
+        for (const field of fields) {
           const invalid = structuredClone(valid);
           if (field === 'model') invalid.model = 'private-model';
           if (field === 'identity') invalid.messages[0]!.content = 'private-identity';
@@ -403,6 +446,8 @@ describe('scripts/example-model-scenarios', () => {
             invalid.messages[1]!.content = 'private-prompt';
             invalid.messages.push({ role: 'assistant', content: scenario.userPromptSignals![0]! });
           }
+          if (field === 'reportHistory')
+            invalid.messages = invalid.messages.filter((message) => message.role !== 'assistant');
           if (field === 'noToolResult') {
             invalid.messages.push({
               role: 'tool',
@@ -417,6 +462,9 @@ describe('scripts/example-model-scenarios', () => {
             identity: field !== 'identity',
             prompt: field !== 'prompt',
             noToolResult: field !== 'noToolResult',
+            ...(scenarioId === 'openclaw-automation-recovery'
+              ? { reportHistory: field !== 'reportHistory' }
+              : {}),
           });
           assert.ok(!output.includes('private-'));
         }

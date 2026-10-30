@@ -10,7 +10,7 @@ Install agent-bound setup, run one native command automation, and verify that bo
 ## What Does Not Belong Here
 
 - Ordinary public commands, stdin, and command refusals: [tools](../openclaw-tools/README.md).
-- General prompt/command scheduling: [automations](../openclaw-automations/README.md).
+- General prompt/command scheduling: [automations](../openclaw-automation-command/README.md).
 
 ## Notes
 

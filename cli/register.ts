@@ -7,6 +7,7 @@ import automationList from './automation-list.ts';
 import automationRun from './automation-run.ts';
 import automationRuns from './automation-runs.ts';
 import automationSync from './automation-sync.ts';
+import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type AutomationService from '../agent/automation-service.ts';
 import type BoundCommandService from '../agent/bound-command-service.ts';
 
@@ -70,6 +71,7 @@ export interface RegisterAgentSystemCliOptions {
   instanceStore?: AssignmentClaimStore;
   notificationReset?: RegisterGitHubNotificationsCliOptions['reset'];
   automations?: AutomationService;
+  reportCredential?: Pick<SessionDispatchCredential, 'use'>;
   boundCommands?: BoundCommandService;
   backupService?: WorkspaceBackupService;
   commandAuthority?: Pick<AgentCommandAuthority, 'resolve' | 'classify'>;
@@ -261,6 +263,7 @@ export default function registerAgentSystemCli(
           manifestService: options.manifestService,
           automations: options.automations!,
           commands: options.boundCommands!,
+          reportCredential: options.reportCredential,
           output,
         });
         setExitCode(code);
