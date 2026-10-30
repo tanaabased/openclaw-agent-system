@@ -856,6 +856,23 @@ describe('agent/openclaw-delivery', () => {
     await publish();
     assert.equal(creates, 1);
   });
+  it('should reject recorded unfinished work before push or pr creation', async () => {
+    record.progression = { stage: 'implementation', via: 'work' };
+    for (const outcome of ['blocked', 'clarification-needed'] as const) {
+      record.work!.result =
+        outcome === 'blocked'
+          ? { outcome, summary: 'Missing shared interface.', fullResult: 'Partial work retained.' }
+          : {
+              outcome,
+              summary: 'Need an answer.',
+              fullResult: 'Partial work retained.',
+              questions: ['Which interface?'],
+            };
+      await assert.rejects(publish(), /delivery-implementation-incomplete/);
+      assert.equal(creates, 0);
+      assert.equal(pushes, 0);
+    }
+  });
   it('should publish completed implementation without a publication-only grant', async () => {
     delete record.handoff;
     delete record.work!.publication;

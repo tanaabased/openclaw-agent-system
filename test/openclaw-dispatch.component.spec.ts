@@ -5645,6 +5645,8 @@ describe('agent/openclaw issue dispatch', () => {
         false,
       );
       assert.equal(verified.status, 'verified');
+      assert.ok('handoff' in verified && verified.handoff && 'instruction' in verified.handoff);
+      assert.match(verified.handoff.instruction ?? '', /prerequisites/);
       assert.ok('implementation' in verified);
       const selection = verified.implementation as AssessmentSelection;
       assert.equal(
@@ -6770,6 +6772,9 @@ describe('agent/openclaw issue dispatch', () => {
     );
     assert.equal(delivery.status, 'needs-attention');
     assert.ok('code' in delivery && delivery.code === 'delivery-implementation-incomplete');
+    assert.ok('instructions' in delivery);
+    assert.match(delivery.instructions ?? '', /implementation context/);
+    assert.doesNotMatch(delivery.instructions ?? '', /delivery prepare again/);
   });
 
   it('should reject owner-looking tool requests without native owner input evidence', async () => {
