@@ -22,7 +22,7 @@ preserving the unrelated prompt.
 
 - Strict AIMock supplies responses; the Gateway, scheduler, repair, and restart remain real.
 - The prompt must receive the recovered report as history without rerunning the command.
-- Retirement adds only direct native observations and synchronization; no additional model turn or Gateway restart.
+- Removing the last reporting command leaves a stale tool grant until Install reconciles it. Retirement checks that drift before repair, without another model turn or Gateway restart.
 
 ## Setup
 
@@ -123,8 +123,11 @@ openclaw agent-system doctor --json > "$TMPDIR/automation-retired-doctor.json" |
 if [ "$doctor_status" -ne 0 ]; then
   jq -c '{status, findings: [.findings[] | select(.status == "blocked" or .status == "drift") | {component, stepId, code, status}][:20]}' "$TMPDIR/automation-retired-doctor.json" >&2
 fi
-test "$doctor_status" -eq 0
+test "$doctor_status" -eq 1
+jq -e '.status == "drift" and ([.findings[] | select(.status == "blocked" or .status == "drift") | {component, code, status}] == [{component:"tool-access", code:"agent-tool-access-drift", status:"drift"}])' "$TMPDIR/automation-retired-doctor.json"
 jq -e 'any(.findings[]; .component == "automations" and .stepId == "identity" and .code == "automation-retired" and .status == "healthy")' "$TMPDIR/automation-retired-doctor.json"
+openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .component == "tool-access" and .code == "set-agent-tool-access" and .status == "updated") and all(.outcomes[]; .status != "created")'
+openclaw agent-system doctor --json | jq -e '.status == "healthy" and any(.findings[]; .component == "automations" and .stepId == "identity" and .code == "automation-retired" and .status == "healthy")'
 openclaw agent-system automations list --json | tee "$TMPDIR/automation-retired.json" | jq -e '.status == "aligned" and any(.jobs[]; .id == "identity" and .retired == true and .nativeEnabled == null)'
 jq -S '[.jobs[] | select(.id == "prompt") | {id, nativeId, routing}]' "$TMPDIR/automation-before.json" > "$TMPDIR/automation-prompt-identity.json"
 jq -S '[.jobs[] | select(.id == "prompt") | {id, nativeId, routing}]' "$TMPDIR/automation-retired.json" | diff - "$TMPDIR/automation-prompt-identity.json"

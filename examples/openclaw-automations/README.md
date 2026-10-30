@@ -11,7 +11,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 - Native display-name rename/removal while preserving the job, its completed run state, and separate chat binding.
 - Completed same-agent Install/Doctor through a command descendant and native prompt tools, including default setup, without per-occurrence approval.
 - Failed command output beyond the former local caps and exit status reaching the exact native run record with delivery disabled.
-- Exact native run IDs and durable completion evidence, rather than treating queued admission as success.
+- Exact native occurrence and durable completion evidence, rather than treating queued admission as success.
 
 ## What Does Not Belong Here
 
@@ -29,6 +29,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 - Source tests cover option/offline variants, one-shot retention, unmanaged jobs, stale authority, containment, timeout/cancellation cleanup, and thread-selection permutations.
 - The failure fixture emits 64 KiB per stream, then late markers and exit 17. This exceeds the former local caps while keeping native diagnostic redaction within its transaction admission budget. Component tests cover forwarding native truncation metadata; this installed case verifies default capture without truncation. It adds no model turn or provider call.
 - Strict AIMock checks reporting transport and card structure, not genuine model interpretation or browser rendering.
+- Timer history identifies occurrences by native job and start time; `runId` is optional and belongs to explicit run requests. Match the captured execution ID to its delivered report and expected process outcome.
 - The output check reads `cron.runs`, the Gateway API supplying run cards. It verifies output propagation, not browser rendering or OpenClaw restart persistence.
 
 ## Setup
@@ -221,14 +222,15 @@ for job in empty-report failed-report timeout-report; do
     if jq -e '.entries | length > 0' "$TMPDIR/$job-run.json" >/dev/null; then break; fi
     sleep 2
   done
-  jq -e --arg job "$job" 'if any(.entries[]; (.runId | type == "string") and .status == (if $job == "empty-report" then "ok" else "error" end) and any(.summary | split("\n")[] | fromjson?; .id == $job and (.reporting.status == "pending" or .reporting.status == "delivered"))) then true else error({job: $job, runs: [.entries[:3][] | {status, runIdPresent: (.runId | type == "string"), diagnostics: [.diagnostics.entries[:3][]? | {exitCode, timedOut, termination, signal}], reports: [(.summary // "") | split("\n")[] | fromjson? | {id, status, code, reporting: (.reporting | {status, code})}][:3]}]} | tojson) end' "$TMPDIR/$job-run.json"
+  jq -e --arg job "$job" --arg native "$native" 'if any(.entries[]; .jobId == $native and .action == "finished" and (.runAtMs | type == "number") and .status == (if $job == "empty-report" then "ok" else "error" end) and any(.summary | split("\n")[] | fromjson?; .id == $job and (.reporting.status == "pending" or .reporting.status == "delivered"))) then true else error({job: $job, runs: [.entries[:3][] | {status, jobMatches: (.jobId == $native), action, runAtMsPresent: (.runAtMs | type == "number"), diagnostics: [.diagnostics.entries[:3][]? | {exitCode, timedOut, termination, signal}], reports: [(.summary // "") | split("\n")[] | fromjson? | {id, status, code, reporting: (.reporting | {status, code})}][:3]}]} | tojson) end' "$TMPDIR/$job-run.json"
+  report_execution=$(jq -er --arg job "$job" '[.entries[].summary | split("\n")[] | fromjson? | select(.id == $job) | .reporting.executionId | select(type == "string" and length > 0)] | unique | if length == 1 then .[0] else error("expected one captured report execution") end' "$TMPDIR/$job-run.json")
   for attempt in $(seq 1 60); do
     openclaw agent-system automations runs "$job" --json > "$TMPDIR/$job-report.json"
-    if jq -e 'any(.reports[]; .status == "delivered" and (.messageId | type == "string"))' "$TMPDIR/$job-report.json" >/dev/null; then break; fi
+    if jq -e --arg execution "$report_execution" 'any(.reports[]; .executionId == $execution and .status == "delivered" and (.messageId | type == "string"))' "$TMPDIR/$job-report.json" >/dev/null; then break; fi
     sleep 2
   done
-  jq -e --argjson expected '{"status":"delivered","effective.model":"aimock/gpt-5.5"}' -f "$GITHUB_WORKSPACE/scripts/assert-automation-report.jq" "$TMPDIR/$job-report.json"
-  report_execution=$(jq -er '.reports[] | select(.status == "delivered") | .executionId' "$TMPDIR/$job-report.json")
+  expected_report=$(jq -nc --arg execution "$report_execution" --arg job "$job" '{executionId:$execution,status:"delivered","effective.model":"aimock/gpt-5.5",reason:(if $job == "empty-report" then "Exit 0" elif $job == "failed-report" then "Exit 17" else "Timed out" end)}')
+  jq -e --argjson expected "$expected_report" -f "$GITHUB_WORKSPACE/scripts/assert-automation-report.jq" "$TMPDIR/$job-report.json"
   grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_execution " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
 done
 
