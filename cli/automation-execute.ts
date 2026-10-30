@@ -127,34 +127,46 @@ export default async function executeAutomation(options: {
     if (stdout) options.output.writeStdout(stdout);
     if (stderr) options.output.writeStderr(stderr);
     const reporting = reportTarget
-      ? options.reportCredential
-        ? await deliverAutomationReport({
-            target: reportTarget,
-            input: { id: options.id, executionId, startedAt, result, cancelled },
-            credential: options.reportCredential,
-            async assertCurrent() {
-              const current = await options.manifestService.loadForAgentId(
-                context.agentId,
-                'service',
-              );
-              if (
-                current.status !== 'loaded' ||
-                current.digest !== snapshot.digest ||
-                current.path !== snapshot.path ||
-                (await realpath(current.scope.workspaceDir)) !== context.workspaceDir
-              )
-                throw new AutomationError('automation-execution-stale');
-              const admitted = await options.automations.admit(
-                current.manifest,
-                current.scope.workspaceDir,
-                options.id,
-                options.hash,
-              );
-              if (admitted.reportTarget?.sessionKey !== reportTarget.sessionKey)
-                throw new AutomationError('automation-report-target-changed');
-            },
-          })
-        : { status: 'not-delivered', executionId, code: 'automation-report-unavailable' }
+      ? await deliverAutomationReport({
+          target: reportTarget,
+          store: options.automations.reports,
+          hash: options.hash,
+          manifestDigest: snapshot.digest,
+          input: {
+            id: options.id,
+            executionId,
+            startedAt,
+            durationMs: Date.now() - Date.parse(startedAt),
+            result,
+            cancelled,
+          },
+          credential: options.reportCredential,
+          async assertCurrent() {
+            const current = await options.manifestService.loadForAgentId(
+              context.agentId,
+              'service',
+            );
+            if (
+              current.status !== 'loaded' ||
+              current.digest !== snapshot.digest ||
+              current.path !== snapshot.path ||
+              (await realpath(current.scope.workspaceDir)) !== context.workspaceDir
+            )
+              throw new AutomationError('automation-execution-stale');
+            const admitted = await options.automations.admit(
+              current.manifest,
+              current.scope.workspaceDir,
+              options.id,
+              options.hash,
+            );
+            if (admitted.reportTarget?.sessionKey !== reportTarget.sessionKey)
+              throw new AutomationError('automation-report-target-changed');
+          },
+        }).catch(() => ({
+          status: 'not-delivered',
+          executionId,
+          code: 'automation-report-capture-failed',
+        }))
       : undefined;
     options.output.writeStdout(
       `${JSON.stringify({ id: options.id, status: success ? 'ok' : 'error', code: result.timedOut ? 'automation-timeout' : cancelled ? 'automation-cancelled' : result.signal || result.termination === 'signal' ? 'automation-command-signalled' : 'automation-command-completed', exitCode: result.exitCode, termination: result.termination, signal: result.signal, timedOut: result.timedOut, cancelled, truncated: result.truncated, stdoutTruncatedBytes: result.output?.stdoutTruncatedBytes ?? 0, stderrTruncatedBytes: result.output?.stderrTruncatedBytes ?? 0, ...(reporting ? { reporting } : {}) })}\n`,

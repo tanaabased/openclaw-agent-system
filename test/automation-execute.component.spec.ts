@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 
+import AutomationReportStore from '../agent/automation-report-store.ts';
 import executeAutomation from '../cli/automation-execute.ts';
 import type { SetupCommandResult } from '../agent/setup-runner.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
@@ -41,16 +42,28 @@ describe('cli/automation-execute', () => {
                 assert.equal(authority.signal?.aborted, false);
                 await authority.assertCurrent?.();
                 return operation(async (method, params) => {
+                  if (method === 'plugins.inspect')
+                    return {
+                      plugin: { id: 'agent-system', enabled: true },
+                      grants: {
+                        hooks: {
+                          allowConversationAccess: { effective: true },
+                          allowPromptInjection: { effective: true },
+                        },
+                      },
+                    };
                   if (method === 'sessions.resolve')
                     return { ok: true, key: 'agent:a:reports', agentId: 'a' };
                   if (method === 'sessions.list')
                     return {
                       sessions: [{ key: 'agent:a:reports', sessionId: 'chat', workspaceDir }],
                     };
-                  assert.equal(method, 'chat.inject');
+                  if (method === 'chat.history') return { sessionId: 'chat', messages: [] };
+                  if (method === 'agent.wait') return { runId: params.runId, status: 'timeout' };
+                  assert.equal(method, 'chat.send');
                   reports.push(String(params.message));
                   if (reporting === 'uncertain') throw Error('lost acknowledgment');
-                  return { ok: true, messageId: 'report-message' };
+                  return { status: 'started', runId: params.idempotencyKey };
                 });
               },
             }
@@ -60,6 +73,7 @@ describe('cli/automation-execute', () => {
           loadForCommandDirectory: async () => loaded,
         },
         automations: {
+          reports: new AutomationReportStore(`${workspaceDir}/reports`),
           admit: async () => ({
             command: { kind: 'exec', executable: 'true', args: [], timeoutSeconds: 10 },
             context: { agentId: 'a', workspaceDir },
@@ -114,11 +128,11 @@ describe('cli/automation-execute', () => {
     assert.equal(run.code, 1);
     assert.equal(run.runs, 1);
     assert.equal(run.reports.length, 1);
-    assert.match(run.reports[0]!, /timed out/u);
+    assert.match(run.reports[0]!, /Timed out/u);
     assert.ok(run.reports[0]!.includes('# Partial backup'));
     assert.ok(!run.reports[0]!.includes('stdoutTruncatedBytes'));
     const completion = JSON.parse(run.stdout.trimEnd().split('\n').at(-1)!);
-    assert.equal(completion.reporting.status, 'delivered');
+    assert.equal(completion.reporting.status, 'pending');
     assert.equal(completion.status, 'error');
   });
   it('should preserve successful execution when report acknowledgment is lost', async () => {
@@ -262,6 +276,7 @@ describe('cli/automation-execute', () => {
           loadForCommandDirectory: async () => loaded,
         },
         automations: {
+          reports: new AutomationReportStore(`${workspaceDir}/reports`),
           admit: async () => ({
             command: { kind: 'exec', executable: 'true', args: [], timeoutSeconds: 10 },
             context: { agentId: 'a', workspaceDir },

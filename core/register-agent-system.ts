@@ -59,6 +59,8 @@ import AutomationLifecycleAuthority, {
   verifyAutomationLifecycleRun,
 } from '../agent/automation-lifecycle-authority.ts';
 import registerAutomationLifecycleHooks from './automation-lifecycle-hook.ts';
+import registerAutomationReportHooks from './automation-report-hook.ts';
+import { reconcileAutomationReport } from '../agent/automation-report-delivery.ts';
 import automationLifecycleCommand from '../cli/automation-lifecycle.ts';
 import SetupCommandService from '../agent/setup-command-service.ts';
 import SetupLifecycleService from '../agent/setup-lifecycle.ts';
@@ -310,6 +312,20 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService: lifecycleManifestService,
   };
   const automationService = new AutomationService(automationDependencies);
+  registerAutomationReportHooks(api, automationService.reports, async (id) => {
+    for (const executionId of id ? [id] : await automationService.reports.ids()) {
+      try {
+        await reconcileAutomationReport({
+          store: automationService.reports,
+          executionId,
+          credential: sessionDispatch,
+          assertCurrent: (record) => automationService.assertReportCurrent(record),
+        });
+      } catch {
+        logger.warn('automation-report: recovery-unavailable');
+      }
+    }
+  });
   const instanceStore = new AssignmentClaimStore(
     join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-instance'),
   );

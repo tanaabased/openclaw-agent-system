@@ -28,7 +28,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 - AIMock normalizes away request reasoning effort. Verify effort through the native embedded-run diagnostic correlated with the completed occurrence's session, not through the mock response or saved settings alone.
 - Source tests cover option/offline variants, one-shot retention, unmanaged jobs, stale authority, containment, timeout/cancellation cleanup, and thread-selection permutations.
 - The failure fixture emits 64 KiB per stream, then late markers and exit 17. This exceeds the former local caps while keeping native diagnostic redaction within its transaction admission budget. Component tests cover forwarding native truncation metadata; this installed case verifies default capture without truncation. It adds no model turn or provider call.
-- Reporting adds three deterministic timer-fired commands, one repeated Install, and fresh history reads; no extra model turn or Gateway restart is needed. Component tests own delivery failures and sanitization. Browser rendering remains a separate visual check.
+- Reporting adds one formatting turn per reporting command, three timer-fired commands, one repeated Install, and fresh history reads. The strict fixture verifies transport and card envelopes, not genuine model interpretation. Component tests own delivery failures and sanitization. Browser rendering remains a separate visual check.
 - The output check reads `cron.runs`, the Gateway API supplying run cards. It verifies output propagation, not browser rendering or OpenClaw restart persistence.
 
 ## Setup
@@ -43,6 +43,7 @@ openclaw config set agents.defaults.modelSelectionScope global
 openclaw config get agents.defaults.model --json > "$TMPDIR/automation-global-model.json"
 
 # should install the owning workspace with reporting enrollment
+openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true --strict-json
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 openclaw agent-system install --skip-setup --yes --json
@@ -92,6 +93,13 @@ node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" identity "$run_id"
 grep -F 'Tanaabot <tanaabot@tanaab.dev>' identity.git
 grep -Fx installed maintenance.installed
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
+for attempt in $(seq 1 60); do
+  openclaw agent-system automations runs identity --json > "$TMPDIR/identity-report.json"
+  if jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5" and .effective.effort == "high")' "$TMPDIR/identity-report.json" >/dev/null; then break; fi
+  sleep 2
+done
+jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5" and .effective.effort == "high")' "$TMPDIR/identity-report.json"
+
 
 # should execute the next timer-fired prompt with the saved model and effort
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
@@ -107,10 +115,8 @@ for attempt in $(seq 1 90); do
 done
 run_session=$(jq -er --arg id "$native" --argjson due "$due" '.entries[] | select(.jobId == $id and .runAtMs >= $due and .status == "ok" and .provider == "aimock" and .model == "gpt-5.5") | .sessionId | strings' "$TMPDIR/automation-timer-run.json")
 grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "sessionId=$run_session " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
-openclaw-aimock evidence --scenario openclaw-automations --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-automations/expected-evidence.json"
 grep -Fx installed maintenance.installed
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
-
 # should migrate legacy native names in place after both jobs have completed
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 for job in identity prompt; do
@@ -187,7 +193,7 @@ openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg runI
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 ```
 
-````bash
+```bash
 # should enroll timer-fired reports into the existing shared chat without replacing it
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 cat reports.yaml >> automations.yaml
@@ -208,17 +214,23 @@ for job in empty-report failed-report timeout-report; do
     if jq -e '.entries | length > 0' "$TMPDIR/$job-run.json" >/dev/null; then break; fi
     sleep 2
   done
-  jq -e --arg job "$job" 'any(.entries[]; (.runId | type == "string") and .status == (if $job == "empty-report" then "ok" else "error" end) and any(.summary | split("\n")[] | fromjson?; .id == $job and .reporting.status == "delivered" and (.reporting.messageId | type == "string")))' "$TMPDIR/$job-run.json"
+  jq -e --arg job "$job" 'any(.entries[]; (.runId | type == "string") and .status == (if $job == "empty-report" then "ok" else "error" end) and any(.summary | split("\n")[] | fromjson?; .id == $job and (.reporting.status == "pending" or .reporting.status == "delivered")))' "$TMPDIR/$job-run.json"
+  for attempt in $(seq 1 60); do
+    openclaw agent-system automations runs "$job" --json > "$TMPDIR/$job-report.json"
+    if jq -e 'any(.reports[]; .status == "delivered" and (.messageId | type == "string"))' "$TMPDIR/$job-report.json" >/dev/null; then break; fi
+    sleep 2
+  done
+  jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5" and .effective.effort == "high")' "$TMPDIR/$job-report.json"
 done
 
-# should retain markdown and diagnostics across fresh history connections without report model turns
+# should retain markdown and diagnostics across fresh history connections with model-formatted cards
 chat=$(jq -er '.jobs[] | select(.id == "prompt") | .routing | sub("^session:"; "")' "$TMPDIR/report-jobs.json")
 for connection in 1 2; do
   openclaw gateway call chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json > "$TMPDIR/report-history-$connection.json"
-  jq -e '([.messages[].content[]? | select(.type == "text") | .text] | join("\n")) as $text | ($text | contains("Succeeded: empty-report")) and ($text | contains("Command completed without stdout.")) and ($text | contains("Failed: failed-report")) and ($text | contains("exit code 17")) and ($text | contains("report-diagnostic-marker")) and ($text | contains("```text\nreport-markdown-marker\n```")) and ($text | contains("Failed: timeout-report")) and ($text | contains("timed out"))' "$TMPDIR/report-history-$connection.json"
+  jq -e '([.messages[] | select(.role == "assistant") | .content[]? | select(.type == "text") | .text] | join("\n")) as $text | ($text | contains("✅ empty-report completed")) and ($text | contains("No output was supplied.")) and ($text | contains("❌ failed-report failed")) and ($text | contains("Exit 17")) and ($text | contains("report-diagnostic-marker")) and ($text | contains("report-markdown-marker")) and ($text | contains("❌ timeout-report failed")) and ($text | contains("Timed out"))' "$TMPDIR/report-history-$connection.json"
 done
 openclaw-aimock evidence --scenario openclaw-automations --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-automations/expected-evidence.json"
-````
+```
 
 ## Cleanup
 

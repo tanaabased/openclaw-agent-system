@@ -191,7 +191,7 @@ Jobs sharing an OpenClaw chat must agree on settings. Explicit runtime targets a
 not owned chats: they keep their native settings and do not inherit `models.default`.
 Explicit automation or runtime model/effort settings are rejected for those targets.
 Command jobs accept model and effort only with a persistent reporting chat. These
-settings configure later conversation, never command execution or report delivery.
+settings select the report-formatting turn and later conversation, never command execution.
 
 > [!IMPORTANT]
 > Workspaces declaring `models` now use `models.default` for prompt automations that
@@ -323,11 +323,30 @@ automations:
 Install creates or reuses the chat and enrolls the existing shared session client
 when needed, disclosing its `operator.read` and `operator.write` grants. Scripts
 need no chat IDs, reporting helpers, credentials, or custom output envelope.
-Each report identifies the job, wrapper execution ID, start time, and actual result.
-Stdout is Markdown; stderr is fenced diagnostic text. Empty stdout still produces
-a completion report. Each stream is sanitized and limited to a 16 KiB chat excerpt;
-permitted native run output remains available separately. Appending invokes no model
-and starts no agent turn. Later prompt turns can read the accumulated history.
+Reporting also needs Agent System's native hook grants for conversation access and
+prompt injection. Enable `plugins.entries.agent-system.hooks.allowConversationAccess`
+in OpenClaw and leave `allowPromptInjection` enabled before using reports. Without
+these grants, results remain pending with `automation-report-hook-permission-required`;
+Agent System does not silently grant itself conversation access.
+After command completion, a normal model turn formats a quoted success, warning, or
+error card with the run facts and a brief explanation. It uses the automation's
+resolved model and effort; omitted settings inherit the existing native defaults.
+Commands without a thread still make no reporting model call.
+
+Both streams accept Markdown, complete JSON, or ordinary text. Useful Markdown is
+preserved, JSON becomes readable facts or tables, and mixed or malformed output gets
+a summary and useful diagnostic excerpt. Nonempty stderr is not automatically a
+failure. The process exit and termination facts remain authoritative; output can
+support an application warning but cannot turn a failed command into success.
+Empty output still gets a completion explanation.
+
+Each stream is sanitized and limited to a 16 KiB model-input excerpt. Truncation is
+disclosed, and permitted native run output remains available separately. The report
+turn cannot use tools; subsequent ordinary conversations retain their normal tools.
+The card envelope and run line are checked with one bounded correction pass. Model
+explanations can still contain mistakes; they do not replace the recorded process
+result. Reports add model cost and latency, and later prompts can read their normal
+conversation history.
 OpenClaw-hosted Codex uses this path; standalone Codex command jobs remain unsupported.
 
 #### OpenClaw execution and ownership
@@ -366,8 +385,16 @@ Install and automation sync update existing managed command jobs with an explici
 
 Command timeouts range from 1 to 3600 seconds (default 1800). Reporting commands
 reserve an additional 35 seconds in the native deadline for process termination and
-a separate 30-second delivery attempt. Delivery does not change the command result
-and is not automatically retried; inspect native run details if a report is missing.
+a separate 30-second submission/observation allowance. The model turn has its native
+execution lifetime and may finish after the command wrapper exits. Delivery does not change the command result
+and never reruns maintenance. The sanitized result is saved before submission.
+An accepted turn remains pending until its exact final reply is verified. Completion
+and startup/reload hooks reconcile saved reports; definite pre-admission rejection
+may be retried, but a lost acknowledgment is observed under its original identity,
+never blindly resent. Model failure or an invalid final card stays failed for inspection.
+Use automation run history to see command and report outcomes separately. If the
+runner is killed before it saves the result, only native execution history is
+available; Agent System does not invent captured output or replay the command.
 For jobs without reporting, the native timeout also includes wrapper startup. OpenClaw
 controls overlapping runs of the same job, retries, recovery, and daylight saving time;
 Agent System does not add another retry loop. Completion, cancellation, and timeout

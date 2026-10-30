@@ -1,27 +1,27 @@
 {
   "discoveryRequestCount": 1,
-  "finalResponseCount": 1,
+  "finalResponseCount": 5,
   "model": "aimock/gpt-5.5",
-  "promptRequestCount": 4,
+  "promptRequestCount": 7,
   "provider": "aimock",
-  "requestCount": 4,
-  "responsesApiRequestCount": 4,
+  "requestCount": 8,
+  "responsesApiRequestCount": 8,
   "scenario": "openclaw-automations",
   "schemaVersion": 2,
   "strictMissCount": 0,
-  "successfulFixtureResponseCount": 4,
+  "successfulFixtureResponseCount": 8,
   "tools": [
     {
       "callResponseCount": 1,
       "name": "agent_system_doctor",
       "projectionRequestCount": 3,
-      "resultRequestCount": 1
+      "resultRequestCount": 4
     },
     {
       "callResponseCount": 1,
       "name": "agent_system_install",
       "projectionRequestCount": 3,
-      "resultRequestCount": 2
+      "resultRequestCount": 5
     }
   ]
 }

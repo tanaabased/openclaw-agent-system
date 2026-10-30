@@ -169,6 +169,8 @@ export const automationRunFixture = {
   delivery: 'unavailable',
 };
 export const automationHistoryFixture = {
+  reports: [],
+  reportsTotal: 0,
   runtime: 'openclaw',
   id: 'review',
   nativeId: 'Native-Mixed',

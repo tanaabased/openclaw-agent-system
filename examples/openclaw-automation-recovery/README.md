@@ -10,6 +10,7 @@ preserving the unrelated prompt.
 - Offline diagnostics with an actionable connectivity recovery.
 - Read-only drift inspection, explicit repair, and preservation of both changed and unrelated native job identities.
 - Restored routing after restart and a completed prompt in the owning native context.
+- A captured command report held by missing hook permission, then delivered after restart without rerunning the command.
 - Retirement after declaration removal and native deletion, without recreating the job or blocking the unrelated prompt.
 
 ## What Does Not Belong Here
@@ -19,8 +20,8 @@ preserving the unrelated prompt.
 
 ## Notes
 
-- Strict AIMock supplies one prompt completion. The Gateway, native scheduler, drift, repair, and restart remain real without a hosted credential.
-- Two jobs make preservation meaningful during repair; the recovery flow runs only the prompt. The ordinary flow owns command completion.
+- Strict AIMock supplies one recovered report and one prompt completion. The Gateway, native scheduler, drift, repair, and restart remain real without a hosted credential.
+- Two jobs make preservation meaningful during repair. The command runs once with reporting held; after restart, the prompt must receive its recovered report as history.
 - Retirement adds only direct native observations and synchronization; no additional model turn or Gateway restart.
 
 ## Setup
@@ -47,6 +48,7 @@ grep -F 'restore gateway connectivity' "$TMPDIR/offline-sync.stderr"
 
 
 # should start the gateway for native recovery checks
+openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess false --strict-json
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 ```
 
@@ -72,15 +74,30 @@ openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .component 
 openclaw agent-system automations list --json | tee "$TMPDIR/automation-reconciled.json" | jq -e '.status == "aligned"'
 jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-reconciled.json" | diff - "$TMPDIR/automation-identities.json"
 
-# should preserve routing across restart and complete a prompt in the owning agent context
+# should retain a successful command when reporting lacks native hook permission
+cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
+run_id=$(openclaw agent-system automations run identity --json | jq -er 'select(.status == "queued") | .runId | strings')
+node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" identity "$run_id"
+openclaw agent-system automations runs identity --json | jq -e 'any(.reports[]; .status == "pending" and .reason == "Exit 0" and .code == "automation-report-hook-permission-required")'
+test "$(wc -l < identity.runs | tr -d ' ')" = 1
+
+# should recover the report across restart and complete a prompt in the owning agent context
 gateway_log=$(openclaw-gateway log-path)
 gateway_redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
 shutdown_status=0
 openclaw-gateway stop --timeout 340 || shutdown_status=$?
 tail -n 1000 "$gateway_log" | node "$gateway_redactor" | tee "$TMPDIR/openclaw-automation-recovery-before-restart.log"
 test "$shutdown_status" -eq 0
+openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true --strict-json
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
+for attempt in $(seq 1 60); do
+  openclaw agent-system automations runs identity --json > "$TMPDIR/recovered-report.json"
+  if jq -e 'any(.reports[]; .status == "delivered" and (.messageId | type == "string"))' "$TMPDIR/recovered-report.json" >/dev/null; then break; fi
+  sleep 2
+done
+jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5" and .effective.effort == "medium")' "$TMPDIR/recovered-report.json"
+test "$(wc -l < identity.runs | tr -d ' ')" = 1
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
 run_id=$(openclaw agent-system automations run prompt --json | jq -er 'select(.status == "queued" and .execution == "unavailable") | .runId | strings')

@@ -392,18 +392,17 @@ describe('scripts/example-model-scenarios', () => {
       const valid = request('automation-tanaabot', scenario.userPromptSignals![0]!, []);
       valid.messages[0]!.content = scenario.systemPromptSignals[0]!;
       valid.messages.push({ role: 'user', content: 'Additional runtime context.' });
-      if (scenarioId === 'openclaw-automations')
-        valid.messages.push({ role: 'assistant', content: '## Succeeded: identity' });
+      valid.messages.push({
+        role: 'assistant',
+        content:
+          scenarioId === 'openclaw-automations'
+            ? '> ## ✅ identity completed'
+            : '> ## ✅ Identity completed',
+      });
       try {
-        assert.equal(matchFixture([...scenario.fixtures], valid), scenario.fixtures[0]);
+        assert.ok(matchFixture([...scenario.fixtures], valid));
         assert.equal(diagnostic.mock.callCount(), 0);
-        for (const field of [
-          'model',
-          'identity',
-          'prompt',
-          'noToolResult',
-          ...(scenarioId === 'openclaw-automations' ? ['reportHistory'] : []),
-        ]) {
+        for (const field of ['model', 'identity', 'prompt', 'noToolResult', 'reportHistory']) {
           const invalid = structuredClone(valid);
           if (field === 'model') invalid.model = 'private-model';
           if (field === 'identity') invalid.messages[0]!.content = 'private-identity';
@@ -427,9 +426,7 @@ describe('scripts/example-model-scenarios', () => {
             identity: field !== 'identity',
             prompt: field !== 'prompt',
             noToolResult: field !== 'noToolResult',
-            ...(scenarioId === 'openclaw-automations'
-              ? { reportHistory: field !== 'reportHistory' }
-              : {}),
+            reportHistory: field !== 'reportHistory',
           });
           assert.ok(!output.includes('private-'));
         }
