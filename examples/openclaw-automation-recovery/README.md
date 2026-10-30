@@ -118,7 +118,13 @@ node --input-type=module -e 'import fs from "node:fs"; import YAML from "yaml"; 
 openclaw agent-system automations sync --json | jq -e 'any(.outcomes[]; .stepId == "identity" and .code == "automation-disabled-retained")'
 openclaw cron rm "$native" --json | jq -e '.removed == true'
 openclaw agent-system automations sync --json | jq -e 'any(.outcomes[]; .stepId == "identity" and .code == "automation-retired") and all(.outcomes[]; .status != "created")'
-openclaw agent-system doctor --json | jq -e 'any(.findings[]; .component == "automations" and .stepId == "identity" and .code == "automation-retired" and .status == "healthy")'
+doctor_status=0
+openclaw agent-system doctor --json > "$TMPDIR/automation-retired-doctor.json" || doctor_status=$?
+if [ "$doctor_status" -ne 0 ]; then
+  jq -c '{status, findings: [.findings[] | select(.status == "blocked" or .status == "drift") | {component, stepId, code, status}][:20]}' "$TMPDIR/automation-retired-doctor.json" >&2
+fi
+test "$doctor_status" -eq 0
+jq -e 'any(.findings[]; .component == "automations" and .stepId == "identity" and .code == "automation-retired" and .status == "healthy")' "$TMPDIR/automation-retired-doctor.json"
 openclaw agent-system automations list --json | tee "$TMPDIR/automation-retired.json" | jq -e '.status == "aligned" and any(.jobs[]; .id == "identity" and .retired == true and .nativeEnabled == null)'
 jq -S '[.jobs[] | select(.id == "prompt") | {id, nativeId, routing}]' "$TMPDIR/automation-before.json" > "$TMPDIR/automation-prompt-identity.json"
 jq -S '[.jobs[] | select(.id == "prompt") | {id, nativeId, routing}]' "$TMPDIR/automation-retired.json" | diff - "$TMPDIR/automation-prompt-identity.json"

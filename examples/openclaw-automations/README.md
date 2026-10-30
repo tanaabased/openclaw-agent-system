@@ -199,12 +199,17 @@ openclaw agent-system automations sync --json | jq -e '.status == "synchronized"
 # should enroll timer-fired reports into the existing shared chat without replacing it
 cd "$GITHUB_WORKSPACE/examples/openclaw-automations"
 cat reports.yaml >> automations.yaml
-openclaw agent-system install --skip-setup --yes --json
-openclaw agent-system automations list --json > "$TMPDIR/report-jobs.json"
 chat=$(jq -er '.jobs[] | select(.id == "prompt") | .routing' "$TMPDIR/automation-before.json")
-jq -e --arg chat "$chat" 'all(.jobs[] | select(.id | endswith("-report")); .routing == $chat)' "$TMPDIR/report-jobs.json"
-openclaw agent-system install --skip-setup --yes --json
-openclaw agent-system automations list --json | jq -S '[.jobs[] | {id,nativeId,routing}] | sort_by(.id)' > "$TMPDIR/report-reinstalled.json"
+for snapshot in report-jobs report-reinstalled-jobs; do
+  openclaw agent-system install --skip-setup --yes --json
+  list_status=0
+  openclaw agent-system automations list --json > "$TMPDIR/$snapshot.json" || list_status=$?
+  jq -c '{status, findings: [.findings[] | select(.status != "healthy" and .status != "skipped") | {component, stepId, code, status}][:20]}' "$TMPDIR/$snapshot.json"
+  test "$list_status" -eq 1
+  jq -e '.status == "attention" and any(.findings[]; .stepId == "failed-output" and .code == "automation-execution-failed" and .status == "warning") and all(.findings[]; .status == "healthy" or .status == "skipped" or (.status == "warning" and .code == "automation-execution-failed" and (.stepId == "failed-output" or .stepId == "failed-report" or .stepId == "timeout-report")))' "$TMPDIR/$snapshot.json"
+  jq -e --arg chat "$chat" 'all(.jobs[] | select(.id | endswith("-report")); .routing == $chat)' "$TMPDIR/$snapshot.json"
+done
+jq -S '[.jobs[] | {id,nativeId,routing}] | sort_by(.id)' "$TMPDIR/report-reinstalled-jobs.json" > "$TMPDIR/report-reinstalled.json"
 jq -S '[.jobs[] | {id,nativeId,routing}] | sort_by(.id)' "$TMPDIR/report-jobs.json" | diff - "$TMPDIR/report-reinstalled.json"
 
 # should deliver truthful timer-fired empty failure and timeout reports
@@ -216,13 +221,13 @@ for job in empty-report failed-report timeout-report; do
     if jq -e '.entries | length > 0' "$TMPDIR/$job-run.json" >/dev/null; then break; fi
     sleep 2
   done
-  jq -e --arg job "$job" 'any(.entries[]; (.runId | type == "string") and .status == (if $job == "empty-report" then "ok" else "error" end) and any(.summary | split("\n")[] | fromjson?; .id == $job and (.reporting.status == "pending" or .reporting.status == "delivered")))' "$TMPDIR/$job-run.json"
+  jq -e --arg job "$job" 'if any(.entries[]; (.runId | type == "string") and .status == (if $job == "empty-report" then "ok" else "error" end) and any(.summary | split("\n")[] | fromjson?; .id == $job and (.reporting.status == "pending" or .reporting.status == "delivered"))) then true else error({job: $job, runs: [.entries[:3][] | {status, runIdPresent: (.runId | type == "string"), diagnostics: [.diagnostics.entries[:3][]? | {exitCode, timedOut, termination, signal}], reports: [(.summary // "") | split("\n")[] | fromjson? | {id, status, code, reporting: (.reporting | {status, code})}][:3]}]} | tojson) end' "$TMPDIR/$job-run.json"
   for attempt in $(seq 1 60); do
     openclaw agent-system automations runs "$job" --json > "$TMPDIR/$job-report.json"
     if jq -e 'any(.reports[]; .status == "delivered" and (.messageId | type == "string"))' "$TMPDIR/$job-report.json" >/dev/null; then break; fi
     sleep 2
   done
-  jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5")' "$TMPDIR/$job-report.json"
+  jq -e --argjson expected '{"status":"delivered","effective.model":"aimock/gpt-5.5"}' -f "$GITHUB_WORKSPACE/scripts/assert-automation-report.jq" "$TMPDIR/$job-report.json"
   report_execution=$(jq -er '.reports[] | select(.status == "delivered") | .executionId' "$TMPDIR/$job-report.json")
   grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_execution " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
 done
