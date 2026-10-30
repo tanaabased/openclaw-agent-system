@@ -28,7 +28,7 @@ preserving the unrelated prompt.
 
 ```bash
 # should prepare the packed plugin and strict scheduled-prompt fixture
-openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE"
+openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service
 openclaw-aimock prepare --scenario openclaw-automation-recovery
 
 # should install the owning workspace before starting the gateway
@@ -104,7 +104,6 @@ done
 jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5")' "$TMPDIR/recovered-report.json"
 report_execution=$(jq -er '.reports[] | select(.status == "delivered") | .executionId' "$TMPDIR/recovered-report.json")
 grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_execution " | grep -F 'provider=aimock model=gpt-5.5 thinking=medium '
-
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 openclaw agent-system automations sync --json | jq -e '.status == "synchronized" and all(.outcomes[]; .status == "unchanged")'
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' | diff - "$TMPDIR/automation-identities.json"
