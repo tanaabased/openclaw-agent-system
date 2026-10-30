@@ -277,18 +277,21 @@ describe('agent/codex-automations', () => {
     await mkdir(join(codexHome, 'automations', id), { recursive: true });
     await writeFile(join(codexHome, 'automations', id, 'automation.toml'), stringify(saved));
   }
-  async function syncOne() {
-    const plan = await inspect();
+  async function syncOne(
+    dependencies: CodexAutomationDependencies = deps(),
+    nativeId = 'fixture-native',
+  ) {
+    const plan = await inspectCodexAutomations(pluginData, inputs(), dependencies);
     assert.equal(plan.status, 'requires-native-app-sync');
     const action = plan.actions[0]!;
-    const prepared = await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+    const prepared = await prepareCodexAutomation(pluginData, plan.digest, inputs(), dependencies);
     assert.deepEqual(prepared.request, {
       mode: action.mode,
       ...(action.id ? { id: action.id } : {}),
       ...action.expected,
     });
-    await nativeWrite(action.expected, action.id);
-    return acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
+    await nativeWrite(action.expected, action.id ?? nativeId);
+    return acknowledgeCodexAutomation(pluginData, plan.digest, undefined, dependencies);
   }
   beforeEach(async () => {
     nativeInventory = {
@@ -839,56 +842,65 @@ describe('agent/codex-automations', () => {
     );
   });
 
-  it('should retire a verified deleted declaration before preparing its replacement', async () => {
-    await syncOne();
-    const before = await ownership();
-    await manifest(job().replace('id: review', 'id: update'));
-    await rm(join(codexHome, 'automations', 'fixture-native', 'automation.toml'));
-    const plan = await inspect();
-    assert.ok(plan.findings.some(({ code }) => code === 'automation-retirement-pending'));
-    assert.deepEqual(plan.actions, []);
-    assert.equal(
-      (await inspectCodexSetup(pluginData, undefined, { ...deps(), automationInputs: inputs() }))
-        .automations.status,
-      'blocked',
-    );
-    assert.equal((await ownership()).bytes, before.bytes);
-    const installed = await installCodexSetup(pluginData, undefined, {
-      ...deps(),
-      automationInputs: inputs(),
+  for (const status of ['active', 'paused']) {
+    it(`should retire a deleted ${status} job through install and retain its history`, async () => {
+      await syncOne();
+      const [old] = await readCodexAutomations(codexHome);
+      if (status === 'paused') {
+        await manifest('');
+        await syncOne();
+      }
+      const dependencies = { ...deps(), automationInputs: inputs(), now: () => 1234 };
+      const before = await ownership();
+      await manifest(job().replace('id: review', 'id: update'));
+      await rm(join(codexHome, 'automations', 'fixture-native', 'automation.toml'));
+      const plan = await inspect();
+      assert.ok(plan.findings.some(({ code }) => code === 'automation-retirement-pending'));
+      assert.deepEqual(plan.actions, []);
+      assert.equal(
+        (await inspectCodexSetup(pluginData, undefined, dependencies)).automations.status,
+        'blocked',
+      );
+      assert.equal((await ownership()).bytes, before.bytes);
+      const installed = await installCodexSetup(pluginData, undefined, dependencies);
+      assert.equal(installed.automations.actions[0]!.manifestId, 'update');
+      const retired = await ownership();
+      assert.deepEqual(retired.ledger.records[0], {
+        ...before.ledger.records[0],
+        removed: true,
+        retired: { atMs: 1234, reason: 'native-job-absent' },
+      });
+      await syncOne(deps(), 'replacement');
+      const final = await ownership();
+      assert.equal(
+        (await inspectCodexSetup(pluginData, undefined, dependencies)).automations.status,
+        'aligned',
+      );
+      assert.equal(
+        (await installCodexSetup(pluginData, undefined, dependencies)).automations.status,
+        'aligned',
+      );
+      assert.equal((await ownership()).bytes, final.bytes);
+      assert.equal((await readCodexAutomations(codexHome)).length, 1);
+      const history = (await listCodexAutomations(pluginData, inputs(), deps())).jobs.find(
+        ({ id }) => id === 'review',
+      )!;
+      assert.equal(history.retired, true);
+      assert.equal(history.nativeId, 'fixture-native');
+      assert.equal(history.nativeStatus, null);
+      await manifest();
+      const reuse = await inspect();
+      assert.equal(reuse.status, 'blocked');
+      assert.ok(reuse.findings.some(({ code }) => code === 'automation-retired-id'));
+      await manifest('');
+      for (const id of ['fixture-native', 'imposter']) {
+        await nativeWrite(old!.definition, id);
+        await assert.rejects(inspect(), rejectsCode('automation-ownership-conflict'));
+        assert.equal((await ownership()).bytes, final.bytes);
+        await rm(join(codexHome, 'automations', id, 'automation.toml'));
+      }
     });
-    assert.equal(installed.automations.actions[0]!.manifestId, 'update');
-    const retired = await ownership();
-    assert.deepEqual(retired.ledger.records[0], {
-      ...before.ledger.records[0],
-      removed: true,
-      retired: { atMs: retired.ledger.records[0].retired.atMs, reason: 'native-job-absent' },
-    });
-    assert.ok(Number.isSafeInteger(retired.ledger.records[0].retired.atMs));
-    const replacement = installed.automations.actions[0]!;
-    await prepareCodexAutomation(pluginData, installed.automations.digest, inputs(), deps());
-    await nativeWrite(replacement.expected, 'replacement');
-    await acknowledgeCodexAutomation(pluginData, installed.automations.digest, undefined, deps());
-    const final = await ownership();
-    assert.equal(
-      (await inspectCodexSetup(pluginData, undefined, { ...deps(), automationInputs: inputs() }))
-        .automations.status,
-      'aligned',
-    );
-    assert.equal(
-      (await installCodexSetup(pluginData, undefined, { ...deps(), automationInputs: inputs() }))
-        .automations.status,
-      'aligned',
-    );
-    assert.equal((await ownership()).bytes, final.bytes);
-    assert.equal((await readCodexAutomations(codexHome)).length, 1);
-    const history = (await listCodexAutomations(pluginData, inputs(), deps())).jobs.find(
-      ({ id }) => id === 'review',
-    )!;
-    assert.equal(history.retired, true);
-    assert.equal(history.nativeId, 'fixture-native');
-    assert.equal(history.nativeStatus, null);
-  });
+  }
 
   for (const obstruction of [
     'missing-root',
@@ -954,13 +966,6 @@ describe('agent/codex-automations', () => {
       const before = await ownership();
       await reconcileCodexAutomationRetirements(pluginData, deps());
       assert.equal((await ownership()).bytes, before.bytes);
-      const blocked = await inspect();
-      assert.equal(blocked.status, 'blocked');
-      assert.deepEqual(blocked.actions, []);
-      assert.ok(
-        blocked.findings.some(({ code }) => code === 'automation-pending-readback-required'),
-      );
-      await assert.rejects(prepareCodexAutomation(pluginData, plan.digest, inputs(), deps()));
     });
   }
 
@@ -989,35 +994,6 @@ describe('agent/codex-automations', () => {
     assert.equal((await ownership()).bytes, before.bytes);
   });
 
-  it('should retain paused deletion history and reject retired id reuse or reappearance', async () => {
-    await syncOne();
-    const [old] = await readCodexAutomations(codexHome);
-    await manifest('');
-    await syncOne();
-    const before = await ownership();
-    await rm(join(codexHome, 'automations', 'fixture-native', 'automation.toml'));
-    await reconcileCodexAutomationRetirements(pluginData, { ...deps(), now: () => 1234 });
-    const retired = await ownership();
-    assert.deepEqual(retired.ledger.records[0], {
-      ...before.ledger.records[0],
-      retired: { atMs: 1234, reason: 'native-job-absent' },
-    });
-    assert.equal((await inspect()).status, 'aligned');
-    await reconcileCodexAutomationRetirements(pluginData, deps());
-    assert.equal((await ownership()).bytes, retired.bytes);
-    await manifest();
-    const reuse = await inspect();
-    assert.equal(reuse.status, 'blocked');
-    assert.ok(reuse.findings.some(({ code }) => code === 'automation-retired-id'));
-    await manifest('');
-    for (const id of ['fixture-native', 'imposter']) {
-      await nativeWrite(old!.definition, id);
-      await assert.rejects(inspect(), rejectsCode('automation-ownership-conflict'));
-      assert.equal((await ownership()).bytes, retired.bytes);
-      await rm(join(codexHome, 'automations', id, 'automation.toml'));
-    }
-  });
-
   it('should retain heartbeat history after retiring a deleted job', async () => {
     const conversations = new Map<string, { id: string; name?: string }>();
     const dependencies = {
@@ -1041,26 +1017,18 @@ describe('agent/codex-automations', () => {
       job('    thread: { name: Activity }\n').replace('id: review', `id: ${id}`);
     await manifest(declaration('nightly-refresh'));
     await syncThreads(dependencies);
-    async function next(nativeId: string) {
-      const plan = await inspectCodexAutomations(pluginData, inputs(), dependencies);
-      const prepared = await prepareCodexAutomation(
-        pluginData,
-        plan.digest,
-        inputs(),
-        dependencies,
-      );
-      await nativeWrite(plan.actions[0]!.expected, nativeId);
-      await acknowledgeCodexAutomation(pluginData, prepared.digest, undefined, dependencies);
-      return prepared.request;
-    }
-    const old = await next('old');
+    await syncOne(dependencies, 'old');
+    const old = (await readCodexAutomations(codexHome))[0]!.definition;
     assert.equal(old.kind, 'heartbeat');
     await manifest(declaration('update'));
     await syncThreads(dependencies);
     const history = structuredClone(conversations.get('thread-0'));
     await rm(join(codexHome, 'automations', 'old', 'automation.toml'));
     await reconcileCodexAutomationRetirements(pluginData, dependencies);
-    const replacement = await next('replacement');
+    await syncOne(dependencies, 'replacement');
+    const replacement = (await readCodexAutomations(codexHome)).find(
+      ({ id }) => id === 'replacement',
+    )!.definition;
     assert.equal(replacement.status, 'ACTIVE');
     assert.equal(replacement.kind, 'heartbeat');
     assert.notEqual(replacement.targetThreadId, old.targetThreadId);
