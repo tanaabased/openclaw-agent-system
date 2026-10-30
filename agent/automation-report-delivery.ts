@@ -193,7 +193,7 @@ export default async function deliverAutomationReport(options: {
   hash: string;
   manifestDigest: string;
   credential?: Pick<SessionDispatchCredential, 'use'>;
-  assertCurrent(): Promise<void>;
+  assertCurrent(record: AutomationReportRecord): Promise<void>;
 }): Promise<AutomationReportDelivery> {
   const executionId = options.input.executionId;
   await options.store.withLock(executionId, async () => {

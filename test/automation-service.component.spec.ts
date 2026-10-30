@@ -45,6 +45,7 @@ describe('agent/automation-service', () => {
   let fail: string | undefined;
   let afterWriteFailure: boolean;
   let loaded: boolean;
+  let manifestDigest: string;
   beforeEach(async () => {
     root = await realpath(await mkdtemp('/tmp/automation-'));
     manifest = {
@@ -57,6 +58,7 @@ describe('agent/automation-service', () => {
     now = 1_900_000_000_000;
     revision = 0;
     loaded = true;
+    manifestDigest = 'fixture';
     fail = undefined;
     afterWriteFailure = false;
     const request: AutomationGateway = async (method, params) => {
@@ -163,7 +165,7 @@ describe('agent/automation-service', () => {
                 path: join(root, 'agent.yaml'),
                 diagnostics: [],
                 validationChecks: [],
-                digest: 'fixture',
+                digest: manifestDigest,
               }
             : { status: 'unresolved', diagnostics: [] };
         },
@@ -1302,6 +1304,39 @@ describe('agent/automation-service', () => {
     };
     await service.reports.withLock(executionId, () => service.reports.write(report));
     await service.assertReportCurrent(report);
+    manifestDigest = 'unrelated-edit';
+    await service.assertReportCurrent(report);
+    const original = structuredClone(manifest);
+    for (const change of [
+      'removed',
+      'disabled',
+      'command',
+      'runtime',
+      'schedule',
+      'report-target',
+    ] as const) {
+      manifest = structuredClone(original);
+      if (change === 'removed') manifest.automations = [];
+      if (change === 'disabled') manifest.automations![0]!.enabled = false;
+      if (change === 'command')
+        manifest.automations![0]!.payload = { kind: 'prompt', prompt: 'changed' };
+      if (change === 'runtime') manifest.automations![0]!.runtimes = ['codex'];
+      if (change === 'schedule')
+        manifest.automations![0]!.schedule = jobs([
+          { id: 'check', schedule: 'every 2 hours', run: ['gh', 'api', 'user'] },
+        ])[0]!.schedule;
+      if (change === 'report-target')
+        manifest.automations = jobs([
+          {
+            id: 'check',
+            schedule: 'in 1 hour',
+            run: ['gh', 'api', 'user'],
+            thread: { name: 'another destination' },
+          },
+        ]);
+      await assert.rejects(service.assertReportCurrent(report), /declaration-changed/u);
+    }
+    manifest = original;
     const history = await service.runs(manifest, root, 'check', {
       limit: 10,
       offset: 0,
@@ -1840,6 +1875,7 @@ describe('agent/automation-service', () => {
     await assert.rejects(service.reconcile(manifest, root), /automation-manifest-changed/u);
     assert.equal(mutations().length, 0);
     loaded = true;
+    manifestDigest = 'fixture';
     fail = 'cron.add';
     await assert.rejects(
       service.reconcile(manifest, root),
