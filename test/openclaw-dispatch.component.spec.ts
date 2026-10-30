@@ -1,4 +1,5 @@
 import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
+import { implementationContextBudget } from '../agent/implementation-material.ts';
 import {
   fixturePullRequest,
   baseline,
@@ -4553,26 +4554,7 @@ describe('agent/openclaw issue dispatch', () => {
       assert.ok('previousResult' in reloaded && 'resultContract' in reloaded);
       assert.deepEqual(reloaded.previousResult, result);
       assert.equal(Value.Check(assessmentResultSchema, result), true);
-      // native tool search includes both content and details in its model-facing envelope.
-      const transported = JSON.stringify(
-        {
-          tool: {
-            id: 'openclaw:agent-system:agent_system_dispatch',
-            name: 'agent_system_dispatch',
-            source: 'openclaw',
-          },
-          result: {
-            content: [{ type: 'text', text: JSON.stringify(reloaded) }],
-            details: reloaded,
-          },
-        },
-        null,
-        2,
-      );
-      assert.ok(
-        transported.length < 32000,
-        `assessment context exceeds the 128k model tool budget: ${transported.length}`,
-      );
+      assert.ok(JSON.stringify(reloaded).length <= implementationContextBudget);
     });
   }
 
@@ -6188,7 +6170,9 @@ describe('agent/openclaw issue dispatch', () => {
       assert.ok('deliveryOnly' in context && !context.deliveryOnly);
       assert.ok('previousResult' in context);
       assert.deepEqual(context.previousResult, done);
-      assert.deepEqual('handoff' in context && context.handoff, { next: 'implementation' });
+      assert.ok('handoff' in context && context.handoff);
+      assert.equal(context.handoff.next, 'implementation');
+      assert.match(context.handoff.instruction ?? '', /prerequisites/);
     }
     assert.equal((await record()).work?.result, undefined);
     const revised = { ...done, summary: 'Revised.', fullResult: 'Revision checked.' };

@@ -6856,7 +6856,9 @@ describe('agent/codex-dispatch', () => {
         assert.equal(response.status, 'verified');
         assert.ok('deliveryOnly' in response && !response.deliveryOnly);
         assert.deepEqual('previousResult' in response && response.previousResult, done);
-        assert.deepEqual('handoff' in response && response.handoff, { next: 'implementation' });
+        assert.ok('handoff' in response && response.handoff);
+        assert.equal(response.handoff.next, 'implementation');
+        assert.match(response.handoff.instruction ?? '', /prerequisites/);
         assert.match(
           'instructions' in response ? response.instructions : '',
           /When deliveryOnly is true/,
