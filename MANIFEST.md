@@ -405,7 +405,12 @@ A separately requested manual task does not verify the schedule.
 
 Agent System tracks owned jobs privately. Native edits to managed fields are drift;
 notification preferences remain native-owned. Install leaves unchanged jobs alone.
-Removed declarations pause jobs and retain history; reintroduced IDs reuse them.
+Removed declarations pause jobs and retain history; reintroduced IDs reuse retained
+native jobs. If both a declaration and its native job are gone, Install or automation
+sync retires the ownership record after complete inspection and fresh absence checks.
+Doctor stays read-only and reports retired history without blocking other jobs.
+Pending writes or incomplete inspection prevent retirement. A retired ID cannot be
+silently recreated; use a new ID for a new automation.
 Unrelated jobs are not adopted by name. Unknown saved schemas stop inspection.
 
 For `automation-thread-model-drift`, rerun Install to reconcile the existing managed

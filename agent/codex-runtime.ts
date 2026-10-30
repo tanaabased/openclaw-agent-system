@@ -26,6 +26,7 @@ import {
   listCodexAutomations,
   codexAutomationRunGap,
   prepareCodexAutomation,
+  reconcileCodexAutomationRetirements,
   syncCodexAutomationThreads,
 } from './codex-automations.ts';
 import { CodexAutomationError } from './codex-automation-state.ts';
@@ -441,6 +442,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
         { digest: string; sectionId: string } | undefined,
     };
     if (action === 'list' || action === 'sync') {
+      if (action === 'sync') await reconcileCodexAutomationRetirements(pluginData);
       writeJson(await listCodexAutomations(pluginData, inputs));
       return;
     }

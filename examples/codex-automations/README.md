@@ -7,7 +7,7 @@ those same conversations.
 ## What Belongs Here
 
 - Digest-bound plans for native automation actions without private scheduler-file writes.
-- Packaged pause-first preparation across removal/addition, with explicit saved-state fixtures rather than desktop scheduler execution.
+- Packaged pause-first preparation and verified-deletion retirement across removal/addition, with explicit saved-state fixtures rather than desktop scheduler execution.
 - Real app-server conversation creation, selected model/permission readback, and attributed setup history without model generation.
 - Fresh-process resumption and shared profile changes preserving conversation identity, permissions, and durable model/effort settings.
 
@@ -142,6 +142,14 @@ jq -e '.code == "automation-readback-diverged"' "$root/cutover-unpaused.json"
 node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" "$root/cutover-prepared.json" "$root/cutover-workspace" "$CODEX_HOME" cutover-old
 node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/cutover-prepare.json" | jq -e '.status == "verified"'
 
+# should retire the deleted old fixture before replacement activation
+root="$TMPDIR/agent-system-codex-automations"
+runtime="$(jq -r .cachePath "$root/cache.json")/dist/codex/codex-runtime.js"
+export CODEX_HOME="$root/cutover-home"
+rm "$CODEX_HOME/automations/cutover-old/automation.toml"
+node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq -e '.status == "blocked" and .actions == [] and any(.findings[]; .id == "nightly-refresh" and .code == "automation-retirement-pending")'
+node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq -e '.status == "requires-native-app-sync" and any(.jobs[]; .id == "nightly-refresh" and .retired == true and .nativeId == "cutover-old" and .nativeStatus == null)'
+
 # should resume replacement preparation without creating duplicate schedules
 root="$TMPDIR/agent-system-codex-automations"
 runtime="$(jq -r .cachePath "$root/cache.json")/dist/codex/codex-runtime.js"
@@ -152,5 +160,5 @@ node "$runtime" automations prepare --plugin-data "$root/cutover-data" < "$root/
 node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" "$root/cutover-prepared.json" "$root/cutover-workspace" "$CODEX_HOME" cutover-new
 node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/cutover-prepare.json" | jq -e '.status == "verified"'
 node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq -e '.status == "aligned" and .actions == []'
-node "$runtime" automations list --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq -e '(.jobs | length) == 2 and any(.jobs[]; .id == "nightly-refresh" and .nativeId == "cutover-old" and .nativeStatus == "PAUSED") and any(.jobs[]; .id == "update" and .nativeId == "cutover-new" and .nativeStatus == "ACTIVE")'
+node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq -e '.status == "aligned" and (.jobs | length) == 2 and any(.jobs[]; .id == "nightly-refresh" and .retired == true and .nativeId == "cutover-old" and .nativeStatus == null) and any(.jobs[]; .id == "update" and .nativeId == "cutover-new" and .nativeStatus == "ACTIVE")'
 ```

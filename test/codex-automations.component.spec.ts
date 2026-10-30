@@ -1,5 +1,14 @@
 import assert from 'node:assert/strict';
-import { appendFile, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import {
+  appendFile,
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -17,6 +26,7 @@ import {
   listCodexAutomations,
   codexAutomationRunGap,
   prepareCodexAutomation,
+  reconcileCodexAutomationRetirements,
   syncCodexAutomationThreads,
   type CodexAutomationDependencies,
 } from '../agent/codex-automations.ts';
@@ -35,6 +45,7 @@ import {
 import { intakeFixture } from './github-intake-fixture.ts';
 import { inspectCodexIntake } from '../agent/codex-intake.ts';
 import normalizeAutomationSchedule from '../manifest/automation-schedule.ts';
+import { inspectCodexSetup, installCodexSetup } from '../agent/codex-setup.ts';
 
 const capture = (name: string) =>
   readFile(resolve('fixtures', `codex-automation-${name}.approved.txt`), 'utf8');
@@ -229,6 +240,14 @@ describe('agent/codex-automations', () => {
     throw new Error('sidebar placement did not converge');
   }
   const inspect = () => inspectCodexAutomations(pluginData, inputs(), deps());
+  async function ownership() {
+    const name = (await readdir(pluginData)).find((entry) =>
+      /^codex-automations-.*\.json$/u.test(entry),
+    )!;
+    const path = join(pluginData, name);
+    const bytes = await readFile(path, 'utf8');
+    return { path, bytes, ledger: JSON.parse(bytes) };
+  }
   async function manifest(declaration = job()) {
     await writeFile(
       join(workspace, 'agent.yaml'),
@@ -812,6 +831,185 @@ describe('agent/codex-automations', () => {
     );
   });
 
+  it('should retire a verified deleted declaration before preparing its replacement', async () => {
+    await syncOne();
+    const before = await ownership();
+    await manifest(job().replace('id: review', 'id: update'));
+    await rm(join(codexHome, 'automations', 'fixture-native', 'automation.toml'));
+    const plan = await inspect();
+    assert.ok(plan.findings.some(({ code }) => code === 'automation-retirement-pending'));
+    assert.deepEqual(plan.actions, []);
+    assert.equal(
+      (await inspectCodexSetup(pluginData, undefined, { ...deps(), automationInputs: inputs() }))
+        .automations.status,
+      'blocked',
+    );
+    assert.equal((await ownership()).bytes, before.bytes);
+    const installed = await installCodexSetup(pluginData, undefined, {
+      ...deps(),
+      automationInputs: inputs(),
+    });
+    assert.equal(installed.automations.actions[0]!.manifestId, 'update');
+    const retired = await ownership();
+    assert.deepEqual(retired.ledger.records[0], {
+      ...before.ledger.records[0],
+      removed: true,
+      retired: { atMs: retired.ledger.records[0].retired.atMs, reason: 'native-job-absent' },
+    });
+    assert.ok(Number.isSafeInteger(retired.ledger.records[0].retired.atMs));
+    const replacement = installed.automations.actions[0]!;
+    await prepareCodexAutomation(pluginData, installed.automations.digest, inputs(), deps());
+    await nativeWrite(replacement.expected, 'replacement');
+    await acknowledgeCodexAutomation(pluginData, installed.automations.digest, undefined, deps());
+    const final = await ownership();
+    assert.equal(
+      (await inspectCodexSetup(pluginData, undefined, { ...deps(), automationInputs: inputs() }))
+        .automations.status,
+      'aligned',
+    );
+    assert.equal(
+      (await installCodexSetup(pluginData, undefined, { ...deps(), automationInputs: inputs() }))
+        .automations.status,
+      'aligned',
+    );
+    assert.equal((await ownership()).bytes, final.bytes);
+    assert.equal((await readCodexAutomations(codexHome)).length, 1);
+    const history = (await listCodexAutomations(pluginData, inputs(), deps())).jobs.find(
+      ({ id }) => id === 'review',
+    )!;
+    assert.equal(history.retired, true);
+    assert.equal(history.nativeId, 'fixture-native');
+    assert.equal(history.nativeStatus, null);
+  });
+
+  for (const obstruction of [
+    'missing-root',
+    'symlink',
+    'unknown-entry',
+    'unreadable',
+    'reappeared',
+    'manifest-changed',
+    'ownership-changed',
+  ]) {
+    it(`should preserve deletion evidence when retirement inspection is ${obstruction}`, async () => {
+      await syncOne();
+      const [old] = await readCodexAutomations(codexHome);
+      await manifest(job().replace('id: review', 'id: update'));
+      await rm(join(codexHome, 'automations', 'fixture-native', 'automation.toml'));
+      const before = await ownership();
+      if (obstruction === 'missing-root')
+        await rm(join(codexHome, 'automations'), { recursive: true });
+      if (obstruction === 'symlink')
+        await symlink(workspace, join(codexHome, 'automations', 'link'));
+      if (obstruction === 'unknown-entry')
+        await writeFile(join(codexHome, 'automations', 'unknown'), 'unclassified');
+      if (obstruction === 'unreadable') {
+        await mkdir(join(codexHome, 'automations', 'unknown'));
+        await writeFile(
+          join(codexHome, 'automations', 'unknown', 'automation.toml'),
+          'version = 99',
+        );
+      }
+      let reads = 0;
+      let concurrentBytes = before.bytes;
+      await assert.rejects(
+        reconcileCodexAutomationRetirements(pluginData, {
+          ...deps(),
+          async readAutomations(home, options) {
+            assert.equal(options?.requireComplete, true);
+            reads++;
+            if (reads === 2 && obstruction === 'reappeared') await nativeWrite(old!.definition);
+            if (reads === 2 && obstruction === 'manifest-changed') await manifest();
+            if (reads === 2 && obstruction === 'ownership-changed') {
+              before.ledger.records[0].removed = true;
+              concurrentBytes = JSON.stringify(before.ledger);
+              await writeFile(before.path, concurrentBytes);
+            }
+            return readCodexAutomations(home, options);
+          },
+        }),
+      );
+      assert.equal((await ownership()).bytes, concurrentBytes);
+      assert.equal((await ownership()).ledger.records[0].retired, undefined);
+    });
+  }
+
+  for (const pending of ['old-pause', 'other-create']) {
+    it(`should refuse deletion retirement while ${pending} remains unresolved`, async () => {
+      await syncOne();
+      if (pending === 'old-pause') await manifest(job().replace('id: review', 'id: update'));
+      else await manifest(job() + job().replace('id: review', 'id: update'));
+      const plan = await inspect();
+      await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+      await manifest(job().replace('id: review', 'id: update'));
+      await rm(join(codexHome, 'automations', 'fixture-native', 'automation.toml'));
+      const before = await ownership();
+      await reconcileCodexAutomationRetirements(pluginData, deps());
+      assert.equal((await ownership()).bytes, before.bytes);
+      const blocked = await inspect();
+      assert.equal(blocked.status, 'blocked');
+      assert.deepEqual(blocked.actions, []);
+      assert.ok(
+        blocked.findings.some(({ code }) => code === 'automation-pending-readback-required'),
+      );
+      await assert.rejects(prepareCodexAutomation(pluginData, plan.digest, inputs(), deps()));
+    });
+  }
+
+  it('should keep declared missing jobs in explicit recovery rather than retire or recreate them', async () => {
+    await syncOne();
+    await rm(join(codexHome, 'automations', 'fixture-native', 'automation.toml'));
+    const before = await ownership();
+    await reconcileCodexAutomationRetirements(pluginData, deps());
+    const plan = await inspect();
+    assert.equal(plan.status, 'blocked');
+    assert.deepEqual(plan.actions, []);
+    assert.ok(plan.findings.some(({ code }) => code === 'automation-native-recovery-required'));
+    assert.equal((await ownership()).bytes, before.bytes);
+  });
+
+  it('should reject retirement ownership conflicts without adopting matching names', async () => {
+    await syncOne();
+    const [old] = await readCodexAutomations(codexHome);
+    await manifest(job().replace('id: review', 'id: update'));
+    await nativeWrite({ ...old!.definition, prompt: 'unmanaged' });
+    const before = await ownership();
+    await assert.rejects(
+      reconcileCodexAutomationRetirements(pluginData, deps()),
+      rejectsCode('automation-ownership-conflict'),
+    );
+    assert.equal((await ownership()).bytes, before.bytes);
+  });
+
+  it('should retain paused deletion history and reject retired id reuse or reappearance', async () => {
+    await syncOne();
+    const [old] = await readCodexAutomations(codexHome);
+    await manifest('');
+    await syncOne();
+    const before = await ownership();
+    await rm(join(codexHome, 'automations', 'fixture-native', 'automation.toml'));
+    await reconcileCodexAutomationRetirements(pluginData, { ...deps(), now: () => 1234 });
+    const retired = await ownership();
+    assert.deepEqual(retired.ledger.records[0], {
+      ...before.ledger.records[0],
+      retired: { atMs: 1234, reason: 'native-job-absent' },
+    });
+    assert.equal((await inspect()).status, 'aligned');
+    await reconcileCodexAutomationRetirements(pluginData, deps());
+    assert.equal((await ownership()).bytes, retired.bytes);
+    await manifest();
+    const reuse = await inspect();
+    assert.equal(reuse.status, 'blocked');
+    assert.ok(reuse.findings.some(({ code }) => code === 'automation-retired-id'));
+    await manifest('');
+    for (const id of ['fixture-native', 'imposter']) {
+      await nativeWrite(old!.definition, id);
+      await assert.rejects(inspect(), rejectsCode('automation-ownership-conflict'));
+      assert.equal((await ownership()).bytes, retired.bytes);
+      await rm(join(codexHome, 'automations', id, 'automation.toml'));
+    }
+  });
+
   for (const outcome of ['denied', 'unreadable', 'diverged', 'lost-response']) {
     it(`should block cutover activation after a ${outcome} pause until exact recovery`, async () => {
       await syncOne();
@@ -856,60 +1054,67 @@ describe('agent/codex-automations', () => {
     });
   }
 
-  it('should retain separate heartbeat histories across a remove and add cutover', async () => {
-    const conversations = new Map<string, { id: string; name?: string }>();
-    const dependencies = {
-      ...deps(),
-      threadAdapter: {
-        async lookup(id: string) {
-          return conversations.get(id) ?? null;
+  for (const cutover of ['pause', 'deletion']) {
+    it(`should retain separate heartbeat histories across ${cutover} cutover`, async () => {
+      const conversations = new Map<string, { id: string; name?: string }>();
+      const dependencies = {
+        ...deps(),
+        threadAdapter: {
+          async lookup(id: string) {
+            return conversations.get(id) ?? null;
+          },
+          async create(_record: unknown, save: (id: string) => Promise<void>) {
+            const id = `thread-${conversations.size}`;
+            await save(id);
+            conversations.set(id, { id });
+            return id;
+          },
+          async rename(id: string, name: string) {
+            conversations.set(id, { id, name });
+          },
         },
-        async create(_record: unknown, save: (id: string) => Promise<void>) {
-          const id = `thread-${conversations.size}`;
-          await save(id);
-          conversations.set(id, { id });
-          return id;
-        },
-        async rename(id: string, name: string) {
-          conversations.set(id, { id, name });
-        },
-      },
-    };
-    const declaration = (id: string) =>
-      job('    thread: { name: Activity }\n').replace('id: review', `id: ${id}`);
-    await manifest(declaration('nightly-refresh'));
-    await syncThreads(dependencies);
-    async function next(nativeId: string) {
-      const plan = await inspectCodexAutomations(pluginData, inputs(), dependencies);
-      const prepared = await prepareCodexAutomation(
-        pluginData,
-        plan.digest,
-        inputs(),
-        dependencies,
+      };
+      const declaration = (id: string) =>
+        job('    thread: { name: Activity }\n').replace('id: review', `id: ${id}`);
+      await manifest(declaration('nightly-refresh'));
+      await syncThreads(dependencies);
+      async function next(nativeId: string) {
+        const plan = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+        const prepared = await prepareCodexAutomation(
+          pluginData,
+          plan.digest,
+          inputs(),
+          dependencies,
+        );
+        await nativeWrite(plan.actions[0]!.expected, nativeId);
+        await acknowledgeCodexAutomation(pluginData, prepared.digest, undefined, dependencies);
+        return prepared.request;
+      }
+      const old = await next('old');
+      assert.equal(old.kind, 'heartbeat');
+      await manifest(declaration('update'));
+      await syncThreads(dependencies);
+      const history = structuredClone(conversations.get('thread-0'));
+      if (cutover === 'deletion') {
+        await rm(join(codexHome, 'automations', 'old', 'automation.toml'));
+        await reconcileCodexAutomationRetirements(pluginData, dependencies);
+      } else {
+        const pause = await next('old');
+        assert.equal(pause.id, 'old');
+        assert.equal(pause.status, 'PAUSED');
+      }
+      const replacement = await next('replacement');
+      assert.equal(replacement.status, 'ACTIVE');
+      assert.equal(replacement.kind, 'heartbeat');
+      assert.notEqual(replacement.targetThreadId, old.targetThreadId);
+      assert.deepEqual(conversations.get('thread-0'), history);
+      assert.equal(conversations.size, 2);
+      assert.equal(
+        (await inspectCodexAutomations(pluginData, inputs(), dependencies)).status,
+        'aligned',
       );
-      await nativeWrite(plan.actions[0]!.expected, nativeId);
-      await acknowledgeCodexAutomation(pluginData, prepared.digest, undefined, dependencies);
-      return prepared.request;
-    }
-    const old = await next('old');
-    assert.equal(old.kind, 'heartbeat');
-    await manifest(declaration('update'));
-    await syncThreads(dependencies);
-    const history = structuredClone(conversations.get('thread-0'));
-    const pause = await next('old');
-    assert.equal(pause.id, 'old');
-    assert.equal(pause.status, 'PAUSED');
-    const replacement = await next('replacement');
-    assert.equal(replacement.status, 'ACTIVE');
-    assert.equal(replacement.kind, 'heartbeat');
-    assert.notEqual(replacement.targetThreadId, old.targetThreadId);
-    assert.deepEqual(conversations.get('thread-0'), history);
-    assert.equal(conversations.size, 2);
-    assert.equal(
-      (await inspectCodexAutomations(pluginData, inputs(), dependencies)).status,
-      'aligned',
-    );
-  });
+    });
+  }
 
   it('should drain all removals before cutover while retaining disabled and unrelated jobs', async () => {
     await manifest(
