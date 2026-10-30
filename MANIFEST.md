@@ -431,6 +431,9 @@ In either runtime, `automation-thread-settings-denied` or
 native settings and, if needed, apply the retained request shown by Doctor through
 supported native controls. Matching saved values clear the receipt on a later Install. Correcting
 authorization alone does not replay a denied attempt; do not delete ownership records.
+If you withdraw a denied change and the declaration matches the same chat's current
+settings, rerun Install to clear the obsolete request without changing the chat.
+Reverting a declaration does not clear an uncertain update whose outcome is still unknown.
 A conflict or missing chat stops the update; earlier verified changes remain applied.
 
 For `automation-journal-busy`, confirm no installation or synchronization is running
