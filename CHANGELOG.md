@@ -36,6 +36,7 @@
 ### Notes
 
 - Added validation for `github.project-pickup` declarations; scheduled pickup is not yet available in either runtime. [#525](https://github.com/tanaabased/openclaw-agent-system/issues/525)
+- Allowed ClawHub validation warnings without blocking release checks; failed validation and reported breakages still block.
 - Changed omitted automation models to inherit `models.default` when configured. Review effective settings before Install. [#556](https://github.com/tanaabased/openclaw-agent-system/issues/556)
 - Made ClawHub publication best-effort, with a warning on failure; npm and repository publication remain required. [#518](https://github.com/tanaabased/openclaw-agent-system/issues/518)
 - Updated installation guidance to use npm while ClawHub publication is blocked upstream. [actions#65](https://github.com/tanaabased/actions/issues/65)
