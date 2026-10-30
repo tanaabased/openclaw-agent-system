@@ -7,7 +7,7 @@ those same conversations.
 ## What Belongs Here
 
 - Digest-bound plans for native automation actions without private scheduler-file writes.
-- Packaged pause-first preparation and verified-deletion retirement across removal/addition, with explicit saved-state fixtures rather than desktop scheduler execution.
+- Packaged removal and verified-deletion retirement, with explicit saved-state fixtures rather than desktop scheduler execution.
 - Real app-server conversation creation, selected model/permission readback, and attributed setup history without model generation.
 - Fresh-process resumption and shared profile changes preserving conversation identity, permissions, and durable model/effort settings.
 
@@ -129,12 +129,12 @@ node "$runtime" automations prepare --plugin-data "$root/cutover-data" < "$root/
 node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" "$root/cutover-prepared.json" "$workspace" "$CODEX_HOME" cutover-old
 node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/cutover-prepare.json" | jq -e '.status == "verified"'
 
-# should prepare only the removed pause until exact saved-state acknowledgment
+# should pause a removed declaration through verified saved state
 root="$TMPDIR/agent-system-codex-automations"
 runtime="$(jq -r .cachePath "$root/cache.json")/dist/codex/codex-runtime.js"
 export CODEX_HOME="$root/cutover-home"
-node --input-type=module -e 'import fs from "node:fs"; import YAML from "yaml"; const path=process.argv[1]; const manifest=YAML.parse(fs.readFileSync(path,"utf8")); manifest.automations[0].id="update"; fs.writeFileSync(path,YAML.stringify(manifest));' "$root/cutover-workspace/agent.yaml"
-node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | tee "$root/cutover-plan.json" | jq -e '.actions[0].manifestId == "nightly-refresh" and .actions[0].removed == true and .actions[1].manifestId == "update"'
+node --input-type=module -e 'import fs from "node:fs"; import YAML from "yaml"; const path=process.argv[1]; const manifest=YAML.parse(fs.readFileSync(path,"utf8")); manifest.automations=[]; fs.writeFileSync(path,YAML.stringify(manifest));' "$root/cutover-workspace/agent.yaml"
+node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | tee "$root/cutover-plan.json" | jq -e '(.actions | length) == 1 and .actions[0].manifestId == "nightly-refresh" and .actions[0].removed == true'
 jq --slurpfile inputs "$root/cutover-input.json" '$inputs[0] + {digest:.digest}' "$root/cutover-plan.json" > "$root/cutover-prepare.json"
 node "$runtime" automations prepare --plugin-data "$root/cutover-data" < "$root/cutover-prepare.json" | tee "$root/cutover-prepared.json" | jq -e '.request.mode == "update" and .request.id == "cutover-old" and .request.status == "PAUSED"'
 if node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/cutover-prepare.json" 2> "$root/cutover-unpaused.json"; then exit 1; fi
@@ -142,18 +142,19 @@ jq -e '.code == "automation-readback-diverged"' "$root/cutover-unpaused.json"
 node "$GITHUB_WORKSPACE/examples/codex-automations/save-automation-fixture.mjs" "$root/cutover-prepared.json" "$root/cutover-workspace" "$CODEX_HOME" cutover-old
 node "$runtime" automations acknowledge --plugin-data "$root/cutover-data" < "$root/cutover-prepare.json" | jq -e '.status == "verified"'
 
-# should retire the deleted old fixture before replacement activation
+# should retire the deleted native job and retain its ownership history
 root="$TMPDIR/agent-system-codex-automations"
 runtime="$(jq -r .cachePath "$root/cache.json")/dist/codex/codex-runtime.js"
 export CODEX_HOME="$root/cutover-home"
 rm "$CODEX_HOME/automations/cutover-old/automation.toml"
 node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq -e '.status == "blocked" and .actions == [] and any(.findings[]; .id == "nightly-refresh" and .code == "automation-retirement-pending")'
-node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq -e '.status == "requires-native-app-sync" and any(.jobs[]; .id == "nightly-refresh" and .retired == true and .nativeId == "cutover-old" and .nativeStatus == null)'
+node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq -e '.status == "aligned" and any(.jobs[]; .id == "nightly-refresh" and .retired == true and .nativeId == "cutover-old" and .nativeStatus == null)'
 
-# should resume replacement preparation without creating duplicate schedules
+# should create a new job without reviving retired ownership
 root="$TMPDIR/agent-system-codex-automations"
 runtime="$(jq -r .cachePath "$root/cache.json")/dist/codex/codex-runtime.js"
 export CODEX_HOME="$root/cutover-home"
+node --input-type=module -e 'import fs from "node:fs"; import YAML from "yaml"; const manifest=YAML.parse(fs.readFileSync(process.argv[1],"utf8")); manifest.automations[0].id="update"; fs.writeFileSync(process.argv[2],YAML.stringify(manifest));' "$GITHUB_WORKSPACE/examples/codex-automations/cutover/agent.yaml" "$root/cutover-workspace/agent.yaml"
 node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | tee "$root/cutover-replacement.json" | jq -e '(.actions | length) == 1 and .actions[0].manifestId == "update" and .actions[0].mode == "create"'
 jq --slurpfile inputs "$root/cutover-input.json" '$inputs[0] + {digest:.digest}' "$root/cutover-replacement.json" > "$root/cutover-prepare.json"
 node "$runtime" automations prepare --plugin-data "$root/cutover-data" < "$root/cutover-prepare.json" | tee "$root/cutover-prepared.json" | jq -e '.request.status == "ACTIVE"'

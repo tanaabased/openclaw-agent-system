@@ -333,8 +333,6 @@ export default async function planCodexAutomations(options: {
       findings.push({ id: record.id, code: 'automation-removal-pending' });
     } else findings.push({ id: record.id, code: 'automation-disabled-retained' });
   }
-  // verify every removed schedule's pause before preparing desired activations.
-  actions.sort((left, right) => Number(right.removed) - Number(left.removed));
   const activeTargets = new Set<string>();
   for (const action of actions) {
     if (action.expected.kind !== 'heartbeat' || action.expected.status !== 'ACTIVE') continue;
