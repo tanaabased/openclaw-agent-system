@@ -160,10 +160,7 @@ export async function readCodexAutomations(
     const result: SavedAutomation[] = [];
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.isSymbolicLink()) throw new Error('symlink');
-      if (!entry.isDirectory()) {
-        if (options.requireComplete) throw new Error('unknown inventory entry');
-        continue;
-      }
+      if (!entry.isDirectory()) continue;
       let contents: string;
       try {
         contents = await readCodexFile(join(root, entry.name, 'automation.toml'));

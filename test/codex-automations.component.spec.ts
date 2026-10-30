@@ -854,6 +854,8 @@ describe('agent/codex-automations', () => {
       const before = await ownership();
       await manifest(job().replace('id: review', 'id: update'));
       await rm(join(codexHome, 'automations', 'fixture-native', 'automation.toml'));
+      for (const name of ['.run-jitter-salt', 'unrelated-file'])
+        await writeFile(join(codexHome, 'automations', name), 'not an automation definition');
       const plan = await inspect();
       assert.ok(plan.findings.some(({ code }) => code === 'automation-retirement-pending'));
       assert.deepEqual(plan.actions, []);
@@ -905,7 +907,6 @@ describe('agent/codex-automations', () => {
   for (const obstruction of [
     'missing-root',
     'symlink',
-    'unknown-entry',
     'unreadable',
     'reappeared',
     'manifest-changed',
@@ -921,8 +922,6 @@ describe('agent/codex-automations', () => {
         await rm(join(codexHome, 'automations'), { recursive: true });
       if (obstruction === 'symlink')
         await symlink(workspace, join(codexHome, 'automations', 'link'));
-      if (obstruction === 'unknown-entry')
-        await writeFile(join(codexHome, 'automations', 'unknown'), 'unclassified');
       if (obstruction === 'unreadable') {
         await mkdir(join(codexHome, 'automations', 'unknown'));
         await writeFile(

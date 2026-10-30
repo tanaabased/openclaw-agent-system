@@ -147,6 +147,7 @@ root="$TMPDIR/agent-system-codex-automations"
 runtime="$(jq -r .cachePath "$root/cache.json")/dist/codex/codex-runtime.js"
 export CODEX_HOME="$root/cutover-home"
 rm "$CODEX_HOME/automations/cutover-old/automation.toml"
+touch "$CODEX_HOME/automations/.run-jitter-salt"
 node "$runtime" automations plan --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq -e '.status == "blocked" and .actions == [] and any(.findings[]; .id == "nightly-refresh" and .code == "automation-retirement-pending")'
 node "$runtime" automations sync --plugin-data "$root/cutover-data" < "$root/cutover-input.json" | jq -e '.status == "aligned" and any(.jobs[]; .id == "nightly-refresh" and .retired == true and .nativeId == "cutover-old" and .nativeStatus == null)'
 
