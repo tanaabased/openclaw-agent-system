@@ -60,7 +60,8 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 3. Append `inspect --plugin-data <pluginData>`, run the command, and summarize its JSON findings. Do not expose declared commands, command output, secrets, or environment values.
 4. Apply only when the user has explicitly requested installation. Append `install --plugin-data <pluginData>` to a fresh copy of the trusted prefix and run it under the host's normal Codex command authorization.
 5. Stop on the first failed step. Do not retry it through OpenClaw, direct shell execution, another runtime selection, or an edited command.
-6. Report outcomes in declaration order: `setup-unchanged` as healthy, `setup-applied` as applied, `setup-not-applicable` as skipped, and an error as failed with its stable code and `stepId` when present.
+6. Setup may replace the installed runtime. Its `requires-fresh-inspection` automation result is a handoff, not a schedule assessment. Continue with Codex automations below in a fresh command invocation using the trusted `automationRuntime` prefix, even when setup made no changes. Never reuse an automation plan from before setup or rerun setup just to reconcile automations.
+7. Report outcomes in declaration order: `setup-unchanged` as healthy, `setup-applied` as applied, `setup-not-applicable` as skipped, and an error as failed with its stable code and `stepId` when present.
 
 #### Codex automations
 

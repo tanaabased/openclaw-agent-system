@@ -843,7 +843,7 @@ describe('agent/codex-automations', () => {
   });
 
   for (const status of ['active', 'paused']) {
-    it(`should retire a deleted ${status} job through install and retain its history`, async () => {
+    it(`should retire a deleted ${status} job through fresh automation sync after setup and retain its history`, async () => {
       await syncOne();
       const [old] = await readCodexAutomations(codexHome);
       if (status === 'paused') {
@@ -865,7 +865,10 @@ describe('agent/codex-automations', () => {
       );
       assert.equal((await ownership()).bytes, before.bytes);
       const installed = await installCodexSetup(pluginData, undefined, dependencies);
-      assert.equal(installed.automations.actions[0]!.manifestId, 'update');
+      assert.equal(installed.automations.status, 'requires-fresh-inspection');
+      assert.equal((await ownership()).bytes, before.bytes);
+      await reconcileCodexAutomationRetirements(pluginData, dependencies);
+      assert.equal((await inspect()).actions[0]!.manifestId, 'update');
       const retired = await ownership();
       assert.deepEqual(retired.ledger.records[0], {
         ...before.ledger.records[0],
@@ -880,7 +883,7 @@ describe('agent/codex-automations', () => {
       );
       assert.equal(
         (await installCodexSetup(pluginData, undefined, dependencies)).automations.status,
-        'aligned',
+        'requires-fresh-inspection',
       );
       assert.equal((await ownership()).bytes, final.bytes);
       assert.equal((await readCodexAutomations(codexHome)).length, 1);
