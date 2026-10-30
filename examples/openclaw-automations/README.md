@@ -95,10 +95,16 @@ grep -Fx installed maintenance.installed
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 for attempt in $(seq 1 60); do
   openclaw agent-system automations runs identity --json > "$TMPDIR/identity-report.json"
-  if jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5" and .effective.effort == "high")' "$TMPDIR/identity-report.json" >/dev/null; then break; fi
+  if jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5")' "$TMPDIR/identity-report.json"
+report_execution=$(jq -er '.reports[] | select(.status == "delivered") | .executionId' "$TMPDIR/identity-report.json")
+grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_execution " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
+ >/dev/null; then break; fi
   sleep 2
 done
-jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5" and .effective.effort == "high")' "$TMPDIR/identity-report.json"
+jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5")' "$TMPDIR/identity-report.json"
+report_execution=$(jq -er '.reports[] | select(.status == "delivered") | .executionId' "$TMPDIR/identity-report.json")
+grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_execution " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
+
 
 
 # should execute the next timer-fired prompt with the saved model and effort
@@ -220,7 +226,10 @@ for job in empty-report failed-report timeout-report; do
     if jq -e 'any(.reports[]; .status == "delivered" and (.messageId | type == "string"))' "$TMPDIR/$job-report.json" >/dev/null; then break; fi
     sleep 2
   done
-  jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5" and .effective.effort == "high")' "$TMPDIR/$job-report.json"
+  jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5")' "$TMPDIR/$job-report.json"
+  report_execution=$(jq -er '.reports[] | select(.status == "delivered") | .executionId' "$TMPDIR/$job-report.json")
+  grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_execution " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
+
 done
 
 # should retain markdown and diagnostics across fresh history connections with model-formatted cards

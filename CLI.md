@@ -136,7 +136,8 @@ For command reports, the JSON result includes a separate job-wide `reports` page
 and `reportsTotal`. Each report carries its wrapper execution ID, command outcome,
 report status (`pending`, `delivered`, `failed`, or `uncertain`), a diagnostic code
 when relevant, and the verified message ID when delivered. Requested and observed
-model/effort are separate fields. This page uses `--offset` and `--limit`; the native
+model/effort are separate fields; observed fields appear only when the host supplies
+them, never as copies of the requested settings. This page uses `--offset` and `--limit`; the native
 `--run-id` filter applies only to native entries, not these wrapper execution IDs.
 Human output shows a separate command-reports table. Reading history does not retry
 reports or rerun commands. Native completion output also preserves the reporting
