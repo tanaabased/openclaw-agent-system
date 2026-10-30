@@ -773,6 +773,55 @@ export default class AutomationService {
             message: `Automation ${record.id} is retired; historical ownership evidence is retained.`,
           });
         }
+        // removed jobs must be verified disabled before any desired activation.
+        for (const record of ledger.records.filter(
+          (entry) => !declarations.some(({ id }) => id === entry.id),
+        )) {
+          await assertCurrent();
+          if (record.retired) {
+            if (
+              !this.retirementConfirmationExpired(record.retired.atMs) &&
+              !outcomes.some(({ stepId }) => stepId === record.id)
+            )
+              outcomes.push({
+                component: 'automations',
+                stepId: record.id,
+                code: 'automation-retired',
+                status: 'unchanged',
+                message: `Automation ${record.id} remains retired.`,
+              });
+            continue;
+          }
+          const native = this.owned(record, observed, context.agentId);
+          if (!native) throw new AutomationError('automation-recovery-required');
+          const before = nativeAutomation(await request('cron.get', { id: native.id }));
+          if (before.configRevision !== native.configRevision)
+            throw new AutomationError('automation-native-snapshot-diverged');
+          if (before.enabled)
+            await this.update(
+              request,
+              store,
+              ledger,
+              record,
+              before,
+              { enabled: false },
+              nativeAutomationHash({ ...before, enabled: false }),
+            );
+          if (!record.removed || record.pending) {
+            record.removed = true;
+            record.nativeId = before.id;
+            record.nativeHash = nativeAutomationHash({ ...before, enabled: false });
+            delete record.pending;
+            await store.write(ledger);
+          }
+          outcomes.push({
+            component: 'automations',
+            stepId: record.id,
+            code: 'automation-disabled-retained',
+            status: before.enabled ? 'updated' : 'unchanged',
+            message: `Automation ${record.id} is disabled; ownership and native history are retained.`,
+          });
+        }
         for (const job of declarations) {
           const effective = effectiveAutomation(job, context);
           let record = ledger.records.find(({ id }) => id === job.id);
@@ -881,54 +930,6 @@ export default class AutomationService {
             code: 'automation-synchronized',
             status: created ? 'created' : changed ? 'updated' : 'unchanged',
             message: `Automation ${job.id} is synchronized (${context.threads?.get(job.id)?.outcome ?? 'independent'}${context.threads?.has(job.id) ? ': ' + context.threads.get(job.id)!.id : ''}).`,
-          });
-        }
-        for (const record of ledger.records.filter(
-          (entry) => !declarations.some(({ id }) => id === entry.id),
-        )) {
-          await assertCurrent();
-          if (record.retired) {
-            if (
-              !this.retirementConfirmationExpired(record.retired.atMs) &&
-              !outcomes.some(({ stepId }) => stepId === record.id)
-            )
-              outcomes.push({
-                component: 'automations',
-                stepId: record.id,
-                code: 'automation-retired',
-                status: 'unchanged',
-                message: `Automation ${record.id} remains retired.`,
-              });
-            continue;
-          }
-          const native = this.owned(record, observed, context.agentId);
-          if (!native) throw new AutomationError('automation-recovery-required');
-          const before = nativeAutomation(await request('cron.get', { id: native.id }));
-          if (before.configRevision !== native.configRevision)
-            throw new AutomationError('automation-native-snapshot-diverged');
-          if (before.enabled)
-            await this.update(
-              request,
-              store,
-              ledger,
-              record,
-              before,
-              { enabled: false },
-              nativeAutomationHash({ ...before, enabled: false }),
-            );
-          if (!record.removed || record.pending) {
-            record.removed = true;
-            record.nativeId = before.id;
-            record.nativeHash = nativeAutomationHash({ ...before, enabled: false });
-            delete record.pending;
-            await store.write(ledger);
-          }
-          outcomes.push({
-            component: 'automations',
-            stepId: record.id,
-            code: 'automation-disabled-retained',
-            status: before.enabled ? 'updated' : 'unchanged',
-            message: `Automation ${record.id} is disabled; ownership and native history are retained.`,
           });
         }
         return { outcomes, warnings: [] };

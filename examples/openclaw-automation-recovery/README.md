@@ -2,14 +2,15 @@
 
 Check how an offline scheduler fails, then synchronize two jobs and repair changed
 routing with Doctor and Install. Restart the Gateway and complete the prompt using
-the same job IDs. Finally, remove the command job and its ownership record while
-preserving the unrelated prompt.
+the same job IDs. Replace the command job only after pausing it, then retire its old
+ownership record while preserving the unrelated prompt.
 
 ## What Belongs Here
 
 - Offline diagnostics with an actionable connectivity recovery.
 - Read-only drift inspection, explicit repair, and preservation of both changed and unrelated native job identities.
 - Restored routing after restart and a completed prompt in the owning native context.
+- Removal/addition cutover retaining the paused old job before replacement activation.
 - Retirement after declaration removal and native deletion, without recreating the job or blocking the unrelated prompt.
 
 ## What Does Not Belong Here
@@ -87,11 +88,18 @@ run_id=$(openclaw agent-system automations run prompt --json | jq -er 'select(.s
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" prompt "$run_id"
 openclaw-aimock evidence --scenario openclaw-automation-recovery --expected-evidence "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery/expected-evidence.json"
 
+# should retain the removed job paused before activating its replacement
+cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
+native=$(jq -er '.jobs[] | select(.id == "identity") | .nativeId' "$TMPDIR/automation-before.json")
+node --input-type=module -e 'import fs from "node:fs"; import YAML from "yaml"; const file = "automations.yaml"; const jobs = YAML.parse(fs.readFileSync(file, "utf8")); jobs.find(job => job.id === "identity").id = "identity-update"; fs.writeFileSync(file, YAML.stringify(jobs));'
+openclaw agent-system automations sync --json | jq -e 'any(.outcomes[]; .stepId == "identity" and .code == "automation-disabled-retained") and ([.outcomes[].stepId] | index("identity") < index("identity-update"))'
+openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.enabled == false'
+openclaw agent-system automations list --json | tee "$TMPDIR/automation-cutover.json" | jq -e '.status == "aligned" and any(.jobs[]; .id == "identity-update" and .nativeEnabled == true)'
+jq -e --slurpfile before "$TMPDIR/automation-before.json" 'any(.jobs[]; .id == "identity" and .removed == true and .nativeEnabled == false and .nativeId == ($before[0].jobs[] | select(.id == "identity") | .nativeId))' "$TMPDIR/automation-cutover.json"
+
 # should retire a deleted undeclared job while preserving the unrelated native identity
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
 native=$(jq -er '.jobs[] | select(.id == "identity") | .nativeId' "$TMPDIR/automation-before.json")
-node --input-type=module -e 'import fs from "node:fs"; import YAML from "yaml"; const file = "automations.yaml"; fs.writeFileSync(file, YAML.stringify(YAML.parse(fs.readFileSync(file, "utf8")).filter(job => job.id !== "identity")));'
-openclaw agent-system automations sync --json | jq -e 'any(.outcomes[]; .stepId == "identity" and .code == "automation-disabled-retained")'
 openclaw cron rm "$native" --json | jq -e '.removed == true'
 openclaw agent-system automations sync --json | jq -e 'any(.outcomes[]; .stepId == "identity" and .code == "automation-retired") and all(.outcomes[]; .status != "created")'
 openclaw agent-system doctor --json | jq -e 'any(.findings[]; .component == "automations" and .stepId == "identity" and .code == "automation-retired" and .status == "healthy")'
