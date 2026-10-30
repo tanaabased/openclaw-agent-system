@@ -91,7 +91,11 @@ while test "$SECONDS" -lt "$deadline"; do
   if jq -e 'any(.reports[]; .status == "delivered" or .status == "failed" or .status == "uncertain")' "$TMPDIR/recovered-report.json" >/dev/null; then break; fi
   sleep 2
 done
-jq -e --argjson expected '{"status":"delivered","effective.model":"aimock/gpt-5.5"}' -f "$GITHUB_WORKSPACE/scripts/assert-automation-report.jq" "$TMPDIR/recovered-report.json"
+jq -e 'if any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5") then true
+else error({reportCount: (.reports | length),
+  deliveredCount: ([.reports[] | select(.status == "delivered")] | length),
+  expectedModelCount: ([.reports[] | select(.effective.model == "aimock/gpt-5.5")] | length)} | tojson)
+end' "$TMPDIR/recovered-report.json"
 report_execution=$(jq -er '.reports[] | select(.status == "delivered") | .executionId' "$TMPDIR/recovered-report.json")
 grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_execution " | grep -F 'provider=aimock model=gpt-5.5 thinking=medium '
 test "$(wc -l < identity.runs | tr -d ' ')" = 1

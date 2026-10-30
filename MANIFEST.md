@@ -320,18 +320,17 @@ automations:
 
 Run Install and approve session access (`operator.read` and `operator.write`) when
 requested. Enable `plugins.entries.agent-system.hooks.allowConversationAccess` in
-OpenClaw and leave `allowPromptInjection` enabled. Reporting does not inspect plugin
-permissions before sending. If the formatter hook was not observed, `automations runs`
-reports `automation-report-hooks-not-observed`; restore these grants before the next run.
-The failed report is not automatically replayed.
+OpenClaw and leave `allowPromptInjection` enabled. For
+`automation-report-hooks-not-observed` in `automations runs`, restore these grants
+before the next run; failed reports are not automatically replayed.
 
-The automation's model and effort format stdout and stderr into a success, warning,
-or error card. Markdown, JSON, plain text, and empty output are supported. Reports
-add model cost and latency; commands without `thread` remain model-free.
+The selected model and effort format stdout and stderr into a report card, adding
+model cost and latency. Markdown, JSON, plain text, and empty output are supported;
+commands without `thread` remain model-free.
 
-Reports use sanitized excerpts up to 16 KiB per stream and disclose truncation;
-permitted full output remains in native run history. Model explanations can be wrong;
-command status remains authoritative, and stderr alone does not mean failure.
+Reports sanitize each stream, cap excerpts at 16 KiB, and disclose truncation; full
+permitted output stays in native run history. Command status, not model explanations
+or stderr alone, determines failure.
 OpenClaw-hosted Codex uses this path; standalone Codex command jobs remain unsupported.
 
 #### OpenClaw execution and ownership
