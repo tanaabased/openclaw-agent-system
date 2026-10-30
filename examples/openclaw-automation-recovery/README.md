@@ -83,7 +83,7 @@ jq -S '[.jobs[] | {id, nativeId, routing}] | sort_by(.id)' "$TMPDIR/automation-r
 cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
 run_id=$(openclaw agent-system automations run identity --json | jq -er 'select(.status == "queued") | .runId | strings')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" identity "$run_id"
-openclaw agent-system automations runs identity --json | jq -e 'any(.reports[]; .status == "pending" and .reason == "Exit 0" and .code == "automation-report-hook-permission-required")'
+openclaw agent-system automations runs identity --json | jq -e --argjson expected '{"status":"pending","reason":"Exit 0","code":"automation-report-hook-permission-required"}' -f "$GITHUB_WORKSPACE/scripts/assert-automation-report.jq"
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 
 # should recover the report across restart and complete a prompt in the owning agent context
@@ -101,7 +101,7 @@ for attempt in $(seq 1 60); do
   if jq -e 'any(.reports[]; .status == "delivered" and (.messageId | type == "string"))' "$TMPDIR/recovered-report.json" >/dev/null; then break; fi
   sleep 2
 done
-jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5")' "$TMPDIR/recovered-report.json"
+jq -e --argjson expected '{"status":"delivered","effective.model":"aimock/gpt-5.5"}' -f "$GITHUB_WORKSPACE/scripts/assert-automation-report.jq" "$TMPDIR/recovered-report.json"
 report_execution=$(jq -er '.reports[] | select(.status == "delivered") | .executionId' "$TMPDIR/recovered-report.json")
 grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_execution " | grep -F 'provider=aimock model=gpt-5.5 thinking=medium '
 test "$(wc -l < identity.runs | tr -d ' ')" = 1

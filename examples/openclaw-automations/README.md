@@ -98,7 +98,7 @@ for attempt in $(seq 1 60); do
   if jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5")' "$TMPDIR/identity-report.json" >/dev/null; then break; fi
   sleep 2
 done
-jq -e 'any(.reports[]; .status == "delivered" and .effective.model == "aimock/gpt-5.5")' "$TMPDIR/identity-report.json"
+jq -e --argjson expected '{"status":"delivered","effective.model":"aimock/gpt-5.5"}' -f "$GITHUB_WORKSPACE/scripts/assert-automation-report.jq" "$TMPDIR/identity-report.json"
 report_execution=$(jq -er '.reports[] | select(.status == "delivered") | .executionId' "$TMPDIR/identity-report.json")
 grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_execution " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
 
