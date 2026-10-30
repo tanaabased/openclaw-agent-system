@@ -126,12 +126,16 @@ For an explicit request to select or change this managed task's existing PR, use
    solutions; add abstractions, dependencies, or compatibility layers only when the task
    requires them or a concrete benefit justifies their upkeep. Report unrelated improvements
    separately rather than expanding the task.
-   Add documentation only for an unmet reader need or a changed user-facing contract.
-   Correct or link its existing authoritative home, using the shortest useful explanation.
-   Keep setup, operation, recovery, and consequential limitations in user documentation;
-   put useful regression or scenario rationale beside the tests or examples it explains.
-   Keep temporary investigation and validation evidence in the work report or PR, and
-   omit redundant narration rather than moving it elsewhere.
+   Add documentation only for an unmet reader need or a changed user-facing contract,
+   applying the repository's existing documentation change gate. Use the fewest words
+   that let users configure, use, or recover the feature; include implementation detail
+   only when it changes a reader's action or decision. Prefer replacing or deleting
+   repetition and internal narration over adding prose. Preserve prerequisites, defaults,
+   consequential limits, and recovery steps. Make no documentation change when existing
+   guidance already serves the reader. This brevity rule applies to user documentation,
+   not the worker's engineering plan, investigation, or validation evidence; keep those
+   complete in the work report or PR. Put useful regression or scenario rationale beside
+   the tests or examples it explains.
 4. Run the required repository checks and focused verification of the changed behavior.
    Add or update tests for meaningful behavior and failure boundaries; for a bug fix,
    demonstrate the regression when practical. Derive expectations from the contract,

@@ -187,7 +187,13 @@ The receipt selects retained evidence; it does not grant authority by itself.
    - **Code:** pair intended changes with inspected files or related owners and the
      necessary rationale; reuse existing patterns and avoid speculative abstractions.
    - **Documentation:** name the reader, unmet need, and existing authoritative home.
-     Check current documentation, help, comments, and diagnostics before proposing prose.
+     Check current documentation, help, comments, and diagnostics before proposing prose;
+     apply the repository's existing documentation change gate. When documentation is
+     needed, use the fewest words that let users configure, use, or recover the feature.
+     Include implementation detail only when it changes a reader's action or decision.
+     Prefer replacing or deleting repetition and internal narration over adding prose;
+     preserve prerequisites, defaults, consequential limits, and recovery steps. Make no
+     documentation change when existing guidance already serves the reader.
    - **Tests:** identify the behavior or failure, coverage gap, and cheapest reliable
      owning layer for each change. Distinguish new coverage from existing checks to run.
      Use the repository's actual test vocabulary, not a particular framework by default.
