@@ -50,6 +50,11 @@ grep -F 'restore gateway connectivity' "$TMPDIR/offline-sync.stderr"
 # should start the gateway for native recovery checks
 openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess false --strict-json
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
+
+# should enroll command reporting only after the offline scheduler diagnostic is complete
+cd "$GITHUB_WORKSPACE/examples/openclaw-automation-recovery"
+node --input-type=module -e 'import fs from "node:fs"; import {parse,stringify} from "yaml"; const jobs=parse(fs.readFileSync("automations.yaml","utf8")); jobs.find(({id})=>id==="identity").thread={id:"automation-status",name:"Automation status"}; fs.writeFileSync("automations.yaml",stringify(jobs));'
+openclaw agent-system install --yes --json
 ```
 
 ## Testing
