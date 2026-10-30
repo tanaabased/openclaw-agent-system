@@ -3,7 +3,10 @@ import { codexInstanceStore } from './codex-assignment-claims.ts';
 import instanceIdentity from './instance-identity.ts';
 
 import { inspectCodexIntake } from './codex-intake.ts';
-import { inspectCodexAutomations } from './codex-automations.ts';
+import {
+  inspectCodexAutomations,
+  reconcileCodexAutomationRetirements,
+} from './codex-automations.ts';
 import type { CodexAutomationInputs } from './codex-automation-plan.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
 import {
@@ -228,6 +231,7 @@ export async function installCodexSetup(
   result.outcomes.push(
     ...instance.outcomes.map((outcome) => ({ ...outcome, component: 'instance-identity' })),
   );
+  await reconcileCodexAutomationRetirements(pluginData, dependencies);
   const automations = await inspectCodexAutomations(
     pluginData,
     dependencies.automationInputs,
