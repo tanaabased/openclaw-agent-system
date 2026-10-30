@@ -87,10 +87,12 @@ node "$runtime" binding bind --plugin-data "$root/threads-data" --workspace "$GI
 node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/threads-data" "$root/sidebar-input.json" | tee "$root/threads-created.json" | jq -e '.status == "verified" and ([.threads[].id] | unique | length) == 2'
 node "$runtime" automations plan --plugin-data "$root/threads-data" < "$root/sidebar-input.json" | tee "$root/threads-plan.json" | jq -e '.status == "requires-native-app-sync" and ([.actions[].expected.targetThreadId] | unique | length) == 2 and all(.actions[]; .expected.kind == "heartbeat")'
 
-# should retain conversation identities and model settings after the creating process exits
+# should restore a deleted sidebar group while retaining conversation identities and model settings
 root="$TMPDIR/agent-system-codex-automations"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
+jq '.nativeInventory.sections |= map(select(.name != "AGENT SYSTEM"))' "$root/sidebar-input.json" > "$root/sidebar-deleted.json"
+mv "$root/sidebar-deleted.json" "$root/sidebar-input.json"
 node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$root/threads-data" "$root/sidebar-input.json" > "$root/threads-reused.json"
 jq -S '.threads | map_values(.id)' "$root/threads-created.json" > "$root/threads-ids.json"
 jq -S '.threads | map_values(.id)' "$root/threads-reused.json" | diff - "$root/threads-ids.json"
