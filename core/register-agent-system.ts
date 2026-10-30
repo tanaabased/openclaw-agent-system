@@ -313,7 +313,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   };
   const automationService = new AutomationService(automationDependencies);
   registerAutomationReportHooks(api, automationService.reports, async (id) => {
-    for (const executionId of id ? [id] : await automationService.reports.ids()) {
+    for (const executionId of id ? [id] : await automationService.reports.recoveryIds()) {
       try {
         await reconcileAutomationReport({
           store: automationService.reports,
@@ -323,6 +323,13 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         });
       } catch {
         logger.warn('automation-report: recovery-unavailable');
+      }
+    }
+    if (!id) {
+      try {
+        await automationService.reports.prune();
+      } catch {
+        logger.warn('automation-report: cleanup-unavailable');
       }
     }
   });

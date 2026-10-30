@@ -115,7 +115,7 @@ function executionEvidence(state: NativeAutomation['state']): string {
 export default class AutomationService {
   readonly reports: AutomationReportStore;
   constructor(readonly dependencies: AutomationServiceDependencies) {
-    this.reports = new AutomationReportStore(join(dependencies.root, 'reports'));
+    this.reports = new AutomationReportStore(join(dependencies.root, 'reports'), dependencies.now);
   }
 
   async scope(manifest: AgentManifest, workspaceDir: string) {
