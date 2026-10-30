@@ -20,8 +20,8 @@ preserving the unrelated prompt.
 
 ## Notes
 
-- Strict AIMock supplies one recovered report and one prompt completion. The Gateway, native scheduler, drift, repair, and restart remain real without a hosted credential.
-- Two jobs make preservation meaningful during repair. The command runs once with reporting held; after restart, the prompt must receive its recovered report as history.
+- Strict AIMock supplies responses; the Gateway, scheduler, repair, and restart remain real.
+- The prompt must receive the recovered report as history without rerunning the command.
 - Retirement adds only direct native observations and synchronization; no additional model turn or Gateway restart.
 
 ## Setup

@@ -300,9 +300,7 @@ OpenClaw changes routing on its existing native job. Codex changes between indep
 and persistent routing by first pausing and retaining the old native schedule, then
 creating its replacement. Old schedule history and conversation bindings remain.
 
-For OpenClaw commands, choose a persistent destination once; reports from successive
-runs go to that same chat. Multiple commands and prompts can share an explicit
-`thread.id` when their names, groups, and resolved model/effort agree.
+Set `thread` on an OpenClaw command to report each run in a saved chat.
 
 ```yaml
 automations:
@@ -320,33 +318,17 @@ automations:
     thread: { id: backups, name: BACKUPS }
 ```
 
-Install creates or reuses the chat and enrolls the existing shared session client
-when needed, disclosing its `operator.read` and `operator.write` grants. Scripts
-need no chat IDs, reporting helpers, credentials, or custom output envelope.
-Reporting also needs Agent System's native hook grants for conversation access and
-prompt injection. Enable `plugins.entries.agent-system.hooks.allowConversationAccess`
-in OpenClaw and leave `allowPromptInjection` enabled before using reports. Without
-these grants, results remain pending with `automation-report-hook-permission-required`;
-Agent System does not silently grant itself conversation access.
-After command completion, a normal model turn formats a quoted success, warning, or
-error card with the run facts and a brief explanation. It uses the automation's
-resolved model and effort; omitted settings inherit the existing native defaults.
-Commands without a thread still make no reporting model call.
+Run Install and approve session access (`operator.read` and `operator.write`) when
+requested. Enable `plugins.entries.agent-system.hooks.allowConversationAccess` in
+OpenClaw and leave `allowPromptInjection` enabled; missing grants leave reports pending.
 
-Both streams accept Markdown, complete JSON, or ordinary text. Useful Markdown is
-preserved, JSON becomes readable facts or tables, and mixed or malformed output gets
-a summary and useful diagnostic excerpt. Nonempty stderr is not automatically a
-failure. The process exit and termination facts remain authoritative; output can
-support an application warning but cannot turn a failed command into success.
-Empty output still gets a completion explanation.
+The automation's model and effort format stdout and stderr into a success, warning,
+or error card. Markdown, JSON, plain text, and empty output are supported. Reports
+add model cost and latency; commands without `thread` remain model-free.
 
-Each stream is sanitized and limited to a 16 KiB model-input excerpt. Truncation is
-disclosed, and permitted native run output remains available separately. The report
-turn cannot use tools; subsequent ordinary conversations retain their normal tools.
-The card envelope and run line are checked with one bounded correction pass. Model
-explanations can still contain mistakes; they do not replace the recorded process
-result. Reports add model cost and latency, and later prompts can read their normal
-conversation history.
+Reports use sanitized excerpts up to 16 KiB per stream and disclose truncation;
+permitted full output remains in native run history. Model explanations can be wrong;
+command status remains authoritative, and stderr alone does not mean failure.
 OpenClaw-hosted Codex uses this path; standalone Codex command jobs remain unsupported.
 
 #### OpenClaw execution and ownership
@@ -383,20 +365,16 @@ inherits OpenClaw capture defaults and forwards captured output without another 
 Install and automation sync update existing managed command jobs with an explicit
 `outputMaxBytes` to 16 MiB per stream; new jobs inherit OpenClaw defaults.
 
-Command timeouts range from 1 to 3600 seconds (default 1800). Reporting commands
-reserve an additional 35 seconds in the native deadline for process termination and
-a separate 30-second submission/observation allowance. The model turn has its native
-execution lifetime and may finish after the command wrapper exits. Delivery does not change the command result
-and never reruns maintenance. The sanitized result is saved before submission.
-An accepted turn remains pending until its exact final reply is verified. Completion
-and startup/reload hooks reconcile saved reports; definite pre-admission rejection
-may be retried, but a lost acknowledgment is observed under its original identity,
-never blindly resent. Model failure or an invalid final card stays failed for inspection.
-Use automation run history to see command and report outcomes separately. If the
-runner is killed before it saves the result, only native execution history is
-available; Agent System does not invent captured output or replay the command.
-For jobs without reporting, the native timeout also includes wrapper startup. OpenClaw
-controls overlapping runs of the same job, retries, recovery, and daylight saving time;
+Command timeouts range from 1 to 3600 seconds (default 1800). Reporting adds 35
+seconds for termination and submission; formatting may finish later. Without
+reporting, the timeout includes wrapper startup.
+
+Reporting failure never changes the command result or reruns it. Recovery checks
+saved reports on completion and restart; uncertain submissions are not blindly retried.
+Inspect report status with [`automations runs`](./CLI.md#openclaw-agent-system-automations-runs).
+A kill before results are saved leaves only native execution history.
+
+OpenClaw controls overlapping runs of the same job, retries, recovery, and daylight saving time;
 Agent System does not add another retry loop. Completion, cancellation, and timeout
 revoke temporary authority and release managed resources. A forced process termination
 can prevent immediate filesystem cleanup.

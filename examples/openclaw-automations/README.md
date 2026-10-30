@@ -28,7 +28,7 @@ Verify that both finish and repeat installation preserves their IDs and routing.
 - AIMock normalizes away request reasoning effort. Verify effort through the native embedded-run diagnostic correlated with the completed occurrence's session, not through the mock response or saved settings alone.
 - Source tests cover option/offline variants, one-shot retention, unmanaged jobs, stale authority, containment, timeout/cancellation cleanup, and thread-selection permutations.
 - The failure fixture emits 64 KiB per stream, then late markers and exit 17. This exceeds the former local caps while keeping native diagnostic redaction within its transaction admission budget. Component tests cover forwarding native truncation metadata; this installed case verifies default capture without truncation. It adds no model turn or provider call.
-- Reporting adds one formatting turn per reporting command, three timer-fired commands, one repeated Install, and fresh history reads. The strict fixture verifies transport and card envelopes, not genuine model interpretation. Component tests own delivery failures and sanitization. Browser rendering remains a separate visual check.
+- Strict AIMock checks reporting transport and card structure, not genuine model interpretation or browser rendering.
 - The output check reads `cron.runs`, the Gateway API supplying run cards. It verifies output propagation, not browser rendering or OpenClaw restart persistence.
 
 ## Setup
