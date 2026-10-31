@@ -1,0 +1,26 @@
+schema-version: 1
+agent:
+  id: command-chat-codex-tanaabot
+  name: Command Chat Codex Tanaabot
+  runtime: codex
+models:
+  default:
+    model: openai/gpt-5.4-nano
+    effort: medium
+automations:
+  - id: success
+    effort: high
+    runtimes: [openclaw]
+    schedule: every 1 hour
+    timeout-seconds: 120
+    run: [sh, ../report.sh, success]
+    group: REPORTS
+    thread: { id: reports, name: Automation reports }
+  - id: failure
+    effort: high
+    runtimes: [openclaw]
+    schedule: every 1 hour
+    timeout-seconds: 120
+    run: [sh, ../report.sh, failure]
+    group: REPORTS
+    thread: { id: reports, name: Automation reports }
