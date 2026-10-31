@@ -58,8 +58,11 @@ export async function reconcileAutomationReport(options: {
   const { store, executionId } = options;
   let record = await store.read(executionId);
   if (!record) throw new Error('automation-report-record-missing');
-  if (record.state === 'delivered' || record.state === 'failed')
+  if (record.state === 'delivered' || record.state === 'failed') {
+    // Move pre-partition records out of active recovery without replaying the report.
+    await store.update(executionId, () => undefined);
     return automationReportDelivery(record);
+  }
   let sending = false;
   try {
     await options.assertCurrent(record);
@@ -193,11 +196,13 @@ export default async function deliverAutomationReport(options: {
   hash: string;
   manifestDigest: string;
   credential?: Pick<SessionDispatchCredential, 'use'>;
-  assertCurrent(): Promise<void>;
+  assertCurrent(record: AutomationReportRecord): Promise<void>;
 }): Promise<AutomationReportDelivery> {
   const executionId = options.input.executionId;
-  await options.store.withLock(executionId, async () => {
-    if (await options.store.read(executionId)) return;
+  const retained = await options.store.withLock(executionId, async () => {
+    if (await options.store.read(executionId)) return true;
+    // An expired capture cannot recreate a pruned terminal occurrence and resend its report.
+    if (options.store.expired(options.input.startedAt)) return false;
     await options.store.write({
       version: 1,
       executionId,
@@ -207,7 +212,9 @@ export default async function deliverAutomationReport(options: {
       input: prepareAutomationReport(options.input),
       state: 'pending',
     });
+    return true;
   });
+  if (!retained) return { status: 'failed', executionId, code: 'automation-report-expired' };
   if (!options.credential)
     return { status: 'pending', executionId, code: 'automation-report-unavailable' };
   return reconcileAutomationReport({ ...options, credential: options.credential, executionId });

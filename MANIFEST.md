@@ -374,6 +374,11 @@ reporting, the timeout includes wrapper startup.
 Reporting failure never changes the command result or reruns it. Recovery checks
 saved reports on completion and restart; uncertain submissions are not blindly retried.
 Inspect report status with [`automations runs`](./CLI.md#openclaw-agent-system-automations-runs).
+Unrelated manifest edits do not invalidate captured reports; the current job, owner,
+and destination must still match. Recovery scans unresolved reports only. Completed
+report records are retained for 30 days and pruned during daily recovery maintenance;
+pending and uncertain records are never age-pruned. Expired captures cannot be
+submitted again after their history is removed. Native chat history is unchanged.
 A kill before results are saved leaves only native execution history.
 
 OpenClaw controls overlapping runs of the same job, retries, recovery, and daylight saving time;

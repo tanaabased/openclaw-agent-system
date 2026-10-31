@@ -141,27 +141,7 @@ export default async function executeAutomation(options: {
             cancelled,
           },
           credential: options.reportCredential,
-          async assertCurrent() {
-            const current = await options.manifestService.loadForAgentId(
-              context.agentId,
-              'service',
-            );
-            if (
-              current.status !== 'loaded' ||
-              current.digest !== snapshot.digest ||
-              current.path !== snapshot.path ||
-              (await realpath(current.scope.workspaceDir)) !== context.workspaceDir
-            )
-              throw new AutomationError('automation-execution-stale');
-            const admitted = await options.automations.admit(
-              current.manifest,
-              current.scope.workspaceDir,
-              options.id,
-              options.hash,
-            );
-            if (admitted.reportTarget?.sessionKey !== reportTarget.sessionKey)
-              throw new AutomationError('automation-report-target-changed');
-          },
+          assertCurrent: (record) => options.automations.assertReportCurrent(record),
         }).catch(() => ({
           status: 'not-delivered',
           executionId,

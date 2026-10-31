@@ -73,6 +73,7 @@ describe('cli/automation-execute', () => {
           loadForCommandDirectory: async () => loaded,
         },
         automations: {
+          assertReportCurrent: async () => {},
           reports: new AutomationReportStore(`${workspaceDir}/reports`),
           admit: async () => ({
             command: { kind: 'exec', executable: 'true', args: [], timeoutSeconds: 10 },
@@ -276,6 +277,7 @@ describe('cli/automation-execute', () => {
           loadForCommandDirectory: async () => loaded,
         },
         automations: {
+          assertReportCurrent: async () => {},
           reports: new AutomationReportStore(`${workspaceDir}/reports`),
           admit: async () => ({
             command: { kind: 'exec', executable: 'true', args: [], timeoutSeconds: 10 },

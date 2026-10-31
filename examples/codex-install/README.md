@@ -140,7 +140,9 @@ printf '%s\n' "$inspection" \
   | jq -e '.status == "inspected" and [.findings[] | select(.component == "setup") | [.stepId, .code]] == [["codex-tools-debug", "setup-healthy"], ["shared", "setup-drift"], ["codex-only", "setup-manual"], ["openclaw-only", "setup-not-applicable"]]'
 installed=$(node "$runtime" setup install --plugin-data "$plugin_data")
 printf '%s\n' "$installed" \
-  | jq -e '.status == "installed" and [.outcomes[] | select(.component == "setup") | [.stepId, .code]] == [["codex-tools-debug", "setup-unchanged"], ["shared", "setup-applied"], ["codex-only", "setup-applied"], ["openclaw-only", "setup-not-applicable"]]'
+  | jq -e '.status == "requires-native-app-sync" and .automations.status == "requires-fresh-inspection" and [.outcomes[] | select(.component == "setup") | [.stepId, .code]] == [["codex-tools-debug", "setup-unchanged"], ["shared", "setup-applied"], ["codex-only", "setup-applied"], ["openclaw-only", "setup-not-applicable"]]'
+# a fresh invocation loads the installed runtime before inspecting automation state.
+node "$runtime" automations inspect --plugin-data "$plugin_data" <<<'{}' | jq -e '.status == "aligned"'
 test -f "$GITHUB_WORKSPACE/examples/codex-install/workspace/.codex-shared"
 test -f "$GITHUB_WORKSPACE/examples/codex-install/workspace/.codex-only"
 test ! -e "$GITHUB_WORKSPACE/examples/codex-install/workspace/.openclaw-checked"

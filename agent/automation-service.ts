@@ -115,7 +115,7 @@ function executionEvidence(state: NativeAutomation['state']): string {
 export default class AutomationService {
   readonly reports: AutomationReportStore;
   constructor(readonly dependencies: AutomationServiceDependencies) {
-    this.reports = new AutomationReportStore(join(dependencies.root, 'reports'));
+    this.reports = new AutomationReportStore(join(dependencies.root, 'reports'), dependencies.now);
   }
 
   async scope(manifest: AgentManifest, workspaceDir: string) {
@@ -1029,14 +1029,20 @@ export default class AutomationService {
     );
     if (
       loaded.status !== 'loaded' ||
-      loaded.digest !== report.manifestDigest ||
+      loaded.manifest.agent.id !== report.target.agentId ||
       (await realpath(loaded.scope.workspaceDir)) !== report.target.workspaceDir
     )
       throw new AutomationError('automation-report-declaration-changed');
-    const { store } = await this.scope(loaded.manifest, loaded.scope.workspaceDir);
+    const { context, store } = await this.scope(loaded.manifest, loaded.scope.workspaceDir);
+    const job = openclawIntakeJobs(loaded.manifest).find((entry) => entry.id === report.input.id);
     const record = (await store.read()).records.find((entry) => entry.id === report.input.id);
     if (
       store.scope !== report.target.scope ||
+      !job ||
+      !job.enabled ||
+      !job.runtimes.includes('openclaw') ||
+      job.payload.kind !== 'command' ||
+      effectiveAutomation(job, context).hash !== report.hash ||
       !record ||
       record.hash !== report.hash ||
       record.retired ||

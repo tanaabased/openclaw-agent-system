@@ -52,7 +52,9 @@ describe('agent/automation-report-delivery', () => {
     const calls: string[] = [];
     const messages: string[] = [];
     const replies: unknown[] = [];
-    const store = new AutomationReportStore(`${workspaceDir}/reports`);
+    const store = new AutomationReportStore(`${workspaceDir}/reports`, () =>
+      Date.parse(input.startedAt),
+    );
     type HookResult =
       { toolsAllow?: string[]; block?: boolean; retry?: { maxAttempts?: number } } | undefined;
     type Hook = (
