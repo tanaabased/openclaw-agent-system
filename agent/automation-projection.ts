@@ -1,6 +1,10 @@
+import { automationReportTimeoutMs } from './automation-report-delivery.ts';
+import { commandTerminationGraceMs } from '../api/cli-budget.ts';
+import type { AutomationThreadModelObservation } from './automation-threads.ts';
 import { AutomationError, type NativeAutomation } from './automation-gateway.ts';
 import { automationHash, type AutomationRecord } from './automation-store.ts';
 import automationContent from '../manifest/automation-content.ts';
+import { explicitModelEfforts } from '../manifest/models-schema.ts';
 import type { ResolvedAutomation } from '../manifest/automation-schema.ts';
 
 export interface AutomationProjectionContext {
@@ -9,7 +13,10 @@ export interface AutomationProjectionContext {
   command: string[];
   environment: Record<string, string>;
   timezone: string;
-  threads?: Map<string, { id: string; outcome: string; name?: string }>;
+  threads?: Map<
+    string,
+    { id: string; outcome: string; name?: string; settings?: AutomationThreadModelObservation }
+  >;
 }
 export type NativeAutomationSpec = Record<string, unknown> & {
   enabled: boolean;
@@ -19,10 +26,7 @@ export type NativeAutomationSpec = Record<string, unknown> & {
 
 export function effectiveAutomation(job: ResolvedAutomation, context: AutomationProjectionContext) {
   const override = job.overrides.openclaw;
-  if (
-    override?.effort &&
-    !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'adaptive'].includes(override.effort)
-  ) {
+  if (override?.effort && !(explicitModelEfforts as readonly string[]).includes(override.effort)) {
     throw new AutomationError('automation-effort-unsupported');
   }
   const normalized = automationContent(job, 'openclaw');
@@ -48,6 +52,7 @@ export function projectAutomation(
   job: ResolvedAutomation,
   record: AutomationRecord,
   context: AutomationProjectionContext,
+  current?: NativeAutomation,
 ): NativeAutomationSpec {
   const effective = effectiveAutomation(job, context);
   const schedule = job.schedule;
@@ -83,7 +88,8 @@ export function projectAutomation(
   const timeoutSeconds = Number(effective.content.timeoutSeconds);
   const override = job.overrides.openclaw;
   return {
-    name: `Agent System: ${job.id}`,
+    name: `${job.origin === 'builtin' ? 'AGENT SYSTEM' : context.agentId.toUpperCase()}: ${job.id}`,
+    ...(job.displayName === undefined ? {} : { displayName: job.displayName }),
     declarationKey: record.marker,
     agentId: context.agentId,
     enabled: job.enabled,
@@ -112,9 +118,17 @@ export function projectAutomation(
             cwd: context.workspaceDir,
             env: context.environment,
             input: '',
-            timeoutSeconds,
+            timeoutSeconds:
+              timeoutSeconds +
+              (context.threads?.has(job.id)
+                ? (automationReportTimeoutMs + commandTerminationGraceMs) / 1000
+                : 0),
             noOutputTimeoutSeconds: 3600,
-            outputMaxBytes: 16384,
+            // native updates cannot clear an existing command cap. migrate it once to
+            // OpenClaw 2026.10.6's 16 MiB per-stream budget; new jobs inherit defaults.
+            ...(current?.payload.kind === 'command' && current.payload.outputMaxBytes !== undefined
+              ? { outputMaxBytes: 16 * 1024 * 1024 }
+              : {}),
           }
         : {
             kind: 'agentTurn',
@@ -123,7 +137,8 @@ export function projectAutomation(
             lightContext: false,
             allowUnsafeExternalContent: false,
             toolsAllow: job.internalOpenClaw?.toolsAllow ?? ['*'],
-            ...(override?.model ? { model: override.model.trim() } : {}),
+            // a declared model must fail explicitly rather than executing a fallback model.
+            ...(override?.model ? { model: override.model.trim(), fallbacks: [] } : {}),
             ...(override?.effort ? { thinking: override.effort.trim() } : {}),
           },
   };
@@ -135,6 +150,7 @@ export function nativeAutomationHash(job: Record<string, unknown>): string {
     Object.fromEntries(
       [
         'name',
+        'displayName',
         'declarationKey',
         'agentId',
         'enabled',
@@ -181,7 +197,7 @@ export function automationPatch(
       ...desired.payload,
       model: desired.payload.model ?? null,
       thinking: desired.payload.thinking ?? null,
-      fallbacks: null,
+      fallbacks: desired.payload.fallbacks ?? null,
       toolsAllow: desired.payload.toolsAllow,
     };
   } else if (patch.payload) patch.payload = { ...desired.payload, toolsAllow: null };
@@ -196,6 +212,7 @@ export function automationPatch(
       failureDestination: null,
     };
   }
+  if (current.displayName != null && desired.displayName === undefined) patch.displayName = null;
   for (const key of ['sessionKey', 'trigger', 'pacing'])
     if (current[key] !== undefined && desired[key] === undefined) patch[key] = null;
   return patch;

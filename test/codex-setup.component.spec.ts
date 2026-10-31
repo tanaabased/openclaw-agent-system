@@ -68,7 +68,7 @@ github:
     };
     const installed = await installCodexSetup(pluginData, undefined, deps);
     assert.equal(installed.status, 'requires-native-app-sync');
-    assert.equal(installed.automations.actions.length, 0);
+    assert.equal(installed.automations.status, 'requires-fresh-inspection');
     assert.equal(
       installed.warnings.some(({ code }) => code === 'github-notification-enabled-deprecated'),
       false,
@@ -118,7 +118,7 @@ setup-agent:
       installed.warnings.some(({ code }) => code === 'github-notification-runtime-unsupported'),
     );
     assert.ok(
-      installed.automations.conversations?.some(({ id }) => id === 'github-issue-assignment'),
+      inspected.automations.conversations?.some(({ id }) => id === 'github-issue-assignment'),
     );
     await access(join(workspace, '.setup-applied'));
   });
@@ -173,6 +173,24 @@ setup-agent:
     const repeated = await installCodexSetup(pluginData, undefined, dependencies);
     assert.equal(repeated.outcomes[0]?.code, 'setup-unchanged');
     assert.equal(repeated.outcomes[1]?.code, 'setup-applied');
+  });
+
+  it('should finish setup without reading scheduler state that needs the updated runtime', async () => {
+    const codexHome = join(root, 'codex');
+    const automationDirectory = join(codexHome, 'automations', 'future-format');
+    await mkdir(automationDirectory, { recursive: true });
+    await writeFile(join(automationDirectory, 'automation.toml'), 'unsupported saved format');
+    await manifest(
+      'automations: [{ id: check, schedule: every 1 hour, prompt: check }]\nsetup-agent: { apply: touch .setup-applied }\n',
+    );
+    const deps = { ...dependencies, codexHome };
+    const installed = await installCodexSetup(pluginData, undefined, deps);
+    await access(join(workspace, '.setup-applied'));
+    assert.equal(installed.automations.status, 'requires-fresh-inspection');
+    await assert.rejects(
+      inspectCodexSetup(pluginData, undefined, deps),
+      /automation-saved-invalid/u,
+    );
   });
 
   it('should report secret-safe doctor findings without applying setup', async () => {

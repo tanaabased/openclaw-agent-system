@@ -1,3 +1,4 @@
+import issueWorkflowMode from './issue-workflow-mode.ts';
 import { dispatchAdmission } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
 
@@ -35,10 +36,7 @@ export default async function advanceCodexAutoDecision(
   let decisionPending: { status: 'pending' | 'blocked'; id: string; code?: string } | undefined;
   if (occurrence) {
     for (const record of state.records) {
-      const liveMode =
-        record.manualIssue?.selections?.mode ??
-        current.manifest.github?.notifications?.issueAssignment?.mode ??
-        'auto';
+      const liveMode = issueWorkflowMode(current.manifest.github?.notifications, record);
       if (input.id && input.id !== record.id) continue;
       const pending = record.autoDecision && !record.autoDecision.ended;
       if (!pending && !needsAutoDecision(record, liveMode)) continue;
@@ -126,12 +124,7 @@ export default async function advanceCodexAutoDecision(
         await save();
         const live = await selectCodexIntake(pluginData, deps);
         if (
-          !needsAutoDecision(
-            record,
-            record.manualIssue?.selections?.mode ??
-              live.manifest.github?.notifications?.issueAssignment?.mode ??
-              'auto',
-          )
+          !needsAutoDecision(record, issueWorkflowMode(live.manifest.github?.notifications, record))
         )
           continue;
         record.autoDecision = {
@@ -158,6 +151,7 @@ export default async function advanceCodexAutoDecision(
           },
         };
         delete record.nativeInactive;
+        delete record.capacityObservation;
         await save();
         return {
           response: {

@@ -338,7 +338,7 @@ outcomes separately. Once implementation has started, resume through the owning
 implementation context, not assessment context. Clarification preserves that stage
 and partial work; incorporate a new answer without another approval. Refresh the
 current skill and guidance while preserving prior results, chat, worktree, and routing.
-Respect cancellation, inactive lifecycle, broader or implementation-specific native denials,
+Respect cancellation, retirement, reset, supersession, broader or implementation-specific native denials,
 and a host-terminated turn. A summary-only denial does not waive these checks or grant implementation;
 follow the retained handoff through fresh implementation context in the same permitted turn. Reconcile
 uncertain effects using their saved receipts; never reset the task or create a

@@ -422,7 +422,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
             digest: next.digest,
             assessment: { complexity: 'low', reason: 'A bounded disposable documentation plan.' },
             fallback: 'default',
-            title: 'Document disposable test issue cleanup',
+            title: `big-test-bucket #${String(context?.source).split('/').at(-1)} — #${String(context?.source).split('/').at(-1)} Document disposable test issue cleanup`,
           });
         advanced = prepared;
       } else if (next.status === 'reconcile-required') {

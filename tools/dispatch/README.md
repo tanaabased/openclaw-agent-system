@@ -43,7 +43,7 @@ supplies the current request, required inputs, and recovery instructions.
 | Rebind a managed task to an existing PR              | `delivery` with `operation: bind`     | [Task Implementation](../../skills/task-implementation/SKILL.md)                              |
 | Replace a stranded managed task                      | `recover`                             | [Task Launch](../../skills/task-launch/SKILL.md)                                              |
 | Reply to an exact GitHub destination                 | `reply`                               | [GitHub Reply](../../skills/github-reply/SKILL.md)                                            |
-| Retire one managed task                              | `retire`                              | [Task Retirement](../../skills/task-retirement/SKILL.md)                                      |
+| Retire a managed task or exact native chat           | `retire`                              | [Task Retirement](../../skills/task-retirement/SKILL.md)                                      |
 | Update an issue with verified progress               | `reply` with `purpose: status-update` | [Task Update](../../skills/task-update/SKILL.md)                                              |
 
 The installed workflow also uses this tool internally. Follow the owning skill and
@@ -91,23 +91,23 @@ or replacing the task. Follow the owning skills for preview, authorization, and 
 These parameters cover `launch`. Use the owning skill and
 [tool schema](./tool-schema.ts) for other actions.
 
-| Parameter     | Type    | Required                 | Default                  | Description                                                                                                                  |
-| ------------- | ------- | ------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `action`      | string  | yes                      | none                     | `launch`.                                                                                                                    |
-| `assessment`  | object  | for final preparation    | none                     | Existing model-routing complexity assessment and reason.                                                                     |
-| `digest`      | string  | for final preparation    | none                     | Digest from the latest routing-required result.                                                                              |
-| `fallback`    | string  | no                       | none                     | Existing explicit `default` profile selection when a requested work tier is not configured; never a model-failure fallback.  |
-| `fresh`       | boolean | no                       | `false`                  | Create an additional task only on an explicit operator request; leave the original active.                                   |
-| `id`          | string  | after context            | none                     | Retained launch receipt.                                                                                                     |
-| `mode`        | string  | no                       | current configuration    | `plan`, `work`, or `auto`; omitted mode defaults to Auto when unconfigured.                                                  |
-| `operation`   | string  | yes                      | none                     | `context`, `prepare`, or `reconcile`.                                                                                        |
-| `projects`    | array   | for Codex preparation    | none                     | Native saved-project inventory, independently checked against repository remotes. Can supply unambiguous repository context. |
-| `pullRequest` | string  | no                       | none                     | Exact existing same-repository PR URL whose verified fetched head supplies the starting point.                               |
-| `repository`  | string  | when otherwise ambiguous | none                     | Explicit `owner/repository` for an issue number.                                                                             |
-| `routing`     | object  | no                       | configured model profile | Supported explicit `model` and/or `effort`, resolved through shared model routing.                                           |
-| `stages`      | object  | no                       | current configuration    | Assessment/implementation `skill` and/or inline or contained-file `guidance`.                                                |
-| `target`      | string  | yes                      | none                     | Issue or same-repository PR URL, or a supported repository-qualified number.                                                 |
-| `title`       | string  | for final preparation    | none                     | Concise alphanumeric issue title for native presentation.                                                                    |
+| Parameter     | Type    | Required                 | Default                  | Description                                                                                                                                                |
+| ------------- | ------- | ------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `action`      | string  | yes                      | none                     | `launch`.                                                                                                                                                  |
+| `assessment`  | object  | for final preparation    | none                     | Existing model-routing complexity assessment and reason.                                                                                                   |
+| `digest`      | string  | for final preparation    | none                     | Digest from the latest routing-required result.                                                                                                            |
+| `fallback`    | string  | no                       | none                     | Existing explicit `default` profile selection when a requested work tier is not configured; never a model-failure fallback.                                |
+| `fresh`       | boolean | no                       | `false`                  | Create an additional task only on an explicit operator request; leave the original active.                                                                 |
+| `id`          | string  | after context            | none                     | Retained launch receipt.                                                                                                                                   |
+| `mode`        | string  | no                       | current configuration    | `plan`, `work`, or `auto`; omitted mode defaults to Auto when unconfigured.                                                                                |
+| `operation`   | string  | yes                      | none                     | `context`, `prepare`, or `reconcile`.                                                                                                                      |
+| `projects`    | array   | for Codex preparation    | none                     | Native saved-project inventory, independently checked against repository remotes. Can supply unambiguous repository context.                               |
+| `pullRequest` | string  | no                       | none                     | Exact existing same-repository PR URL whose verified fetched head supplies the starting point.                                                             |
+| `repository`  | string  | when otherwise ambiguous | none                     | Explicit `owner/repository` for an issue number.                                                                                                           |
+| `routing`     | object  | no                       | configured model profile | Supported explicit `model` and/or `effort`, resolved through shared model routing.                                                                         |
+| `stages`      | object  | no                       | current configuration    | Assessment/implementation `skill` and/or inline or contained-file `guidance`.                                                                              |
+| `target`      | string  | yes                      | none                     | Issue or same-repository PR URL, or a supported repository-qualified number.                                                                               |
+| `title`       | string  | for final preparation    | none                     | Short description without repository or issue prefixes; punctuation and Unicode are allowed. The runtime adds the issue prefix and uppercase presentation. |
 
 ### Usage
 
@@ -138,3 +138,44 @@ Continue an existing PR through the same launch flow:
 Follow the returned preparation instructions, then verify that the same launch completed.
 Reused chats keep their stage and completed assessment. Recover an incomplete or
 uncertain attempt before starting another.
+
+### Native cleanup
+
+Explicit unmanaged cleanup needs no GitHub issue or assignment intake. Use the
+invoking runtime's exact native identifier. Known managed chats must use managed
+retirement; a managed denial never falls back to unmanaged cleanup.
+
+#### Parameters
+
+| Parameter | Type   | Required  | Default | Description                                                                                     |
+| --------- | ------ | --------- | ------- | ----------------------------------------------------------------------------------------------- |
+| `action`  | string | yes       | none    | `retire`.                                                                                       |
+| `digest`  | string | for apply | none    | Digest returned by the latest exact-target preview.                                             |
+| `native`  | string | yes       | none    | Exact OpenClaw session key or standalone Codex thread id. Cannot be combined with managed `id`. |
+
+#### Usage
+
+Preview one unmanaged OpenClaw session:
+
+```json
+{ "action": "retire", "native": "agent:example:disposable" }
+```
+
+Inspect its target and effects, then repeat with the returned `digest`. Existing
+explicit cleanup intent authorizes apply without another conversational
+confirmation. OpenClaw requires enrolled session transport; explicit Install with
+`--manual-session-dispatch` supplies it when absent. Standalone Codex requires the
+native desktop archive tool and uses its exact thread id through the shared skill.
+
+> [!WARNING]
+> This is intentional disposal through normal native cleanup, not managed
+> preservation. It may stop selected work, archive native descendants or reclaim
+> a native checkout/local branch. Local-only work may be lost. Remote branches,
+> GitHub issues and assignments are not changed.
+
+`archived` verifies native archival, not disk reclamation. Checkout disposition
+`native-owned` means the runtime owns any later cleanup; removal or retention is
+not independently verified. Uncertain results stay `pending`; native denial is
+`failed`. Missing native tools are unavailable, never a reason to delete files.
+Use native history/restore where supported; restoring history does not guarantee
+recovery of discarded local changes. This entry has no keep-checkout option.

@@ -2,8 +2,9 @@ import { realpath } from 'node:fs/promises';
 
 import { AutomationError, nativeObject, type AutomationGateway } from './automation-gateway.ts';
 import type { AutomationThreadAdapter } from './automation-threads.ts';
+import automationGatewayDiagnostic from './automation-gateway-diagnostic.ts';
 
-/** operator-only native session transport. never inspect or edit the Gateway's private stores. */
+/** native session transport using the caller's credential, without private Gateway stores. */
 export default function automationThreadGateway(
   request: AutomationGateway,
   context: { agentId: string; workspaceDir: string; scope: string },
@@ -62,6 +63,20 @@ export default function automationThreadGateway(
       throw new AutomationError('automation-thread-workspace-mismatch');
     return {
       id: key,
+      incarnation: row.sessionId,
+      ...(typeof row.lifecycleRevision === 'string'
+        ? { lifecycleRevision: row.lifecycleRevision }
+        : {}),
+      ...(typeof row.model === 'string'
+        ? {
+            model: row.model.includes('/')
+              ? row.model
+              : typeof row.modelProvider === 'string'
+                ? `${row.modelProvider}/${row.model}`
+                : undefined,
+          }
+        : {}),
+      ...(typeof row.thinkingLevel === 'string' ? { effort: row.thinkingLevel } : {}),
       archived: row.archived === true,
       ...(typeof row.displayName === 'string' ? { name: row.displayName } : {}),
       ...(typeof row.category === 'string' ? { group: row.category } : {}),
@@ -84,6 +99,49 @@ export default function automationThreadGateway(
           cwd: context.workspaceDir,
         });
       return key;
+    },
+    async updateSettings(current, settings) {
+      const latest = await lookup(current.id);
+      if (
+        !latest ||
+        latest.incarnation !== current.incarnation ||
+        latest.model !== current.model ||
+        latest.effort !== current.effort
+      )
+        throw new AutomationError('automation-thread-settings-conflict');
+      try {
+        await request('sessions.patch', {
+          key: current.id,
+          expectedSessionId: latest.sessionId,
+          ...(latest.lifecycleRevision
+            ? { expectedLifecycleRevision: latest.lifecycleRevision }
+            : {}),
+          ...(settings.model === undefined ? {} : { model: settings.model }),
+          ...(settings.effort === undefined ? {} : { thinkingLevel: settings.effort }),
+        });
+      } catch (error) {
+        // the enrolled backend deliberately replaces native error prose with safe codes.
+        if (error instanceof Error) {
+          if (error.message === 'session-dispatch-sessions-patch-model-runtime-unavailable')
+            throw new AutomationError('automation-model-unavailable');
+          if (
+            [
+              'session-dispatch-sessions-patch-request-invalid',
+              'session-dispatch-sessions-patch-forbidden',
+            ].includes(error.message)
+          )
+            throw new AutomationError('automation-thread-settings-denied');
+        }
+        const diagnostic =
+          error instanceof AutomationError
+            ? error.diagnostic
+            : automationGatewayDiagnostic('sessions.patch', error);
+        if (diagnostic?.reason === 'model-runtime-unavailable')
+          throw new AutomationError('automation-model-unavailable', diagnostic);
+        if (diagnostic?.category === 'rejected')
+          throw new AutomationError('automation-thread-settings-denied', diagnostic);
+        throw error;
+      }
     },
     async setGroup(id, group) {
       const current = await lookup(id);

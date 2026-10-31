@@ -3,7 +3,10 @@ import { realpath } from 'node:fs/promises';
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { automationThreadSelection } from './automation-threads.ts';
+import {
+  automationThreadSelection,
+  type AutomationThreadModelObservation,
+} from './automation-threads.ts';
 import { automationHash } from './automation-hash.ts';
 import codexAutomationSchedule from './codex-automation-schedule.ts';
 import {
@@ -23,6 +26,15 @@ export const automationRecordSchema = Type.Object(
     nativeId: text,
     removed: Type.Boolean(),
     definition: nativeAutomationSchema,
+    retired: Type.Optional(
+      Type.Object(
+        {
+          atMs: Type.Integer({ minimum: 0, maximum: 8.64e15 }),
+          reason: Type.Literal('native-job-absent'),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -39,15 +51,18 @@ export interface CodexAutomationAction {
 export interface CodexAutomationInputs {
   projects?: unknown;
   threads?: unknown[];
+  nativeInventory?: unknown;
+  placementReceipt?: { digest: string; sectionId: string };
 }
 export interface CodexAutomationPlan {
   status: 'aligned' | 'requires-native-app-sync' | 'blocked';
   digest: string;
   actions: CodexAutomationAction[];
-  findings: { id: string; code: string }[];
+  findings: { id: string; code: string; settings?: AutomationThreadModelObservation }[];
   unmanagedCount: number;
   conversations?: {
     id: string;
+    settings?: AutomationThreadModelObservation;
     routing: 'per-automation' | 'exact-native';
     nativeId: string | null;
     name?: string;
@@ -68,6 +83,39 @@ export function savedMatches(
     automationHash(actual.definition) === automationHash(expected) &&
     (expected.kind !== 'cron' || automationHash(actual.cwds) === automationHash([workspace]))
   );
+}
+
+/** verify exact native ownership before planning or retiring saved records. */
+export function ownedCodexAutomations(
+  scope: string,
+  saved: SavedAutomation[],
+  records: CodexAutomationRecord[],
+) {
+  const ids = new Set<string>();
+  const owned = new Map<string, SavedAutomation>();
+  const prefix = `Managed by Agent System (codex:${scope}:`;
+  for (const item of saved) {
+    if (ids.has(item.id)) throw new CodexAutomationError('automation-native-id-duplicate');
+    ids.add(item.id);
+    if (!item.definition.prompt.includes(prefix)) continue;
+    const markers = item.definition.prompt.split('\n').filter((line) => line.startsWith(prefix));
+    const match =
+      markers.length === 1
+        ? /^Managed by Agent System \(codex:[a-f0-9]{64}:([a-z0-9]+(?:-[a-z0-9]+)*)\)\.$/u.exec(
+            markers[0]!,
+          )
+        : null;
+    if (!match || owned.has(match[1]!))
+      throw new CodexAutomationError('automation-ownership-conflict');
+    owned.set(match[1]!, item);
+  }
+  if (
+    new Set(records.map((record) => record.id)).size !== records.length ||
+    new Set(records.map((record) => record.nativeId)).size !== records.length ||
+    records.some((record) => record.retired && (owned.has(record.id) || ids.has(record.nativeId)))
+  )
+    throw new CodexAutomationError('automation-ownership-conflict');
+  return owned;
 }
 
 async function projectId(input: unknown, workspace: string): Promise<string> {
@@ -96,7 +144,11 @@ async function projectId(input: unknown, workspace: string): Promise<string> {
   return matches[0]!;
 }
 
-async function verifyThread(inputs: unknown[], id: string, workspace: string): Promise<void> {
+export async function verifyThread(
+  inputs: unknown[],
+  id: string,
+  workspace: string,
+): Promise<void> {
   const schema = Type.Object({
     schemaVersion: Type.Literal(1),
     thread: Type.Object({
@@ -131,35 +183,12 @@ export default async function planCodexAutomations(options: {
   records: CodexAutomationRecord[];
   inputs: CodexAutomationInputs;
   defaults?: { model: string; effort: string };
-  bindings?: Map<string, { id: string }>;
+  bindings?: Map<string, { id: string; settings?: AutomationThreadModelObservation }>;
 }): Promise<CodexAutomationPlan> {
   const { scope, workspace, jobs, records, saved, inputs } = options;
   const findings: CodexAutomationPlan['findings'] = [];
   const actions: CodexAutomationAction[] = [];
-  const ids = new Set<string>();
-  const owned = new Map<string, SavedAutomation>();
-  const prefix = `Managed by Agent System (codex:${scope}:`;
-  for (const item of saved) {
-    if (ids.has(item.id)) throw new CodexAutomationError('automation-native-id-duplicate');
-    ids.add(item.id);
-    if (!item.definition.prompt.includes(prefix)) continue;
-    const markers = item.definition.prompt.split('\n').filter((line) => line.startsWith(prefix));
-    const match =
-      markers.length === 1
-        ? /^Managed by Agent System \(codex:[a-f0-9]{64}:([a-z0-9]+(?:-[a-z0-9]+)*)\)\.$/u.exec(
-            markers[0]!,
-          )
-        : null;
-    if (!match || owned.has(match[1]!))
-      throw new CodexAutomationError('automation-ownership-conflict');
-    owned.set(match[1]!, item);
-  }
-  if (
-    new Set(records.map((record) => record.id)).size !== records.length ||
-    new Set(records.map((record) => record.nativeId)).size !== records.length
-  ) {
-    throw new CodexAutomationError('automation-ownership-conflict');
-  }
+  const owned = ownedCodexAutomations(scope, saved, records);
   for (const [id] of owned)
     if (!records.some((record) => record.id === id)) {
       findings.push({ id, code: 'automation-ownership-recovery-required' });
@@ -176,6 +205,7 @@ export default async function planCodexAutomations(options: {
         throw new CodexAutomationError('automation-prompt-marker-conflict');
       }
       const record = records.find((r) => r.id === job.id);
+      if (record?.retired) throw new CodexAutomationError('automation-retired-id');
       const rrule = codexAutomationSchedule(job.schedule, record?.definition.rrule);
       const override = job.overrides.codex;
       const selection = automationThreadSelection(job, 'codex');
@@ -259,10 +289,8 @@ export default async function planCodexAutomations(options: {
         actions.push({
           manifestId: job.id,
           mode: actual ? 'update' : 'create',
-          ...(/^DTSTART[:;]/u.test(rrule) && rrule !== actual?.definition.rrule
-            ? { review: true }
-            : {}),
           ...(actual ? { id: actual.id } : {}),
+          ...(!actual && /^DTSTART[:;]/u.test(rrule) ? { review: true } : {}),
           expected,
           removed: false,
         });
@@ -282,6 +310,14 @@ export default async function planCodexAutomations(options: {
   for (const record of records) {
     if (declaredIds.has(record.id)) continue;
     const actual = owned.get(record.id);
+    if (record.retired) {
+      findings.push({ id: record.id, code: 'automation-retired' });
+      continue;
+    }
+    if (!actual && !saved.some((item) => item.id === record.nativeId)) {
+      findings.push({ id: record.id, code: 'automation-retirement-pending' });
+      continue;
+    }
     if (!actual || actual.id !== record.nativeId) {
       findings.push({ id: record.id, code: 'automation-native-recovery-required' });
       continue;
@@ -306,6 +342,7 @@ export default async function planCodexAutomations(options: {
   }
   const ordinary = new Set([
     'automation-healthy',
+    'automation-retired',
     'automation-disabled',
     'automation-disabled-retained',
     'automation-missing',
@@ -339,6 +376,7 @@ export default async function planCodexAutomations(options: {
               ? [
                   {
                     id: job.id,
+                    settings: options.bindings?.get(job.id)?.settings,
                     routing: selection.managed
                       ? ('per-automation' as const)
                       : ('exact-native' as const),

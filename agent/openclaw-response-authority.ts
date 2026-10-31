@@ -3,7 +3,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { nativeInputEvent } from './openclaw-session-input.ts';
-import issueTurnReply from './openclaw-session-reply.ts';
+import openClawTurnReply from './openclaw-turn-evidence.ts';
 import {
   describeIssueSession,
   sessionObject,
@@ -46,26 +46,31 @@ export default async function openClawResponseAuthority(input: {
     if (observed.status !== 'timeout')
       throw new Error('dispatch-assessment-continuation-not-ready');
     // agent.wait is process-local; after restart require the exact native input and terminal reply.
-    await nativeInputEvent({
+    const original = await nativeInputEvent({
       request,
       sessionKey: caller.sessionKey,
       sessionId: caller.sessionId,
       runId: record.resultTurnId,
-      retained: [],
+      retained: [
+        record.assessmentCaller,
+        record.turnEvidence,
+        ...(record.assessmentHistory ?? []).map((entry) =>
+          entry.inputEventId ? { runId: entry.runId, inputEventId: entry.inputEventId } : undefined,
+        ),
+        record.assessmentTurn?.consumedByEventId
+          ? {
+              runId: record.assessmentTurn.runId,
+              inputEventId: record.assessmentTurn.consumedByEventId,
+            }
+          : undefined,
+      ],
     });
-    const history = sessionObject(
-      await request('chat.history', {
-        sessionKey: caller.sessionKey,
-        inputRunIds: [record.resultTurnId],
-        limit: 200,
-        maxChars: 100000,
-      }),
-    );
     if (
-      history.sessionId !== caller.sessionId ||
-      !Array.isArray(history.messages) ||
-      !issueTurnReply(history.messages, record.resultTurnId)
+      await openClawTurnReply(request, caller, record.resultTurnId, {
+        messageId: original.inputEventId,
+      })
     )
-      throw new Error('dispatch-assessment-continuation-not-ready');
+      return;
+    throw new Error('dispatch-assessment-continuation-not-ready');
   }
 }

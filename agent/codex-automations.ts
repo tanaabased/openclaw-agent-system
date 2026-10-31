@@ -9,6 +9,8 @@ import { Value } from 'typebox/value';
 
 import { AutomationError } from './automation-gateway.ts';
 import AutomationThreads, {
+  AutomationThreadSettingsError,
+  type AutomationThreadModelObservation,
   automationThreadSelection,
   type AutomationThreadAdapter,
 } from './automation-threads.ts';
@@ -26,7 +28,9 @@ import { automationHash } from './automation-hash.ts';
 import planCodexAutomations, {
   automationRecordSchema,
   codexAutomationMarker,
+  ownedCodexAutomations,
   savedMatches,
+  verifyThread,
   type CodexAutomationAction,
   type CodexAutomationInputs,
 } from './codex-automation-plan.ts';
@@ -41,6 +45,14 @@ import {
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
+import CodexSidebarJournal, { type SidebarEffect } from './codex-sidebar-journal.ts';
+import { sidebarSections } from './codex-sidebar-placement.ts';
+
+class SidebarPending extends AutomationError {
+  constructor(readonly effect: Exclude<SidebarEffect, { status: 'done' }>) {
+    super('automation-thread-group-drift');
+  }
+}
 
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const actionSchema = Type.Object(
@@ -91,6 +103,8 @@ const ledgerSchema = Type.Object(
 type Ledger = Static<typeof ledgerSchema>;
 export interface CodexAutomationDependencies {
   codexHome?: string;
+  readAutomations?: typeof readCodexAutomations;
+  now?: () => number;
   inspectBinding?: typeof inspectCodexWorkspaceBinding;
   threadAdapter?: AutomationThreadAdapter;
   intake?: CodexIntakeDependencies;
@@ -214,7 +228,10 @@ async function snapshot(pluginData: string, dependencies: CodexAutomationDepende
     if (ledger.pending && !ledger.pending.targetBefore && !ledger.pending.beforeHash)
       throw new Error('missing pending snapshot');
     for (const record of ledger.records) {
-      if (!record.definition.prompt.endsWith(codexAutomationMarker(scope, record.id)))
+      if (
+        !record.definition.prompt.endsWith(codexAutomationMarker(scope, record.id)) ||
+        (record.retired && (!record.removed || ledger.pending?.action.manifestId === record.id))
+      )
         throw new Error('invalid marker');
     }
   } catch {
@@ -230,7 +247,10 @@ async function snapshot(pluginData: string, dependencies: CodexAutomationDepende
       });
     } catch (error) {
       cleanupOnly = true;
-      policyBlocker = error instanceof IntakeError ? error.code : 'intake-policy-invalid';
+      policyBlocker =
+        error instanceof IntakeError || error instanceof AutomationError
+          ? error.code
+          : 'intake-policy-invalid';
     }
   }
   return {
@@ -249,14 +269,51 @@ async function snapshot(pluginData: string, dependencies: CodexAutomationDepende
   };
 }
 
-async function resolveThreads(selected: Awaited<ReturnType<typeof snapshot>>, apply = false) {
+async function resolveThreads(
+  selected: Awaited<ReturnType<typeof snapshot>>,
+  inputs: CodexAutomationInputs,
+  apply = false,
+) {
   const jobs = selected.jobs.filter(
-    (job) => job.runtimes.includes('codex') && automationThreadSelection(job, 'codex')?.managed,
+    (job) => job.runtimes.includes('codex') && automationThreadSelection(job, 'codex'),
   );
   if (!jobs.length) return new Map<string, { id: string }>();
-  let connection = selected.dependencies.threadAdapter
-    ? undefined
-    : await connectCodexThreads(selected.workspace, selected.codexHome);
+  const explicitIds = new Set<string>();
+  for (const job of jobs) {
+    const selection = automationThreadSelection(job, 'codex')!;
+    if (!selection.managed) {
+      try {
+        await verifyThread(inputs.threads ?? [], selection.exact!, selected.workspace);
+      } catch (error) {
+        if (error instanceof CodexAutomationError) error.automationId = job.id;
+        throw error;
+      }
+      explicitIds.add(selection.exact!);
+    }
+  }
+  const sections = sidebarSections(inputs.nativeInventory);
+  const journals = new Map<string, CodexSidebarJournal>();
+  const destinations = new Map<string, string | undefined>();
+  const pendingGroups = new Set<string>();
+  for (const job of jobs) {
+    const selection = automationThreadSelection(job, 'codex')!;
+    const group = selection.group!;
+    if (journals.has(group)) continue;
+    const journal = new CodexSidebarJournal(selected.root, selected.codexHome, group);
+    const { placement, state } = await journal.inspect(
+      inputs.nativeInventory,
+      selection.exact ?? 'pending',
+      inputs.placementReceipt,
+    );
+    if (state.pending) pendingGroups.add(group);
+    journals.set(group, journal);
+    destinations.set(group, placement.sectionId);
+  }
+  let connection =
+    selected.dependencies.threadAdapter ||
+    jobs.every((job) => !automationThreadSelection(job, 'codex')!.managed)
+      ? undefined
+      : await connectCodexThreads(selected.workspace, selected.codexHome);
   try {
     const adapter =
       selected.dependencies.threadAdapter ??
@@ -268,13 +325,80 @@ async function resolveThreads(selected: Awaited<ReturnType<typeof snapshot>>, ap
           connection = await connectCodexThreads(selected.workspace, selected.codexHome);
           return connection.request('thread/resume', { threadId: id });
         },
+        async (id) => {
+          await connection!.close();
+          connection = await connectCodexThreads(selected.workspace, selected.codexHome);
+          return connection.request('thread/read', { threadId: id, includeTurns: false });
+        },
       );
-    return await new AutomationThreads(
+    const lookup = async (id: string, fresh = false) => {
+      const native = explicitIds.has(id)
+        ? { id }
+        : await (fresh && adapter.lookupFresh ? adapter.lookupFresh(id) : adapter.lookup(id));
+      if (!native) return native;
+      const section = sections.find(
+        (section) =>
+          section.itemKeys.includes(`codex:thread:local:${id}`) &&
+          destinations.get(section.name) === section.sectionId,
+      );
+      return {
+        ...native,
+        group: section && !pendingGroups.has(section.name) ? section.name : undefined,
+      };
+    };
+    const bindings = await new AutomationThreads(
       { root: selected.root, scope: selected.scope, runtime: 'codex' },
-      adapter,
+      {
+        ...adapter,
+        lookup,
+        lookupFresh: (id) => lookup(id, true),
+        setGroup: async (id, group) => {
+          const journal = journals.get(group)!;
+          const state = await journal.read();
+          const receipt =
+            state.pending?.digest === inputs.placementReceipt?.digest
+              ? inputs.placementReceipt
+              : undefined;
+          const effect = await journal.apply(selected.scope, inputs.nativeInventory, id, receipt);
+          if (effect.status !== 'done') throw new SidebarPending(effect);
+          pendingGroups.delete(group);
+        },
+      },
     ).resolve(jobs, apply);
+    if (apply) {
+      // retain the verified destination even when the chat was already correctly placed.
+      for (const job of jobs) {
+        const group = automationThreadSelection(job, 'codex')!.group!;
+        const journal = journals.get(group)!;
+        const state = await journal.read();
+        if (state.sectionId === destinations.get(group) && !state.pending) continue;
+        const effect = await journal.apply(
+          selected.scope,
+          inputs.nativeInventory,
+          bindings.get(job.id)!.id,
+        );
+        if (effect.status !== 'done') throw new SidebarPending(effect);
+      }
+    }
+    return bindings;
   } finally {
     await connection?.close();
+  }
+}
+
+function verifyMigrationRetirements(
+  selected: Awaited<ReturnType<typeof snapshot>>,
+  saved: SavedAutomation[],
+) {
+  for (const retired of selected.ledger.retired ?? []) {
+    const actual = saved.find((item) => item.id === retired.nativeId);
+    if (
+      retired.retired ||
+      !actual ||
+      retired.definition.status !== 'PAUSED' ||
+      !savedMatches(actual, retired.definition, selected.workspace)
+    )
+      throw new CodexAutomationError('automation-retired-job-diverged');
   }
 }
 
@@ -286,17 +410,9 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     ledger.records.length ||
     ledger.retired?.length ||
     ledger.pending
-      ? await readCodexAutomations(codexHome)
+      ? await (selected.dependencies.readAutomations ?? readCodexAutomations)(codexHome)
       : [];
-  for (const retired of ledger.retired ?? []) {
-    const actual = saved.find((item) => item.id === retired.nativeId);
-    if (
-      !actual ||
-      retired.definition.status !== 'PAUSED' ||
-      !savedMatches(actual, retired.definition, workspace)
-    )
-      throw new CodexAutomationError('automation-retired-job-diverged');
-  }
+  verifyMigrationRetirements(selected, saved);
   const needsDefaults = jobs.some(
     (job) =>
       job.runtimes.includes('codex') &&
@@ -307,13 +423,23 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
   const defaults = needsDefaults
     ? await readCodexAutomationDefaults(codexHome).catch(() => undefined)
     : undefined;
-  let bindings: Map<string, { id: string }> | undefined;
+  let bindings:
+    Map<string, { id: string; settings?: AutomationThreadModelObservation }> | undefined;
+  let threadSettings: AutomationThreadModelObservation | undefined;
   let threadCode: string | undefined;
+  let threadAutomationId: string | undefined;
   try {
-    bindings = await resolveThreads(selected);
+    bindings = await resolveThreads(selected, inputs);
   } catch (error) {
+    if (error instanceof AutomationError || error instanceof CodexAutomationError)
+      threadAutomationId = error.automationId;
+    if (error instanceof AutomationThreadSettingsError) threadSettings = error.settings;
     threadCode =
-      error instanceof AutomationError ? error.code : 'automation-thread-inspection-failed';
+      error instanceof AutomationError || error instanceof CodexAutomationError
+        ? error.code
+        : error instanceof Error && error.message.startsWith('automation-sidebar-')
+          ? error.message
+          : 'automation-thread-inspection-failed';
   }
   const result = await planCodexAutomations({
     scope,
@@ -343,24 +469,37 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     if (!result.actions.length) result.status = 'blocked';
   }
   if (threadCode) {
-    result.findings.push({ id: 'threads', code: threadCode });
+    result.findings.push({
+      id: threadAutomationId ?? 'threads',
+      code: threadCode,
+      ...(threadSettings ? { settings: threadSettings } : {}),
+    });
     result.actions = [];
     const synchronizable = new Set([
       'automation-thread-sync-required',
       'automation-thread-replacement-required',
       'automation-thread-name-drift',
+      'automation-thread-model-drift',
+      'automation-thread-settings-busy',
+      'automation-thread-settings-unsupported',
+      'automation-thread-group-drift',
       'automation-missing',
       'automation-drift',
       'automation-healthy',
       'automation-disabled',
       'automation-disabled-retained',
+      'automation-retired',
       'automation-removal-pending',
       'automation-target-migration-pending',
     ]);
     result.status = result.findings.every((finding) => synchronizable.has(finding.code))
       ? 'requires-native-app-sync'
       : 'blocked';
-    result.digest = automationHash({ plan: result.digest, threadCode });
+    result.digest = automationHash({
+      plan: result.digest,
+      threadCode,
+      nativeInventory: inputs.nativeInventory,
+    });
   }
   if (ledger.pending)
     return {
@@ -425,7 +564,7 @@ export async function inspectCodexDispatchActivation(
   };
   if (
     (selected.cleanupOnly && (!retainedWork || !selected.policyBlocker)) ||
-    (!retainedWork && selected.ledger.pending) ||
+    (!retainedWork && selected.ledger.pending?.action.manifestId === intakeAutomationId) ||
     !record ||
     record.definition.kind !== 'heartbeat' ||
     (!retainedWork &&
@@ -512,11 +651,16 @@ export async function syncCodexAutomationThreads(
     const allowed = new Set([
       'automation-thread-sync-required',
       'automation-thread-name-drift',
+      'automation-thread-model-drift',
+      'automation-thread-settings-busy',
+      'automation-thread-settings-unsupported',
+      'automation-thread-group-drift',
       'automation-thread-recovery-required',
       'automation-thread-replacement-required',
       'automation-healthy',
       'automation-disabled',
       'automation-disabled-retained',
+      'automation-retired',
       'automation-missing',
       'automation-drift',
       'automation-removal-pending',
@@ -524,7 +668,8 @@ export async function syncCodexAutomationThreads(
     ]);
     if (result.findings.some((finding) => !allowed.has(finding.code)))
       throw new CodexAutomationError('automation-plan-stale-or-blocked');
-    const bindings = await resolveThreads(selected, true).catch((error) => {
+    const bindings = await resolveThreads(selected, inputs, true).catch((error) => {
+      if (error instanceof SidebarPending) return error.effect;
       throw new CodexAutomationError(
         error instanceof AutomationError ? error.code : 'automation-thread-sync-failed',
       );
@@ -532,6 +677,7 @@ export async function syncCodexAutomationThreads(
     const current = await snapshot(pluginData, dependencies);
     if (current.loaded.digest !== selected.loaded.digest)
       throw new CodexAutomationError('automation-plan-stale-or-blocked');
+    if (!(bindings instanceof Map)) return bindings;
     return { status: 'verified', routing: 'per-automation', threads: Object.fromEntries(bindings) };
   });
 }
@@ -565,6 +711,7 @@ export async function listCodexAutomations(
         nativeId: record?.nativeId ?? null,
         nativeStatus: actual?.definition.status ?? null,
         removed: record?.removed ?? false,
+        retired: Boolean(record?.retired),
         findings: result.findings.filter((finding) => finding.id === id),
       };
     }),
@@ -599,6 +746,7 @@ export async function replaceCodexNotificationCoordinator(
   pluginData: string,
   before: SavedAutomation,
   dependencies: CodexAutomationDependencies = {},
+  inputs: CodexAutomationInputs = {},
 ) {
   const initial = await snapshot(pluginData, dependencies);
   return withJournal(initial, async () => {
@@ -636,7 +784,12 @@ export async function replaceCodexNotificationCoordinator(
     )
       throw new Error('notification-reset-automation-changed');
     const jobs = selected.jobs.filter(({ id }) => id === intakeAutomationId);
-    const target = (await resolveThreads({ ...selected, jobs }, true)).get(intakeAutomationId)?.id;
+    const bindings = await resolveThreads({ ...selected, jobs }, inputs, true).catch((error) => {
+      if (error instanceof SidebarPending) return error.effect;
+      throw error;
+    });
+    if (!(bindings instanceof Map)) return bindings;
+    const target = bindings.get(intakeAutomationId)?.id;
     if (!target || target === before.definition.targetThreadId)
       throw new Error('notification-reset-coordinator-not-replaced');
     const definition = { ...before.definition, targetThreadId: target };
@@ -736,6 +889,67 @@ async function withJournal<T>(
   } finally {
     await rmdir(lock);
   }
+}
+
+/** explicit install/sync retires only undeclared, authoritatively absent native jobs. */
+export async function reconcileCodexAutomationRetirements(
+  pluginData: string,
+  dependencies: CodexAutomationDependencies = {},
+): Promise<void> {
+  const initial = await snapshot(pluginData, dependencies);
+  const declared = (selected: typeof initial) =>
+    new Set(selected.jobs.filter((job) => job.runtimes.includes('codex')).map(({ id }) => id));
+  if (
+    initial.cleanupOnly ||
+    initial.ledger.pending ||
+    !initial.ledger.records.some((record) => !record.retired && !declared(initial).has(record.id))
+  )
+    return;
+  await withJournal(initial, async () => {
+    const selected = await snapshot(pluginData, dependencies);
+    const unchanged = (current: typeof initial) =>
+      !current.cleanupOnly &&
+      current.scope === initial.scope &&
+      current.loaded.digest === initial.loaded.digest &&
+      automationHash(current.ledger) === automationHash(initial.ledger);
+    if (!unchanged(selected)) throw new CodexAutomationError('automation-plan-stale-or-blocked');
+    const read = dependencies.readAutomations ?? readCodexAutomations;
+    const saved = await read(selected.codexHome, { requireComplete: true });
+    const owned = ownedCodexAutomations(selected.scope, saved, selected.ledger.records);
+    verifyMigrationRetirements(selected, saved);
+    for (const id of owned.keys())
+      if (!selected.ledger.records.some((record) => record.id === id))
+        throw new CodexAutomationError('automation-ownership-recovery-required');
+    const candidates = [];
+    const declaredIds = declared(selected);
+    for (const record of selected.ledger.records) {
+      if (record.retired) {
+        if (declaredIds.has(record.id)) throw new CodexAutomationError('automation-retired-id');
+        continue;
+      }
+      const actual = owned.get(record.id);
+      if (actual?.id === record.nativeId) continue;
+      if (actual || saved.some((item) => item.id === record.nativeId))
+        throw new CodexAutomationError('automation-ownership-conflict');
+      if (declaredIds.has(record.id))
+        throw new CodexAutomationError('automation-native-recovery-required');
+      candidates.push(record);
+    }
+    if (!candidates.length) return;
+    // re-read all saved state, then reauthorize the exact manifest and ownership at commit.
+    const fresh = await read(selected.codexHome, { requireComplete: true });
+    if (automationHash(fresh) !== automationHash(saved))
+      throw new CodexAutomationError('automation-native-snapshot-diverged');
+    if (!unchanged(await snapshot(pluginData, dependencies)))
+      throw new CodexAutomationError('automation-plan-stale-or-blocked');
+    for (const record of candidates) {
+      record.removed = true;
+      record.retired = { atMs: (dependencies.now ?? Date.now)(), reason: 'native-job-absent' };
+    }
+    if (!Value.Check(ledgerSchema, selected.ledger))
+      throw new CodexAutomationError('automation-ownership-invalid');
+    await selected.file.write(JSON.stringify(selected.ledger));
+  });
 }
 
 function pendingTargets(saved: SavedAutomation[], scope: string, action: CodexAutomationAction) {

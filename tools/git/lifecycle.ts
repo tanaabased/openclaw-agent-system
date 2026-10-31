@@ -44,11 +44,13 @@ export default function createGitLifecycleContribution(
               status === 'ready'
                 ? {
                     code: `git-${kind}-root-ready`,
+                    stepId: kind,
                     message: `Git managed ${kind} root is ready.`,
                     status: 'healthy' as const,
                   }
                 : {
                     code: `git-${kind}-root-${status}`,
+                    stepId: kind,
                     message: `Git managed ${kind} root is ${status}.`,
                     remediation: 'Run openclaw agent-system install from this workspace.',
                     status: status === 'unsafe' ? ('blocked' as const) : ('drift' as const),
@@ -83,11 +85,13 @@ export default function createGitLifecycleContribution(
               status === 'ready'
                 ? {
                     code: 'git-worktree-local-repository-ready',
+                    stepId: id,
                     message: `Git local repository override ${id} is ready.`,
                     status: 'healthy' as const,
                   }
                 : {
                     code: `git-worktree-local-repository-${status}`,
+                    stepId: id,
                     message: `Git local repository override ${id} is ${status}.`,
                     remediation: 'Correct the local repository path, then run install.',
                     status: status === 'unsafe' ? ('blocked' as const) : ('drift' as const),

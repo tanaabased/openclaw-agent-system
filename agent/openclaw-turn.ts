@@ -1,5 +1,10 @@
 import issueInputEvent, { issueInputEventId } from './openclaw-session-input.ts';
-import issueTurnReply from './openclaw-session-reply.ts';
+import openClawTurnReply from './openclaw-turn-evidence.ts';
+import {
+  completeOpenClawMessage,
+  openClawHistoryPages,
+  type HistoryScope,
+} from './openclaw-history.ts';
 import { sessionObject } from './openclaw-session-create.ts';
 import type { OpenClawTurn } from './openclaw-turn-state.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
@@ -25,6 +30,33 @@ export function consumedInputEvent(messages: unknown[], turn: OpenClawTurn) {
   return eventId;
 }
 
+/** recover missing or shortened input without replacing retained consumption. */
+export async function openClawConsumedInput(
+  request: DispatchRequest,
+  scope: HistoryScope,
+  turn: OpenClawTurn,
+  first: Record<string, unknown>,
+) {
+  for await (const messages of openClawHistoryPages(request, scope, { first })) {
+    const candidates = messages.filter((entry) => {
+      if (entry.role !== 'user' || entry.__openclaw == null) return false;
+      const meta = sessionObject(entry.__openclaw);
+      return (
+        meta.runId === turn.runId ||
+        meta.idempotencyKey === `${turn.runId}:user` ||
+        entry.idempotencyKey === `${turn.runId}:user`
+      );
+    });
+    if (candidates.length || turn.consumedByEventId) {
+      const complete = await Promise.all(
+        candidates.map((entry) => completeOpenClawMessage(request, scope, entry)),
+      );
+      return consumedInputEvent(complete, turn);
+    }
+  }
+  return consumedInputEvent([], turn);
+}
+
 /** reconcile exact native custody without sending another input. */
 export async function reconcileOpenClawTurn(input: {
   request: DispatchRequest;
@@ -39,8 +71,6 @@ export async function reconcileOpenClawTurn(input: {
       await request('chat.history', {
         sessionKey: input.sessionKey,
         inputRunIds: [turn.runId],
-        limit: 200,
-        maxChars: 100000,
       }),
     );
     if (
@@ -63,7 +93,7 @@ export async function reconcileOpenClawTurn(input: {
       throw new Error('dispatch-turn-cancelled');
     }
     const consumedByEventId = !receipt
-      ? consumedInputEvent(history.messages, turn)
+      ? await openClawConsumedInput(request, input, turn, history)
       : receipt.state === 'consumed' &&
           typeof receipt.consumedByEventId === 'string' &&
           receipt.consumedByEventId
@@ -97,7 +127,11 @@ export async function reconcileOpenClawTurn(input: {
       await save();
       return;
     }
-    const reply = issueTurnReply(history.messages, turn.runId);
+    if (info.hasActiveRun === true || receipt?.queued === true) return;
+    const reply =
+      turn.status === 'consumed' && info.hasActiveRun === false
+        ? await openClawTurnReply(request, input, turn.runId, { first: history })
+        : undefined;
     if (reply && turn.status === 'consumed' && info.hasActiveRun === false) {
       let executionModel: string | undefined;
       if (observed.terminalReceipt) {

@@ -1,4 +1,10 @@
+import assessmentMaterial from '../agent/assessment-material.ts';
+import summaryFixture from './assessment-summary-fixture.ts';
+import type { AssessmentSummaryRequest } from '../agent/assessment-summary-state.ts';
 import assert from 'node:assert/strict';
+import implementationMaterial, {
+  type ImplementationMaterialRead,
+} from '../agent/implementation-material.ts';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import waitForAssessmentRelease from '../examples/openclaw-notifications-intake/assessment-barrier.ts';
@@ -14,7 +20,10 @@ import assessmentSubmission from '../agent/assessment-submission.ts';
 import { issueExampleScenario } from '../examples/openclaw-notifications-issue-journey/model-fixture.ts';
 import { intakeExampleScenario } from '../examples/openclaw-notifications-intake/model-fixture.ts';
 import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
-import { progressionExampleScenario } from '../examples/openclaw-notifications-progression/model-fixture.ts';
+import {
+  progressionExampleScenario,
+  retainedPlan,
+} from '../examples/openclaw-notifications-progression/model-fixture.ts';
 import { prExampleScenario } from '../examples/openclaw-notifications-pr-journey/model-fixture.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
@@ -94,6 +103,26 @@ for (const scenario of [
       : fixture.response;
   }
 
+  async function appendPagedContext(input: ChatCompletionRequest, value: Record<string, unknown>) {
+    const request = { action: 'implementation-context', id };
+    append(input, 'work-context', implementationMaterial(value, request));
+    let pages = 0;
+    for (; pages < 64; pages++) {
+      const next = await response(input);
+      assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
+      const args = JSON.parse(next.toolCalls[0]!.arguments);
+      if (!args.material) break;
+      assert.ok(Value.Check(dispatchParameters, args));
+      assert.ok('material' in args);
+      append(
+        input,
+        `work-material-${pages}`,
+        implementationMaterial(value, request, args.material as ImplementationMaterialRead),
+      );
+    }
+    assert.ok(pages > 0 && pages < 64);
+  }
+
   type Action = Static<typeof dispatchParameters> | { action: 'scan'; policyDigest: string };
 
   async function action<A extends Action['action']>(
@@ -121,18 +150,49 @@ for (const scenario of [
     hold = false,
   ) {
     assert.equal((await action(input, 'summary', selectedScenario)).operation, 'compose');
-    append(input, 'summary-compose', {
-      status: 'composition-ready',
-      digest,
-      selection: { defaultSkill: true, skill: { path: '/tmp/SUMMARY.md' } },
-    });
+    const owner =
+      selectedScenario.id === 'openclaw-notifications-progression' ? summaryFixture() : undefined;
+    if (owner) {
+      owner.record.id = id;
+      owner.retain({ ...owner.result, plan: retainedPlan, fullAssessment: retainedPlan });
+    }
+    const composition = owner
+      ? await owner.run({ operation: 'compose' })
+      : {
+          status: 'composition-ready',
+          digest,
+          selection: { defaultSkill: true, skill: { path: '/tmp/SUMMARY.md' } },
+        };
+    assert.ok('digest' in composition);
+    const compositionDigest = composition.digest;
+    const beforePages = owner && structuredClone(owner.record);
+    assert.ok(JSON.stringify(composition).length < 48000);
+    append(input, 'summary-compose', composition);
+    if (owner) {
+      let pages = 0;
+      for (; pages < 64; pages++) {
+        const next = await response(input, selectedScenario);
+        assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
+        const args = JSON.parse(next.toolCalls[0]!.arguments);
+        if (!args.material) break;
+        assert.ok(Value.Check(dispatchParameters, args));
+        assert.equal(args.action, 'summary');
+        assert.equal(args.operation, 'compose');
+        const page: Record<string, unknown> = await owner.run(args as AssessmentSummaryRequest);
+        assert.equal(page.status, 'material');
+        assert.ok(JSON.stringify(page).length < 48000);
+        append(input, `summary-material-${pages}`, page);
+      }
+      assert.ok(pages > 0 && pages < 64);
+      assert.deepEqual(owner.record, beforePages);
+    }
     const read = await response(input, selectedScenario);
     assert.ok('toolCalls' in read);
     assert.equal(read.toolCalls?.[0]?.name, 'read');
     append(input, 'summary-skill', { text: 'Selected reply guidance' });
     const candidate = await action(input, 'summary', selectedScenario);
     assert.equal(candidate.operation, 'candidate');
-    assert.equal(candidate.digest, digest);
+    assert.equal(candidate.digest, compositionDigest);
     append(input, 'summary-candidate', { status: 'candidate-recorded' });
     assert.equal((await action(input, 'summary', selectedScenario)).digest, undefined);
     append(input, 'summary-preview', { status: 'publication-ready', digest: 'e'.repeat(64) });
@@ -803,6 +863,55 @@ for (const scenario of [
           if (!interrupted) await publishProgressionSummary(input, selected, true);
           assert.equal((await action(input, 'implementation-context', selected)).id, id);
         });
+      it('should reconstruct an oversized assessment before submitting the auto decision', async () => {
+        const input = request(`Refresh agent_system_dispatch action context with id ${id}.`);
+        await action(input, 'context');
+        const retained = {
+          version: 1,
+          outcome: 'plan-ready',
+          summary: 'Ready.',
+          assessment: retainedPlan,
+          fullAssessment: retainedPlan,
+          plan: retainedPlan,
+          evidence: [],
+          progress: { completed: [], remaining: [] },
+        };
+        assert.ok(JSON.stringify(retained).length > 64000);
+        const source = {
+          status: 'verified',
+          runtime: 'openclaw',
+          id,
+          mode: 'auto',
+          previousResult: retained,
+          previousResultDigest: digest,
+        };
+        const ownerRequest = { action: 'context', id };
+        append(input, 'refresh-context', assessmentMaterial(source, ownerRequest));
+        let pages = 0;
+        for (; pages < 64; pages++) {
+          const next = await response(input);
+          assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
+          const args = JSON.parse(next.toolCalls[0]!.arguments);
+          if (!args.material) break;
+          assert.ok(Value.Check(dispatchParameters, args));
+          assert.equal(args.action, 'context');
+          append(
+            input,
+            `assessment-material-${pages}`,
+            assessmentMaterial(source, ownerRequest, args.material),
+          );
+        }
+        assert.ok(pages > 0 && pages < 64);
+        const submitted = await action(input, 'result');
+        assert.equal(submitted.previousResultDigest, digest);
+        assert.deepEqual(submitted.result, {
+          ...retained,
+          decision: {
+            mode: 'work',
+            reasons: ['The retained documentation plan is bounded and actionable.'],
+          },
+        });
+      });
       for (const direct of [false, true])
         it(`should ask clarification during automatic work and resume an answer with direct handoff ${direct}`, async () => {
           const automatic = request(
@@ -835,8 +944,10 @@ for (const scenario of [
             });
             await publishProgressionSummary(automatic, scenario, true);
           }
-          await action(automatic, 'implementation-context');
-          append(automatic, 'work-context', {
+          assert.equal((await action(automatic, 'implementation-context')).scope, undefined);
+          await appendPagedContext(automatic, {
+            id,
+            plan: retainedPlan,
             status: 'verified',
             runtime: 'openclaw',
             deliveryOnly: false,
@@ -870,12 +981,14 @@ for (const scenario of [
           const answer = request(
             `Answer for managed issue ${id}: Yes, after evidence is captured. Do not push or publish a PR.`,
           );
-          await action(answer, 'implementation-context');
-          append(answer, 'work-context', {
+          assert.equal((await action(answer, 'implementation-context')).scope, 'local');
+          await appendPagedContext(answer, {
+            id,
+            plan: retainedPlan,
             status: 'verified',
             runtime: 'openclaw',
             deliveryOnly: false,
-            publicationAuthorized: true,
+            publicationAuthorized: false,
             project: { path: '/tmp/owned' },
             previousImplementationResult: question.implementationResult,
           });
@@ -999,7 +1112,7 @@ for (const scenario of [
           assert.equal(linkageRetry.id, id);
           append(input, 'delivery-link-publish-0', {
             status: 'published',
-            workflowStatus: 'partially-delivered',
+            workflowStatus: 'delivered-response-pending',
           });
           assert.equal((await action(input, 'delivery')).operation, 'compose');
           append(input, 'delivery-compose', {
@@ -1126,7 +1239,7 @@ for (const scenario of [
         assert.equal((await action(input, 'delivery')).digest, refreshedDigest);
         append(input, 'delivery-link-publish-0', {
           status: 'published',
-          workflowStatus: 'partially-delivered',
+          workflowStatus: 'delivered-response-pending',
         });
         assert.equal((await action(input, 'delivery')).operation, 'announce');
         append(input, 'delivery-repeat', { status: 'announced' });

@@ -81,9 +81,7 @@ export default function createToolCliRunner(
       input: request.stdin ?? '',
       killGraceMs: commandTerminationGraceMs,
       killProcessTree: true,
-      maxCombinedOutputBytes: request.maxOutputBytes,
-      maxOutputBytes: request.maxOutputBytes,
-      outputCapture: 'head',
+      ...(request.maxOutputBytes === undefined ? {} : { maxOutputBytes: request.maxOutputBytes }),
       ...(signal === undefined ? {} : { signal }),
       timeoutMs: request.timeoutMs,
     });
@@ -92,6 +90,15 @@ export default function createToolCliRunner(
     return {
       exitCode: timedOut ? null : result.code,
       resolvedExecutable: executable,
+      termination: result.termination,
+      signal: result.signal,
+      killed: result.killed,
+      ...(result.stdoutTruncatedBytes === undefined
+        ? {}
+        : { stdoutTruncatedBytes: result.stdoutTruncatedBytes }),
+      ...(result.stderrTruncatedBytes === undefined
+        ? {}
+        : { stderrTruncatedBytes: result.stderrTruncatedBytes }),
       stderr: result.stderr,
       stdout: result.stdout,
       timedOut,

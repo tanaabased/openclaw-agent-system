@@ -55,24 +55,29 @@ built standalone provider.
 
 ### Codex
 
-From a checkout with [locked dependencies installed](#requirements),
-build and install through the pinned development dependency:
+From a checkout with [locked dependencies installed](#requirements), rebuild
+after changing the Codex runtime or its imports:
 
 ```sh
-# build the runtime, then preview and install the local plugin.
 bun run build
+```
+
+Keep development validation isolated from the live Codex installation. Cache drift
+against a task worktree is expected; it does not require `bun run codex:sync` or
+Agent System Install. Use the isolated package validation flow below for native
+installation and discovery checks.
+
+To deliberately install this checkout into your live Codex installation, preview
+and apply the source installation:
+
+```sh
 ./node_modules/.bin/codex-tools install . --dry-run --json
 ./node_modules/.bin/codex-tools install .
 ```
 
-Rebuild after changing the Codex runtime or its imports. For changes to
-`.codex-plugin/`, `assets/`, `hooks/`, `package.json`, or `skills/`, sync the
-installed cache directly:
-
-```sh
-bun run codex:sync
-bun run codex:check
-```
+When deliberately adopting changes to installed Codex runtime or skill paths, run
+`bun run codex:sync` and `bun run codex:check` to update and verify the cache. Changed plugin contents
+may require renewed hook review.
 
 If a development build writes a changed persistent format, verify that any runtime
 restored during cleanup can read the retained state. Cache equality alone does not

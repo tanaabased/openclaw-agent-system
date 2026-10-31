@@ -11,8 +11,14 @@ import {
   type NormalizedCommand,
 } from './command-schema.ts';
 import type { ManifestDiagnostic } from './types.ts';
+import { explicitModelEfforts, modelReferenceSchema } from './models-schema.ts';
+import managedGroupName from '../utils/managed-group-name.ts';
 
 const textSchema = Type.String({ pattern: '^(?=[\\s\\S]*\\S)[^\\u0000\\r\\n]*(?![\\s\\S])' });
+const displayNameSchema = Type.String({
+  maxLength: 200,
+  pattern: '^(?=[\\s\\S]*\\S)[^\\u0000\\r\\n\\u000b\\u000c\\u0085\\u2028\\u2029]*(?![\\s\\S])',
+});
 export const automationFileSchema = Type.Object(
   { file: textSchema },
   { additionalProperties: false },
@@ -38,8 +44,17 @@ export const automationThreadSchema = Type.Object(
 const jobSchema = Type.Object(
   {
     id: Type.String({ pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*(?![\\s\\S])' }),
+    'display-name': Type.Optional(displayNameSchema),
+    model: Type.Optional(
+      Type.Union([
+        modelReferenceSchema,
+        ...['default', 'low', 'medium', 'high'].map((value) => Type.Literal(value)),
+      ]),
+    ),
+    effort: Type.Optional(Type.Union(explicitModelEfforts.map((value) => Type.Literal(value)))),
     enabled: Type.Optional(Type.Boolean()),
     thread: Type.Optional(Type.Union([Type.Null(), textSchema, automationThreadSchema])),
+    group: Type.Optional(Type.String()),
     runtimes: Type.Optional(
       Type.Array(Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]), {
         uniqueItems: true,
@@ -84,6 +99,9 @@ export type AutomationRuntime = 'openclaw' | 'codex';
 export type AutomationOverride = Static<typeof overrideSchema>;
 export interface AgentAutomation {
   id: string;
+  displayName?: string;
+  model?: string;
+  effort?: string;
   enabled: boolean;
   runtimes: AutomationRuntime[];
   schedule: AutomationSchedule;
@@ -91,17 +109,17 @@ export interface AgentAutomation {
     | { kind: 'command'; run: NormalizedCommand }
     | { kind: 'prompt'; prompt: string | { file: string } };
   thread?: { id?: string; name?: string };
+  group?: string;
   timeoutSeconds?: number;
   overrides: Partial<Record<AutomationRuntime, AutomationOverride>>;
 }
 export type ResolvedAutomation = Omit<AgentAutomation, 'payload'> & {
-  /** optional presentation supplied by a runtime-owned job projection. */
-  displayName?: string;
+  /** trusted declaration origin; omitted for manifest-owned jobs, never accepted from yaml. */
+  origin?: 'builtin';
   /** Trusted runtime-derived settings; not accepted by the external manifest schema. */
   internalOpenClaw?: {
     trigger: { script: string };
     toolsAllow: string[];
-    group?: string;
   };
   payload: { kind: 'command'; run: NormalizedCommand } | { kind: 'prompt'; prompt: string };
 };
@@ -113,6 +131,26 @@ export function automationDiagnostic(code: string, fieldPath: string): ManifestD
     message: `Invalid automation declaration at ${fieldPath}.`,
     severity: 'error',
   };
+}
+
+/** profile references are validated without native catalogs or credentials. */
+export function automationProfileDiagnostics(
+  jobs: AgentAutomation[],
+  models: unknown,
+): ManifestDiagnostic[] {
+  return jobs.flatMap((job, index) => {
+    if (!['default', 'low', 'medium', 'high'].includes(job.model ?? '')) return [];
+    if (models && typeof models === 'object' && Object.hasOwn(models, job.model!)) return [];
+    return [
+      {
+        ...automationDiagnostic(
+          'manifest-automation-profile-missing',
+          `/automations/${index}/model`,
+        ),
+        message: `The requested automation model profile is not configured at /automations/${index}/model.`,
+      },
+    ];
+  });
 }
 
 /** normalize declarations without files, clocks, model calls, or runtime capability checks. */
@@ -146,6 +184,11 @@ export default function normalizeAutomations(
   const automations: AgentAutomation[] = [];
   for (const [index, job] of value.entries()) {
     const path = `/automations/${index}`;
+    // native openclaw also bounds utf-16 length, not only json schema code points.
+    if (job['display-name'] !== undefined && job['display-name'].length > 200) {
+      diagnostics.push(automationDiagnostic('manifest-automation-schema', `${path}/display-name`));
+      continue;
+    }
     if (ids.has(job.id))
       diagnostics.push(automationDiagnostic('manifest-automation-duplicate-id', `${path}/id`));
     ids.add(job.id);
@@ -162,17 +205,22 @@ export default function normalizeAutomations(
       (job.run !== undefined
         ? { kind: 'command' as const, run: job.run, shell: job.shell }
         : { kind: 'prompt' as const, prompt: job.prompt! });
-    if (payload.kind === 'command' && job.overrides !== undefined) {
-      diagnostics.push(
-        automationDiagnostic('manifest-automation-command-overrides', `${path}/overrides`),
-      );
-      continue;
-    }
-    if (payload.kind === 'command' && Object.hasOwn(job, 'thread')) {
-      diagnostics.push(
-        automationDiagnostic('manifest-automation-command-thread', `${path}/thread`),
-      );
-      continue;
+    if (payload.kind === 'command') {
+      for (const runtime of job.runtimes ?? (['openclaw', 'codex'] as const)) {
+        const override = job.overrides?.[runtime];
+        const persistent = override?.target !== 'independent' && (override?.target || job.thread);
+        if (
+          !persistent &&
+          (job.model !== undefined ||
+            job.effort !== undefined ||
+            override?.model !== undefined ||
+            override?.effort !== undefined)
+        )
+          diagnostics.push({
+            ...automationDiagnostic('manifest-automation-command-model', path),
+            message: `Command model/effort require a persistent reporting chat for ${runtime}.`,
+          });
+      }
     }
     const normalizedPayload =
       payload.kind === 'command'
@@ -181,6 +229,32 @@ export default function normalizeAutomations(
             kind: 'prompt' as const,
             prompt: typeof payload.prompt === 'string' ? payload.prompt : { ...payload.prompt },
           };
+    let group: string | undefined;
+    if (job.group !== undefined) {
+      try {
+        group = managedGroupName(
+          job.group,
+          (job.runtimes ?? ['openclaw', 'codex']).includes('openclaw') ? 512 : undefined,
+        );
+      } catch (error) {
+        diagnostics.push({
+          ...automationDiagnostic('manifest-automation-group', `${path}/group`),
+          message: `Invalid group: ${error instanceof Error ? error.message : 'invalid name'}. Use a nonblank name without control characters within the native name limit.`,
+        });
+        continue;
+      }
+      for (const runtime of job.runtimes ?? (['openclaw', 'codex'] as const)) {
+        const target = job.overrides?.[runtime]?.target;
+        if (target === 'independent' || (!target && !job.thread))
+          diagnostics.push({
+            ...automationDiagnostic(
+              'manifest-automation-group-persistent-required',
+              `${path}/group`,
+            ),
+            message: `group requires a persistent chat for ${runtime}; declare thread or overrides.${runtime}.target.thread, or remove group.`,
+          });
+      }
+    }
     if (
       normalizedPayload.kind === 'command' &&
       normalizedPayload.run.kind === 'exec' &&
@@ -203,10 +277,14 @@ export default function normalizeAutomations(
     }
     automations.push({
       id: job.id,
+      ...(job['display-name'] === undefined ? {} : { displayName: job['display-name'].trim() }),
       enabled: job.enabled ?? true,
       runtimes: [...(job.runtimes ?? (['openclaw', 'codex'] as const))].sort(),
       schedule,
       payload: normalizedPayload,
+      ...(job.model === undefined ? {} : { model: job.model }),
+      ...(job.effort === undefined ? {} : { effort: job.effort }),
+      ...(group === undefined ? {} : { group }),
       ...(job.thread == null
         ? {}
         : {

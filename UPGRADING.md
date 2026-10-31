@@ -4,6 +4,15 @@ See the [version compatibility matrix](./README.md#version-compatibility) for su
 OpenClaw and Node.js versions. This guide covers the changes since `v0.8.0`,
 including earlier `v0.9.0` pre-release configurations.
 
+## Automation model defaults
+
+Prompt automations now inherit `models.default` when configured. Review effective
+settings before Install: this can change cost, latency, or model availability.
+Install also updates settings on existing managed chats. Explicit runtime targets
+retain their native settings and reject explicit job model settings.
+See [automation configuration and recovery](./MANIFEST.md#automations) for precedence
+and handling busy chats or denied updates.
+
 ## Skill names
 
 Task workflow skills now use task terminology. Update explicit skill selections in

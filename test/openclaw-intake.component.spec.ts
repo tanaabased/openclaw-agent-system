@@ -1,3 +1,4 @@
+import { automationThreadSelection } from '../agent/automation-threads.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -489,7 +490,7 @@ describe('openclaw v2 intake slice', () => {
     assert.ok(job);
     assert.equal(value.automations, undefined);
     assert.equal(job.schedule.kind, 'every');
-    assert.equal(job.internalOpenClaw!.group, 'Agent System');
+    assert.equal(automationThreadSelection(job, 'openclaw')!.group, 'AGENT SYSTEM');
     assert.equal(job.overrides.openclaw!.model, 'openai/gpt-6-astra');
     assert.equal(job.overrides.openclaw!.effort, 'medium');
     assert.equal(value.models.low.model, 'openai/gpt-6-luna');
@@ -506,7 +507,7 @@ describe('openclaw v2 intake slice', () => {
       configRevision: '1',
       state: {},
     } as NativeAutomation;
-    assert.equal(desired.name, 'Agent System: github-issue-assignment');
+    assert.equal(desired.name, 'AGENT SYSTEM: github-issue-assignment');
     assert.deepEqual(desired.payload.toolsAllow, ['*']);
     const restricted = {
       ...current,

@@ -1,0 +1,16 @@
+- id: success
+  effort: high
+  runtimes: [openclaw]
+  schedule: every 1 hour
+  timeout-seconds: 120
+  run: [sh, ./report.sh, success]
+  group: REPORTS
+  thread: { id: reports, name: Automation reports }
+- id: failure
+  effort: high
+  runtimes: [openclaw]
+  schedule: every 1 hour
+  timeout-seconds: 120
+  run: [sh, ./report.sh, failure]
+  group: REPORTS
+  thread: { id: reports, name: Automation reports }

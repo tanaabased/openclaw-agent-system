@@ -7,9 +7,13 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 export class CodexAutomationError extends Error {
+  automationId?: string;
   override name = 'CodexAutomationError';
-  constructor(readonly code: string) {
-    super(code);
+  constructor(
+    readonly code: string,
+    message = code,
+  ) {
+    super(message);
   }
 }
 
@@ -144,7 +148,10 @@ export async function readCodexFile(path: string): Promise<string> {
   }
 }
 
-export async function readCodexAutomations(codexHome: string): Promise<SavedAutomation[]> {
+export async function readCodexAutomations(
+  codexHome: string,
+  options: { requireComplete?: boolean } = {},
+): Promise<SavedAutomation[]> {
   const root = join(codexHome, 'automations');
   try {
     if (!(await lstat(root)).isDirectory()) throw new Error('invalid directory');
@@ -159,7 +166,11 @@ export async function readCodexAutomations(codexHome: string): Promise<SavedAuto
         contents = await readCodexFile(join(root, entry.name, 'automation.toml'));
       } catch (error) {
         // native deletion retains run memory without a definition.
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          if (options.requireComplete && !(await lstat(join(root, entry.name))).isDirectory())
+            throw new Error('incomplete inventory', { cause: error });
+          continue;
+        }
         throw error;
       }
       const saved = parseSavedAutomation(contents, entry.name);
@@ -169,7 +180,7 @@ export async function readCodexAutomations(codexHome: string): Promise<SavedAuto
     }
     return result;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    if (!options.requireComplete && (error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     if (error instanceof CodexAutomationError) throw error;
     throw new CodexAutomationError('automation-saved-inspection-failed');
   }

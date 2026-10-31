@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
+import type { AgentSystemCliResult } from '../api/types.ts';
 import retryGitHubRead from '../core/github-read-retry.ts';
 
 function response(value: unknown, status = 200, headers = 'etag: "v1"') {
@@ -13,7 +14,7 @@ function response(value: unknown, status = 200, headers = 'etag: "v1"') {
 }
 function fixture() {
   const calls: string[][] = [];
-  let reply = response({ revision: 1 });
+  let reply: AgentSystemCliResult = response({ revision: 1 });
   const account = {
     identity: { login: 'bot', nodeId: 'U_bot' },
     observationScope: {},
@@ -160,6 +161,30 @@ describe('github conditional reads', () => {
       f.set(response({ revision: 2 }));
       await f.api.request(['repos/o/r/issues/1'], 'read');
       assert.equal(conditional(f.calls.at(-1)!), undefined);
+    }
+  });
+
+  it('should reject parseable partial responses before quota or cache updates', async () => {
+    for (const metadata of [
+      { stdoutTruncatedBytes: 1 },
+      { stderrTruncatedBytes: 1 },
+      { signal: 'SIGTERM' },
+    ]) {
+      for (const status of [200, 304]) {
+        const f = fixture();
+        const path = ['repos/o/r/issues/1'];
+        await f.api.request(path, 'read');
+        const before = { ...f.api.rateLimit };
+        f.set({
+          ...response({ revision: 2 }, status, 'etag: "bad"\nx-ratelimit-remaining: 0'),
+          ...metadata,
+        });
+        await assert.rejects(f.api.request(path, 'read'));
+        assert.deepEqual(f.api.rateLimit, before);
+        f.set(response({ revision: 3 }));
+        assert.deepEqual((await f.api.request(path, 'read')).value, { revision: 3 });
+        assert.equal(conditional(f.calls.at(-1)!), undefined);
+      }
     }
   });
 

@@ -8,5 +8,16 @@ github:
       node-id: O_example
   issue-assignment:
     paused: true
+  project-pickup:
+    paused: true
+    schedule:
+      cron: '0 22 * * *'
+      timezone: UTC
+    window-minutes: 60
+    projects:
+      - repository: example/pilot
+        milestone:
+          number: 10
+          policy: only
   review-request:
     paused: true

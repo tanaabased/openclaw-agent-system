@@ -1,3 +1,4 @@
+import issueWorkflowMode from './issue-workflow-mode.ts';
 import type { OperatorIssue } from './managed-issue.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { Type, type Static } from 'typebox';
@@ -22,6 +23,7 @@ export const feedbackDecisionSchema = Type.Object(
   { additionalProperties: false },
 );
 type Issue = Parameters<typeof issueProgression>[0] & {
+  projectWork?: SharedDispatchRecord['projectWork'];
   manualIssue?: Pick<OperatorIssue, 'selections'>;
 };
 
@@ -62,9 +64,7 @@ export function feedbackMode(record: Issue, policy: GitHubNotificationPolicy) {
     (record.continuation?.phase === 'cancelled' && !record.handoff)
   )
     throw new Error('feedback-issue-inactive');
-  return retainedIssueProgression(record)
-    ? 'work'
-    : (record.manualIssue?.selections?.mode ?? policy.issueAssignment?.mode ?? 'auto');
+  return retainedIssueProgression(record) ? 'work' : issueWorkflowMode(policy, record);
 }
 
 /** feedback uses the issue transition; its own result never replaces the original attempt. */

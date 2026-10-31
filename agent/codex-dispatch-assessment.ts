@@ -1,3 +1,7 @@
+import { observeCodexActivity } from './codex-capacity-reconcile.ts';
+import assessmentMaterial from './assessment-material.ts';
+import type { ImplementationMaterialRead } from './implementation-material.ts';
+import issueWorkflowMode from './issue-workflow-mode.ts';
 import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
 import readRetainedHistory from './read-retained-history.ts';
@@ -152,6 +156,7 @@ export async function handoffDispatch(
     );
     if (
       !native ||
+      native.archived ||
       native.id !== record.threadId ||
       (await realpath(native.cwd)) !== (await realpath(record.worktree))
     )
@@ -164,15 +169,6 @@ export async function handoffDispatch(
       'handoff',
     );
     const retainedAssessment = record.result ? { previousResult: record.result } : {};
-    if (record.handoff)
-      return {
-        status: 'handed-off' as const,
-        changed: false,
-        id: record.id,
-        threadId: record.threadId,
-        issueBranch: record.issueBranch?.name,
-        ...retainedAssessment,
-      };
     if (record.continuation?.phase === 'cancelled') throw new Error('implementation-cancelled');
     if (
       record.continuation?.phase === 'blocked' &&
@@ -187,13 +183,24 @@ export async function handoffDispatch(
                 record.continuation.binding?.turnId))))
     )
       throw new Error(record.continuation.code ?? 'continuation-implementation-blocked');
+    if (record.handoff)
+      return {
+        status: 'handed-off' as const,
+        changed: false,
+        id: record.id,
+        threadId: record.threadId,
+        issueBranch: record.issueBranch?.name,
+        ...retainedAssessment,
+      };
+    const operatorInput = native.followUpUserTurn
+      ? await withNative(current, deps, (host) => host.operatorInput(record.threadId!))
+      : undefined;
+    if (operatorInput && operatorInput.turnId !== native.turnId)
+      throw new Error('dispatch-native-readback-diverged');
     const transition = issueProgression(record, {
-      mode:
-        record.manualIssue?.selections?.mode ??
-        current.manifest.github?.notifications?.issueAssignment?.mode ??
-        'auto',
+      mode: issueWorkflowMode(current.manifest.github?.notifications, record),
       now: (deps.now ?? Date.now)(),
-      operator: native.followUpUserTurn,
+      operator: Boolean(operatorInput),
     });
     if (!native.turnId || (!native.followUpUserTurn && transition.status !== 'ready'))
       throw new WorkflowPolicyHeld(
@@ -206,8 +213,12 @@ export async function handoffDispatch(
         feedback: undefined,
         intakeReportedAt: undefined,
         renameRequested: undefined,
+        nativeInactive: undefined,
+        capacityObservation: undefined,
+        reservationVersion: undefined,
       },
       turnId: native.turnId,
+      inputId: operatorInput?.inputId,
     });
     if (input.digest === undefined)
       return {
@@ -232,7 +243,13 @@ export async function handoffDispatch(
       save,
       prepare: true,
     });
-    record.handoff = { at: (deps.now ?? Date.now)(), by: caller, turnId: native.turnId };
+    record.handoff = {
+      at: (deps.now ?? Date.now)(),
+      by: caller,
+      turnId: native.turnId,
+      ...(operatorInput ? { inputId: operatorInput.inputId } : {}),
+    };
+    observeCodexActivity(record, native, (deps.now ?? Date.now)());
     const response = notice(record, intake);
     await save();
     return { ...response, issueBranch: record.issueBranch?.name, ...retainedAssessment };
@@ -248,10 +265,7 @@ export async function assessDispatch(
 ) {
   const { pluginData, current, deps, now, signal, save, fresh } = tx;
   if (action === 'context')
-    record.issueMode =
-      record.manualIssue?.selections?.mode ??
-      current.manifest.github?.notifications?.issueAssignment?.mode ??
-      'auto';
+    record.issueMode = issueWorkflowMode(current.manifest.github?.notifications, record);
   if (action === 'summary') {
     if (!record.result || !native.turnId) throw new Error('assessment-summary-source-unavailable');
     const activate = () =>
@@ -275,6 +289,7 @@ export async function assessDispatch(
       summaryAuthority.schedule ?? record.manualIssue!.initiation,
     );
     return assessmentSummary({
+      runtime: 'codex',
       record,
       intake,
       action: input as unknown as AssessmentSummaryRequest,
@@ -359,7 +374,8 @@ export async function assessDispatch(
     // historical selection remains evidence; each invocation uses live configuration.
     record.assessment ??= assessment;
     await save();
-    return {
+    const context = {
+      runtime: 'codex',
       status: 'verified' as const,
       assignmentObservation: record.assignmentObservation,
       entry: 'managed',
@@ -395,9 +411,7 @@ export async function assessDispatch(
             previousResult: record.result,
             handoff: assessmentHandoff(
               record,
-              record.manualIssue?.selections?.mode ??
-                current.manifest.github?.notifications?.issueAssignment?.mode ??
-                'auto',
+              issueWorkflowMode(current.manifest.github?.notifications, record),
               'codex',
             ),
             previousResultDigest: automationHash(record.result),
@@ -426,15 +440,17 @@ export async function assessDispatch(
         id: record.id,
         previousResultDigest: record.result ? automationHash(record.result) : undefined,
       }),
-      mode:
-        record.manualIssue?.selections?.mode ??
-        current.manifest.github?.notifications?.issueAssignment?.mode ??
-        'auto',
+      mode: issueWorkflowMode(current.manifest.github?.notifications, record),
       instructions:
         'Read feedbackWork for retained plan revisions and responses before interpreting the current input. Historical responses supply context, not fresh authorization. ' +
         codexAssessmentInstructions +
         (record.issueMode === 'auto' ? '\n\n' + autoAssessmentInstructions : ''),
     };
+    return assessmentMaterial(
+      context,
+      { action: 'context', id: record.id },
+      input.material as ImplementationMaterialRead | undefined,
+    );
   }
   if (action === 'result') {
     const continuation = record.issueMode === 'auto' ? record.continuation : undefined;
@@ -502,9 +518,7 @@ export async function assessDispatch(
       previousResultDigest: automationHash(result),
       handoff: assessmentHandoff(
         record,
-        record.manualIssue?.selections?.mode ??
-          current.manifest.github?.notifications?.issueAssignment?.mode ??
-          'auto',
+        issueWorkflowMode(current.manifest.github?.notifications, record),
         'codex',
       ),
       presentation,

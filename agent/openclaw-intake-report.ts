@@ -1,3 +1,4 @@
+import { dispatchStorageNotice } from './dispatch-storage.ts';
 import intakeDebug from './intake-debug.ts';
 import retirementNotice from './retirement-notice.ts';
 import workflowRecovery from './workflow-recovery.ts';
@@ -29,6 +30,7 @@ export default function openclawIntakeReport(input: {
   debug?: boolean;
 }) {
   const { state, intake, observation } = input;
+  const storage = dispatchStorageNotice(state);
   const active = state.records.filter(
     (record) => !record.retired && !record.retirement && !record.reset,
   );
@@ -54,6 +56,7 @@ export default function openclawIntakeReport(input: {
   const pending =
     intake && observation.status === 'ready' ? pendingAssignments(state, intake).length : undefined;
   const failures = [
+    ...(storage.level !== 'normal' ? [{ id: 'storage', code: storage.key }] : []),
     ...retirementNotices
       .filter(({ notice }) => notice.severity !== 'info')
       .map(({ record, code }) => ({ id: record.id, code })),
@@ -85,6 +88,7 @@ export default function openclawIntakeReport(input: {
     if (problem.endsWith(':retirement-legacy-unverified') || problems.includes(problem))
       return false;
     const id = problem.slice(0, problem.indexOf(':'));
+    if (id === 'storage') return storage.level === 'normal';
     if (id === 'intake') return observation.status === 'ready';
     if (id.startsWith('deferred-')) return true;
     if (id.startsWith('feedback-'))
@@ -142,6 +146,14 @@ export default function openclawIntakeReport(input: {
               ? '💡 Intake checked — retirement in progress'
               : '💡 Intake checked';
   const lines = ['## ' + title, ''];
+  if (storage.level !== 'normal' || recovered.some((entry) => entry.startsWith('storage:')))
+    lines.push(
+      storage.message,
+      storage.level === 'normal'
+        ? 'Journal pressure is clear.'
+        : 'Reconcile retired history. New admissions pause at 32 MiB; existing tasks can continue within the emergency budget.',
+      '',
+    );
   const label = (record: OpenClawDispatchRecord) => {
     const item = intake?.records.find((entry) => entry.id === record.intakeId);
     return item
@@ -154,6 +166,7 @@ export default function openclawIntakeReport(input: {
     );
   if (started.length) lines.push('');
   for (const failure of failures.slice(0, 12)) {
+    if (failure.id === 'storage') continue;
     const notice = intakeAutomationNotice(failure.code);
     if (failure.id === 'intake' && notice) {
       lines.push(

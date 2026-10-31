@@ -33,6 +33,18 @@ The session dispatch credential uses `name: Agent System` and a masked `device`.
 Mask identifiers to `***` plus their last four characters, including repeated
 references in recovery commands. JSON retains full identifiers and raw results.
 
+Put the known name, ID, or resource first in Doctor details, before its condition
+and settings. Keep healthy automation rows quiet: omit routine requested/observed
+model and effort comparisons. Show settings for drift, unsupported selections, or
+another actionable settings condition; for drift, show only differing requested
+settings. Keep complete observations in JSON, including matching values.
+
+For example, a healthy row's details read
+`name: ISSUE ASSIGNMENTS; mode: persistent; thread: ***9c31; outcome: reused`.
+With effort-only drift, details begin
+`name: ISSUE ASSIGNMENTS; condition: automation-thread-model-drift; effort: requested: high; observed: medium`.
+Do not repeat the matching model in that drift row.
+
 Author new human fragments in lowercase, preserving literal names and external
 errors. Do not lowercase whole result messages or identifiers to enforce style.
 Existing shared lifecycle prose remains literal data unless explicitly projected.

@@ -6,7 +6,12 @@ agent:
 models:
   default:
     model: aimock/gpt-5.5
-    effort: medium
+    effort: high
 git: {}
+setup:
+  steps:
+    - id: maintenance-receipt
+      check: test -f maintenance.installed
+      apply: printf installed > maintenance.installed
 automations:
   file: ./automations.yaml

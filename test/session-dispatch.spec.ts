@@ -1,3 +1,4 @@
+import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 
@@ -490,6 +491,35 @@ describe('credentials/session-dispatch', () => {
 });
 
 describe('agent/session-dispatch-requirements', () => {
+  it('should enroll only enabled openclaw command reporting consumers', () => {
+    const parsed = normalizeAutomations([
+      {
+        id: 'backup',
+        schedule: 'every 1 day',
+        run: ['true'],
+        thread: 'BACKUPS',
+        runtimes: ['openclaw'],
+      },
+    ]);
+    assert.equal(parsed.status, 'valid');
+    if (parsed.status !== 'valid') return;
+    const value: AgentManifest = {
+      schemaVersion: 1,
+      agent: { id: 'test' },
+      automations: parsed.automations as ResolvedAutomation[],
+    };
+    assert.deepEqual(sessionDispatchRequirements(value), [
+      { id: 'automation-reports', name: 'command automation reports' },
+    ]);
+    value.automations![0]!.enabled = false;
+    assert.deepEqual(sessionDispatchRequirements(value), []);
+    value.automations![0]!.enabled = true;
+    value.automations![0]!.runtimes = ['codex'];
+    assert.deepEqual(sessionDispatchRequirements(value), []);
+    value.automations![0]!.runtimes = ['openclaw'];
+    delete value.automations![0]!.thread;
+    assert.deepEqual(sessionDispatchRequirements(value), []);
+  });
   it('should derive required consumers from effective runtime and trigger policy', () => {
     const value = manifest();
     assert.deepEqual(

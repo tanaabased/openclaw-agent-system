@@ -367,6 +367,15 @@ describe('agent/codex-intake', () => {
       string,
       { id: string; name?: string; model?: string; effort?: string }
     >();
+    const section = { sectionId: 'intake-section', name: 'AGENT SYSTEM', itemKeys: [] as string[] };
+    const inputs = {
+      nativeInventory: {
+        schemaVersion: 4,
+        sections: [section],
+        unavailableHosts: [],
+        unavailableSources: [],
+      },
+    };
     let creates = 0;
     const deps = {
       codexHome,
@@ -385,6 +394,7 @@ describe('agent/codex-intake', () => {
           const id = 'intake-thread';
           await save(id);
           conversations.set(id, { id, ...settings });
+          section.itemKeys.push(`codex:thread:local:${id}`);
           return id;
         },
         async rename(id: string, name: string) {
@@ -392,34 +402,29 @@ describe('agent/codex-intake', () => {
         },
       },
     };
-    const plan = () => inspectCodexAutomations(pluginData, {}, deps);
+    const plan = () => inspectCodexAutomations(pluginData, inputs, deps);
     const first = await plan();
     assert.equal(first.status, 'requires-native-app-sync');
     assert.ok(first.findings.some((finding) => finding.code === 'automation-thread-sync-required'));
-    await assert.rejects(prepareCodexAutomation(pluginData, first.digest, {}, deps), {
+    await assert.rejects(prepareCodexAutomation(pluginData, first.digest, inputs, deps), {
       code: 'automation-plan-stale-or-blocked',
     });
-    await syncCodexAutomationThreads(pluginData, first.digest, {}, deps);
+    await syncCodexAutomationThreads(pluginData, first.digest, inputs, deps);
     const desired = await plan();
     await assert.rejects(
-      prepareCodexAutomation(
-        pluginData,
-        desired.digest,
-        {},
-        {
-          ...deps,
-          intake: {
-            ...deps.intake,
-            connect: async () => ({
-              ...fixture.client,
-              identity: { ...fixture.client.identity, nodeId: 'U_wrong' },
-            }),
-          },
+      prepareCodexAutomation(pluginData, desired.digest, inputs, {
+        ...deps,
+        intake: {
+          ...deps.intake,
+          connect: async () => ({
+            ...fixture.client,
+            identity: { ...fixture.client.identity, nodeId: 'U_wrong' },
+          }),
         },
-      ),
+      }),
       { code: 'intake-github-identity-mismatch' },
     );
-    const prepared = await prepareCodexAutomation(pluginData, desired.digest, {}, deps);
+    const prepared = await prepareCodexAutomation(pluginData, desired.digest, inputs, deps);
     assert.equal(prepared.request.kind, 'heartbeat');
     assert.equal(prepared.request.rrule, 'FREQ=MINUTELY;INTERVAL=5');
     assert.equal(prepared.request.name, '📥 ISSUE ASSIGNMENTS');
@@ -455,6 +460,48 @@ describe('agent/codex-intake', () => {
       )!;
       const path = join(pluginData, file);
       const original = await readFile(path, 'utf8');
+      for (const mode of ['create', 'update'] as const) {
+        const pendingLedger = JSON.parse(original);
+        pendingLedger.pending = {
+          digest: 'a'.repeat(64),
+          manifestDigest: 'pending-manifest',
+          action: {
+            manifestId: 'nightly-refresh',
+            mode,
+            ...(mode === 'update' ? { id: 'nightly-refresh-job' } : {}),
+            expected: {
+              ...pendingLedger.records[0].definition,
+              name: '🌙 NIGHTLY REFRESH',
+            },
+            removed: false,
+          },
+          targetBefore: { hash: 'b'.repeat(64), nativeIds: [] },
+        };
+        await writeFile(path, JSON.stringify(pendingLedger));
+        assert.deepEqual(
+          await inspectCodexDispatchActivation(pluginData, deps, false, false, 'intake'),
+          { sourceThreadId: 'intake-thread' },
+        );
+      }
+      const pendingIntakeLedger = JSON.parse(original);
+      pendingIntakeLedger.pending = {
+        digest: 'c'.repeat(64),
+        manifestDigest: 'pending-manifest',
+        action: {
+          manifestId: intakeAutomationId,
+          mode: 'update',
+          id: nativeId,
+          expected: pendingIntakeLedger.records[0].definition,
+          removed: false,
+        },
+        targetBefore: { hash: 'd'.repeat(64), nativeIds: [nativeId] },
+      };
+      await writeFile(path, JSON.stringify(pendingIntakeLedger));
+      await assert.rejects(
+        inspectCodexDispatchActivation(pluginData, deps, false, false, 'intake'),
+        /intake-automation-update-required/,
+      );
+      await writeFile(path, original);
       const ledger = JSON.parse(original);
       const oldPrompt =
         'Previously reconciled automation instructions.\n\n' +
@@ -462,6 +509,10 @@ describe('agent/codex-intake', () => {
       ledger.records[0].definition.prompt = oldPrompt;
       await writeFile(path, JSON.stringify(ledger));
       await saveNative({ ...prepared.request, prompt: oldPrompt });
+      await assert.rejects(
+        inspectCodexDispatchActivation(pluginData, deps, false, false, 'intake'),
+        /intake-automation-update-required/,
+      );
       const inspection = await inspectCodexIntake(pluginData, { codexHome });
       assert.equal(inspection.code, 'intake-automation-update-required');
       assert.match(inspection.remediation!, /apply the update/);
@@ -479,7 +530,7 @@ describe('agent/codex-intake', () => {
       assert.deepEqual((await selected.store.read())!.records, before!.records);
       const update = await plan();
       assert.equal(update.actions[0]!.id, nativeId);
-      const repair = await prepareCodexAutomation(pluginData, update.digest, {}, deps);
+      const repair = await prepareCodexAutomation(pluginData, update.digest, inputs, deps);
       await saveNative(repair.request);
       await acknowledgeCodexAutomation(pluginData, update.digest, undefined, deps);
       assert.equal((await inspectCodexIntake(pluginData, { codexHome })).status, 'ready');
@@ -653,19 +704,14 @@ describe('agent/codex-intake', () => {
     assert.equal(cleanup.actions.length, 1);
     assert.equal(cleanup.actions[0]!.id, nativeId);
     assert.equal(cleanup.actions[0]!.expected.status, 'PAUSED');
-    const pause = await prepareCodexAutomation(
-      pluginData,
-      cleanup.digest,
-      {},
-      {
-        ...deps,
-        intake: {
-          connect: async () => {
-            throw new Error('disable must not authenticate');
-          },
+    const pause = await prepareCodexAutomation(pluginData, cleanup.digest, inputs, {
+      ...deps,
+      intake: {
+        connect: async () => {
+          throw new Error('disable must not authenticate');
         },
       },
-    );
+    });
     await saveNative(pause.request);
     await acknowledgeCodexAutomation(pluginData, cleanup.digest, undefined, deps);
     assert.equal((await plan()).actions.length, 0);
@@ -687,7 +733,7 @@ describe('agent/codex-intake', () => {
     assert.equal(stale.code, 'intake-automation-paused');
     const reenable = await plan();
     assert.equal(reenable.actions[0]!.id, nativeId);
-    const resume = await prepareCodexAutomation(pluginData, reenable.digest, {}, deps);
+    const resume = await prepareCodexAutomation(pluginData, reenable.digest, inputs, deps);
     await saveNative(resume.request);
     await acknowledgeCodexAutomation(pluginData, reenable.digest, undefined, deps);
     assert.equal((await plan()).actions.length, 0);
@@ -696,12 +742,17 @@ describe('agent/codex-intake', () => {
     // preserve cleanup after a native write whose policy disappeared before acknowledgment.
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(disabled));
     const disableAgain = await plan();
-    const pauseAgain = await prepareCodexAutomation(pluginData, disableAgain.digest, {}, deps);
+    const pauseAgain = await prepareCodexAutomation(pluginData, disableAgain.digest, inputs, deps);
     await saveNative(pauseAgain.request);
     await acknowledgeCodexAutomation(pluginData, disableAgain.digest, undefined, deps);
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
     const resumeAgain = await plan();
-    const activateAgain = await prepareCodexAutomation(pluginData, resumeAgain.digest, {}, deps);
+    const activateAgain = await prepareCodexAutomation(
+      pluginData,
+      resumeAgain.digest,
+      inputs,
+      deps,
+    );
     await saveNative(activateAgain.request);
     // policy can disappear after the native action; acknowledgment must still permit cleanup.
     await rm(join(workspace, 'agent.yaml'));

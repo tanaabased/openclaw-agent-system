@@ -1,3 +1,5 @@
+import { dispatchStoragePressure } from './dispatch-storage.ts';
+import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   managedTargetUrl,
   dispatchAdmission,
@@ -228,23 +230,17 @@ export default class OpenClawDispatchCoordinator {
           (record.blocker &&
             dispatchRetryDue(record, (this.context.dependencies.now ?? Date.now)()))),
     );
-    const pending = pendingAssignments(state, current.admitted)
+    const storagePaused = ['paused', 'emergency'].includes(dispatchStoragePressure(state).level);
+    const pending = (storagePaused ? [] : pendingAssignments(state, current.admitted))
       .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
       .some(pendingAssignment);
     const workPending = state.records.some(
       (record) =>
         (openClawDecisionPending(
           record,
-          record.manualIssue?.selections?.mode ??
-            manifest.github?.notifications?.issueAssignment?.mode ??
-            'auto',
+          issueWorkflowMode(manifest.github?.notifications, record),
         ) ||
-          openClawWorkSlot(
-            record,
-            record.manualIssue?.selections?.mode ??
-              manifest.github?.notifications?.issueAssignment?.mode ??
-              'auto',
-          )) &&
+          openClawWorkSlot(record, issueWorkflowMode(manifest.github?.notifications, record))) &&
         (openClawItemOccupied(record) || capacity.available > 0),
     );
     const responsePending = state.records.some((record) => openClawResponseEligible(record));
@@ -525,15 +521,11 @@ export default class OpenClawDispatchCoordinator {
       .flatMap((record) => {
         const slot = openClawWorkSlot(
           record,
-          record.manualIssue?.selections?.mode ??
-            manifest.github?.notifications?.issueAssignment?.mode ??
-            'auto',
+          issueWorkflowMode(manifest.github?.notifications, record),
         );
         const decision = openClawDecisionPending(
           record,
-          record.manualIssue?.selections?.mode ??
-            manifest.github?.notifications?.issueAssignment?.mode ??
-            'auto',
+          issueWorkflowMode(manifest.github?.notifications, record),
         );
         return slot || decision || openClawResponseEligible(record)
           ? [
@@ -612,7 +604,8 @@ export default class OpenClawDispatchCoordinator {
         });
       return { status: continuationStatus(continuing)!, id: continuing.id };
     }
-    const pending = pendingAssignments(state, current.admitted)
+    const storagePaused = ['paused', 'emergency'].includes(dispatchStoragePressure(state).level);
+    const pending = (storagePaused ? [] : pendingAssignments(state, current.admitted))
       .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
       .filter(pendingAssignment)
       .filter(
@@ -673,17 +666,22 @@ export default class OpenClawDispatchCoordinator {
     }
     if (!pending)
       return {
-        status:
-          pass.selected.length ||
-          pendingAssignments(state, current.admitted)
-            .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
-            .some(pendingAssignment)
+        ...(storagePaused ? { code: 'dispatch-storage-admission-paused' } : {}),
+        status: storagePaused
+          ? 'at-capacity'
+          : pass.selected.length ||
+              pendingAssignments(state, current.admitted)
+                .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
+                .some(pendingAssignment)
             ? 'pass-completed'
             : 'idle',
       };
     const record: OpenClawDispatchRecord = pending.record ?? {
       id: automationHash([current.journal.scope, randomUUID()]),
       intakeId: pending.intake.id,
+      ...(!('initiation' in pending.intake) && pending.intake.evidence.projectWork
+        ? { projectWork: structuredClone(pending.intake.evidence.projectWork) }
+        : {}),
       issueKey: issueKey(pending.intake),
       sourceThreadId,
       phase: 'routing',

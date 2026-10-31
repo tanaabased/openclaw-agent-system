@@ -19,6 +19,58 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     };
   }
   const reasons: Record<string, [string, string]> = {
+    'delivery-implementation-incomplete': [
+      'Completed implementation has not been established, so PR delivery was refused before publication.',
+      'Refresh implementation context and inspect the retained outcome. Preserve partial work, explain the missing prerequisite or question and its resume condition, and finish authorized implementation before requesting delivery. Do not retry publication or mark unfinished work done to bypass the guard.',
+    ],
+    'continuation-implementation-required': [
+      'A completed implementation matching the current checkout has not been established for delivery.',
+      'Refresh implementation context and inspect the retained outcome and checkout. Resolve unfinished work or reconcile changed commits before delivery; do not retry publication or relabel partial work as done.',
+    ],
+    'delivery-continuation-stopped': [
+      'The retained implementation is not in a completed delivery state.',
+      'Refresh the owning implementation context and inspect its result and any stop reason. If unfinished, preserve partial work and resolve the prerequisite or question before delivery. Honor cancellation and native denial; do not retry publication as a substitute for resuming implementation.',
+    ],
+    'continuation-handoff-input-unverified': [
+      'This older handoff does not retain the input needed to resume it automatically.',
+      'Continue in the original issue chat with a fresh authorized input and refresh implementation context. Preserve the existing work, scope and receipts; do not create a replacement chat or resend the old request.',
+    ],
+    'dispatch-state-capacity': [
+      'This save exceeds the 64 MiB working-content or 65 MiB total journal ceiling. The committed state is preserved.',
+      'Retry context/reconciliation in the same chat to offload verified retired history, then resubmit the complete result. If protected active work still fills the emergency budget, reduce pressure through supported retirement. Do not delete the journal, reset intake, or manufacture completion flags.',
+    ],
+    'dispatch-storage-admission-paused': [
+      'The proposed new task would reach the 32 MiB admission threshold; native creation was not authorized.',
+      'Leave the assignment pending. Existing tasks can progress, deliver and retire within the 64 MiB emergency budget. Reconciliation offloads eligible history; admission resumes automatically below 32 MiB with room for the proposed task.',
+    ],
+    'workflow-evidence-incomplete': [
+      'Native history discovery could not finish; missing evidence has not been proved absent.',
+      'Reconcile this same task when native reads can complete. Preserve its receipts; do not recreate the chat, resend input, or repeat publication.',
+    ],
+    'dispatch-native-history-incomplete': [
+      'Native history discovery exceeded the read budget before reaching the required evidence boundary.',
+      'Retry read-only reconciliation of the same task when history is readable. Preserve the original operation receipts; do not repeat uncertain effects.',
+    ],
+    'dispatch-native-history-missing': [
+      'Native history was exhausted without finding the retained turn that bounds this operation.',
+      'Restore access to the original task history before reconciling. Keep its receipts and do not repeat an uncertain send or publication.',
+    ],
+    'workflow-evidence-truncated': [
+      'The native runtime could not provide the complete required message, even through its exact-message read.',
+      'Keep the existing task and restore complete native message access before reconciling. A display summary cannot replace the required evidence; do not reset or resend the task.',
+    ],
+    'workflow-evidence-missing': [
+      'The exact native message required by this task was not found.',
+      'Restore access to that task’s retained native history, then reconcile the same operation. Keep existing receipts; absence does not authorize a duplicate send or publication.',
+    ],
+    'workflow-evidence-unavailable': [
+      'The native runtime cannot expose the required workflow evidence.',
+      'Restore native read access or use a compatible runtime, then reconcile the retained task. Do not substitute a summary or repeat the original effect.',
+    ],
+    'workflow-evidence-conflicting': [
+      'Native history returned a different session or message identity from the retained task.',
+      'Inspect the retained task and restore its original native history before reconciliation. Do not adopt a replacement session or discard its receipts.',
+    ],
     'assessment-result-incomplete': [
       'The new assessment is missing its complete source; the result was not recorded.',
       'Include the complete assessment, evidence, plan or questions in `fullAssessment` and resubmit the result in this chat. Keep the previous saved result; do not substitute a summary for the source.',

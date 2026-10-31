@@ -1,11 +1,20 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { projectWorkSchema } from './project-pickup-authority.ts';
 import { issueKey } from './dispatch-pending.ts';
 import { adoptedPullRequestSchema } from './delivery-state.ts';
 import ColdHistory from './cold-history.ts';
 import intakePassStarted from './intake-pass-started.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { historyLifetimeMs, historySoftBytes, retainedHistorySchema } from './history-state.ts';
-import retainDispatchHistory, { validTerminalRecord } from './retain-dispatch-history.ts';
+import {
+  assertDispatchStorage,
+  dispatchStorageBytes,
+  dispatchStorageLimits,
+} from './dispatch-storage.ts';
+import retainDispatchHistory, {
+  validTerminalRecord,
+  verifiedTerminalCleanup,
+} from './retain-dispatch-history.ts';
 import { routingInstructionsSchema } from './routing-instructions.ts';
 import { operatorIssueSchema } from './managed-issue.ts';
 import { assessmentEntriesSchema } from './assessment-entry-state.ts';
@@ -47,6 +56,7 @@ export const assessmentStageReceiptSchema = Type.Object(
   { additionalProperties: false },
 );
 export const dispatchRecordProperties = {
+  projectWork: Type.Optional(projectWorkSchema),
   retainedHistory: Type.Optional(retainedHistorySchema),
   directAssessments: Type.Optional(assessmentEntriesSchema),
   providerDiagnostic: Type.Optional(providerDiagnosticSchema),
@@ -121,7 +131,7 @@ export const dispatchRecordProperties = {
   ),
   handoff: Type.Optional(
     Type.Object(
-      { at: Type.Integer({ minimum: 0 }), by: text, turnId: text },
+      { at: Type.Integer({ minimum: 0 }), by: text, turnId: text, inputId: Type.Optional(text) },
       { additionalProperties: false },
     ),
   ),
@@ -143,6 +153,7 @@ export type SharedDispatchRecord = Static<TObject<typeof dispatchRecordPropertie
 export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema: TSchema) {
   return Type.Object(
     {
+      storageReclaimedBytes: Type.Optional(Type.Integer({ minimum: 0 })),
       version: Type.Literal(1),
       scope: hash,
       resetGeneration: Type.Optional(text),
@@ -221,25 +232,6 @@ export type DispatchState<R extends SharedDispatchRecord> = Static<
   ReturnType<typeof dispatchStateSchema<R>>
 >;
 
-const contentBytes = 4 * 1024 * 1024;
-// a bounded report may expand under json escaping; producers cannot consume this reserve.
-const journalBytes = contentBytes + 1024 * 1024;
-
-function serializeState<R extends SharedDispatchRecord>(state: DispatchState<R>) {
-  const contents = JSON.stringify(state);
-  if (
-    Buffer.byteLength(contents) > journalBytes ||
-    Buffer.byteLength(
-      JSON.stringify({
-        ...state,
-        run: state.run && { ...state.run, response: undefined },
-      }),
-    ) > contentBytes
-  )
-    throw new Error('dispatch-state-capacity');
-  return contents;
-}
-
 /** one journal bridges native actions; a persisted creation intent is never issued twice. */
 export default class DispatchStore<R extends SharedDispatchRecord> {
   readonly file: PrivateStateFile;
@@ -263,7 +255,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
       directories: [root],
       currentUid: process.getuid?.(),
       label: this.contract.runtime + ' issue dispatch',
-      maximumBytes: journalBytes,
+      maximumBytes: dispatchStorageLimits.file,
     });
   }
   private validate(state: unknown): asserts state is DispatchState<R> {
@@ -371,7 +363,6 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     )
       throw new Error('notification-state-reset-required');
     this.validate(state);
-    serializeState(state);
     return state;
   }
   /** external work runs unlocked; each save commits only checked changes to fresh state. */
@@ -390,6 +381,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     const signal = options.signal ?? new AbortController().signal;
     signal.throwIfAborted();
     await assertNotificationManagement(this.root, this.scope);
+    await this.reconcile();
     const state = await this.read();
     let before = structuredClone(state);
     return run(
@@ -444,6 +436,11 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     );
   }
 
+  /** Existing runtime transactions recover eligible history before accepting new effects. */
+  async reconcile() {
+    await this.exclusive(async () => {}, true);
+  }
+
   async exclusive<T>(
     run: (state: DispatchState<R>, save: () => Promise<void>, signal: AbortSignal) => Promise<T>,
     waitForLock = false,
@@ -482,115 +479,128 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
         await assertNotificationManagement(this.root, this.scope);
         const state = await this.read();
         let committed = structuredClone(state);
-        return run(
-          state,
-          async () => {
-            guard.assertHeld();
-            await assertNotificationManagement(this.root, this.scope);
-            const current = await this.read();
-            if (current.resetGeneration !== committed.resetGeneration)
-              throw new Error('notification-reset-stale-operation');
-            if (!isDeepStrictEqual(current, committed)) throw new Error(stateSnapshotConflictCode);
-            this.validate(state);
-            const retained = structuredClone(state);
-            const pressure =
-              Buffer.byteLength(
-                JSON.stringify({
-                  ...retained,
-                  run: retained.run && { ...retained.run, response: undefined },
+        const save = async () => {
+          guard.assertHeld();
+          await assertNotificationManagement(this.root, this.scope);
+          const current = await this.read();
+          if (current.resetGeneration !== committed.resetGeneration)
+            throw new Error('notification-reset-stale-operation');
+          if (!isDeepStrictEqual(current, committed)) throw new Error(stateSnapshotConflictCode);
+          this.validate(state);
+          const retained = structuredClone(state);
+          const originalBytes = dispatchStorageBytes(retained).contentBytes;
+          const pressure = originalBytes > historySoftBytes;
+          const now = Date.now();
+          let expiredHistory = false;
+          for (const record of retained.records) {
+            const history = record.retainedHistory;
+            if (!history) continue;
+            const entries = history.entries.filter((entry) => entry.at + historyLifetimeMs > now);
+            if (entries.length !== history.entries.length) {
+              history.expired = true;
+              expiredHistory = true;
+            }
+            history.entries = entries;
+          }
+          const snapshots: { original: R; projected: R }[] = [];
+          if (this.contract.runtime === 'openclaw') {
+            for (const pass of retained.openclawPasses ?? []) {
+              if (pass.completed) continue;
+              const started = intakePassStarted(
+                pass,
+                retained.records as unknown as OpenClawDispatchRecord[],
+              );
+              if (started.length || pass.started) pass.started = started;
+              if (
+                pressure &&
+                retained.openclawOccurrence &&
+                !sameIntakeRun(pass, retained.openclawOccurrence) &&
+                started.length >= pass.allowance &&
+                pass.recovery.every((id) => pass.selected.includes(id))
+              ) {
+                pass.completed = true;
+                pass.candidates = [];
+                pass.recovery = [];
+                pass.selected = [];
+                pass.started = [];
+              }
+            }
+          }
+          for (let index = 0; index < retained.records.length; index++) {
+            const original = retained.records[index]!;
+            const events = (original as R & { feedback?: { events: unknown[] } }).feedback?.events;
+            if (!verifiedTerminalCleanup(original) && !pressure && (events?.length ?? 0) < 350)
+              continue;
+            const projected = retainDispatchHistory(original);
+            if (!projected) continue;
+            // preflight the projected size before performing any archive effects.
+            projected.retainedHistory ??= { entries: [] };
+            snapshots.push({ original, projected });
+            retained.records[index] = projected;
+          }
+          this.validate(retained);
+          const admission = retained.records.some((record) => {
+            if (record.retired || record.retirement || record.reset) return false;
+            const previous = committed.records.find((entry) => entry.id === record.id);
+            return !previous || (!previous.request && Boolean(record.request));
+          });
+          assertDispatchStorage(retained, admission);
+          if (snapshots.length || expiredHistory) {
+            await lock!.release();
+            lock = undefined;
+            let archiveError: unknown;
+            let archiveFailed = false;
+            try {
+              await outsideJournal(() =>
+                this.history.exclusive(async () => {
+                  for (const { original, projected } of snapshots) {
+                    const reference = await this.history.retain(
+                      original,
+                      original.retired?.at ?? now,
+                      now,
+                    );
+                    projected.retainedHistory!.entries.push(reference);
+                  }
+                  await this.history.prune(now);
                 }),
-              ) > historySoftBytes;
-            const now = Date.now();
-            for (const record of retained.records) {
-              const history = record.retainedHistory;
-              if (!history) continue;
-              const entries = history.entries.filter((entry) => entry.at + historyLifetimeMs > now);
-              if (entries.length !== history.entries.length) history.expired = true;
-              history.entries = entries;
+              );
+            } catch (error) {
+              archiveError = error;
+              archiveFailed = true;
             }
-            const snapshots: { original: R; projected: R }[] = [];
-            if (this.contract.runtime === 'openclaw') {
-              for (const pass of retained.openclawPasses ?? []) {
-                if (pass.completed) continue;
-                const started = intakePassStarted(
-                  pass,
-                  retained.records as unknown as OpenClawDispatchRecord[],
-                );
-                if (started.length || pass.started) pass.started = started;
-                if (
-                  pressure &&
-                  retained.openclawOccurrence &&
-                  !sameIntakeRun(pass, retained.openclawOccurrence) &&
-                  started.length >= pass.allowance &&
-                  pass.recovery.every((id) => pass.selected.includes(id))
-                ) {
-                  pass.completed = true;
-                  pass.candidates = [];
-                  pass.recovery = [];
-                  pass.selected = [];
-                  pass.started = [];
-                }
-              }
+            try {
+              lock = await acquire(true);
+              followLease();
+            } catch (error) {
+              reacquireFailure = error;
+              throw error;
             }
-            for (let index = 0; index < retained.records.length; index++) {
-              const original = retained.records[index]!;
-              const events = (original as R & { feedback?: { events: unknown[] } }).feedback
-                ?.events;
-              if (!pressure && (events?.length ?? 0) < 350) continue;
-              const projected = retainDispatchHistory(original);
-              if (!projected) continue;
-              // preflight the projected size before performing any archive effects.
-              projected.retainedHistory ??= { entries: [] };
-              snapshots.push({ original, projected });
-              retained.records[index] = projected;
-            }
-            this.validate(retained);
-            serializeState(retained);
-            if (snapshots.length || retained.records.some((record) => record.retainedHistory)) {
-              await lock!.release();
-              lock = undefined;
-              let archiveError: unknown;
-              let archiveFailed = false;
-              try {
-                await outsideJournal(() =>
-                  this.history.exclusive(async () => {
-                    for (const { original, projected } of snapshots) {
-                      const reference = await this.history.retain(
-                        original,
-                        original.retired?.at ?? now,
-                        now,
-                      );
-                      projected.retainedHistory!.entries.push(reference);
-                    }
-                    await this.history.prune(now);
-                  }),
-                );
-              } catch (error) {
-                archiveError = error;
-                archiveFailed = true;
-              }
-              try {
-                lock = await acquire(true);
-                followLease();
-              } catch (error) {
-                reacquireFailure = error;
-                throw error;
-              }
-              await assertNotificationManagement(this.root, this.scope);
-              const fresh = await this.read();
-              if (fresh.resetGeneration !== committed.resetGeneration)
-                throw new Error('notification-reset-stale-operation');
-              if (!isDeepStrictEqual(fresh, committed)) throw new Error(stateSnapshotConflictCode);
-              if (archiveFailed) throw archiveError;
-            }
-            this.validate(retained);
-            const contents = serializeState(retained);
-            await this.file.write(contents);
-            refreshStateSnapshot(state, retained);
-            committed = JSON.parse(contents) as DispatchState<R>;
-          },
-          guard.signal,
-        );
+            await assertNotificationManagement(this.root, this.scope);
+            const fresh = await this.read();
+            if (fresh.resetGeneration !== committed.resetGeneration)
+              throw new Error('notification-reset-stale-operation');
+            if (!isDeepStrictEqual(fresh, committed)) throw new Error(stateSnapshotConflictCode);
+            if (archiveFailed) throw archiveError;
+          }
+          this.validate(retained);
+          const reclaimed = originalBytes - dispatchStorageBytes(retained).contentBytes;
+          if (reclaimed > 0) retained.storageReclaimedBytes = reclaimed;
+          const contents = assertDispatchStorage(retained, admission);
+          await this.file.write(contents);
+          refreshStateSnapshot(state, retained);
+          committed = JSON.parse(contents) as DispatchState<R>;
+        };
+        const pressured = dispatchStorageBytes(state).contentBytes > historySoftBytes;
+        if (
+          state.records.some(
+            (record) =>
+              !record.retainedHistory?.terminal &&
+              (verifiedTerminalCleanup(record) || pressured) &&
+              retainDispatchHistory(record),
+          )
+        )
+          await save();
+        return run(state, save, guard.signal);
       });
     } finally {
       await lock?.release();

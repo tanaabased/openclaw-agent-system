@@ -27,7 +27,7 @@ export class DirectEntryStore<S extends TSchema> {
     private readonly root: string,
     binding: AssessmentEntryBinding,
     private readonly entriesSchema: S,
-    private readonly kind: 'assessment' | 'implementation',
+    private readonly kind: 'assessment' | 'implementation' | 'native-retirement',
   ) {
     this.scope = automationHash(binding);
     this.path = join(root, `github-${kind}-${this.scope}.json`);

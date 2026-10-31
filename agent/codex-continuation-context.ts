@@ -1,3 +1,4 @@
+import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import type { ManagedIssueState } from './managed-issue.ts';
 import { type Static, Type } from 'typebox';
 
@@ -32,6 +33,7 @@ export const requestSchema = Type.Object(
       Type.Literal('retry-denied'),
     ]),
     id: Type.Optional(Type.String()),
+    material: Type.Optional(implementationMaterialSchema),
     digest: Type.Optional(Type.String()),
     approvedCallId: Type.Optional(Type.String()),
     result: Type.Optional(implementationResultSchema),

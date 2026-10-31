@@ -7,6 +7,7 @@ import automationList from './automation-list.ts';
 import automationRun from './automation-run.ts';
 import automationRuns from './automation-runs.ts';
 import automationSync from './automation-sync.ts';
+import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import type AutomationService from '../agent/automation-service.ts';
 import type BoundCommandService from '../agent/bound-command-service.ts';
 
@@ -70,6 +71,7 @@ export interface RegisterAgentSystemCliOptions {
   instanceStore?: AssignmentClaimStore;
   notificationReset?: RegisterGitHubNotificationsCliOptions['reset'];
   automations?: AutomationService;
+  reportCredential?: Pick<SessionDispatchCredential, 'use'>;
   boundCommands?: BoundCommandService;
   backupService?: WorkspaceBackupService;
   commandAuthority?: Pick<AgentCommandAuthority, 'resolve' | 'classify'>;
@@ -139,6 +141,45 @@ export default function registerAgentSystemCli(
     .alias('as')
     .description('manage reproducible openclaw agent workspaces.')
     .action(() => writeHelp(agentSystem, output));
+  const forwardLifecycleCommand = async (operation: string, selected: Record<string, unknown>) => {
+    let binding;
+    try {
+      binding = await commandAuthority?.resolve(environment, cwd());
+    } catch {
+      return false;
+    }
+    if (!binding) return false;
+    if (!binding.executeCommand || selected.agent !== undefined) {
+      writeCliError(
+        output,
+        'agent system operator commands are unavailable without verified automation lifecycle authority or with a target override. code=operator-command-denied',
+        { json: selected.json === true },
+      );
+      setExitCode(1);
+      return true;
+    }
+    const flags: Record<string, string> = {
+      yes: '--yes',
+      nonInteractive: '--non-interactive',
+      manualSessionDispatch: '--manual-session-dispatch',
+      skipSetup: '--skip-setup',
+      skipSetupHost: '--skip-setup-host',
+      skipSetupAgent: '--skip-setup-agent',
+      rebuildCodexPath: '--rebuild-codex-path',
+      json: '--json',
+    };
+    const result = await binding.executeCommand({
+      command: 'lifecycle',
+      argv: [
+        operation,
+        ...Object.entries(flags).flatMap(([key, flag]) => (selected[key] === true ? [flag] : [])),
+      ],
+    });
+    output.writeStdout(result.stdout);
+    output.writeStderr(result.stderr);
+    setExitCode(result.exitCode ?? 1);
+    return true;
+  };
   if (options.automations) {
     const automations = agentSystem
       .command('automations')
@@ -222,6 +263,7 @@ export default function registerAgentSystemCli(
           manifestService: options.manifestService,
           automations: options.automations!,
           commands: options.boundCommands!,
+          reportCredential: options.reportCredential,
           output,
         });
         setExitCode(code);
@@ -473,6 +515,7 @@ export default function registerAgentSystemCli(
     .option('--agent <id>', 'inspect the configured workspace for an openclaw agent.')
     .option('--json', 'write structured json output.')
     .action(async () => {
+      if (await forwardLifecycleCommand('doctor', doctor.opts())) return;
       if (!(await allowOperatorCommand(doctor.opts().json === true))) return;
       const commandOptions = doctor.opts();
       const agentId = commandOptions.agent;
@@ -672,6 +715,7 @@ export default function registerAgentSystemCli(
     )
     .option('--json', 'write structured json output.')
     .action(async () => {
+      if (await forwardLifecycleCommand('install', install.opts())) return;
       if (!(await allowOperatorCommand(install.opts().json === true))) return;
       await installAgentSystem({
         installService: options.installService,

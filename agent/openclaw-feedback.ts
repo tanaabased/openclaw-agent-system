@@ -27,9 +27,9 @@ import { feedbackResultSchema } from './feedback-state.ts';
 import redactFeedback from './feedback-redaction.ts';
 import selectFeedbackStage from './feedback-stage.ts';
 import openClawSkill from './openclaw-skill.ts';
-import { reconcileOpenClawTurn, consumedInputEvent } from './openclaw-turn.ts';
+import { reconcileOpenClawTurn, openClawConsumedInput } from './openclaw-turn.ts';
 import { operatorInputEvent } from './openclaw-session-input.ts';
-import issueTurnReply from './openclaw-session-reply.ts';
+import openClawTurnReply from './openclaw-turn-evidence.ts';
 import {
   describeIssueSession,
   sessionObject,
@@ -309,14 +309,19 @@ export default async function openClawFeedback(input: {
           await request('chat.history', {
             sessionKey: caller.sessionKey,
             inputRunIds: [previousTurn.runId],
-            limit: 200,
-            maxChars: 100000,
           }),
         );
         if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
           throw new Error('feedback-resume-terminal-unverified');
-        previousTurn.consumedByEventId = consumedInputEvent(history.messages, previousTurn);
-        const reply = issueTurnReply(history.messages, previousTurn.runId);
+        previousTurn.consumedByEventId = await openClawConsumedInput(
+          request,
+          caller,
+          previousTurn,
+          history,
+        );
+        const reply = await openClawTurnReply(request, caller, previousTurn.runId, {
+          first: history,
+        });
         if (reply) previousTurn.replyEventId = String(sessionObject(reply.__openclaw).id);
         else if (terminal.status === 'error') previousTurn.failed = true;
         else throw new Error('feedback-resume-terminal-unverified');
@@ -395,18 +400,18 @@ export default async function openClawFeedback(input: {
       await request('chat.history', {
         sessionKey: record.threadId,
         inputRunIds: [caller.runId],
-        limit: 200,
-        maxChars: 100000,
       }),
     );
     if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
       throw new Error('feedback-input-unverified');
-    const inputId = consumedInputEvent(history.messages, event.turn);
-    event.turn.consumedByEventId = inputId;
-    event.turn.status = 'consumed';
-    if (action.operation === 'context' || action.operation === 'implementation-context') {
-      event.contextInputId = inputId;
-      await save();
+    const inputId = await openClawConsumedInput(request, caller, event.turn, history);
+    if (!action.material) {
+      event.turn.consumedByEventId = inputId;
+      event.turn.status = 'consumed';
+      if (action.operation === 'context' || action.operation === 'implementation-context') {
+        event.contextInputId = inputId;
+        await save();
+      } else if (event.contextInputId !== inputId) throw new Error('feedback-context-required');
     } else if (event.contextInputId !== inputId) throw new Error('feedback-context-required');
   }
   if (
@@ -444,22 +449,25 @@ export default async function openClawFeedback(input: {
   if (action.operation === 'implementation-context') {
     const live = await livePolicy();
     feedbackMode(record, live);
-    if (event.work?.result)
+    if (!action.material && event.work?.result)
       return {
         status: 'finished',
         result: event.work.result,
         next: event.work.result.outcome === 'done' ? 'delivery' : 'result',
       };
-    const implementation = await beginFeedbackWork({
-      record,
-      event,
-      policy: live,
-      decision: action.decision,
-      workspace: input.workspace,
-      now: input.now,
-      pullRequest: record.work?.delivery?.pullRequest,
-      resolveSkill: (id) => openClawSkill(request, expected, id),
-    });
+    if (action.material && !event.work) throw new Error('implementation-material-context-required');
+    const implementation = action.material
+      ? event.work!.selection
+      : await beginFeedbackWork({
+          record,
+          event,
+          policy: live,
+          decision: action.decision,
+          workspace: input.workspace,
+          now: input.now,
+          pullRequest: record.work?.delivery?.pullRequest,
+          resolveSkill: (id) => openClawSkill(request, expected, id),
+        });
     await save();
     return {
       ...implementationContext({

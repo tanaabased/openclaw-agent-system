@@ -1,5 +1,8 @@
+import codexCapacity from './codex-capacity.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
-import implementationRevision from './implementation-revision.ts';
+import implementationRevision, {
+  unprocessedImplementationInput,
+} from './implementation-revision.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 import { automationHash } from './automation-hash.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
@@ -45,6 +48,29 @@ export default async function advanceCodexWorkTurn(
   const work = record.continuation!;
   const retryDenied = input.action === 'retry-denied';
   const retry = input.action === 'retry' || retryDenied;
+  // A handoff is already owned work. Reconcile its exact native input before preparing
+  // another send, including when the original turn ended before context was requested.
+  if (record.handoff && !work.attempt && !work.binding && input.action === 'next') {
+    const source = record.handoff;
+    if (!source.inputId && source.turnId !== record.resultTurnId)
+      throw new Error('continuation-handoff-input-unverified');
+    work.attempt = {
+      id: automationHash({ id: record.id, handoff: source }),
+      origin: source.inputId ? 'input' : 'assessment',
+      ...(source.inputId ? { inputId: source.inputId } : {}),
+      sourceThreadId: record.threadId!,
+      sourceTurnId: source.turnId,
+      beforeTurnId: source.turnId,
+      turnId: source.turnId,
+      request: {
+        threadId: record.threadId!,
+        prompt: 'Resume the retained implementation handoff.',
+      },
+    };
+    work.assessmentDigest = automationHash(record.result);
+    work.phase = 'running';
+    await save();
+  }
   if (input.action === 'context' && !work.attempt && !work.binding) {
     const unresolved = (reason: string) => ({
       status: 'unresolved' as const,
@@ -147,6 +173,13 @@ export default async function advanceCodexWorkTurn(
     )
       return { ready: false as const, response: undefined };
     if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
+    if (
+      codexCapacity(
+        context.records.filter((entry) => entry.id !== record.id),
+        current.policy!.policy.maxConcurrentItems,
+      ).available === 0
+    )
+      return { ready: false as const, response: undefined };
     record.progression = { ...transition.progression, workOwner: 'issue' };
     work.assessmentDigest = automationHash(record.result);
     if (liveMode === 'auto') work.assessmentSelectionDigest = automationHash(record.assessment);
@@ -173,6 +206,7 @@ export default async function advanceCodexWorkTurn(
       },
     };
     delete record.nativeInactive;
+    delete record.capacityObservation;
     work.phase = 'prepared';
     delete work.retry;
     delete work.retryAfter;
@@ -276,6 +310,11 @@ export default async function advanceCodexWorkTurn(
       response: { status: 'pending' as const, id: record.id, code: 'continuation-send-unverified' },
     };
   }
+  if (record.handoff && activeAttempt.sourceTurnId === record.handoff.turnId) {
+    (work.handoffs ??= []).push(record.handoff);
+    delete record.handoff;
+    await save();
+  }
   const completedTurnId =
     work.resultSource?.turnId ?? work.activeTurnId ?? work.binding?.turnId ?? work.attempt?.turnId;
   const workflowTurn = [
@@ -286,23 +325,37 @@ export default async function advanceCodexWorkTurn(
     ...(work.retries?.map(({ attempt }) => attempt.turnId) ?? []),
     ...(record.feedback?.events.map(({ attempt }) => attempt?.turnId) ?? []),
   ].includes(found.turnId);
-  const revisionInput =
+  const currentInput =
     context.operatorInput ??
     (work.revisionSource?.turnId === found.turnId ? work.revisionSource : undefined) ??
     (input.action === 'context' &&
     work.result?.outcome === 'done' &&
-    !workflowTurn &&
+    (!workflowTurn ||
+      (work.resultSource?.turnId === found.turnId && work.resultSource.inputId !== found.turnId)) &&
     found.followUpUserTurn &&
-    found.turnId !== completedTurnId
+    (found.turnId !== completedTurnId || Boolean(work.resultSource))
       ? await native.operatorInput(record.threadId!)
       : undefined);
+  const revisionInput = currentInput
+    ? { turnId: currentInput.turnId, inputId: currentInput.inputId }
+    : undefined;
   const revision = Boolean(
-    !workflowTurn &&
+    (!workflowTurn ||
+      Boolean(context.operatorInput) ||
+      (work.resultSource?.turnId === found.turnId && work.resultSource.inputId !== found.turnId)) &&
     revisionInput &&
     revisionInput.turnId === found.turnId &&
     implementationRevision(work, revisionInput, input.action === 'context', completedTurnId),
   );
-  if (revision && revisionInput) {
+  const answer = Boolean(
+    context.operatorInput &&
+    revisionInput &&
+    revisionInput.turnId === found.turnId &&
+    input.action === 'context' &&
+    ['blocked', 'clarification-needed'].includes(work.result?.outcome ?? '') &&
+    unprocessedImplementationInput(work, revisionInput, completedTurnId),
+  );
+  if ((revision || answer) && revisionInput) {
     const revisionAttempt = {
       ...work.attempt,
       id: automationHash({ attempt: work.attempt.id, source: revisionInput }),
@@ -335,6 +388,8 @@ export default async function advanceCodexWorkTurn(
       (work.resultHistory ??= []).push({ source: work.resultSource, result: work.result! });
       delete work.result;
       delete work.resultSource;
+      delete work.blockedTurnId;
+      delete work.clarificationTurnId;
       for (const previous of [work.attempt, work.publicationAttempt]) {
         if (previous)
           (work.retries ??= []).push({
@@ -387,7 +442,7 @@ export default async function advanceCodexWorkTurn(
         },
       };
   }
-  if (resumeBlocked) {
+  if (resumeBlocked && !answer) {
     if (!found.followUpUserTurn || !blockedTurnId || found.turnId === blockedTurnId)
       return {
         ready: false as const,
@@ -469,9 +524,7 @@ export default async function advanceCodexWorkTurn(
       response: { status: 'retry-ready' as const, id: record.id, threadId: record.threadId! },
     };
   }
-  const currentTurnEnded = work.activeTurnId
-    ? ['completed', 'failed', 'interrupted'].includes(found.turnStatus ?? '')
-    : receipt.ended;
+  const currentTurnEnded = work.activeTurnId ? Boolean(found.turnEnded) : receipt.ended;
   activeAttempt.turnId = receipt.turnId;
   if (work.phase === 'prepared') work.phase = 'running';
   work.binding ??= {

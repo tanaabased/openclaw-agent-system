@@ -43,6 +43,12 @@ export interface GitHubRepositoryIdentity {
   owner: GitHubIdentity;
 }
 
+export interface GitHubMilestone {
+  nodeId: string;
+  number: number;
+  state: 'open' | 'closed';
+}
+
 export interface GitHubPullRequestIdentity {
   author?: GitHubIdentity;
   baseRef: string;
@@ -67,7 +73,7 @@ interface GitHubCanonicalWorkItemBase {
 
 export type GitHubCanonicalWorkItem = GitHubCanonicalWorkItemBase &
   (
-    | { itemType: 'issue'; pullRequest?: never; title?: string }
+    | { itemType: 'issue'; pullRequest?: never; title?: string; milestone?: GitHubMilestone | null }
     | { itemType: 'pull-request'; pullRequest: GitHubPullRequestIdentity }
   );
 

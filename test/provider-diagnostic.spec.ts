@@ -1,3 +1,4 @@
+import githubCredentialRejected from '../credentials/github-rejection.ts';
 import OpCache from '../environment/op-cache.ts';
 import AgentDoctorService from '../agent/doctor-service.ts';
 import createAgentLifecycleContribution from '../agent/lifecycle.ts';
@@ -389,6 +390,30 @@ describe('safe provider diagnostics', () => {
         redacted(repeat);
       }
       assert.equal(f.calls(), 1);
+    }
+  });
+
+  it('should withhold control diagnostics and credential rejection from incomplete output', () => {
+    for (const metadata of [
+      { truncated: true },
+      { stdoutTruncatedBytes: 1 },
+      { stderrTruncatedBytes: 1 },
+      { signal: 'SIGTERM' },
+    ]) {
+      const result = {
+        exitCode: 1,
+        stdout: 'HTTP/2 429 Too Many Requests\nretry-after: 120\n\n{}',
+        stderr: 'gh: Bad credentials (HTTP 401)',
+        timedOut: false,
+        truncated: false,
+        ...metadata,
+      };
+      const diagnostic = githubCliDiagnostic(result);
+      assert.equal(diagnostic.classification, 'unknown');
+      assert.equal(diagnostic.httpStatus, null);
+      assert.equal(diagnostic.retryAfterMs, null);
+      assert.equal(diagnostic.providerMessage, undefined);
+      assert.equal(githubCredentialRejected(result), false);
     }
   });
 

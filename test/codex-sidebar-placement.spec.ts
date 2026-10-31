@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 
-import codexResetPlacement from '../agent/codex-reset-placement.ts';
+import codexSidebarPlacement from '../agent/codex-sidebar-placement.ts';
 
-describe('agent/codex-reset-placement', () => {
+describe('agent/codex-sidebar-placement', () => {
   const inventory = (sections: unknown[]) => ({
     schemaVersion: 4,
     sections,
@@ -12,7 +12,7 @@ describe('agent/codex-reset-placement', () => {
   const group = { sectionId: 'owned-group', name: 'AGENT SYSTEM', itemKeys: [] as string[] };
 
   it('should create a missing group and reuse an existing group for the exact new coordinator', () => {
-    assert.deepEqual(codexResetPlacement(inventory([]), 'new').request, {
+    assert.deepEqual(codexSidebarPlacement(inventory([]), 'new').request, {
       tool: 'create_sidebar_section',
       arguments: { name: 'AGENT SYSTEM' },
     });
@@ -21,14 +21,14 @@ describe('agent/codex-reset-placement', () => {
       { ...group, itemKeys: ['codex:thread:local:old', 'codex:thread:local:unrelated'] },
     ]);
     const before = structuredClone(current);
-    assert.deepEqual(codexResetPlacement(current, 'new').request, {
+    assert.deepEqual(codexSidebarPlacement(current, 'new').request, {
       tool: 'move_thread_to_sidebar_section',
       arguments: { threadId: 'new', hostId: 'local', source: 'codex', sectionId: 'owned-group' },
     });
     assert.deepEqual(current, before);
     assert.deepEqual(
-      codexResetPlacement(inventory([{ ...group, itemKeys: ['codex:thread:local:new'] }]), 'new'),
-      { status: 'done' },
+      codexSidebarPlacement(inventory([{ ...group, itemKeys: ['codex:thread:local:new'] }]), 'new'),
+      { sectionId: 'owned-group' },
     );
   });
 
@@ -40,13 +40,14 @@ describe('agent/codex-reset-placement', () => {
       { ...inventory([]), unavailableSources: ['codex'] },
       inventory([{ ...group, itemKeys: null }]),
     ]) {
-      const result = codexResetPlacement(value, 'new');
-      assert.equal(result.code, 'notification-reset-native-inventory-required');
-      assert.equal(result.request, undefined);
+      assert.throws(
+        () => codexSidebarPlacement(value, 'new'),
+        /automation-sidebar-inventory-required/,
+      );
     }
-    assert.equal(
-      codexResetPlacement(inventory([group, { ...group, sectionId: 'duplicate' }]), 'new').code,
-      'notification-reset-sidebar-ambiguous',
+    assert.throws(
+      () => codexSidebarPlacement(inventory([group, { ...group, sectionId: 'duplicate' }]), 'new'),
+      /automation-sidebar-ambiguous/,
     );
   });
 });

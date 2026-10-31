@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   dispatchFailurePhase,
+  dispatchFailureStatus,
   dispatchRetryDue,
   scheduleDispatchRetry,
 } from '../agent/dispatch-retry.ts';
@@ -8,6 +9,44 @@ import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 
 describe('agent/dispatch-retry', () => {
+  it('should clear obsolete backoff and identify investigation instead of promising a retry', () => {
+    const record = {
+      retry: { code: 'dispatch-host-unavailable', attempts: 1 },
+      retryAfter: 100,
+    } as SharedDispatchRecord;
+    assert.equal(scheduleDispatchRetry(record, 'unclassified-failure', undefined, 200), false);
+    assert.equal(record.retry, undefined);
+    assert.equal(record.retryAfter, undefined);
+    assert.equal(dispatchFailureStatus(record, 'unclassified-failure'), 'needs-attention');
+    assert.equal(dispatchRetryDue(record, 1000), false);
+    assert.equal(dispatchFailureStatus(record, 'continuation-native-approval-denied'), 'blocked');
+  });
+
+  it('should recheck known prerequisites and native custody at a bounded cadence', () => {
+    for (const code of [
+      'dispatch-project-registration-unavailable',
+      'dispatch-assessment-skill-unavailable',
+      'dispatch-assessment-guidance-unreadable',
+      'workflow-stage-skill-unavailable',
+      'dispatch-creation-unresolved',
+      'dispatch-assignment-superseded',
+    ]) {
+      const record = {} as SharedDispatchRecord;
+      for (const now of [0, 300000, 600000]) {
+        assert.equal(scheduleDispatchRetry(record, code, undefined, now), true);
+        assert.equal(record.retryAfter, now + 300000);
+        assert.equal(dispatchRetryDue(record, now), false);
+        assert.equal(dispatchRetryDue(record, now + 300000), true);
+      }
+      assert.equal(
+        scheduleDispatchRetry(record, 'dispatch-creation-denied', undefined, 900000),
+        false,
+      );
+      assert.equal(record.retry, undefined);
+      assert.equal(record.retryAfter, undefined);
+    }
+  });
+
   it('should reserve durable blockers for decisions and authority loss', () => {
     const record = {} as SharedDispatchRecord;
     for (const code of [

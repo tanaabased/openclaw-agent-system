@@ -8,7 +8,7 @@ import notificationAutomationReadiness, {
 import OpenClawNotifications from '../agent/openclaw-notifications.ts';
 import OpenClawNotificationReset from '../agent/openclaw-notification-reset.ts';
 import { openclawIntakeAutomationId } from '../agent/openclaw-intake-policy.ts';
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
@@ -55,6 +55,13 @@ import createInstallTool from '../tools/install/tool.ts';
 import createDoctorTool from '../tools/doctor/tool.ts';
 import createModelRoutingTool from '../tools/model-routing/tool.ts';
 import { registerLifecycleApprovalHook } from './lifecycle-approval-hook.ts';
+import AutomationLifecycleAuthority, {
+  verifyAutomationLifecycleRun,
+} from '../agent/automation-lifecycle-authority.ts';
+import registerAutomationLifecycleHooks from './automation-lifecycle-hook.ts';
+import registerAutomationReportHooks from './automation-report-hook.ts';
+import { reconcileAutomationReport } from '../agent/automation-report-delivery.ts';
+import automationLifecycleCommand from '../cli/automation-lifecycle.ts';
 import SetupCommandService from '../agent/setup-command-service.ts';
 import SetupLifecycleService from '../agent/setup-lifecycle.ts';
 import createAgentLifecycleContribution from '../agent/lifecycle.ts';
@@ -305,6 +312,29 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     manifestService: lifecycleManifestService,
   };
   const automationService = new AutomationService(automationDependencies);
+  registerAutomationReportHooks(api, automationService.reports, async (id) => {
+    for (const executionId of id ? [id] : await automationService.reports.recoveryIds()) {
+      try {
+        await reconcileAutomationReport({
+          store: automationService.reports,
+          executionId,
+          credential: sessionDispatch,
+          assertCurrent: (record) => automationService.assertReportCurrent(record),
+          selectSettings: (record, request) =>
+            automationService.selectReportSettings(record, request),
+        });
+      } catch {
+        logger.warn('automation-report: recovery-unavailable');
+      }
+    }
+    if (!id) {
+      try {
+        await automationService.reports.prune();
+      } catch {
+        logger.warn('automation-report: cleanup-unavailable');
+      }
+    }
+  });
   const instanceStore = new AssignmentClaimStore(
     join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-instance'),
   );
@@ -430,8 +460,6 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
           timeoutMs: 120_000,
           killGraceMs: commandTerminationGraceMs,
           killProcessTree: true,
-          maxCombinedOutputBytes: 1_048_576,
-          outputCapture: 'head',
           ...(signal ? { signal } : {}),
         });
       },
@@ -672,10 +700,37 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     credentialManager,
     lifecycleRegistry,
   });
+  const automationLifecycle = new AutomationLifecycleAuthority({
+    setRunContext: (patch) => api.runContext.setRunContext({ ...patch, value: { ...patch.value } }),
+    getRunContext: (params) => api.runContext.getRunContext(params),
+    clearRunContext: (params) => api.runContext.clearRunContext(params),
+  });
+  registerAutomationLifecycleHooks(api, automationLifecycle);
   const lifecycleApproval = new AgentLifecycleApproval({
     manifestService,
     doctorService,
     installService,
+    async automation(loaded, context) {
+      const admitted = automationLifecycle.resolve(context);
+      if (!admitted) return;
+      const assertCurrent = async () => {
+        admitted.assertCurrent();
+        if (
+          (await realpath(loaded.scope.workspaceDir)) !==
+          (await realpath(admitted.run.workspaceDir))
+        )
+          throw new AutomationError('automation-lifecycle-unverified');
+        await verifyAutomationLifecycleRun(
+          automationService,
+          readScheduler?.(),
+          loaded.manifest,
+          admitted.run,
+        );
+        admitted.assertCurrent();
+      };
+      await assertCurrent();
+      return { assertActive: admitted.assertCurrent, assertCurrent };
+    },
   });
   registerLifecycleApprovalHook(api, lifecycleApproval);
   toolRegistry.registerTools(api, toolRuntime);
@@ -741,6 +796,12 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       excludedExecutableDirectories: excludedToolExecutableDirectories,
     });
     const boundCommands = new BoundCommandService({
+      executeLifecycle: (command, scope, signal) =>
+        automationLifecycleCommand(command, scope, signal, {
+          manifestService,
+          installService: operatorInstall,
+          doctorService: operatorDoctor,
+        }),
       baseEnvironment: process.env,
       currentUid,
       manifestService,
@@ -821,6 +882,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       installService: operatorInstall,
       instanceStore,
       automations,
+      reportCredential: sessionDispatch,
       boundCommands,
       manifestService,
       nativeNotifications: new OpenClawNotifications({

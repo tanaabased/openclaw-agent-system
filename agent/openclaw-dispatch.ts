@@ -1,3 +1,5 @@
+import assessmentMaterial from './assessment-material.ts';
+import implementationMaterial from './implementation-material.ts';
 import recoverOpenClawTask from './openclaw-dispatch-recovery.ts';
 import issueLaunch from './issue-launch.ts';
 import openClawEntryContext from './openclaw-entry-context.ts';
@@ -6,6 +8,7 @@ import { launchRequestSchema } from '../tools/dispatch/launch-schema.ts';
 import openClawImplementationEntry from './openclaw-implementation-entry.ts';
 import openClawAssessmentEntry from './openclaw-assessment-entry.ts';
 import retireOpenClawTask from './openclaw-dispatch-retirement.ts';
+import retireOpenClawNative from './openclaw-native-retirement.ts';
 import pendingPublicResponse from './pending-public-response.ts';
 import openClawReply from './openclaw-reply.ts';
 import type { Static } from 'typebox';
@@ -109,9 +112,54 @@ export default class OpenClawDispatch {
     operator = false,
     authority: DispatchAuthority = {},
   ) {
-    return input.action === 'launch'
+    if (
+      'material' in input &&
+      input.material &&
+      !(
+        input.action === 'context' ||
+        (input.action === 'implementation-context' && !input.scope) ||
+        (input.action === 'summary' &&
+          input.operation === 'compose' &&
+          !input.digest &&
+          !input.publicText &&
+          !input.diagnostic) ||
+        (input.action === 'feedback' &&
+          input.operation === 'implementation-context' &&
+          !input.decision) ||
+        (input.action === 'implementation' &&
+          input.operation === 'context' &&
+          !input.scope &&
+          !input.plan)
+      )
+    )
+      throw new Error('implementation-material-request-invalid');
+    const response = await (input.action === 'launch'
       ? this.launch(manifest, workspace, caller, input, operator, authority)
-      : this.execute(manifest, workspace, caller, input, operator, authority);
+      : this.execute(manifest, workspace, caller, input, operator, authority));
+    if (
+      input.action === 'implementation-context' ||
+      (input.action === 'feedback' && input.operation === 'implementation-context')
+    ) {
+      if ('resultContract' in response && response.resultContract === 'implementation-result/v1') {
+        const request =
+          input.action === 'feedback'
+            ? {
+                action: 'feedback',
+                operation: 'implementation-context',
+                id: input.id,
+                eventId: input.eventId,
+              }
+            : { action: 'implementation-context', id: input.id };
+        return implementationMaterial(response, request, input.material);
+      }
+    }
+    if (
+      input.action === 'context' &&
+      'resultContract' in response &&
+      response.resultContract === 'assessment-result/v1'
+    )
+      return assessmentMaterial(response, { action: 'context', id: input.id }, input.material);
+    return response;
   }
   private async launch(
     manifest: AgentManifest,
@@ -260,6 +308,17 @@ export default class OpenClawDispatch {
         workspace,
         caller,
         input,
+        operator,
+        authority,
+      });
+    if (input.action === 'retire' && input.native !== undefined)
+      return retireOpenClawNative({
+        dependencies: this.dependencies,
+        manifest,
+        workspace,
+        caller,
+        native: input.native,
+        digest: input.digest,
         operator,
         authority,
       });

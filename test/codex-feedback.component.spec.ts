@@ -1,3 +1,4 @@
+import hydrateImplementation from './implementation-material-fixture.ts';
 import commentProviderFixture from './github-comment-provider-fixture.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
@@ -275,6 +276,31 @@ describe('agent/codex-feedback', () => {
         assert.equal(record.feedback!.events[0]!.work, undefined);
         assert.equal(creates, 0);
       });
+  it('should retrieve oversized codex feedback material without changing source or entered authority', async () => {
+    await feedbackMode('work');
+    const ref = await prepare();
+    sent = true;
+    turn = 'feedback';
+    await call('context', ref, true);
+    const large = 'Complete approved feedback implementation plan.\n'.repeat(650);
+    const first = await call(
+      'implementation-context',
+      { ...ref, decision: { mode: 'work', reasons: ['Bounded repair.'], plan: large } },
+      true,
+    );
+    assert.equal(first.status, 'verified');
+    await feedbackMode('plan');
+    const before = (await store.read()).records[0]!;
+    const restored = await hydrateImplementation(first, async (request) =>
+      call('implementation-context', { ...ref, material: request.material }, true),
+    );
+    assert.equal(restored.plan, large);
+    const after = (await store.read()).records[0]!;
+    assert.deepEqual(after.feedback!.events[0], before.feedback!.events[0]);
+    assert.deepEqual(after.progression, before.progression);
+    assert.deepEqual(after.result, before.result);
+  });
+
   it('should keep plan feedback in planning and use live work policy without install', async () => {
     const ref = await prepare();
     sent = true;

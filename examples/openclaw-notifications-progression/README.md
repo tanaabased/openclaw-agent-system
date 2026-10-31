@@ -7,7 +7,7 @@ answer to complete a local commit without another handoff.
 ## What Belongs Here
 
 - A live mode edit taking effect without Install and preserving the original assessment, model selection, chat, and worktree.
-- The authorized assessment-to-implementation transition, with completed work reconciled rather than dispatched again.
+- The authorized assessment-to-implementation transition, including bounded summary composition followed by native retrieval of an oversized retained plan, with completed work reconciled rather than dispatched again.
 - A reported summary-publication hold retained independently of same-turn authorized implementation.
 - Clarification holding the implementation stage until an answer arrives, then resuming the same work without pushing or publishing.
 
@@ -22,6 +22,7 @@ answer to complete a local commit without another handoff.
 
 - Strict AIMock supplies decisions; the installed plugin, GitHub assignment, managed checkout, coordinator, and receipts remain real. This is not proof of genuine model judgment.
 - The Auto decision turn records a controlled reported summary denial without invoking publication. This verifies the installed hold protocol and independent progression, not an actual native reviewer refusal. Controlled Codex and OpenClaw adapter coverage owns denial and negative-authority permutations.
+- The retained plan exceeds the old implementation response budget when repeated. Strict AIMock parses summary composition and retrieves every summary and implementation material page through the native tool before clarification and resumption; this proves installed retrieval, not genuine model interpretation or the Codex bridge’s truncation behavior.
 - The final operator answer explicitly requests a local commit and prohibits push/PR publication. The test verifies the committed change, not delivery.
 - EMORI creates the disposable issue; only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule isolate discovery. Cleanup disposes of the issue and SSH registration; the runner owns the local workspace.
 
@@ -140,6 +141,8 @@ node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-answer" 600000
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-implemented.json"
 jq -e --slurp '.[1].progression.workOwner == "issue" and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].routing == .[1].routing and .[0].effective == .[1].effective and .[0].request.model == .[1].request.model and .[0].request.thinkingLevel == .[1].request.thinkingLevel and .[0].result == (.[1].result | del(.decision)) and .[1].progression.stage == "implementation" and .[1].progression.via == "auto" and .[1].work.caller.runId == "notification-answer" and .[1].work.result.outcome == "done" and .[1].work.delivery == null' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-implemented.json"
+jq -e '.work.scope == "local"' "$TMPDIR/notification-implemented.json"
+openclaw agent-system notifications status --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")" --json | jq -e '.items[0].workflow.phase == "publication-held"'
 jq -e --slurp '.[0].work.implementation == .[1].work.implementation and .[0].work.turn.runId == .[1].work.turn.runId and .[0].handoff == .[1].handoff and .[1].work.caller.runId == "notification-answer"' "$TMPDIR/notification-clarification.json" "$TMPDIR/notification-implemented.json"
 jq -e --slurp '.[0].assessmentSummaries == .[1].assessmentSummaries and .[1].summaryRecovery == null' "$TMPDIR/notification-clarification.json" "$TMPDIR/notification-implemented.json"
 worktree=$(jq -er .worktree "$TMPDIR/notification-implemented.json")

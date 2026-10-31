@@ -14,9 +14,10 @@ import {
 } from './codex-automations.ts';
 import { readCodexAutomations, type SavedAutomation } from './codex-automation-state.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
-import { codexDispatchNative } from './codex-dispatch-native.ts';
+import observeResetThread from './codex-reset-observation.ts';
 import codexResetRemoved from './codex-reset-removed.ts';
-import codexResetPlacement from './codex-reset-placement.ts';
+import CodexSidebarJournal, { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
+import { defaultManagedGroup } from '../utils/managed-group-name.ts';
 import { connectCodexThreads, codexThreadAdapter } from './codex-thread-client.ts';
 import codexRetirementNative from './codex-retirement-native.ts';
 import waitForCodexWorktreeRemoval from './codex-worktree-removal.ts';
@@ -38,6 +39,7 @@ const schema = Type.Object(
     fresh: Type.Optional(Type.Boolean()),
     confirmation: Type.Optional(Type.String()),
     nativeInventory: Type.Optional(Type.Unknown()),
+    placementReceipt: Type.Optional(sidebarReceiptSchema),
   },
   { additionalProperties: false },
 );
@@ -97,7 +99,6 @@ export default async function runCodexNotificationReset(
   };
   const observe = async (record: NotificationResetRecord) =>
     withNative(async ({ request }) => {
-      const native = codexDispatchNative(request);
       const saved = JSON.parse(record.automation) as SavedAutomation;
       const sources = new Set(parse(record).records.map(({ sourceThreadId }) => sourceThreadId));
       if ('targetThreadId' in saved.definition) sources.add(saved.definition.targetThreadId);
@@ -127,19 +128,9 @@ export default async function runCodexNotificationReset(
           return false;
       }
       for (const entry of parse(record).records) {
-        if (!entry.request) {
-          if (entry.threadId) throw new Error('notification-reset-native-identity-unresolved');
-          continue;
-        }
         let thread;
         try {
-          thread = await native.find({
-            sourceThreadId: entry.sourceThreadId,
-            prompt: entry.request.prompt,
-            createdAfter: entry.createdAt,
-            threadId: entry.threadId,
-            observationOnly: true,
-          });
+          thread = await observeResetThread(request, entry);
         } catch (error) {
           if (await codexResetRemoved(request, entry, error)) continue;
           throw error;
@@ -299,12 +290,22 @@ export default async function runCodexNotificationReset(
         pluginData,
         before,
         deps,
+        { nativeInventory: input.nativeInventory, placementReceipt: input.placementReceipt },
       );
       if (replacement.status !== 'done') return replacement;
       const saved = JSON.parse(replacement.automation) as SavedAutomation;
       if (saved.definition.kind !== 'heartbeat')
         throw new Error('notification-reset-coordinator-missing');
-      const placement = codexResetPlacement(input.nativeInventory, saved.definition.targetThreadId);
+      const journal = new CodexSidebarJournal(pluginData, current.codexHome, defaultManagedGroup);
+      const pending = (await journal.read()).pending;
+      const receipt =
+        pending?.digest === input.placementReceipt?.digest ? input.placementReceipt : undefined;
+      const placement = await journal.apply(
+        `reset:${current.store.location.scope}`,
+        input.nativeInventory,
+        saved.definition.targetThreadId,
+        receipt,
+      );
       return placement.status === 'done' ? replacement : placement;
     },
     restore: (record) => toggle(record, true),
@@ -326,16 +327,9 @@ export default async function runCodexNotificationReset(
         };
       }
       return withNative(async ({ request }) => {
-        const native = codexDispatchNative(request);
         let thread;
         try {
-          thread = await native.find({
-            sourceThreadId: entry.sourceThreadId,
-            prompt: entry.request!.prompt,
-            createdAfter: entry.createdAt,
-            threadId: entry.threadId,
-            observationOnly: true,
-          });
+          thread = await observeResetThread(request, entry);
         } catch (error) {
           if (await codexResetRemoved(request, entry, error)) return { status: 'done' };
           throw error;

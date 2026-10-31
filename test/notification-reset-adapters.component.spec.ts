@@ -119,8 +119,32 @@ describe('agent/notification reset runtime adapters', () => {
           sourceToolCallId: 'call',
         },
       });
+      state.records.push({
+        id: 'b'.repeat(64),
+        intakeId: 'e'.repeat(64),
+        issueKey: 'c'.repeat(64),
+        sourceThreadId: 'coordinator',
+        phase: 'complete',
+        createdAt: 2,
+        manifestDigest: 'manifest',
+        threadId: 'retired-child',
+        worktree: root,
+        retired: { at: 4, by: 'coordinator' },
+        retirement: {
+          reason: 'issue-closed',
+          at: 3,
+          checkedAt: 4,
+          eligibleAt: 3,
+          intakeId: 'e'.repeat(64),
+          archivedAt: 4,
+          worktreeRemovedAt: 4,
+        },
+        retainedHistory: { terminal: true, entries: [], sessionId: 'retired-session' },
+      });
       await save();
     });
+    let terminalReads = 0;
+    let terminalActive = false;
     let enabled = true;
     let active = true;
     let missingSession: unknown = { ok: true, key: 'agent:receiver:issue:missing' };
@@ -149,6 +173,25 @@ describe('agent/notification reset runtime adapters', () => {
           run(async (method, params) => {
             if (method === 'sessions.resolve' && params.key === 'agent:receiver:issue:missing')
               return missingSession;
+            if (params.key === 'retired-child' && method === 'sessions.describe') {
+              terminalReads++;
+              return {
+                session: {
+                  key: 'retired-child',
+                  agentId: 'receiver',
+                  sessionId: 'retired-session',
+                  spawnedCwd: root,
+                  archived: true,
+                },
+              };
+            }
+            if (params.sessionKey === 'retired-child' && method === 'chat.history')
+              return {
+                sessionId: 'retired-session',
+                messages: [],
+                sessionInfo: { hasActiveRun: terminalActive },
+                pendingInputs: { total: 0 },
+              };
             return native.request(method);
           }),
       },
@@ -174,7 +217,11 @@ describe('agent/notification reset runtime adapters', () => {
     missingSession = { ok: false, candidates: ['ambiguous'] };
     await assert.rejects(run(), /notification-reset-session-creation-unresolved/u);
     missingSession = { ok: false, candidates: [] };
+    terminalActive = true;
+    assert.equal((await run()).status, 'waiting');
+    terminalActive = false;
     assert.equal((await run()).status, 'complete');
+    assert.ok(terminalReads > 0);
     assert.deepEqual(toggles, [false, true]);
     assert.ok((await intake.read())!.baselineAt > 1);
     assert.equal(native.archived(), true);
@@ -456,6 +503,7 @@ describe('agent/notification reset runtime adapters', () => {
       }),
     };
     const sections: { sectionId: string; name: string; itemKeys: string[] }[] = [];
+    let placementReceipt: { digest: string; sectionId: string } | undefined;
     const run = () =>
       runCodexNotificationReset(
         pluginData,
@@ -463,6 +511,7 @@ describe('agent/notification reset runtime adapters', () => {
           agent: ['receiver'],
           yes: true,
           purge: true,
+          placementReceipt,
           nativeInventory: {
             schemaVersion: 4,
             sections,
@@ -503,6 +552,8 @@ describe('agent/notification reset runtime adapters', () => {
       name: 'AGENT SYSTEM',
       itemKeys: ['codex:thread:local:old'],
     });
+    assert.ok('digest' in grouping && typeof grouping.digest === 'string');
+    placementReceipt = { digest: grouping.digest, sectionId: 'group' };
     const placing = await run();
     assert.equal(placing.status, 'native-action');
     assert.deepEqual('request' in placing && placing.request, {
@@ -510,6 +561,8 @@ describe('agent/notification reset runtime adapters', () => {
       arguments: { threadId: 'replacement', hostId: 'local', source: 'codex', sectionId: 'group' },
     });
     assert.equal(saved.definition.status, 'PAUSED');
+    assert.ok('digest' in placing && typeof placing.digest === 'string');
+    placementReceipt = { digest: placing.digest, sectionId: 'group' };
     assert.equal((await run()).status, 'incomplete');
     sections[0]!.itemKeys.push('codex:thread:local:replacement');
     const restoring = await run();
@@ -649,8 +702,21 @@ describe('agent/notification reset runtime adapters', () => {
           sourceToolCallId: 'missing-call',
         },
       });
+      if (missing) {
+        original.retired = { at: 4, by: 'coordinator' };
+        original.retirement = {
+          reason: 'issue-closed',
+          at: 3,
+          checkedAt: 4,
+          eligibleAt: 3,
+          intakeId,
+          sessionUnavailableObserved: { at: 4, session: 'not-found' },
+          worktreeRemovedAt: 4,
+        };
+      }
       await save();
     });
+    if (missing) assert.equal((await journal.read()).records[0]!.request, undefined);
     const native = coordinator();
     native.missing();
     let pinned = !missing;

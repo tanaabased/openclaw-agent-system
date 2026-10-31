@@ -1,9 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { realpath } from 'node:fs/promises';
 
+import { gte } from 'semver';
+
 import { commandTerminationGraceMs, metadataCommandTimeoutMs } from '../api/cli-budget.ts';
 import { AutomationError, nativeObject } from './automation-gateway.ts';
-import type { AutomationThreadAdapter } from './automation-threads.ts';
+import type { AutomationThreadAdapter, AutomationThreadSettings } from './automation-threads.ts';
 
 export class CodexThreadRpcError extends Error {
   constructor(
@@ -56,6 +58,7 @@ export async function connectCodexThreads(
   const deadline = options.deadline ?? dependencies.now() + 120_000;
   const child = dependencies.start(workspace, codexHome);
   let sequence = 0;
+  let settingsUpdateSupported = false;
   let buffer = '';
   let diagnosticTail = '';
   let hostAccessDenied = false;
@@ -155,6 +158,10 @@ export async function connectCodexThreads(
   });
   const request: CodexThreadRequest = (method, params) =>
     new Promise((resolve, reject) => {
+      if (method === 'thread/settings/update' && !settingsUpdateSupported) {
+        reject(new AutomationError('automation-thread-settings-unsupported'));
+        return;
+      }
       if (failed) {
         reject(failed);
         return;
@@ -188,6 +195,7 @@ export async function connectCodexThreads(
     if (options.signal?.aborted) abort();
     const initialized = await request('initialize', {
       clientInfo: { name: 'agent_system', version: '1' },
+      capabilities: { experimentalApi: true },
     });
     if (
       typeof initialized.codexHome !== 'string' ||
@@ -195,6 +203,11 @@ export async function connectCodexThreads(
         (await dependencies.realpath(codexHome))
     )
       throw new AutomationError('automation-thread-profile-mismatch');
+    const version =
+      typeof initialized.userAgent === 'string'
+        ? initialized.userAgent.match(/\/(\d+\.\d+\.\d+)(?:[\s(]|$)/u)?.[1]
+        : undefined;
+    settingsUpdateSupported = Boolean(version && gte(version, '0.160.1'));
     child.stdin.write(JSON.stringify({ method: 'initialized' }) + '\n');
     return { request, close };
   } catch (error) {
@@ -207,6 +220,7 @@ export function codexThreadAdapter(
   request: CodexThreadRequest,
   workspace: string,
   verifyDurable?: (id: string) => Promise<Record<string, unknown>>,
+  readDurable?: (id: string) => Promise<Record<string, unknown>>,
 ): AutomationThreadAdapter {
   const permissions = {
     approvalPolicy: 'on-request',
@@ -222,10 +236,13 @@ export function codexThreadAdapter(
     )
       throw new AutomationError('automation-thread-permissions-diverged');
   }
-  async function lookup(id: string) {
+  async function lookup(id: string, fresh = false) {
     let result: Record<string, unknown>;
     try {
-      result = await request('thread/read', { threadId: id, includeTurns: false });
+      result =
+        fresh && readDurable
+          ? await readDurable(id)
+          : await request('thread/read', { threadId: id, includeTurns: false });
     } catch (error) {
       // native negative responses, not a UUID heuristic or a transport failure.
       if (
@@ -270,9 +287,44 @@ export function codexThreadAdapter(
       ...(typeof thread.reasoningEffort === 'string' ? { effort: thread.reasoningEffort } : {}),
     };
   }
+  async function validateSettings(settings: AutomationThreadSettings, currentModel?: string) {
+    const desiredModel = settings.model ?? currentModel;
+    let cursor: string | undefined;
+    for (let page = 0; page < 100; page++) {
+      const result = await request('model/list', {
+        limit: 100,
+        includeHidden: true,
+        ...(cursor ? { cursor } : {}),
+      });
+      if (!Array.isArray(result.data))
+        throw new AutomationError('automation-thread-response-invalid');
+      const model = result.data.find(
+        (item) =>
+          nativeObject(item) &&
+          (desiredModel ? item.model === desiredModel : item.isDefault === true),
+      );
+      if (nativeObject(model)) {
+        if (
+          settings.effort &&
+          (!Array.isArray(model.supportedReasoningEfforts) ||
+            !model.supportedReasoningEfforts.some(
+              (item) => nativeObject(item) && item.reasoningEffort === settings.effort,
+            ))
+        )
+          throw new AutomationError('automation-effort-unsupported');
+        return;
+      }
+      if (typeof result.nextCursor !== 'string') break;
+      cursor = result.nextCursor;
+    }
+    throw new AutomationError('automation-model-unsupported');
+  }
   return {
     lookup,
+    lookupFresh: (id) => lookup(id, true),
+    validateSettings: (settings, current) => validateSettings(settings, current?.model),
     async create(record, saveId, fresh, settings) {
+      if (settings?.model || settings?.effort) await validateSettings(settings);
       if (!record.nativeId && !fresh)
         throw new AutomationError('automation-thread-create-ambiguous');
       let id = record.nativeId;
@@ -313,7 +365,42 @@ export function codexThreadAdapter(
       verifyPermissions(
         verifyDurable ? await verifyDurable(id) : await request('thread/resume', { threadId: id }),
       );
+      await request('thread/unsubscribe', { threadId: id });
       return id;
+    },
+    async updateSettings(current, settings) {
+      if (!readDurable) throw new AutomationError('automation-thread-settings-unsupported');
+      await validateSettings(settings, current.model);
+      let resumed = false;
+      try {
+        // native writer custody rejects a concurrent owner, including a desktop-loaded thread.
+        await request('thread/resume', { threadId: current.id });
+        resumed = true;
+        const latest = await lookup(current.id);
+        if (
+          !latest ||
+          latest.archived ||
+          latest.model !== current.model ||
+          latest.effort !== current.effort
+        )
+          throw new AutomationError('automation-thread-settings-conflict');
+        await request('thread/settings/update', { threadId: current.id, ...settings });
+      } catch (error) {
+        if (error instanceof CodexThreadRpcError) {
+          if (
+            error.code === -32600 &&
+            error.message === `thread ${current.id} already has an active writer`
+          )
+            throw new AutomationError('automation-thread-settings-busy');
+          if (error.code === -32601)
+            throw new AutomationError('automation-thread-settings-unsupported');
+          if (error.code === -32600 || error.code === -32602)
+            throw new AutomationError('automation-thread-settings-denied');
+        }
+        throw error;
+      } finally {
+        if (resumed) await request('thread/unsubscribe', { threadId: current.id });
+      }
     },
     async rename(id, name) {
       await request('thread/name/set', { threadId: id, name });

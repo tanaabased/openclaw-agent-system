@@ -120,61 +120,31 @@ describe('agent/codex-dispatch-state', () => {
     assert.deepEqual(await store.read(), retained);
   });
 
-  it('should retain the storage limit for work records', async () => {
-    const before = await store.read();
-    await assert.rejects(
-      store.exclusive(async (state, save) => {
-        state.records = Array.from({ length: 50 }, (_, i) => ({
-          id: i.toString(16).padStart(64, '0'),
-          issueKey: i.toString(16).padStart(64, '0'),
-          intakeId: 'b'.repeat(64),
-          sourceThreadId: 'intake',
-          phase: 'routing',
-          createdAt: 1,
-          manifestDigest: 'manifest',
-          context: 'x'.repeat(96000),
-        }));
-        await save();
-      }),
-      /dispatch-state-capacity/,
-    );
-    assert.deepEqual(await store.read(), before);
-  });
-
-  it('should reserve room for an escaped report without letting work consume that room', async () => {
-    const response = '\u0000'.repeat(128000);
+  it('should round-trip escaped reporting text without replacing working content', async () => {
+    const response = '\u0000界'.repeat(12);
     await store.exclusive(async (state, save) => {
-      state.records = Array.from({ length: 44 }, (_, i) => ({
-        id: i.toString(16).padStart(64, '0'),
-        issueKey: i.toString(16).padStart(64, '0'),
+      state.records.push({
+        id: 'b'.repeat(64),
+        issueKey: 'b'.repeat(64),
         intakeId: 'b'.repeat(64),
         sourceThreadId: 'intake',
         phase: 'routing',
         createdAt: 1,
         manifestDigest: 'manifest',
-        context: i < 43 ? 'x'.repeat(96000) : '',
-      }));
+        context: 'full working context',
+      });
       state.run = {
         id: 'run',
         automationId: 'intake',
         currentTimeIso: '2026-10-12T12:00:00.000Z',
         actions: 1,
       };
-      state.records.at(-1)!.context = 'x'.repeat(
-        4 * 1024 * 1024 - 100 - Buffer.byteLength(JSON.stringify(state)),
-      );
       await save();
       state.run.response = response;
       await save();
     });
-    assert.equal((await store.read()).run?.response, response);
-    await assert.rejects(
-      store.exclusive(async (state, save) => {
-        state.records.at(-1)!.context += 'x'.repeat(101);
-        await save();
-      }),
-      /dispatch-state-capacity/,
-    );
-    assert.equal((await store.read()).run?.response, response);
+    const saved = await store.read();
+    assert.equal(saved.run?.response, response);
+    assert.equal(saved.records[0]!.context, 'full working context');
   });
 });

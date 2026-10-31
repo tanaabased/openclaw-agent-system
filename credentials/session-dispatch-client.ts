@@ -19,6 +19,7 @@ import {
   sessionDispatchDeadlineError,
 } from './session-dispatch-diagnostic.ts';
 import waitForSessionDispatchGateway, {
+  sessionDispatchReadinessTimeoutMs,
   type ReadinessOptions,
 } from './session-dispatch-readiness.ts';
 import type { ReadinessEvidence } from './session-dispatch-readiness-evidence.ts';
@@ -30,6 +31,7 @@ import {
 } from './session-dispatch.ts';
 import { sessionDispatchScopes } from '../agent/session-dispatch-requirements.ts';
 import { openclawSessionCreateTimeoutMs } from '../agent/openclaw-session-timeout.ts';
+import automationGatewayDiagnostic from '../agent/automation-gateway-diagnostic.ts';
 
 interface SessionDispatchClientDependencies {
   createClient(
@@ -161,7 +163,7 @@ export async function useSessionDispatchClient<T>(
     },
     DEFAULT_PREAUTH_HANDSHAKE_TIMEOUT_MS +
       DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS +
-      (authority.waitForGateway ? 30_000 : 0),
+      (authority.waitForGateway ? sessionDispatchReadinessTimeoutMs : 0),
   );
   let failed = false;
   try {
@@ -182,7 +184,7 @@ export async function useSessionDispatchClient<T>(
               client.start();
             },
           },
-          { signal: startup.signal, timeoutMs: 30_000 },
+          { signal: startup.signal, timeoutMs: sessionDispatchReadinessTimeoutMs },
         )
       : Promise.resolve(client.start());
     const hello = await Promise.race([ready.promise, start.then(() => ready.promise)]).catch(
@@ -271,6 +273,12 @@ export function sessionDispatchRequest(
       : method.replaceAll('.', '-').toLowerCase();
     const result = await request(method, params).catch((error: unknown) => {
       assertCurrent();
+      // preserve only the known settings rejection, never the native model name or prose.
+      if (
+        method === 'sessions.patch' &&
+        automationGatewayDiagnostic('sessions.patch', error).reason === 'model-runtime-unavailable'
+      )
+        throw new Error('session-dispatch-sessions-patch-model-runtime-unavailable');
       const reason =
         error instanceof GatewayClientRequestTimeoutError
           ? 'timeout-unverified'

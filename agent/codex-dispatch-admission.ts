@@ -1,3 +1,6 @@
+import { dispatchStoragePressure } from './dispatch-storage.ts';
+import issueWorkflowMode from './issue-workflow-mode.ts';
+import issueChatTitle from './issue-chat-title.ts';
 import {
   managedPullRequest,
   dispatchAdmission,
@@ -27,6 +30,7 @@ import { automationHash } from './automation-hash.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
 import codexCapacity, { codexUnresolvedRetirement } from './codex-capacity.ts';
+import { dispatchRecheckable } from './dispatch-retry.ts';
 import { dispatchCheckDigest } from './codex-dispatch-check.ts';
 import {
   code,
@@ -271,12 +275,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         entry.request &&
         !entry.supersededBy &&
         !entry.denial &&
-        !entry.handoff &&
-        (codexUnresolvedRetirement(entry) ||
-          ((entry.threadId || entry.receiptThreadId) &&
-            (['blocked', 'waiting', 'retrying'].includes(entry.phase) ||
-              (entry.continuation && ['blocked', 'cancelled'].includes(entry.continuation.phase)) ||
-              entry.feedback?.events.some((event) => event.phase === 'blocked' && event.attempt)))),
+        (codexUnresolvedRetirement(entry) || entry.threadId || entry.receiptThreadId),
     )
     .sort((a, b) => (a.capacityObservation?.at ?? 0) - (b.capacityObservation?.at ?? 0))
     .filter(
@@ -315,6 +314,9 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
       (record.phase !== 'blocked' ||
         (record.result?.outcome === 'operator-setup-blocker' &&
           record.result.code === 'dispatch-assignment-superseded')) &&
+      (record.result?.outcome !== 'operator-setup-blocker' ||
+        Boolean(record.retry) ||
+        dispatchRecheckable(record.result.code)) &&
       (record.retryAfter ?? 0) <= now,
   )) {
     const intake = dispatchAdmission(pending, admitted.records);
@@ -406,6 +408,8 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
   }
   if (!codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 3).available)
     return checked('at-capacity');
+  if (['paused', 'emergency'].includes(dispatchStoragePressure(state).level))
+    return { ...(await checked('at-capacity')), code: 'dispatch-storage-admission-paused' };
   const intake = pendingDispatchAssignments(state, admitted, codexUnresolvedRetirement)
     .filter(({ intake }) => !liveWorkflowPolicy(current.manifest, 'codex', intake))
     .find(
@@ -414,6 +418,10 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         !record?.request &&
         (!deps.claims || record?.claimPass !== (tx.operatorInput?.turnId ?? state.run!.id)) &&
         (record?.phase !== 'blocked' || record.intakeId !== intake.id) &&
+        (record?.result?.outcome !== 'operator-setup-blocker' ||
+          Boolean(record.retry) ||
+          dispatchRecheckable(record.result.code) ||
+          record.intakeId !== intake.id) &&
         (record?.retryAfter ?? 0) <= now,
     )?.intake;
   if (!intake) return checked('idle');
@@ -429,6 +437,9 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
     record = {
       id: automationHash([current.store.location.scope, randomUUID()]),
       intakeId: intake.id,
+      ...(!('initiation' in intake) && intake.evidence.projectWork
+        ? { projectWork: structuredClone(intake.evidence.projectWork) }
+        : {}),
       issueKey: issueKey(intake),
       sourceThreadId: activation.sourceThreadId,
       phase: 'routing',
@@ -727,10 +738,7 @@ export async function prepareDispatch(
         withNative(current, deps, (native) => native.assessmentSkill(record.project!.path, id)),
     });
     record.assessment = selected.selection;
-    record.issueMode =
-      record.manualIssue?.selections?.mode ??
-      current.manifest.github?.notifications?.issueAssignment?.mode ??
-      'auto';
+    record.issueMode = issueWorkflowMode(current.manifest.github?.notifications, record);
     if (record.issueMode === 'work' || record.issueMode === 'auto') {
       if (!record.manualIssue)
         await (deps.activation ?? inspectCodexDispatchActivation)(
@@ -784,7 +792,11 @@ export async function prepareDispatch(
     delete record.capacityObservation;
     delete record.nativeInactive;
     record.request = {
-      title: '#' + intake.issue.number + ': ' + (input.title as string).trim().toUpperCase(),
+      title: issueChatTitle(
+        input.title as string,
+        intake.issue.number,
+        `${intake.repository.owner.login}/${intake.repository.name}`,
+      ),
       prompt: launchPrompt(record, intake),
       model: decision.candidate.model,
       thinking: decision.candidate.thinking,

@@ -41,7 +41,6 @@ export default function replyOwnerContext(input: {
       record.supersededBy ||
       record.retirement ||
       record.reset ||
-      record.nativeInactive ||
       (record.threadId && input.custodyInvalid),
     ),
     repository: intake ? `${intake.repository.owner.login}/${intake.repository.name}` : undefined,

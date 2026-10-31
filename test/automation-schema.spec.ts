@@ -14,6 +14,49 @@ function normalize(jobs: unknown): ResolvedAutomation[] {
 const base = { id: 'daily-review', schedule: 'every 1 hour' };
 
 describe('manifest/automation-schema', () => {
+  it('should accept independent unicode display names and retain omitted defaults', () => {
+    assert.equal(normalize([{ ...base, prompt: 'hello' }])[0]!.displayName, undefined);
+    for (const label of ['🔄 NIGHTLY REFRESH', 'Обновление', 'a'.repeat(200), '🔄'.repeat(100)]) {
+      const [job] = normalize([
+        { ...base, prompt: 'hello', 'display-name': label, thread: 'NIGHTLY REFRESH' },
+      ]);
+      assert.equal(job!.displayName, label);
+      assert.deepEqual(job!.thread, { name: 'NIGHTLY REFRESH' });
+    }
+    assert.equal(
+      normalize([{ ...base, prompt: 'hello', 'display-name': ' Label ' }])[0]!.displayName,
+      'Label',
+    );
+  });
+
+  it('should reject invalid display names without exposing their text', () => {
+    for (const label of [
+      null,
+      42,
+      true,
+      {},
+      [],
+      '',
+      '  ',
+      '\0',
+      'first\nsecond',
+      'first\rsecond',
+      'first\vsecond',
+      'first\fsecond',
+      'first\u0085second',
+      'first\u2028second',
+      'first\u2029second',
+      'a'.repeat(201),
+      '🔄'.repeat(101),
+    ]) {
+      const result = normalizeAutomations([{ ...base, prompt: 'hello', 'display-name': label }]);
+      assert.equal(result.status, 'invalid', JSON.stringify(label));
+      assert.ok(
+        result.diagnostics.some(({ fieldPath }) => fieldPath === '/automations/0/display-name'),
+      );
+    }
+  });
+
   it('should normalize equivalent payloads and defaults without changing literal content', () => {
     const script = '  echo "$HOME"\n';
     assert.deepEqual(

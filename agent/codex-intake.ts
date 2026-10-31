@@ -1,4 +1,6 @@
+import { dispatchStorageNotice } from './dispatch-storage.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
+import type { ProjectPickupAuthority } from './project-pickup-authority.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
 import { assertNotificationManagement } from './notification-reset-state.ts';
 import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';
@@ -26,6 +28,7 @@ import { githubIdentityMatches } from '../channels/github/provider/work-item.ts'
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 
 export interface CodexIntakeDependencies {
+  projectPickup?: ProjectPickupAuthority;
   assertActive?: () => Promise<void>;
   threadId?: string;
   intakeNative?: Pick<ReturnType<typeof codexDispatchNative>, 'occurrence'>;
@@ -226,6 +229,8 @@ export async function runCodexIntake(
         throw new IntakeError('intake-workspace-binding-changed');
     };
     const result = await scanAssignments({
+      runtime: 'codex',
+      projectPickup: deps.projectPickup,
       store: current.store,
       workspaceDir: current.workspace,
       agentId: current.agentId,
@@ -339,6 +344,13 @@ export async function inspectCodexIntake(pluginData: string, deps: CodexIntakeDe
     status: code ? 'blocked' : 'ready',
     ...(code ? { code, remediation: intakeRemediation(code) } : {}),
     ...context,
+    ...(context
+      ? {
+          storage: dispatchStorageNotice(
+            await new CodexDispatchStore(pluginData, context.scope).read(),
+          ),
+        }
+      : {}),
     baselineAt: state?.baselineAt ?? null,
     checkpoint: state?.checkpoint ?? null,
     blocker: state?.blocker ?? null,

@@ -100,13 +100,18 @@ describe('agent/setup-runner', () => {
       assert.equal(options.input, '');
       assert.deepEqual(options.baseEnv, {});
       assert.equal(options.timeoutMs, 7_000);
-      assert.equal(options.maxOutputBytes, 65_536);
-      assert.equal(options.maxCombinedOutputBytes, 65_536);
+      assert.equal(Object.hasOwn(options, 'maxOutputBytes'), false);
+      assert.equal(Object.hasOwn(options, 'maxCombinedOutputBytes'), false);
       assert.equal(options.killProcessTree, true);
       assert.equal(options.killGraceMs, 5_000);
-      assert.equal(options.outputCapture, 'head');
+      assert.equal(Object.hasOwn(options, 'outputCapture'), false);
       assert.equal(options.signal, controller.signal);
-      return { ...success, code: 1, stdout: 'private output', stderr: 'private error' };
+      return {
+        ...success,
+        code: 1,
+        stdout: 'private output'.repeat(10_000),
+        stderr: 'private error'.repeat(10_000),
+      };
     });
     assert.deepEqual(await run(shell(script), context(), controller.signal), {
       exitCode: 1,
@@ -115,6 +120,27 @@ describe('agent/setup-runner', () => {
       timedOut: false,
       truncated: false,
     });
+    assert.deepEqual(await readdir(temporaryDirectory), []);
+  });
+
+  it('should return captured streams only when explicitly requested and preserve truncation metadata', async () => {
+    const run = runner(async () => ({
+      ...success,
+      code: 17,
+      stdout: 'captured output',
+      stderr: 'captured error',
+      stderrTruncatedBytes: 12,
+    }));
+    const result = await run(shell('exit 17'), { ...context(), captureOutput: true });
+    assert.equal(result.exitCode, 17);
+    assert.equal(result.truncated, true);
+    assert.deepEqual(result.output, {
+      stdout: 'captured output',
+      stderr: 'captured error',
+      stdoutTruncatedBytes: undefined,
+      stderrTruncatedBytes: 12,
+    });
+    assert.equal((await run(shell('exit 17'), context())).output, undefined);
     assert.deepEqual(await readdir(temporaryDirectory), []);
   });
 

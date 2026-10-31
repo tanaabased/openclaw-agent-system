@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+
+import { prepareAutomationReport } from '../agent/automation-report.ts';
 import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -42,6 +45,7 @@ describe('agent/automation-service', () => {
   let fail: string | undefined;
   let afterWriteFailure: boolean;
   let loaded: boolean;
+  let manifestDigest: string;
   beforeEach(async () => {
     root = await realpath(await mkdtemp('/tmp/automation-'));
     manifest = {
@@ -54,6 +58,7 @@ describe('agent/automation-service', () => {
     now = 1_900_000_000_000;
     revision = 0;
     loaded = true;
+    manifestDigest = 'fixture';
     fail = undefined;
     afterWriteFailure = false;
     const request: AutomationGateway = async (method, params) => {
@@ -118,7 +123,9 @@ describe('agent/automation-service', () => {
           delete job.deleteAfterRun;
       }
       if (patch.payload) {
-        patch.payload = { ...job.payload, ...(patch.payload as object) };
+        const payload = patch.payload as Record<string, unknown>;
+        patch.payload =
+          payload.kind === job.payload.kind ? { ...job.payload, ...payload } : payload;
         for (const [key, value] of Object.entries(patch.payload as object))
           if (value === null) delete (patch.payload as Record<string, unknown>)[key];
       }
@@ -130,7 +137,8 @@ describe('agent/automation-service', () => {
       Object.assign(job, patch, { configRevision: String(++revision) });
       if (job.payload.kind === 'agentTurn' && job.payload.toolsAllow === undefined)
         job.payload.toolsAllow = ['*'];
-      for (const key of ['trigger', 'pacing', 'sessionKey']) if (job[key] === null) delete job[key];
+      for (const key of ['displayName', 'trigger', 'pacing', 'sessionKey'])
+        if (job[key] === null) delete job[key];
       if (afterWriteFailure) {
         afterWriteFailure = false;
         throw new Error('lost acknowledgement');
@@ -157,7 +165,7 @@ describe('agent/automation-service', () => {
                 path: join(root, 'agent.yaml'),
                 diagnostics: [],
                 validationChecks: [],
-                digest: 'fixture',
+                digest: manifestDigest,
               }
             : { status: 'unresolved', diagnostics: [] };
         },
@@ -169,6 +177,288 @@ describe('agent/automation-service', () => {
   });
   const mutations = () =>
     calls.filter(({ method }) => ['cron.add', 'cron.update'].includes(method));
+
+  for (const payload of [{ run: ['node', 'task.js'] }, { prompt: 'Review.' }])
+    it(`should migrate declared ${'run' in payload ? 'command' : 'prompt'} names without changing job state`, async () => {
+      manifest.agent.name = 'Different display identity';
+      manifest.automations = jobs([
+        { id: 'github-declared-job', schedule: 'every 1 hour', enabled: false, ...payload },
+      ]);
+      await service.reconcile(manifest, root);
+      const { store } = await service.scope(manifest, root);
+      const ledger = await store.read();
+      const record = structuredClone(ledger.records[0]!);
+      native[0]!.name = 'Agent System: github-declared-job';
+      native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'ok', nextRunAtMs: now + 3600000 };
+      ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+      await store.write(ledger);
+      const before = structuredClone(native[0]!);
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.deepEqual(
+        mutations().map(({ method, params }) => ({ method, patch: params.patch })),
+        [{ method: 'cron.update', patch: { name: 'TANAABOT: github-declared-job' } }],
+      );
+      assert.deepEqual(native[0], {
+        ...before,
+        name: 'TANAABOT: github-declared-job',
+        configRevision: native[0]!.configRevision,
+      });
+      const after = (await store.read()).records[0]!;
+      assert.deepEqual(after, { ...record, nativeHash: nativeAutomationHash(native[0]!) });
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.deepEqual(mutations(), []);
+    });
+
+  for (const state of ['recurring', 'disabled', 'completed'] as const)
+    it(`should migrate legacy capture for ${state} jobs without replacing or rescheduling them`, async () => {
+      if (state !== 'completed')
+        manifest.automations = jobs([
+          {
+            id: 'check',
+            schedule: 'every 1 hour',
+            enabled: state !== 'disabled',
+            run: ['gh', 'api', 'user'],
+          },
+        ]);
+      await service.reconcile(manifest, root);
+      assert.equal(native[0]!.payload.outputMaxBytes, undefined);
+      native[0]!.payload.outputMaxBytes = 16384;
+      native[0]!.state = {
+        lastRunAtMs: now,
+        lastRunStatus: 'ok',
+        ...(state === 'completed' ? {} : { nextRunAtMs: now + 3600000 }),
+      };
+      if (state === 'completed') native[0]!.enabled = false;
+      const { store } = await service.scope(manifest, root);
+      const ledger = await store.read();
+      ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+      await store.write(ledger);
+      const before = structuredClone(native[0]!);
+      const record = structuredClone(ledger.records[0]!);
+      if (state === 'recurring') {
+        await service.admit(manifest, root, 'check', record.hash);
+        await service.run(manifest, root, 'check');
+      }
+      assert.ok(
+        (await service.inspect(manifest, root)).some(({ code }) => code === 'automation-drift'),
+      );
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.equal(native.length, 1);
+      assert.deepEqual(native[0], {
+        ...before,
+        configRevision: native[0]!.configRevision,
+        payload: { ...before.payload, outputMaxBytes: 16777216 },
+      });
+      assert.deepEqual(
+        mutations().map(({ params }) => params.patch),
+        [{ payload: { ...before.payload, outputMaxBytes: 16777216, toolsAllow: null } }],
+      );
+      const after = (await store.read()).records[0]!;
+      assert.deepEqual(after, {
+        ...record,
+        nativeHash: nativeAutomationHash(native[0]!),
+        ...(state === 'completed' ? { completion: 'ok' } : {}),
+      });
+      if (state === 'recurring') {
+        await service.admit(manifest, root, 'check', after.hash);
+        await service.run(manifest, root, 'check');
+        native[0]!.payload.outputMaxBytes = 42;
+        await assert.rejects(service.run(manifest, root, 'check'), /execution-drift/);
+        await assert.rejects(service.admit(manifest, root, 'check', after.hash), /execution-drift/);
+        native[0]!.payload.outputMaxBytes = 16777216;
+      }
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.deepEqual(mutations(), []);
+      assert.equal(
+        (await service.inspect(manifest, root)).some(({ code }) => code === 'automation-drift'),
+        false,
+      );
+    });
+
+  it('should admit scheduled commands on both sides of an output-only native update', async () => {
+    await service.reconcile(manifest, root);
+    native[0]!.payload.outputMaxBytes = 16384;
+    const { store } = await service.scope(manifest, root);
+    const ledger = await store.read();
+    const record = ledger.records[0]!;
+    record.nativeHash = nativeAutomationHash(native[0]!);
+    await store.write(ledger);
+    const original = service.dependencies.request!;
+    let admissions = 0;
+    service.dependencies.request = async (method, params) => {
+      if (method !== 'cron.update') return original(method, params);
+      await service.admit(manifest, root, 'check', record.hash);
+      admissions++;
+      const response = await original(method, params);
+      await service.admit(manifest, root, 'check', record.hash);
+      admissions++;
+      return response;
+    };
+    await service.reconcile(manifest, root);
+    assert.equal(admissions, 2);
+    assert.equal(native[0]!.payload.outputMaxBytes, 16777216);
+  });
+
+  it('should keep the old capture configuration runnable after a rejected update without allowing drift', async () => {
+    await service.reconcile(manifest, root);
+    native[0]!.payload.outputMaxBytes = 16384;
+    const { store } = await service.scope(manifest, root);
+    const ledger = await store.read();
+    ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+    await store.write(ledger);
+    fail = 'cron.update';
+    await assert.rejects(service.reconcile(manifest, root));
+    const hash = ledger.records[0]!.hash;
+    await service.admit(manifest, root, 'check', hash);
+    const before = structuredClone(native[0]!);
+    for (const change of [
+      { payload: { ...before.payload, outputMaxBytes: 42 } },
+      { payload: { ...before.payload, argv: ['another-command'] } },
+      { schedule: { kind: 'every', everyMs: 1000 } },
+      { enabled: false },
+      { state: { autoDisabled: true } },
+    ]) {
+      native[0] = { ...before, ...change };
+      await assert.rejects(service.admit(manifest, root, 'check', hash), /execution-drift/);
+    }
+    native[0] = before;
+    await service.admit(manifest, root, 'check', hash);
+    native[0]!.enabled = false;
+    native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'ok' };
+    fail = undefined;
+    await service.reconcile(manifest, root);
+    assert.equal(native[0]!.enabled, false);
+    assert.deepEqual(native[0]!.state, { lastRunAtMs: now, lastRunStatus: 'ok' });
+    assert.equal(native[0]!.payload.outputMaxBytes, 16777216);
+    assert.equal((await store.read()).records[0]!.pending, undefined);
+  });
+
+  for (const changed of ['command', 'schedule'] as const)
+    it(`should keep pending ${changed} changes blocked even when they also migrate capture`, async () => {
+      await service.reconcile(manifest, root);
+      native[0]!.payload.outputMaxBytes = 16384;
+      const { store, context } = await service.scope(manifest, root);
+      const ledger = await store.read();
+      ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+      await store.write(ledger);
+      manifest.automations = jobs([
+        {
+          id: 'check',
+          schedule: changed === 'schedule' ? 'in 2 hours' : 'in 1 hour',
+          run: changed === 'command' ? ['gh', 'api', 'repos'] : ['gh', 'api', 'user'],
+        },
+      ]);
+      afterWriteFailure = true;
+      await assert.rejects(service.reconcile(manifest, root));
+      const hash = effectiveAutomation(manifest.automations[0]!, context).hash;
+      await assert.rejects(service.admit(manifest, root, 'check', hash), /execution-stale/);
+    });
+
+  it('should reject a substantive pending update recorded during native admission readback', async () => {
+    await service.reconcile(manifest, root);
+    const { store } = await service.scope(manifest, root);
+    const ledger = await store.read();
+    const original = service.dependencies.request!;
+    service.dependencies.request = async (method, params) => {
+      const response = await original(method, params);
+      if (method === 'cron.get') {
+        ledger.records[0]!.pending = { kind: 'update', nativeHash: 'a'.repeat(64) };
+        await store.write(ledger);
+      }
+      return response;
+    };
+    await assert.rejects(
+      service.admit(manifest, root, 'check', ledger.records[0]!.hash),
+      /execution-stale/,
+    );
+  });
+
+  for (const observed of ['before', 'after'] as const)
+    it(`should admit when migration completes around the ${observed} native read`, async () => {
+      await service.reconcile(manifest, root);
+      native[0]!.payload.outputMaxBytes = 16384;
+      const { store } = await service.scope(manifest, root);
+      const ledger = await store.read();
+      ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+      await store.write(ledger);
+      const original = service.dependencies.request!;
+      let migrate = true;
+      service.dependencies.request = async (method, params) => {
+        if (method !== 'cron.get' || !migrate) return original(method, params);
+        migrate = false;
+        const before = observed === 'before' ? await original(method, params) : undefined;
+        await service.reconcile(manifest, root);
+        return before ?? original(method, params);
+      };
+      await service.admit(manifest, root, 'check', ledger.records[0]!.hash);
+      assert.equal(native[0]!.payload.outputMaxBytes, 16777216);
+      assert.equal((await store.read()).records[0]!.pending, undefined);
+    });
+
+  for (const completed of [false, true])
+    it(`should recover an acknowledged-lost capture migration without replaying its update with completion ${completed}`, async () => {
+      await service.reconcile(manifest, root);
+      native[0]!.payload.outputMaxBytes = 12345;
+      const { store } = await service.scope(manifest, root);
+      const ledger = await store.read();
+      ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+      await store.write(ledger);
+      afterWriteFailure = true;
+      await assert.rejects(service.reconcile(manifest, root));
+      assert.equal(native[0]!.payload.outputMaxBytes, 16777216);
+      assert.equal((await store.read()).records[0]!.pending?.kind, 'update');
+      await service.admit(manifest, root, 'check', ledger.records[0]!.hash);
+      if (completed) {
+        native[0]!.enabled = false;
+        native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'ok' };
+        await assert.rejects(
+          service.admit(manifest, root, 'check', ledger.records[0]!.hash),
+          /execution-drift/,
+        );
+      }
+      const before = structuredClone(native[0]!);
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.deepEqual(mutations(), []);
+      assert.deepEqual(native[0], before);
+      assert.equal((await store.read()).records[0]!.pending, undefined);
+    });
+
+  it('should relabel completed one-shots without rearming them or changing command hashes', async () => {
+    await service.reconcile(manifest, root);
+    native[0]!.state = { lastRunAtMs: now, lastRunStatus: 'ok' };
+    await service.reconcile(manifest, root);
+    const before = structuredClone(native[0]!);
+    const { store } = await service.scope(manifest, root);
+    const record = (await store.read()).records[0]!;
+    for (const label of ['🔄 NIGHTLY REFRESH', '🔄 RENAMED', undefined]) {
+      manifest.automations![0]!.displayName = label;
+      assert.ok(
+        (await service.inspect(manifest, root)).some(({ code }) => code === 'automation-drift'),
+      );
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.deepEqual(
+        mutations().map(({ params }) => params.patch),
+        [{ displayName: label ?? null }],
+      );
+      assert.deepEqual(native[0], {
+        ...before,
+        configRevision: native[0]!.configRevision,
+        ...(label ? { displayName: label } : {}),
+      });
+      assert.equal(native.length, 1);
+      assert.deepEqual((await store.read()).records[0]!.anchorMs, record.anchorMs);
+      assert.equal((await store.read()).records[0]!.generation, record.generation);
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.equal(mutations().length, 0);
+    }
+  });
 
   it('should pause and restore exact native settings without changing the installed receipt', async () => {
     await service.reconcile(manifest, root);
@@ -292,7 +582,7 @@ describe('agent/automation-service', () => {
         connectionDetails: {},
       });
     });
-    manifest.automations![0]!.overrides.openclaw = { effort: 'max' };
+    manifest.automations![0]!.overrides.openclaw = { effort: 'unsupported' };
     await assert.rejects(service.contribution().reconcile!({ manifest, workspaceDir: root }), {
       code: 'automation-effort-unsupported',
     });
@@ -422,7 +712,13 @@ describe('agent/automation-service', () => {
       if (method === 'sessions.list') return { sessions: [...sessions.values()] };
       if (method === 'sessions.create') {
         assert.equal(params.cwd, root);
-        sessions.set(key, { key, sessionId: 'intake-session', workspaceDir: root });
+        sessions.set(key, {
+          key,
+          sessionId: 'intake-session',
+          workspaceDir: root,
+          model: params.model,
+          thinkingLevel: params.thinkingLevel,
+        });
         return { ok: true };
       }
       if (method === 'sessions.patch') {
@@ -440,31 +736,68 @@ describe('agent/automation-service', () => {
     manifest.models = {
       default: { model: 'openai/gpt-6-luna', effort: 'medium' },
       low: { model: 'openai/gpt-6-luna', effort: 'medium' },
+      medium: { model: 'openai/gpt-6-luna', effort: 'medium' },
+      high: { model: 'openai/gpt-6-luna', effort: 'high' },
     };
     manifest.github = { username: 'tanaabot', notifications: policy };
     await service.reconcile(manifest, root);
     assert.equal(native.length, 1);
     assert.equal(sessions.size, 1);
     assert.equal(native[0]!.enabled, true);
-    assert.equal(native[0]!.name, 'Agent System: github-issue-assignment');
+    assert.equal(native[0]!.name, 'AGENT SYSTEM: github-issue-assignment');
+    assert.equal(native[0]!.displayName, '📥 ISSUE ASSIGNMENTS');
+    assert.equal([...sessions.values()][0]!.displayName, 'ISSUE ASSIGNMENTS');
     assert.ok(native[0]!.trigger);
-    assert.equal([...sessions.values()][0]!.category, 'Agent System');
+    assert.equal([...sessions.values()][0]!.category, 'AGENT SYSTEM');
     const identity = native[0]!.id;
     const coordinator = native[0]!.sessionTarget;
     const { store, context } = await service.scope(manifest, root);
+    native[0]!.name = 'Agent System: github-issue-assignment';
+    const legacy = await store.read();
+    legacy.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
+    await store.write(legacy);
+    const beforeRename = structuredClone(native[0]!);
+    calls = [];
+    await service.reconcile(manifest, root);
+    assert.deepEqual(
+      mutations().map(({ params }) => params.patch),
+      [{ name: 'AGENT SYSTEM: github-issue-assignment' }],
+    );
+    const renamed: NativeAutomation = {
+      ...beforeRename,
+      name: 'AGENT SYSTEM: github-issue-assignment',
+      configRevision: native[0]!.configRevision,
+    };
+    assert.deepEqual(native[0], renamed);
+    calls = [];
+    await service.reconcile(manifest, root);
+    assert.deepEqual(mutations(), []);
     const ledger = await store.read();
     const oldJob = structuredClone(openclawIntakeJobs(manifest)[0]!);
-    oldJob.payload = { kind: 'prompt', prompt: 'Advance at most one issue per run.' };
-    native[0]!.payload.message = oldJob.payload.prompt;
+    native[0]!.name = 'Agent System: github-issue-assignment';
+    delete native[0]!.displayName;
+    oldJob.payload = {
+      kind: 'command',
+      run: { kind: 'exec', executable: 'node', args: ['legacy-intake.js'] },
+    };
+    native[0]!.payload = {
+      kind: 'command',
+      argv: ['node', 'legacy-intake.js'],
+      outputMaxBytes: 16384,
+    };
     ledger.records[0]!.hash = effectiveAutomation(oldJob, context).hash;
     ledger.records[0]!.nativeHash = nativeAutomationHash(native[0]!);
     await store.write(ledger);
     calls = [];
     await service.reconcile(manifest, root);
     assert.equal(native[0]!.id, identity);
+    assert.equal(native[0]!.name, 'AGENT SYSTEM: github-issue-assignment');
+    assert.equal(native[0]!.displayName, '📥 ISSUE ASSIGNMENTS');
     assert.equal(native[0]!.sessionTarget, coordinator);
     assert.equal(sessions.size, 1);
     assert.match(String(native[0]!.payload.message), /Fill initially available intake slots/);
+    assert.equal(native[0]!.payload.kind, 'agentTurn');
+    assert.equal(native[0]!.payload.outputMaxBytes, undefined);
     assert.equal(calls.filter((call) => call.method === 'cron.update').length, 1);
     calls = [];
     await service.reconcile(manifest, root);
@@ -556,7 +889,7 @@ describe('agent/automation-service', () => {
     );
     assert.notEqual(replacement.sessionKey, installedKey);
     assert.equal(sessions.size, 3);
-    assert.equal(sessions.get(replacement.sessionKey)!.category, 'Agent System');
+    assert.equal(sessions.get(replacement.sessionKey)!.category, 'AGENT SYSTEM');
     assert.equal(sessions.get(replacement.sessionKey)!.workspaceDir, root);
     assert.equal(
       await notificationAutomationReadiness(
@@ -586,6 +919,202 @@ describe('agent/automation-service', () => {
     );
   });
 
+  it('should register without selecting settings and select reports through the enrolled credential', async () => {
+    const sessions = new Map<string, Record<string, unknown>>();
+    const original = service.dependencies.request!;
+    service.dependencies.request = async (method, params) => {
+      if (!method.startsWith('sessions.')) return original(method, params);
+      calls.push({ method, params: structuredClone(params) });
+      const key = String(params.key ?? params.sessionId);
+      if (method === 'sessions.resolve')
+        return sessions.has(key) ? { ok: true, key, agentId: 'tanaabot' } : { ok: false };
+      if (method === 'sessions.list') return { sessions: [...sessions.values()] };
+      if (method === 'sessions.create') {
+        sessions.set(key, {
+          key,
+          sessionId: 'same-chat',
+          lifecycleRevision: 'revision-1',
+          workspaceDir: root,
+          model: params.model,
+          thinkingLevel: params.thinkingLevel,
+        });
+        return { ok: true };
+      }
+      if (method === 'sessions.patch') {
+        assert.equal(params.expectedSessionId, 'same-chat');
+        if (params.model || params.thinkingLevel) {
+          assert.deepEqual(params, {
+            key,
+            expectedSessionId: 'same-chat',
+            expectedLifecycleRevision: 'revision-1',
+            model: 'openai/gpt-6-luna',
+            thinkingLevel: 'high',
+          });
+        }
+        Object.assign(sessions.get(key)!, {
+          ...(params.autoLabel ? { displayName: params.autoLabel } : {}),
+          ...(params.category ? { category: params.category } : {}),
+          ...(params.model ? { model: params.model } : {}),
+          ...(params.thinkingLevel ? { thinkingLevel: params.thinkingLevel } : {}),
+        });
+        return { ok: true };
+      }
+      throw new Error('unexpected session call');
+    };
+    manifest.models = { default: { model: 'openai/gpt-6-luna', effort: 'medium' } };
+    manifest.automations = jobs([
+      {
+        id: 'prompt',
+        schedule: 'every 1 hour',
+        prompt: 'Check.',
+        thread: { id: 'activity', name: 'Activity' },
+      },
+      {
+        id: 'report',
+        schedule: 'every 1 hour',
+        run: { command: 'true' },
+        thread: { id: 'activity', name: 'Activity' },
+      },
+    ]);
+    await service.reconcile(manifest, root);
+    const [chat] = [...sessions.values()];
+    assert.equal(chat?.model, undefined);
+    assert.equal(chat?.thinkingLevel, undefined);
+    assert.ok(
+      calls
+        .filter(({ method }) => method === 'sessions.create')
+        .every(({ params }) => !('model' in params) && !('thinkingLevel' in params)),
+    );
+    chat!.model = 'openai/other';
+    chat!.thinkingLevel = 'low';
+    calls = [];
+    const healthy = await service.inspect(manifest, root);
+    assert.ok(healthy.every(({ status }) => status === 'healthy'));
+    assert.ok(healthy.every(({ settings }) => settings === undefined));
+    assert.ok(
+      !calls.some(({ method }) =>
+        ['sessions.patch', 'sessions.create', 'cron.update'].includes(method),
+      ),
+    );
+    const identities = native.map(({ id }) => id);
+    manifest.models.default.effort = 'high';
+    await service.reconcile(manifest, root);
+    assert.deepEqual(
+      native.map(({ id }) => id),
+      identities,
+    );
+    assert.equal(chat?.model, 'openai/other');
+    assert.equal(chat?.thinkingLevel, 'low');
+    assert.equal(
+      native.find(({ payload }) => payload.kind === 'agentTurn')!.payload.thinking,
+      'high',
+    );
+    const job = openclawIntakeJobs(manifest).find(({ id }) => id === 'report')!;
+    const { context } = await service.scope(manifest, root);
+    const admitted = await service.admit(
+      manifest,
+      root,
+      'report',
+      effectiveAutomation(job, context).hash,
+    );
+    const executionId = randomUUID();
+    const report = {
+      version: 1 as const,
+      executionId,
+      hash: effectiveAutomation(job, context).hash,
+      manifestDigest: 'fixture',
+      target: { ...admitted.reportTarget!, sessionId: 'same-chat' },
+      input: prepareAutomationReport({
+        id: 'report',
+        executionId,
+        startedAt: '2026-10-30T00:00:00Z',
+        cancelled: false,
+        result: { exitCode: 0, timedOut: false, truncated: false },
+      }),
+      state: 'pending' as const,
+    };
+    const enrolled = service.dependencies.request!;
+    service.dependencies.request = async () => {
+      throw new Error('operator transport must not be used');
+    };
+    await service.selectReportSettings(report, (method, params) =>
+      enrolled(method as Parameters<AutomationGateway>[0], params as Record<string, unknown>),
+    );
+    assert.equal(chat?.model, 'openai/gpt-6-luna');
+    assert.equal(chat?.thinkingLevel, 'high');
+    assert.equal(sessions.size, 1);
+    const before = calls.filter(
+      ({ method, params }) => method === 'sessions.patch' && params.model,
+    ).length;
+    await service.selectReportSettings(report, (method, params) =>
+      enrolled(method as Parameters<AutomationGateway>[0], params as Record<string, unknown>),
+    );
+    assert.equal(
+      calls.filter(({ method, params }) => method === 'sessions.patch' && params.model).length,
+      before,
+    );
+    chat!.sessionId = 'replacement';
+    chat!.model = 'openai/other';
+    await assert.rejects(
+      service.selectReportSettings(report, (method, params) =>
+        enrolled(method as Parameters<AutomationGateway>[0], params as Record<string, unknown>),
+      ),
+      (error: unknown) =>
+        error instanceof AutomationError && error.code === 'automation-report-target-unavailable',
+    );
+    assert.equal(
+      calls.filter(({ method, params }) => method === 'sessions.patch' && params.model).length,
+      before,
+    );
+    service.dependencies.request = enrolled;
+  });
+
+  it('should preserve unowned chat settings and schedule when only workspace defaults change', async () => {
+    const original = service.dependencies.request!;
+    const key = 'agent:tanaabot:existing';
+    service.dependencies.request = async (method, params) => {
+      if (!method.startsWith('sessions.')) return original(method, params);
+      calls.push({ method, params });
+      if (method === 'sessions.resolve') return { ok: true, key, agentId: 'tanaabot' };
+      if (method === 'sessions.list')
+        return {
+          sessions: [
+            {
+              key,
+              sessionId: 'existing',
+              workspaceDir: root,
+              category: 'AGENT SYSTEM',
+              model: 'openai/native',
+              thinkingLevel: 'low',
+            },
+          ],
+        };
+      assert.fail('unowned chat must not receive a session mutation');
+    };
+    manifest.models = { default: { model: 'openai/default', effort: 'medium' } };
+    manifest.automations = jobs([
+      {
+        id: 'prompt',
+        schedule: 'every 1 hour',
+        prompt: 'Check.',
+        overrides: { openclaw: { target: { thread: key } } },
+      },
+    ]);
+    await service.reconcile(manifest, root);
+    assert.equal(native[0]!.payload.model, undefined);
+    assert.equal(native[0]!.payload.thinking, undefined);
+    const before = structuredClone(native);
+    manifest.models.default = { model: 'openai/changed', effort: 'high' };
+    calls = [];
+    await service.reconcile(manifest, root);
+    assert.deepEqual(native, before);
+    assert.ok(
+      !calls.some(({ method }) =>
+        ['sessions.create', 'sessions.patch', 'cron.update'].includes(method),
+      ),
+    );
+  });
+
   it('should share a native session, preserve history across routing changes, and recover a lost create response', async () => {
     const sessions = new Map<string, Record<string, unknown>>();
     const original = service.dependencies.request!;
@@ -612,8 +1141,10 @@ describe('agent/automation-service', () => {
       if (method === 'sessions.patch') {
         assert.equal(params.expectedSessionId, 'durable-id');
         Object.assign(sessions.get(key)!, {
-          autoLabel: params.autoLabel,
-          displayName: params.autoLabel,
+          ...(params.autoLabel !== undefined
+            ? { autoLabel: params.autoLabel, displayName: params.autoLabel }
+            : {}),
+          ...(params.category !== undefined ? { category: params.category } : {}),
         });
         return { ok: true };
       }
@@ -636,6 +1167,24 @@ describe('agent/automation-service', () => {
     assert.equal(native[0]?.sessionTarget, native[1]?.sessionTarget);
     assert.match(String(native[0]?.sessionTarget), /^session:agent:tanaabot:/);
     const nativeIds = native.map((job) => job.id);
+    const originalJob = structuredClone(native[0]!);
+    const originalSessions = structuredClone(sessions);
+    for (const label of ['🔄 NIGHTLY REFRESH', '🔄 RENAMED', undefined]) {
+      manifest.automations[0]!.displayName = label;
+      calls = [];
+      await service.reconcile(manifest, root);
+      assert.deepEqual(
+        mutations().map(({ params }) => params.patch),
+        [{ displayName: label ?? null }],
+      );
+      assert.deepEqual(native[0], {
+        ...originalJob,
+        configRevision: native[0]!.configRevision,
+        ...(label ? { displayName: label } : {}),
+      });
+      assert.deepEqual(sessions, originalSessions);
+      assert.equal(native.length, 2);
+    }
     const before = calls.length;
     await service.reconcile(manifest, root);
     assert.equal(
@@ -754,6 +1303,86 @@ describe('agent/automation-service', () => {
     await assert.rejects(service.run(manifest, root, 'check'), /ownership-conflict/u);
     assert.equal(calls.filter(({ method }) => method === 'cron.run').length, 0);
   });
+  it('should keep job-wide report state separate from native history without exposing captured output', async () => {
+    await service.reconcile(manifest, root);
+    const { store } = await service.scope(manifest, root);
+    const ledger = await store.read();
+    const executionId = randomUUID();
+    const report = {
+      version: 1 as const,
+      executionId,
+      hash: ledger.records[0]!.hash,
+      manifestDigest: 'fixture',
+      target: {
+        scope: store.scope,
+        agentId: 'tanaabot',
+        workspaceDir: root,
+        sessionKey: 'agent:tanaabot:reports',
+      },
+      input: prepareAutomationReport({
+        id: 'check',
+        executionId,
+        startedAt: '2026-10-30T00:00:00Z',
+        cancelled: false,
+        result: {
+          exitCode: 17,
+          timedOut: false,
+          truncated: false,
+          output: { stdout: 'private output', stderr: '' },
+        },
+      }),
+      state: 'pending' as const,
+    };
+    await service.reports.withLock(executionId, () => service.reports.write(report));
+    await service.assertReportCurrent(report);
+    manifestDigest = 'unrelated-edit';
+    await service.assertReportCurrent(report);
+    const original = structuredClone(manifest);
+    for (const change of [
+      'removed',
+      'disabled',
+      'command',
+      'runtime',
+      'schedule',
+      'report-target',
+    ] as const) {
+      manifest = structuredClone(original);
+      if (change === 'removed') manifest.automations = [];
+      if (change === 'disabled') manifest.automations![0]!.enabled = false;
+      if (change === 'command')
+        manifest.automations![0]!.payload = { kind: 'prompt', prompt: 'changed' };
+      if (change === 'runtime') manifest.automations![0]!.runtimes = ['codex'];
+      if (change === 'schedule')
+        manifest.automations![0]!.schedule = jobs([
+          { id: 'check', schedule: 'every 2 hours', run: ['gh', 'api', 'user'] },
+        ])[0]!.schedule;
+      if (change === 'report-target')
+        manifest.automations = jobs([
+          {
+            id: 'check',
+            schedule: 'in 1 hour',
+            run: ['gh', 'api', 'user'],
+            thread: { name: 'another destination' },
+          },
+        ]);
+      await assert.rejects(service.assertReportCurrent(report), /declaration-changed/u);
+    }
+    manifest = original;
+    const history = await service.runs(manifest, root, 'check', {
+      limit: 10,
+      offset: 0,
+      runId: 'run-1',
+    });
+    assert.equal(history.reportsTotal, 1);
+    assert.equal(history.reports[0]!.executionId, executionId);
+    assert.equal(history.reports[0]!.execution, 'error');
+    assert.equal(history.reports[0]!.status, 'pending');
+    assert.equal(history.entries[0]!.execution, 'ok');
+    assert.ok(!JSON.stringify(history).includes('private output'));
+    loaded = false;
+    await assert.rejects(service.assertReportCurrent(report), /declaration-changed/);
+  });
+
   it('should reject invalid history options and report transport failure without replay', async () => {
     await service.reconcile(manifest, root);
     for (const options of [
@@ -1277,6 +1906,7 @@ describe('agent/automation-service', () => {
     await assert.rejects(service.reconcile(manifest, root), /automation-manifest-changed/u);
     assert.equal(mutations().length, 0);
     loaded = true;
+    manifestDigest = 'fixture';
     fail = 'cron.add';
     await assert.rejects(
       service.reconcile(manifest, root),

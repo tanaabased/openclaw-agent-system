@@ -16,6 +16,59 @@ describe('agent/codex-continuation-native', () => {
       thinking: 'high',
     },
   };
+  it('should recover the same input receipt after an incomplete read and retain a later denial', async () => {
+    const direct = {
+      ...attempt,
+      origin: 'input' as const,
+      sourceThreadId: 'issue',
+      sourceTurnId: 'operator-turn',
+      turnId: 'operator-turn',
+      inputId: 'operator-input',
+    };
+    const before = structuredClone(direct);
+    const unavailable = new Error('native history temporarily unavailable');
+    let available = false;
+    let denied = false;
+    const verify = codexContinuationNative(async (method, params) => {
+      if (method === 'thread/turns/list')
+        return { data: [{ id: direct.sourceTurnId, status: 'inProgress' }] };
+      assert.equal(method, 'thread/items/list');
+      assert.equal(params.turnId, direct.sourceTurnId);
+      if (params.cursor && !available) throw unavailable;
+      return params.cursor
+        ? {
+            data: denied
+              ? [
+                  {
+                    turnId: direct.sourceTurnId,
+                    item: { type: 'commandExecution', status: 'declined' },
+                  },
+                ]
+              : [],
+            nextCursor: null,
+          }
+        : {
+            data: [
+              {
+                turnId: direct.sourceTurnId,
+                item: {
+                  id: direct.inputId,
+                  type: 'userMessage',
+                  content: [{ type: 'text', text: 'authorized input '.repeat(10000) }],
+                },
+              },
+            ],
+            nextCursor: 'remaining',
+          };
+    });
+    await assert.rejects(verify('intake', direct), (error) => error === unavailable);
+    available = true;
+    assert.equal((await verify('intake', direct)).status, 'verified');
+    assert.equal((await verify('intake', direct)).status, 'verified');
+    denied = true;
+    assert.equal((await verify('intake', direct)).status, 'blocked');
+    assert.deepEqual(direct, before);
+  });
   it('should verify exact native operator input instead of an invented assessment or delegated receipt', async () => {
     const direct = {
       ...attempt,
@@ -33,10 +86,33 @@ describe('agent/codex-continuation-native', () => {
         content: [{ type: 'text', text: 'Implement the plan.' }],
       },
     ];
-    const verify = codexContinuationNative(async () => ({
-      data: items.map((item) => ({ turnId: 'operator-turn', item })),
+    let ended = false;
+    const verify = codexContinuationNative(async (method) => ({
+      data:
+        method === 'thread/turns/list'
+          ? [
+              {
+                id: 'operator-turn',
+                status: ended ? 'completed' : 'inProgress',
+                completedAt: ended ? 10 : null,
+              },
+            ]
+          : items.map((item) => ({ turnId: 'operator-turn', item })),
     }));
+    assert.equal((await verify('intake', direct)).ended, false);
+    ended = true;
+    assert.equal((await verify('intake', direct)).ended, true);
     assert.equal((await verify('intake', direct)).status, 'verified');
+    items.push({
+      id: 'later-operator-input',
+      type: 'userMessage',
+      content: [{ type: 'text', text: 'Run the disposable pilot.' }],
+    });
+    assert.equal((await verify('intake', direct)).status, 'verified');
+    assert.equal(
+      (await verify('intake', { ...direct, inputId: 'later-operator-input' })).status,
+      'verified',
+    );
     items[0]!.type = 'agentMessage';
     await assert.rejects(verify('intake', direct), /continuation-input-unverified/);
     items[0]!.type = 'userMessage';
@@ -136,8 +212,17 @@ describe('agent/codex-continuation-native', () => {
       return {
         data:
           method === 'thread/turns/list'
-            ? turns
-            : turns.flatMap((turn) => turn.items.map((item) => ({ turnId: turn.id, item }))),
+            ? params.sortDirection === 'desc'
+              ? turns
+                  .toReversed()
+                  .slice(0, typeof params.limit === 'number' ? params.limit : undefined)
+              : turns
+            : turns
+                .filter(
+                  (turn) =>
+                    params.threadId === 'source' || !params.turnId || params.turnId === turn.id,
+                )
+                .flatMap((turn) => turn.items.map((item) => ({ turnId: turn.id, item }))),
         nextCursor: null,
       };
     });

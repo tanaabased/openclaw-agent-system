@@ -2,6 +2,7 @@ import { Type, type Static, type TObject } from 'typebox';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { workflowBindingSchema } from './workflow-result.ts';
 import { maximumGitHubNotificationReplyLength } from '../channels/github/publication/limits.ts';
+import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -18,6 +19,7 @@ export const assessmentSummaryRequestProperties = {
     Type.String({ minLength: 1, maxLength: maximumGitHubNotificationReplyLength }),
   ),
   diagnostic: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })),
+  material: Type.Optional(implementationMaterialSchema),
 };
 export const assessmentSummarySchema = Type.Object(
   {

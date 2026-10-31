@@ -24,7 +24,7 @@ function fixtureNative(request: CodexThreadRequest) {
       assert.equal(params.includeTurns, false);
       return request(method, params);
     }
-    if (method === 'thread/turns/list' || (method === 'thread/items/list' && params.limit === 50)) {
+    if (method === 'thread/turns/list' || method === 'thread/items/list') {
       const response = await request('thread/read', {
         threadId: params.threadId,
         includeTurns: false,
@@ -36,7 +36,10 @@ function fixtureNative(request: CodexThreadRequest) {
       }));
       if (method === 'thread/turns/list') {
         const ordered = params.sortDirection === 'desc' ? [...turns].reverse() : turns;
-        return { data: ordered.slice(0, Number(params.limit)), nextCursor: null };
+        return {
+          data: ordered.slice(0, typeof params.limit === 'number' ? params.limit : undefined),
+          nextCursor: null,
+        };
       }
       return {
         data: turns

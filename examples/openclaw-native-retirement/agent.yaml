@@ -1,0 +1,8 @@
+schema-version: 1
+agent:
+  id: native-retirement
+  name: Native Retirement Fixture
+models:
+  default:
+    model: aimock/gpt-5.5
+    effort: medium

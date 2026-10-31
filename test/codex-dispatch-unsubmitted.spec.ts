@@ -15,7 +15,10 @@ describe('agent/codex-dispatch-unsubmitted', () => {
     return async (method, params) => {
       assert.equal(params.threadId, 'intake');
       if (method === 'thread/turns/list')
-        return { data: turns.slice(0, Number(params.limit)), nextCursor: null };
+        return {
+          data: turns.slice(0, typeof params.limit === 'number' ? params.limit : undefined),
+          nextCursor: null,
+        };
       assert.equal(method, 'thread/items/list');
       return {
         data: (params.turnId === 'current' ? [message] : items).map((item) => ({

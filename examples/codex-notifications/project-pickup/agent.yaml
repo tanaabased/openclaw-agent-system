@@ -1,0 +1,20 @@
+schema-version: 1
+agent:
+  id: pickup
+github:
+  username: tanaabot
+  runtimes: [codex]
+  allowed-repository-owners: ['@tanaabased']
+  issue-assignment: {}
+  project-pickup:
+    schedule:
+      cron: '0 22 * * *'
+      timezone: America/New_York
+    window-minutes: 60
+    selection:
+      guidance: choose useful, ready work within the milestone
+    projects:
+      - repository: tanaabased/big-test-bucket
+        milestone:
+          number: 10
+          policy: only

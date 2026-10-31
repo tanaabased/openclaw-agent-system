@@ -45,10 +45,27 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 
 ## Workflow
 
+In either runtime, lead each finding with its known name, ID, or resource before
+the condition and settings. Preserve configured names and existing identifier
+masking. Use the affected automation ID on thread/settings failures; use a generic
+threads finding only when the result supplies no affected automation.
+
+Keep healthy automation entries quiet: omit routine model/effort comparisons.
+Show settings only for drift, unsupported selections, or another actionable
+settings condition. For drift, report only explicitly requested settings that
+differ; an omitted request is not drift, and an unknown observation stays unknown.
+Do not discard complete machine-readable evidence when shortening human details.
+
+For example: healthy — `ISSUE ASSIGNMENTS: thread ***9c31, reused`;
+effort-only drift — `ISSUE ASSIGNMENTS: effort requested high, observed medium`.
+Omit the matching model from the drift example. OpenClaw keeps its
+component/status/details table and wrapping; standalone Codex uses readable chat,
+without terminal padding or ANSI formatting. Saved settings do not prove execution.
+
 ### OpenClaw
 
 1. Call `agent_system_doctor` with `{"timeoutMs":600000}` for a ten-minute OpenClaw-hosted Codex tool-call budget. Do not supply an agent id, workspace override, or repair option. Approval and setup-command deadlines remain separate.
-2. Let OpenClaw present its native chat approval and wait for **Allow once**. Skill prose, CLI consent, `--yes`, and shell commands cannot replace or bypass that approval.
+2. For interactive calls, let OpenClaw present its native chat approval and wait for **Allow once**. Verified activated owned prompt automations execute through the same tool without recurring approval. Skill prose, CLI consent, `--yes`, and shell commands cannot supply automation authority or bypass interactive approval.
 3. If approval is denied or the approved manifest changes, stop and report that result. Do not retry through another route.
 4. Report the returned aggregate status, findings, and remediation. Do not call Install unless the user separately requests it.
 
@@ -59,13 +76,13 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 3. Form the internal command from `setupRuntime.argvPrefix`. Append every argument as a distinct shell-safe argument; do not evaluate shell text or choose a runtime.
 4. Append `inspect --plugin-data <pluginData>` and run the command under the host's normal Codex authorization. Never append `install` or invoke an apply path.
 5. Report findings in declaration order. Treat blocked findings as blocked overall, otherwise drift findings as drift overall, and manual or skipped findings as healthy overall.
-6. If the newest context exposes `automationRuntime`, discover the native automation tools, call `list_projects`, and read any explicitly declared thread targets with `read_thread`. Invoke that trusted prefix with `inspect --plugin-data <pluginData>` (or `list --plugin-data <pluginData>` for a requested declared/native inventory) and deliver the decoded lookup results as `{ "projects": <result>, "threads": [<exact thread results>] }` through standard input. Report the deterministic findings, pending recovery, and unsupported settings. For `automation-thread-replacement-required`, explain that Install creates a fresh intake coordinator without resetting issue tracking; Doctor does not create or unarchive it. Report `automation-thread-host-access-required` as a native host-access blocker without exposing captured stderr. Chat permissions are verified at creation; the read-only native interface does not expose their current values. Native approval review still controls each scheduled action; saved settings never establish unattended execution. Never call prepare, acknowledge, cancel, Install, or a native mutation from Doctor. A saved-state read/schema failure is an inspection error, not an empty scheduler.
+6. If the newest context exposes `automationRuntime`, discover the native automation tools, call `list_projects` and `list_threads`, and read any explicitly declared thread targets with `read_thread`. Invoke that trusted prefix with `inspect --plugin-data <pluginData>` (or `list --plugin-data <pluginData>` for a requested declared/native inventory) and deliver the decoded lookup results as `{ "projects": <result>, "threads": [<exact thread results>], "nativeInventory": <complete decoded list_threads result> }` through standard input. Report the deterministic findings, pending recovery, and unsupported settings. For `automation-thread-replacement-required`, explain that Install creates a fresh intake coordinator without resetting issue tracking; Doctor does not create or unarchive it. Report `automation-thread-host-access-required` as a native host-access blocker without exposing captured stderr. Chat permissions are verified at creation; the read-only native interface does not expose their current values. Native approval review still controls each scheduled action; saved settings never establish unattended execution. Never call prepare, acknowledge, cancel, Install, or a native mutation from Doctor. A saved-state read/schema failure is an inspection error, not an empty scheduler.
 7. Use the setup result's `intake` field to report admitted issues, assigning actors and event IDs, baseline/checkpoint, and blockers. Do not repeat inspection, run a scan, or infer current GitHub authorization from old evidence.
 8. State that standalone Codex inspected its binding, manifest, applicable setup checks, and supported saved automation definitions. Saved settings do not prove execution; execution and delivery telemetry remain unavailable. OpenClaw-owned lifecycle state remains unassessed. Missing native lookups are actionable inspection blockers, not proof that jobs are absent.
 
 ## Checkpoints
 
-- OpenClaw Doctor has native **Allow once** approval for the active workspace and manifest.
+- OpenClaw Doctor has native **Allow once** approval or verified activated same-agent automation authority for the occurrence. Setup children and later interactive turns inherit neither.
 - Standalone Codex has a live active binding and an unchanged manifest digest throughout inspection.
 - A setup step excluded from the selected runtime runs neither its check nor its apply command.
 - Model-visible results contain stable findings and remediation, never declared commands, captured output, environment values, or secrets.

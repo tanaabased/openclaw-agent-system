@@ -1,7 +1,8 @@
 import { openClawCollaborationScenario } from '../examples/openclaw-collaboration/model-fixture.ts';
 import { automationRecoveryScenario } from '../examples/openclaw-automation-recovery/model-fixture.ts';
+import { automationCommandChatScenario } from '../examples/openclaw-automation-command-chat/model-fixture.ts';
 import { lifecycleApprovalScenario } from '../examples/openclaw-lifecycle-approvals/model-fixture.ts';
-import { automationExampleScenario } from '../examples/openclaw-automations/model-fixture.ts';
+import { automationExampleScenario } from '../examples/openclaw-automation-prompt/model-fixture.ts';
 import { agentExampleScenario } from '../examples/openclaw-agent/model-fixture.ts';
 import { credentialExampleScenario as openClawCredentialScenario } from '../examples/openclaw-credentials/model-fixture.ts';
 import { githubExampleScenario } from '../examples/openclaw-github/model-fixture.ts';
@@ -19,6 +20,7 @@ import { feedbackPolicyExampleScenario } from '../examples/openclaw-notification
 import { assignmentPolicyExampleScenario } from '../examples/openclaw-notifications-assignment-policy/model-fixture.ts';
 import { reactivationExampleScenario } from '../examples/openclaw-notifications-reactivation/model-fixture.ts';
 import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
+import { nativeRetirementScenario } from '../examples/openclaw-native-retirement/model-fixture.ts';
 import { resetExampleScenario } from '../examples/openclaw-notifications-reset/model-fixture.ts';
 import { progressionExampleScenario } from '../examples/openclaw-notifications-progression/model-fixture.ts';
 import { decisionRecoveryExampleScenario } from '../examples/openclaw-notifications-decision-recovery/model-fixture.ts';
@@ -41,6 +43,7 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [openClawCollaborationScenario.id, openClawCollaborationScenario],
   [automationExampleScenario.id, automationExampleScenario],
   [automationRecoveryScenario.id, automationRecoveryScenario],
+  [automationCommandChatScenario.id, automationCommandChatScenario],
   [openClawCredentialScenario.id, openClawCredentialScenario],
   [githubExampleScenario.id, githubExampleScenario],
   [osExecutionExampleScenario.id, osExecutionExampleScenario],
@@ -72,6 +75,7 @@ const scenarios = new Map<string, OpenClawAIMockScenario>([
   [assignmentPolicyExampleScenario.id, assignmentPolicyExampleScenario],
   [reactivationExampleScenario.id, reactivationExampleScenario],
   [retirementExampleScenario.id, retirementExampleScenario],
+  [nativeRetirementScenario.id, nativeRetirementScenario],
   [resetExampleScenario.id, resetExampleScenario],
 ]);
 

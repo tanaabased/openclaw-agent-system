@@ -309,6 +309,7 @@ describe('assignment retirement', () => {
     it(`should ${shared ? 'block' : 'complete'} unavailable-session retirement ${shared ? 'with' : 'without'} an active shared owner`, async () => {
       const h = setup();
       h.record.worktree = '/managed/issue';
+      h.record.nativeInactive = false;
       h.fixture.item.state = 'closed';
       h.settings.value = parseCleanupConfiguration({ graceMinutes: 0 });
       if (shared)

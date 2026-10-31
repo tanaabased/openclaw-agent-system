@@ -25,6 +25,7 @@ import recoverDispatch from './codex-dispatch-recovery.ts';
 import liveWorkflowPolicy from './live-workflow-policy.ts';
 import reportDispatch, { failDispatch, notice } from './codex-dispatch-reporting.ts';
 import validateDispatchRequest from './codex-dispatch-request.ts';
+import retireCodexNative from './codex-native-retirement.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
 import runCodexFeedback from './codex-feedback.ts';
 import acceptCodexIntakeOccurrence from './codex-intake-occurrence.ts';
@@ -100,6 +101,12 @@ export async function runCodexDispatch(
       deps,
     );
   validateDispatchRequest(action, input);
+  if (action === 'retire' && typeof input.native === 'string')
+    return retireCodexNative(
+      pluginData,
+      { native: input.native, digest: input.digest as string | undefined },
+      deps,
+    );
   deps = {
     ...deps,
     claimStore: deps.claimStore ?? codexInstanceStore(pluginData),

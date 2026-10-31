@@ -76,6 +76,8 @@ describe('agent/openclaw-intake-policy', () => {
     assert.equal(jobs.length, 2);
     assert.deepEqual(jobs[0], value.automations![0]);
     assert.equal(jobs[1]?.id, 'github-issue-assignment');
+    assert.equal(jobs[1]?.displayName, '📥 ISSUE ASSIGNMENTS');
+    assert.deepEqual(jobs[1]?.thread, { name: 'ISSUE ASSIGNMENTS' });
     assert.equal(jobs[1]?.enabled, true);
   });
 

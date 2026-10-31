@@ -15,6 +15,7 @@ export interface IssueWorkflowState {
   supersededBy?: string;
   handoff?: unknown;
   blocker?: string;
+  implementationPreparationError?: string;
   retry?: unknown;
   result?: { code?: string; outcome?: string };
   progression?: { stage: string; workOwner?: string };
@@ -61,13 +62,12 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
     record.result?.code === 'dispatch-assignment-superseded'
   )
     return { action: 'stopped', status: 'obsolete' };
+  if (record.implementationPreparationError)
+    return { action: 'implementation', status: record.retry ? 'retrying' : 'needs-attention' };
   // openclaw also retains a continuation message; it is transport, not codex work state.
   const continuation = record.continuation?.phase ? record.continuation : undefined;
   const work = record.work;
-  if (continuation?.phase === 'cancelled')
-    return record.handoff
-      ? { action: 'implementation', status: 'running' }
-      : { action: 'stopped', status: 'cancelled' };
+  if (continuation?.phase === 'cancelled') return { action: 'stopped', status: 'cancelled' };
   if (
     continuation?.phase === 'blocked' ||
     (work?.code &&
@@ -94,7 +94,7 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
     return { action: 'wait-input', status: 'clarification-needed' };
   if (result?.outcome === 'blocked' && !resumed) return { action: 'wait-input', status: 'blocked' };
   if (result?.outcome === 'done' && (continuation?.scope ?? work?.scope) === 'local')
-    return { action: 'complete', status: 'complete' };
+    return { action: 'complete', status: 'publication-held' };
   const delivery = record.delivery ?? work?.delivery;
   const implementing =
     (result && result.outcome !== 'done' && resumed) ||
@@ -118,10 +118,10 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
       delivery.announcement?.receipt &&
       !delivery.announcement.code;
     return complete
-      ? { action: 'complete', status: 'complete' }
+      ? { action: 'complete', status: 'delivered' }
       : {
           action: 'delivery',
-          status: delivery?.pullRequest ? 'partially-delivered' : 'delivery',
+          status: published ? 'delivered-response-pending' : 'delivery',
           publicationPending: !published,
         };
   }
@@ -144,7 +144,9 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
         ? 'policy-held'
         : continuation.retry
           ? 'retrying'
-          : (continuation.phase ?? 'running'),
+          : continuation.code
+            ? 'needs-attention'
+            : (continuation.phase ?? 'running'),
     };
   }
   if (work || record.progression?.stage === 'implementation') {
@@ -171,10 +173,12 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
         ? 'blocked'
         : record.retry
           ? 'retrying'
-          : record.phase === 'complete'
-            ? (record.result?.outcome ?? record.phase)
-            : record.phase === 'creating'
-              ? 'uncertain'
-              : record.phase,
+          : record.phase === 'waiting' && (record.blocker || record.result?.code)
+            ? 'needs-attention'
+            : record.phase === 'complete'
+              ? (record.result?.outcome ?? record.phase)
+              : record.phase === 'creating'
+                ? 'uncertain'
+                : record.phase,
   };
 }
