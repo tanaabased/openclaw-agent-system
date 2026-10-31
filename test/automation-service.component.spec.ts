@@ -919,7 +919,7 @@ describe('agent/automation-service', () => {
     );
   });
 
-  it('should create and update shared settings while preserving the native chat and schedule', async () => {
+  it('should register without selecting settings and select reports through the enrolled credential', async () => {
     const sessions = new Map<string, Record<string, unknown>>();
     const original = service.dependencies.request!;
     service.dependencies.request = async (method, params) => {
@@ -969,73 +969,104 @@ describe('agent/automation-service', () => {
         prompt: 'Check.',
         thread: { id: 'activity', name: 'Activity' },
       },
+      {
+        id: 'report',
+        schedule: 'every 1 hour',
+        run: { command: 'true' },
+        thread: { id: 'activity', name: 'Activity' },
+      },
     ]);
     await service.reconcile(manifest, root);
     const [chat] = [...sessions.values()];
-    assert.equal(chat?.thinkingLevel, 'medium');
-    assert.equal(chat?.model, 'openai/gpt-6-luna');
-    const id = native[0]!.id;
-    const healthy = (await service.inspect(manifest, root)).find(
-      ({ stepId }) => stepId === 'prompt',
-    )!;
-    assert.equal(healthy.status, 'healthy');
-    assert.deepEqual(healthy.settings, {
-      requested: { model: 'openai/gpt-6-luna', effort: 'medium' },
-      observed: { model: 'openai/gpt-6-luna', effort: 'medium' },
-    });
-    for (const dimension of ['model', 'effort'] as const) {
-      const field = dimension === 'model' ? 'model' : 'thinkingLevel';
-      const previous = chat![field];
-      chat![field] = dimension === 'model' ? 'openai/other' : 'low';
-      calls = [];
-      const [drift] = await service.inspect(manifest, root);
-      assert.equal(drift?.stepId, 'prompt');
-      assert.equal(drift?.code, 'automation-thread-model-drift');
-      assert.equal(drift?.status, 'blocked');
-      assert.deepEqual(drift?.settings, {
-        requested: { model: 'openai/gpt-6-luna', effort: 'medium' },
-        observed: { model: 'openai/gpt-6-luna', effort: 'medium', [dimension]: chat![field] },
-      });
-      assert.equal(
-        calls.some(({ method }) =>
-          ['sessions.patch', 'sessions.create', 'cron.update'].includes(method),
-        ),
-        false,
-      );
-      assert.equal(chat![field], dimension === 'model' ? 'openai/other' : 'low');
-      chat![field] = previous;
-    }
-    const name = chat!.displayName;
-    chat!.displayName = 'Other';
-    const [nameDrift] = await service.inspect(manifest, root);
-    assert.equal(nameDrift?.stepId, 'prompt');
-    assert.equal(nameDrift?.code, 'automation-thread-name-drift');
-    chat!.displayName = name;
-    manifest.models.default.effort = 'high';
-    calls = [];
-    const findings = await service.inspect(manifest, root);
+    assert.equal(chat?.model, undefined);
+    assert.equal(chat?.thinkingLevel, undefined);
     assert.ok(
-      findings.some(({ message }) => message.includes('high') && message.includes('medium')),
+      calls
+        .filter(({ method }) => method === 'sessions.create')
+        .every(({ params }) => !('model' in params) && !('thinkingLevel' in params)),
     );
-    assert.equal(
-      calls.some(({ method }) => method === 'sessions.patch'),
-      false,
-    );
-    await service.reconcile(manifest, root);
-    assert.equal(sessions.size, 1);
-    assert.equal(chat?.thinkingLevel, 'high');
-    assert.equal(native[0]!.id, id);
-    assert.equal(native[0]!.payload.thinking, 'high');
-    assert.equal(
-      calls.some(({ method }) => method === 'sessions.create'),
-      false,
-    );
+    chat!.model = 'openai/other';
+    chat!.thinkingLevel = 'low';
     calls = [];
-    await service.reconcile(manifest, root);
-    assert.equal(
-      calls.some(({ method }) => ['sessions.patch', 'cron.update'].includes(method)),
-      false,
+    const healthy = await service.inspect(manifest, root);
+    assert.ok(healthy.every(({ status }) => status === 'healthy'));
+    assert.ok(healthy.every(({ settings }) => settings === undefined));
+    assert.ok(
+      !calls.some(({ method }) =>
+        ['sessions.patch', 'sessions.create', 'cron.update'].includes(method),
+      ),
     );
+    const identities = native.map(({ id }) => id);
+    manifest.models.default.effort = 'high';
+    await service.reconcile(manifest, root);
+    assert.deepEqual(
+      native.map(({ id }) => id),
+      identities,
+    );
+    assert.equal(chat?.model, 'openai/other');
+    assert.equal(chat?.thinkingLevel, 'low');
+    assert.equal(
+      native.find(({ payload }) => payload.kind === 'agentTurn')!.payload.thinking,
+      'high',
+    );
+    const job = openclawIntakeJobs(manifest).find(({ id }) => id === 'report')!;
+    const { context } = await service.scope(manifest, root);
+    const admitted = await service.admit(
+      manifest,
+      root,
+      'report',
+      effectiveAutomation(job, context).hash,
+    );
+    const executionId = randomUUID();
+    const report = {
+      version: 1 as const,
+      executionId,
+      hash: effectiveAutomation(job, context).hash,
+      manifestDigest: 'fixture',
+      target: { ...admitted.reportTarget!, sessionId: 'same-chat' },
+      input: prepareAutomationReport({
+        id: 'report',
+        executionId,
+        startedAt: '2026-10-30T00:00:00Z',
+        cancelled: false,
+        result: { exitCode: 0, timedOut: false, truncated: false },
+      }),
+      state: 'pending' as const,
+    };
+    const enrolled = service.dependencies.request!;
+    service.dependencies.request = async () => {
+      throw new Error('operator transport must not be used');
+    };
+    await service.selectReportSettings(report, (method, params) =>
+      enrolled(method as Parameters<AutomationGateway>[0], params as Record<string, unknown>),
+    );
+    assert.equal(chat?.model, 'openai/gpt-6-luna');
+    assert.equal(chat?.thinkingLevel, 'high');
+    assert.equal(sessions.size, 1);
+    const before = calls.filter(
+      ({ method, params }) => method === 'sessions.patch' && params.model,
+    ).length;
+    await service.selectReportSettings(report, (method, params) =>
+      enrolled(method as Parameters<AutomationGateway>[0], params as Record<string, unknown>),
+    );
+    assert.equal(
+      calls.filter(({ method, params }) => method === 'sessions.patch' && params.model).length,
+      before,
+    );
+    chat!.sessionId = 'replacement';
+    chat!.model = 'openai/other';
+    await assert.rejects(
+      service.selectReportSettings(report, (method, params) =>
+        enrolled(method as Parameters<AutomationGateway>[0], params as Record<string, unknown>),
+      ),
+      (error: unknown) =>
+        error instanceof AutomationError && error.code === 'automation-report-target-unavailable',
+    );
+    assert.equal(
+      calls.filter(({ method, params }) => method === 'sessions.patch' && params.model).length,
+      before,
+    );
+    service.dependencies.request = enrolled;
   });
 
   it('should preserve unowned chat settings and schedule when only workspace defaults change', async () => {

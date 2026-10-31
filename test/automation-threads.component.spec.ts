@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 
-import { AutomationError } from '../agent/automation-gateway.ts';
+import { AutomationError, nativeObject } from '../agent/automation-gateway.ts';
 import AutomationThreads, {
   automationThreadSelection,
   AutomationThreadSettingsError,
@@ -9,6 +9,9 @@ import AutomationThreads, {
   type AutomationThreadSettings,
 } from '../agent/automation-threads.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
+import automationThreadGateway from '../agent/automation-thread-gateway.ts';
+import { GatewayClientRequestError } from '@openclaw/gateway-client';
+import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
 
 function jobs(thread: unknown, ids = ['builds', 'reviews']) {
   const result = normalizeAutomations(
@@ -84,7 +87,7 @@ describe('agent/automation-threads', () => {
     assert.equal(automationThreadSelection(declarations[0]!, 'codex'), undefined);
   });
 
-  for (const runtime of ['openclaw', 'codex'] as const)
+  for (const runtime of ['codex'] as const)
     it(`should retain affected identity and full settings without inspection writes in ${runtime}`, async () => {
       const f = fixture(runtime);
       const declarations = jobs('Activity', ['first', 'affected']);
@@ -253,7 +256,7 @@ describe('agent/automation-threads', () => {
     assert.equal(f.native.get(id)?.effort, 'high');
     assert.equal(f.creates(), 1);
   });
-  for (const runtime of ['openclaw', 'codex'] as const) {
+  for (const runtime of ['codex'] as const) {
     for (const pending of ['busy', 'unsupported'] as const)
       it(`should recover ${pending} and lost acknowledgements without replacing the ${runtime} chat`, async () => {
         const f = fixture(runtime);
@@ -389,6 +392,132 @@ describe('agent/automation-threads', () => {
     );
     assert.equal(f.creates(), 0);
   });
+  it('should register openclaw chats without model validation or settings observations', async () => {
+    const f = fixture('openclaw');
+    const declarations = jobs('Reports', ['report']);
+    declarations[0]!.overrides.openclaw = { model: 'unavailable', effort: 'high' };
+    let writes = 0;
+    f.store.adapter.validateSettings = async () => {
+      throw new Error('live model validation');
+    };
+    f.adapter.updateSettings = async () => {
+      writes++;
+    };
+    const id = (await f.store.resolve(declarations, true)).get('report')!.id;
+    assert.equal(f.native.get(id)!.model, undefined);
+    assert.equal((await f.store.resolve(declarations)).get('report')!.settings, undefined);
+    f.native.get(id)!.model = 'different';
+    await f.store.resolve(declarations, true);
+    assert.equal(writes, 0);
+    assert.equal(f.creates(), 1);
+  });
+  it('should select through the native adapter after registration and reconcile a committed lost acknowledgement', async () => {
+    const workspaceDir = await realpath(root);
+    const native = new Map<string, Record<string, unknown>>();
+    let available = false;
+    let selections = 0;
+    const request = sessionDispatchRequest(async (method, params) => {
+      const key = String(params.key);
+      if (method === 'sessions.resolve')
+        return native.has(key) ? { ok: true, key, agentId: 'a' } : { ok: false };
+      if (method === 'sessions.list') return { sessions: [...native.values()] };
+      if (method === 'sessions.create') {
+        assert.equal(params.model, undefined);
+        assert.equal(params.thinkingLevel, undefined);
+        native.set(key, {
+          key,
+          sessionId: 'same-session',
+          lifecycleRevision: 'revision',
+          workspaceDir,
+        });
+        return { ok: true };
+      }
+      assert.equal(method, 'sessions.patch');
+      const row = native.get(key)!;
+      if (params.model) {
+        selections++;
+        assert.equal(params.expectedSessionId, 'same-session');
+        assert.equal(params.expectedLifecycleRevision, 'revision');
+        if (!available)
+          throw new GatewayClientRequestError({
+            code: 'INVALID_REQUEST',
+            message:
+              'A runtime is not available for test/requested. Refresh the model catalog and choose again.',
+          });
+        row.model = params.model;
+        row.thinkingLevel = params.thinkingLevel;
+        throw new Error('lost acknowledgement after commit');
+      }
+      if (params.autoLabel) row.displayName = params.autoLabel;
+      if (params.category) row.category = params.category;
+      return { ok: true };
+    }, {});
+    const adapter = automationThreadGateway(
+      async (method, params) => {
+        const result = await request(method, params);
+        assert.ok(nativeObject(result));
+        return result;
+      },
+      { agentId: 'a', workspaceDir, scope: 'native' },
+    );
+    const store = new AutomationThreads({ root, scope: 'native', runtime: 'openclaw' }, adapter);
+    const declarations = jobs('Reports', ['report']);
+    declarations[0]!.overrides.openclaw = { model: 'test/requested', effort: 'high' };
+    const id = (await store.resolve(declarations, true)).get('report')!.id;
+    await assert.rejects(
+      store.selectSettings(declarations),
+      rejects('automation-model-unavailable'),
+    );
+    assert.equal((await store.read()).records[0]!.settingsUpdate, undefined);
+    assert.equal((await store.resolve(declarations)).get('report')!.settings, undefined);
+    available = true;
+    await store.selectSettings(declarations);
+    await store.selectSettings(declarations);
+    assert.equal(native.get(id)!.model, 'test/requested');
+    assert.equal(native.get(id)!.thinkingLevel, 'high');
+    assert.equal(selections, 2);
+    assert.equal(native.size, 1);
+  });
+  for (const phase of ['denied', 'uncertain', 'busy', 'unsupported', 'unavailable'] as const)
+    it(`should retain openclaw execution selection recovery for ${phase} without install drift`, async () => {
+      const f = fixture('openclaw');
+      const declarations = jobs('Reports', ['report']);
+      declarations[0]!.overrides.openclaw = { model: 'requested', effort: 'high' };
+      const id = (await f.store.resolve(declarations, true)).get('report')!.id;
+      f.native.get(id)!.incarnation = 'session';
+      let writes = 0;
+      const code =
+        phase === 'unavailable'
+          ? 'automation-model-unavailable'
+          : `automation-thread-settings-${phase}`;
+      f.adapter.updateSettings = async () => {
+        writes++;
+        if (phase === 'uncertain') throw new Error('lost response');
+        throw new AutomationError(code);
+      };
+      await assert.rejects(f.store.selectSettings(declarations), rejects(code));
+      const saved = await readFile(f.store.path, 'utf8');
+      assert.equal((await f.store.resolve(declarations)).get('report')!.settings, undefined);
+      await f.store.resolve(declarations, true);
+      assert.equal(await readFile(f.store.path, 'utf8'), saved);
+      if (phase === 'denied' || phase === 'uncertain') {
+        await assert.rejects(f.store.selectSettings(declarations), rejects(code));
+        assert.equal(writes, 1);
+      }
+      f.adapter.updateSettings = async (current, settings) => {
+        writes++;
+        f.native.set(current.id, { ...current, ...settings });
+        throw new Error('lost acknowledgement after commit');
+      };
+      if (phase === 'denied' || phase === 'uncertain') {
+        f.native.get(id)!.model = 'requested';
+        f.native.get(id)!.effort = 'high';
+      }
+      await f.store.selectSettings(declarations);
+      await f.store.selectSettings(declarations);
+      assert.equal(writes, phase === 'denied' || phase === 'uncertain' ? 1 : 2);
+      assert.equal(f.creates(), 1);
+    });
   it('should share explicit ids in openclaw but partition codex by stable automation id', async () => {
     for (const runtime of ['openclaw', 'codex'] as const) {
       const f = fixture(runtime);
@@ -429,10 +558,11 @@ describe('agent/automation-threads', () => {
     );
     assert.equal(updates, 0);
     declarations[1]!.overrides.openclaw!.effort = 'high';
-    const resolved = await f.store.resolve(declarations, true);
+    await f.store.resolve(declarations, true);
+    const resolved = await f.store.selectSettings(declarations);
     assert.equal(resolved.get('one')!.id, resolved.get('two')!.id);
     assert.equal(updates, 1);
-    await f.store.resolve(declarations, true);
+    await f.store.selectSettings(declarations);
     assert.equal(updates, 1);
   });
 
@@ -441,13 +571,14 @@ describe('agent/automation-threads', () => {
     const declarations = jobs({ name: 'Activity' }, ['github-issue-assignment']);
     declarations[0]!.overrides.openclaw = { model: 'openai/selected', effort: 'medium' };
     const id = (await f.store.resolve(declarations, true)).get('github-issue-assignment')!.id;
+    await f.store.selectSettings(declarations);
     f.native.get(id)!.incarnation = 'original';
     declarations[0]!.overrides.openclaw!.effort = 'high';
     f.adapter.updateSettings = async () => {
       throw new Error('lost response');
     };
     await assert.rejects(
-      f.store.resolve(declarations, true),
+      f.store.selectSettings(declarations),
       rejects('automation-thread-settings-uncertain'),
     );
     let writes = 0;
@@ -468,7 +599,7 @@ describe('agent/automation-threads', () => {
       if (replacement) f.native.set(id, replacement);
       else f.native.delete(id);
       await assert.rejects(
-        f.store.resolve(declarations, true),
+        f.store.selectSettings(declarations),
         rejects('automation-thread-settings-conflict'),
       );
     }

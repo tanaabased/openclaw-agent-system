@@ -16,6 +16,7 @@ import {
   nativeAutomation,
   nativeAutomationHistory,
   nativeAutomationRun,
+  nativeObject,
   type AutomationHistoryOptions,
   type AutomationGateway,
   type NativeAutomation,
@@ -49,6 +50,8 @@ import {
 } from '../core/lifecycle-registry.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import type { DispatchRequest } from '../credentials/session-dispatch.ts';
+import { assertPrivateStateLocksHeld } from '../core/private-state-lock-context.ts';
 
 export interface AutomationServiceDependencies {
   root: string;
@@ -136,10 +139,14 @@ export default class AutomationService {
     return { context, store };
   }
 
-  private threads(context: AutomationProjectionContext, store: AutomationStore) {
+  private threads(
+    context: AutomationProjectionContext,
+    store: AutomationStore,
+    request = this.dependencies.request!,
+  ) {
     return new AutomationThreads(
       { root: this.dependencies.root, scope: store.scope, runtime: 'openclaw' },
-      automationThreadGateway(this.dependencies.request!, { ...context, scope: store.scope }),
+      automationThreadGateway(request, { ...context, scope: store.scope }),
     );
   }
 
@@ -1050,6 +1057,45 @@ export default class AutomationService {
       record.pending
     )
       throw new AutomationError('automation-report-declaration-changed');
+  }
+
+  /** use the retained reporting credential and existing settings journal, never operator auth. */
+  async selectReportSettings(report: AutomationReportRecord, request: DispatchRequest) {
+    await this.assertReportCurrent(report);
+    if (!report.target.model && !report.target.effort) return;
+    if (!report.target.sessionId) throw new AutomationError('automation-report-target-unavailable');
+    const loaded = await this.dependencies.manifestService.loadForAgentId(
+      report.target.agentId,
+      'service',
+    );
+    if (loaded.status !== 'loaded')
+      throw new AutomationError('automation-report-declaration-changed');
+    const { context, store } = await this.scope(loaded.manifest, loaded.scope.workspaceDir);
+    const job = openclawIntakeJobs(loaded.manifest).find(({ id }) => id === report.input.id);
+    if (!job || effectiveAutomation(job, context).hash !== report.hash)
+      throw new AutomationError('automation-report-declaration-changed');
+    const threads = this.threads(context, store, async (method, params) => {
+      assertPrivateStateLocksHeld();
+      const result = await request(method, params);
+      assertPrivateStateLocksHeld();
+      if (!nativeObject(result)) throw new AutomationError('automation-thread-response-invalid');
+      return result;
+    });
+    const lookup = threads.adapter.lookup;
+    threads.adapter.lookup = async (id) => {
+      const native = await lookup(id);
+      if (
+        native &&
+        (native.id !== report.target.sessionKey || native.incarnation !== report.target.sessionId)
+      )
+        throw new AutomationError('automation-report-target-unavailable');
+      return native;
+    };
+    const targets = await threads.resolve([job]);
+    if (targets.get(job.id)?.id !== report.target.sessionKey)
+      throw new AutomationError('automation-report-target-unavailable');
+    await this.assertReportCurrent(report);
+    await threads.selectSettings([job]);
   }
 
   async admit(manifest: AgentManifest, workspaceDir: string, id: string, hash: string) {

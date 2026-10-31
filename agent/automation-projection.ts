@@ -137,7 +137,8 @@ export function projectAutomation(
             lightContext: false,
             allowUnsafeExternalContent: false,
             toolsAllow: job.internalOpenClaw?.toolsAllow ?? ['*'],
-            ...(override?.model ? { model: override.model.trim() } : {}),
+            // a declared model must fail explicitly rather than executing a fallback model.
+            ...(override?.model ? { model: override.model.trim(), fallbacks: [] } : {}),
             ...(override?.effort ? { thinking: override.effort.trim() } : {}),
           },
   };
@@ -196,7 +197,7 @@ export function automationPatch(
       ...desired.payload,
       model: desired.payload.model ?? null,
       thinking: desired.payload.thinking ?? null,
-      fallbacks: null,
+      fallbacks: desired.payload.fallbacks ?? null,
       toolsAllow: desired.payload.toolsAllow,
     };
   } else if (patch.payload) patch.payload = { ...desired.payload, toolsAllow: null };

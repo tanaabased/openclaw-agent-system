@@ -102,6 +102,9 @@ describe('agent/automation-report-store', () => {
         cancelled: false,
         result: { exitCode: 0, timedOut: false, truncated: false },
       },
+      selectSettings: async () => {
+        throw new Error('must not select');
+      },
       assertCurrent: async () => {
         throw new Error('must not submit');
       },
@@ -118,6 +121,9 @@ describe('agent/automation-report-store', () => {
     await reconcileAutomationReport({
       store,
       executionId: complete.executionId,
+      selectSettings: async () => {
+        throw new Error('terminal report must not select');
+      },
       assertCurrent: async () => {
         throw new Error('terminal report must not be sent');
       },
@@ -137,6 +143,9 @@ describe('agent/automation-report-store', () => {
     await reconcileAutomationReport({
       store,
       executionId: complete.executionId,
+      selectSettings: async () => {
+        throw new Error('terminal report must not select');
+      },
       assertCurrent: async () => {
         throw new Error('terminal report must not be sent');
       },

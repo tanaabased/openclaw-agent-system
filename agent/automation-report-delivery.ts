@@ -8,10 +8,11 @@ import automationReport, {
 import type AutomationReportStore from './automation-report-store.ts';
 import type { AutomationReportRecord } from './automation-report-store.ts';
 import automationThreadGateway from './automation-thread-gateway.ts';
-import { nativeObject } from './automation-gateway.ts';
+import { AutomationError, nativeObject } from './automation-gateway.ts';
 import openClawTurnReply from './openclaw-turn-evidence.ts';
 import gatewayErrorDiagnostic from '../utils/gateway-error-diagnostic.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
+import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 
 // bound one observation pass, not the model's execution lifetime.
 export const automationReportTimeoutMs = 30_000;
@@ -54,6 +55,7 @@ export async function reconcileAutomationReport(options: {
   executionId: string;
   credential: Pick<SessionDispatchCredential, 'use'>;
   assertCurrent(record: AutomationReportRecord): Promise<void>;
+  selectSettings(record: AutomationReportRecord, request: DispatchRequest): Promise<void>;
 }): Promise<AutomationReportDelivery> {
   const { store, executionId } = options;
   let record = await store.read(executionId);
@@ -64,6 +66,8 @@ export async function reconcileAutomationReport(options: {
     return automationReportDelivery(record);
   }
   let sending = false;
+  let claimed = false;
+  let attempted = false;
   try {
     await options.assertCurrent(record);
     await options.credential.use(
@@ -77,7 +81,7 @@ export async function reconcileAutomationReport(options: {
           if (!nativeObject(response)) throw new Error('automation-report-response-invalid');
           return response;
         }, record!.target);
-        const thread = await adapter.lookup(record!.target.sessionKey);
+        let thread = await adapter.lookup(record!.target.sessionKey);
         if (
           !thread ||
           !thread.incarnation ||
@@ -86,24 +90,33 @@ export async function reconcileAutomationReport(options: {
           (record!.target.sessionId && thread.incarnation !== record!.target.sessionId)
         )
           throw new Error('automation-report-target-unavailable');
-        if (
-          (record!.target.model && thread.model !== record!.target.model) ||
-          (record!.target.effort && thread.effort !== record!.target.effort)
-        )
-          throw new Error('automation-report-settings-drift');
+        const sessionId = thread.incarnation;
+        const sessionKey = thread.id;
         await options.assertCurrent(record!);
-        // claim only pending work. a second process observes the same send without repeating it.
+        // claim settings selection and send together; recovery never selects for an admitted run.
         record = await store.update(executionId, (current) => {
           if (current.state !== 'pending') return;
-          current.target.sessionId = thread.incarnation;
+          current.target.sessionId = sessionId;
           current.state = 'sending';
           delete current.code;
-          sending = true;
+          claimed = true;
         });
-        if (sending) {
+        if (claimed) {
+          await options.selectSettings(record!, request);
+          const selected = await adapter.lookup(sessionKey);
+          if (!selected || selected.archived || selected.incarnation !== sessionId)
+            throw new Error('automation-report-target-unavailable');
+          thread = selected;
+          if (
+            (record!.target.model && thread.model !== record!.target.model) ||
+            (record!.target.effort && thread.effort !== record!.target.effort)
+          )
+            throw new Error('automation-report-settings-drift');
+        }
+        if (claimed) {
           const params = {
-            sessionKey: thread.id,
-            sessionId: thread.incarnation,
+            sessionKey,
+            sessionId,
             agentId: record.target.agentId,
             message: automationReport(record.input),
             idempotencyKey: executionId,
@@ -113,6 +126,8 @@ export async function reconcileAutomationReport(options: {
           };
           if (!validateChatSendParams(params)) throw new Error('automation-report-request-invalid');
           await options.assertCurrent(record);
+          attempted = true;
+          sending = true;
           const accepted = await request('chat.send', params);
           if (
             !nativeObject(accepted) ||
@@ -127,11 +142,7 @@ export async function reconcileAutomationReport(options: {
           sending = false;
         }
         // admission is not delivery. exact native terminal metadata survives a gateway restart.
-        const reply = await openClawTurnReply(
-          request,
-          { sessionKey: thread.id, sessionId: thread.incarnation },
-          executionId,
-        );
+        const reply = await openClawTurnReply(request, { sessionKey, sessionId }, executionId);
         if (reply) {
           const body = (reply.content as Array<{ type: string; text?: string }>)
             .filter((part) => part.type === 'text')
@@ -141,6 +152,14 @@ export async function reconcileAutomationReport(options: {
             if (!current.guarded) {
               current.state = 'failed';
               current.code = 'automation-report-hooks-not-observed';
+              return;
+            }
+            if (
+              (current.target.model && current.effective?.model !== current.target.model) ||
+              (current.target.effort && current.effective?.effort !== current.target.effort)
+            ) {
+              current.state = 'failed';
+              current.code = 'automation-report-settings-mismatch';
               return;
             }
             if (!automationReportCardValid(body, current.input)) {
@@ -171,6 +190,15 @@ export async function reconcileAutomationReport(options: {
     record = await store.update(executionId, (current) => {
       // a concurrent terminal hook may already have settled this occurrence.
       if (current.state === 'delivered' || current.state === 'failed') return;
+      if (claimed && !attempted && error instanceof AutomationError) {
+        current.state = 'failed';
+        current.code =
+          error.code === 'automation-model-unavailable'
+            ? 'automation-report-model-unavailable'
+            : error.code.replace(/^automation-thread-/, 'automation-report-');
+        return;
+      }
+      if (claimed && !attempted) current.state = 'pending';
       if (sending) {
         current.state =
           diagnostic.category === 'rejected' || diagnostic.requestDispatched === false
@@ -197,6 +225,7 @@ export default async function deliverAutomationReport(options: {
   manifestDigest: string;
   credential?: Pick<SessionDispatchCredential, 'use'>;
   assertCurrent(record: AutomationReportRecord): Promise<void>;
+  selectSettings(record: AutomationReportRecord, request: DispatchRequest): Promise<void>;
 }): Promise<AutomationReportDelivery> {
   const executionId = options.input.executionId;
   const retained = await options.store.withLock(executionId, async () => {

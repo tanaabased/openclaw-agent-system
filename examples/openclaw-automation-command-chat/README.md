@@ -8,6 +8,7 @@ provider returning reports through the real Gateway response path.
 - Shared persistent destination creation and reuse by command automations.
 - Captured stdout, stderr, and process outcome reaching the formatter request.
 - Corresponding durable reports after reconnect, without repeating commands.
+- Report-time model selection with an effort different from the agent default.
 
 ## What does not belong here
 
@@ -56,7 +57,7 @@ for mode in success failure; do
     if jq -e 'any(.reports[]; .status == "delivered" or .status == "failed" or .status == "uncertain")' "$TMPDIR/report-$mode.json" >/dev/null; then break; fi
     sleep 2
   done
-  jq -e --arg reason "$reason" '.reports | length == 1 and all(.[]; .status == "delivered" and .reason == $reason and (.messageId | type == "string"))' "$TMPDIR/report-$mode.json"
+  jq -e --arg reason "$reason" '.reports | length == 1 and all(.[]; .status == "delivered" and .reason == $reason and (.messageId | type == "string") and .requested == {model:"aimock/gpt-5.5",effort:"high"} and .effective.model == .requested.model and .effective.effort == .requested.effort)' "$TMPDIR/report-$mode.json"
   message_id=$(jq -er '.reports[0].messageId' "$TMPDIR/report-$mode.json")
   openclaw gateway call chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json > "$TMPDIR/chat-history.json"
   jq -er --arg id "$message_id" '.messages[] | select(.__openclaw.id == $id and .role == "assistant") | [.content[]? | select(.type == "text") | .text] | join("\n")' "$TMPDIR/chat-history.json" > "$TMPDIR/card-$mode.md"

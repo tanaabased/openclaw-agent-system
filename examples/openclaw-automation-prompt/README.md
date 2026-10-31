@@ -5,6 +5,7 @@ Complete a scheduled prompt in its owning agent context, then preserve its job a
 ## What belongs here
 
 - Native scheduling, configured model/effort, and completion.
+- The job's medium effort overriding the agent's low default at execution.
 - Install and Doctor through an activated prompt without per-run approval.
 
 ## What does not belong here

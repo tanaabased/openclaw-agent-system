@@ -142,6 +142,8 @@ export default async function executeAutomation(options: {
           },
           credential: options.reportCredential,
           assertCurrent: (record) => options.automations.assertReportCurrent(record),
+          selectSettings: (record, request) =>
+            options.automations.selectReportSettings(record, request),
         }).catch(() => ({
           status: 'not-delivered',
           executionId,

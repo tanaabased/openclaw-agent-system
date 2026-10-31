@@ -26,6 +26,43 @@ function job(payload: { prompt: string } | { run: string[] }) {
 }
 
 describe('agent/automation-projection', () => {
+  it('should disable native fallback only when the prompt declares a resolved model', () => {
+    const prompt = job({ prompt: 'Review.' });
+    const record = {
+      id: prompt.id,
+      marker: 'fixture',
+      hash: '',
+      triggerHash: '',
+      generation: 1,
+      anchorMs: 0,
+      removed: false,
+    };
+    const inherited = projectAutomation(prompt, record, context);
+    assert.equal(inherited.payload.fallbacks, undefined);
+    prompt.overrides.openclaw = { model: 'provider/requested', effort: 'high' };
+    const desired = projectAutomation(prompt, record, context);
+    assert.equal(desired.payload.model, 'provider/requested');
+    assert.equal(desired.payload.thinking, 'high');
+    assert.deepEqual(desired.payload.fallbacks, []);
+    const native = {
+      ...desired,
+      id: 'native',
+      declarationKey: record.marker,
+      agentId: context.agentId,
+      configRevision: '1',
+      state: {},
+    };
+    assert.deepEqual(
+      (
+        automationPatch(
+          { ...native, payload: { ...desired.payload, fallbacks: ['provider/other'] } },
+          desired,
+        ).payload as Record<string, unknown>
+      ).fallbacks,
+      [],
+    );
+    assert.deepEqual(automationPatch(native, desired), {});
+  });
   it('should reserve report delivery time without adding a model turn or changing schedule anchors', () => {
     const command = job({ run: ['true'] });
     command.thread = { id: 'reports', name: 'UPDATES' };
