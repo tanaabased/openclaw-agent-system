@@ -89,6 +89,11 @@ Then use $agent-system-doctor to check readiness.
 Install runs [setup steps that select Codex](./MANIFEST.md#setup) and updates
 native automations. Doctor inspects readiness without changing settings or running jobs.
 
+To add account-default setup, have your bound workspace's root `AGENTS.md` point to
+its setup guide. Codex Binding follows that guide after binding and when you request
+account-default updates. See [Me's setup guide](https://github.com/pirog/me/blob/main/references/account-binding.md)
+for an example; your workspace defines its own profiles and account choices.
+
 Install creates a persistent installation UUID and readable name. Reinstalling or
 rebinding preserves them. Ask Codex to “rename this instance to office-laptop” to
 change its name. For a copied installation, explicitly request UUID rotation;
