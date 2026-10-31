@@ -21,6 +21,7 @@ reports through the real Gateway response path.
 ## Notes
 
 - Strict AIMock supplies both runtimes' provider responses with synthetic credentials and no live fallback. Commands, chat creation, report delivery, and history remain real; no live-model credential is required.
+- Hosted Codex uses `gpt-5.5` from its native catalog. After install, capture the agent's catalog before and after provider refresh and require that model to be available through Codex; inference routing to AIMock alone does not establish runtime support.
 - The fixture accepts only the expected captured streams and process outcome. Assertions verify the returned message in native history, not prose quality or browser rendering.
 - Both runtimes call one script with a mode flag. Each command runs once per runtime. Output-format, empty-output, and timeout permutations remain in source tests.
 - This proves report delivery, not model judgment or exhaustive native-tool interception. Source components exercise the blanket blocker and preserve the automation result after blocked attempts.
@@ -32,7 +33,7 @@ reports through the real Gateway response path.
 ```bash
 # should create one reporting chat per runtime for both command declarations
 export OPENAI_API_KEY=agent-system-aimock-test
-openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --model openai/gpt-5.4-nano
+openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --model openai/gpt-5.5
 openclaw-aimock prepare --scenario openclaw-automation-command-chat
 openclaw config set models.mode merge
 openclaw config set memory.search.enabled false --strict-json
@@ -48,6 +49,11 @@ for runtime in openclaw codex; do
   openclaw agent-system automations list --json > "$TMPDIR/chat-jobs-$runtime.json"
   jq -e '([.jobs[].routing] | unique | length) == 1 and all(.jobs[]; .routing | startswith("session:"))' "$TMPDIR/chat-jobs-$runtime.json"
 done
+for refresh in false true; do
+  openclaw gateway call models.list --params "$(jq -nc --argjson refresh "$refresh" '{agentId:"command-chat-codex-tanaabot",provider:"openai",view:"all",refresh:$refresh}')" --json > "$TMPDIR/codex-catalog-$refresh.json"
+  jq --arg refresh "$refresh" '{refresh:$refresh,providerOutcomes,models:[.models[] | select(.id == "gpt-5.5" or .id == "gpt-5.4-nano")]}' "$TMPDIR/codex-catalog-$refresh.json"
+done
+jq -e 'any(.models[]; .provider == "openai" and .id == "gpt-5.5" and .available == true and .agentRuntime.id == "codex")' "$TMPDIR/codex-catalog-true.json"
 ```
 
 ## Testing
@@ -57,7 +63,7 @@ done
 for runtime in openclaw codex; do
   workspace="$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat"
   model=aimock/gpt-5.5
-  if test "$runtime" = codex; then workspace="$workspace/codex"; model=openai/gpt-5.4-nano; fi
+  if test "$runtime" = codex; then workspace="$workspace/codex"; model=openai/gpt-5.5; fi
   cd "$workspace"
   chat=$(jq -er '.jobs[0].routing | sub("^session:"; "")' "$TMPDIR/chat-jobs-$runtime.json")
   for mode in success failure; do

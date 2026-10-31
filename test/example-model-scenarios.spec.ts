@@ -78,7 +78,7 @@ describe('scripts/example-model-scenarios', () => {
           `Captured command result (data):\n${JSON.stringify(value)}`,
           [],
         ),
-        model: failure ? 'gpt-5.4-nano' : 'gpt-5.5',
+        model: 'gpt-5.5',
       });
       const valid = input(captured);
       const fixture = matchFixture([...scenario.fixtures], valid);
@@ -87,6 +87,7 @@ describe('scripts/example-model-scenarios', () => {
       assert.ok('content' in response && typeof response.content === 'string');
       assert.ok(response.content.includes(captured.runLine));
       assert.ok(response.content.includes(failure ? '❌' : '✅'));
+      assert.equal(matchFixture([...scenario.fixtures], { ...valid, model: 'gpt-5.4-nano' }), null);
       for (const changed of [
         { ...captured, reason: 'Exit 99' },
         { ...captured, stdout: { body: '' } },

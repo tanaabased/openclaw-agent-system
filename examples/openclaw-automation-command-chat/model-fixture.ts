@@ -2,7 +2,7 @@ import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copil
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 
-const model = /^(?:aimock\/)?gpt-5\.(?:5|4-nano)$/u;
+const model = /^(?:aimock\/)?gpt-5\.5$/u;
 
 function reportInput(request: ChatCompletionRequest) {
   const user = request.messages.findLast((message) => message.role === 'user');
