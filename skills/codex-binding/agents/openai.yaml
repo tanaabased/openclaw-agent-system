@@ -1,9 +1,9 @@
 interface:
   display_name: 'Agent System Codex Binding'
-  short_description: 'Bind Codex to an Agent System workspace'
+  short_description: 'Bind a workspace and set up its account defaults'
   icon_small: './assets/icon-small.svg'
   icon_large: './assets/icon-large.svg'
   brand_color: '#387fb5'
-  default_prompt: "Use $agent-system-codex-binding to inspect or change this Codex installation's workspace binding."
+  default_prompt: "Use $agent-system-codex-binding to inspect or change this Codex installation's workspace binding or update its account defaults."
 policy:
   allow_implicit_invocation: true
