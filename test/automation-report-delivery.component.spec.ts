@@ -50,6 +50,7 @@ describe('agent/automation-report-delivery', () => {
       requestGuard?: boolean;
       selectionError?: string;
       effectiveMismatch?: boolean;
+      effectiveEffort?: string;
       historyFailure?: boolean;
     } = {},
   ) {
@@ -146,7 +147,7 @@ describe('agent/automation-report-delivery', () => {
               runId: params.idempotencyKey,
               provider: 'test',
               model: options.effectiveMismatch ? 'other' : 'formatter',
-              reasoningEffort: 'high',
+              ...(options.effectiveEffort ? { reasoningEffort: options.effectiveEffort } : {}),
             },
             context,
           );
@@ -214,7 +215,8 @@ describe('agent/automation-report-delivery', () => {
     assert.ok(f.messages[0]!.includes('Exit 17'));
     assert.ok(f.messages[0]!.includes('# Saved'));
     const saved = await f.store.read(input.executionId);
-    assert.deepEqual(saved?.effective, { model: 'test/formatter', effort: 'high' });
+    assert.deepEqual(saved?.effective, { model: 'test/formatter' });
+    assert.equal(saved?.target.effort, 'high');
     assert.equal(
       await f.hooks.get('before_prompt_build')!(
         {},
@@ -336,6 +338,18 @@ describe('agent/automation-report-delivery', () => {
       (await f.store.read(input.executionId))?.code,
       'automation-report-settings-mismatch',
     );
+  });
+  it('should verify reported execution effort without inventing absent telemetry', async () => {
+    for (const effectiveEffort of [undefined, 'high', 'low']) {
+      const f = fixture({ effectiveEffort });
+      const result = await f.deliver(randomUUID());
+      assert.equal(result.status, effectiveEffort === 'low' ? 'failed' : 'delivered');
+      const saved = await f.store.read(result.executionId);
+      assert.equal(saved?.effective?.effort, effectiveEffort);
+      assert.equal(saved?.target.effort, 'high');
+      if (effectiveEffort === 'low')
+        assert.equal(result.code, 'automation-report-settings-mismatch');
+    }
   });
   it('should preserve an acknowledged send when later history inspection fails', async () => {
     const options = { historyFailure: true, pending: true };

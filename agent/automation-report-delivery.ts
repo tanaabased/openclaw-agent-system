@@ -156,7 +156,10 @@ export async function reconcileAutomationReport(options: {
             }
             if (
               (current.target.model && current.effective?.model !== current.target.model) ||
-              (current.target.effort && current.effective?.effort !== current.target.effort)
+              // native OpenClaw llm_output omits effort; absent telemetry is not a mismatch.
+              (current.target.effort &&
+                current.effective?.effort !== undefined &&
+                current.effective.effort !== current.target.effort)
             ) {
               current.state = 'failed';
               current.code = 'automation-report-settings-mismatch';

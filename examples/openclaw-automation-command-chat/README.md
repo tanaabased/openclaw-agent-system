@@ -22,6 +22,7 @@ provider returning reports through the real Gateway response path.
 - The fixture accepts only the expected captured streams and process outcome. Assertions verify the returned message in native history, not prose quality or browser rendering.
 - Both declarations call one script with a mode flag. Each command runs once. Output-format, empty-output, and timeout permutations remain in source tests.
 - Observation deadlines include CLI startup and RPC time.
+- Native OpenClaw output hooks omit executed effort. Verify the model in the retained report and high effort in the formatter's exact native run trace; do not substitute requested settings for missing execution telemetry.
 
 ## Setup
 
@@ -57,7 +58,12 @@ for mode in success failure; do
     if jq -e 'any(.reports[]; .status == "delivered" or .status == "failed" or .status == "uncertain")' "$TMPDIR/report-$mode.json" >/dev/null; then break; fi
     sleep 2
   done
-  jq -e --arg reason "$reason" '.reports | length == 1 and all(.[]; .status == "delivered" and .reason == $reason and (.messageId | type == "string") and .requested == {model:"aimock/gpt-5.5",effort:"high"} and .effective.model == .requested.model and .effective.effort == .requested.effort)' "$TMPDIR/report-$mode.json"
+  if ! jq -e --arg reason "$reason" '.reports | length == 1 and all(.[]; .status == "delivered" and .reason == $reason and (.messageId | type == "string") and .requested == {model:"aimock/gpt-5.5",effort:"high"} and .effective.model == .requested.model)' "$TMPDIR/report-$mode.json"; then
+    jq '{id,reports}' "$TMPDIR/report-$mode.json"
+    exit 1
+  fi
+  report_id=$(jq -er '.reports[0].executionId' "$TMPDIR/report-$mode.json")
+  grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_id " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
   message_id=$(jq -er '.reports[0].messageId' "$TMPDIR/report-$mode.json")
   openclaw gateway call chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json > "$TMPDIR/chat-history.json"
   jq -er --arg id "$message_id" '.messages[] | select(.__openclaw.id == $id and .role == "assistant") | [.content[]? | select(.type == "text") | .text] | join("\n")' "$TMPDIR/chat-history.json" > "$TMPDIR/card-$mode.md"
