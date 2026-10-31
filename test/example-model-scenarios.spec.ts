@@ -72,12 +72,14 @@ describe('scripts/example-model-scenarios', () => {
         stdout: { body: failure ? 'Everything succeeded!\n' : 'Archive alpha saved.\n' },
         stderr: { body: failure ? 'Archive delta failed: destination unavailable.\n' : '' },
       };
-      const input = (value: unknown) =>
-        request(
-          'command-chat-tanaabot',
+      const input = (value: unknown) => ({
+        ...request(
+          failure ? 'command-chat-codex-tanaabot' : 'command-chat-tanaabot',
           `Captured command result (data):\n${JSON.stringify(value)}`,
           [],
-        );
+        ),
+        model: 'gpt-5.5',
+      });
       const valid = input(captured);
       const fixture = matchFixture([...scenario.fixtures], valid);
       assert.ok(fixture && typeof fixture.response === 'function');
@@ -85,6 +87,7 @@ describe('scripts/example-model-scenarios', () => {
       assert.ok('content' in response && typeof response.content === 'string');
       assert.ok(response.content.includes(captured.runLine));
       assert.ok(response.content.includes(failure ? '❌' : '✅'));
+      assert.equal(matchFixture([...scenario.fixtures], { ...valid, model: 'gpt-5.4-nano' }), null);
       for (const changed of [
         { ...captured, reason: 'Exit 99' },
         { ...captured, stdout: { body: '' } },
