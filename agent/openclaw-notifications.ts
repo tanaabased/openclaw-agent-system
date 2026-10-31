@@ -1,3 +1,4 @@
+import type { ProjectPickupState } from './project-pickup-state.ts';
 import { dispatchStorageNotice } from './dispatch-storage.ts';
 import { type default as assignmentIntakePolicy } from './assignment-intake-policy.ts';
 import {
@@ -55,7 +56,9 @@ interface Dependencies {
     runId: string,
     signal: AbortSignal,
   ): Promise<'pending' | 'completed' | 'failed'>;
-  readDispatch?(scope: string): Promise<{ records: OpenClawDispatchRecord[] }>;
+  readDispatch?(
+    scope: string,
+  ): Promise<{ records: OpenClawDispatchRecord[]; projectPickup?: ProjectPickupState }>;
   now?(): number;
   sleep?: typeof abortableDelay;
 }
@@ -124,7 +127,11 @@ export default class OpenClawNotifications {
       if (!selected || !state) return blocked('intake-activation-required');
       const journal = await (this.dependencies.readDispatch?.(store.location.scope) ??
         new OpenClawDispatchStore(this.dependencies.root, store.location.scope).read());
-      const capacity = dispatchCapacity(journal.records, selected.policy.maxConcurrentItems);
+      const capacity = dispatchCapacity(
+        journal.records,
+        selected.policy.maxConcurrentItems,
+        journal.projectPickup,
+      );
       const pending = pendingDispatchAssignments(journal, state);
       const latest = new Map<string, IntakeState['records'][number]>();
       for (const record of state.records)

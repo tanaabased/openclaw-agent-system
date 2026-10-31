@@ -5,7 +5,7 @@ import {
   intakeFixture,
   removeFixtureAssignment,
 } from './github-intake-fixture.ts';
-import { retainedProjectWork } from './project-pickup-fixture.ts';
+import { reservedProjectPickup } from './project-pickup-fixture.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
 import cleanupConfiguration from '../agent/cleanup-configuration.ts';
 import CodexAssignmentClaims, { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
@@ -5095,11 +5095,23 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(after.continuation!.attempt!.request, before.continuation!.attempt!.request);
   });
 
-  it('should carry scoped work from admission through assessment and continuation', async () => {
+  it('should transfer a pickup reservation through admission and continuation at capacity', async () => {
     const selected = await selectCodexIntake(pluginData, deps);
+    const journal = new CodexDispatchStore(
+      selected.store.location.root,
+      selected.store.location.scope,
+    );
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({ ...manifest, github: { ...manifest.github, 'max-concurrent-items': 1 } }),
+    );
     await selected.store.exclusive(async (state, save) => {
       const intake = state!.records[0]!;
-      intake.evidence.projectWork = retainedProjectWork(intake, 'codex');
+      const pickup = reservedProjectPickup(intake, 'codex');
+      await journal.exclusive(async (dispatch, save) => {
+        dispatch.projectPickup = pickup;
+        await save();
+      });
       intake.evidence.mode = 'work';
       await save(state!);
     });

@@ -1,3 +1,5 @@
+import projectPickupCapacity from './project-pickup-capacity.ts';
+import type { ProjectPickupState } from './project-pickup-state.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 
 /** a busy native owner counts once, including a handed-off operator implementation. */
@@ -29,8 +31,15 @@ export function openClawItemOccupied(record: OpenClawDispatchRecord) {
     ),
   );
 }
-export default function openClawCapacity(records: OpenClawDispatchRecord[], limit: number) {
+export default function openClawCapacity(
+  records: OpenClawDispatchRecord[],
+  limit: number,
+  pickup?: ProjectPickupState,
+  excludeIssue?: string,
+) {
   if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('dispatch-capacity-invalid');
-  const occupied = records.filter(openClawItemOccupied).length;
+  const occupied =
+    records.filter(openClawItemOccupied).length +
+    projectPickupCapacity(records, pickup, openClawItemOccupied, excludeIssue);
   return { occupied, available: Math.max(0, limit - occupied) };
 }

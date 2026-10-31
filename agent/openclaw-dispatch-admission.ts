@@ -83,7 +83,12 @@ export default class OpenClawDispatchAdmission {
         caller,
         hasCapacity:
           Boolean(record.request) ||
-          dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems).available > 0,
+          dispatchCapacity(
+            state.records,
+            current.policy.policy.maxConcurrentItems,
+            state.projectPickup,
+            'initiation' in intake ? undefined : intake.evidence?.projectWork?.pickup?.issueNodeId,
+          ).available > 0,
       });
       if (claim.status !== 'owned') {
         if (claim.status === 'recovery-required') throw new Error(claim.code);
@@ -102,7 +107,14 @@ export default class OpenClawDispatchAdmission {
       if (!record.manualIssue && !pass?.selected.includes(record.id))
         throw new Error('dispatch-pass-selection-required');
       if (record.request) return { status: 'reconcile-required' as const, id: record.id };
-      if (!dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems).available)
+      if (
+        !dispatchCapacity(
+          state.records,
+          current.policy.policy.maxConcurrentItems,
+          state.projectPickup,
+          'initiation' in intake ? undefined : intake.evidence?.projectWork?.pickup?.issueNodeId,
+        ).available
+      )
         return { status: 'at-capacity' as const, id: record.id };
       if (record.phase !== 'routing' || input.digest !== digest(record) || !record.context)
         throw new Error('dispatch-preparation-stale');

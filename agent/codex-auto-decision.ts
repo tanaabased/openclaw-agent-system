@@ -55,8 +55,12 @@ export default async function advanceCodexAutoDecision(
         !pending &&
         (input.action !== 'next' ||
           (!codexItemOccupied(record) &&
-            !codexCapacity(state.records, current.policy?.policy.maxConcurrentItems ?? 1)
-              .available))
+            !codexCapacity(
+              state.records,
+              current.policy?.policy.maxConcurrentItems ?? 1,
+              state.projectPickup,
+              record.projectWork?.pickup?.issueNodeId,
+            ).available))
       )
         continue;
       if (

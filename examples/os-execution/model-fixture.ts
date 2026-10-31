@@ -47,7 +47,7 @@ const fixtures: Fixture[] = modes.flatMap((mode) => {
             arguments: JSON.stringify({
               command: `sh ./probe.sh ${mode}`,
               pty: mode === 'pty',
-              timeoutSeconds: 120,
+              timeoutSeconds: 300,
               yieldMs: 1000,
             }),
             id: callId,

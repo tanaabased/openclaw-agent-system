@@ -1,3 +1,4 @@
+import projectPickupCapacity from './project-pickup-capacity.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
@@ -200,7 +201,13 @@ export default class OpenClawDispatchCoordinator {
       state.discoveryProgress = fresh.discoveryProgress;
       await save();
     });
-    const capacity = dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems);
+    const available = (issueNodeId?: string) =>
+      dispatchCapacity(
+        state.records,
+        current.policy.policy.maxConcurrentItems,
+        state.projectPickup,
+        issueNodeId,
+      ).available;
     const feedbackPending = state.records.some(
       (record) =>
         !record.retired &&
@@ -218,7 +225,7 @@ export default class OpenClawDispatchCoordinator {
               (!event.retry ||
                 dispatchRetryDue(event, (this.context.dependencies.now ?? Date.now)())) &&
               !openClawItemOccupied(record) &&
-              capacity.available > 0),
+              available(record.projectWork?.pickup?.issueNodeId) > 0),
         ),
     );
     const recoverable = state.records.some(
@@ -233,7 +240,16 @@ export default class OpenClawDispatchCoordinator {
     const storagePaused = ['paused', 'emergency'].includes(dispatchStoragePressure(state).level);
     const pending = (storagePaused ? [] : pendingAssignments(state, current.admitted))
       .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
-      .some(pendingAssignment);
+      .filter(pendingAssignment)
+      .some(
+        ({ intake }) =>
+          dispatchCapacity(
+            state.records,
+            current.policy.policy.maxConcurrentItems,
+            state.projectPickup,
+            intake.evidence?.projectWork?.pickup?.issueNodeId,
+          ).available > 0,
+      );
     const workPending = state.records.some(
       (record) =>
         (openClawDecisionPending(
@@ -241,15 +257,10 @@ export default class OpenClawDispatchCoordinator {
           issueWorkflowMode(manifest.github?.notifications, record),
         ) ||
           openClawWorkSlot(record, issueWorkflowMode(manifest.github?.notifications, record))) &&
-        (openClawItemOccupied(record) || capacity.available > 0),
+        (openClawItemOccupied(record) || available(record.projectWork?.pickup?.issueNodeId) > 0),
     );
     const responsePending = state.records.some((record) => openClawResponseEligible(record));
-    const actionable =
-      responsePending ||
-      feedbackPending ||
-      recoverable ||
-      workPending ||
-      (capacity.available > 0 && pending);
+    const actionable = responsePending || feedbackPending || recoverable || workPending || pending;
     const code = state.records.find(
       (record) => !record.retired && !record.retirement && !record.reset && record.feedback?.code,
     )?.feedback?.code;
@@ -487,7 +498,18 @@ export default class OpenClawDispatchCoordinator {
       )
         return reconciled;
     }
-    const capacity = dispatchCapacity(state.records, current.policy.policy.maxConcurrentItems);
+    const capacity = dispatchCapacity(
+      state.records,
+      current.policy.policy.maxConcurrentItems,
+      state.projectPickup,
+    );
+    const available = (issueNodeId?: string) =>
+      dispatchCapacity(
+        state.records,
+        current.policy.policy.maxConcurrentItems,
+        state.projectPickup,
+        issueNodeId,
+      ).available;
     const assignments = pendingAssignments(state, current.admitted)
       .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
       .filter(pendingAssignment)
@@ -555,7 +577,9 @@ export default class OpenClawDispatchCoordinator {
         sessionId: caller.sessionId,
         runId: caller.runId,
         limit: current.policy.policy.maxConcurrentItems,
-        allowance: capacity.available,
+        allowance:
+          capacity.available +
+          projectPickupCapacity(state.records, state.projectPickup, openClawItemOccupied),
         candidates: [
           ...assignments.map(({ intake }) => ({
             id: intake.id,
@@ -610,7 +634,14 @@ export default class OpenClawDispatchCoordinator {
       .filter(pendingAssignment)
       .filter(
         ({ intake, record }) =>
-          pass.candidates.includes(intake.id) && (!record || !pass.selected.includes(record.id)),
+          pass.candidates.includes(intake.id) &&
+          (!record || !pass.selected.includes(record.id)) &&
+          dispatchCapacity(
+            state.records,
+            current.policy.policy.maxConcurrentItems,
+            state.projectPickup,
+            intake.evidence?.projectWork?.pickup?.issueNodeId,
+          ).available > 0,
       )
       .sort(
         (a, b) => pass.candidates.indexOf(a.intake.id) - pass.candidates.indexOf(b.intake.id),
@@ -620,19 +651,19 @@ export default class OpenClawDispatchCoordinator {
       return { status: pass.selected.length ? 'pass-completed' : 'at-capacity' };
     const feedback = queued.find(
       ({ record, event }) =>
-        pass.candidates.includes(event.id) && !pass.selected.includes(record.id),
+        pass.candidates.includes(event.id) &&
+        !pass.selected.includes(record.id) &&
+        available(record.projectWork?.pickup?.issueNodeId) > 0,
     );
-    if (!capacity.available && (pending || feedback || !pass.selected.length))
-      return { status: 'at-capacity' as const };
     const workItem = workItems.find(
       (item) =>
         !item.recovering &&
         pass.candidates.includes(item.candidateId) &&
-        !pass.selected.includes(item.record.id),
+        !pass.selected.includes(item.record.id) &&
+        available(item.record.projectWork?.pickup?.issueNodeId) > 0,
     );
     if (
       workItem &&
-      capacity.available > 0 &&
       (!pending ||
         pass.candidates.indexOf(workItem.candidateId) <
           pass.candidates.indexOf(pending.intake.id)) &&
@@ -664,6 +695,8 @@ export default class OpenClawDispatchCoordinator {
         { ...authority, signal },
       );
     }
+    if (!pending && !capacity.available && !pass.selected.length)
+      return { status: 'at-capacity' as const };
     if (!pending)
       return {
         ...(storagePaused ? { code: 'dispatch-storage-admission-paused' } : {}),

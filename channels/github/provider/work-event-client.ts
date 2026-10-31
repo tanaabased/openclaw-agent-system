@@ -1,3 +1,4 @@
+import GitHubProjectPickupClient from './project-pickup-client.ts';
 import GitHubReviewReplyClient from './review-reply-client.ts';
 import GitHubReviewClient from './review-client.ts';
 import type { ConnectedGitHubAccountClient } from '../../../core/github-account-client.ts';
@@ -50,6 +51,7 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
   readonly #api: GitHubWorkEventApiClient;
   readonly #comments: GitHubIssueCommentClient;
   readonly #items: GitHubWorkItemClient;
+  readonly #pickup: GitHubProjectPickupClient;
   readonly maximumCommentCharacters: number;
 
   constructor(
@@ -63,6 +65,7 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
     this.replies = new GitHubReviewReplyClient(this.#api, this.reviews);
     this.#comments = new GitHubIssueCommentClient(this.#api, this.maximumCommentCharacters);
     this.#items = new GitHubWorkItemClient(this.#api);
+    this.#pickup = new GitHubProjectPickupClient(this.#api);
   }
 
   listIssueCommentPage(owner: string, name: string, number: number, page: number, since: string) {
@@ -103,6 +106,19 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
 
   getItem(owner: string, name: string, number: number): Promise<GitHubCanonicalWorkItem> {
     return this.#items.getItem(owner, name, number);
+  }
+
+  discoverProject(owner: string, name: string, milestone: number, page: number) {
+    return this.#pickup.discoverProject(owner, name, milestone, page);
+  }
+  projectCandidate(owner: string, name: string, number: number) {
+    return this.#pickup.projectCandidate(owner, name, number);
+  }
+  projectBlocked(owner: string, name: string, number: number) {
+    return this.#pickup.projectBlocked(owner, name, number);
+  }
+  assignProjectIssue(owner: string, name: string, number: number) {
+    return this.#pickup.assignProjectIssue(owner, name, number);
   }
 
   getItemContext(
