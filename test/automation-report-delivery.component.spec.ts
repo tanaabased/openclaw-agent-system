@@ -11,6 +11,7 @@ import type { AutomationReportInput } from '../agent/automation-report.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
 import registerAutomationReportHooks from '../core/automation-report-hook.ts';
+import { AutomationError } from '../agent/automation-gateway.ts';
 
 const input: AutomationReportInput = {
   id: 'backup',
@@ -47,11 +48,17 @@ describe('agent/automation-report-delivery', () => {
       unguarded?: boolean;
       settledBeforeAck?: boolean;
       requestGuard?: boolean;
+      selectionError?: string;
+      effectiveMismatch?: boolean;
+      effectiveEffort?: string;
+      historyFailure?: boolean;
     } = {},
   ) {
     const calls: string[] = [];
     const messages: string[] = [];
     const replies: unknown[] = [];
+    let selections = 0;
+    let selected = false;
     const store = new AutomationReportStore(`${workspaceDir}/reports`, () =>
       Date.parse(input.startedAt),
     );
@@ -99,12 +106,15 @@ describe('agent/automation-report-delivery', () => {
                   sessionId: 'incarnation',
                   workspaceDir: options.otherWorkspace ? '/' : workspaceDir,
                   archived: options.archived,
-                  model: options.drift ? 'test/other' : target.model,
+                  model: options.drift && !selected ? 'test/other' : target.model,
                   thinkingLevel: target.effort,
                 },
               ],
             };
-          if (method === 'chat.history') return { sessionId: 'incarnation', messages: replies };
+          if (method === 'chat.history') {
+            if (options.historyFailure) throw new Error('history transport unavailable');
+            return { sessionId: 'incarnation', messages: replies };
+          }
           if (method === 'agent.wait') return { runId: params.runId, status: 'timeout' };
           assert.equal(method, 'chat.send');
           assert.equal(params.sessionKey, target.sessionKey);
@@ -136,8 +146,8 @@ describe('agent/automation-report-delivery', () => {
             {
               runId: params.idempotencyKey,
               provider: 'test',
-              model: 'formatter',
-              reasoningEffort: 'high',
+              model: options.effectiveMismatch ? 'other' : 'formatter',
+              ...(options.effectiveEffort ? { reasoningEffort: options.effectiveEffort } : {}),
             },
             context,
           );
@@ -174,6 +184,11 @@ describe('agent/automation-report-delivery', () => {
         );
       },
     };
+    async function selectSettings() {
+      selections++;
+      if (options.selectionError) throw new AutomationError(options.selectionError);
+      selected = true;
+    }
     const deliver = (executionId = input.executionId) =>
       deliverAutomationReport({
         target,
@@ -183,10 +198,11 @@ describe('agent/automation-report-delivery', () => {
         manifestDigest: 'manifest',
         credential,
         assertCurrent,
+        selectSettings,
       });
     const recover = (executionId = input.executionId) =>
-      reconcileAutomationReport({ store, executionId, credential, assertCurrent });
-    return { deliver, recover, calls, messages, store, hooks };
+      reconcileAutomationReport({ store, executionId, credential, assertCurrent, selectSettings });
+    return { deliver, recover, calls, messages, store, hooks, selections: () => selections };
   }
   it('should verify final cards and settings while preserving unrelated chat tools', async () => {
     const f = fixture();
@@ -199,7 +215,8 @@ describe('agent/automation-report-delivery', () => {
     assert.ok(f.messages[0]!.includes('Exit 17'));
     assert.ok(f.messages[0]!.includes('# Saved'));
     const saved = await f.store.read(input.executionId);
-    assert.deepEqual(saved?.effective, { model: 'test/formatter', effort: 'high' });
+    assert.deepEqual(saved?.effective, { model: 'test/formatter' });
+    assert.equal(saved?.target.effort, 'high');
     assert.equal(
       await f.hooks.get('before_prompt_build')!(
         {},
@@ -273,13 +290,12 @@ describe('agent/automation-report-delivery', () => {
     assert.equal((await f.deliver()).status, 'failed');
     assert.equal((await f.store.read(input.executionId))?.code, 'automation-report-card-invalid');
   });
-  it('should retain sanitized captured results without sending to unavailable or drifted targets', async () => {
+  it('should retain sanitized captured results without sending to unavailable targets', async () => {
     for (const options of [
       { archived: true },
       { otherWorkspace: true },
       { revoked: true },
       { stale: true },
-      { drift: true },
     ]) {
       const f = fixture(options);
       const id = randomUUID();
@@ -287,6 +303,63 @@ describe('agent/automation-report-delivery', () => {
       assert.equal(f.messages.length, 0);
       assert.equal((await f.store.read(id))?.input.reason, 'Exit 17');
     }
+  });
+  it('should select settings once before sending and never select again for a submitted run', async () => {
+    const f = fixture({ drift: true, pending: true });
+    await Promise.all([f.deliver(), f.deliver()]);
+    assert.equal(f.messages.length, 1);
+    assert.equal(f.selections(), 1);
+    await f.recover();
+    assert.equal(f.selections(), 1);
+    assert.equal(f.messages.length, 1);
+  });
+  it('should fail unavailable selection without sending or losing the captured command outcome', async () => {
+    const f = fixture({ selectionError: 'automation-model-unavailable' });
+    const result = await f.deliver();
+    assert.equal(result.status, 'failed');
+    assert.equal(result.code, 'automation-report-model-unavailable');
+    assert.equal(f.messages.length, 0);
+    await f.recover();
+    assert.equal(f.selections(), 1);
+    assert.equal((await f.store.read(input.executionId))?.input.reason, 'Exit 17');
+  });
+  for (const phase of ['denied', 'uncertain'])
+    it(`should fail a ${phase} selection without replaying it on report recovery`, async () => {
+      const f = fixture({ selectionError: `automation-thread-settings-${phase}` });
+      assert.equal((await f.deliver()).status, 'failed');
+      assert.equal((await f.recover()).code, `automation-report-settings-${phase}`);
+      assert.equal(f.selections(), 1);
+      assert.equal(f.messages.length, 0);
+    });
+  it('should reject effective settings mismatch without reporting successful delivery', async () => {
+    const f = fixture({ effectiveMismatch: true });
+    assert.equal((await f.deliver()).status, 'failed');
+    assert.equal(
+      (await f.store.read(input.executionId))?.code,
+      'automation-report-settings-mismatch',
+    );
+  });
+  it('should verify reported execution effort without inventing absent telemetry', async () => {
+    for (const effectiveEffort of [undefined, 'high', 'low']) {
+      const f = fixture({ effectiveEffort });
+      const result = await f.deliver(randomUUID());
+      assert.equal(result.status, effectiveEffort === 'low' ? 'failed' : 'delivered');
+      const saved = await f.store.read(result.executionId);
+      assert.equal(saved?.effective?.effort, effectiveEffort);
+      assert.equal(saved?.target.effort, 'high');
+      if (effectiveEffort === 'low')
+        assert.equal(result.code, 'automation-report-settings-mismatch');
+    }
+  });
+  it('should preserve an acknowledged send when later history inspection fails', async () => {
+    const options = { historyFailure: true, pending: true };
+    const f = fixture(options);
+    await f.deliver();
+    assert.equal((await f.store.read(input.executionId))?.state, 'submitted');
+    options.historyFailure = false;
+    await f.recover();
+    assert.equal(f.messages.length, 1);
+    assert.equal(f.selections(), 1);
   });
   it('should distinguish a definite native rejection from an ambiguous send', async () => {
     const f = fixture({ denied: true });

@@ -4,10 +4,11 @@ agent:
   id: install-data
   name: Install Data
   email: install-data@example.com
+  runtime: codex
 
 models:
   default:
-    model: install-fixture/install-model
+    model: openai/gpt-6.1-sol
     effort: medium
 
 environment:

@@ -1,4 +1,5 @@
 - id: success
+  effort: high
   runtimes: [openclaw]
   schedule: every 1 hour
   timeout-seconds: 120
@@ -6,6 +7,7 @@
   group: REPORTS
   thread: { id: reports, name: Automation reports }
 - id: failure
+  effort: high
   runtimes: [openclaw]
   schedule: every 1 hour
   timeout-seconds: 120

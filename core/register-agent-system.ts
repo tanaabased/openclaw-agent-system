@@ -320,6 +320,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
           executionId,
           credential: sessionDispatch,
           assertCurrent: (record) => automationService.assertReportCurrent(record),
+          selectSettings: (record, request) =>
+            automationService.selectReportSettings(record, request),
         });
       } catch {
         logger.warn('automation-report: recovery-unavailable');

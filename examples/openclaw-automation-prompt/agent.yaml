@@ -6,7 +6,7 @@ agent:
 models:
   default:
     model: aimock/gpt-5.5
-    effort: medium
+    effort: high
 git: {}
 setup:
   steps:

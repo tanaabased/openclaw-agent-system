@@ -440,6 +440,7 @@ describe('credentials/session-dispatch-client', () => {
       ['sessions.describe', 'session-dispatch-describe-request-invalid'],
       ['chat.history', 'session-dispatch-history-request-invalid'],
       ['chat.send', 'session-dispatch-chat-send-request-invalid'],
+      ['sessions.patch', 'session-dispatch-sessions-patch-request-invalid'],
     ] as const) {
       let calls = 0;
       const request = sessionDispatchRequest(async () => {
@@ -459,6 +460,27 @@ describe('credentials/session-dispatch-client', () => {
       });
       assert.equal(calls, 1);
     }
+  });
+
+  it('should retain a safe unavailable-model rejection for settings selection without native prose', async () => {
+    let calls = 0;
+    const request = sessionDispatchRequest(async () => {
+      calls++;
+      throw new GatewayClientRequestError({
+        code: 'INVALID_REQUEST',
+        message:
+          'A runtime is not available for private-provider/private-model. Refresh the model catalog and choose again.',
+        details: { token: 'private-token' },
+      });
+    }, {});
+    await assert.rejects(request('sessions.patch', {}), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message, 'session-dispatch-sessions-patch-model-runtime-unavailable');
+      assert.equal(error.cause, undefined);
+      assert.ok(![error.stack, JSON.stringify(error)].join('').includes('private-'));
+      return true;
+    });
+    assert.equal(calls, 1);
   });
 
   it('should retain uncertain create outcomes for timeout and unrecognized failures', async () => {

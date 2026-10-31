@@ -31,6 +31,7 @@ import {
 } from './session-dispatch.ts';
 import { sessionDispatchScopes } from '../agent/session-dispatch-requirements.ts';
 import { openclawSessionCreateTimeoutMs } from '../agent/openclaw-session-timeout.ts';
+import automationGatewayDiagnostic from '../agent/automation-gateway-diagnostic.ts';
 
 interface SessionDispatchClientDependencies {
   createClient(
@@ -272,6 +273,12 @@ export function sessionDispatchRequest(
       : method.replaceAll('.', '-').toLowerCase();
     const result = await request(method, params).catch((error: unknown) => {
       assertCurrent();
+      // preserve only the known settings rejection, never the native model name or prose.
+      if (
+        method === 'sessions.patch' &&
+        automationGatewayDiagnostic('sessions.patch', error).reason === 'model-runtime-unavailable'
+      )
+        throw new Error('session-dispatch-sessions-patch-model-runtime-unavailable');
       const reason =
         error instanceof GatewayClientRequestTimeoutError
           ? 'timeout-unverified'

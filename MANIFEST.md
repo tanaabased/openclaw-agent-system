@@ -185,8 +185,13 @@ inherited effort. Finally, runtime overrides replace model and effort independen
 Codex shared models must use the `openai/` provider; Codex runtime overrides may still
 use unqualified native model IDs.
 
-Install applies these settings to new and existing managed chats and verifies saved
-readback. The same resolved pair feeds independent jobs and schedule drift detection.
+Codex Install applies these settings to new and existing managed chats and verifies
+saved readback. OpenClaw Install registers chats without selecting models; Doctor
+does not inspect automation chat model settings or report model drift. Prompt jobs
+carry the resolved pair in their native cron payload. Command jobs select it through
+guarded `sessions.patch` before their report-formatting turn. Unavailable selections
+fail at execution without substituting another model. The same resolved pair feeds
+independent jobs and schedule drift detection.
 Jobs sharing an OpenClaw chat must agree on settings. Explicit runtime targets are
 not owned chats: they keep their native settings and do not inherit `models.default`.
 Explicit automation or runtime model/effort settings are rejected for those targets.
@@ -461,7 +466,7 @@ Pending writes or incomplete inspection prevent retirement. A retired ID cannot 
 silently recreated; use a new ID for a new automation.
 Unrelated jobs are not adopted by name. Unknown saved schemas stop inspection.
 
-For `automation-thread-model-drift`, rerun Install to reconcile the existing managed
+For Codex `automation-thread-model-drift`, rerun Install to reconcile the existing managed
 chat. Doctor reports requested and observed values without applying changes. Codex
 settings updates require CLI `0.160.1` or newer and its experimental settings API;
 unsupported native operations remain explicit errors. Settings-only updates never
@@ -470,8 +475,8 @@ create a replacement chat or generate a model turn.
 `automation-thread-settings-busy` means Codex still owns the chat's writer, which can
 include an idle desktop-loaded chat. Release that chat in the native app and rerun
 Install. Agent System does not interrupt it or schedule an automatic idle retry.
-In either runtime, `automation-thread-settings-denied` or
-`automation-thread-settings-uncertain` retains the attempt without replay. Inspect
+`automation-thread-settings-denied` or `automation-thread-settings-uncertain`
+retains the attempt without replay. Inspect
 native settings and, if needed, apply the retained request shown by Doctor through
 supported native controls. Matching saved values clear the receipt on a later Install. Correcting
 authorization alone does not replay a denied attempt; do not delete ownership records.
@@ -479,6 +484,12 @@ If you withdraw a denied change and the declaration matches the same chat's curr
 settings, rerun Install to clear the obsolete request without changing the chat.
 Reverting a declaration does not clear an uncertain update whose outcome is still unknown.
 A conflict or missing chat stops the update; earlier verified changes remain applied.
+
+For OpenClaw command reports, settings selection and its recovery belong to execution,
+not Install or Doctor. A denied or uncertain selection fails that report without
+replaying the update. Inspect the declared model and effort and the same native chat's
+settings through supported native controls. Matching saved settings clear the retained
+attempt on a later execution; authorization changes alone do not replay a denial.
 
 For `automation-journal-busy`, confirm no installation or synchronization is running
 before removing only the stale Agent System `.lock` directory. Never edit native
