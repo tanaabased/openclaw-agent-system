@@ -66,6 +66,12 @@ describe('tools/dispatch/tool', () => {
       agent: { id: caller.agentId },
       github: { notifications: { schemaVersion: 3 as number | undefined } },
     };
+    const reads = {
+      async session() {
+        return { ...session };
+      },
+      async manifest() {},
+    };
     const api = {
       source: '/plugin/index.ts',
       runtimeSource: '/plugin/dist/index.js',
@@ -83,6 +89,8 @@ describe('tools/dispatch/tool', () => {
       runtime: {
         agent: {
           session: {
+            getSessionEntryAsync: async ({ sessionKey }: { sessionKey: string }) =>
+              sessionKey === caller.sessionKey ? reads.session() : undefined,
             getSessionEntry: ({ sessionKey }: { sessionKey: string }) =>
               sessionKey === caller.sessionKey ? session : undefined,
           },
@@ -94,6 +102,7 @@ describe('tools/dispatch/tool', () => {
       config: () => ({}),
       manifestService: {
         async loadForAgentId() {
+          await reads.manifest();
           return { status: 'loaded', manifest, scope: { workspaceDir } };
         },
       },
@@ -117,6 +126,7 @@ describe('tools/dispatch/tool', () => {
       build,
       calls,
       session,
+      reads,
       adapter,
       manifest,
     };
@@ -352,6 +362,75 @@ describe('tools/dispatch/tool', () => {
       /expired/,
     );
     assert.deepEqual(calls, []);
+  });
+
+  it('should reject a reset or archive while the descriptive read is suspended', async () => {
+    for (const change of ['reset', 'archive'] as const) {
+      const f = fixture();
+      const started = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      f.reads.session = async () => {
+        const stale = { ...f.session };
+        started.resolve();
+        await resume.promise;
+        return stale;
+      };
+      const pending = f.hook(event, coordinator);
+      await started.promise;
+      if (change === 'reset') f.session.sessionId = 'replacement';
+      else f.session.archivedAt = 1;
+      resume.resolve();
+      assert.match((await pending)!.blockReason, /dispatch-native-session-diverged/);
+      await assert.rejects(
+        f.build().execute(event.toolCallId, event.params),
+        /dispatch-native-invocation-missing/,
+      );
+      assert.deepEqual(f.calls, []);
+    }
+  });
+
+  it('should recheck host and session authority after a manifest refresh', async () => {
+    for (const change of ['reset', 'archive', 'revoke', 'abort', 'workspace'] as const) {
+      const f = fixture();
+      await f.hook(event, coordinator);
+      let revoked = false;
+      const controller = new AbortController();
+      const started = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      let rejected: unknown;
+      f.adapter.service.run = async (...args) => {
+        f.reads.manifest = async () => {
+          started.resolve();
+          await resume.promise;
+        };
+        try {
+          await args[5]?.assertCurrent?.();
+        } catch (error) {
+          rejected = error;
+          throw error;
+        }
+        f.calls.push(args[2]);
+        return { status: 'idle' };
+      };
+      const pending = f
+        .build({
+          ...coordinator,
+          assertInvocationCurrent() {
+            if (revoked) throw new Error('revoked');
+          },
+        })
+        .execute(event.toolCallId, event.params, controller.signal);
+      await started.promise;
+      if (change === 'reset') f.session.sessionId = 'replacement';
+      if (change === 'archive') f.session.archivedAt = 1;
+      if (change === 'revoke') revoked = true;
+      if (change === 'abort') controller.abort();
+      if (change === 'workspace') f.manifest.agent.id = 'other';
+      resume.resolve();
+      await pending;
+      assert.match(String(rejected), /diverged|revoked|abort|binding|manifest/iu);
+      assert.deepEqual(f.calls, []);
+    }
   });
 
   it('should remove an unused capture after a terminal tool hook', async () => {

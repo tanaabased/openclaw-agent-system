@@ -27,6 +27,7 @@ async function readInput(): Promise<string> {
 
 const quietLogger = { debug() {}, error() {}, info() {}, warn() {} };
 const manifestService = new AgentManifestService({
+  // 10.8 snapshots cannot cold-load config in this fresh helper process.
   getConfig: () => getRuntimeConfig({ pin: false }),
   logger: quietLogger,
   parseSessionAgentId: () => undefined,

@@ -212,6 +212,10 @@ bun run plugin:check
 
 Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
 
+The ClawHub package check rejects breakages, unavailable SDK targets, and unexpected
+warnings. Its explicit 10.8 exceptions retain cold configuration loading and final
+synchronous session authority checks; a passing result is not deprecation-free.
+
 ### Leia Scenarios
 
 > [!IMPORTANT]

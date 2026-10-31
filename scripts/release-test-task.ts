@@ -15,14 +15,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { clawHubSourceMaps, withoutClawHubSourceMapReference } from './clawhub-fallback.ts';
-
-interface ClawHubValidation {
-  status?: string;
-  summary?: {
-    breakageCount?: number;
-    warningCount?: number;
-  };
-}
+import validateClawHubReport from './clawhub-validation.ts';
 
 interface CodexPluginManifest {
   description?: string;
@@ -711,33 +704,31 @@ try {
     });
   });
 
-  await check('pass ClawHub package validation without breakages', async () => {
-    const clawHubReports = join(temporaryRoot, 'clawhub-reports');
-    const clawHubResult = await run('clawhub', [
-      'package',
-      'validate',
-      packageRoot,
-      '--openclaw',
-      resolve('node_modules/openclaw'),
-      '--out',
-      clawHubReports,
-    ]);
-    const clawHubValidation = JSON.parse(
-      await readFile(join(clawHubReports, 'plugin-inspector-report.json'), 'utf8'),
-    ) as ClawHubValidation;
-    const clawHubOutput = clawHubResult.output.trim();
-    assert.equal(
-      clawHubValidation.status,
-      'pass',
-      `ClawHub package validation must pass\n${clawHubOutput}`,
-    );
-    assert.equal(
-      clawHubValidation.summary?.breakageCount,
-      0,
-      `ClawHub package validation must report no breakages\n${clawHubOutput}`,
-    );
-    if (clawHubValidation.summary?.warningCount) process.stderr.write(`${clawHubOutput}\n`);
-  });
+  await check(
+    'pass ClawHub package validation with only justified compatibility warnings',
+    async () => {
+      const clawHubReports = join(temporaryRoot, 'clawhub-reports');
+      const clawHubResult = await run('clawhub', [
+        'package',
+        'validate',
+        packageRoot,
+        '--openclaw',
+        resolve('node_modules/openclaw'),
+        '--out',
+        clawHubReports,
+      ]);
+      const clawHubValidation = JSON.parse(
+        await readFile(join(clawHubReports, 'plugin-inspector-report.json'), 'utf8'),
+      );
+      const clawHubOutput = clawHubResult.output.trim();
+      process.stderr.write(`${clawHubOutput}\n`);
+      const sdkRoot = resolve('node_modules/openclaw');
+      const sdk = JSON.parse(await readFile(join(sdkRoot, 'package.json'), 'utf8')) as {
+        version: string;
+      };
+      validateClawHubReport(clawHubValidation, { path: sdkRoot, version: sdk.version });
+    },
+  );
 } catch (error) {
   process.stderr.write(
     `release package checks: failed (${passedChecks}/${attemptedChecks} passed)\n`,

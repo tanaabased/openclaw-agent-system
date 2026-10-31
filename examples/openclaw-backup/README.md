@@ -20,6 +20,7 @@ are refused, and that pruning older archives remains separate from integrity che
 
 - Direct Ubuntu commands need no Gateway, model, or provider credential. The checked-in workspace runs in place with an independent checksum baseline and separate restore target.
 - The database fixture keeps real committed WAL content present during capture; restoration verifies the recovered database, not just archive membership.
+- The 10.8 fixture retains the synchronous database opener: the audit's worker V2 replacement is not available through that SDK's public entry. This example-only warning is separate from packaged plugin validation; do not replace the real agent database with a synthetic schema to silence it.
 - After the restore checks, the historical fixture replaces snapshot entries in disposable copies of the created archive with a schema-24 marker and matching artifact metadata. It is not a complete historical OpenClaw schema. The current archive remains unchanged.
 
 ## Setup
