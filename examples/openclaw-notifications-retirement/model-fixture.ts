@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { access, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { setTimeout } from 'node:timers/promises';
 
 import {
   getTextContent,
@@ -86,12 +89,40 @@ const final: Fixture = {
     return result;
   },
 };
+const queueHold: Fixture = {
+  match: {
+    model: issueExampleScenario.model.match,
+    systemMessage: ['Name: Notification Tanaabot'],
+    predicate: (request) =>
+      request.messages.some(
+        (message) =>
+          message.role === 'user' &&
+          getTextContent(message.content)?.includes('Hold retirement queue until release'),
+      ),
+  },
+  response: async () => {
+    const root = process.env.TMPDIR;
+    assert.ok(root);
+    await writeFile(join(root, 'retirement-queue-ready'), 'ready');
+    const signal = AbortSignal.timeout(120_000);
+    while (
+      !(await access(join(root, 'retirement-queue-release')).then(
+        () => true,
+        () => false,
+      ))
+    ) {
+      await setTimeout(100, undefined, { signal });
+    }
+    return { content: 'Retirement queue hold released.' };
+  },
+};
 export const retirementExampleScenario: OpenClawAIMockScenario = {
   ...issueExampleScenario,
   id: 'openclaw-notifications-retirement',
   dynamicFinalResponseFixtures: [
     ...(issueExampleScenario.dynamicFinalResponseFixtures ?? []),
     final,
+    queueHold,
   ],
   toolCalls: [
     ...issueExampleScenario.toolCalls,
@@ -102,5 +133,5 @@ export const retirementExampleScenario: OpenClawAIMockScenario = {
       })),
     ),
   ],
-  fixtures: [tools, final, ...issueExampleScenario.fixtures],
+  fixtures: [queueHold, tools, final, ...issueExampleScenario.fixtures],
 };

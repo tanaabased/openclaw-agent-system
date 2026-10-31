@@ -35,6 +35,99 @@ function fixture() {
 }
 
 describe('agent/openclaw retirement observation', () => {
+  it('should ignore terminal input history without requiring historical messages', async () => {
+    const f = fixture();
+    delete f.history.messages;
+    f.history.pendingInputs = {
+      total: 2,
+      queuedCount: 0,
+      items: [
+        { id: 'a', state: 'cancelled' },
+        { id: 'b', state: 'interrupted' },
+      ],
+    };
+    assert.equal((await observeRetiringSession(f.request, f.record, 'owner'))?.idle, true);
+    f.history.messages = ['unavailable presentation'];
+    assert.equal((await observeRetiringSession(f.request, f.record, 'owner'))?.idle, true);
+  });
+  it('should inspect every pending page and protect unresolved or live queued work', async () => {
+    for (const state of ['cancelled', 'queued', 'unknown']) {
+      const f = fixture();
+      const cursors: unknown[] = [];
+      const request: DispatchRequest = async (method, params) => {
+        if (method !== 'chat.history') return f.request(method, params);
+        cursors.push(params.pendingBefore);
+        return {
+          ...f.history,
+          pendingInputs: params.pendingBefore
+            ? { total: 2, queuedCount: 0, items: [{ id: 'b', state }] }
+            : {
+                total: 2,
+                queuedCount: 0,
+                items: [{ id: 'a', state: 'interrupted' }],
+                nextBefore: 10,
+              },
+        };
+      };
+      if (state === 'unknown')
+        await assert.rejects(
+          observeRetiringSession(request, f.record, 'owner'),
+          /pending-inputs-unresolved/,
+        );
+      else
+        assert.equal(
+          (await observeRetiringSession(request, f.record, 'owner'))?.idle,
+          state === 'cancelled',
+        );
+      assert.deepEqual(cursors, [undefined, 10]);
+    }
+    const f = fixture();
+    f.history.pendingInputs = { total: 0, items: [], queuedCount: 1 };
+    assert.equal((await observeRetiringSession(f.request, f.record, 'owner'))?.idle, false);
+  });
+  it('should reject incomplete, changing, duplicate and malformed pending custody', async () => {
+    for (const pending of [
+      { total: 1, items: [] },
+      { total: 1 },
+      { total: -1, items: [] },
+      { total: 0, items: [], queuedCount: '0' },
+      {
+        total: 2,
+        items: [
+          { id: 'a', state: 'cancelled' },
+          { id: 'a', state: 'interrupted' },
+        ],
+      },
+    ]) {
+      const f = fixture();
+      f.history.pendingInputs = pending;
+      await assert.rejects(
+        observeRetiringSession(f.request, f.record, 'owner'),
+        /pending-inputs-unresolved/,
+      );
+    }
+    for (const changed of ['identity', 'total', 'cursor']) {
+      const f = fixture();
+      const request: DispatchRequest = async (method, params) =>
+        method !== 'chat.history'
+          ? f.request(method, params)
+          : {
+              ...f.history,
+              sessionId: params.pendingBefore && changed === 'identity' ? 'replacement' : 'child',
+              pendingInputs: params.pendingBefore
+                ? {
+                    total: changed === 'total' ? 3 : 2,
+                    items: [{ id: 'b', state: 'cancelled' }],
+                    ...(changed === 'cursor' ? { nextBefore: 10 } : {}),
+                  }
+                : { total: 2, items: [{ id: 'a', state: 'cancelled' }], nextBefore: 10 },
+            };
+      await assert.rejects(
+        observeRetiringSession(request, f.record, 'owner'),
+        /unavailable|unresolved/,
+      );
+    }
+  });
   it('should observe compact retirement receipts and still reject changed native identities', async () => {
     const f = fixture();
     f.record.intakeId = 'admitted';
