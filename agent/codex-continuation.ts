@@ -148,7 +148,12 @@ export default async function runCodexContinuation(
           if (state.continuationRun?.responses?.includes(record.id)) continue;
           if (
             !record.summaryRecovery &&
-            codexCapacity(state.records, current.policy!.policy.maxConcurrentItems).available === 0
+            codexCapacity(
+              state.records,
+              current.policy!.policy.maxConcurrentItems,
+              state.projectPickup,
+              record.projectWork?.pickup?.issueNodeId,
+            ).available === 0
           )
             continue;
           let response;

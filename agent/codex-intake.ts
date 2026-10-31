@@ -1,3 +1,6 @@
+import { codexItemOccupied } from './codex-capacity.ts';
+import projectPickup, { pickupAuthority, type PickupInput } from './project-pickup.ts';
+import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
 import { dispatchStorageNotice } from './dispatch-storage.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { ProjectPickupAuthority } from './project-pickup-authority.ts';
@@ -230,7 +233,15 @@ export async function runCodexIntake(
     };
     const result = await scanAssignments({
       runtime: 'codex',
-      projectPickup: deps.projectPickup,
+      readProjectPickup: async () =>
+        pickupAuthority(
+          (
+            await new CodexDispatchStore(
+              current.store.location.root,
+              current.store.location.scope,
+            ).read()
+          ).projectPickup,
+        ) ?? deps.projectPickup,
       store: current.store,
       workspaceDir: current.workspace,
       agentId: current.agentId,
@@ -356,4 +367,49 @@ export async function inspectCodexIntake(pluginData: string, deps: CodexIntakeDe
     blocker: state?.blocker ?? null,
     records: state?.records ?? [],
   };
+}
+
+/** internal enrollment consumer; activation and native model turns are wired by their scheduler owner. */
+export async function runCodexProjectPickup(
+  pluginData: string,
+  input: PickupInput,
+  timezone: string,
+  deps: CodexIntakeDependencies = {},
+) {
+  if (!deps.projectPickup) throw new IntakeError('project-pickup-activation-required');
+  const current = await selectCodexIntake(pluginData, deps);
+  await assertCodexIntakeActive(pluginData, current, deps);
+  const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  return journal.exclusive(async (state, save, signal) => {
+    const readPolicy = async () => {
+      const live = await selectCodexIntake(pluginData, deps);
+      if (live.store.location.scope !== current.store.location.scope || !live.policy)
+        throw new IntakeError('intake-workspace-binding-changed');
+      return live.policy.policy;
+    };
+    await readPolicy();
+    const client = (await connectSelected(current, deps, signal)) as ProjectPickupClient;
+    if (
+      !client.discoverProject ||
+      !client.projectCandidate ||
+      !client.projectBlocked ||
+      !client.assignProjectIssue
+    )
+      throw new IntakeError('project-pickup-provider-unavailable');
+    return projectPickup({
+      runtime: 'codex',
+      scope: current.store.location.scope,
+      workspaceDir: current.workspace,
+      agentId: current.agentId,
+      enrollment: deps.projectPickup!.enrollment,
+      timezone,
+      state,
+      save,
+      now: deps.now ?? Date.now,
+      readPolicy,
+      client,
+      occupied: codexItemOccupied,
+      input,
+    });
+  });
 }

@@ -7,7 +7,7 @@ import {
   removeFixtureAssignment,
   originalIntakeDigest,
 } from './github-intake-fixture.ts';
-import { retainedProjectWork } from './project-pickup-fixture.ts';
+import { reservedProjectPickup } from './project-pickup-fixture.ts';
 import assert from 'node:assert/strict';
 import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import { automationHash } from '../agent/automation-hash.ts';
@@ -3160,11 +3160,17 @@ describe('agent/openclaw issue dispatch', () => {
     );
   });
 
-  it('should carry scoped work from admission through assessment and continuation', async () => {
+  it('should transfer a pickup reservation through admission and continuation at capacity', async () => {
+    manifest.github!.notifications!.maxConcurrentItems = 1;
     const selected = await service.scope(manifest, root);
+    const journal = selected.journal;
     await selected.store.exclusive(async (state, save) => {
       const intake = state!.records[0]!;
-      intake.evidence.projectWork = retainedProjectWork(intake, 'openclaw');
+      const pickup = reservedProjectPickup(intake, 'openclaw');
+      await journal.exclusive(async (dispatch, save) => {
+        dispatch.projectPickup = pickup;
+        await save();
+      });
       intake.evidence.mode = 'work';
       await save(state!);
     });

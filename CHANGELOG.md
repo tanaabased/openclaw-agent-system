@@ -7,6 +7,7 @@
 - Added explicit unmanaged native chat cleanup in Codex and OpenClaw. [#508](https://github.com/tanaabased/openclaw-agent-system/issues/508)
 - Added manual launch from an existing same-repository PR, retaining its branch and original PR. [#507](https://github.com/tanaabased/openclaw-agent-system/issues/507)
 - Added shared automation model/profile and effort selection, including updates to existing managed chats. [#556](https://github.com/tanaabased/openclaw-agent-system/issues/556)
+- Added shared project pickup selection and assignment recovery for Codex and OpenClaw; activation remains pending. [#526](https://github.com/tanaabased/openclaw-agent-system/issues/526)
 
 ### Bug Fixes
 

@@ -478,7 +478,12 @@ export default async function runCodexFeedback(
             if (
               assignmentAt < readyAt(record) ||
               codexItemOccupied(record) ||
-              !codexCapacity(state.records, policy.maxConcurrentItems).available ||
+              !codexCapacity(
+                state.records,
+                policy.maxConcurrentItems,
+                state.projectPickup,
+                record.projectWork?.pickup?.issueNodeId,
+              ).available ||
               !['idle', 'notLoaded'].includes(found.status) ||
               found.turnEnded !== true
             )
