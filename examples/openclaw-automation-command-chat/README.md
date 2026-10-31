@@ -33,6 +33,8 @@ reports through the real Gateway response path.
 ```bash
 # should create one reporting chat per runtime for both command declarations
 export OPENAI_API_KEY=agent-system-aimock-test
+# openclaw provider discovery does not read the codex app-server's inference override.
+export OPENAI_BASE_URL=http://127.0.0.1:4010/v1
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --model openai/gpt-5.5
 openclaw-aimock prepare --scenario openclaw-automation-command-chat
 openclaw config set models.mode merge
