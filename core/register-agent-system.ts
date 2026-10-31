@@ -753,7 +753,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     toolRegistry,
     async (manifest, workspace, binding) => {
       if (!binding.sessionKey || !binding.sessionId) return;
-      const entry = api.runtime.agent.session.getSessionEntry({
+      const entry = await api.runtime.agent.session.getSessionEntryAsync({
         sessionKey: binding.sessionKey,
         readConsistency: 'latest',
       });

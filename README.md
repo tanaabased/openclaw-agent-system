@@ -29,7 +29,7 @@ See example agents:
 - [pirog/me](https://github.com/pirog/me) — Mike Pirog's bound Codex profile.
 
 > [!NOTE]
-> The OpenClaw integration requires 2026.10.6 or newer and is developed against 2026.10.6. See
+> The OpenClaw integration requires 2026.10.8 or newer and is developed against 2026.10.8. See
 > [version compatibility](#version-compatibility).
 
 > [!WARNING]
@@ -112,6 +112,7 @@ uses the [shared skills](#skills) through its native host interfaces.
 
 | Agent System release | Minimum OpenClaw | Development target |
 | -------------------- | ---------------- | ------------------ |
+| Next release         | 2026.10.8        | 2026.10.8          |
 | 0.9.0                | 2026.10.6        | 2026.10.6          |
 | 0.8.0                | 2026.9.5         | 2026.9.6           |
 | 0.7.0                | 2026.9.5         | 2026.9.6           |
