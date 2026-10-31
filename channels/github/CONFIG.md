@@ -91,17 +91,37 @@ and a repository within `allowed-repository-owners`; it does not expand GitHub a
 or approved assignment and feedback authors.
 
 > [!IMPORTANT]
-> This release validates the policy but does not activate project pickup. Scheduled
-> selection and enrollment are not available yet in either runtime. Adding this key
-> or running Install does not self-assign issues or change existing held work to Work.
+> Choose one installation and runtime for this coordinator. Inspect its existing
+> installation identity using the [instance commands](../../CLI.md#openclaw-agent-system-instance-inspect)
+> or [Codex identity actions](../../CODEX.md#workspace-setup), then set `coordinator`
+> below. Run Install there and approve the native pickup schedule. Doctor checks its
+> saved enrollment and schedule. Missing or mismatched designation cannot activate pickup.
 
-| Field                | Required | Meaning                                                                                                                                                                                        |
-| -------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `paused`             | no       | Defaults to `false`; desired pause state for future pickup scheduling.                                                                                                                         |
-| `schedule`           | yes      | Existing [recurring schedule syntax](../../MANIFEST.md#automations): cron with an optional IANA timezone, or `every`. One-shot schedules are rejected. Native adapter limitations still apply. |
-| `window-minutes`     | yes      | Positive integer duration for each pickup window.                                                                                                                                              |
-| `selection.guidance` | no       | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                   |
-| `projects`           | yes      | Exactly one entry with `repository: owner/name` and `milestone: {number: 10, policy: only}`. The milestone number must be positive. Other policies and multi-project selection are rejected.   |
+| Field                | Required       | Meaning                                                                                                                                                                                        |
+| -------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `paused`             | no             | Defaults to `false`; pauses new pickup immediately. Run Install to synchronize the saved native job.                                                                                           |
+| `coordinator`        | for activation | `{runtime: codex, instance-id: <installation UUID>}` or runtime `openclaw`. Other installations reject activation.                                                                             |
+| `schedule`           | yes            | Existing [recurring schedule syntax](../../MANIFEST.md#automations): cron with an optional IANA timezone, or `every`. One-shot schedules are rejected. Native adapter limitations still apply. |
+| `window-minutes`     | yes            | Positive integer duration for each pickup window, at least `github.interval-minutes`.                                                                                                          |
+| `selection.guidance` | no             | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                   |
+| `projects`           | yes            | Exactly one entry with `repository: owner/name` and `milestone: {number: 10, policy: only}`. The milestone number must be positive. Other policies and multi-project selection are rejected.   |
+
+Install adds one `PROJECT PICKUP` job alongside assignment intake, using the intake
+cadence. Each eligible window can select and self-assign at most one actionable,
+unassigned issue in the configured milestone. Verified pickup enters the existing
+assessment and Work workflow; ordinary assignments keep their configured mode.
+Missed windows are not replayed. Accepted issue work may finish after a window or pause.
+Codex uses the low model profile; OpenClaw uses its default automation profile.
+
+The pilot retains its original repository, milestone, schedule, timezone and window
+anchor. Install rejects changes to those enrolled values; restore them to resume.
+Pause and selection guidance can change without reenrollment. Before transferring
+pickup, settle pending pickup operations with the original owner, stop its native
+job, and verify it is stopped. Then designate the new installation. Existing issue
+work stays with its original runtime; do not copy or delete journals to transfer it.
+Conflicting workspaces on one installation are rejected. There is no automatic
+failover, account-wide concurrency cap, or protection against independently divergent
+configuration or copied private installation identities.
 
 ## `github.issue-assignment`
 

@@ -621,8 +621,12 @@ describe('openclaw v2 intake slice', () => {
       },
       {} as never,
     );
-    if (typeof factory !== 'function') throw Error('missing factory');
-    const tool = await factory({ agentId: 'receiver', workspaceDir: root });
+    if (!factory || typeof factory !== 'object' || !('create' in factory))
+      throw Error('missing factory');
+    const descriptor = factory;
+    const build = (workspaceDir: string) =>
+      descriptor.create({ agentId: 'receiver', workspaceDir, assertInvocationCurrent() {} });
+    const tool = await build(root);
     assert.ok(tool && !Array.isArray(tool));
     const script = openclawIntakeJobs(f.value)[0]!.internalOpenClaw!.trigger.script;
     const { store } = await f.service.select(f.value, root);
@@ -747,9 +751,12 @@ describe('openclaw v2 intake slice', () => {
       },
       {} as never,
     );
-    assert.equal(typeof factory, 'function');
-    if (typeof factory !== 'function') throw Error('missing factory');
-    const tool = await factory({ agentId: 'receiver', workspaceDir: root });
+    if (!factory || typeof factory !== 'object' || !('create' in factory))
+      throw Error('missing factory');
+    const descriptor = factory;
+    const build = (workspaceDir: string) =>
+      descriptor.create({ agentId: 'receiver', workspaceDir, assertInvocationCurrent() {} });
+    const tool = await build(root);
     assert.ok(tool && !Array.isArray(tool));
     for (const request of [
       { action: 'activate' },
@@ -759,9 +766,88 @@ describe('openclaw v2 intake slice', () => {
       await assert.rejects(tool.execute('call', request), { code: 'intake-request-invalid' });
     }
     await tool.execute('call', { action: 'inspect' });
-    const wrong = await factory({ agentId: 'receiver', workspaceDir: '/tmp' });
+    const wrong = await build('/tmp');
     assert.ok(wrong && !Array.isArray(wrong));
     await assert.rejects(wrong.execute('call', { action: 'inspect' }), /bind the active/);
     assert.equal(f.connects(), 0);
+  });
+  it('should consume pickup authority once for the exact native call and reject expired or generic calls', async () => {
+    const f = fixture();
+    type Context = {
+      agentId: string;
+      sessionKey: string;
+      sessionId: string;
+      runId: string;
+      toolCallId: string;
+    };
+    const context: Context = {
+      agentId: 'receiver',
+      sessionKey: 'pickup',
+      sessionId: 'session',
+      runId: 'run',
+      toolCallId: 'call',
+    };
+    const hooks = new Map<
+      string,
+      (
+        event: { toolName: string; params: object; toolCallId: string },
+        context: Context,
+      ) => Promise<{ block?: boolean } | void>
+    >();
+    let factory: Parameters<OpenClawPluginApi['registerTool']>[0] | undefined;
+    let current = true;
+    let calls = 0;
+    const assertCurrent = async () => {
+      if (!current) throw Error('expired');
+    };
+    f.service.pickup = async (_manifest, _workspace, _input, _timezone, occurrence) => {
+      await occurrence!.assertCurrent();
+      calls++;
+      return { status: 'idle', changed: false };
+    };
+    createIntakeTool(
+      f.service,
+      f.manifests,
+      async () => {
+        await assertCurrent();
+        return { nativeId: 'pickup-job', assertCurrent };
+      },
+      {
+        on: ((name: string, hook: never) => {
+          hooks.set(name, hook);
+        }) as OpenClawPluginApi['on'],
+      },
+    ).registerTools(
+      {
+        registerTool(value) {
+          factory = value;
+        },
+      },
+      {} as never,
+    );
+    if (!factory || typeof factory !== 'object' || !('create' in factory))
+      throw Error('missing factory');
+    const tool = factory.create({ ...context, workspaceDir: root, assertInvocationCurrent() {} });
+    assert.ok(tool && !Array.isArray(tool));
+    const event = {
+      toolName: 'agent_system_intake',
+      toolCallId: 'call',
+      params: { action: 'pickup' },
+    };
+    const hook = hooks.get('before_tool_call')!;
+    await assert.rejects(tool.execute('call', event.params), /native-caller-required/);
+    assert.equal(await hook(event, context), undefined);
+    await assert.rejects(tool.execute('different-call', event.params), /native-caller-required/);
+    await tool.execute('call', event.params);
+    await assert.rejects(tool.execute('call', event.params), /native-caller-required/);
+    await hook(event, context);
+    current = false;
+    await assert.rejects(tool.execute('call', event.params), /expired/);
+    assert.equal((await hook(event, context))?.block, true);
+    current = true;
+    await hook(event, context);
+    await hooks.get('after_tool_call')!(event, context);
+    await assert.rejects(tool.execute('call', event.params), /native-caller-required/);
+    assert.equal(calls, 1);
   });
 });

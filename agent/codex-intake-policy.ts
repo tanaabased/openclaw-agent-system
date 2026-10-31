@@ -1,4 +1,5 @@
 import automationModels from './automation-models.ts';
+import projectPickupJobs, { projectPickupAutomationId } from './project-pickup-jobs.ts';
 import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import { assessmentSummaryConsent } from './assessment-summary-state.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
@@ -22,7 +23,7 @@ export function codexIntakeJobs(
   runtime?: { entrypoint: string; pluginData: string },
 ): ResolvedAutomation[] {
   const declarations = manifest.automations ?? [];
-  if (declarations.some((job) => job.id === intakeAutomationId))
+  if (declarations.some((job) => [intakeAutomationId, projectPickupAutomationId].includes(job.id)))
     throw new IntakeError('intake-automation-id-reserved');
   const jobs = automationModels(declarations, manifest.models, 'codex');
   const selected = codexIntakePolicy(manifest);
@@ -83,5 +84,6 @@ export function codexIntakeJobs(
         ].join('\n\n'),
       },
     },
+    ...projectPickupJobs(manifest, 'codex', runtime ? codexDispatchHandoff(runtime) : ''),
   ];
 }

@@ -7,6 +7,9 @@ github:
   allowed-repository-owners: ['@tanaabased']
   issue-assignment: {}
   project-pickup:
+    coordinator:
+      runtime: openclaw
+      instance-id: 00000000-0000-4000-8000-000000000001
     schedule:
       cron: '0 22 * * *'
       timezone: America/New_York

@@ -1,0 +1,21 @@
+{
+  "discoveryRequestCount": 1,
+  "finalResponseCount": 1,
+  "model": "aimock/gpt-5.5",
+  "promptRequestCount": 3,
+  "provider": "aimock",
+  "requestCount": 3,
+  "responsesApiRequestCount": 3,
+  "scenario": "openclaw-notifications-scheduling",
+  "schemaVersion": 2,
+  "strictMissCount": 0,
+  "successfulFixtureResponseCount": 3,
+  "tools": [
+    {
+      "callResponseCount": 1,
+      "name": "agent_system_intake",
+      "projectionRequestCount": 2,
+      "resultRequestCount": 1
+    }
+  ]
+}

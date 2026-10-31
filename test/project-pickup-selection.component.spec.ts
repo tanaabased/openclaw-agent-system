@@ -1,3 +1,5 @@
+import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
+import ProjectPickupEnrollmentStore from '../agent/project-pickup-enrollment.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -6,6 +8,7 @@ import { join } from 'node:path';
 import codexCapacity from '../agent/codex-capacity.ts';
 import CodexDispatchStore from '../agent/codex-dispatch-state.ts';
 import {
+  prepareCodexPickupEnrollment,
   runCodexIntake,
   runCodexProjectPickup,
   selectCodexIntake,
@@ -38,6 +41,15 @@ describe('project pickup selection through native journals', () => {
     const home = join(root, 'codex');
     await mkdir(workspace);
     await mkdir(home);
+    const instanceRoot = join(data, 'instance');
+    const identity = await new AssignmentClaimStore(instanceRoot).identity();
+    const enrollmentStore = new ProjectPickupEnrollmentStore(instanceRoot);
+    const caller = { current: true };
+    const assertCurrent = async () => {
+      if (!caller.current) throw new Error('project-pickup-native-caller-required');
+    };
+    const occurrence = { nativeId: 'pickup-job', assertCurrent };
+
     const source = JSON.stringify({
       'schema-version': 1,
       agent: { id: 'receiver' },
@@ -54,6 +66,7 @@ describe('project pickup selection through native journals', () => {
           ],
         },
         'project-pickup': {
+          coordinator: { runtime, 'instance-id': identity.instanceId },
           schedule: 'every 1 day',
           'window-minutes': 60,
           selection: { guidance: { file: 'selection.md' } },
@@ -80,18 +93,33 @@ describe('project pickup selection through native journals', () => {
         now: () => f.clock.now,
         assertActive: async () => {},
         connect: async () => f.client,
+        threadId: 'pickup-thread',
+        pickupActivation: async () => ({ threadId: 'pickup-thread', nativeId: 'pickup-job' }),
+        intakeNative: {
+          occurrence: async () => {
+            await assertCurrent();
+            return {
+              id: 'turn',
+              automationId: 'pickup-job',
+              currentTimeIso: new Date(f.clock.now).toISOString(),
+            };
+          },
+        },
       };
       await runCodexIntake(data, true, deps);
       const selected = await selectCodexIntake(data, deps);
       scope = selected.store.location.scope;
       journal = new CodexDispatchStore(data, scope);
-      deps.projectPickup = f.authority;
+      const enrollment = await prepareCodexPickupEnrollment(data, deps);
+      await enrollmentStore.activate(enrollment.enrollment.id, occurrence.nativeId);
+      Object.assign(f.authority.enrollment, enrollment.enrollment);
       pickup = (input = {}) => runCodexProjectPickup(data, input, 'UTC', deps);
       scan = () => runCodexIntake(data, false, deps);
       read = async () => (await selected.store.read())!.records;
     } else {
       const intake = new OpenClawIntake({
         root: data,
+        pickupStore: enrollmentStore,
         namespace: root,
         now: () => f.clock.now,
         readiness: async () => undefined,
@@ -112,8 +140,10 @@ describe('project pickup selection through native journals', () => {
       const selected = await intake.select(manifest, workspace);
       scope = selected.store.location.scope;
       journal = new OpenClawDispatchStore(data, scope);
-      intake.dependencies.projectPickup = f.authority;
-      pickup = (input = {}) => intake.pickup(manifest, workspace, input, 'UTC');
+      const enrollment = await intake.preparePickup(manifest, workspace);
+      await enrollmentStore.activate(enrollment.enrollment.id, occurrence.nativeId);
+      Object.assign(f.authority.enrollment, enrollment.enrollment);
+      pickup = (input = {}) => intake.pickup(manifest, workspace, input, 'UTC', occurrence);
       scan = () => intake.run(manifest, workspace, 'scan');
       read = async () => (await selected.store.read())!.records;
     }
@@ -134,10 +164,18 @@ describe('project pickup selection through native journals', () => {
         rationale: 'highest explicit priority and impact among ready work',
       };
     };
-    return { ...f, pickup, scan, read, journal, select };
+    return { ...f, pickup, scan, read, journal, select, caller };
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should reject an expired native occurrence before provider assignment in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const selection = await f.select();
+      f.caller.current = false;
+      await assert.rejects(f.pickup({ selection }), /native-caller-required/);
+      assert.equal(f.effects.writes, 0);
+    });
+
     it(`should persist selection and uncertain assignment then admit once after restart in ${runtime}`, async () => {
       const f = await fixture(runtime);
       const selection = await f.select();

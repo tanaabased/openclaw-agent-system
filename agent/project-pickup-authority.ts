@@ -67,6 +67,7 @@ export function projectPickupPolicyDigest(policy: GitHubNotificationPolicy) {
     pickup
       ? {
           projects: pickup.projects,
+          coordinator: pickup.coordinator,
           schedule: pickup.schedule,
           windowMinutes: pickup.windowMinutes,
         }

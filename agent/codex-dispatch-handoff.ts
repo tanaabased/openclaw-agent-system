@@ -7,7 +7,7 @@ interface CodexRuntimeIdentity {
 export default function codexDispatchHandoff(runtime: CodexRuntimeIdentity) {
   return `const runtime = ${JSON.stringify({ entrypoint: runtime.entrypoint, pluginData: runtime.pluginData })};
 ${String.raw`const actions = {
-  intake: ['scan', 'failure-response'],
+  intake: ['scan', 'pickup', 'failure-response'],
   dispatch: ['observe-denials', 'next', 'prepare', 'reconcile', 'report'],
   continuation: ['next', 'reconcile'],
   feedback: ['reconcile']
@@ -44,7 +44,9 @@ while (true) {
     cmd: command, max_output_tokens: 32000,
     ...(escalated ? {
       sandbox_permissions: 'require_escalated',
-      justification: 'Allow ' + runtimeRoute + ':' + input.action + ' for the operator-activated recurring assignment workflow? This exact command checks workflow evidence, prepares configured repositories when required, and updates private tracking state; it does not create chats, send turns, implement task code, or publish to GitHub. Eligible assignments are selected by the activated manifest policy. Current operator restrictions and native approval decisions still apply.',
+      justification: runtimeRoute === 'intake' && input.action === 'pickup'
+        ? 'Allow this occurrence of the activated project pickup workflow to verify candidates, update its private journal, and self-assign at most one eligible GitHub issue under the designated installation policy? Native denials stop the operation.'
+        : 'Allow ' + runtimeRoute + ':' + input.action + ' for the operator-activated recurring assignment workflow? This exact command checks workflow evidence, prepares configured repositories when required, and updates private tracking state; it does not create chats, send turns, implement task code, or publish to GitHub. Eligible assignments are selected by the activated manifest policy. Current operator restrictions and native approval decisions still apply.',
       prefix_rule: argv
     } : {})
   });

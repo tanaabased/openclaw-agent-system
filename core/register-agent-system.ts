@@ -12,6 +12,9 @@ import { readFile, realpath } from 'node:fs/promises';
 
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
+import ProjectPickupEnrollmentStore from '../agent/project-pickup-enrollment.ts';
+import type { AgentManifest } from '../manifest/types.ts';
+import { projectPickupAutomationId } from '../agent/project-pickup-jobs.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import instanceIdentity from '../agent/instance-identity.ts';
@@ -255,7 +258,11 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     privateStateRoot,
   });
   let readScheduler: (() => NotificationScheduler | undefined) | undefined;
-  const intakeV2 = new OpenClawIntake({
+  const pickupStore = new ProjectPickupEnrollmentStore(
+    join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-instance'),
+  );
+  const intakeV2: OpenClawIntake = new OpenClawIntake({
+    pickupStore,
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-intake-v2'),
     resetRoot: join(
       privateStateRoot ?? api.runtime.state.resolveStateDir(),
@@ -264,7 +271,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     namespace: api.runtime.state.resolveStateDir(),
     manifestService: lifecycleManifestService,
     // tool registrations need not share the service-start closure; use enrolled read authority.
-    readiness: (manifest, workspace) =>
+    readiness: (manifest, workspace, automationId, expectedNativeId) =>
       sessionDispatch.use({ signal: AbortSignal.timeout(25000) }, (request) =>
         notificationAutomationReadiness(
           automationService,
@@ -284,6 +291,8 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
               );
             }
           },
+          automationId,
+          expectedNativeId,
         ),
       ),
     readinessFailure: (error) =>
@@ -297,10 +306,16 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       ),
     async connect(input, signal) {
       const connected = await githubCapability.accountClient.connect(input, 'service', signal);
-      return new GitHubWorkItemClient(new GitHubWorkEventApiClient(connected));
+      return new GitHubWorkEventClient(connected);
     },
   });
   const automationDependencies = {
+    pickup: {
+      prepare: (manifest: AgentManifest, workspace: string) =>
+        intakeV2.preparePickup(manifest, workspace),
+      activate: (id: string, nativeId: string, previousNativeId?: string) =>
+        pickupStore.activate(id, nativeId, previousNativeId),
+    },
     root: join(api.runtime.state.resolveStateDir(), 'agent-system-automations'),
     profile: api.runtime.state.resolveStateDir(),
     command: openClawCommand,
@@ -311,7 +326,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     ),
     manifestService: lifecycleManifestService,
   };
-  const automationService = new AutomationService(automationDependencies);
+  const automationService: AutomationService = new AutomationService(automationDependencies);
   registerAutomationReportHooks(api, automationService.reports, async (id) => {
     for (const executionId of id ? [id] : await automationService.reports.recoveryIds()) {
       try {
@@ -410,14 +425,45 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   });
   const toolRegistry = new AgentSystemToolRegistry([
     dispatchV2.tool,
-    createIntakeTool(intakeV2, {
-      ...lifecycleManifestService,
-      loadForCommandDirectory(...args) {
-        if (!manifestServiceRef.current)
-          throw new Error('Agent System manifest service is unavailable.');
-        return manifestServiceRef.current.loadForCommandDirectory(...args);
+    createIntakeTool(
+      intakeV2,
+      {
+        ...lifecycleManifestService,
+        loadForCommandDirectory(...args) {
+          if (!manifestServiceRef.current)
+            throw new Error('Agent System manifest service is unavailable.');
+          return manifestServiceRef.current.loadForCommandDirectory(...args);
+        },
       },
-    }),
+      async (context) => {
+        const admitted = automationLifecycle.resolve(context);
+        if (!admitted) throw new Error('project-pickup-native-caller-required');
+        const assertCurrent = async () => {
+          admitted.assertCurrent();
+          const loaded = await lifecycleManifestService.loadForAgentId(
+            admitted.run.agentId,
+            'service',
+          );
+          if (
+            loaded.status !== 'loaded' ||
+            (await realpath(loaded.scope.workspaceDir)) !==
+              (await realpath(admitted.run.workspaceDir))
+          )
+            throw new Error('project-pickup-native-caller-required');
+          await verifyAutomationLifecycleRun(
+            automationService,
+            readScheduler?.(),
+            loaded.manifest,
+            admitted.run,
+            projectPickupAutomationId,
+          );
+          admitted.assertCurrent();
+        };
+        await assertCurrent();
+        return { nativeId: admitted.run.jobId, assertCurrent };
+      },
+      api,
+    ),
     ...gitCapability.tools,
     ...githubCapability.tools,
     ...googleCapability.tools,

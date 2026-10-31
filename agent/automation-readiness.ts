@@ -18,12 +18,16 @@ export default async function notificationAutomationReadiness(
   workspace: string,
   scheduler?: NotificationScheduler,
   request?: AutomationGateway,
+  automationId = openclawIntakeAutomationId,
+  expectedNativeId?: string,
 ): Promise<string | undefined> {
   const { context, store } = await service.scope(manifest, workspace);
-  const declared = openclawIntakeJobs(manifest).find(({ id }) => id === openclawIntakeAutomationId);
+  const declared = openclawIntakeJobs(manifest).find(({ id }) => id === automationId);
   if (!declared) return 'intake-policy-disabled';
   const record = (await store.read()).records.find(({ id }) => id === declared.id);
   if (!record) return 'intake-activation-required';
+  if (expectedNativeId && record.nativeId !== expectedNativeId)
+    return 'project-pickup-enrollment-changed';
   if (!declared.enabled) return 'intake-automation-paused';
   if (record.removed || record.pending || !record.nativeId || !record.nativeHash)
     return 'intake-automation-update-required';
