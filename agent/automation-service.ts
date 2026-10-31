@@ -1,5 +1,12 @@
 import { realpath } from 'node:fs/promises';
+import { join } from 'node:path';
 
+import AutomationReportStore, { type AutomationReportRecord } from './automation-report-store.ts';
+
+import {
+  automationReportDelivery,
+  type AutomationReportTarget,
+} from './automation-report-delivery.ts';
 import openclawIntakeJobs from './openclaw-intake-policy.ts';
 
 import {
@@ -9,6 +16,7 @@ import {
   nativeAutomation,
   nativeAutomationHistory,
   nativeAutomationRun,
+  nativeObject,
   type AutomationHistoryOptions,
   type AutomationGateway,
   type NativeAutomation,
@@ -42,6 +50,8 @@ import {
 } from '../core/lifecycle-registry.ts';
 import type AgentManifestService from '../manifest/service.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import type { DispatchRequest } from '../credentials/session-dispatch.ts';
+import { assertPrivateStateLocksHeld } from '../core/private-state-lock-context.ts';
 
 export interface AutomationServiceDependencies {
   root: string;
@@ -106,7 +116,10 @@ function executionEvidence(state: NativeAutomation['state']): string {
 
 /** own explicit reconciliation; no timers, model calls, credentials or private scheduler access. */
 export default class AutomationService {
-  constructor(readonly dependencies: AutomationServiceDependencies) {}
+  readonly reports: AutomationReportStore;
+  constructor(readonly dependencies: AutomationServiceDependencies) {
+    this.reports = new AutomationReportStore(join(dependencies.root, 'reports'), dependencies.now);
+  }
 
   async scope(manifest: AgentManifest, workspaceDir: string) {
     const workspace = await realpath(workspaceDir);
@@ -126,10 +139,14 @@ export default class AutomationService {
     return { context, store };
   }
 
-  private threads(context: AutomationProjectionContext, store: AutomationStore) {
+  private threads(
+    context: AutomationProjectionContext,
+    store: AutomationStore,
+    request = this.dependencies.request!,
+  ) {
     return new AutomationThreads(
       { root: this.dependencies.root, scope: store.scope, runtime: 'openclaw' },
-      automationThreadGateway(this.dependencies.request!, { ...context, scope: store.scope }),
+      automationThreadGateway(request, { ...context, scope: store.scope }),
     );
   }
 
@@ -401,7 +418,30 @@ export default class AutomationService {
       native.id,
       options,
     );
-    return { runtime: 'openclaw', id, nativeId: native.id, status: 'ok', ...result };
+    const { store } = await this.scope(manifest, workspaceDir);
+    const reports = [];
+    for (const executionId of await this.reports.ids()) {
+      const report = await this.reports.read(executionId);
+      if (report?.target.scope !== store.scope || report.input.id !== id) continue;
+      reports.push({
+        ...automationReportDelivery(report),
+        startedAt: report.input.startedAt,
+        execution: report.input.outcome,
+        reason: report.input.reason,
+        requested: { model: report.target.model, effort: report.target.effort },
+        effective: report.effective,
+      });
+    }
+    reports.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    return {
+      runtime: 'openclaw',
+      id,
+      nativeId: native.id,
+      status: 'ok',
+      ...result,
+      reports: reports.slice(options.offset, options.offset + options.limit),
+      reportsTotal: reports.length,
+    };
   }
 
   async inspect(
@@ -430,6 +470,9 @@ export default class AutomationService {
       stepId: id,
       status,
       code,
+      ...(context.threads?.get(id)?.settings
+        ? { settings: context.threads.get(id)!.settings }
+        : {}),
       message: `${context.threads?.get(id)?.settings ? automationSettingsMessage(context.threads.get(id)!.settings!) + '; ' : ''}Automation ${id}: ${code.replace(/^automation-/u, '')}${execution ? executionEvidence(execution) : ''}${context.threads?.has(id) ? ` (persistent, ${context.threads.get(id)!.outcome}: ${context.threads.get(id)!.id})` : ''}.`,
       ...(status === 'healthy'
         ? {}
@@ -460,12 +503,15 @@ export default class AutomationService {
         ...findings,
         {
           ...finding(
-            'threads',
+            error instanceof AutomationError ? (error.automationId ?? 'threads') : 'threads',
             'blocked',
             error instanceof AutomationError ? error.code : 'automation-thread-inspection-failed',
           ),
           ...(error instanceof AutomationThreadSettingsError
-            ? { message: `${error.code}; ${automationSettingsMessage(error.settings)}` }
+            ? {
+                message: `${error.code}; ${automationSettingsMessage(error.settings)}`,
+                settings: error.settings,
+              }
             : {}),
         },
       ];
@@ -983,6 +1029,75 @@ export default class AutomationService {
     return after;
   }
 
+  async assertReportCurrent(report: AutomationReportRecord) {
+    const loaded = await this.dependencies.manifestService.loadForAgentId(
+      report.target.agentId,
+      'service',
+    );
+    if (
+      loaded.status !== 'loaded' ||
+      loaded.manifest.agent.id !== report.target.agentId ||
+      (await realpath(loaded.scope.workspaceDir)) !== report.target.workspaceDir
+    )
+      throw new AutomationError('automation-report-declaration-changed');
+    const { context, store } = await this.scope(loaded.manifest, loaded.scope.workspaceDir);
+    const job = openclawIntakeJobs(loaded.manifest).find((entry) => entry.id === report.input.id);
+    const record = (await store.read()).records.find((entry) => entry.id === report.input.id);
+    if (
+      store.scope !== report.target.scope ||
+      !job ||
+      !job.enabled ||
+      !job.runtimes.includes('openclaw') ||
+      job.payload.kind !== 'command' ||
+      effectiveAutomation(job, context).hash !== report.hash ||
+      !record ||
+      record.hash !== report.hash ||
+      record.retired ||
+      record.removed ||
+      record.pending
+    )
+      throw new AutomationError('automation-report-declaration-changed');
+  }
+
+  /** use the retained reporting credential and existing settings journal, never operator auth. */
+  async selectReportSettings(report: AutomationReportRecord, request: DispatchRequest) {
+    await this.assertReportCurrent(report);
+    if (!report.target.model && !report.target.effort) return;
+    if (!report.target.sessionId) throw new AutomationError('automation-report-target-unavailable');
+    const loaded = await this.dependencies.manifestService.loadForAgentId(
+      report.target.agentId,
+      'service',
+    );
+    if (loaded.status !== 'loaded')
+      throw new AutomationError('automation-report-declaration-changed');
+    const { context, store } = await this.scope(loaded.manifest, loaded.scope.workspaceDir);
+    const job = openclawIntakeJobs(loaded.manifest).find(({ id }) => id === report.input.id);
+    if (!job || effectiveAutomation(job, context).hash !== report.hash)
+      throw new AutomationError('automation-report-declaration-changed');
+    const threads = this.threads(context, store, async (method, params) => {
+      assertPrivateStateLocksHeld();
+      const result = await request(method, params);
+      assertPrivateStateLocksHeld();
+      if (!nativeObject(result)) throw new AutomationError('automation-thread-response-invalid');
+      return result;
+    });
+    const lookup = threads.adapter.lookup;
+    threads.adapter.lookup = async (id) => {
+      const native = await lookup(id);
+      if (
+        native &&
+        (native.id !== report.target.sessionKey || native.incarnation !== report.target.sessionId)
+      )
+        throw new AutomationError('automation-report-target-unavailable');
+      return native;
+    };
+    const targets = await threads.resolve([job]);
+    if (targets.get(job.id)?.id !== report.target.sessionKey)
+      throw new AutomationError('automation-report-target-unavailable');
+    await this.assertReportCurrent(report);
+    await threads.selectSettings([job]);
+  }
+
   async admit(manifest: AgentManifest, workspaceDir: string, id: string, hash: string) {
     const { context, store } = await this.scope(manifest, workspaceDir);
     const job = openclawIntakeJobs(manifest).find((entry) => entry.id === id);
@@ -1024,9 +1139,24 @@ export default class AutomationService {
           (!outputLimitOnly || nativeHash !== record.pending!.nativeHash))
       )
         throw new AutomationError('automation-execution-drift');
+      const selection = automationThreadSelection(job, 'openclaw');
+      const reportTarget: AutomationReportTarget | undefined =
+        selection &&
+        typeof native.sessionTarget === 'string' &&
+        native.sessionTarget.startsWith('session:')
+          ? {
+              sessionKey: native.sessionTarget.slice(8),
+              agentId: context.agentId,
+              workspaceDir: context.workspaceDir,
+              scope: store.scope,
+              ...(job.overrides.openclaw?.model ? { model: job.overrides.openclaw.model } : {}),
+              ...(job.overrides.openclaw?.effort ? { effort: job.overrides.openclaw.effort } : {}),
+            }
+          : undefined;
       return {
         command: { ...job.payload.run, timeoutSeconds: job.timeoutSeconds ?? 1800 },
         context,
+        reportTarget,
       };
     }
     throw new AutomationError('automation-execution-stale');

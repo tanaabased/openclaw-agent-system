@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 
-import { AutomationError } from '../agent/automation-gateway.ts';
+import { AutomationError, nativeObject } from '../agent/automation-gateway.ts';
 import AutomationThreads, {
   automationThreadSelection,
+  AutomationThreadSettingsError,
   type AutomationThread,
   type AutomationThreadSettings,
 } from '../agent/automation-threads.ts';
 import normalizeAutomations, { type ResolvedAutomation } from '../manifest/automation-schema.ts';
+import automationThreadGateway from '../agent/automation-thread-gateway.ts';
+import { GatewayClientRequestError } from '@openclaw/gateway-client';
+import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
 
 function jobs(thread: unknown, ids = ['builds', 'reviews']) {
   const result = normalizeAutomations(
@@ -60,6 +64,90 @@ describe('agent/automation-threads', () => {
     const store = new AutomationThreads({ root, scope: runtime, runtime }, adapter);
     return { store, adapter, native, creates: () => creates };
   }
+  it('should share and reuse one chat for commands and prompts with the same explicit id', async () => {
+    const f = fixture('openclaw');
+    const declarations = jobs({ id: 'reports', name: 'UPDATES' }, ['first', 'second', 'prompt']);
+    for (const job of declarations.slice(0, 2))
+      job.payload = { kind: 'command', run: { kind: 'exec', executable: 'true', args: [] } };
+    for (const job of declarations) job.group = 'REPORTS';
+    const first = await f.store.resolve(declarations, true);
+    assert.equal(new Set([...first.values()].map(({ id }) => id)).size, 1);
+    assert.equal(f.creates(), 1);
+    const reused = await f.store.resolve(declarations, true);
+    assert.deepEqual(
+      [...reused.values()].map(({ id }) => id),
+      [...first.values()].map(({ id }) => id),
+    );
+    assert.ok([...reused.values()].every(({ outcome }) => outcome === 'reused'));
+    assert.equal(f.creates(), 1);
+    declarations[1]!.group = 'OTHER';
+    await assert.rejects(f.store.resolve(declarations, true));
+    assert.equal(f.creates(), 1);
+    assert.equal([...f.native.values()][0]!.group, 'REPORTS');
+    assert.equal(automationThreadSelection(declarations[0]!, 'codex'), undefined);
+  });
+
+  for (const runtime of ['codex'] as const)
+    it(`should retain affected identity and full settings without inspection writes in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const declarations = jobs('Activity', ['first', 'affected']);
+      for (const job of declarations)
+        job.overrides[runtime] = { model: 'selected', effort: 'high' };
+      const bindings = await f.store.resolve(declarations, true);
+      const id = bindings.get('affected')!.id;
+      const before = await readFile(f.store.path, 'utf8');
+      assert.deepEqual((await f.store.resolve(declarations)).get('affected')!.settings, {
+        requested: { model: 'selected', effort: 'high' },
+        observed: { model: 'selected', effort: 'high' },
+      });
+      for (const dimension of ['model', 'effort'] as const) {
+        f.native.get(id)![dimension] = 'different';
+        await assert.rejects(f.store.resolve(declarations), (error: unknown) => {
+          assert.ok(error instanceof AutomationThreadSettingsError);
+          assert.equal(error.automationId, 'affected');
+          assert.equal(error.code, 'automation-thread-model-drift');
+          assert.deepEqual(error.settings, {
+            requested: { model: 'selected', effort: 'high' },
+            observed: { model: 'selected', effort: 'high', [dimension]: 'different' },
+          });
+          return true;
+        });
+        assert.equal(f.native.get(id)![dimension], 'different');
+        f.native.get(id)![dimension] = dimension === 'model' ? 'selected' : 'high';
+      }
+      f.native.get(id)!.name = 'Renamed';
+      await assert.rejects(f.store.resolve(declarations), (error: unknown) => {
+        assert.ok(error instanceof AutomationError);
+        assert.equal(error.automationId, 'affected');
+        assert.equal(error.code, 'automation-thread-name-drift');
+        return true;
+      });
+      f.store.adapter.validateSettings = async (_settings, current) => {
+        if (current?.id === id) throw new AutomationError('automation-model-unsupported');
+      };
+      await assert.rejects(f.store.resolve(declarations), (error: unknown) => {
+        assert.ok(error instanceof AutomationThreadSettingsError);
+        assert.equal(error.automationId, 'affected');
+        assert.equal(error.code, 'automation-model-unsupported');
+        assert.equal(error.settings.requested.model, 'selected');
+        assert.equal(error.settings.observed.effort, 'high');
+        return true;
+      });
+      delete f.store.adapter.validateSettings;
+      f.adapter.lookup = async (target) => {
+        if (target === id) throw new Error('private provider error');
+        return f.native.get(target) ?? null;
+      };
+      await assert.rejects(f.store.resolve(declarations), (error: unknown) => {
+        assert.ok(error instanceof AutomationError);
+        assert.equal(error.automationId, 'affected');
+        assert.equal(error.code, 'automation-thread-inspection-failed');
+        assert.equal(error.message.includes('private provider'), false);
+        return true;
+      });
+      assert.equal(await readFile(f.store.path, 'utf8'), before);
+      assert.equal(f.creates(), 2);
+    });
   for (const runtime of ['openclaw', 'codex'] as const)
     it(`should preserve a failed create receipt without retrying and attribute only openclaw diagnostics in ${runtime}`, async () => {
       const f = fixture(runtime);
@@ -168,7 +256,7 @@ describe('agent/automation-threads', () => {
     assert.equal(f.native.get(id)?.effort, 'high');
     assert.equal(f.creates(), 1);
   });
-  for (const runtime of ['openclaw', 'codex'] as const) {
+  for (const runtime of ['codex'] as const) {
     for (const pending of ['busy', 'unsupported'] as const)
       it(`should recover ${pending} and lost acknowledgements without replacing the ${runtime} chat`, async () => {
         const f = fixture(runtime);
@@ -237,11 +325,61 @@ describe('agent/automation-threads', () => {
           );
           return rejects(`automation-thread-settings-${state}`)(error);
         });
+        if (state === 'uncertain') {
+          changed[0]!.overrides[runtime]!.effort = 'medium';
+          await assert.rejects(
+            f.store.resolve(changed, true),
+            rejects('automation-thread-settings-uncertain'),
+          );
+          assert.equal(await readFile(f.store.path, 'utf8'), before);
+          assert.equal(writes, 1);
+        }
         f.native.get(id)!.effort = 'high';
         await f.store.resolve(declarations, true);
         assert.equal(writes, 1);
         assert.equal(f.creates(), 1);
       });
+    it(`should settle a withdrawn denied update without changing the ${runtime} chat`, async () => {
+      const f = fixture(runtime);
+      const declarations = jobs('Activity', ['activity']);
+      declarations[0]!.overrides[runtime] = { model: 'original', effort: 'medium' };
+      const id = (await f.store.resolve(declarations, true)).get('activity')!.id;
+      f.native.get(id)!.incarnation = 'original-session';
+      declarations[0]!.overrides[runtime] = { model: 'requested', effort: 'high' };
+      let writes = 0;
+      f.adapter.updateSettings = async () => {
+        writes++;
+        throw new AutomationError('automation-thread-settings-denied');
+      };
+      await assert.rejects(
+        f.store.resolve(declarations, true),
+        rejects('automation-thread-settings-denied'),
+      );
+      const saved = await readFile(f.store.path, 'utf8');
+      declarations[0]!.overrides[runtime] = { model: 'original', effort: 'medium' };
+      await assert.rejects(
+        f.store.resolve(declarations),
+        rejects('automation-thread-sync-required'),
+      );
+      assert.equal(await readFile(f.store.path, 'utf8'), saved);
+      f.native.get(id)!.incarnation = 'replacement-session';
+      await assert.rejects(
+        f.store.resolve(declarations, true),
+        rejects('automation-thread-settings-conflict'),
+      );
+      assert.equal(await readFile(f.store.path, 'utf8'), saved);
+      f.native.get(id)!.incarnation = 'original-session';
+      const before = structuredClone(f.native.get(id));
+      assert.equal((await f.store.resolve(declarations, true)).get('activity')!.id, id);
+      assert.equal((await f.store.resolve(declarations)).get('activity')!.id, id);
+      assert.deepEqual(f.native.get(id), before);
+      assert.equal(writes, 1);
+      assert.equal(f.creates(), 1);
+      assert.equal(
+        JSON.parse(await readFile(f.store.path, 'utf8')).records[0].settingsUpdate,
+        undefined,
+      );
+    });
   }
   it('should reject incompatible settings for a shared chat before creating it', async () => {
     const f = fixture('openclaw');
@@ -254,6 +392,132 @@ describe('agent/automation-threads', () => {
     );
     assert.equal(f.creates(), 0);
   });
+  it('should register openclaw chats without model validation or settings observations', async () => {
+    const f = fixture('openclaw');
+    const declarations = jobs('Reports', ['report']);
+    declarations[0]!.overrides.openclaw = { model: 'unavailable', effort: 'high' };
+    let writes = 0;
+    f.store.adapter.validateSettings = async () => {
+      throw new Error('live model validation');
+    };
+    f.adapter.updateSettings = async () => {
+      writes++;
+    };
+    const id = (await f.store.resolve(declarations, true)).get('report')!.id;
+    assert.equal(f.native.get(id)!.model, undefined);
+    assert.equal((await f.store.resolve(declarations)).get('report')!.settings, undefined);
+    f.native.get(id)!.model = 'different';
+    await f.store.resolve(declarations, true);
+    assert.equal(writes, 0);
+    assert.equal(f.creates(), 1);
+  });
+  it('should select through the native adapter after registration and reconcile a committed lost acknowledgement', async () => {
+    const workspaceDir = await realpath(root);
+    const native = new Map<string, Record<string, unknown>>();
+    let available = false;
+    let selections = 0;
+    const request = sessionDispatchRequest(async (method, params) => {
+      const key = String(params.key);
+      if (method === 'sessions.resolve')
+        return native.has(key) ? { ok: true, key, agentId: 'a' } : { ok: false };
+      if (method === 'sessions.list') return { sessions: [...native.values()] };
+      if (method === 'sessions.create') {
+        assert.equal(params.model, undefined);
+        assert.equal(params.thinkingLevel, undefined);
+        native.set(key, {
+          key,
+          sessionId: 'same-session',
+          lifecycleRevision: 'revision',
+          workspaceDir,
+        });
+        return { ok: true };
+      }
+      assert.equal(method, 'sessions.patch');
+      const row = native.get(key)!;
+      if (params.model) {
+        selections++;
+        assert.equal(params.expectedSessionId, 'same-session');
+        assert.equal(params.expectedLifecycleRevision, 'revision');
+        if (!available)
+          throw new GatewayClientRequestError({
+            code: 'INVALID_REQUEST',
+            message:
+              'A runtime is not available for test/requested. Refresh the model catalog and choose again.',
+          });
+        row.model = params.model;
+        row.thinkingLevel = params.thinkingLevel;
+        throw new Error('lost acknowledgement after commit');
+      }
+      if (params.autoLabel) row.displayName = params.autoLabel;
+      if (params.category) row.category = params.category;
+      return { ok: true };
+    }, {});
+    const adapter = automationThreadGateway(
+      async (method, params) => {
+        const result = await request(method, params);
+        assert.ok(nativeObject(result));
+        return result;
+      },
+      { agentId: 'a', workspaceDir, scope: 'native' },
+    );
+    const store = new AutomationThreads({ root, scope: 'native', runtime: 'openclaw' }, adapter);
+    const declarations = jobs('Reports', ['report']);
+    declarations[0]!.overrides.openclaw = { model: 'test/requested', effort: 'high' };
+    const id = (await store.resolve(declarations, true)).get('report')!.id;
+    await assert.rejects(
+      store.selectSettings(declarations),
+      rejects('automation-model-unavailable'),
+    );
+    assert.equal((await store.read()).records[0]!.settingsUpdate, undefined);
+    assert.equal((await store.resolve(declarations)).get('report')!.settings, undefined);
+    available = true;
+    await store.selectSettings(declarations);
+    await store.selectSettings(declarations);
+    assert.equal(native.get(id)!.model, 'test/requested');
+    assert.equal(native.get(id)!.thinkingLevel, 'high');
+    assert.equal(selections, 2);
+    assert.equal(native.size, 1);
+  });
+  for (const phase of ['denied', 'uncertain', 'busy', 'unsupported', 'unavailable'] as const)
+    it(`should retain openclaw execution selection recovery for ${phase} without install drift`, async () => {
+      const f = fixture('openclaw');
+      const declarations = jobs('Reports', ['report']);
+      declarations[0]!.overrides.openclaw = { model: 'requested', effort: 'high' };
+      const id = (await f.store.resolve(declarations, true)).get('report')!.id;
+      f.native.get(id)!.incarnation = 'session';
+      let writes = 0;
+      const code =
+        phase === 'unavailable'
+          ? 'automation-model-unavailable'
+          : `automation-thread-settings-${phase}`;
+      f.adapter.updateSettings = async () => {
+        writes++;
+        if (phase === 'uncertain') throw new Error('lost response');
+        throw new AutomationError(code);
+      };
+      await assert.rejects(f.store.selectSettings(declarations), rejects(code));
+      const saved = await readFile(f.store.path, 'utf8');
+      assert.equal((await f.store.resolve(declarations)).get('report')!.settings, undefined);
+      await f.store.resolve(declarations, true);
+      assert.equal(await readFile(f.store.path, 'utf8'), saved);
+      if (phase === 'denied' || phase === 'uncertain') {
+        await assert.rejects(f.store.selectSettings(declarations), rejects(code));
+        assert.equal(writes, 1);
+      }
+      f.adapter.updateSettings = async (current, settings) => {
+        writes++;
+        f.native.set(current.id, { ...current, ...settings });
+        throw new Error('lost acknowledgement after commit');
+      };
+      if (phase === 'denied' || phase === 'uncertain') {
+        f.native.get(id)!.model = 'requested';
+        f.native.get(id)!.effort = 'high';
+      }
+      await f.store.selectSettings(declarations);
+      await f.store.selectSettings(declarations);
+      assert.equal(writes, phase === 'denied' || phase === 'uncertain' ? 1 : 2);
+      assert.equal(f.creates(), 1);
+    });
   it('should share explicit ids in openclaw but partition codex by stable automation id', async () => {
     for (const runtime of ['openclaw', 'codex'] as const) {
       const f = fixture(runtime);
@@ -294,10 +558,11 @@ describe('agent/automation-threads', () => {
     );
     assert.equal(updates, 0);
     declarations[1]!.overrides.openclaw!.effort = 'high';
-    const resolved = await f.store.resolve(declarations, true);
+    await f.store.resolve(declarations, true);
+    const resolved = await f.store.selectSettings(declarations);
     assert.equal(resolved.get('one')!.id, resolved.get('two')!.id);
     assert.equal(updates, 1);
-    await f.store.resolve(declarations, true);
+    await f.store.selectSettings(declarations);
     assert.equal(updates, 1);
   });
 
@@ -306,13 +571,14 @@ describe('agent/automation-threads', () => {
     const declarations = jobs({ name: 'Activity' }, ['github-issue-assignment']);
     declarations[0]!.overrides.openclaw = { model: 'openai/selected', effort: 'medium' };
     const id = (await f.store.resolve(declarations, true)).get('github-issue-assignment')!.id;
+    await f.store.selectSettings(declarations);
     f.native.get(id)!.incarnation = 'original';
     declarations[0]!.overrides.openclaw!.effort = 'high';
     f.adapter.updateSettings = async () => {
       throw new Error('lost response');
     };
     await assert.rejects(
-      f.store.resolve(declarations, true),
+      f.store.selectSettings(declarations),
       rejects('automation-thread-settings-uncertain'),
     );
     let writes = 0;
@@ -333,7 +599,7 @@ describe('agent/automation-threads', () => {
       if (replacement) f.native.set(id, replacement);
       else f.native.delete(id);
       await assert.rejects(
-        f.store.resolve(declarations, true),
+        f.store.selectSettings(declarations),
         rejects('automation-thread-settings-conflict'),
       );
     }

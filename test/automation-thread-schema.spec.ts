@@ -68,7 +68,7 @@ describe('manifest/automation-thread-schema', () => {
       if (result.status === 'valid') assert.deepEqual(result.automations[0]?.thread, expected);
     }
   });
-  it('should reject empty, blank, unknown, and command thread declarations', () => {
+  it('should reject empty, blank, and unknown thread declarations', () => {
     for (const thread of [
       '',
       '  ',
@@ -79,11 +79,13 @@ describe('manifest/automation-thread-schema', () => {
       1,
     ])
       assert.equal(normalizeAutomations([{ ...base, thread }]).status, 'invalid');
+  });
+  it('should accept command reporting threads and preserve the null opt-out', () => {
     for (const thread of [null, 'Activity', { id: 'activity' }])
       assert.equal(
         normalizeAutomations([{ id: 'command', schedule: 'every 1 hour', run: ['true'], thread }])
           .status,
-        'invalid',
+        'valid',
       );
   });
   it('should hash effective thread declarations but ignore them behind explicit target overrides', () => {

@@ -64,9 +64,9 @@ output="$(NO_COLOR=1 openclaw agent-system doctor 2>&1)"
 printf '%s\n' "$output" | grep -F 'manifest-setup-deprecated'
 printf '%s\n' "$output" | awk '/^[[:space:]]*workspace[[:space:]]/ {footer=NR} /^messages$/ {section=NR; count++} END {exit !(footer && section > footer && count == 1)}'
 
-# should report component-first healthy agent and path state without color
+# should report healthy agent identity first and path state without color
 cd "$GITHUB_WORKSPACE/examples/openclaw-doctor/data"
-NO_COLOR=1 openclaw agent-system doctor | grep -E '^agent[[:space:]]+healthy[[:space:]]'
+NO_COLOR=1 openclaw agent-system doctor | grep -E '^agent[[:space:]]+healthy[[:space:]]+id: doctor-data;'
 NO_COLOR=1 openclaw agent-system doctor | grep -E '^path[[:space:]]+healthy[[:space:]]'
 
 # should report the same healthy aggregate state as structured json

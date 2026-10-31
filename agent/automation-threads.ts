@@ -9,6 +9,7 @@ import { automationHash } from './automation-hash.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
 import acquirePrivateStateFileLock from '../core/private-state-file-lock.ts';
+import { withPrivateStateLock } from '../core/private-state-lock-context.ts';
 import type { AutomationRuntime, ResolvedAutomation } from '../manifest/automation-schema.ts';
 import managedGroupName, { defaultManagedGroup } from '../utils/managed-group-name.ts';
 
@@ -116,7 +117,7 @@ export function automationThreadSelection(
   job: ResolvedAutomation,
   runtime: AutomationRuntime,
 ): AutomationThreadSelection | undefined {
-  if (job.payload.kind !== 'prompt') return;
+  if (job.payload.kind === 'command' && runtime !== 'openclaw') return;
   const target = job.overrides[runtime]?.target;
   if (target === 'independent') return;
   const group = managedGroupName(
@@ -152,8 +153,11 @@ export function automationThreadNames(jobs: ResolvedAutomation[], runtime: Autom
     const selection = automationThreadSelection(job, runtime);
     if (!selection?.name) continue;
     const previous = names.get(selection.key);
-    if (previous !== undefined && previous !== selection.name)
-      throw new AutomationError('automation-thread-name-conflict');
+    if (previous !== undefined && previous !== selection.name) {
+      const error = new AutomationError('automation-thread-name-conflict');
+      error.automationId = job.id;
+      throw error;
+    }
     names.set(selection.key, selection.name);
   }
   return names;
@@ -195,7 +199,16 @@ export default class AutomationThreads {
       throw new AutomationError('automation-thread-ownership-invalid');
     }
   }
-  async resolve(jobs: ResolvedAutomation[], apply = false) {
+  resolve(jobs: ResolvedAutomation[], apply = false) {
+    return this.reconcile(jobs, apply, false);
+  }
+  /** execution selects settings only on an already registered conversation. */
+  selectSettings(jobs: ResolvedAutomation[]) {
+    return this.reconcile(jobs, true, true);
+  }
+  private async reconcile(jobs: ResolvedAutomation[], apply: boolean, execution: boolean) {
+    const manageSettings = this.options.runtime === 'codex' || execution;
+    let automationId: string | undefined;
     const run = async () => {
       const ledger = await this.read();
       const save = () => this.file.write(JSON.stringify(ledger));
@@ -219,7 +232,8 @@ export default class AutomationThreads {
       >();
       const nativeNames = new Map<string, string>();
       const groups = new Map<string, string>();
-      for (const { selection } of selected) {
+      for (const { job, selection } of selected) {
+        automationId = job.id;
         const previous = groups.get(selection.key);
         if (previous !== undefined && previous !== selection.group)
           throw new AutomationError('automation-thread-group-conflict');
@@ -246,6 +260,7 @@ export default class AutomationThreads {
         map.set(key, settings);
       };
       for (const { job, selection } of selected) {
+        automationId = job.id;
         const settings = settingsFor(job);
         if (!selection.managed && (settings.model || settings.effort))
           throw new AutomationError('automation-thread-settings-unowned');
@@ -253,6 +268,7 @@ export default class AutomationThreads {
       }
       // verify every existing target and all aliases before the first mutation.
       for (const { job, selection } of selected) {
+        automationId = job.id;
         if (prepared.has(selection.key)) continue;
         const record = ledger.records.find((r) => r.key === selection.key);
         const id = record?.nativeId ?? selection.exact;
@@ -262,6 +278,7 @@ export default class AutomationThreads {
               : this.adapter.lookup(id))
           : null;
         if (
+          manageSettings &&
           record?.settingsUpdate &&
           (!native ||
             native.archived ||
@@ -308,8 +325,9 @@ export default class AutomationThreads {
         });
       }
       // Reject unavailable selections before journaling a potentially ambiguous native create.
-      if (this.adapter.validateSettings) {
-        for (const { settings, native, record } of prepared.values()) {
+      if (manageSettings && this.adapter.validateSettings) {
+        for (const { settings, native, record, automationId: id } of prepared.values()) {
+          automationId = id;
           if (!settings || (!settings.model && !settings.effort) || record?.settingsUpdate)
             continue;
           try {
@@ -327,6 +345,7 @@ export default class AutomationThreads {
       if (this.options.runtime === 'codex') {
         const active = new Set<string>();
         for (const { job, selection } of selected) {
+          automationId = job.id;
           const id = prepared.get(selection.key)?.native?.id;
           if (id && job.enabled && active.has(id))
             throw new AutomationError('automation-thread-schedule-conflict');
@@ -344,12 +363,13 @@ export default class AutomationThreads {
       >();
       const reconciledNative = new Map<string, AutomationThread>();
       for (const [key, entry] of prepared) {
+        automationId = entry.automationId;
         const { selection, settings } = entry;
         let { record, native } = entry;
         if (native) native = reconciledNative.get(native.id) ?? native;
         let outcome: 'created' | 'bound' | 'reused' = record ? 'reused' : 'bound';
         if (entry.replace || !native || (record && record.phase !== 'ready')) {
-          if (!apply) throw new AutomationError('automation-thread-sync-required');
+          if (!apply || execution) throw new AutomationError('automation-thread-sync-required');
           const fresh = !record || entry.replace === true;
           if (entry.replace && record) {
             record.retiredId = record.nativeId;
@@ -373,7 +393,7 @@ export default class AutomationThreads {
                 await save();
               },
               fresh,
-              settings,
+              manageSettings ? settings : undefined,
             )
             .catch((error: unknown) => {
               if (
@@ -395,11 +415,11 @@ export default class AutomationThreads {
           await save();
           outcome = 'created';
         }
-        if (selection.managed && !record && !apply)
+        if (selection.managed && !record && (!apply || execution))
           throw new AutomationError('automation-thread-sync-required');
         const name = names.get(key);
         if (name !== undefined && native.name !== name) {
-          if (!apply) throw new AutomationError('automation-thread-name-drift');
+          if (!apply || execution) throw new AutomationError('automation-thread-name-drift');
           await this.adapter.rename(native.id, name);
           const readback = await this.adapter.lookup(native.id);
           if (!readback || readback.name !== name)
@@ -407,7 +427,7 @@ export default class AutomationThreads {
           native = readback;
         }
         if (selection.group !== undefined && native.group !== selection.group) {
-          if (!apply) throw new AutomationError('automation-thread-group-drift');
+          if (!apply || execution) throw new AutomationError('automation-thread-group-drift');
           if (!this.adapter.setGroup)
             throw new AutomationError('automation-thread-group-unsupported');
           await this.adapter.setGroup(native.id, selection.group);
@@ -429,14 +449,18 @@ export default class AutomationThreads {
         });
         const settingsError = (code: string) =>
           new AutomationThreadSettingsError(code, observation());
-        if (record?.settingsUpdate) {
+        if (manageSettings && record?.settingsUpdate) {
           const pending = record.settingsUpdate;
           if (pending.nativeId !== native.id || pending.incarnation !== native.incarnation)
             throw new AutomationError('automation-thread-settings-conflict');
           const pendingMatch =
             (pending.desired.model === undefined || native.model === pending.desired.model) &&
             (pending.desired.effort === undefined || native.effort === pending.desired.effort);
-          if (!pendingMatch) {
+          // withdrawing a denied change needs no native write; uncertain writes still need proof.
+          const withdrawnDenial =
+            !pendingMatch && pending.phase === 'denied' && settingsMatch(native);
+          if (withdrawnDenial && !apply) throw settingsError('automation-thread-sync-required');
+          if (!pendingMatch && !withdrawnDenial) {
             const retrySafe = pending.phase === 'busy' || pending.phase === 'unsupported';
             if (!apply || !retrySafe)
               throw new AutomationThreadSettingsError(
@@ -457,7 +481,7 @@ export default class AutomationThreads {
             await save();
           }
         }
-        if (!settingsMatch(native)) {
+        if (manageSettings && !settingsMatch(native)) {
           if (!this.adapter.updateSettings)
             throw settingsError('automation-thread-settings-unsupported');
           if (!apply) throw settingsError('automation-thread-model-drift');
@@ -495,6 +519,7 @@ export default class AutomationThreads {
                 [
                   'automation-thread-settings-conflict',
                   'automation-model-unsupported',
+                  'automation-model-unavailable',
                   'automation-effort-unsupported',
                 ].includes(failure.code)
               )
@@ -524,13 +549,27 @@ export default class AutomationThreads {
         resolved.set(key, {
           id: native.id,
           outcome,
-          ...(selection.managed ? { settings: observation() } : {}),
+          ...(selection.managed && manageSettings ? { settings: observation() } : {}),
           ...(native.name ? { name: native.name } : {}),
         });
       }
       return new Map(selected.map(({ job, selection }) => [job.id, resolved.get(selection.key)!]));
     };
-    if (!apply) return run();
+    const resolve = async () => {
+      try {
+        return await run();
+      } catch (error) {
+        // retain the original subtype, settings observation, code, and safe diagnostic.
+        if (error instanceof AutomationError) error.automationId ??= automationId;
+        else if (!apply && automationId) {
+          const failure = new AutomationError('automation-thread-inspection-failed');
+          failure.automationId = automationId;
+          throw failure;
+        }
+        throw error;
+      }
+    };
+    if (!apply) return resolve();
     await ensurePrivateStateDirectories({
       directories: [this.options.root],
       currentUid: process.getuid?.(),
@@ -541,7 +580,7 @@ export default class AutomationThreads {
       staleMs: 30000,
     });
     try {
-      return await run();
+      return await withPrivateStateLock(lock, resolve);
     } finally {
       await lock.release();
     }

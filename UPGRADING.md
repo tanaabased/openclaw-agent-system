@@ -6,17 +6,12 @@ including earlier `v0.9.0` pre-release configurations.
 
 ## Automation model defaults
 
-Prompt automations now inherit `models.default` when the workspace declares `models`.
-Before Install, review the effective model and effort for each job; this can change
-cost, latency, or model availability. An explicit automation model/profile and effort
-replace inherited fields, and runtime overrides still win per field. Workspaces
-without model configuration retain native inheritance.
-
-Install now reconciles existing managed chat settings as well as new chats. Explicit
-runtime targets remain unowned: omitted settings preserve the chat's native choices
-even when `models.default` is configured. Explicit job settings remain rejected.
-See [automation configuration and recovery](./MANIFEST.md#automations) for precedence,
-busy chats, and denied or uncertain updates.
+Prompt automations now inherit `models.default` when configured. Review effective
+settings before Install: this can change cost, latency, or model availability.
+Install also updates settings on existing managed chats. Explicit runtime targets
+retain their native settings and reject explicit job model settings.
+See [automation configuration and recovery](./MANIFEST.md#automations) for precedence
+and handling busy chats or denied updates.
 
 ## Skill names
 

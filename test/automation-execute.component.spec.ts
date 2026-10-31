@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 
+import AutomationReportStore from '../agent/automation-report-store.ts';
 import executeAutomation from '../cli/automation-execute.ts';
 import type { SetupCommandResult } from '../agent/setup-runner.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import type { AutomationLifecycleCommandScope } from '../agent/automation-lifecycle-authority.ts';
 
 describe('cli/automation-execute', () => {
-  async function execute(result: SetupCommandResult) {
+  async function execute(
+    result: SetupCommandResult,
+    reporting?: 'delivered' | 'uncertain',
+    cancelDuringRun = false,
+  ) {
     const workspaceDir = await realpath(await mkdtemp('/tmp/automation-output-'));
     const loaded: AgentManifestLoadResult = {
       status: 'loaded',
@@ -18,6 +23,9 @@ describe('cli/automation-execute', () => {
       validationChecks: [],
       diagnostics: [],
     };
+    const controller = new AbortController();
+    const reports: string[] = [];
+    let runs = 0;
     let stdout = '';
     let stderr = '';
     let retained = false;
@@ -27,14 +35,53 @@ describe('cli/automation-execute', () => {
         id: 'job',
         hash: 'a'.repeat(64),
         workspaceDir,
+        signal: controller.signal,
+        reportCredential: reporting
+          ? {
+              async use(authority, operation) {
+                assert.equal(authority.signal?.aborted, false);
+                await authority.assertCurrent?.();
+                return operation(async (method, params) => {
+                  if (method === 'plugins.inspect')
+                    return {
+                      plugin: { id: 'agent-system', enabled: true },
+                      grants: {
+                        hooks: {
+                          allowConversationAccess: { effective: true },
+                          allowPromptInjection: { effective: true },
+                        },
+                      },
+                    };
+                  if (method === 'sessions.resolve')
+                    return { ok: true, key: 'agent:a:reports', agentId: 'a' };
+                  if (method === 'sessions.list')
+                    return {
+                      sessions: [{ key: 'agent:a:reports', sessionId: 'chat', workspaceDir }],
+                    };
+                  if (method === 'chat.history') return { sessionId: 'chat', messages: [] };
+                  if (method === 'agent.wait') return { runId: params.runId, status: 'timeout' };
+                  assert.equal(method, 'chat.send');
+                  reports.push(String(params.message));
+                  if (reporting === 'uncertain') throw Error('lost acknowledgment');
+                  return { status: 'started', runId: params.idempotencyKey };
+                });
+              },
+            }
+          : undefined,
         manifestService: {
           loadForAgentId: async () => loaded,
           loadForCommandDirectory: async () => loaded,
         },
         automations: {
+          assertReportCurrent: async () => {},
+          selectReportSettings: async () => {},
+          reports: new AutomationReportStore(`${workspaceDir}/reports`),
           admit: async () => ({
             command: { kind: 'exec', executable: 'true', args: [], timeoutSeconds: 10 },
             context: { agentId: 'a', workspaceDir },
+            reportTarget: reporting
+              ? { sessionKey: 'agent:a:reports', agentId: 'a', workspaceDir, scope: 'fixture' }
+              : undefined,
           }),
         } as never,
         commands: {
@@ -46,6 +93,8 @@ describe('cli/automation-execute', () => {
             authority = target.automation;
             assert.ok(authority);
             await authority.assertCurrent();
+            runs += 1;
+            if (cancelDuringRun) controller.abort();
             return result;
           },
         } as never,
@@ -61,11 +110,42 @@ describe('cli/automation-execute', () => {
       assert.ok(authority);
       assert.throws(() => authority!.assertActive());
       await assert.rejects(authority.assertCurrent());
-      return { code, stdout, stderr, retained };
+      return { code, stdout, stderr, retained, reports, runs };
     } finally {
       await rm(workspaceDir, { recursive: true, force: true });
     }
   }
+
+  it('should report timed-out execution with a fresh delivery signal and no internal footer', async () => {
+    const run = await execute(
+      {
+        exitCode: null,
+        timedOut: true,
+        truncated: false,
+        output: { stdout: '# Partial backup', stderr: 'deadline exceeded' },
+      },
+      'delivered',
+      true,
+    );
+    assert.equal(run.code, 1);
+    assert.equal(run.runs, 1);
+    assert.equal(run.reports.length, 1);
+    assert.match(run.reports[0]!, /Timed out/u);
+    assert.ok(run.reports[0]!.includes('# Partial backup'));
+    assert.ok(!run.reports[0]!.includes('stdoutTruncatedBytes'));
+    const completion = JSON.parse(run.stdout.trimEnd().split('\n').at(-1)!);
+    assert.equal(completion.reporting.status, 'pending');
+    assert.equal(completion.status, 'error');
+  });
+  it('should preserve successful execution when report acknowledgment is lost', async () => {
+    const run = await execute({ exitCode: 0, timedOut: false, truncated: false }, 'uncertain');
+    assert.equal(run.code, 0);
+    assert.equal(run.runs, 1);
+    assert.equal(run.reports.length, 1);
+    const completion = JSON.parse(run.stdout.trimEnd().split('\n').at(-1)!);
+    assert.equal(completion.status, 'ok');
+    assert.equal(completion.reporting.status, 'uncertain');
+  });
 
   it('should retain both command streams and the real failing exit status', async () => {
     const run = await execute({
@@ -198,6 +278,9 @@ describe('cli/automation-execute', () => {
           loadForCommandDirectory: async () => loaded,
         },
         automations: {
+          assertReportCurrent: async () => {},
+          selectReportSettings: async () => {},
+          reports: new AutomationReportStore(`${workspaceDir}/reports`),
           admit: async () => ({
             command: { kind: 'exec', executable: 'true', args: [], timeoutSeconds: 10 },
             context: { agentId: 'a', workspaceDir },

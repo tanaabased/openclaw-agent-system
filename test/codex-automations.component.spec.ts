@@ -1,11 +1,22 @@
 import assert from 'node:assert/strict';
-import { appendFile, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import {
+  appendFile,
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { parse, stringify } from 'smol-toml';
 
 import { automationHash } from '../agent/automation-hash.ts';
+import { AutomationError } from '../agent/automation-gateway.ts';
+import type { AutomationThread, AutomationThreadAdapter } from '../agent/automation-threads.ts';
 import {
   acknowledgeCodexAutomation,
   replaceCodexNotificationCoordinator,
@@ -15,6 +26,7 @@ import {
   listCodexAutomations,
   codexAutomationRunGap,
   prepareCodexAutomation,
+  reconcileCodexAutomationRetirements,
   syncCodexAutomationThreads,
   type CodexAutomationDependencies,
 } from '../agent/codex-automations.ts';
@@ -33,6 +45,7 @@ import {
 import { intakeFixture } from './github-intake-fixture.ts';
 import { inspectCodexIntake } from '../agent/codex-intake.ts';
 import normalizeAutomationSchedule from '../manifest/automation-schedule.ts';
+import { inspectCodexSetup, installCodexSetup } from '../agent/codex-setup.ts';
 
 const capture = (name: string) =>
   readFile(resolve('fixtures', `codex-automation-${name}.approved.txt`), 'utf8');
@@ -227,6 +240,14 @@ describe('agent/codex-automations', () => {
     throw new Error('sidebar placement did not converge');
   }
   const inspect = () => inspectCodexAutomations(pluginData, inputs(), deps());
+  async function ownership() {
+    const name = (await readdir(pluginData)).find((entry) =>
+      /^codex-automations-.*\.json$/u.test(entry),
+    )!;
+    const path = join(pluginData, name);
+    const bytes = await readFile(path, 'utf8');
+    return { path, bytes, ledger: JSON.parse(bytes) };
+  }
   async function manifest(declaration = job()) {
     await writeFile(
       join(workspace, 'agent.yaml'),
@@ -256,18 +277,21 @@ describe('agent/codex-automations', () => {
     await mkdir(join(codexHome, 'automations', id), { recursive: true });
     await writeFile(join(codexHome, 'automations', id, 'automation.toml'), stringify(saved));
   }
-  async function syncOne() {
-    const plan = await inspect();
+  async function syncOne(
+    dependencies: CodexAutomationDependencies = deps(),
+    nativeId = 'fixture-native',
+  ) {
+    const plan = await inspectCodexAutomations(pluginData, inputs(), dependencies);
     assert.equal(plan.status, 'requires-native-app-sync');
     const action = plan.actions[0]!;
-    const prepared = await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+    const prepared = await prepareCodexAutomation(pluginData, plan.digest, inputs(), dependencies);
     assert.deepEqual(prepared.request, {
       mode: action.mode,
       ...(action.id ? { id: action.id } : {}),
       ...action.expected,
     });
-    await nativeWrite(action.expected, action.id);
-    return acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
+    await nativeWrite(action.expected, action.id ?? nativeId);
+    return acknowledgeCodexAutomation(pluginData, plan.digest, undefined, dependencies);
   }
   beforeEach(async () => {
     nativeInventory = {
@@ -319,31 +343,34 @@ describe('agent/codex-automations', () => {
     }
   });
 
-  it('should reject timezone-qualified creates before journaling a native proposal', async () => {
-    const zoned = (zone = 'Europe/London', hour = 8) =>
-      job().replace('every 1 hour', `{ cron: "0 ${hour} * * *", timezone: "${zone}" }`);
-    await manifest(zoned());
-    await assert.rejects(
-      prepareCodexAutomation(pluginData, (await inspect()).digest, inputs(), deps()),
-      (error: unknown) =>
-        !!error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        error.code === 'automation-dtstart-create-unsupported' &&
-        error instanceof Error &&
-        error.message.includes('does not support DTSTART recurrences'),
-    );
-    const afterFailure = await inspect();
-    assert.equal(afterFailure.status, 'requires-native-app-sync');
-    assert.equal(afterFailure.actions.length, 1);
-    assert.deepEqual(await readCodexAutomations(codexHome), []);
-    assert.deepEqual(
-      (await readdir(pluginData)).filter((name) =>
-        /^codex-automations-[a-f0-9]{64}\.json$/u.test(name),
-      ),
-      [],
-    );
-  });
+  for (const zone of ['Europe/London', 'UTC']) {
+    it(`should require review only when creating a new timezone schedule in ${zone.toLowerCase()}`, async () => {
+      await manifest(job().replace('every 1 hour', `{ cron: "0 8 * * *", timezone: "${zone}" }`));
+      const plan = await inspect();
+      const action = plan.actions[0]!;
+      assert.equal(action.mode, 'create');
+      assert.equal(action.review, true);
+      const prepared = await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+      assert.deepEqual(prepared.request, { mode: 'suggested_create', ...action.expected });
+      assert.deepEqual(await readCodexAutomations(codexHome), []);
+      await assert.rejects(
+        acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps()),
+        rejectsCode('automation-review-pending'),
+      );
+      await assert.rejects(
+        prepareCodexAutomation(pluginData, plan.digest, inputs(), deps()),
+        rejectsCode('automation-plan-stale-or-blocked'),
+      );
+      await nativeWrite({ ...action.expected, rrule: 'FREQ=DAILY;BYHOUR=8;BYMINUTE=0' });
+      await assert.rejects(
+        acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps()),
+        rejectsCode('automation-readback-diverged'),
+      );
+      await nativeWrite(action.expected);
+      await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
+      assert.equal((await inspect()).status, 'aligned');
+    });
+  }
 
   it('should directly create supported local-time cron schedules', async () => {
     await manifest(job().replace('every 1 hour', '{ cron: "0 9 * * *" }'));
@@ -391,6 +418,20 @@ describe('agent/codex-automations', () => {
     assert.ok(saved!.definition.kind === 'cron');
     assert.equal(saved!.definition.projectId, 'fixture-project');
     assert.equal(saved!.definition.status, edit.actions[0]!.expected.status);
+
+    for (const declaration of [
+      zoned('Europe/London'),
+      zoned('UTC'),
+      job().replace('every 1 hour', '{ cron: "0 9 * * *" }'),
+    ]) {
+      await manifest(declaration);
+      const next = await inspect();
+      assert.equal(next.actions[0]!.mode, 'update');
+      assert.equal(next.actions[0]!.review, undefined);
+      assert.equal(next.actions[0]!.id, 'fixture-native');
+      await syncOne();
+      assert.equal((await inspect()).status, 'aligned');
+    }
   });
 
   it('should cancel a failed direct create only when no partial saved create exists', async () => {
@@ -654,6 +695,85 @@ describe('agent/codex-automations', () => {
     }
   });
 
+  it('should identify settings and thread failures while retaining full read-only codex evidence', async () => {
+    await manifest(
+      job(
+        '    thread: {name: Review}\n    overrides:\n      codex: {model: selected, effort: high}\n',
+      ),
+    );
+    const conversations = new Map<string, AutomationThread>();
+    const adapter: AutomationThreadAdapter = {
+      async lookup(id) {
+        return conversations.get(id) ?? null;
+      },
+      async create(_record, save, _fresh, settings) {
+        await save('thread-1');
+        conversations.set('thread-1', { id: 'thread-1', ...settings });
+        return 'thread-1';
+      },
+      async rename(id, name) {
+        conversations.get(id)!.name = name;
+      },
+      async updateSettings() {
+        assert.fail('inspection must not change settings');
+      },
+    };
+    const dependencies = { ...deps(), threadAdapter: adapter };
+    await syncThreads(dependencies);
+    const current = conversations.get('thread-1')!;
+    const plan = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    await prepareCodexAutomation(pluginData, plan.digest, inputs(), dependencies);
+    await nativeWrite(plan.actions[0]!.expected);
+    await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, dependencies);
+    const healthy = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.equal(healthy.status, 'aligned');
+    assert.ok(
+      healthy.findings.some(({ id, code }) => id === 'review' && code === 'automation-healthy'),
+    );
+    assert.deepEqual(healthy.conversations?.[0]?.settings, {
+      requested: { model: 'selected', effort: 'high' },
+      observed: { model: 'selected', effort: 'high' },
+    });
+    const saved = await readCodexAutomations(codexHome);
+    for (const dimension of ['model', 'effort'] as const) {
+      current[dimension] = 'different';
+      const drift = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+      const finding = drift.findings.find(({ code }) => code === 'automation-thread-model-drift');
+      assert.equal(finding?.id, 'review');
+      assert.deepEqual(finding?.settings, {
+        requested: { model: 'selected', effort: 'high' },
+        observed: { model: 'selected', effort: 'high', [dimension]: 'different' },
+      });
+      assert.equal(drift.status, 'requires-native-app-sync');
+      assert.deepEqual(drift.actions, []);
+      assert.equal(current[dimension], 'different');
+      current[dimension] = dimension === 'model' ? 'selected' : 'high';
+    }
+    adapter.validateSettings = async () => {
+      throw new AutomationError('automation-model-unsupported');
+    };
+    const unsupported = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.equal(unsupported.status, 'blocked');
+    assert.ok(
+      unsupported.findings.some(
+        ({ id, code, settings }) =>
+          id === 'review' &&
+          code === 'automation-model-unsupported' &&
+          settings?.requested.model === 'selected',
+      ),
+    );
+    delete adapter.validateSettings;
+    current.name = 'Other';
+    const failed = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.ok(
+      failed.findings.some(
+        ({ id, code }) => id === 'review' && code === 'automation-thread-name-drift',
+      ),
+    );
+    assert.deepEqual(await readCodexAutomations(codexHome), saved);
+    assert.equal(conversations.size, 1);
+  });
+
   it('should list owned state through the planner and report native occurrence gaps without writes', async () => {
     const before = await readdir(pluginData);
     const initial = await listCodexAutomations(pluginData, inputs(), deps());
@@ -698,6 +818,228 @@ describe('agent/codex-automations', () => {
     await manifest();
     assert.equal((await syncOne()).nativeId, first.nativeId);
     assert.equal((await inspect()).status, 'aligned');
+  });
+
+  it('should activate a new job independently of pausing a removed job', async () => {
+    await syncOne();
+    await manifest(job().replace('id: review', 'id: update'));
+    const plan = await inspect();
+    const prepared = await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+    assert.equal(prepared.request.mode, 'create');
+    assert.equal(prepared.request.status, 'ACTIVE');
+    await nativeWrite(plan.actions[0]!.expected, 'replacement');
+    await acknowledgeCodexAutomation(pluginData, plan.digest, undefined, deps());
+    const pause = await inspect();
+    assert.equal(pause.actions.length, 1);
+    assert.equal(pause.actions[0]!.id, 'fixture-native');
+    assert.equal(pause.actions[0]!.expected.status, 'PAUSED');
+    await syncOne();
+    assert.equal((await inspect()).status, 'aligned');
+    assert.equal(
+      (await readCodexAutomations(codexHome)).find(({ id }) => id === 'replacement')!.definition
+        .status,
+      'ACTIVE',
+    );
+  });
+
+  for (const status of ['active', 'paused']) {
+    it(`should retire a deleted ${status} job through fresh automation sync after setup and retain its history`, async () => {
+      await syncOne();
+      const [old] = await readCodexAutomations(codexHome);
+      if (status === 'paused') {
+        await manifest('');
+        await syncOne();
+      }
+      const dependencies = { ...deps(), automationInputs: inputs(), now: () => 1234 };
+      const before = await ownership();
+      await manifest(job().replace('id: review', 'id: update'));
+      await rm(join(codexHome, 'automations', 'fixture-native', 'automation.toml'));
+      for (const name of ['.run-jitter-salt', 'unrelated-file'])
+        await writeFile(join(codexHome, 'automations', name), 'not an automation definition');
+      const plan = await inspect();
+      assert.ok(plan.findings.some(({ code }) => code === 'automation-retirement-pending'));
+      assert.deepEqual(plan.actions, []);
+      assert.equal(
+        (await inspectCodexSetup(pluginData, undefined, dependencies)).automations.status,
+        'blocked',
+      );
+      assert.equal((await ownership()).bytes, before.bytes);
+      const installed = await installCodexSetup(pluginData, undefined, dependencies);
+      assert.equal(installed.automations.status, 'requires-fresh-inspection');
+      assert.equal((await ownership()).bytes, before.bytes);
+      await reconcileCodexAutomationRetirements(pluginData, dependencies);
+      assert.equal((await inspect()).actions[0]!.manifestId, 'update');
+      const retired = await ownership();
+      assert.deepEqual(retired.ledger.records[0], {
+        ...before.ledger.records[0],
+        removed: true,
+        retired: { atMs: 1234, reason: 'native-job-absent' },
+      });
+      await syncOne(deps(), 'replacement');
+      const final = await ownership();
+      assert.equal(
+        (await inspectCodexSetup(pluginData, undefined, dependencies)).automations.status,
+        'aligned',
+      );
+      assert.equal(
+        (await installCodexSetup(pluginData, undefined, dependencies)).automations.status,
+        'requires-fresh-inspection',
+      );
+      assert.equal((await ownership()).bytes, final.bytes);
+      assert.equal((await readCodexAutomations(codexHome)).length, 1);
+      const history = (await listCodexAutomations(pluginData, inputs(), deps())).jobs.find(
+        ({ id }) => id === 'review',
+      )!;
+      assert.equal(history.retired, true);
+      assert.equal(history.nativeId, 'fixture-native');
+      assert.equal(history.nativeStatus, null);
+      await manifest();
+      const reuse = await inspect();
+      assert.equal(reuse.status, 'blocked');
+      assert.ok(reuse.findings.some(({ code }) => code === 'automation-retired-id'));
+      await manifest('');
+      for (const id of ['fixture-native', 'imposter']) {
+        await nativeWrite(old!.definition, id);
+        await assert.rejects(inspect(), rejectsCode('automation-ownership-conflict'));
+        assert.equal((await ownership()).bytes, final.bytes);
+        await rm(join(codexHome, 'automations', id, 'automation.toml'));
+      }
+    });
+  }
+
+  for (const obstruction of [
+    'missing-root',
+    'symlink',
+    'unreadable',
+    'reappeared',
+    'manifest-changed',
+    'ownership-changed',
+  ]) {
+    it(`should preserve deletion evidence when retirement inspection is ${obstruction}`, async () => {
+      await syncOne();
+      const [old] = await readCodexAutomations(codexHome);
+      await manifest(job().replace('id: review', 'id: update'));
+      await rm(join(codexHome, 'automations', 'fixture-native', 'automation.toml'));
+      const before = await ownership();
+      if (obstruction === 'missing-root')
+        await rm(join(codexHome, 'automations'), { recursive: true });
+      if (obstruction === 'symlink')
+        await symlink(workspace, join(codexHome, 'automations', 'link'));
+      if (obstruction === 'unreadable') {
+        await mkdir(join(codexHome, 'automations', 'unknown'));
+        await writeFile(
+          join(codexHome, 'automations', 'unknown', 'automation.toml'),
+          'version = 99',
+        );
+      }
+      let reads = 0;
+      let concurrentBytes = before.bytes;
+      await assert.rejects(
+        reconcileCodexAutomationRetirements(pluginData, {
+          ...deps(),
+          async readAutomations(home, options) {
+            assert.equal(options?.requireComplete, true);
+            reads++;
+            if (reads === 2 && obstruction === 'reappeared') await nativeWrite(old!.definition);
+            if (reads === 2 && obstruction === 'manifest-changed') await manifest();
+            if (reads === 2 && obstruction === 'ownership-changed') {
+              before.ledger.records[0].removed = true;
+              concurrentBytes = JSON.stringify(before.ledger);
+              await writeFile(before.path, concurrentBytes);
+            }
+            return readCodexAutomations(home, options);
+          },
+        }),
+      );
+      assert.equal((await ownership()).bytes, concurrentBytes);
+      assert.equal((await ownership()).ledger.records[0].retired, undefined);
+    });
+  }
+
+  for (const pending of ['old-pause', 'other-create']) {
+    it(`should refuse deletion retirement while ${pending} remains unresolved`, async () => {
+      await syncOne();
+      if (pending === 'old-pause') await manifest('');
+      else await manifest(job() + job().replace('id: review', 'id: update'));
+      const plan = await inspect();
+      await prepareCodexAutomation(pluginData, plan.digest, inputs(), deps());
+      await manifest(job().replace('id: review', 'id: update'));
+      await rm(join(codexHome, 'automations', 'fixture-native', 'automation.toml'));
+      const before = await ownership();
+      await reconcileCodexAutomationRetirements(pluginData, deps());
+      assert.equal((await ownership()).bytes, before.bytes);
+    });
+  }
+
+  it('should keep declared missing jobs in explicit recovery rather than retire or recreate them', async () => {
+    await syncOne();
+    await rm(join(codexHome, 'automations', 'fixture-native', 'automation.toml'));
+    const before = await ownership();
+    await reconcileCodexAutomationRetirements(pluginData, deps());
+    const plan = await inspect();
+    assert.equal(plan.status, 'blocked');
+    assert.deepEqual(plan.actions, []);
+    assert.ok(plan.findings.some(({ code }) => code === 'automation-native-recovery-required'));
+    assert.equal((await ownership()).bytes, before.bytes);
+  });
+
+  it('should reject retirement ownership conflicts without adopting matching names', async () => {
+    await syncOne();
+    const [old] = await readCodexAutomations(codexHome);
+    await manifest(job().replace('id: review', 'id: update'));
+    await nativeWrite({ ...old!.definition, prompt: 'unmanaged' });
+    const before = await ownership();
+    await assert.rejects(
+      reconcileCodexAutomationRetirements(pluginData, deps()),
+      rejectsCode('automation-ownership-conflict'),
+    );
+    assert.equal((await ownership()).bytes, before.bytes);
+  });
+
+  it('should retain heartbeat history after retiring a deleted job', async () => {
+    const conversations = new Map<string, { id: string; name?: string }>();
+    const dependencies = {
+      ...deps(),
+      threadAdapter: {
+        async lookup(id: string) {
+          return conversations.get(id) ?? null;
+        },
+        async create(_record: unknown, save: (id: string) => Promise<void>) {
+          const id = `thread-${conversations.size}`;
+          await save(id);
+          conversations.set(id, { id });
+          return id;
+        },
+        async rename(id: string, name: string) {
+          conversations.set(id, { id, name });
+        },
+      },
+    };
+    const declaration = (id: string) =>
+      job('    thread: { name: Activity }\n').replace('id: review', `id: ${id}`);
+    await manifest(declaration('nightly-refresh'));
+    await syncThreads(dependencies);
+    await syncOne(dependencies, 'old');
+    const old = (await readCodexAutomations(codexHome))[0]!.definition;
+    assert.equal(old.kind, 'heartbeat');
+    await manifest(declaration('update'));
+    await syncThreads(dependencies);
+    const history = structuredClone(conversations.get('thread-0'));
+    await rm(join(codexHome, 'automations', 'old', 'automation.toml'));
+    await reconcileCodexAutomationRetirements(pluginData, dependencies);
+    await syncOne(dependencies, 'replacement');
+    const replacement = (await readCodexAutomations(codexHome)).find(
+      ({ id }) => id === 'replacement',
+    )!.definition;
+    assert.equal(replacement.status, 'ACTIVE');
+    assert.equal(replacement.kind, 'heartbeat');
+    assert.notEqual(replacement.targetThreadId, old.targetThreadId);
+    assert.deepEqual(conversations.get('thread-0'), history);
+    assert.equal(conversations.size, 2);
+    assert.equal(
+      (await inspectCodexAutomations(pluginData, inputs(), dependencies)).status,
+      'aligned',
+    );
   });
 
   it('should materialize defaults, detect referenced-content drift and preserve unrelated jobs and notification preferences', async () => {
@@ -801,6 +1143,11 @@ describe('agent/codex-automations', () => {
       '\nmodels:\n  default:\n    model: openai/default\n    effort: high\n',
     );
     assert.equal((await inspect()).findings[0]?.code, 'automation-thread-verification-required');
+    assert.ok(
+      (await inspect()).findings
+        .filter(({ code }) => code === 'automation-thread-verification-required')
+        .every(({ id }) => id === 'review'),
+    );
     const threads = [
       JSON.parse((await capture('lookups')).replaceAll('/workspace/fixture', workspace)).thread,
     ];

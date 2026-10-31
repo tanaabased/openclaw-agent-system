@@ -142,19 +142,19 @@ Operator [list](./CLI.md#openclaw-agent-system-automations-list),
 | Field             | Type                                                                                      | Required         | Default                                            | Description                                                                    |
 | ----------------- | ----------------------------------------------------------------------------------------- | ---------------- | -------------------------------------------------- | ------------------------------------------------------------------------------ |
 | `display-name`    | nonblank single-line string, up to 200 UTF-16 code units                                  | no               | runtime-owned                                      | Automation label; independent of the persistent conversation name.             |
-| `effort`          | `none`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `adaptive`, `max`, or `ultra` | no               | selected profile effort, otherwise native          | Prompt-only; the selected runtime/model must support it.                       |
+| `effort`          | `none`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `adaptive`, `max`, or `ultra` | no               | selected profile effort, otherwise native          | Conversation effort; the selected runtime/model must support it.               |
 | `enabled`         | boolean                                                                                   | no               | `true`                                             | Desired enabled state.                                                         |
-| `group`           | nonblank string                                                                           | no               | `AGENT SYSTEM` for persistent prompt chats         | Sidebar destination; normalized to uppercase.                                  |
+| `group`           | nonblank string                                                                           | no               | `AGENT SYSTEM` for persistent chats                | Sidebar destination; normalized to uppercase.                                  |
 | `id`              | lowercase kebab-case string                                                               | yes              | none                                               | Stable unique ID within the workspace.                                         |
-| `model`           | provider-qualified model or `default`, `low`, `medium`, `high`                            | no               | `models.default` when configured, otherwise native | Prompt-only shared model selection.                                            |
-| `overrides`       | runtime mapping                                                                           | no               | none                                               | Prompt-only `openclaw` / `codex` settings below.                               |
+| `model`           | provider-qualified model or `default`, `low`, `medium`, `high`                            | no               | `models.default` when configured, otherwise native | Prompt or command-report conversation model.                                   |
+| `overrides`       | runtime mapping                                                                           | no               | none                                               | Runtime conversation settings below.                                           |
 | `payload`         | command or prompt object                                                                  | one payload form | none                                               | `{ kind: command, run: ..., shell?: ... }` or `{ kind: prompt, prompt: ... }`. |
 | `prompt`          | nonblank string or `{ file: relative-path }`                                              | one payload form | none                                               | Inline text or UTF-8 prompt file.                                              |
 | `run`             | nonblank shell string, argv array, or `{ command, args? }`                                | one payload form | none                                               | Command; argv stays literal and ordered.                                       |
 | `runtimes`        | unique list of `openclaw` / `codex`                                                       | no               | both                                               | Runtime applicability.                                                         |
 | `schedule`        | string or object                                                                          | yes              | none                                               | Schedule forms below.                                                          |
 | `shell`           | `sh`, `bash`, or `zsh`                                                                    | no               | `sh`                                               | Shell strings only; place inside `payload` for long-form commands.             |
-| `thread`          | null, nonblank string, or `{ id?: string, name?: string }`                                | no               | independent                                        | Persistent prompt conversation; at least one object field is required.         |
+| `thread`          | null, nonblank string, or `{ id?: string, name?: string }`                                | no               | independent                                        | Persistent conversation; enables OpenClaw command reports.                     |
 | `timeout-seconds` | integer, 1–3600                                                                           | no               | runtime-owned                                      | Job-level only. OpenClaw projection: 1800 seconds; Codex: native default.      |
 
 Use exactly one of `run`, `prompt`, or `payload`. Commands reuse
@@ -164,8 +164,9 @@ Set `display-name` to give the automation a readable label, including emoji. Out
 whitespace is trimmed; NUL and line breaks are rejected. Codex uses the label as its
 native automation `name`; OpenClaw uses native `displayName`, retaining its stable
 job `name`. Without a label, Codex uses `<agent-id>: <automation-id>` and OpenClaw
-uses `Agent System: <automation-id>`. Changing or removing the label through normal
-synchronization updates the existing job or restores that default; it does not
+uses `<UPPERCASE-AGENT-ID>: <automation-id>` (`AGENT SYSTEM` for built-in jobs).
+Changing or removing the label through normal synchronization updates the existing
+job or restores that default; it does not
 replace the job, change its schedule, or rename its chat.
 
 ```yaml
@@ -184,12 +185,18 @@ inherited effort. Finally, runtime overrides replace model and effort independen
 Codex shared models must use the `openai/` provider; Codex runtime overrides may still
 use unqualified native model IDs.
 
-Install applies these settings to new and existing managed chats and verifies saved
-readback. The same resolved pair feeds independent jobs and schedule drift detection.
+Codex Install applies these settings to new and existing managed chats and verifies
+saved readback. OpenClaw Install registers chats without selecting models; Doctor
+does not inspect automation chat model settings or report model drift. Prompt jobs
+carry the resolved pair in their native cron payload. Command jobs select it through
+guarded `sessions.patch` before their report-formatting turn. Unavailable selections
+fail at execution without substituting another model. The same resolved pair feeds
+independent jobs and schedule drift detection.
 Jobs sharing an OpenClaw chat must agree on settings. Explicit runtime targets are
 not owned chats: they keep their native settings and do not inherit `models.default`.
 Explicit automation or runtime model/effort settings are rejected for those targets.
-Command jobs reject model and effort.
+Command jobs accept model and effort only with a persistent reporting chat. These
+settings select the report-formatting turn and later conversation, never command execution.
 
 > [!IMPORTANT]
 > Workspaces declaring `models` now use `models.default` for prompt automations that
@@ -234,7 +241,7 @@ no jobs.
 Set `group: operations` to place a persistent automation chat under `OPERATIONS` in either
 runtime. Omission uses `AGENT SYSTEM`, including built-in coordinator chats. Group changes
 move the same chat while preserving its title, history, schedule, permissions and project
-membership. Command jobs and effective independent targets cannot declare `group`.
+membership. Effective independent targets cannot declare `group`.
 
 Group names are trimmed and uppercased without changing chat titles or `display-name`.
 Blank names and control characters are rejected. OpenClaw permits at most 512 Unicode
@@ -243,7 +250,7 @@ Exact uppercase destinations are reused; differently cased groups stay untouched
 Ambiguous exact destinations or uncertain native creation block reconciliation until their
 identity can be verified. Doctor reports drift without moving chats; Install applies it.
 
-Omit `thread` or use `null` for independent runs. A string or `{ name: "Activity" }`
+Omit `thread` or use `null` for independent prompt runs or commands without chat reports. A string or `{ name: "Activity" }`
 keeps one named conversation per automation. Matching names never combine jobs.
 
 ```yaml
@@ -298,6 +305,39 @@ OpenClaw changes routing on its existing native job. Codex changes between indep
 and persistent routing by first pausing and retaining the old native schedule, then
 creating its replacement. Old schedule history and conversation bindings remain.
 
+Set `thread` on an OpenClaw command to report each run in a saved chat.
+
+```yaml
+automations:
+  - id: update-agent
+    runtimes: [openclaw]
+    schedule: every 24 hours
+    run: [sh, ./scripts/update-agent.sh]
+    group: REPORTS
+    thread: { id: updates, name: UPDATES }
+  - id: backup-agent
+    runtimes: [openclaw]
+    schedule: every 24 hours
+    run: [sh, ./scripts/backup-agent.sh]
+    group: REPORTS
+    thread: { id: backups, name: BACKUPS }
+```
+
+Run Install and approve session access (`operator.read` and `operator.write`) when
+requested. Enable `plugins.entries.agent-system.hooks.allowConversationAccess` in
+OpenClaw and leave `allowPromptInjection` enabled. For
+`automation-report-hooks-not-observed` in `automations runs`, restore these grants
+before the next run; failed reports are not automatically replayed.
+
+The selected model and effort format stdout and stderr into a report card, adding
+model cost and latency. Markdown, JSON, plain text, and empty output are supported;
+commands without `thread` remain model-free.
+
+Reports sanitize each stream, cap excerpts at 16 KiB, and disclose truncation; full
+permitted output stays in native run history. Command status, not model explanations
+or stderr alone, determines failure.
+OpenClaw-hosted Codex uses this path; standalone Codex command jobs remain unsupported.
+
 #### OpenClaw execution and ownership
 
 The operator needs a running Gateway and native cron read/administration permissions.
@@ -313,36 +353,40 @@ launchers, which check tool policy before loading credentials. Other executables
 as host commands under the same [containment limits](./CLI.md#trust-boundary) as setup.
 Rerun Install after changing a command declaration.
 
-Approving and activating an owned automation also authorizes its same-agent Install
-and Doctor calls for that occurrence, without another permission setting or recurring
-chat approval. Command jobs can call `openclaw agent-system install` and
-`openclaw agent-system doctor` (or `status`); prompt jobs use the native lifecycle tools,
-including OpenClaw-hosted Codex. The target comes from the verified job binding, never
-`--agent`, a replacement workspace, or prompt text. Ordinary setup children and later
-interactive turns do not inherit this authority. Expired, cancelled, changed, or
-unverifiable runs are refused; correct the reported condition before requesting another run.
-Install runs normal applicable setup unless the author chooses its supported skip
-options. Doctor runs checks without repairs. Activation does not override provider
-permissions, enrollment/pairing requirements, shared prerequisites, or the native
-prompt tools' operator-only scheduler-sync limitation. Standalone Codex retains its
+Activating an owned automation authorizes same-agent Install and Doctor calls for
+that run. Command jobs use `openclaw agent-system install` and `doctor` (or `status`);
+prompt jobs use native lifecycle tools. The job cannot select another agent or
+workspace, and later interactive turns retain their normal approval requirements.
+Provider permissions, enrollment, and prerequisites still apply; native prompt tools
+cannot synchronize schedules. Standalone Codex retains its
 [native approval boundary](#codex-execution-and-ownership).
 
 Prompt jobs normally start a separate session for the configured agent. They use its
 resolved shared model and effort, then runtime overrides; absent settings inherit
 native defaults. Persistent jobs reuse their verified session and conversation history.
-Results stay in native run history unless you configure delivery. Command runs retain
+Results stay in native run history; commands with a reporting chat also append there.
+Command runs retain
 bounded stdout and stderr, even without delivery. Authorized Gateway operators can
 inspect output and truncation in run details; setup output stays private. Agent System
 inherits OpenClaw capture defaults and forwards captured output without another cap.
-Install and automation sync migrate existing managed command jobs with an explicit
-`outputMaxBytes` to 16 MiB per stream, preserving their IDs, schedules, routing and
-history. The native update API cannot clear that field, so migrated jobs retain this
-fixed compatibility value; new jobs omit it and inherit OpenClaw defaults. Scheduled
-command execution remains available before sync and while an output-limit-only
-update is pending, including after a lost update acknowledgement.
+Install and automation sync update existing managed command jobs with an explicit
+`outputMaxBytes` to 16 MiB per stream; new jobs inherit OpenClaw defaults.
 
-Timeouts include startup and range from 1 to 3600 seconds (default 1800). OpenClaw
-controls overlapping runs of the same job, retries, recovery, and daylight saving time;
+Command timeouts range from 1 to 3600 seconds (default 1800). Reporting adds 35
+seconds for termination and submission; formatting may finish later. Without
+reporting, the timeout includes wrapper startup.
+
+Reporting failure never changes the command result or reruns it. Recovery checks
+saved reports on completion and restart; uncertain submissions are not blindly retried.
+Inspect report status with [`automations runs`](./CLI.md#openclaw-agent-system-automations-runs).
+Unrelated manifest edits do not invalidate captured reports; the current job, owner,
+and destination must still match. Recovery scans unresolved reports only. Completed
+report records are retained for 30 days and pruned during daily recovery maintenance;
+pending and uncertain records are never age-pruned. Expired captures cannot be
+submitted again after their history is removed. Native chat history is unchanged.
+A kill before results are saved leaves only native execution history.
+
+OpenClaw controls overlapping runs of the same job, retries, recovery, and daylight saving time;
 Agent System does not add another retry loop. Completion, cancellation, and timeout
 revoke temporary authority and release managed resources. A forced process termination
 can prevent immediate filesystem cleanup.
@@ -396,11 +440,11 @@ New automation chats use native `auto_review`, `workspace-write`, and `on-reques
 approvals. Install verifies saved permissions; existing ready chats keep theirs.
 Native review may still deny an action. Install does not add global approval rules.
 
-Install reports `automation-dtstart-create-unsupported` before journaling a proposal
-when a new timezone-qualified schedule requires `DTSTART`. Keep the requested timezone;
-do not replace it with local time. Timezone changes to existing schedules use direct
-updates, and Install verifies the saved schedule and target. Codex controls timezones,
-daylight saving time, and missed runs.
+Install opens a native review card only when creating a new timezone-qualified
+schedule. Review and save the card to preserve the requested timezone; Install waits
+for verified saved settings before proceeding. Other creates and all updates, including
+timezone changes, use direct writes. Codex controls timezones, daylight saving time,
+and missed runs.
 
 > [!WARNING]
 > In Codex desktop version 26.1021.22027 (21747), named-zone scheduling can use the
@@ -414,10 +458,15 @@ A separately requested manual task does not verify the schedule.
 
 Agent System tracks owned jobs privately. Native edits to managed fields are drift;
 notification preferences remain native-owned. Install leaves unchanged jobs alone.
-Removed declarations pause jobs and retain history; reintroduced IDs reuse them.
+Removed declarations pause jobs and retain history; reintroduced IDs reuse retained
+native jobs. If both a declaration and its native job are gone, Install or automation
+sync retires the ownership record after complete inspection and fresh absence checks.
+Doctor stays read-only and reports retired history without blocking other jobs.
+Pending writes or incomplete inspection prevent retirement. A retired ID cannot be
+silently recreated; use a new ID for a new automation.
 Unrelated jobs are not adopted by name. Unknown saved schemas stop inspection.
 
-For `automation-thread-model-drift`, rerun Install to reconcile the existing managed
+For Codex `automation-thread-model-drift`, rerun Install to reconcile the existing managed
 chat. Doctor reports requested and observed values without applying changes. Codex
 settings updates require CLI `0.160.1` or newer and its experimental settings API;
 unsupported native operations remain explicit errors. Settings-only updates never
@@ -426,12 +475,21 @@ create a replacement chat or generate a model turn.
 `automation-thread-settings-busy` means Codex still owns the chat's writer, which can
 include an idle desktop-loaded chat. Release that chat in the native app and rerun
 Install. Agent System does not interrupt it or schedule an automatic idle retry.
-In either runtime, `automation-thread-settings-denied` or
-`automation-thread-settings-uncertain` retains the attempt without replay. Inspect
+`automation-thread-settings-denied` or `automation-thread-settings-uncertain`
+retains the attempt without replay. Inspect
 native settings and, if needed, apply the retained request shown by Doctor through
 supported native controls. Matching saved values clear the receipt on a later Install. Correcting
 authorization alone does not replay a denied attempt; do not delete ownership records.
+If you withdraw a denied change and the declaration matches the same chat's current
+settings, rerun Install to clear the obsolete request without changing the chat.
+Reverting a declaration does not clear an uncertain update whose outcome is still unknown.
 A conflict or missing chat stops the update; earlier verified changes remain applied.
+
+For OpenClaw command reports, settings selection and its recovery belong to execution,
+not Install or Doctor. A denied or uncertain selection fails that report without
+replaying the update. Inspect the declared model and effort and the same native chat's
+settings through supported native controls. Matching saved settings clear the retained
+attempt on a later execution; authorization changes alone do not replay a denial.
 
 For `automation-journal-busy`, confirm no installation or synchronization is running
 before removing only the stale Agent System `.lock` directory. Never edit native

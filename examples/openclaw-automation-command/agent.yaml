@@ -1,12 +1,8 @@
 schema-version: 1
 agent:
-  id: automation-tanaabot
+  id: command-tanaabot
   name: Tanaabot
   email: tanaabot@tanaab.dev
-models:
-  default:
-    model: aimock/gpt-5.5
-    effort: medium
 git: {}
 setup:
   steps:

@@ -1,3 +1,4 @@
+import { automationThreadSelection } from './automation-threads.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
 /** one catalog owns the consumers shown in consent, lifecycle, and tool access. */
@@ -7,9 +8,17 @@ export default function sessionDispatchRequirements(
 ) {
   const policy = manifest.github?.notifications;
   const automatic = policy?.runtimes.includes('openclaw') ? policy.issueAssignment : undefined;
+  const reporting = manifest.automations?.some(
+    (job) =>
+      job.enabled &&
+      job.payload.kind === 'command' &&
+      job.runtimes.includes('openclaw') &&
+      automationThreadSelection(job, 'openclaw'),
+  );
   return [{ id: 'github-issue-assignment', name: 'issue assignments', policy: automatic }]
     .filter(({ policy: trigger }) => Boolean(trigger))
     .map(({ id, name }) => ({ id, name }))
+    .concat(reporting ? [{ id: 'automation-reports', name: 'command automation reports' }] : [])
     .concat(
       manualSessionDispatch ? [{ id: 'github-issue-launch', name: 'manual issue launch' }] : [],
     );

@@ -133,11 +133,13 @@ describe('tools/git/lifecycle', () => {
     assert.deepEqual(await contribution.inspect?.(context), [
       {
         code: 'git-repositories-root-ready',
+        stepId: 'repositories',
         message: 'Git managed repositories root is ready.',
         status: 'healthy',
       },
       {
         code: 'git-worktrees-root-ready',
+        stepId: 'worktrees',
         message: 'Git managed worktrees root is ready.',
         status: 'healthy',
       },
@@ -148,6 +150,7 @@ describe('tools/git/lifecycle', () => {
       },
       {
         code: 'git-worktree-local-repository-ready',
+        stepId: 'canon',
         message: 'Git local repository override canon is ready.',
         status: 'healthy',
       },

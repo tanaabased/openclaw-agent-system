@@ -1,0 +1,10 @@
+schema-version: 1
+agent:
+  id: command-chat-tanaabot
+  name: Command Chat Tanaabot
+models:
+  default:
+    model: aimock/gpt-5.5
+    effort: medium
+automations:
+  file: ./automations.yaml

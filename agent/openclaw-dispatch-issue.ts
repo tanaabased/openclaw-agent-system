@@ -740,7 +740,9 @@ export default class OpenClawDispatchIssue {
               code: code === 'dispatch-operation-failed' ? 'delivery-provider-failed' : code,
               pullRequest: record.work?.delivery?.pullRequest,
               instructions:
-                'Preserve this operation and all work. Stop on denial or lost authority. For an interrupted publication, use delivery prepare again in this issue chat to reconcile the existing attempt. Never create a replacement PR or discard its retained binding.',
+                code === 'delivery-implementation-incomplete'
+                  ? workflowRecovery(code)!.next
+                  : 'Preserve this operation and all work. Stop on denial or lost authority. For an interrupted publication, use delivery prepare again in this issue chat to reconcile the existing attempt. Never create a replacement PR or discard its retained binding.',
             };
           });
         },

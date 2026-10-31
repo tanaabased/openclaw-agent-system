@@ -92,6 +92,32 @@ async function automationOperation(
         '',
         ...(entries.length === 0 ? ['no matching runs'] : []),
         ...(result.hasMore ? [`next page: --offset ${result.nextOffset}`] : []),
+        ...((result.reports as Record<string, unknown>[] | undefined)?.length
+          ? [
+              '',
+              'command reports (job-wide)',
+              ...renderCliTableRows(
+                [
+                  {
+                    cells: ['execution id', 'execution', 'report', 'detail'].map((value) => ({
+                      value,
+                    })),
+                  },
+                  ...(result.reports as Record<string, unknown>[]).map((report) => ({
+                    cells: [
+                      { value: String(report.executionId) },
+                      { value: String(report.reason) },
+                      { value: String(report.status) },
+                      { value: String(report.code ?? report.messageId ?? '') },
+                    ],
+                  })),
+                ],
+                styles,
+                { rowPadding: 0, terminalColumns: columns },
+              ),
+              '',
+            ]
+          : []),
       ]);
     } else {
       writeCliLines(

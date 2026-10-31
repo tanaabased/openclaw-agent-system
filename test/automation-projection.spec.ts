@@ -26,6 +26,72 @@ function job(payload: { prompt: string } | { run: string[] }) {
 }
 
 describe('agent/automation-projection', () => {
+  it('should disable native fallback only when the prompt declares a resolved model', () => {
+    const prompt = job({ prompt: 'Review.' });
+    const record = {
+      id: prompt.id,
+      marker: 'fixture',
+      hash: '',
+      triggerHash: '',
+      generation: 1,
+      anchorMs: 0,
+      removed: false,
+    };
+    const inherited = projectAutomation(prompt, record, context);
+    assert.equal(inherited.payload.fallbacks, undefined);
+    prompt.overrides.openclaw = { model: 'provider/requested', effort: 'high' };
+    const desired = projectAutomation(prompt, record, context);
+    assert.equal(desired.payload.model, 'provider/requested');
+    assert.equal(desired.payload.thinking, 'high');
+    assert.deepEqual(desired.payload.fallbacks, []);
+    const native = {
+      ...desired,
+      id: 'native',
+      declarationKey: record.marker,
+      agentId: context.agentId,
+      configRevision: '1',
+      state: {},
+    };
+    assert.deepEqual(
+      (
+        automationPatch(
+          { ...native, payload: { ...desired.payload, fallbacks: ['provider/other'] } },
+          desired,
+        ).payload as Record<string, unknown>
+      ).fallbacks,
+      [],
+    );
+    assert.deepEqual(automationPatch(native, desired), {});
+  });
+  it('should reserve report delivery time without adding a model turn or changing schedule anchors', () => {
+    const command = job({ run: ['true'] });
+    command.thread = { id: 'reports', name: 'UPDATES' };
+    command.timeoutSeconds = 10;
+    command.overrides.openclaw = { model: 'openai/report-chat', effort: 'high' };
+    const record = {
+      id: command.id,
+      marker: 'fixture',
+      hash: '',
+      triggerHash: '',
+      generation: 1,
+      anchorMs: 123,
+      removed: false,
+    };
+    const reportingContext = {
+      ...context,
+      threads: new Map([[command.id, { id: 'agent:tanaabot:reports', outcome: 'reused' }]]),
+    };
+    const projected = projectAutomation(command, record, reportingContext);
+    assert.equal(projected.payload.kind, 'command');
+    assert.equal(projected.payload.timeoutSeconds, 45);
+    assert.equal(projected.payload.model, undefined);
+    assert.equal(projected.sessionTarget, 'session:agent:tanaabot:reports');
+    assert.deepEqual(projected.delivery, { mode: 'none', bestEffort: false });
+    const hash = effectiveAutomation(command, reportingContext).triggerHash;
+    command.thread = { id: 'other' };
+    assert.equal(effectiveAutomation(command, reportingContext).triggerHash, hash);
+    assert.equal(projectAutomation(command, record, context).payload.timeoutSeconds, 10);
+  });
   it('should name jobs by trusted origin and migrate only their native name', () => {
     const record = {
       id: 'github-declared-job',

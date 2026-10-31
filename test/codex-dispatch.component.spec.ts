@@ -5776,6 +5776,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await work.run('next')).status, 'pending');
     work.receive();
     const context = await work.run('context', {}, true);
+    assert.ok('handoff' in context && context.handoff?.instruction?.includes('prerequisites'));
     assert.equal(context.status, 'verified');
     assert.deepEqual('assessment' in context && context.assessment, result);
     assert.equal(
@@ -5808,6 +5809,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await work.run('next')).status, 'prepared');
     work.receive();
     const context = await work.run('context', {}, true);
+    assert.ok('handoff' in context && context.handoff?.instruction?.includes('prerequisites'));
     assert.equal(
       'implementation' in context && context.implementation?.skill.name,
       'agent-system:agent-system-task-implementation',
@@ -6606,6 +6608,11 @@ describe('agent/codex-dispatch', () => {
 
   it('should resume a substantive implementation blocker only on fresh user input', async () => {
     const work = await workIssue();
+    let publications = 0;
+    work.continuation.deliver = async () => {
+      publications++;
+      throw new Error('unfinished work must not publish');
+    };
     await work.run('next');
     work.receive();
     await work.run('context', {}, true);
@@ -6617,6 +6624,13 @@ describe('agent/codex-dispatch', () => {
     const saved = await work.run('result', { result: question }, true);
     assert.equal(saved.status, 'recorded');
     assert.ok('presentation' in saved);
+    assert.ok('handoff' in saved && saved.handoff?.next === 'blocked');
+    assert.ok('handoff' in saved && saved.handoff?.instruction?.includes('unfinished'));
+    assert.equal(
+      (await work.run('delivery', { delivery: { action: 'prepare' } }, true)).status,
+      'blocked',
+    );
+    assert.equal(publications, 0);
     assert.equal((await work.run('context', {}, true)).status, 'blocked');
     native!.status = 'idle';
     native!.turnStatus = 'completed';
@@ -6854,7 +6868,9 @@ describe('agent/codex-dispatch', () => {
         assert.equal(response.status, 'verified');
         assert.ok('deliveryOnly' in response && !response.deliveryOnly);
         assert.deepEqual('previousResult' in response && response.previousResult, done);
-        assert.deepEqual('handoff' in response && response.handoff, { next: 'implementation' });
+        assert.ok('handoff' in response && response.handoff);
+        assert.equal(response.handoff.next, 'implementation');
+        assert.match(response.handoff.instruction ?? '', /prerequisites/);
         assert.match(
           'instructions' in response ? response.instructions : '',
           /When deliveryOnly is true/,

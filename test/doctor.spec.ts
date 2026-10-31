@@ -30,7 +30,11 @@ describe('cli/doctor', () => {
           code: 'automation-healthy',
           status: 'healthy',
           message:
-            'Automation github-issue-assignment: healthy (persistent, reused: native-12345678).',
+            'requested: selected / high; observed: selected / high; Automation github-issue-assignment: healthy (persistent, reused: native-12345678).',
+          settings: {
+            requested: { model: 'selected', effort: 'high' },
+            observed: { model: 'selected', effort: 'high' },
+          },
         },
       ],
     };
@@ -65,6 +69,8 @@ describe('cli/doctor', () => {
         assert.match(text, /automation\s+healthy\s+name: ISSUE ASSIGNMENTS/u);
         assert.ok(text.includes('thread: ***5678'));
         assert.equal(text.includes('native-12345678'), false);
+        assert.equal(text.includes('requested:'), false);
+        assert.equal(text.includes('selected'), false);
       }
     }
   });

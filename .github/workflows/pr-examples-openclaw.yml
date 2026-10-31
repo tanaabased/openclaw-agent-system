@@ -42,7 +42,9 @@ jobs:
           - openclaw-backup
           - openclaw-backup-cleanup
           - openclaw-credentials
-          - openclaw-automations
+          - openclaw-automation-prompt
+          - openclaw-automation-command
+          - openclaw-automation-command-chat
           - openclaw-automation-recovery
           - openclaw-runtimes
           - openclaw-lifecycle-approvals

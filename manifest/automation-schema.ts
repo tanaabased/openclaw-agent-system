@@ -205,21 +205,22 @@ export default function normalizeAutomations(
       (job.run !== undefined
         ? { kind: 'command' as const, run: job.run, shell: job.shell }
         : { kind: 'prompt' as const, prompt: job.prompt! });
-    if (payload.kind === 'command' && (job.model !== undefined || job.effort !== undefined)) {
-      diagnostics.push(automationDiagnostic('manifest-automation-command-model', path));
-      continue;
-    }
-    if (payload.kind === 'command' && job.overrides !== undefined) {
-      diagnostics.push(
-        automationDiagnostic('manifest-automation-command-overrides', `${path}/overrides`),
-      );
-      continue;
-    }
-    if (payload.kind === 'command' && Object.hasOwn(job, 'thread')) {
-      diagnostics.push(
-        automationDiagnostic('manifest-automation-command-thread', `${path}/thread`),
-      );
-      continue;
+    if (payload.kind === 'command') {
+      for (const runtime of job.runtimes ?? (['openclaw', 'codex'] as const)) {
+        const override = job.overrides?.[runtime];
+        const persistent = override?.target !== 'independent' && (override?.target || job.thread);
+        if (
+          !persistent &&
+          (job.model !== undefined ||
+            job.effort !== undefined ||
+            override?.model !== undefined ||
+            override?.effort !== undefined)
+        )
+          diagnostics.push({
+            ...automationDiagnostic('manifest-automation-command-model', path),
+            message: `Command model/effort require a persistent reporting chat for ${runtime}.`,
+          });
+      }
     }
     const normalizedPayload =
       payload.kind === 'command'
@@ -230,14 +231,6 @@ export default function normalizeAutomations(
           };
     let group: string | undefined;
     if (job.group !== undefined) {
-      if (payload.kind === 'command') {
-        diagnostics.push({
-          ...automationDiagnostic('manifest-automation-group-persistent-required', `${path}/group`),
-          message:
-            'group requires a persistent prompt chat; remove group from this command automation.',
-        });
-        continue;
-      }
       try {
         group = managedGroupName(
           job.group,
@@ -258,7 +251,7 @@ export default function normalizeAutomations(
               'manifest-automation-group-persistent-required',
               `${path}/group`,
             ),
-            message: `group requires a persistent prompt chat for ${runtime}; declare thread or overrides.${runtime}.target.thread, or remove group.`,
+            message: `group requires a persistent chat for ${runtime}; declare thread or overrides.${runtime}.target.thread, or remove group.`,
           });
       }
     }

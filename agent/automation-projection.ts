@@ -1,3 +1,5 @@
+import { automationReportTimeoutMs } from './automation-report-delivery.ts';
+import { commandTerminationGraceMs } from '../api/cli-budget.ts';
 import type { AutomationThreadModelObservation } from './automation-threads.ts';
 import { AutomationError, type NativeAutomation } from './automation-gateway.ts';
 import { automationHash, type AutomationRecord } from './automation-store.ts';
@@ -116,7 +118,11 @@ export function projectAutomation(
             cwd: context.workspaceDir,
             env: context.environment,
             input: '',
-            timeoutSeconds,
+            timeoutSeconds:
+              timeoutSeconds +
+              (context.threads?.has(job.id)
+                ? (automationReportTimeoutMs + commandTerminationGraceMs) / 1000
+                : 0),
             noOutputTimeoutSeconds: 3600,
             // native updates cannot clear an existing command cap. migrate it once to
             // OpenClaw 2026.10.6's 16 MiB per-stream budget; new jobs inherit defaults.
@@ -131,7 +137,8 @@ export function projectAutomation(
             lightContext: false,
             allowUnsafeExternalContent: false,
             toolsAllow: job.internalOpenClaw?.toolsAllow ?? ['*'],
-            ...(override?.model ? { model: override.model.trim() } : {}),
+            // a declared model must fail explicitly rather than executing a fallback model.
+            ...(override?.model ? { model: override.model.trim(), fallbacks: [] } : {}),
             ...(override?.effort ? { thinking: override.effort.trim() } : {}),
           },
   };
@@ -190,7 +197,7 @@ export function automationPatch(
       ...desired.payload,
       model: desired.payload.model ?? null,
       thinking: desired.payload.thinking ?? null,
-      fallbacks: null,
+      fallbacks: desired.payload.fallbacks ?? null,
       toolsAllow: desired.payload.toolsAllow,
     };
   } else if (patch.payload) patch.payload = { ...desired.payload, toolsAllow: null };

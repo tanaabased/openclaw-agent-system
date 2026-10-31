@@ -5,6 +5,7 @@ import {
 } from '../credentials/session-dispatch-diagnostic.ts';
 import { withProviderDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import type SetupLifecycleService from '../agent/setup-lifecycle.ts';
+import type { AutomationThreadModelObservation } from '../agent/automation-threads.ts';
 import setupStepApplies from '../agent/setup-runtime.ts';
 import type { AgentSetupRuntime } from '../manifest/setup-schema.ts';
 import type { AgentManifest, ManifestDiagnostic } from '../manifest/types.ts';
@@ -50,6 +51,7 @@ export type AgentSystemLifecycleFindingStatus =
   'blocked' | 'drift' | 'healthy' | 'manual' | 'skipped' | 'warning';
 
 export interface AgentSystemLifecycleFinding {
+  settings?: AutomationThreadModelObservation;
   providerDiagnostic?: ProviderDiagnostic;
   sessionDispatchDiagnostic?: SessionDispatchDiagnostic;
   code: string;

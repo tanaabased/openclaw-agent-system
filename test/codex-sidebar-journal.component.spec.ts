@@ -74,6 +74,53 @@ describe('agent/codex-sidebar-journal', () => {
     assert.notEqual((await a.read()).pending!.digest, pending.digest);
     assert.equal((await a.apply('a', inventory(), 'chat-a')).status, 'incomplete');
   });
+  for (const changed of ['deleted', 'renamed']) {
+    it(`should reconcile a ${changed} confirmed group without replaying an unresolved creation`, async () => {
+      const journal = new CodexSidebarJournal(root, 'profile', 'operations');
+      assert.equal(
+        (await journal.apply('a', inventory([section('old', 'OPERATIONS', 'chat')]), 'chat'))
+          .status,
+        'done',
+      );
+      const current = inventory(changed === 'renamed' ? [section('old', 'PERSONAL', 'chat')] : []);
+      await assert.rejects(
+        journal.apply('a', { ...current, unavailableHosts: ['local'] }, 'chat'),
+        /inventory-required/,
+      );
+      assert.equal((await journal.read()).sectionId, 'old');
+      const create = await journal.apply('a', current, 'chat');
+      assert.equal(create.status, 'native-action');
+      if (create.status !== 'native-action') return;
+      assert.deepEqual(create.request, {
+        tool: 'create_sidebar_section',
+        arguments: { name: 'OPERATIONS' },
+      });
+      assert.equal((await journal.apply('a', current, 'chat')).status, 'incomplete');
+      assert.equal((await journal.apply('b', current, 'other-chat')).status, 'incomplete');
+      current.sections.push(section('replacement'));
+      const move = await journal.apply('a', current, 'chat', {
+        digest: create.digest,
+        sectionId: 'replacement',
+      });
+      assert.equal(move.status, 'native-action');
+      if (move.status !== 'native-action') return;
+      assert.deepEqual(move.request, {
+        tool: 'move_thread_to_sidebar_section',
+        arguments: { threadId: 'chat', hostId: 'local', source: 'codex', sectionId: 'replacement' },
+      });
+      for (const entry of current.sections) entry.itemKeys = [];
+      current.sections.at(-1)!.itemKeys.push('codex:thread:local:chat');
+      assert.deepEqual(
+        await journal.apply('a', current, 'chat', {
+          digest: move.digest,
+          sectionId: 'replacement',
+        }),
+        { status: 'done', sectionId: 'replacement' },
+      );
+      assert.equal((await journal.apply('a', current, 'chat')).status, 'done');
+      if (changed === 'renamed') assert.equal(current.sections[0]!.name, 'PERSONAL');
+    });
+  }
   it('should retain a returned id before incomplete readback and refuse ambiguous recovery', async () => {
     const journal = new CodexSidebarJournal(root, 'profile', 'operations');
     const prepared = await journal.apply('a', inventory(), 'chat');

@@ -22,6 +22,29 @@ function jobs(settings: Record<string, unknown> = {}) {
   return parsed.automations as ResolvedAutomation[];
 }
 describe('agent/automation-models', () => {
+  it('should resolve conversation settings for reporting commands without changing command-only consumers', () => {
+    const parsed = normalizeAutomations([
+      {
+        id: 'report',
+        run: ['true'],
+        schedule: 'every 1 hour',
+        thread: { id: 'reports' },
+        model: 'low',
+        runtimes: ['openclaw'],
+      },
+      { id: 'silent', run: ['true'], schedule: 'every 1 hour' },
+    ]);
+    assert.equal(parsed.status, 'valid');
+    if (parsed.status !== 'valid') return;
+    const [report, silent] = automationModels(
+      parsed.automations as ResolvedAutomation[],
+      models,
+      'openclaw',
+    );
+    assert.deepEqual(report!.overrides.openclaw, { model: 'openai/small', effort: 'high' });
+    assert.deepEqual(silent, parsed.automations[1]);
+    assert.equal(report!.payload.kind, 'command');
+  });
   for (const runtime of ['openclaw', 'codex'] as const) {
     const native = (model: string) => (runtime === 'codex' ? model.slice(7) : model);
     const resolve = (settings: Record<string, unknown>) =>

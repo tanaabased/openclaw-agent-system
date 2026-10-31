@@ -28,6 +28,7 @@ import { automationHash } from './automation-hash.ts';
 import planCodexAutomations, {
   automationRecordSchema,
   codexAutomationMarker,
+  ownedCodexAutomations,
   savedMatches,
   verifyThread,
   type CodexAutomationAction,
@@ -102,6 +103,8 @@ const ledgerSchema = Type.Object(
 type Ledger = Static<typeof ledgerSchema>;
 export interface CodexAutomationDependencies {
   codexHome?: string;
+  readAutomations?: typeof readCodexAutomations;
+  now?: () => number;
   inspectBinding?: typeof inspectCodexWorkspaceBinding;
   threadAdapter?: AutomationThreadAdapter;
   intake?: CodexIntakeDependencies;
@@ -225,7 +228,10 @@ async function snapshot(pluginData: string, dependencies: CodexAutomationDepende
     if (ledger.pending && !ledger.pending.targetBefore && !ledger.pending.beforeHash)
       throw new Error('missing pending snapshot');
     for (const record of ledger.records) {
-      if (!record.definition.prompt.endsWith(codexAutomationMarker(scope, record.id)))
+      if (
+        !record.definition.prompt.endsWith(codexAutomationMarker(scope, record.id)) ||
+        (record.retired && (!record.removed || ledger.pending?.action.manifestId === record.id))
+      )
         throw new Error('invalid marker');
     }
   } catch {
@@ -276,7 +282,12 @@ async function resolveThreads(
   for (const job of jobs) {
     const selection = automationThreadSelection(job, 'codex')!;
     if (!selection.managed) {
-      await verifyThread(inputs.threads ?? [], selection.exact!, selected.workspace);
+      try {
+        await verifyThread(inputs.threads ?? [], selection.exact!, selected.workspace);
+      } catch (error) {
+        if (error instanceof CodexAutomationError) error.automationId = job.id;
+        throw error;
+      }
       explicitIds.add(selection.exact!);
     }
   }
@@ -375,6 +386,22 @@ async function resolveThreads(
   }
 }
 
+function verifyMigrationRetirements(
+  selected: Awaited<ReturnType<typeof snapshot>>,
+  saved: SavedAutomation[],
+) {
+  for (const retired of selected.ledger.retired ?? []) {
+    const actual = saved.find((item) => item.id === retired.nativeId);
+    if (
+      retired.retired ||
+      !actual ||
+      retired.definition.status !== 'PAUSED' ||
+      !savedMatches(actual, retired.definition, selected.workspace)
+    )
+      throw new CodexAutomationError('automation-retired-job-diverged');
+  }
+}
+
 async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: CodexAutomationInputs) {
   const { loaded, workspace, scope, codexHome, ledger } = selected;
   const jobs = selected.jobs;
@@ -383,17 +410,9 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     ledger.records.length ||
     ledger.retired?.length ||
     ledger.pending
-      ? await readCodexAutomations(codexHome)
+      ? await (selected.dependencies.readAutomations ?? readCodexAutomations)(codexHome)
       : [];
-  for (const retired of ledger.retired ?? []) {
-    const actual = saved.find((item) => item.id === retired.nativeId);
-    if (
-      !actual ||
-      retired.definition.status !== 'PAUSED' ||
-      !savedMatches(actual, retired.definition, workspace)
-    )
-      throw new CodexAutomationError('automation-retired-job-diverged');
-  }
+  verifyMigrationRetirements(selected, saved);
   const needsDefaults = jobs.some(
     (job) =>
       job.runtimes.includes('codex') &&
@@ -408,9 +427,12 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     Map<string, { id: string; settings?: AutomationThreadModelObservation }> | undefined;
   let threadSettings: AutomationThreadModelObservation | undefined;
   let threadCode: string | undefined;
+  let threadAutomationId: string | undefined;
   try {
     bindings = await resolveThreads(selected, inputs);
   } catch (error) {
+    if (error instanceof AutomationError || error instanceof CodexAutomationError)
+      threadAutomationId = error.automationId;
     if (error instanceof AutomationThreadSettingsError) threadSettings = error.settings;
     threadCode =
       error instanceof AutomationError || error instanceof CodexAutomationError
@@ -448,7 +470,7 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
   }
   if (threadCode) {
     result.findings.push({
-      id: 'threads',
+      id: threadAutomationId ?? 'threads',
       code: threadCode,
       ...(threadSettings ? { settings: threadSettings } : {}),
     });
@@ -466,6 +488,7 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
       'automation-healthy',
       'automation-disabled',
       'automation-disabled-retained',
+      'automation-retired',
       'automation-removal-pending',
       'automation-target-migration-pending',
     ]);
@@ -637,6 +660,7 @@ export async function syncCodexAutomationThreads(
       'automation-healthy',
       'automation-disabled',
       'automation-disabled-retained',
+      'automation-retired',
       'automation-missing',
       'automation-drift',
       'automation-removal-pending',
@@ -687,6 +711,7 @@ export async function listCodexAutomations(
         nativeId: record?.nativeId ?? null,
         nativeStatus: actual?.definition.status ?? null,
         removed: record?.removed ?? false,
+        retired: Boolean(record?.retired),
         findings: result.findings.filter((finding) => finding.id === id),
       };
     }),
@@ -866,6 +891,67 @@ async function withJournal<T>(
   }
 }
 
+/** explicit install/sync retires only undeclared, authoritatively absent native jobs. */
+export async function reconcileCodexAutomationRetirements(
+  pluginData: string,
+  dependencies: CodexAutomationDependencies = {},
+): Promise<void> {
+  const initial = await snapshot(pluginData, dependencies);
+  const declared = (selected: typeof initial) =>
+    new Set(selected.jobs.filter((job) => job.runtimes.includes('codex')).map(({ id }) => id));
+  if (
+    initial.cleanupOnly ||
+    initial.ledger.pending ||
+    !initial.ledger.records.some((record) => !record.retired && !declared(initial).has(record.id))
+  )
+    return;
+  await withJournal(initial, async () => {
+    const selected = await snapshot(pluginData, dependencies);
+    const unchanged = (current: typeof initial) =>
+      !current.cleanupOnly &&
+      current.scope === initial.scope &&
+      current.loaded.digest === initial.loaded.digest &&
+      automationHash(current.ledger) === automationHash(initial.ledger);
+    if (!unchanged(selected)) throw new CodexAutomationError('automation-plan-stale-or-blocked');
+    const read = dependencies.readAutomations ?? readCodexAutomations;
+    const saved = await read(selected.codexHome, { requireComplete: true });
+    const owned = ownedCodexAutomations(selected.scope, saved, selected.ledger.records);
+    verifyMigrationRetirements(selected, saved);
+    for (const id of owned.keys())
+      if (!selected.ledger.records.some((record) => record.id === id))
+        throw new CodexAutomationError('automation-ownership-recovery-required');
+    const candidates = [];
+    const declaredIds = declared(selected);
+    for (const record of selected.ledger.records) {
+      if (record.retired) {
+        if (declaredIds.has(record.id)) throw new CodexAutomationError('automation-retired-id');
+        continue;
+      }
+      const actual = owned.get(record.id);
+      if (actual?.id === record.nativeId) continue;
+      if (actual || saved.some((item) => item.id === record.nativeId))
+        throw new CodexAutomationError('automation-ownership-conflict');
+      if (declaredIds.has(record.id))
+        throw new CodexAutomationError('automation-native-recovery-required');
+      candidates.push(record);
+    }
+    if (!candidates.length) return;
+    // re-read all saved state, then reauthorize the exact manifest and ownership at commit.
+    const fresh = await read(selected.codexHome, { requireComplete: true });
+    if (automationHash(fresh) !== automationHash(saved))
+      throw new CodexAutomationError('automation-native-snapshot-diverged');
+    if (!unchanged(await snapshot(pluginData, dependencies)))
+      throw new CodexAutomationError('automation-plan-stale-or-blocked');
+    for (const record of candidates) {
+      record.removed = true;
+      record.retired = { atMs: (dependencies.now ?? Date.now)(), reason: 'native-job-absent' };
+    }
+    if (!Value.Check(ledgerSchema, selected.ledger))
+      throw new CodexAutomationError('automation-ownership-invalid');
+    await selected.file.write(JSON.stringify(selected.ledger));
+  });
+}
+
 function pendingTargets(saved: SavedAutomation[], scope: string, action: CodexAutomationAction) {
   const marker = codexAutomationMarker(scope, action.manifestId);
   return saved.filter((item) => item.id === action.id || item.definition.prompt.includes(marker));
@@ -892,11 +978,6 @@ export async function prepareCodexAutomation(
       throw new CodexAutomationError('automation-plan-stale-or-blocked');
     }
     const action = result.actions[0];
-    if (action.mode === 'create' && /^DTSTART[:;]/u.test(action.expected.rrule))
-      throw new CodexAutomationError(
-        'automation-dtstart-create-unsupported',
-        'Codex direct creation does not support DTSTART recurrences. Keep the requested timezone and use a schedule without DTSTART only if it preserves the intended timing.',
-      );
     if (action.manifestId === intakeAutomationId && action.expected.status === 'ACTIVE') {
       const verified = await preflightCodexIntake(pluginData, {
         ...dependencies.intake,

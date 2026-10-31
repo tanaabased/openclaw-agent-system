@@ -2,8 +2,9 @@ import { realpath } from 'node:fs/promises';
 
 import { AutomationError, nativeObject, type AutomationGateway } from './automation-gateway.ts';
 import type { AutomationThreadAdapter } from './automation-threads.ts';
+import automationGatewayDiagnostic from './automation-gateway-diagnostic.ts';
 
-/** operator-only native session transport. never inspect or edit the Gateway's private stores. */
+/** native session transport using the caller's credential, without private Gateway stores. */
 export default function automationThreadGateway(
   request: AutomationGateway,
   context: { agentId: string; workspaceDir: string; scope: string },
@@ -86,7 +87,7 @@ export default function automationThreadGateway(
   }
   return {
     lookup,
-    async create(record, saveId, _fresh, settings) {
+    async create(record, saveId) {
       const key =
         record.nativeId ??
         `agent:${context.agentId}:automation:${context.scope}:${record.key}${record.generation ? `:${record.generation}` : ''}`;
@@ -96,8 +97,6 @@ export default function automationThreadGateway(
           key,
           agentId: context.agentId,
           cwd: context.workspaceDir,
-          ...(settings?.model ? { model: settings.model } : {}),
-          ...(settings?.effort ? { thinkingLevel: settings.effort } : {}),
         });
       return key;
     },
@@ -121,8 +120,26 @@ export default function automationThreadGateway(
           ...(settings.effort === undefined ? {} : { thinkingLevel: settings.effort }),
         });
       } catch (error) {
-        if (error instanceof AutomationError && error.diagnostic?.category === 'rejected')
-          throw new AutomationError('automation-thread-settings-denied', error.diagnostic);
+        // the enrolled backend deliberately replaces native error prose with safe codes.
+        if (error instanceof Error) {
+          if (error.message === 'session-dispatch-sessions-patch-model-runtime-unavailable')
+            throw new AutomationError('automation-model-unavailable');
+          if (
+            [
+              'session-dispatch-sessions-patch-request-invalid',
+              'session-dispatch-sessions-patch-forbidden',
+            ].includes(error.message)
+          )
+            throw new AutomationError('automation-thread-settings-denied');
+        }
+        const diagnostic =
+          error instanceof AutomationError
+            ? error.diagnostic
+            : automationGatewayDiagnostic('sessions.patch', error);
+        if (diagnostic?.reason === 'model-runtime-unavailable')
+          throw new AutomationError('automation-model-unavailable', diagnostic);
+        if (diagnostic?.category === 'rejected')
+          throw new AutomationError('automation-thread-settings-denied', diagnostic);
         throw error;
       }
     },
