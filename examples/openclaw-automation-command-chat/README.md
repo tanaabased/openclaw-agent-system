@@ -33,8 +33,8 @@ reports through the real Gateway response path.
 ```bash
 # should create one reporting chat per runtime for both command declarations
 export OPENAI_API_KEY=agent-system-aimock-test
-# openclaw provider discovery does not read the codex app-server's inference override.
-export OPENAI_BASE_URL=http://127.0.0.1:4010/v1
+# mock catalog discovery without changing the provider route's supported runtimes.
+export NODE_OPTIONS="--import=$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat/catalog-fixture.mjs"
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --model openai/gpt-5.5
 openclaw-aimock prepare --scenario openclaw-automation-command-chat
 openclaw config set models.mode merge
@@ -62,6 +62,7 @@ jq -e 'any(.models[]; .provider == "openai" and .id == "gpt-5.5" and .available 
 
 ```bash
 # should retain both mock-formatted reports without rerunning their commands
+trap 'result=$?; if test "$result" -ne 0; then curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/diagnostics >&2 || true; fi; exit "$result"' EXIT
 for runtime in openclaw codex; do
   workspace="$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat"
   model=aimock/gpt-5.5
@@ -82,7 +83,7 @@ for runtime in openclaw codex; do
       if jq -e 'any(.reports[]; .status == "delivered" or .status == "failed" or .status == "uncertain")' "$TMPDIR/report-$runtime-$mode.json" >/dev/null; then break; fi
       sleep 2
     done
-    if ! jq -e --arg reason "$reason" --arg model "$model" '.reports | length == 1 and all(.[]; .status == "delivered" and .reason == $reason and (.messageId | type == "string") and .requested == {model:$model,effort:"high"} and .effective.model == .requested.model and (.effective.effort == null or .effective.effort == "high"))' "$TMPDIR/report-$runtime-$mode.json"; then
+    if ! jq -e --arg reason "$reason" --arg model "$model" --arg runtime "$runtime" '.reports | length == 1 and all(.[]; .status == "delivered" and .reason == $reason and (.messageId | type == "string") and .requested == {model:$model,effort:"high"} and .effective.model == .requested.model and .effective.harness == $runtime and (.effective.effort == null or .effective.effort == "high"))' "$TMPDIR/report-$runtime-$mode.json"; then
       jq '{id,reports}' "$TMPDIR/report-$runtime-$mode.json"
       exit 1
     fi
