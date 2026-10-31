@@ -67,6 +67,46 @@ describe('agent/codex-intake', () => {
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
   });
+  it('should apply routing precedence and live reorder without reinstalling or losing admitted work', async () => {
+    const provider = intakeFixture();
+    const assigned = provider.events.splice(0);
+    let now = baseline;
+    const deps = {
+      codexHome,
+      assertActive: async () => {},
+      now: () => now,
+      connect: async () => provider.client,
+    };
+    const configure = async (routing: string[]) =>
+      writeFile(
+        join(workspace, 'agent.yaml'),
+        JSON.stringify({
+          ...manifest,
+          github: {
+            ...manifest.github,
+            routing,
+            'allowed-repository-owners': 'ignored invalid value',
+          },
+        }),
+      );
+    await configure(['!owner/repo', 'owner/*']);
+    await runCodexIntake(pluginData, true, deps);
+    provider.events.push(...assigned);
+    now += 120000;
+    const denied = await runCodexIntake(pluginData, false, deps);
+    assert.equal('repositoryScope' in denied && denied.repositoryScope?.[0]?.reason, 'excluded');
+    await configure(['owner/*', '!owner/repo']);
+    now += 60000;
+    const included = await runCodexIntake(pluginData, false, deps);
+    assert.equal('admitted' in included && included.admitted, 1);
+    const { store } = await selectCodexIntake(pluginData, deps);
+    const before = (await store.read())!;
+    await configure([]);
+    now += 60000;
+    await runCodexIntake(pluginData, false, deps);
+    assert.deepEqual((await store.read())!.records, before.records);
+    assert.equal((await store.read())!.baselineAt, baseline);
+  });
   it('should preserve the activated baseline across operational policy changes', async () => {
     const provider = intakeFixture();
     provider.events.length = 0;

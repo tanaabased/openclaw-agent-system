@@ -1,6 +1,7 @@
 import { Type, type Static } from 'typebox';
 
 import decodeProjectPickup, { projectPickupSchema } from './project-pickup-schema.ts';
+import { repositoryPatternSchema } from './repository-scope.ts';
 
 import {
   assessmentConfigurationSchema,
@@ -47,7 +48,6 @@ export const githubV3Properties = {
   ),
   'interval-minutes': Type.Optional(Type.Integer({ minimum: 1, maximum: 1440 })),
   'max-concurrent-items': Type.Optional(Type.Integer({ minimum: 1 })),
-  'allowed-repository-owners': Type.Array(githubIdentityReferenceSchema, { minItems: 1 }),
   'issue-assignment': Type.Optional(
     Type.Object(
       {
@@ -71,9 +71,23 @@ export const githubV3Properties = {
   ),
 };
 
-export const externalGitHubV3Schema = Type.Object(githubV3Properties, {
-  additionalProperties: false,
-});
+export const githubLegacyScopeProperties = {
+  'allowed-repository-owners': Type.Array(githubIdentityReferenceSchema, { minItems: 1 }),
+};
+export const githubRoutingScopeProperties = {
+  routing: Type.Array(repositoryPatternSchema),
+  'allowed-repository-owners': Type.Optional(Type.Unknown()),
+};
+export const externalGitHubV3Schema = Type.Union([
+  Type.Object(
+    { ...githubV3Properties, ...githubLegacyScopeProperties },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    { ...githubV3Properties, ...githubRoutingScopeProperties },
+    { additionalProperties: false },
+  ),
+]);
 export type ExternalGitHubV3 = Static<typeof externalGitHubV3Schema>;
 
 function identity(value: Static<typeof githubIdentityReferenceSchema>): GitHubIdentityPin {
@@ -105,7 +119,9 @@ export default function decodeGitHubV3(value: ExternalGitHubV3): GitHubNotificat
     ...(value['project-pickup']
       ? { projectPickup: decodeProjectPickup(value['project-pickup']) }
       : {}),
-    allowedRepositoryOwners: value['allowed-repository-owners'].map(identity),
+    ...('routing' in value
+      ? { routing: [...value.routing], allowedRepositoryOwners: [] }
+      : { allowedRepositoryOwners: value['allowed-repository-owners'].map(identity) }),
     ...(issue === undefined
       ? {}
       : {

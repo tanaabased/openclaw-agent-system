@@ -411,7 +411,11 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
         ...externalAgentManifestSchema.properties,
         github: Type.Optional(
           externalGitHubSectionSchema.anyOf[
-            isRecord(value) && hasGitHubWorkflowConfiguration(value.github) ? 1 : 0
+            isRecord(value) && hasGitHubWorkflowConfiguration(value.github)
+              ? Object.hasOwn(value.github, 'routing')
+                ? 2
+                : 1
+              : 0
           ]!,
         ),
       },
@@ -438,7 +442,10 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
   const host = declarations.find(({ key }) => key === 'setup-host');
   const agent = declarations.find(({ key }) => key === agentKey);
   const manifest = decodeManifest(value);
-  const notificationDiagnostics = validateGitHubNotificationPolicy(manifest.github);
+  const notificationDiagnostics = validateGitHubNotificationPolicy(
+    manifest.github,
+    value.github !== undefined && Object.hasOwn(value.github, 'allowed-repository-owners'),
+  );
   if (notificationDiagnostics.some(({ severity }) => severity === 'error')) {
     return { status: 'invalid', diagnostics: notificationDiagnostics };
   }

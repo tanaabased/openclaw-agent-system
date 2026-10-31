@@ -33,6 +33,9 @@ github:
     title: agent-system-test-__GITHUB_REPOSITORY_ID__-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__-intake
   runtimes: [openclaw]
   interval-minutes: 1440
+  routing:
+    - '!tanaabased/big-test-bucket'
+    - tanaabased/*
   allowed-repository-owners:
     - login: tanaabased
       node-id: __OWNER_NODE_ID__

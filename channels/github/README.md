@@ -35,7 +35,7 @@ github:
   schema-version: 3
   username: tanaabot
   runtimes: [openclaw]
-  allowed-repository-owners: ['@tanaabased']
+  routing: ['tanaabased/*']
   issue-assignment:
     mode: auto
     allowed: ['@pirog']
@@ -103,7 +103,7 @@ github:
   schema-version: 3
   username: tanaabot
   runtimes: [openclaw]
-  allowed-repository-owners: ['@tanaabased']
+  routing: ['tanaabased/*']
   issue-assignment:
     mode: plan
     allowed: ['@pirog']
@@ -123,7 +123,7 @@ github:
   schema-version: 3
   username: tanaabot
   runtimes: [openclaw]
-  allowed-repository-owners: ['@tanaabased']
+  routing: ['tanaabased/*']
   issue-assignment:
     mode: work
     allowed: ['@pirog']
@@ -144,7 +144,7 @@ github:
   schema-version: 3
   username: tanaabot
   runtimes: [openclaw]
-  allowed-repository-owners: ['@tanaabased']
+  routing: ['tanaabased/*']
   max-concurrent-items: 1
   issue-assignment:
     mode: auto
