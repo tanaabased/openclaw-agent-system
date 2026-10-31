@@ -63,7 +63,13 @@ describe('agent/automation-report-delivery', () => {
       Date.parse(input.startedAt),
     );
     type HookResult =
-      { toolsAllow?: string[]; block?: boolean; retry?: { maxAttempts?: number } } | undefined;
+      | {
+          toolsAllow?: string[];
+          appendSystemContext?: string;
+          block?: boolean;
+          retry?: { maxAttempts?: number };
+        }
+      | undefined;
     type Hook = (
       event: Record<string, unknown>,
       context: Record<string, unknown>,
@@ -136,7 +142,8 @@ describe('agent/automation-report-delivery', () => {
           };
           if (!options.unguarded) {
             const guard = await hooks.get('before_prompt_build')!({}, context);
-            assert.deepEqual(guard?.toolsAllow, []);
+            assert.equal(guard?.toolsAllow, undefined);
+            assert.ok(guard?.appendSystemContext);
           }
           assert.equal(
             (await hooks.get('before_tool_call')!({ toolName: 'exec' }, context))?.block,
@@ -249,6 +256,54 @@ describe('agent/automation-report-delivery', () => {
     assert.equal((await f.recover()).status, 'pending');
     assert.equal(f.messages.length, 1);
     assert.equal((await f.store.read(input.executionId))?.input.outcome, 'error');
+  });
+  it('should block formatter tool attempts without replacing the automation report', async () => {
+    const f = fixture({ pending: true });
+    await f.deliver();
+    const before = await f.store.read(input.executionId);
+    const context = {
+      agentId: 'a',
+      sessionKey: 'agent:a:reports',
+      sessionId: 'incarnation',
+    };
+    for (const toolName of [
+      'exec_command',
+      'apply_patch',
+      'message',
+      'web_search',
+      'mcp__fixture__write',
+      'spawn_agent',
+    ]) {
+      const result = await f.hooks.get('before_tool_call')!(
+        { toolName, runId: input.executionId },
+        context,
+      );
+      assert.equal(result?.block, true, toolName);
+    }
+    assert.deepEqual(await f.store.read(input.executionId), before);
+    assert.equal(f.messages.length, 1);
+    assert.equal(
+      await f.hooks.get('before_tool_call')!(
+        { toolName: 'exec_command', runId: randomUUID() },
+        context,
+      ),
+      undefined,
+    );
+  });
+  it('should block tool execution when formatter custody cannot be read', async () => {
+    const f = fixture();
+    f.store.read = async () => {
+      throw new Error('fixture storage failure');
+    };
+    assert.equal(
+      (
+        await f.hooks.get('before_tool_call')!(
+          { toolName: 'exec_command', runId: input.executionId },
+          { agentId: 'a', sessionKey: 'agent:a:reports', sessionId: 'incarnation' },
+        )
+      )?.block,
+      true,
+    );
   });
   it('should deliver through the enrolled request guard without a plugin inspection', async () => {
     const f = fixture({ requestGuard: true });
