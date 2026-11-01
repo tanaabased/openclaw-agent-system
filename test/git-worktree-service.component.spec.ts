@@ -762,7 +762,7 @@ describe('tools/git/worktree-service', () => {
       assert.equal(
         (await service.cleanup(context, input.repositoryId, input.workId, 'renamed', true, true))
           .status,
-        'unpreserved',
+        'preserved',
       );
       assert.equal(git.worktrees.size, 1);
       git.preserved = true;

@@ -132,6 +132,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         // uncertain or completed native effects retain their receipts, never become a retry grant.
         if (
           record.retirement!.archiveAttempt ||
+          record.retirement!.archiveRequest ||
           record.retirement!.archivedAt ||
           record.retirement!.worktreeRemovalAttemptedAt ||
           record.retirement!.worktreeRemovedAt
@@ -173,6 +174,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
       }
       if (
         record.retirement &&
+        reason !== 'issue-closed' &&
         !record.retirement.operatorRequest &&
         record.nativeInactive === false &&
         native?.idle
@@ -195,6 +197,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         !native.archived &&
         !record.retirement?.archivedAt &&
         !record.retirement?.archiveAttempt &&
+        !record.retirement?.archiveRequest &&
         record.retirement?.reason !== 'chat-archived' &&
         successor &&
         (!record.retirement?.operatorRequest ||
@@ -220,6 +223,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           record.retirement?.reason !== 'chat-archived' &&
           !record.retirement?.archivedAt &&
           !record.retirement?.archiveAttempt &&
+          !record.retirement?.archiveRequest &&
           !record.retirement?.worktreeRemovalAttemptedAt &&
           (record.retirement || record.feedbackReactivation) &&
           input.reactivate &&
@@ -243,13 +247,15 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
       record.retirement = assignmentRetirement({
         previous: record.retirement,
         reason:
-          native?.archived && record.retirement?.reason !== 'assignment-removed'
+          reason !== 'issue-closed' &&
+          native?.archived &&
+          record.retirement?.reason !== 'assignment-removed'
             ? 'chat-archived'
             : reason,
         intakeId: successor?.id ?? record.intakeId ?? record.manualIssue!.id,
         now,
         graceMinutes,
-        activityId: native?.activityId,
+        activityId: reason === 'issue-closed' ? undefined : native?.activityId,
       });
       if (!record.retirement) continue;
       if (native?.unavailableSession)
@@ -298,7 +304,6 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         if (current.digest !== configuration.digest)
           throw new Error('retirement-configuration-changed');
         // pending owners can archive independently; active or unknown owners still fence reclamation.
-        if (shared.length > 12) throw new Error('retirement-worktree-shared');
         for (const other of shared) {
           if (other.retired) {
             if (
@@ -309,7 +314,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
               throw new Error('retirement-worktree-shared');
             continue;
           }
-          const otherIntake = input.admitted.find((item) => item.id === other.intakeId);
+          const otherIntake = dispatchAdmission(other, input.admitted);
           if (
             other.sourceThreadId !== input.owner ||
             other.reset ||
@@ -326,7 +331,8 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
             (!otherNative.idle && !otherNative.unavailableSession) ||
             (other.retirement.reason === 'assignment-removed' &&
               otherReason !== 'assignment-removed') ||
-            (!otherNative.unavailableSession &&
+            (otherReason !== 'issue-closed' &&
+              !otherNative.unavailableSession &&
               otherNative.activityId !== other.retirement.activityId) ||
             (!otherReason && !otherNative.archived && !other.retirement.operatorRequest) ||
             (!otherNative.archived &&
@@ -349,7 +355,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           (!currentReason && !currentNative?.archived && !record.retirement?.operatorRequest) ||
           (record.request && !currentNative?.idle && !currentNative?.unavailableSession) ||
           currentNative?.unavailableSession !== native?.unavailableSession ||
-          currentNative?.activityId !== native?.activityId
+          (currentReason !== 'issue-closed' && currentNative?.activityId !== native?.activityId)
         )
           throw new Error('retirement-observation-changed');
       };

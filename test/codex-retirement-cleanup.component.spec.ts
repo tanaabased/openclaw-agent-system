@@ -125,13 +125,14 @@ describe('codex retirement cleanup', () => {
     assert.equal(h.saved(), 1);
   });
 
-  it('should permit verified retiring peers while protecting pinned or unowned peers', async () => {
+  it('should permit pinned closed owners while protecting unowned peers', async () => {
     const h = await fixture();
     h.input.shared = [{ ...h.input.record, id: 'peer', threadId: 'peer' }];
     h.input.native.worktreeUsers = async () => ['child', 'peer'];
     h.input.inventory = { ...(h.input.inventory as object), pinnedThreads: [{ id: 'peer' }] };
+    h.input.issueClosed = false;
     assert.equal((await h.run()).code, 'retirement-native-resource-protected');
-    h.input.inventory = { ...(h.input.inventory as object), pinnedThreads: [] };
+    h.input.issueClosed = true;
     h.input.native.worktreeUsers = async () => ['child', 'peer', 'unowned'];
     assert.equal((await h.run()).code, 'retirement-worktree-shared');
     h.input.native.worktreeUsers = async () => ['child', 'peer'];
@@ -145,7 +146,7 @@ describe('codex retirement cleanup', () => {
     assert.ok('request' in (await h.run()));
     assert.equal(h.input.record.retirement!.archiveAttempt?.turnId, 'next-turn');
   });
-  it('should allow a completed guardian but preserve pinned and automation-owned helpers', async () => {
+  it('should allow a pinned completed guardian but preserve automation-owned helpers', async () => {
     const h = await fixture();
     const guardian = {
       id: 'guardian',
@@ -166,8 +167,9 @@ describe('codex retirement cleanup', () => {
       return { data: [{ status: 'completed', completedAt: 10 }] };
     });
     h.input.inventory = { ...(h.input.inventory as object), pinnedThreads: [{ id: 'guardian' }] };
+    h.input.issueClosed = false;
     assert.equal((await h.run()).code, 'retirement-worktree-shared');
-    h.input.inventory = { ...(h.input.inventory as object), pinnedThreads: [] };
+    h.input.issueClosed = true;
     const job = join(root, 'automations', 'job');
     await mkdir(job, { recursive: true });
     await writeFile(
@@ -206,6 +208,7 @@ describe('codex retirement cleanup', () => {
       const git = h.input.git!;
       if (kind === 'pinned')
         h.input.inventory = { ...(h.input.inventory as object), pinnedThreads: [{ id: 'child' }] };
+      if (kind === 'pinned' || kind === 'unpreserved') h.input.issueClosed = false;
       if (kind === 'shared') h.input.native.worktreeUsers = async () => ['child', 'other'];
       if (kind === 'dirty') {
         h.input.issueClosed = false;
@@ -240,6 +243,17 @@ describe('codex retirement cleanup', () => {
       assert.equal(h.fresh(), 0);
     });
   }
+  it('should archive a pinned closed owner without requiring a preserving ref', async () => {
+    const h = await fixture();
+    h.input.inventory = { ...(h.input.inventory as object), pinnedThreads: [{ id: 'child' }] };
+    const git = h.input.git!;
+    h.input.git = async (path, args) => (args[0] === 'for-each-ref' ? '' : git(path, args));
+    assert.ok((await h.run()).request);
+    assert.equal(
+      h.calls.some((args) => args[0] === 'for-each-ref'),
+      false,
+    );
+  });
   it('should allow local cleanup despite unavailable remote hosts and chatgpt', async () => {
     const h = await fixture();
     h.input.inventory = {

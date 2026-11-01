@@ -73,6 +73,12 @@ export const retirementSchema = Type.Object(
       ),
     ),
     archivedAt: Type.Optional(time),
+    archiveRequest: Type.Optional(
+      Type.Object(
+        { at: time, sessionId: text, code: Type.Optional(text) },
+        { additionalProperties: false },
+      ),
+    ),
     archiveAttempt: Type.Optional(
       Type.Object(
         { at: time, turnId: text, sourceThreadId: Type.Optional(text) },
@@ -93,6 +99,7 @@ export const retirementSchema = Type.Object(
     ),
     worktreeRemovedAt: Type.Optional(time),
     worktreeRemovalAttemptedAt: Type.Optional(time),
+    worktreeRemovalCode: Type.Optional(text),
     code: Type.Optional(text),
   },
   { additionalProperties: false },

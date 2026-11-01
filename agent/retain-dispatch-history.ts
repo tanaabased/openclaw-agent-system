@@ -43,6 +43,9 @@ export function verifiedTerminalCleanup(record: SharedDispatchRecord) {
     (!cleanup.archiveAttempt ||
       (cleanup.archivedAt ?? cleanup.sessionUnavailableObserved!.at) >=
         cleanup.archiveAttempt.at) &&
+    (!cleanup.archiveRequest ||
+      (cleanup.archivedAt ?? cleanup.sessionUnavailableObserved!.at) >=
+        cleanup.archiveRequest.at) &&
     (!cleanup.worktreeRemovalAttemptedAt ||
       cleanup.worktreeRemovedAt >= cleanup.worktreeRemovalAttemptedAt),
   );

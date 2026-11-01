@@ -77,7 +77,14 @@ export default async function codexRetirementCleanup(input: {
     if (!id) return pending('retirement-native-resource-unresolved');
     owners.add(id);
   }
-  if (inventory.pinnedThreads.some((entry) => !nativeObject(entry) || owners.has(String(entry.id))))
+  if (inventory.pinnedThreads.some((entry) => !nativeObject(entry) || typeof entry.id !== 'string'))
+    return pending('retirement-native-inventory-required');
+  if (
+    !input.issueClosed &&
+    inventory.pinnedThreads.some((entry) =>
+      owners.has(String((entry as Record<string, unknown>).id)),
+    )
+  )
     return pending('retirement-native-resource-protected');
   const jobs = await readCodexAutomations(input.codexHome);
   if (
@@ -89,7 +96,9 @@ export default async function codexRetirementCleanup(input: {
   )
     return pending('retirement-automation-owner');
   const protectedThreads = new Set(
-    inventory.pinnedThreads.map((entry) => String((entry as Record<string, unknown>).id)),
+    input.issueClosed
+      ? []
+      : inventory.pinnedThreads.map((entry) => String((entry as Record<string, unknown>).id)),
   );
   for (const job of jobs)
     if ('targetThreadId' in job.definition)
@@ -113,21 +122,23 @@ export default async function codexRetirementCleanup(input: {
     (await git(record.worktree, ['status', '--porcelain=v1', '--untracked-files=all']))
   )
     return pending('retirement-worktree-dirty');
-  const head = await git(record.worktree, ['rev-parse', 'HEAD']);
-  if (
-    !/^[a-f0-9]{40,64}$/u.test(head) ||
-    !(
-      await git(record.worktree, [
-        'for-each-ref',
-        '--format=%(refname)',
-        '--contains=' + head,
-        'refs/heads/',
-        'refs/remotes/',
-        'refs/tags/',
-      ])
-    ).trim()
-  )
-    return pending('retirement-worktree-unpreserved');
+  if (!input.issueClosed) {
+    const head = await git(record.worktree, ['rev-parse', 'HEAD']);
+    if (
+      !/^[a-f0-9]{40,64}$/u.test(head) ||
+      !(
+        await git(record.worktree, [
+          'for-each-ref',
+          '--format=%(refname)',
+          '--contains=' + head,
+          'refs/heads/',
+          'refs/remotes/',
+          'refs/tags/',
+        ])
+      ).trim()
+    )
+      return pending('retirement-worktree-unpreserved');
+  }
   await input.fresh();
   retirement.archiveAttempt = {
     at: input.now,

@@ -50,19 +50,74 @@ export async function observeRetiringSession(
     await request('chat.history', { sessionKey: key, limit: 1 }),
     'chat-history',
   );
-  if (history.sessionId !== row.sessionId || !Array.isArray(history.messages))
+  if (history.sessionId !== row.sessionId)
     throw new Error('retirement-session-history-unavailable');
   const info = retirementObject(history.sessionInfo, 'chat-history-session-info');
-  const pending = retirementObject(history.pendingInputs, 'chat-history-pending-inputs');
-  const last = history.messages.at(-1);
+  let page = history;
+  let total: number | undefined;
+  let before: number | undefined;
+  const seen = new Set<string>();
+  let idle = info.hasActiveRun === false;
+  for (;;) {
+    if (page.sessionId !== row.sessionId) throw new Error('retirement-session-history-unavailable');
+    const execution = retirementObject(page.sessionInfo, 'chat-history-session-info');
+    const pending = retirementObject(page.pendingInputs, 'chat-history-pending-inputs');
+    if (
+      !Number.isSafeInteger(pending.total) ||
+      Number(pending.total) < 0 ||
+      (total !== undefined && total !== pending.total) ||
+      (pending.queuedCount !== undefined &&
+        (!Number.isSafeInteger(pending.queuedCount) || Number(pending.queuedCount) < 0))
+    )
+      throw new Error('retirement-pending-inputs-unresolved');
+    total = Number(pending.total);
+    idle &&= execution.hasActiveRun === false && (pending.queuedCount ?? 0) === 0;
+    const items = pending.items ?? (total === 0 ? [] : undefined);
+    if (!Array.isArray(items)) throw new Error('retirement-pending-inputs-unresolved');
+    for (const item of items) {
+      const entry = retirementObject(item, 'chat-history-pending-input');
+      if (
+        typeof entry.id !== 'string' ||
+        !entry.id ||
+        seen.has(entry.id) ||
+        !['queued', 'cancelled', 'interrupted'].includes(String(entry.state))
+      )
+        throw new Error('retirement-pending-inputs-unresolved');
+      seen.add(entry.id);
+      // persisted queued inputs remain unresolved even when the live queue is empty.
+      if (entry.state === 'queued' || entry.queued === true) idle = false;
+    }
+    if (pending.nextBefore === undefined) {
+      if (seen.size !== total) throw new Error('retirement-pending-inputs-unresolved');
+      break;
+    }
+    if (
+      !Number.isSafeInteger(pending.nextBefore) ||
+      Number(pending.nextBefore) < 1 ||
+      (before !== undefined && Number(pending.nextBefore) >= before) ||
+      !items.length ||
+      seen.size >= total
+    )
+      throw new Error('retirement-pending-inputs-unresolved');
+    before = Number(pending.nextBefore);
+    page = retirementObject(
+      await request('chat.history', {
+        sessionKey: key,
+        limit: 1,
+        pendingBefore: before,
+      }),
+      'chat-history',
+    );
+  }
+  const last = Array.isArray(history.messages) ? history.messages.at(-1) : undefined;
   return {
     row,
     archived: row.archived === true || Boolean(row.archivedAt),
-    idle: info.hasActiveRun === false && pending.total === 0,
+    idle,
     ...(typeof info.activeLeafEntryId === 'string'
       ? { activityId: info.activeLeafEntryId }
-      : last && typeof retirementObject(last, 'chat-history-last-message').id === 'string'
-        ? { activityId: String(retirementObject(last, 'chat-history-last-message').id) }
+      : last && typeof last === 'object' && typeof last.id === 'string'
+        ? { activityId: last.id }
         : {}),
   };
 }
