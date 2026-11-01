@@ -73,17 +73,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/tanaabot"
 instance=$(openclaw agent-system instance inspect --json | jq -er '.instanceId')
 milestone=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method POST repos/tanaabased/big-test-bucket/milestones -f title="pickup-scheduling-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --jq .number)
 printf '%s\n' "$milestone" > "$TMPDIR/pickup-scheduling-milestone"
-cat >> agent.yaml <<YAML
-  project-pickup:
-    coordinator:
-      runtime: openclaw
-      instance-id: $instance
-    schedule: every 2 days
-    window-minutes: 1440
-    projects:
-      - repository: tanaabased/big-test-bucket
-        milestone: {number: $milestone, policy: only}
-YAML
+sed -e "s|__INSTANCE_ID__|$instance|g" -e "s|__MILESTONE_NUMBER__|$milestone|g" -e 's/^/  /' "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/pickup.yaml" >> agent.yaml
 openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .stepId == "github-project-pickup" and .status == "created")'
 openclaw agent-system automations list --json > "$TMPDIR/pickup-scheduling-jobs.json"
 pickup=$(jq -er '.jobs[] | select(.id == "github-project-pickup" and .nativeEnabled == true) | .nativeId' "$TMPDIR/pickup-scheduling-jobs.json")
