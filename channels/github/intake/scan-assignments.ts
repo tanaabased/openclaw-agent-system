@@ -1,4 +1,8 @@
 import GitHubIdentityCache from '../identity-cache.ts';
+import repositoryScope, {
+  repositoryScopeCandidate,
+  type RepositoryScopeDecision,
+} from '../repository-scope.ts';
 import authorizeProjectAssignment, {
   type ProjectPickupAuthority,
 } from '../../../agent/project-pickup-authority.ts';
@@ -52,6 +56,7 @@ interface AssignmentScanResult {
   checkpoint?: number;
   more?: boolean;
   deferred?: number;
+  repositoryScope?: Array<RepositoryScopeDecision & { count: number }>;
 }
 
 /** admission evidence only: no workspaces, chats, model decisions, or publication. */
@@ -91,6 +96,7 @@ export default async function scanAssignments(
     let admitted = 0;
     let next: IntakeState;
     let result: AssignmentScanResult;
+    const scopeCounts = new Map<string, RepositoryScopeDecision & { count: number }>();
     try {
       budget.check();
       const client = await input.connect(AbortSignal.any([signal, budget.signal]));
@@ -192,22 +198,19 @@ export default async function scanAssignments(
           if (candidate.itemType !== 'issue') return;
           const coordinates = githubRepositoryPath(candidate.repositoryPath);
           if (
-            !input.policy.allowedRepositoryOwners.some(
-              (owner) => owner.login.toLowerCase() === coordinates.owner.toLowerCase(),
-            )
+            input.policy.routing === undefined &&
+            !repositoryScopeCandidate(input.policy, coordinates.owner, coordinates.name)
           )
             return;
-          const repository = await observeRead('repository', () =>
-            client.getRepository(coordinates.owner, coordinates.name),
-          );
-          if (
-            repository.archived ||
-            repository.disabled ||
-            !input.policy.allowedRepositoryOwners.some((owner) =>
-              identityMatches(owner, repository.owner),
-            )
-          )
-            return;
+          // search paths and saved observations may predate a rename or transfer.
+          const repository = await client.getRepository(coordinates.owner, coordinates.name);
+          const scope = repositoryScope(input.policy, repository);
+          const scopeKey = JSON.stringify(scope);
+          scopeCounts.set(scopeKey, {
+            ...scope,
+            count: (scopeCounts.get(scopeKey)?.count ?? 0) + 1,
+          });
+          if (repository.archived || repository.disabled || scope.decision !== 'local') return;
           const item = await observeRead('issue', () =>
             client.getItem(coordinates.owner, coordinates.name, candidate.number),
           );
@@ -266,7 +269,8 @@ export default async function scanAssignments(
               open: true,
               assigned: true,
               repositoryReadable: true,
-              ownerPinned: true,
+              ownerPinned: scope.source === 'allowed-repository-owners',
+              repositoryScope: scope,
               actorPinned: true,
             },
             observedAt: input.now,
@@ -401,6 +405,7 @@ export default async function scanAssignments(
         ...(recovered ? { recovered: true } : {}),
         baselineAt: state.baselineAt,
         checkpoint: state.checkpoint,
+        ...(scopeCounts.size ? { repositoryScope: [...scopeCounts.values()] } : {}),
       };
       next = state;
     } catch (error) {

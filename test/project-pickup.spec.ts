@@ -33,6 +33,19 @@ function parse(pickup: unknown, assignment: unknown = {}) {
 }
 
 describe('github project pickup policy', () => {
+  it('should intersect pickup scope with ordered routing without consulting legacy pins', async () => {
+    const f = pickupFixture();
+    f.policy.routing = ['!owner/repo', '*/*'];
+    assert.equal(await projectPickupScope(f.policy, f.client, f.repository, f.item), undefined);
+    f.policy.routing.reverse();
+    f.policy.allowedRepositoryOwners = [{ login: 'other', nodeId: 'O_other' }];
+    assert.equal(await projectPickupScope(f.policy, f.client, f.repository, f.item), f.milestone);
+    f.policy.routing = [];
+    assert.equal(await projectPickupScope(f.policy, f.client, f.repository, f.item), undefined);
+    delete f.policy.routing;
+    assert.equal(await projectPickupScope(f.policy, f.client, f.repository, f.item), undefined);
+  });
+
   it('should normalize recurring schedules and both guidance forms without activating work', () => {
     for (const guidance of ['choose useful work', { file: 'guidance/pickup.md' }]) {
       const parsed = parse({ ...pickupDeclaration, selection: { guidance } });

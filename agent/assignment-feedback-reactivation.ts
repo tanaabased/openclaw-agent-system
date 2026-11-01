@@ -7,6 +7,7 @@ import type { GitHubNotificationPublicationClient } from '../channels/github/pro
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import type assignmentIntakePolicy from './assignment-intake-policy.ts';
 import { inspectActiveIssue, inspectContinuedIssue } from './dispatch-assignment.ts';
+import repositoryScope from '../channels/github/repository-scope.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { admitFeedback, discoverFeedback, observeFeedbackPolicy } from './feedback-source.ts';
 import type { FeedbackSourceState } from './feedback-state.ts';
@@ -83,13 +84,8 @@ export default async function reactivateAssignmentFeedback(input: {
     return false;
   }
   if (record.feedback) observeFeedbackPolicy(record.feedback, policy.policy, input.now);
-  await inspectActiveIssue(intake, client, true);
-  if (
-    !policy.policy.allowedRepositoryOwners.some(
-      (owner) => owner.nodeId === intake.repository.owner.nodeId,
-    )
-  )
-    return false;
+  const active = await inspectActiveIssue(intake, client, true);
+  if (repositoryScope(policy.policy, active.repo).decision !== 'local') return false;
   const history = await client.listAssignmentEvents(
     intake.repository.owner.login,
     intake.repository.name,

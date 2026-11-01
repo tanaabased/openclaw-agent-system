@@ -1,5 +1,6 @@
 import type { dispatchStorageNotice } from '../../../agent/dispatch-storage.ts';
 import type { GitHubNotificationRuntimeDiagnostic } from '../notification-policy.ts';
+import type { RepositoryScopeDecision } from '../repository-scope.ts';
 import {
   githubNotificationItemMatchesSelector,
   type GitHubNotificationItemSelector,
@@ -29,6 +30,7 @@ export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarge
 ]);
 
 export interface GitHubNotificationStatusItem {
+  repositoryScope?: RepositoryScopeDecision;
   workflow?: { phase: string; conversation?: string };
   feedback?: { queued: number; active: number; blocked: number };
   disposition: GitHubNotificationItemDisposition;
@@ -116,6 +118,7 @@ export interface GitHubNotificationRefreshResult {
   diagnosticCode?: string;
   runId?: string;
   admitted?: number;
+  repositoryScope?: Array<RepositoryScopeDecision & { count: number }>;
   status: 'completed' | 'failed' | 'queued' | 'skipped';
 }
 

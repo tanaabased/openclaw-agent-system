@@ -3,6 +3,7 @@ import issueWorkflowMode from './issue-workflow-mode.ts';
 import { projectWorkMatches } from './project-pickup-authority.ts';
 import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
+import repositoryScope from '../channels/github/repository-scope.ts';
 
 /** current workflow settings decide eligibility; receipts retain effects and identity. */
 export default function liveWorkflowPolicy(
@@ -30,11 +31,7 @@ export default function liveWorkflowPolicy(
   if (effect !== 'assignment' || 'initiation' in intake) return;
   if (!policy || !policy.runtimes.includes(runtime)) return 'workflow-disabled';
   if (!policy.issueAssignment) return 'issue-workflow-disabled';
-  if (
-    !policy.allowedRepositoryOwners.some((owner) =>
-      githubIdentityMatches(owner, intake.repository.owner),
-    )
-  )
+  if (repositoryScope(policy, intake.repository).decision !== 'local')
     return 'repository-outside-workflow';
   if (
     !projectWorkMatches(
