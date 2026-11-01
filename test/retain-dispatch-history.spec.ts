@@ -188,6 +188,10 @@ describe('agent/retain-dispatch-history', () => {
         ...record(),
         retirement: { ...record().retirement!, archiveAttempt: { at: 11, turnId: 'later' } },
       },
+      {
+        ...record(),
+        retirement: { ...record().retirement!, archiveRequest: { at: 11, sessionId: 'later' } },
+      },
       { ...record(), retirement: { ...record().retirement!, deadlinePending: true as const } },
     ])
       assert.equal(retainDispatchHistory(source), undefined);

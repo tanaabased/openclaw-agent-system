@@ -48,6 +48,78 @@ describe('channels/github/intake/records', () => {
     };
   }
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should exclude one repository without blocking another ${runtime} candidate`, async () => {
+      const { input, client, store, policy, repository, events } = setup(runtime);
+      policy.routing = ['!owner/excluded', 'owner/*'];
+      const assignments = events.splice(0);
+      await scanAssignments({ ...input, activate: true });
+      events.push(...assignments);
+      const discover = client.discoverAssigned;
+      client.discoverAssigned = async (...args) => {
+        const found = await discover(...args);
+        return {
+          ...found,
+          totalCount: 2,
+          candidates: [
+            { ...found.candidates[0]!, repositoryPath: '/repos/owner/excluded' },
+            ...found.candidates,
+          ],
+        };
+      };
+      client.getRepository = async (_owner, name) => ({ ...repository, name });
+      const result = await scanAssignments({ ...input, now: baseline + 120000 });
+      assert.equal(result.admitted, 1);
+      assert.deepEqual(
+        result.repositoryScope?.map(({ reason, count }) => [reason, count]),
+        [
+          ['excluded', 1],
+          ['match', 1],
+        ],
+      );
+      assert.equal((await store.read())!.records[0]!.repository.name, 'repo');
+    });
+
+    it(`should apply ordered ${runtime} routing to fresh canonical names and preserve admitted work`, async () => {
+      const { input, store, policy, repository } = setup(runtime);
+      policy.routing = ['!owner/repo', 'owner/*'];
+      await scanAssignments({ ...input, activate: true });
+      const excluded = await scanAssignments({ ...input, now: baseline + 120000 });
+      assert.equal(excluded.admitted, 0);
+      assert.deepEqual(excluded.repositoryScope, [
+        {
+          source: 'routing',
+          decision: 'deny',
+          reason: 'excluded',
+          index: 0,
+          pattern: '!owner/repo',
+          count: 1,
+        },
+      ]);
+      policy.routing = ['owner/renamed'];
+      const miss = await scanAssignments({ ...input, now: baseline + 180000 });
+      assert.equal(miss.repositoryScope![0]!.reason, 'no-match');
+      // the search path still uses the old name; the provider redirects to the current name.
+      repository.name = 'renamed';
+      const included = await scanAssignments({ ...input, now: baseline + 240000 });
+      assert.equal(included.admitted, 1);
+      const saved = (await store.read())!;
+      assert.equal(saved.records[0]!.repository.name, 'renamed');
+      assert.equal(saved.records[0]!.evidence.ownerPinned, false);
+      assert.equal(saved.records[0]!.evidence.repositoryScope!.pattern, 'owner/renamed');
+      policy.routing = [];
+      await scanAssignments({ ...input, now: baseline + 300000 });
+      assert.deepEqual((await store.read())!.records, saved.records);
+      assert.equal((await store.read())!.baselineAt, saved.baselineAt);
+      policy.routing = ['owner/*'];
+      const resumed = await scanAssignments({
+        ...input,
+        store: new IntakeRecordStore(store.location),
+        now: baseline + 360000,
+      });
+      assert.equal(resumed.admitted, 0);
+      assert.deepEqual((await store.read())!.records, saved.records);
+    });
+
     it(`should remove only duplicate admitted observations under ${runtime} byte pressure`, async () => {
       const { input, store, events } = setup(runtime);
       const assigned = events.splice(0);
@@ -238,7 +310,7 @@ describe('channels/github/intake/records', () => {
       assert.deepEqual(await store.read(), before);
     }
   });
-  it('should resume completed assignment observations after its budget expires', async () => {
+  it('should refresh repository scope while resuming completed issue observations after its budget expires', async () => {
     const { input, store, client, events } = setup('openclaw');
     const assignments = events.splice(0);
     await scanAssignments({ ...input, activate: true });
@@ -248,8 +320,14 @@ describe('channels/github/intake/records', () => {
     const read = client.getRepository;
     client.getRepository = async (...args) => {
       reads++;
-      clock = 20000;
       return read(...args);
+    };
+    const readItem = client.getItem;
+    let itemReads = 0;
+    client.getItem = async (...args) => {
+      itemReads++;
+      clock = 20000;
+      return readItem(...args);
     };
     const partial = await scanAssignments({
       ...input,
@@ -261,7 +339,7 @@ describe('channels/github/intake/records', () => {
     const saved = (await store.read())!;
     assert.equal(saved.baselineAt, baseline);
     assert.equal(saved.records.length, 0);
-    assert.ok(saved.discovery?.observations?.repository);
+    assert.ok(saved.discovery?.observations?.issue);
     clock = 0;
     const complete = await scanAssignments({
       ...input,
@@ -270,7 +348,8 @@ describe('channels/github/intake/records', () => {
       budget: new DiscoveryBudget(20000, undefined, () => clock),
     });
     assert.equal(complete.admitted, 1);
-    assert.equal(reads, 1);
+    assert.equal(reads, 2);
+    assert.equal(itemReads, 1);
     assert.equal((await store.read())!.records.length, 1);
   });
 

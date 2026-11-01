@@ -29,6 +29,7 @@ export interface GitHubNotificationPolicy {
   intervalMinutes: number;
   maxConcurrentItems: number;
   allowedRepositoryOwners: GitHubIdentityPin[];
+  routing?: string[];
   issueAssignment?: {
     paused?: boolean;
     allowed: GitHubApprovedActor[];

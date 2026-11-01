@@ -15,7 +15,8 @@ export function notificationAuthority(policy: GitHubNotificationPolicy) {
   const value = structuredClone({
     schemaVersion: policy.schemaVersion,
     runtimes: policy.runtimes,
-    allowedRepositoryOwners: policy.allowedRepositoryOwners,
+    allowedRepositoryOwners: policy.routing === undefined ? policy.allowedRepositoryOwners : [],
+    ...(policy.routing === undefined ? {} : { routing: policy.routing }),
     issueAssignment: policy.issueAssignment,
     reviewRequest: policy.reviewRequest,
     ...(policy.projectPickup
@@ -49,7 +50,8 @@ function feedbackAuthority(policy: GitHubNotificationPolicy) {
     effect: 'feedback-reply',
     schemaVersion: policy.schemaVersion,
     runtimes: policy.runtimes,
-    allowedRepositoryOwners: policy.allowedRepositoryOwners,
+    allowedRepositoryOwners: policy.routing === undefined ? policy.allowedRepositoryOwners : [],
+    ...(policy.routing === undefined ? {} : { routing: policy.routing }),
     enabled: Boolean(policy.issueAssignment),
     authors: feedbackIdentities(
       policy.issueAssignment?.allowed ?? [],

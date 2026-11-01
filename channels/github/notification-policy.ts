@@ -1,5 +1,6 @@
 import { githubIdentitySet } from './provider/work-item.ts';
 import { projectPickupConfigurationCode } from './project-pickup-schema.ts';
+import { repositoryScopeCandidate } from './repository-scope.ts';
 import type { GitHubNotificationsDeclaration } from './workflow-policy.ts';
 import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
 import type { ManifestDiagnostic } from '../../manifest/types.ts';
@@ -7,10 +8,24 @@ import type { ManifestDiagnostic } from '../../manifest/types.ts';
 /** validate portable policy without consulting providers, credentials, or installed state. */
 export function validateGitHubNotificationPolicy(
   github: GitHubManifestConfiguration | undefined,
+  legacyOwnersDeclared = github?.notifications?.routing === undefined,
 ): ManifestDiagnostic[] {
   const policy = github?.notifications;
   if (!policy) return [];
   const diagnostics: ManifestDiagnostic[] = [];
+  if (legacyOwnersDeclared)
+    diagnostics.push({
+      code:
+        policy.routing === undefined
+          ? 'github-repository-owners-deprecated'
+          : 'github-repository-owners-ignored',
+      fieldPath: '/github/allowed-repository-owners',
+      severity: 'warning',
+      message:
+        policy.routing === undefined
+          ? 'allowed-repository-owners is deprecated. Use ordered github.routing name patterns for new work; legacy identity pins remain active until you migrate.'
+          : 'github.routing takes precedence. allowed-repository-owners is ignored; remove the deprecated property after migration to avoid restoring it when routing is removed.',
+    });
   if (policy.projectPickup) {
     if (!policy.issueAssignment)
       diagnostics.push({
@@ -28,15 +43,13 @@ export function validateGitHubNotificationPolicy(
           'Use a recurring automation schedule (cron with an optional IANA timezone, or every). One-shot schedules are not supported.',
         severity: 'error',
       });
-    const owner = policy.projectPickup.projects[0]!.repository.split('/')[0]!.toLowerCase();
-    if (
-      !policy.allowedRepositoryOwners.some((pin) => !pin.login || pin.login.toLowerCase() === owner)
-    )
+    const [owner, name] = policy.projectPickup.projects[0]!.repository.split('/');
+    if (!repositoryScopeCandidate(policy, owner!, name!))
       diagnostics.push({
         code: 'github-project-pickup-repository-outside-workflow',
         fieldPath: '/github/project-pickup/projects/0/repository',
         message:
-          'Choose a repository owned by an allowed-repository-owners identity. Pickup does not expand repository access.',
+          'Choose a repository included by github.routing, or by legacy owners when routing is absent. Pickup does not expand repository access.',
         severity: 'error',
       });
   }
@@ -49,7 +62,10 @@ export function validateGitHubNotificationPolicy(
     });
   }
   const lists = [
-    { path: 'allowed-repository-owners', identities: policy.allowedRepositoryOwners },
+    {
+      path: 'allowed-repository-owners',
+      identities: policy.routing === undefined ? policy.allowedRepositoryOwners : [],
+    },
     { path: 'issue-assignment/allowed', identities: policy.issueAssignment?.allowed ?? [] },
     { path: 'review-request/allowed', identities: policy.reviewRequest?.allowed ?? [] },
   ];

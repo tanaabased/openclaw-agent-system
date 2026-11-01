@@ -72,6 +72,10 @@ describe('agent/openclaw issue dispatch', () => {
   let preparedWorktrees: number;
   let multiple: boolean;
   let cronJobs: unknown[];
+  let terminalInputs: Array<{ id: string; state: string }>;
+  let archiveError: boolean;
+  let foreignSessions: Array<Record<string, unknown>>;
+  let cronInventoryTotal: number | undefined;
   let ordinarySkills: Array<Record<string, unknown>>;
   let describeError: GatewayClientRequestError | undefined;
   const sessions = new Map<string, Record<string, unknown>>();
@@ -154,6 +158,10 @@ describe('agent/openclaw issue dispatch', () => {
     session = null;
     calls = [];
     cronJobs = [];
+    terminalInputs = [];
+    archiveError = false;
+    foreignSessions = [];
+    cronInventoryTotal = undefined;
     await mkdir(join(root, 'ordinary'));
     await writeFile(
       join(root, 'ordinary', 'SKILL.md'),
@@ -313,8 +321,30 @@ describe('agent/openclaw issue dispatch', () => {
                     },
                   ],
                 };
-              if (method === 'cron.list') return { jobs: cronJobs };
+              if (method === 'cron.status') return { jobs: cronInventoryTotal ?? cronJobs.length };
+              if (method === 'cron.list')
+                return {
+                  jobs: cronJobs
+                    .slice(
+                      Number(params.offset ?? 0),
+                      Number(params.offset ?? 0) + Number(params.limit ?? 200),
+                    )
+                    .map((job, n) => ({
+                      id: `job-${Number(params.offset ?? 0) + n}`,
+                      configRevision: 'r',
+                      enabled: true,
+                      schedule: {},
+                      payload: { kind: 'agentTurn' },
+                      state: {},
+                      ...(job as object),
+                    })),
+                  total: cronJobs.length,
+                  hasMore:
+                    Number(params.offset ?? 0) + Number(params.limit ?? 200) < cronJobs.length,
+                };
               if (method === 'sessions.patch') {
+                if (archiveError)
+                  throw new GatewayClientRequestError({ code: 'FORBIDDEN', message: 'private' });
                 (multiple ? sessions.get(String(params.key))! : session!).archived =
                   params.archived;
                 return { ok: true };
@@ -322,6 +352,19 @@ describe('agent/openclaw issue dispatch', () => {
               if (method === 'sessions.describe') {
                 if (describeError) throw describeError;
                 return { session: multiple ? sessions.get(String(params.key)) : session };
+              }
+              if (method === 'sessions.list') {
+                const rows = [
+                  ...(multiple ? [...sessions.values()] : session ? [session] : []),
+                  ...foreignSessions,
+                ].filter((row) => row.spawnedCwd === params.workspaceDir);
+                return {
+                  sessions: rows.slice(
+                    Number(params.offset ?? 0),
+                    Number(params.offset ?? 0) + Number(params.limit),
+                  ),
+                  totalCount: rows.length,
+                };
               }
               if (method === 'chat.send') {
                 const feedbackTurn = (
@@ -416,7 +459,15 @@ describe('agent/openclaw issue dispatch', () => {
                     : currentMessages,
                 inputReceipts: currentReceipts,
                 pendingInputs: {
-                  total: currentReceipts.filter((entry) => entry.state === 'pending').length,
+                  items: [
+                    ...terminalInputs,
+                    ...currentReceipts
+                      .filter((entry) => entry.state === 'pending')
+                      .map((entry) => ({ id: entry.runId, state: 'queued' })),
+                  ],
+                  total:
+                    terminalInputs.length +
+                    currentReceipts.filter((entry) => entry.state === 'pending').length,
                 },
                 sessionInfo: {
                   hasActiveRun: saved.active,
@@ -931,7 +982,7 @@ describe('agent/openclaw issue dispatch', () => {
     );
   });
 
-  it('should archive all eligible owners before removing a shared checkout once', async () => {
+  it('should retire eligible shared owners and remove their closed checkout once', async () => {
     const { items } = await assignments(2, 2);
     const sharedTree = {
       path: join(root, 'shared'),
@@ -946,7 +997,6 @@ describe('agent/openclaw issue dispatch', () => {
     service.dependencies.worktrees.inspectGitHub = async () => (removals ? undefined : sharedTree);
     service.dependencies.worktrees.cleanupGitHub = async (input) => {
       if (!input.verifyOnly) {
-        assert.ok([...sessions.values()].every((entry) => entry.archived));
         removals++;
       }
       return { ...sharedTree, status: input.verifyOnly ? 'preserved' : 'removed' };
@@ -1311,21 +1361,231 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(session!.archived, undefined);
   });
 
-  it('should preserve pinned sessions and worktrees while excluding them from active intake', async () => {
+  it('should retire a pinned closed session with terminal input history through ordinary reconciliation', async () => {
     await prepare(await next());
     session!.pinned = true;
     fixture.item.state = 'closed';
+    terminalInputs = [
+      { id: 'cancelled', state: 'cancelled' },
+      { id: 'interrupted', state: 'interrupted' },
+    ];
     await service.run(manifest, root, coordinator, { action: 'next' });
     const pending = await record();
     service.dependencies.now = () => pending.retirement!.eligibleAt;
-    service.dependencies.worktrees.cleanupGitHub = async () => {
-      throw new Error('must-not-remove');
+    service.dependencies.worktrees.cleanupGitHub = async (input) => {
+      if (!input.verifyOnly) await rm(input.worktree.path, { recursive: true });
+      return {
+        ...input.worktree,
+        repositoryId: 'github-10',
+        workId: 'issue-20',
+        status: input.verifyOnly ? 'preserved' : 'removed',
+      };
     };
     await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
-    assert.equal((await record()).retirement?.code, 'retirement-native-resource-protected');
-    assert.equal(session!.archived, undefined);
-    assert.equal((await record()).retired, undefined);
+    assert.equal(session!.archived, true);
+    assert.ok((await record()).retired);
   });
+
+  for (const kind of [
+    'incidental',
+    'disabled',
+    'running-disabled',
+    'command-cwd',
+    'later-page',
+  ] as const) {
+    it(`should distinguish structured automation custody from ${kind} state`, async () => {
+      await prepare(await next());
+      const target = await record();
+      const job = { sessionTarget: `session:${target.threadId}` };
+      cronJobs =
+        kind === 'incidental'
+          ? [
+              {
+                description: target.threadId,
+                payload: { kind: 'agentTurn', message: target.threadId },
+              },
+            ]
+          : kind === 'command-cwd'
+            ? [{ payload: { kind: 'command', cwd: target.worktree } }]
+            : kind === 'later-page'
+              ? [...Array.from({ length: 200 }, () => ({})), job]
+              : [
+                  {
+                    ...job,
+                    enabled: false,
+                    state: kind === 'running-disabled' ? { runningAtMs: baseline } : {},
+                  },
+                ];
+      let removals = 0;
+      service.dependencies.worktrees.cleanupGitHub = async (input) => {
+        if (!input.verifyOnly) removals++;
+        return {
+          ...input.worktree,
+          repositoryId: 'github-10',
+          workId: 'issue-20',
+          status: input.verifyOnly ? 'preserved' : 'removed',
+        };
+      };
+      fixture.item.state = 'closed';
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      const deadline = (await record()).retirement!.eligibleAt;
+      service.dependencies.now = () => deadline;
+      await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
+      const protectedResource = !['incidental', 'disabled'].includes(kind);
+      assert.equal(removals, protectedResource ? 0 : 1);
+      assert.equal(Boolean((await record()).retired), !protectedResource);
+      if (protectedResource)
+        assert.equal((await record()).retirement?.code, 'retirement-automation-owner');
+    });
+  }
+
+  for (const legacy of [false, true]) {
+    it(`should reclaim a closed checkout despite ${legacy ? 'retained' : 'new'} archive denial without replaying it`, async () => {
+      await prepare(await next());
+      const target = await record();
+      const inspect = service.dependencies.worktrees.inspectGitHub;
+      let removed = false;
+      let removals = 0;
+      service.dependencies.worktrees.inspectGitHub = async (...args) =>
+        removed ? undefined : inspect(...args);
+      service.dependencies.worktrees.cleanupGitHub = async (input) => {
+        if (!input.verifyOnly) {
+          removals++;
+          removed = true;
+          await rm(input.worktree.path, { recursive: true });
+        }
+        return {
+          ...input.worktree,
+          repositoryId: 'github-10',
+          workId: 'issue-20',
+          status: input.verifyOnly ? 'preserved' : 'removed',
+        };
+      };
+      archiveError = true;
+      fixture.item.state = 'closed';
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      const deadline = (await record()).retirement!.eligibleAt;
+      if (legacy) {
+        await (
+          await service.scope(manifest, root)
+        ).journal.exclusive(async (state, save) => {
+          state.records.find((entry) => entry.id === target.id)!.retirement!.code =
+            'session-dispatch-sessions-patch-forbidden';
+          await save();
+        });
+      }
+      service.dependencies.now = () => deadline;
+      await service.run(manifest, root, { ...coordinator, runId: 'denied' }, { action: 'next' });
+      const pending = await record();
+      assert.equal(pending.retired, undefined);
+      assert.equal(
+        pending.retirement?.archiveRequest?.sessionId,
+        target.sessionCreation!.sessionId,
+      );
+      assert.equal(pending.retirement?.archivedAt, undefined);
+      assert.ok(pending.retirement?.worktreeRemovedAt);
+      assert.equal(pending.retirement?.code, 'session-dispatch-sessions-patch-forbidden');
+      service.dependencies.now = () => deadline + 60_000;
+      await service.run(
+        manifest,
+        root,
+        { ...coordinator, runId: 'reconcile-denial' },
+        { action: 'next' },
+      );
+      assert.equal(removals, 1);
+      assert.equal(
+        calls.filter(({ method }) => method === 'sessions.patch').length,
+        legacy ? 0 : 1,
+      );
+      assert.equal((await record()).retired, undefined);
+      session!.archived = true;
+      service.dependencies.now = () => deadline + 120_000;
+      await service.run(
+        manifest,
+        root,
+        { ...coordinator, runId: 'observe-archive' },
+        { action: 'next' },
+      );
+      assert.ok((await record()).retired);
+      assert.equal(
+        calls.filter(({ method }) => method === 'sessions.patch').length,
+        legacy ? 0 : 1,
+      );
+    });
+  }
+  it('should retain a refused worktree effect without repeating removal or losing its diagnostic', async () => {
+    await prepare(await next());
+    let removals = 0;
+    service.dependencies.worktrees.cleanupGitHub = async (input) => {
+      if (!input.verifyOnly) removals++;
+      return {
+        ...input.worktree,
+        repositoryId: 'github-10',
+        workId: 'issue-20',
+        status: input.verifyOnly ? 'preserved' : 'failed',
+      };
+    };
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const deadline = (await record()).retirement!.eligibleAt;
+    service.dependencies.now = () => deadline;
+    await service.run(
+      manifest,
+      root,
+      { ...coordinator, runId: 'refuse-removal' },
+      { action: 'next' },
+    );
+    assert.equal((await record()).retirement?.code, 'retirement-worktree-failed');
+    service.dependencies.now = () => deadline + 60_000;
+    await service.run(
+      manifest,
+      root,
+      { ...coordinator, runId: 'reconcile-removal' },
+      { action: 'next' },
+    );
+    assert.equal(removals, 1);
+    assert.equal((await record()).retirement?.code, 'retirement-worktree-failed');
+    assert.equal((await record()).retirement?.worktreeRemovalCode, 'retirement-worktree-failed');
+    assert.equal((await record()).retired, undefined);
+    assert.equal(calls.filter(({ method }) => method === 'sessions.patch').length, 1);
+  });
+  for (const custody of ['unowned-session', 'incomplete-automations'] as const) {
+    it(`should retain checkout custody when native inventory reports ${custody}`, async () => {
+      await prepare(await next());
+      const target = await record();
+      if (custody === 'unowned-session')
+        foreignSessions = [{ key: 'unowned', spawnedCwd: target.worktree }];
+      else cronInventoryTotal = 1;
+      let mutations = 0;
+      service.dependencies.worktrees.cleanupGitHub = async () => {
+        mutations++;
+        throw new Error('must-not-clean');
+      };
+      fixture.item.state = 'closed';
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      const deadline = (await record()).retirement!.eligibleAt;
+      service.dependencies.now = () => deadline;
+      await service.run(
+        manifest,
+        root,
+        { ...coordinator, runId: 'check-custody' },
+        { action: 'next' },
+      );
+      const after = await record();
+      assert.equal(
+        after.retirement?.code,
+        custody === 'unowned-session'
+          ? 'retirement-worktree-shared'
+          : 'retirement-automation-ownership-unavailable',
+      );
+      assert.equal(after.retired, undefined);
+      assert.equal(mutations, 0);
+      assert.equal(
+        calls.some(({ method }) => method === 'sessions.patch'),
+        false,
+      );
+    });
+  }
 
   it('should report scheduler drift and its recovery without creating issue sessions', async () => {
     const intake = service.dependencies.intake;

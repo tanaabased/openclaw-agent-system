@@ -78,6 +78,20 @@ function fixture() {
 }
 
 describe('assignment feedback reactivation', () => {
+  it('should require a current routing match before reactivating an unassigned conversation', async () => {
+    const h = fixture();
+    h.input.policy.policy.routing = ['!owner/repo', '*/*'];
+    assert.equal(await h.run(), false);
+    assert.equal(h.record.feedbackReactivation, undefined);
+    h.input.policy.policy.routing.reverse();
+    h.input.policy.policy.allowedRepositoryOwners = [{ login: 'other', nodeId: 'O_other' }];
+    assert.equal(await h.run(), true);
+    assert.equal(h.record.feedback!.events.length, 1);
+    h.input.policy.policy.routing = [];
+    assert.equal(await h.run(), false);
+    assert.equal(h.record.feedback!.events.length, 1);
+  });
+
   it('should admit a comment between unassignment and the first poll without granting implementation', async () => {
     const h = fixture();
     assert.equal(await h.run(), true);

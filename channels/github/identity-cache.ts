@@ -30,7 +30,7 @@ type Purpose = 'assignment' | 'feedback' | 'delivery' | 'all';
 
 function pins(policy: GitHubNotificationPolicy, purpose: Purpose = 'all') {
   const result: Array<{ pin: GitHubIdentityPin; user: boolean }> =
-    purpose === 'assignment' || purpose === 'all'
+    policy.routing === undefined && (purpose === 'assignment' || purpose === 'all')
       ? policy.allowedRepositoryOwners.map((pin) => ({ pin, user: false }))
       : [];
   // A reserved workflow cannot cause credential access or provider lookups.

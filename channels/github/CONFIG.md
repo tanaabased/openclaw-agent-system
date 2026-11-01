@@ -24,16 +24,49 @@ These fields select repository scope, runtimes, and intake limits. Add
 [`issue-assignment`](#githubissue-assignment) to declare assignment-driven work;
 omitting it creates no assignment automation.
 
-### `allowed-repository-owners`
+### `routing`
 
-| Type                                       | Required | Default |
-| ------------------------------------------ | -------- | ------- |
-| [Identity list](#identity-lists), nonempty | yes      | none    |
+Use an ordered list of repository name patterns to select new automated work in
+Codex and OpenClaw. The first matching rule wins: a positive pattern permits local
+work, and a leading `!` excludes it. No match, including `routing: []`, admits no
+new work.
+
+```yaml
+routing:
+  - '!tanaabased/archive-*'
+  - tanaabased/*
+  - pirog/me
+```
+
+Patterns match the entire current `owner/repository` name, case-insensitively.
+`*` matches zero or more characters within either segment; it never crosses `/`.
+Quote exclusions and patterns beginning with `*`. URLs, `**`, other glob syntax,
+and object or remote-target rules are not supported.
+
+Routing follows current names, without pinning owner or repository IDs. A rename
+or transfer changes which rules match; a replacement reusing a name can match the
+same rule. Scope changes apply to new admissions without Install and preserve
+already admitted work and its original owner. Routing does not grant GitHub access,
+approve assignment actors, or enable unsupported workflows.
+
+When `routing` is present, it replaces `allowed-repository-owners` completely,
+including its identity lookups. An invalid routing value is an error, not a request
+to use legacy owners. Remove the deprecated property after migrating: removing
+`routing` would otherwise restore the legacy fallback.
+
+### `allowed-repository-owners` (deprecated)
+
+| Type                                       | Required                      | Default |
+| ------------------------------------------ | ----------------------------- | ------- |
+| [Identity list](#identity-lists), nonempty | only when `routing` is absent | none    |
 
 Select the users or organizations whose repositories the workflow may use. These
 are repository owners, not the people allowed to assign work. For example,
 `['@tanaabased', '@pirog']` includes repositories owned by either account, subject
 to the agent's GitHub permissions. It does not grant access to private repositories.
+Existing immutable identity pins remain active only when `routing` is absent.
+To migrate owner-wide scope, replace `['@tanaabased', '@pirog']` with
+`routing: ['tanaabased/*', 'pirog/*']`, accepting the name-based behavior above.
 
 ### `interval-minutes`
 
@@ -87,7 +120,7 @@ versions are rejected. GitHub CLI-only configuration does not require this field
 ## `github.project-pickup`
 
 Declares the policy for one repository and milestone. It requires `issue-assignment`
-and a repository within `allowed-repository-owners`; it does not expand GitHub access
+and a repository included by `routing` (or legacy owners when routing is absent); it does not expand GitHub access
 or approved assignment and feedback authors.
 
 > [!IMPORTANT]

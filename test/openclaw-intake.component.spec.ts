@@ -23,6 +23,7 @@ import { automationPatch, projectAutomation } from '../agent/automation-projecti
 import type { NativeAutomation } from '../agent/automation-gateway.ts';
 import { intakeLocation } from '../channels/github/intake/record-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
 import { baseline, intakeFixture, originalIntakeDigest } from './github-intake-fixture.ts';
 
@@ -108,6 +109,28 @@ describe('openclaw v2 intake slice', () => {
     f.setNow(baseline + 120000);
     assert.equal((await f.service.run(f.value, root, 'scan', 'previous-policy')).status, 'ready');
     assert.equal((await store.read())!.policyDigest, selected!.digest);
+  });
+  it('should apply ordered routing and preserve admitted work across live scope edits', async () => {
+    const f = fixture();
+    const policy: GitHubNotificationPolicy = f.value.github.notifications;
+    policy.routing = ['!owner/repo', 'owner/*'];
+    policy.allowedRepositoryOwners = [{ login: 'ignored', nodeId: '', reference: '@ignored' }];
+    await f.service.run(f.value, root, 'activate');
+    f.provider.events.push(...intakeFixture().events);
+    f.setNow(baseline + 120000);
+    const denied = await f.service.run(f.value, root, 'scan');
+    assert.equal('repositoryScope' in denied && denied.repositoryScope?.[0]?.reason, 'excluded');
+    policy.routing.reverse();
+    f.setNow(baseline + 180000);
+    const included = await f.service.run(f.value, root, 'scan');
+    assert.equal('admitted' in included && included.admitted, 1);
+    const { store } = await f.service.select(f.value, root);
+    const before = (await store.read())!;
+    policy.routing = [];
+    f.setNow(baseline + 240000);
+    await f.service.run(f.value, root, 'scan');
+    assert.deepEqual((await store.read())!.records, before.records);
+    assert.equal((await store.read())!.baselineAt, baseline);
   });
   it('should retain the baseline and reevaluate live policy independently of saved fingerprints', async () => {
     const f = fixture();

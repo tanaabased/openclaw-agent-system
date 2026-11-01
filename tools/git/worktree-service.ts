@@ -400,15 +400,17 @@ export default class GitWorktreeService {
     ]);
     if (status.exitCode !== 0) return { ...base, status: 'failed' };
     if (status.stdout.trim() && !purge) return { ...base, status: 'dirty' };
-    const preserved = await this.#run(context, path, [
-      'for-each-ref',
-      '--format=%(refname)',
-      '--contains=HEAD',
-      'refs/heads/',
-      'refs/tags/',
-    ]);
-    if (preserved.exitCode !== 0) return { ...base, status: 'failed' };
-    if (!preserved.stdout.trim()) return { ...base, status: 'unpreserved' };
+    if (!purge) {
+      const preserved = await this.#run(context, path, [
+        'for-each-ref',
+        '--format=%(refname)',
+        '--contains=HEAD',
+        'refs/heads/',
+        'refs/tags/',
+      ]);
+      if (preserved.exitCode !== 0) return { ...base, status: 'failed' };
+      if (!preserved.stdout.trim()) return { ...base, status: 'unpreserved' };
+    }
     if (verifyOnly) return { ...base, status: 'preserved' };
     const removed = await this.#run(context, repository.path, [
       'worktree',

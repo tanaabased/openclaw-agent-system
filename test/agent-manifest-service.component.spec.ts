@@ -193,13 +193,19 @@ describe('manifest/service', () => {
     assert.equal(result.status, 'loaded');
     if (result.status !== 'loaded') return;
     assert.equal(result.manifest.git?.policy?.forcePush, 'deny');
-    assert.deepEqual(result.diagnostics, []);
+    assert.deepEqual(
+      result.diagnostics.map(({ code }) => code),
+      ['github-repository-owners-deprecated'],
+    );
     const path = join(root, 'agent.yaml');
     await writeFile(path, (await readFile(path, 'utf8')).replace('"mode":"work"', '"mode":"plan"'));
     const supported = await service.loadForAgentId('tanaabot', 'before_tool_call');
     assert.equal(supported.status, 'loaded');
     if (supported.status !== 'loaded') return;
-    assert.deepEqual(supported.diagnostics, []);
+    assert.deepEqual(
+      supported.diagnostics.map(({ code }) => code),
+      ['github-repository-owners-deprecated'],
+    );
     assert.equal(supported.manifest.git?.policy?.forcePush, 'deny');
   });
 

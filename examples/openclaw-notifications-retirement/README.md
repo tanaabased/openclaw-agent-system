@@ -8,7 +8,7 @@ Retire a second task whose completed session is missing, preserving its saved ev
 
 - Closed-issue retirement observing external cleanup and archiving the retained native owner without losing its assessment.
 - A fresh assignment creating a distinct owner/branch from the repository base while preserving the retired branch's local commit.
-- Closed-issue archival and automatic removal of that fresh checkout despite a changed branch and modified/untracked files, preserving its commits and assessment.
+- Closed-issue archival and automatic removal of that fresh checkout despite terminal input history, a changed branch, and modified/untracked files, preserving its branches and assessment.
 - Explicit retirement from an active turn remaining pending, followed by verified missing-session reconciliation and safe checkout removal without invented archival.
 - Offloading verified retirement immediately, including legacy stale consumed turns below 2 MiB, through an installed normal save, then retaining the terminal owner after loss of its cold copy.
 
@@ -20,6 +20,7 @@ Retire a second task whose completed session is missing, preserving its saved ev
 
 ## Notes
 
+- The queue regression holds one real native turn at the mock provider, cancels a queued followup through `chat.abort`, and observes a pending closed retirement before releasing the turn. No native store or retirement journal is edited.
 - Strict AIMock reuses assessment judgment and adds the existing digest-bound retirement preview/apply exchange. Real native execution must leave the request pending while its own turn is active.
 - The retention check restores an archived fixture and seeds stale consumed-turn bookkeeping only while the Gateway is stopped. It exercises the packed runtime after restart; it neither fabricates cleanup receipts nor runs a performance benchmark.
 - The two native cases share a job but select their exact retained owners. No reset empties the journal between them; earlier retired attempts remain as independent history.
@@ -172,11 +173,28 @@ git -C "$worktree" branch --show-current > "$TMPDIR/notification-dirty-branch"
 printf 'modified\n' > "$worktree/retirement-tracked.txt"
 printf 'untracked\n' > "$worktree/retirement-untracked.txt"
 
+# should retain cancelled queue history without ending the active owner
+conversation=$(jq -er .threadId "$TMPDIR/notification-fresh.json")
+openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Hold retirement queue until release",queueMode:"followup",deliver:false,idempotencyKey:"retirement-queue-hold"}')" --json | jq -e '.runId == "retirement-queue-hold"'
+for attempt in $(seq 1 120); do
+  if test -f "$TMPDIR/retirement-queue-ready"; then break; fi
+  sleep 0.5
+done
+test -f "$TMPDIR/retirement-queue-ready"
+openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Cancelled retirement followup",queueMode:"followup",deliver:false,idempotencyKey:"retirement-cancelled-input"}')" --json | jq -e '.runId == "retirement-cancelled-input"'
+openclaw gateway call chat.abort --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,runId:"retirement-cancelled-input"}')" --json | jq -e '.aborted == true'
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -e '.sessionInfo.hasActiveRun == true and any(.pendingInputs.items[]; .runId == "retirement-cancelled-input" and .state == "cancelled")'
+
 # should retire the closed dirty fixture automatically before the missing-session case
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api --method PATCH "repos/tanaabased/big-test-bucket/issues/$number" -f state=closed | jq -e '.state == "closed"'
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/tanaabot"
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
+jq -es --slurpfile before "$TMPDIR/notification-fresh.json" '[.[].records[] | select(.id == $before[0].id)] | length == 1 and .[0].retirement.code == "retirement-native-work-unresolved" and .[0].retired == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+touch "$TMPDIR/retirement-queue-release"
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" retirement-queue-hold 600000
 sleep 61
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
