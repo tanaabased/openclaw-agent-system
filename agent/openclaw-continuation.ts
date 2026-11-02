@@ -1,5 +1,6 @@
 import { nativeInputEvent } from './openclaw-session-input.ts';
 import issueWorkflowProgress from './issue-workflow-progress.ts';
+import { announcementRecoveryAction } from './delivery-announcement-recovery.ts';
 import { feedbackWorkStarted } from './feedback-work.ts';
 import sendOpenClawTurn from './openclaw-send-turn.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
@@ -13,7 +14,7 @@ import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 
 type Mode = 'plan' | 'work' | 'auto';
 /** select a continuation without reviving stopped work or replaying a submitted turn. */
-export function openClawWorkSlot(record: OpenClawDispatchRecord, mode: Mode) {
+export function openClawWorkSlot(record: OpenClawDispatchRecord, mode: Mode, now = Date.now()) {
   if (
     record.feedbackReactivation ||
     (!record.work?.turn && record.decisionTurn && record.decisionTurn.status !== 'completed') ||
@@ -28,7 +29,8 @@ export function openClawWorkSlot(record: OpenClawDispatchRecord, mode: Mode) {
   if (work?.deliveryTurn && work.deliveryTurn.status !== 'completed')
     return 'deliveryTurn' as const;
   if (feedbackWorkStarted(record)) return;
-  if (progress.action === 'delivery') return 'deliveryTurn' as const;
+  if (progress.action === 'delivery' && announcementRecoveryAction(work?.delivery, now) !== 'wait')
+    return 'deliveryTurn' as const;
   if (
     progress.action === 'implementation' &&
     (work?.turn?.status === 'completed' || (!work?.turn && work?.implementation))
@@ -74,7 +76,7 @@ export default async function advanceOpenClawWork(input: {
       save,
     });
   }
-  const slot = openClawWorkSlot(record, input.mode);
+  const slot = openClawWorkSlot(record, input.mode, input.now);
   if (!slot) return { status: 'implementation-idle', id: record.id };
   // a current handoff can precede implementation-context; reconcile its exact native receipt before sending.
   if (slot === 'turn' && !record.work?.turn && record.work?.implementation) {
@@ -98,6 +100,11 @@ export default async function advanceOpenClawWork(input: {
   if (input.reconcileOnly && (!record.work?.[slot] || record.work[slot]!.status === 'completed'))
     return { status: 'implementation-idle', id: record.id };
   if (!record.work?.[slot] || record.work[slot]!.status === 'completed') {
+    if (
+      slot === 'deliveryTurn' &&
+      announcementRecoveryAction(record.work?.delivery, input.now) !== 'ready'
+    )
+      return { status: 'implementation-pending', id: record.id };
     const session = await feedbackSession(request, record, input.config);
     if (session.busy) return { status: 'implementation-queued', id: record.id };
     if (typeof session.leaf !== 'string' || !session.leaf)

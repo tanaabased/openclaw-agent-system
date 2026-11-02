@@ -61,6 +61,11 @@ import openClawWorkAction, { verifyOpenClawWork } from './openclaw-work.ts';
 import workflowFailure from './workflow-failure.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 import workflowRecovery from './workflow-recovery.ts';
+import {
+  announcementRecoveryAction,
+  retainAnnouncementFailure,
+} from './delivery-announcement-recovery.ts';
+import { recoverRetainedAnnouncement } from './delivery-announcement.ts';
 
 function source(intake: IntakeRecord) {
   return managedTargetUrl(intake);
@@ -72,7 +77,7 @@ export default class OpenClawDispatchIssue {
     workspace: string,
     record: OpenClawDispatchRecord,
     save: () => Promise<void>,
-    authority: DispatchAuthority,
+    authority: DispatchAuthority & { caller?: DispatchCaller },
     reconcileOnly = false,
   ) {
     if (openClawResponseEligible(record)) {
@@ -163,6 +168,44 @@ export default class OpenClawDispatchIssue {
         .use({ ...authority, assertCurrent }, async (request) => {
           if (!record.request || !('key' in record.request))
             throw new Error('dispatch-work-context-mismatch');
+          const delivery = record.work?.delivery;
+          if (
+            !reconcileOnly &&
+            delivery &&
+            record.work?.turn?.status === 'completed' &&
+            (!record.work.deliveryTurn || record.work.deliveryTurn.status === 'completed') &&
+            announcementRecoveryAction(delivery, now) !== 'ready'
+          ) {
+            const { intake } = await this.context.validate(manifest, workspace, record, true);
+            await recoverRetainedAnnouncement({
+              delivery,
+              intake,
+              now,
+              signal: authority.signal,
+              save,
+              authorize: async () => {
+                await assertCurrent();
+                await this.context.validate(manifest, workspace, record, true);
+              },
+              connect: async () => {
+                if (!authority.caller || !this.context.dependencies.delivery)
+                  throw new Error('delivery-runtime-unavailable');
+                return this.context.dependencies.delivery({
+                  manifest,
+                  workspaceDir: workspace,
+                  worktree: record.worktree!,
+                  caller: authority.caller,
+                  signal: authority.signal ?? new AbortController().signal,
+                });
+              },
+            });
+            if (announcementRecoveryAction(delivery, now) !== 'ready')
+              return {
+                status: 'implementation-pending' as const,
+                id: record.id,
+                nextAction: 'next' as const,
+              };
+          }
           const selection =
             record.work?.selection ??
             (!record.work
@@ -205,6 +248,17 @@ export default class OpenClawDispatchIssue {
           nextAction: 'next',
         };
       const code = openClawDispatchFailureCode(error);
+      const delivery = record.work?.delivery;
+      if (delivery?.announcementRecovery && announcementRecoveryAction(delivery, now) === 'check') {
+        retainAnnouncementFailure(
+          delivery,
+          delivery.announcementRecovery.binding,
+          error,
+          now,
+          delivery.announcementRecovery.phase,
+        );
+        await save();
+      }
       if (
         record.work &&
         [
@@ -666,6 +720,7 @@ export default class OpenClawDispatchIssue {
           };
           await assertPRCheckout();
           return openClawDelivery({
+            now,
             record,
             intake,
             action: input,

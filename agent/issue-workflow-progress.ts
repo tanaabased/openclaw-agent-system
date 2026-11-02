@@ -6,6 +6,7 @@ interface Delivery {
   cardAttempts?: number;
   pushedHead?: string;
   announcement?: { receipt?: unknown; code?: string };
+  announcementRecovery?: { status: string };
 }
 export interface IssueWorkflowState {
   phase: string;
@@ -116,12 +117,17 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
       delivery.attached !== false &&
       delivery.cardAttempts !== 0 &&
       delivery.announcement?.receipt &&
-      !delivery.announcement.code;
+      !delivery.announcement.code &&
+      !delivery.announcementRecovery;
     return complete
       ? { action: 'complete', status: 'delivered' }
       : {
           action: 'delivery',
-          status: published ? 'delivered-response-pending' : 'delivery',
+          status: published
+            ? delivery.announcementRecovery
+              ? `announcement-${delivery.announcementRecovery.status}`
+              : 'delivered-response-pending'
+            : 'delivery',
           publicationPending: !published,
         };
   }

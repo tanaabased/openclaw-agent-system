@@ -5,17 +5,21 @@ import { Value } from 'typebox/value';
 import deliveryAnnouncement, {
   announcementPresentation,
   reconcileAnnouncement,
+  recheckAnnouncement,
 } from '../agent/delivery-announcement.ts';
-import {
-  deliveryAnnouncementStateSchema,
-  type DeliveryAnnouncementState,
-} from '../agent/delivery-announcement-state.ts';
+import { deliveryAnnouncementStateSchema } from '../agent/delivery-announcement-state.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
+import {
+  announcementRecoveryAction,
+  announcementRecoverySchema,
+  type AnnouncementDelivery,
+} from '../agent/delivery-announcement-recovery.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
+import { WorkflowPolicyHeld } from '../agent/live-workflow-policy.ts';
 
 describe('agent/delivery-announcement', () => {
   let input: Parameters<typeof deliveryAnnouncement>[0];
-  let delivery: { announcement?: DeliveryAnnouncementState };
+  let delivery: AnnouncementDelivery;
   let comments: Array<{ nodeId: string; databaseId: number; body: string }>;
   let posts: number, reads: number, snapshots: number;
   let lost: boolean, missing: boolean, rejected: boolean, revoked: boolean;
@@ -100,7 +104,13 @@ describe('agent/delivery-announcement', () => {
         if (revoked) throw new Error('delivery-authority-revoked');
       },
       async save() {
-        assert.equal(Value.Check(deliveryAnnouncementStateSchema, delivery.announcement), true);
+        if (delivery.announcement)
+          assert.equal(Value.Check(deliveryAnnouncementStateSchema, delivery.announcement), true);
+        if (delivery.announcementRecovery)
+          assert.equal(
+            Value.Check(announcementRecoverySchema, delivery.announcementRecovery),
+            true,
+          );
       },
     };
   });
@@ -118,6 +128,159 @@ describe('agent/delivery-announcement', () => {
     assert.ok('digest' in prepared);
     return prepared;
   }
+  it('should persist the first failed prerequisite before composing an announcement', async () => {
+    let saves = 0;
+    input.provider.announcement = async () => {
+      throw new Error('github-delivery-linkage-unverified');
+    };
+    input.save = async () => {
+      saves++;
+    };
+    const result = await run('compose');
+    assert.equal(result.status, 'announcement-blocked');
+    assert.equal(saves, 1);
+    assert.equal(delivery.announcement, undefined);
+    assert.equal(delivery.announcementRecovery?.code, 'github-delivery-linkage-unverified');
+    assert.equal(
+      Value.Check(
+        announcementRecoverySchema,
+        JSON.parse(JSON.stringify(delivery.announcementRecovery)),
+      ),
+      true,
+    );
+    assert.match(result.presentation!, /github-delivery-linkage-unverified/);
+  });
+  it('should not retain arbitrary provider text as a diagnostic code', async () => {
+    input.provider.announcement = async () => {
+      throw new Error('sensitive-material');
+    };
+    await run('compose', { now: 100 });
+    assert.equal(delivery.announcementRecovery!.code, 'delivery-announcement-failed');
+    assert.ok(!JSON.stringify(delivery).includes('sensitive-material'));
+  });
+  it('should check only when due and exhaust unchanged failure without another model turn', async () => {
+    let now = 100;
+    let checks = 0;
+    input.provider.announcement = async () => {
+      checks++;
+      throw new Error('github-delivery-linkage-unverified');
+    };
+    await run('compose', { now });
+    assert.equal(checks, 1);
+    const first = delivery.announcementRecovery!.retryAfter!;
+    const check = () => recheckAnnouncement({ ...input, now });
+    assert.equal(announcementRecoveryAction(delivery, now), 'wait');
+    now = first - 1;
+    assert.equal(await check(), false);
+    assert.equal(checks, 1);
+    now = first;
+    assert.equal(announcementRecoveryAction(delivery, now), 'check');
+    for (let attempt = 2; attempt <= 5; attempt++) {
+      assert.equal(await check(), false);
+      assert.equal(checks, attempt);
+      assert.equal(delivery.announcementRecovery!.attempts, attempt);
+      now = delivery.announcementRecovery!.retryAfter ?? now;
+    }
+    assert.equal(delivery.announcementRecovery!.status, 'exhausted');
+    now += 86400000;
+    assert.equal(await check(), false);
+    assert.equal(checks, 5);
+    assert.equal(posts, 0);
+  });
+  it('should preserve reversible policy holds without consuming the recovery budget', async () => {
+    input.provider.announcement = async () => {
+      throw new Error('github-delivery-linkage-unverified');
+    };
+    await run('compose', { now: 100 });
+    const saved = JSON.stringify(delivery);
+    input.authorize = async () => {
+      throw new WorkflowPolicyHeld('workflow-disabled');
+    };
+    await assert.rejects(
+      recheckAnnouncement({ ...input, now: delivery.announcementRecovery!.retryAfter! }),
+      WorkflowPolicyHeld,
+    );
+    assert.equal(JSON.stringify(delivery), saved);
+    await assert.rejects(run('compose'), WorkflowPolicyHeld);
+    assert.equal(JSON.stringify(delivery), saved);
+  });
+  it('should retain the same draft and preview while recovering a failed prerequisite', async () => {
+    const preview = await candidate();
+    const saved = JSON.stringify(delivery.announcement);
+    const provider = input.provider.announcement;
+    input.provider.announcement = async () => {
+      throw new Error('github-delivery-linkage-unverified');
+    };
+    await run('announce', { digest: preview.digest, now: 100 });
+    delivery = JSON.parse(JSON.stringify(delivery));
+    input.delivery = delivery;
+    input.provider.announcement = provider;
+    assert.equal(
+      await recheckAnnouncement({ ...input, now: delivery.announcementRecovery!.retryAfter! }),
+      true,
+    );
+    assert.equal(delivery.announcementRecovery, undefined);
+    assert.equal(JSON.stringify(delivery.announcement), saved);
+    assert.equal((await run('announce', { digest: preview.digest })).status, 'announced');
+    assert.equal(posts, 1);
+  });
+  it('should reconcile an uncertain write deterministically without another snapshot or post', async () => {
+    const preview = await candidate();
+    lost = true;
+    await run('announce', { digest: preview.digest, now: 100 });
+    const before = snapshots;
+    assert.equal(
+      await recheckAnnouncement({ ...input, now: delivery.announcementRecovery!.retryAfter! }),
+      true,
+    );
+    assert.equal(snapshots, before);
+    assert.equal(posts, 1);
+    assert.equal(delivery.announcement!.receipt!.nodeId, 'IC_1');
+  });
+  it('should hold native denials and missing references while respecting provider retry guidance', async () => {
+    for (const code of [
+      'delivery-authority-revoked',
+      'dispatch-approval-denied',
+      'github-delivery-closing-reference-missing',
+      'github-delivery-linkage-observation-invalid',
+    ]) {
+      delivery = {};
+      input.delivery = delivery;
+      input.provider.announcement = async () => {
+        throw new Error(code);
+      };
+      await run('compose', { now: 100 });
+      assert.equal(announcementRecoveryAction(delivery, 86400000), 'wait');
+      assert.equal(posts, 0);
+    }
+    for (const classification of [
+      'transport',
+      'permission',
+      'authentication',
+      'rate-limit',
+    ] as const) {
+      delivery = {};
+      input.delivery = delivery;
+      input.provider.announcement = async () => {
+        throw new GitHubWorkEventClientError(
+          'github-notification-request-failed',
+          'safe',
+          {},
+          undefined,
+          providerDiagnostic('github', 'api-request', classification, {
+            httpStatus: 429,
+            retryAfterMs: 900000,
+          }),
+        );
+      };
+      await run('compose', { now: 100 });
+      assert.equal(
+        delivery.announcementRecovery!.providerDiagnostic!.classification,
+        classification,
+      );
+      assert.equal(delivery.announcementRecovery!.retryAfter, 900100);
+    }
+  });
   for (const state of [false, true])
     it(`should publish one verified ${state ? 'draft' : 'ready'} announcement on its originating issue`, async () => {
       draft = state;

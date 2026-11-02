@@ -1,3 +1,5 @@
+import { recoverRetainedAnnouncement } from '../agent/delivery-announcement.ts';
+import { openClawWorkSlot } from '../agent/openclaw-continuation.ts';
 import manualPullRequest from '../agent/manual-pull-request.ts';
 import { fixturePullRequest, intakeFixture } from './github-intake-fixture.ts';
 import openClawWorkAction from '../agent/openclaw-work.ts';
@@ -602,6 +604,65 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(announcement.posts, 1);
     assert.equal(creates, 1);
     assert.equal(pushes, 1);
+  });
+
+  it('should wait and recheck the same published pr before making delivery runnable', async () => {
+    await publish();
+    let linked = false,
+      checks = 0;
+    const connect = input.connect;
+    input.now = 100;
+    input.connect = async () => {
+      const connection = await connect();
+      const execute = connection.account.execute;
+      connection.account.execute = async (...args) => {
+        if (args[0].includes('graphql')) {
+          checks++;
+          return response({
+            id: 'PR_7',
+            closingIssuesReferences: { nodes: linked ? [{ id: 'I_issue' }] : [] },
+          });
+        }
+        return execute(...args);
+      };
+      return connection;
+    };
+    assert.equal((await request('compose')).status, 'announcement-blocked');
+    input.record = record = JSON.parse(JSON.stringify(record));
+    record.work!.turn = { runId: 'implementation', message: 'done', status: 'completed' };
+    record.work!.result = { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' };
+    const delivery = record.work!.delivery!;
+    const first = delivery.announcementRecovery!.retryAfter!;
+    assert.equal(openClawWorkSlot(record, 'work', first - 1), undefined);
+    const check = (now: number) =>
+      recoverRetainedAnnouncement({
+        delivery,
+        intake: input.intake,
+        now,
+        signal: input.signal,
+        connect: input.connect,
+        authorize: input.assertCurrent,
+        save: input.save,
+      });
+    assert.equal(await check(first - 1), false);
+    assert.equal(checks, 1);
+    assert.equal(await check(first), false);
+    assert.equal(checks, 2);
+    assert.equal(openClawWorkSlot(record, 'work', first), undefined);
+    linked = true;
+    assert.equal(await check(delivery.announcementRecovery!.retryAfter!), true);
+    assert.equal(openClawWorkSlot(record, 'work', first), 'deliveryTurn');
+    const composed = await request('compose');
+    assert.ok('digest' in composed);
+    const candidate = await request('candidate', {
+      digest: composed.digest,
+      publicText: 'Delivers the existing fix.',
+    });
+    assert.ok('digest' in candidate);
+    await request('announce', { digest: candidate.digest });
+    assert.equal(creates, 1);
+    assert.equal(pushes, 1);
+    assert.equal(announcement.posts, 1);
   });
 
   it('should publish once and retain the issue pr session binding with a quoted card and truthful feedback availability', async () => {

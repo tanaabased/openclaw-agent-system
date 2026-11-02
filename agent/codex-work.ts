@@ -31,6 +31,12 @@ import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.t
 import { notificationAuthorityDigest } from './notification-authority.ts';
 import workflowFailure from './workflow-failure.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
+import {
+  announcementRecoveryAction,
+  retainAnnouncementFailure,
+} from './delivery-announcement-recovery.ts';
+import { recoverRetainedAnnouncement } from './delivery-announcement.ts';
+import connectCodexGitHubAccount from './codex-github-client.ts';
 
 export async function prepareCodexWork(state: DispatchState, context: CodexWorkContext) {
   const { input, deps, current, caller, native, admissions, save } = context;
@@ -301,6 +307,54 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       git,
       work.attempt || record.handoff ? 'handoff' : undefined,
     );
+    if (
+      input.action === 'next' &&
+      progress.action === 'delivery' &&
+      record.delivery &&
+      ['idle', 'notLoaded'].includes(found.status) &&
+      announcementRecoveryAction(record.delivery, (deps.now ?? Date.now)()) !== 'ready'
+    ) {
+      const authorize = async () => {
+        await authorizeLive();
+        signal.throwIfAborted();
+        const fresh = record.manualIssue
+          ? { sourceThreadId: record.sourceThreadId }
+          : await (deps.activation ?? inspectCodexDispatchActivation)(
+              pluginData,
+              { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+              false,
+              true,
+              'publication',
+            );
+        if (fresh.sourceThreadId !== activation.sourceThreadId)
+          throw new Error('continuation-schedule-binding-mismatch');
+      };
+      await recoverRetainedAnnouncement({
+        delivery: record.delivery,
+        intake: admitted,
+        now: (deps.now ?? Date.now)(),
+        signal,
+        save,
+        authorize,
+        connect: async () => {
+          const connected = await (deps.deliveryDependencies?.connect ?? connectCodexGitHubAccount)(
+            current.workspace,
+            signal,
+          );
+          await revalidateDispatchAssignment(
+            current,
+            admitted,
+            { connect: async () => connected.client },
+            signal,
+            true,
+            record,
+          );
+          return connected;
+        },
+      });
+      if (announcementRecoveryAction(record.delivery, (deps.now ?? Date.now)()) !== 'ready')
+        return undefined;
+    }
     if (input.material) {
       if (!retainedIssueProgression(record))
         throw new Error('implementation-material-context-required');
@@ -450,6 +504,27 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     }
     if (codexHostAccess(error) || (input.action !== 'next' && input.action !== 'reconcile'))
       throw error;
+    if (
+      input.action === 'next' &&
+      record.delivery?.announcementRecovery &&
+      announcementRecoveryAction(record.delivery, (deps.now ?? Date.now)()) === 'check'
+    ) {
+      const recovery = record.delivery.announcementRecovery;
+      retainAnnouncementFailure(
+        record.delivery,
+        recovery.binding,
+        error,
+        (deps.now ?? Date.now)(),
+        recovery.phase,
+      );
+      await save();
+      return {
+        status: 'pending' as const,
+        id: record.id,
+        code: record.delivery.announcementRecovery!.code,
+        nextAction: 'next' as const,
+      };
+    }
     if (record.continuation) {
       record.continuation.code = workflowFailure(error, 'continuation-operation-failed').code;
       scheduleDispatchRetry(

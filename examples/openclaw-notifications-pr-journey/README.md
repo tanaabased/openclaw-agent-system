@@ -26,6 +26,21 @@ publish a reply. Verify that another scan repeats none of the completed actions.
 - Feedback work enters through direct implementation with a scope argument; re-entry must preserve the existing feedback owner and its publication contract.
 - If the closing-issue link is delayed, the shared fixture checks the same delivery through at most three prepare/publish passes. Unknown failures and uncertain writes never create replacement PRs.
 
+## Announcement recovery acceptance
+
+The ordinary journey does not establish recovery from a retained announcement
+prerequisite failure. In a disposable CI installation, stop after publishing the
+same linked PR but before announcing it, retain an unobserved-linkage failure,
+and let the enrolled scheduler check it. Before eligibility, require no provider
+check or delivery turn. At eligibility, an unchanged failure must advance backoff
+without sending a delivery turn; repeated failures must exhaust the bounded budget.
+When the association becomes observable before exhaustion, require only the missing
+announcement on the same PR, then one quiet repeat scan. Preserve a saved draft and
+reconcile any uncertain post without another comment. After exhaustion, verify
+explicit same-chat resumption after correction. Do not inject failures into a
+production workflow or treat these acceptance steps as executed by this README's
+ordinary journey; deterministic failure permutations belong to component tests.
+
 ## Setup
 
 ```bash

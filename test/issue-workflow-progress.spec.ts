@@ -102,6 +102,24 @@ describe('agent/issue-workflow-progress', () => {
       } else issue.work!.code = 'dispatch-turn-cancelled';
       assert.deepEqual(issueWorkflowProgress(issue), { action: 'stopped', status: 'blocked' });
     });
+    it(`should expose unfinished ${runtime} announcement recovery without declaring delivery complete`, () => {
+      const issue = record('done');
+      const delivery = {
+        pullRequest: { pullRequestNumber: 7 },
+        reconciled: true,
+        announcementRecovery: { status: 'retrying' },
+      };
+      if (runtime === 'codex') issue.delivery = delivery;
+      else issue.work!.delivery = delivery;
+      for (const status of ['retrying', 'exhausted', 'needs-attention', 'stopped']) {
+        delivery.announcementRecovery.status = status;
+        assert.deepEqual(issueWorkflowProgress(issue), {
+          action: 'delivery',
+          status: `announcement-${status}`,
+          publicationPending: false,
+        });
+      }
+    });
   }
   it('should select assessment or unanswered assessment questions without assuming work authority', () => {
     assert.equal(
