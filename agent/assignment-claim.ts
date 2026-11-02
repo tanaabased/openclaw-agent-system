@@ -40,6 +40,13 @@ export interface ClaimDecision {
   status: 'local' | 'pending' | 'owned' | 'other-owner' | 'recovery-required' | 'at-capacity';
   code?: string;
   winnerId?: number;
+  instructions?: string;
+  routing?: {
+    eligibleInstanceIds: string[];
+    instanceId: string;
+    eligible: boolean;
+    ownerInstanceId?: string;
+  };
 }
 
 /** a local route must not bypass a visible election or initialize an installation identity. */
@@ -89,13 +96,25 @@ export async function claimAssignment(input: {
   source: ClaimSource;
   passId: string;
   hasCapacity: boolean;
+  eligibleInstanceIds?: string[];
+  nativeAttempted?: boolean;
 }): Promise<ClaimDecision> {
   const { store, client, source, passId } = input;
   if (!passId) throw new Error('claim-pass-required');
-  return store.exclusive(async (state, save, signal) => {
+  let routing: ClaimDecision['routing'];
+  const decision = await store.exclusive<ClaimDecision>(async (state, save, signal) => {
     signal.throwIfAborted();
     await client.verify(source);
     const claims = await readAssignmentClaims(client, source);
+    const eligible =
+      !input.eligibleInstanceIds || input.eligibleInstanceIds.includes(state.instanceId);
+    if (input.eligibleInstanceIds)
+      routing = {
+        eligibleInstanceIds: input.eligibleInstanceIds,
+        instanceId: state.instanceId,
+        eligible,
+        ...(claims[0] ? { ownerInstanceId: claims[0].claim!.instanceId } : {}),
+      };
     let record = state.claims[assignmentClaimKey(source)];
     if (record && record.instanceId !== state.instanceId)
       return { status: 'recovery-required', code: 'claim-instance-rotated' };
@@ -116,6 +135,7 @@ export async function claimAssignment(input: {
         await save();
         return { status: 'other-owner', winnerId: claims[0]!.comment.databaseId };
       }
+      if (!eligible) return { status: 'pending', code: 'claim-route-instance-ineligible' };
       if (!input.hasCapacity) return { status: 'at-capacity' };
       record = {
         instanceId: state.instanceId,
@@ -188,11 +208,30 @@ export async function claimAssignment(input: {
       return { status: 'recovery-required', code: 'claim-comment-changed' };
     if (record.commentId !== record.winnerId)
       return { status: 'recovery-required', code: 'claim-identity-shared' };
+    // a route edit cannot transfer a claim or abandon an uncertain native creation.
+    if (!eligible && !record.nativeReceipt && !input.nativeAttempted)
+      return {
+        status: 'pending',
+        code: 'claim-route-owner-ineligible',
+        winnerId: record.winnerId,
+      };
     if (!input.hasCapacity) return { status: 'at-capacity' };
     await client.verify(source);
     signal.throwIfAborted();
     return { status: 'owned', winnerId: record.winnerId };
   });
+  if (!routing) return decision;
+  const instructions =
+    decision.code === 'claim-route-owner-ineligible'
+      ? 'The retained claimant is outside the selected pool. Restore its eligibility or use managed task recovery; do not transfer ownership or delete claim evidence.'
+      : decision.code === 'claim-route-instance-ineligible'
+        ? 'This installation is outside the selected pool. Leave the assignment pending and inspect the target UUIDs and their intake, pause and capacity state; do not try a later rule or infer offline status from silence.'
+        : decision.status === 'other-owner'
+          ? `Retain the observed owner ***${routing.ownerInstanceId?.slice(-4)}. Pool edits do not authorize takeover.`
+          : decision.status === 'at-capacity'
+            ? 'This eligible installation has no available capacity. Leave the assignment pending without borrowing capacity or falling through.'
+            : undefined;
+  return { ...decision, routing, ...(instructions ? { instructions } : {}) };
 }
 
 /** the native adapter must verify creation before supplying this receipt. */

@@ -741,14 +741,15 @@ export default class OpenClawDispatchCoordinator {
     try {
       const { client, repo, intake } = await this.context.validate(manifest, workspace, record);
       if ('initiation' in intake) throw new Error('dispatch-assignment-required');
+      const route = repositoryScope(current.policy.policy, intake.repository);
       if (!this.context.dependencies.claims) {
         await assertDormantAssignmentUnclaimed(this.context.dependencies.claimStore, intake);
-        if (repositoryScope(current.policy.policy, intake.repository).decision === 'swarm')
-          throw new Error('claim-runtime-unavailable');
+        if (route.decision === 'swarm') throw new Error('claim-runtime-unavailable');
       }
       const claim = await this.context.dependencies.claims?.select({
         intake,
-        mode: repositoryScope(current.policy.policy, intake.repository).decision,
+        mode: route.decision,
+        eligibleInstanceIds: route.eligibleInstanceIds,
         client,
         caller,
         hasCapacity: capacity.available > 0,

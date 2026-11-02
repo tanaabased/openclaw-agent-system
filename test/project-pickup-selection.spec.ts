@@ -5,6 +5,30 @@ import { pickupAuthority } from '../agent/project-pickup.ts';
 import fixture from './project-pickup-selection-fixture.ts';
 
 describe('agent/project-pickup', () => {
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should hold new instance-routed pickup and preserve uncertain assignments in ${runtime}`, async () => {
+      const target = '11111111-1111-4111-8111-111111111111';
+      const f = fixture(runtime);
+      f.policy.routing = [{ 'owner/*': [target] }];
+      const held = await f.run();
+      assert.ok('code' in held && held.code === 'project-pickup-instance-routing-unsupported');
+      assert.equal(f.effects.writes, 0);
+      const accepted = fixture(runtime);
+      const write = accepted.client.assignProjectIssue;
+      accepted.client.assignProjectIssue = async (...args) => {
+        await write(...args);
+        throw new Error('lost-response');
+      };
+      assert.equal(
+        (await accepted.run({ selection: await accepted.select() })).status,
+        'attempted',
+      );
+      accepted.policy.routing = [{ 'owner/*': target }];
+      assert.equal((await accepted.run()).status, 'assigned');
+      assert.equal(accepted.effects.writes, 1);
+      assert.equal(pickupAuthority(accepted.state.projectPickup)!.receipts.length, 1);
+    });
+  }
   it('should retain guidance and evidence for native selection, never pick oldest by default', async () => {
     const f = fixture();
     const result = await f.run();

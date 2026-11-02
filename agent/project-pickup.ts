@@ -24,6 +24,7 @@ import projectPickupWindow from './project-pickup-window.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
+import repositoryScope from '../channels/github/repository-scope.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 export const pickupSelectionSchema = Type.Object(
@@ -253,7 +254,9 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     return { live, repository, item, evidence };
   };
   try {
-    await freshScope();
+    const scope = await freshScope();
+    if (!operation.attemptedAt && repositoryScope(scope.live, scope.repository).eligibleInstanceIds)
+      return finish(operation, 'failed', 'project-pickup-instance-routing-unsupported');
     if (operation.phase === 'discovering') {
       const page = await client.discoverProject(
         owner,
@@ -328,6 +331,8 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         return finish(operation, 'failed', 'project-pickup-assignment-history-incomplete');
       const live = await tx.readPolicy();
       if (live.projectPickup?.paused) return { status: 'paused', id: operation.id, changed };
+      if (repositoryScope(live, current.repository).eligibleInstanceIds)
+        return finish(operation, 'failed', 'project-pickup-instance-routing-unsupported');
       if (projectPickupPolicyDigest(live) !== enrollment.policyDigest)
         throw new Error('project-pickup-policy-changed');
       if (

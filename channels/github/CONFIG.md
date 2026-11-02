@@ -29,12 +29,17 @@ omitting it creates no assignment automation.
 Use an ordered list of repository name patterns to select new automated work in
 Codex and OpenClaw. The first matching rule wins: a positive pattern permits local
 work by default, and a leading `!` excludes it. Use a single-entry mapping to
-choose `local` or `swarm`. No match, including `routing: []`, admits no new work.
+choose `local`, `swarm`, an installation UUID, or a nonempty list of unique UUIDs.
+No match, including `routing: []`, admits no new work.
 
 ```yaml
 routing:
   - '!tanaabased/archive-*'
   - 'tanaabased/openclaw-agent-system': local
+  - 'tanaabased/canon': '11111111-1111-4111-8111-111111111111'
+  - 'tanaabased/theme':
+      - '11111111-1111-4111-8111-111111111111'
+      - '22222222-2222-4222-8222-222222222222'
   - 'tanaabased/*': swarm
   - pirog/me # implicitly local
 ```
@@ -42,8 +47,8 @@ routing:
 Patterns match the entire current `owner/repository` name, case-insensitively.
 `*` matches zero or more characters within either segment; it never crosses `/`.
 Quote exclusions and patterns beginning with `*`. URLs, `**`, other glob syntax,
-multi-entry mappings, exclusion mappings, and targets other than `local` or `swarm`
-are not supported.
+multi-entry mappings, exclusion mappings, readable instance names, and mixed
+UUID/keyword lists are not supported. UUIDs use their full lowercase form.
 
 Routing follows current names, without pinning owner or repository IDs. A rename
 or transfer changes which rules match; a replacement reusing a name can match the
@@ -57,6 +62,21 @@ for that repository on every participant sharing the receiving account. This is 
 comment-only proof of concept: incomplete concurrent reads can still produce
 overlapping work. It does not coordinate project pickup allowances or independent
 review requests.
+
+A UUID restricts new claims to that installation; a list restricts them to that
+pool. Both use the same claim coordination as `swarm`, including singleton pools.
+List order gives no priority and never broadcasts work. An excluded installation
+does not try later rules. Use instance inspection to obtain the UUID; renaming an
+instance preserves it, while rotating it requires updating routes explicitly.
+
+Claim results report the selected UUID set, local eligibility, and any observed
+owner. If no eligible installation claims the assignment, it stays pending: an
+unknown, offline, paused, or full target does not trigger fallback. Silence alone
+does not identify which condition applies. Pool edits preserve existing ownership
+and uncertain native creation; an excluded claimant that has not started native
+creation is held for recovery. New project pickup with UUID/pool routing reports
+`project-pickup-instance-routing-unsupported`; pickup allowances and review
+integration remain separate work.
 
 `local` creates no claim. A retained or visible Swarm claim still blocks new local
 work; switching routes does not transfer ownership. If a claim is missing, changed,

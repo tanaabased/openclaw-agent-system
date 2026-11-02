@@ -1,4 +1,5 @@
 import { feedbackIdentities } from '../channels/github/feedback-policy.ts';
+import { normalizeRepositoryRouting } from '../channels/github/repository-scope.ts';
 import { automationHash } from './automation-hash.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 
@@ -16,7 +17,9 @@ export function notificationAuthority(policy: GitHubNotificationPolicy) {
     schemaVersion: policy.schemaVersion,
     runtimes: policy.runtimes,
     allowedRepositoryOwners: policy.routing === undefined ? policy.allowedRepositoryOwners : [],
-    ...(policy.routing === undefined ? {} : { routing: policy.routing }),
+    ...(policy.routing === undefined
+      ? {}
+      : { routing: normalizeRepositoryRouting(policy.routing) }),
     issueAssignment: policy.issueAssignment,
     reviewRequest: policy.reviewRequest,
     ...(policy.projectPickup
@@ -51,7 +54,9 @@ function feedbackAuthority(policy: GitHubNotificationPolicy) {
     schemaVersion: policy.schemaVersion,
     runtimes: policy.runtimes,
     allowedRepositoryOwners: policy.routing === undefined ? policy.allowedRepositoryOwners : [],
-    ...(policy.routing === undefined ? {} : { routing: policy.routing }),
+    ...(policy.routing === undefined
+      ? {}
+      : { routing: normalizeRepositoryRouting(policy.routing) }),
     enabled: Boolean(policy.issueAssignment),
     authors: feedbackIdentities(
       policy.issueAssignment?.allowed ?? [],
