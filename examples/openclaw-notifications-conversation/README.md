@@ -21,6 +21,7 @@ that an already-current issue needs no further post.
 
 - A real admitted issue and its initial assessment are prerequisites. Strict AIMock supplies text through the existing issue protocol; native context, routing, result history, and GitHub publication remain real.
 - The paired-question check compares retained fixture answers. It proves context transport and publication boundaries, not genuine model interpretation.
+- Native context calls exercise asynchronous session lookup while final admission keeps a synchronous authority check. Reset/archive races during reads and revocation during manifest refresh belong to the dispatch tool's unit tests.
 - Only Tanaabot is assigned; refreshes target this job's issue and cleanup stops the Gateway before external changes.
 
 ## Setup

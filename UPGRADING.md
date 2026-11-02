@@ -47,7 +47,7 @@ terminal in the same OpenClaw profile:
 ```sh
 openclaw gateway stop
 openclaw plugins disable agent-system
-openclaw update --tag 2026.10.6 --no-restart
+openclaw update --tag 2026.10.8 --no-restart
 openclaw plugins update agent-system --accept-capabilities
 openclaw plugins enable agent-system --accept-capabilities
 openclaw plugins inspect agent-system --runtime --json
@@ -60,8 +60,8 @@ select the intended release or update the checkout using
 [OpenClaw's plugin update guidance](https://docs.openclaw.ai/cli/plugins/uninstall-and-update#update).
 If a shared Codex plugin is already installed, review its version and follow the
 [shared prerequisite instructions](./CLI.md#openclaw-agent-system-install) to
-explicitly upgrade an existing `@openclaw/codex@2026.9.8` installation to
-`@openclaw/codex@2026.10.6` before running workspace Install. Agent installation
+explicitly upgrade an existing `@openclaw/codex@2026.10.6` (or older) installation to
+`@openclaw/codex@2026.10.8` before running workspace Install. Agent installation
 installs the plugin if it is required and missing. If an existing version conflicts,
 you must resolve the conflict explicitly before retrying.
 Start the upgraded Gateway and verify RPC readiness before applying workspace settings.

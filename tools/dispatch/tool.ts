@@ -67,6 +67,15 @@ export default function createDispatchTool(input: {
   assessmentGit?: OpenClawDispatchDependencies['assessmentGit'];
 }) {
   const { api } = input;
+  // 10.8 async reads are descriptive; final admission still needs this synchronous guard.
+  const assertSessionCurrent = (sessionKey: string, sessionId: string) => {
+    const entry = api.runtime.agent.session.getSessionEntry({
+      sessionKey,
+      readConsistency: 'latest',
+    });
+    if (!entry || entry.sessionId !== sessionId || entry.archivedAt)
+      throw new Error('dispatch-native-session-diverged');
+  };
   const invocations = new Map<string, DispatchCaller & { agentId: string; operator: boolean }>();
   const loaded = async (context: NativeContext) => {
     if (!context.agentId) throw new Error('dispatch-agent-required');
@@ -117,7 +126,7 @@ export default function createDispatchTool(input: {
         return { block: true, blockReason: 'dispatch-native-hook-context-unavailable' };
       return;
     }
-    const nativeCaller = api.runtime.agent.session.getSessionEntry({
+    const nativeCaller = await api.runtime.agent.session.getSessionEntryAsync({
       sessionKey: context.sessionKey,
       readConsistency: 'latest',
     });
@@ -125,6 +134,7 @@ export default function createDispatchTool(input: {
     if (event.params.action === 'check' && Value.Check(dispatchParameters, event.params)) return;
     try {
       const who = caller(context, event, nativeCaller);
+      assertSessionCurrent(who.sessionKey, who.sessionId);
       invocations.set(who.toolCallId, {
         ...who,
         agentId: context.agentId,
@@ -189,13 +199,12 @@ export default function createDispatchTool(input: {
               throw new Error(
                 `dispatch-native-factory-mismatch: agentId=${who.agentId === context.agentId}; sessionKey=${who.sessionKey === context.sessionKey}; sessionIdPresent=${!!context.sessionId}; sessionId=${who.sessionId === context.sessionId}`,
               );
-            context.assertInvocationCurrent?.();
-            const current = api.runtime.agent.session.getSessionEntry({
-              sessionKey: who.sessionKey,
-              readConsistency: 'latest',
-            });
-            if (!current || current.sessionId !== who.sessionId || current.archivedAt)
-              throw new Error('dispatch-native-session-diverged');
+            const assertCurrent = () => {
+              signal?.throwIfAborted();
+              context.assertInvocationCurrent?.();
+              assertSessionCurrent(who.sessionKey, who.sessionId);
+            };
+            assertCurrent();
             const { operator, ...nativeCaller } = who;
             result = await service
               .run(
@@ -207,15 +216,9 @@ export default function createDispatchTool(input: {
                 {
                   signal,
                   async assertCurrent() {
-                    signal?.throwIfAborted();
-                    context.assertInvocationCurrent?.();
-                    const entry = api.runtime.agent.session.getSessionEntry({
-                      sessionKey: who.sessionKey,
-                      readConsistency: 'latest',
-                    });
-                    if (!entry || entry.sessionId !== who.sessionId || entry.archivedAt)
-                      throw new Error('dispatch-native-session-diverged');
+                    assertCurrent();
                     const fresh = await loaded(context);
+                    assertCurrent();
                     if (
                       fresh.manifest.agent.id !== binding.manifest.agent.id ||
                       fresh.scope.workspaceDir !== binding.scope.workspaceDir
