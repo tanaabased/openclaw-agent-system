@@ -13,7 +13,7 @@ export const deliveryContentUpdateSchema = Type.Object(
 
 export const deliveryPendingPushSchema = Type.Object(
   {
-    previousHead: Type.String({ pattern: '^[a-f0-9]{40,64}$' }),
+    previousHead: Type.String({ pattern: '^(?:[a-f0-9]{40,64})?$' }),
     head: Type.String({ pattern: '^[a-f0-9]{40,64}$' }),
   },
   { additionalProperties: false },

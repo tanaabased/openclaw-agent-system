@@ -194,6 +194,20 @@ describe('shared delivery push recovery', () => {
     };
   }
 
+  it('should never replay a reserved push when its remote outcome is still unknown', async () => {
+    const f = publicationFixture();
+    let attempts = 0;
+    f.input.push = async () => {
+      attempts++;
+      throw new Error('transport-lost');
+    };
+    await assert.rejects(publishIssueDelivery(f.input), /transport-lost/);
+    f.restore();
+    await assert.rejects(publishIssueDelivery(f.input), /delivery-push-uncertain/);
+    assert.equal(attempts, 1);
+    assert.equal(f.input.delivery.pendingPush?.head, f.input.publication.headSha);
+  });
+
   it('should retain the exact pre-push head across restart and reconcile without pushing twice', async () => {
     const f = publicationFixture();
     const pending = (error: unknown) =>
