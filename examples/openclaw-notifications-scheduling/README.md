@@ -18,7 +18,7 @@ Enroll a designated project pickup job and retain its identity across pause/resu
 
 ## Notes
 
-- Direct installed commands need one GitHub identity and native dispatch enrollment, without creating issues, PRs, worktrees, or SSH registrations. Pickup creates one disposable milestone in `tanaabased/big-test-bucket`. One strict AIMock turn invokes the native pickup job against that empty milestone; the tool, scheduler, provider reads and journal are real. It does not establish unattended timing or assignment-to-PR delivery.
+- Direct installed commands need one GitHub identity and native dispatch enrollment, without creating issues, PRs, worktrees, or SSH registrations. Pickup creates one disposable milestone in `tanaabased/big-test-bucket`. One strict AIMock turn invokes the native pickup job against that empty milestone and requires its quiet response; the tool, scheduler, provider reads and journal are real. It does not establish unattended timing or assignment-to-PR delivery.
 - Setup, first Install, and scheduling assertions share one fail-fast block. Failed installation retains its output and automation inspection, then stops before dependent checks. CI enables bounded, redacted native rejection evidence for that first attempt.
 - The 24-hour interval keeps scheduled agent work outside this bounded job. All scheduler and Gateway state belongs to the ephemeral runner.
 
@@ -77,7 +77,9 @@ sed -e "s|__INSTANCE_ID__|$instance|g" -e "s|__MILESTONE_NUMBER__|$milestone|g" 
 openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .stepId == "github-project-pickup" and .status == "created")'
 openclaw agent-system automations list --json > "$TMPDIR/pickup-scheduling-jobs.json"
 pickup=$(jq -er '.jobs[] | select(.id == "github-project-pickup" and .nativeEnabled == true) | .nativeId' "$TMPDIR/pickup-scheduling-jobs.json")
+pickup_chat=$(jq -er '.jobs[] | select(.id == "github-project-pickup") | .routing | select(startswith("session:"))' "$TMPDIR/pickup-scheduling-jobs.json")
 openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .stepId == "github-project-pickup" and .status == "unchanged")'
+openclaw agent-system automations list --json | jq -e --arg chat "$pickup_chat" 'any(.jobs[]; .id == "github-project-pickup" and .routing == $chat)'
 openclaw agent-system doctor --json | jq -e 'any(.findings[]; .code == "project-pickup-ready")'
 run_id=$(openclaw agent-system automations run github-project-pickup --json | jq -er 'select(.status == "queued") | .runId | strings')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-project-pickup "$run_id"

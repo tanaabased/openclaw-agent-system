@@ -290,7 +290,7 @@ export default class AutomationThreads {
           record?.phase === 'ready' &&
           (!native || native.archived) &&
           selection.managed &&
-          job.id === 'github-issue-assignment',
+          ['github-issue-assignment', 'github-project-pickup'].includes(job.id),
         );
         if (replace && !apply) throw new AutomationError('automation-thread-replacement-required');
         if (record && record.phase === 'ready' && !native && !replace)

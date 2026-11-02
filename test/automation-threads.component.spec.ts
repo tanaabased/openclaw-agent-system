@@ -678,31 +678,30 @@ describe('agent/automation-threads', () => {
     assert.equal(f.creates(), 1);
   });
   for (const runtime of ['openclaw', 'codex'] as const) {
-    for (const unavailable of ['archived', 'missing'] as const) {
-      it(`should report ${unavailable} ${runtime} intake read-only and replace it once on install`, async () => {
-        const f = fixture(runtime);
-        const declarations = jobs('Issue assignments', ['github-issue-assignment']);
-        const old = (await f.store.resolve(declarations, true)).get('github-issue-assignment')!.id;
-        if (unavailable === 'archived') f.native.get(old)!.archived = true;
-        else f.native.delete(old);
-        const before = await readFile(f.store.path, 'utf8');
-        await assert.rejects(
-          f.store.resolve(declarations),
-          rejects('automation-thread-replacement-required'),
-        );
-        assert.equal(await readFile(f.store.path, 'utf8'), before);
-        const current = (await f.store.resolve(declarations, true)).get(
-          'github-issue-assignment',
-        )!.id;
-        assert.notEqual(current, old);
-        assert.equal(
-          (await f.store.resolve(declarations, true)).get('github-issue-assignment')!.id,
-          current,
-        );
-        assert.equal(f.creates(), 2);
-        if (unavailable === 'archived') assert.equal(f.native.get(old)!.archived, true);
-      });
-    }
+    for (const jobId of ['github-issue-assignment', 'github-project-pickup'])
+      for (const unavailable of ['archived', 'missing'] as const) {
+        it(`should report ${unavailable} ${runtime} ${jobId} read-only and replace it once on install`, async () => {
+          const f = fixture(runtime);
+          const declarations = jobs(
+            jobId === 'github-project-pickup' ? 'PROJECT PICKUP' : 'Issue assignments',
+            [jobId],
+          );
+          const old = (await f.store.resolve(declarations, true)).get(jobId)!.id;
+          if (unavailable === 'archived') f.native.get(old)!.archived = true;
+          else f.native.delete(old);
+          const before = await readFile(f.store.path, 'utf8');
+          await assert.rejects(
+            f.store.resolve(declarations),
+            rejects('automation-thread-replacement-required'),
+          );
+          assert.equal(await readFile(f.store.path, 'utf8'), before);
+          const current = (await f.store.resolve(declarations, true)).get(jobId)!.id;
+          assert.notEqual(current, old);
+          assert.equal((await f.store.resolve(declarations, true)).get(jobId)!.id, current);
+          assert.equal(f.creates(), 2);
+          if (unavailable === 'archived') assert.equal(f.native.get(old)!.archived, true);
+        });
+      }
   }
 
   it('should never replace an archived unrelated job or explicit native target', async () => {

@@ -826,7 +826,12 @@ describe('openclaw v2 intake slice', () => {
     f.service.pickup = async (_manifest, _workspace, _input, _timezone, occurrence) => {
       await occurrence!.assertCurrent();
       calls++;
-      return { status: 'idle', changed: false };
+      return {
+        status: 'idle',
+        changed: false,
+        response: '',
+        instructions: 'Reproduce response unchanged.',
+      };
     };
     createIntakeTool(
       f.service,

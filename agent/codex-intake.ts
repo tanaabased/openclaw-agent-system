@@ -1,6 +1,8 @@
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
-import { codexItemOccupied } from './codex-capacity.ts';
+import projectPickupReport from './project-pickup-report.ts';
+import { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
+import codexCapacity, { codexItemOccupied } from './codex-capacity.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
 import ProjectPickupEnrollmentStore from './project-pickup-enrollment.ts';
 import { projectPickupConfigurationCode, projectPickupErrorCode } from './project-pickup-jobs.ts';
@@ -387,6 +389,7 @@ export async function runCodexProjectPickup(
 ) {
   const current = await selectCodexIntake(pluginData, deps);
   const enrollmentStore = new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root);
+  let nativeOccurrence: { id: string; automationId: string } | undefined;
   const verifyNative = async (policy: GitHubNotificationPolicy) => {
     const retained = await enrollmentStore.inspect(policy, 'codex', current.store.location.scope);
     const activation = await (
@@ -412,6 +415,7 @@ export async function runCodexProjectPickup(
       ).occurrence(deps.threadId);
       if (occurrence.automationId !== activation.nativeId)
         throw new IntakeError('project-pickup-native-caller-required');
+      nativeOccurrence = occurrence;
     } finally {
       await connection?.close();
     }
@@ -443,7 +447,7 @@ export async function runCodexProjectPickup(
       !client.assignProjectIssue
     )
       throw new IntakeError('project-pickup-provider-unavailable');
-    return projectPickup({
+    const result = await projectPickup({
       runtime: 'codex',
       scope: current.store.location.scope,
       workspaceDir: current.workspace,
@@ -458,6 +462,48 @@ export async function runCodexProjectPickup(
       occupied: codexItemOccupied,
       input,
     });
+    const reportPolicy = await readPolicy();
+    const report = projectPickupReport({
+      policy: reportPolicy,
+      pickup: state.projectPickup,
+      records: state.records,
+      previous: state.projectPickupReport,
+      outcome: result,
+      now: (deps.now ?? Date.now)(),
+      runId: nativeOccurrence?.id,
+      debug: current.manifest.debug,
+      capacity: {
+        occupied: codexCapacity(state.records, reportPolicy.maxConcurrentItems, state.projectPickup)
+          .occupied,
+        limit: reportPolicy.maxConcurrentItems,
+      },
+      active: (record) =>
+        record.nativeInactive
+          ? false
+          : record.capacityObservation?.code === 'dispatch-capacity-native-active'
+            ? true
+            : undefined,
+      conversation: (record) =>
+        record.effective && record.threadId
+          ? `codex://threads/${encodeURIComponent(record.threadId)}`
+          : undefined,
+    });
+    if (report.report) {
+      state.projectPickupReport = report.report;
+      await save();
+    }
+    return {
+      ...result,
+      response: codexHeartbeatEnvelope(
+        nativeOccurrence?.automationId ?? 'github-project-pickup',
+        report.response,
+        report.notify,
+      ),
+      instructions:
+        'instructions' in result
+          ? result.instructions
+          : 'Reproduce response unchanged as the whole final report. An empty response means no card. Preserve the native notification decision. Report preparation does not prove visible delivery.',
+    };
   });
 }
 

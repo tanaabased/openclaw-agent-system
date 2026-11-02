@@ -41,6 +41,12 @@ export const automationThreadSchema = Type.Object(
   { id: Type.Optional(textSchema), name: Type.Optional(textSchema) },
   { additionalProperties: false, minProperties: 1 },
 );
+export const automationThreadValueSchema = Type.Union([textSchema, automationThreadSchema]);
+export function normalizeAutomationThread(value: string | Static<typeof automationThreadSchema>) {
+  return typeof value === 'string'
+    ? { name: value.trim() }
+    : Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, entry.trim()]));
+}
 const jobSchema = Type.Object(
   {
     id: Type.String({ pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*(?![\\s\\S])' }),
@@ -53,7 +59,7 @@ const jobSchema = Type.Object(
     ),
     effort: Type.Optional(Type.Union(explicitModelEfforts.map((value) => Type.Literal(value)))),
     enabled: Type.Optional(Type.Boolean()),
-    thread: Type.Optional(Type.Union([Type.Null(), textSchema, automationThreadSchema])),
+    thread: Type.Optional(Type.Union([Type.Null(), automationThreadValueSchema])),
     group: Type.Optional(Type.String()),
     runtimes: Type.Optional(
       Type.Array(Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]), {
@@ -288,12 +294,7 @@ export default function normalizeAutomations(
       ...(job.thread == null
         ? {}
         : {
-            thread:
-              typeof job.thread === 'string'
-                ? { name: job.thread.trim() }
-                : Object.fromEntries(
-                    Object.entries(job.thread).map(([key, value]) => [key, value.trim()]),
-                  ),
+            thread: normalizeAutomationThread(job.thread),
           }),
       ...(job['timeout-seconds'] === undefined ? {} : { timeoutSeconds: job['timeout-seconds'] }),
       overrides: structuredClone(job.overrides ?? {}),

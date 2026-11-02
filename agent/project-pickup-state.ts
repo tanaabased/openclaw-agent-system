@@ -8,6 +8,17 @@ import {
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const time = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
+export const pickupReportSchema = Type.Object(
+  {
+    fingerprint: text,
+    problems: Type.Array(text),
+    runId: Type.Optional(text),
+    response: Type.String({ maxLength: 128000 }),
+    notify: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+export type PickupReport = Static<typeof pickupReportSchema>;
 export const pickupOperationSchema = Type.Object(
   {
     id: text,
