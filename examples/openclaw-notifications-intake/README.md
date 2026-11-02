@@ -1,11 +1,11 @@
 # OpenClaw Notification Intake Example
 
-Activate notification intake, exclude fixture assignments through repository routing, then reorder the rules to start three independent issue assessments before any result completes. Retain all three plans and verify that narrowing routing preserves the same chats, worktrees, and assessment turns.
+Activate notification intake, exclude fixture assignments through repository routing, then reorder the rules to claim three assignments and start their assessments on a second native pass before any result completes. Retain all three plans and verify that narrowing routing preserves the same chats, worktrees, and assessment turns.
 
 ## What Belongs Here
 
 - Native channel readiness and a safe intake baseline before fixture assignment.
-- First-match repository routing overriding legacy owners, with live rule changes preserving admitted work.
+- First-match repository routing overriding legacy owners, with two-pass Swarm admission and live rule changes preserving admitted work.
 - Custom routing skill/guidance selection during concurrent admission with distinct verified native owners, complete retained assessments, and private routing-method readback.
 - One repeat scan proving that admission does not duplicate chats, checkouts, or turns.
 
@@ -20,6 +20,7 @@ Activate notification intake, exclude fixture assignments through repository rou
 - Native skill discovery and retained guidance are asserted during admission; the fixed mock judgment does not prove interpretation of the custom skill. No additional live-model turn is required.
 - One completed assessment checks that the retained custom method reaches the private routing card. Formatting and debug variants stay in owning renderer tests.
 - Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases all three only after verifying their native starts; model judgment is not under test.
+- Swarm adds one coordinator turn to verify that claims precede native creation. This single-installation journey does not prove cross-installation exclusion; the comment-only POC can overlap under incomplete provider views.
 - V3 object identities pin assignment actors; repository routing overrides the retained legacy owner list. Only Tanaabot receives the three disposable assignments.
 - Scoped refreshes and a 24-hour schedule bound discovery. The job owns its workspaces, issues, native state, and SSH registration; cleanup stops the Gateway before changing external fixtures.
 
@@ -121,7 +122,7 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number "$number" --json | jq -e '.status == "completed" and .admitted == 0 and any(.repositoryScope[]; .source == "routing" and .reason == "excluded" and .index == 0)'
 jq -es '[.[].records[]] | length == 0' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json
 
-# should start three native assessments after reordering routes without reinstalling
+# should register three swarm claims without starting native assessments
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github.routing.reverse(); writeFileSync(path,stringify(value));'
 for slot in 1 2 3; do
@@ -130,7 +131,14 @@ for slot in 1 2 3; do
 done
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-if ! jq -es '[.[].records[]] | length == 3 and ([.[].threadId] | unique | length) == 3 and all(.[]; .sessionCreation.verified == true and (.assessmentTurn.status == "accepted" or (.assessmentTurn.status == "consumed" and (.assessmentTurn.consumedByEventId | type == "string" and length > 0))) and .assessmentTurn.failed != true and .assessmentTurn.cancelled != true and .result == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json; then
+jq -es '[.[].records[]] | length == 3 and all(.[]; .threadId == null and .sessionCreation == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -e '.claims | length == 3 and all(.[]; .attempted == true and .commentId != null and .nativeReceipt == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-instance/assignment-claims.json"
+
+# should start three native assessments on the second swarm pass
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
+if ! jq -es '[.[].records[]] | length == 3 and ([.[].threadId] | unique | length) == 3 and all(.[]; .claimAccepted == true and .sessionCreation.verified == true and (.assessmentTurn.status == "accepted" or (.assessmentTurn.status == "consumed" and (.assessmentTurn.consumedByEventId | type == "string" and length > 0))) and .assessmentTurn.failed != true and .assessmentTurn.cancelled != true and .result == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json; then
   jq -s '[.[].records[]] | {count: length, records: (.[0:10] | map({id, phase, blocker, threadId, sessionVerified: .sessionCreation.verified, assessmentTurn: (.assessmentTurn | {runId, status, consumedByEventId, failed, cancelled}), hasResult: (.result != null)}))}' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json >&2
   exit 1
 fi

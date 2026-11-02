@@ -3,6 +3,10 @@ import { Type, type Static } from 'typebox';
 import { instanceIdPattern } from './provider/assignment-claim.ts';
 
 import { assessmentConfigurationSchema } from '../../manifest/assessment-schema.ts';
+import {
+  automationThreadValueSchema,
+  normalizeAutomationThread,
+} from '../../manifest/automation-schema.ts';
 import normalizeAutomationSchedule, {
   type AutomationSchedule,
 } from '../../manifest/automation-schedule.ts';
@@ -10,6 +14,7 @@ import normalizeAutomationSchedule, {
 export const projectPickupSchema = Type.Object(
   {
     paused: Type.Optional(Type.Boolean()),
+    thread: Type.Optional(automationThreadValueSchema),
     coordinator: Type.Optional(
       Type.Object(
         {
@@ -53,6 +58,7 @@ export const projectPickupSchema = Type.Object(
 type Declaration = Static<typeof projectPickupSchema>;
 export interface ProjectPickupPolicy {
   paused: boolean;
+  thread?: { id?: string; name?: string };
   coordinator?: { runtime: 'codex' | 'openclaw'; instanceId: string };
   /** undefined is rejected by semantic validation, without throwing from manifest decoding. */
   schedule?: AutomationSchedule;
@@ -71,6 +77,7 @@ export default function decodeProjectPickup(value: Declaration): ProjectPickupPo
   }
   return {
     paused: value.paused ?? false,
+    ...(value.thread === undefined ? {} : { thread: normalizeAutomationThread(value.thread) }),
     ...(value.coordinator
       ? {
           coordinator: {

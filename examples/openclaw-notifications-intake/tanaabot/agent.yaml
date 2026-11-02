@@ -35,7 +35,7 @@ github:
   interval-minutes: 1440
   routing:
     - '!tanaabased/big-test-bucket'
-    - tanaabased/*
+    - 'tanaabased/*': swarm
   allowed-repository-owners:
     - login: tanaabased
       node-id: __OWNER_NODE_ID__

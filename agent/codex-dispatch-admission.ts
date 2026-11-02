@@ -1,3 +1,4 @@
+import repositoryScope from '../channels/github/repository-scope.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import issueChatTitle from './issue-chat-title.ts';
@@ -200,9 +201,12 @@ async function selectClaim(
   const { state, deps, current, save } = tx;
   if (!deps.claims) {
     await assertDormantAssignmentUnclaimed(deps.claimStore, intake);
+    if (repositoryScope(current.policy!.policy, intake.repository).decision === 'swarm')
+      throw new Error('claim-runtime-unavailable');
     return;
   }
   const claim = await deps.claims.select({
+    mode: repositoryScope(current.policy!.policy, intake.repository).decision,
     intake,
     client,
     threadId: tx.caller,
@@ -215,6 +219,7 @@ async function selectClaim(
         intake.evidence?.projectWork?.pickup?.issueNodeId,
       ).available > 0,
   });
+  if (claim.status === 'local') return;
   if (claim.status === 'recovery-required')
     throw new Error(claim.code ?? 'claim-recovery-required');
   if (claim.status === 'owned') {

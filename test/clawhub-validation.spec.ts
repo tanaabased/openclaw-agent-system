@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import validateClawHubReport from '../scripts/clawhub-validation.ts';
 
 describe('scripts/clawhub-validation', () => {
-  const target = { path: '/sdk/openclaw', version: '2026.10.8' };
+  const target = { path: '/sdk/openclaw', version: '2026.10.9' };
   function warning(api: string, record: string, path: string) {
     return {
       code: 'sdk-deprecated-api',
@@ -34,7 +34,7 @@ describe('scripts/clawhub-validation', () => {
     validateClawHubReport(report(), target);
   });
 
-  it('should accept only the owned 10.8 config and final session exceptions with their bundles', () => {
+  it('should accept only the owned 10.9 config and final session exceptions with their bundles', () => {
     validateClawHubReport(
       report([
         config(),
@@ -87,7 +87,7 @@ describe('scripts/clawhub-validation', () => {
       assert.throws(() => validateClawHubReport(value, target), /clawhub-/);
   });
 
-  it('should not carry 10.8 exceptions into a different sdk target', () => {
+  it('should not carry 10.9 exceptions into a different sdk target', () => {
     const value = report([config()]);
     value.targetOpenClaw.version = '2027.1.1';
     assert.throws(

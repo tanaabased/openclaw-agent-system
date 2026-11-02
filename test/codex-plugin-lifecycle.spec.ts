@@ -101,46 +101,48 @@ function fixture(
 }
 
 describe('agent/codex-plugin-lifecycle', () => {
-  it('should require explicit reconciliation of an older plugin for the release-owned matched pair', async () => {
-    const selected = codexPluginRequirement(metadata)!;
-    const f = fixture('enabled', selected);
-    f.metadata.openclaw.compat.pluginApi = metadata.openclaw.compat.pluginApi;
-    f.record.version = '2026.10.6';
-    f.report.install.version = '2026.10.6';
-    f.metadata.version = '2026.10.6';
+  for (const olderVersion of ['2026.10.6', '2026.10.8']) {
+    it(`should require explicit reconciliation of a ${olderVersion} plugin for the release-owned matched pair`, async () => {
+      const selected = codexPluginRequirement(metadata)!;
+      const f = fixture('enabled', selected);
+      f.metadata.openclaw.compat.pluginApi = metadata.openclaw.compat.pluginApi;
+      f.record.version = olderVersion;
+      f.report.install.version = olderVersion;
+      f.metadata.version = olderVersion;
 
-    const finding = (await f.contribution().inspect!(context))[0]!;
-    assert.equal(finding.code, 'codex-plugin-conflict');
-    assert.ok(finding.message.includes('2026.10.6'));
-    assert.ok(finding.message.includes(selected.spec));
-    assert.ok(finding.remediation?.includes(selected.spec));
-    await assert.rejects(f.contribution().reconcile!(context), { code: 'codex-plugin-conflict' });
-    assert.equal(f.locks(), 0);
-    assert.deepEqual(f.mutations(), []);
+      const finding = (await f.contribution().inspect!(context))[0]!;
+      assert.equal(finding.code, 'codex-plugin-conflict');
+      assert.ok(finding.message.includes(olderVersion));
+      assert.ok(finding.message.includes(selected.spec));
+      assert.ok(finding.remediation?.includes(selected.spec));
+      await assert.rejects(f.contribution().reconcile!(context), { code: 'codex-plugin-conflict' });
+      assert.equal(f.locks(), 0);
+      assert.deepEqual(f.mutations(), []);
 
-    f.record.version = selected.version;
-    f.report.install.version = selected.version;
-    f.metadata.version = selected.version;
-    assert.equal((await f.contribution().inspect!(context))[0]?.code, 'codex-plugin-ready');
-    assert.equal(
-      (await f.contribution().reconcile!(context)).outcomes[0]?.code,
-      'codex-plugin-unchanged',
-    );
-    assert.deepEqual(f.mutations(), []);
-  });
-
-  it('should reject a 10.6 host before inspecting or installing the release-owned prerequisite', async () => {
-    const f = fixture('missing', codexPluginRequirement(metadata)!);
-    f.dependencies.runOpenClawCommand = async (args) => {
-      f.calls.push(args);
-      return { code: 0, stdout: 'OpenClaw 2026.10.6 (release)', stderr: '' };
-    };
-    await assert.rejects(f.contribution().reconcile!(context), {
-      code: 'codex-plugin-host-incompatible',
+      f.record.version = selected.version;
+      f.report.install.version = selected.version;
+      f.metadata.version = selected.version;
+      assert.equal((await f.contribution().inspect!(context))[0]?.code, 'codex-plugin-ready');
+      assert.equal(
+        (await f.contribution().reconcile!(context)).outcomes[0]?.code,
+        'codex-plugin-unchanged',
+      );
+      assert.deepEqual(f.mutations(), []);
     });
-    assert.deepEqual(f.calls, [['--version']]);
-    assert.equal(f.locks(), 0);
-  });
+
+    it(`should reject a ${olderVersion} host before inspecting or installing the release-owned prerequisite`, async () => {
+      const f = fixture('missing', codexPluginRequirement(metadata)!);
+      f.dependencies.runOpenClawCommand = async (args) => {
+        f.calls.push(args);
+        return { code: 0, stdout: `OpenClaw ${olderVersion} (release)`, stderr: '' };
+      };
+      await assert.rejects(f.contribution().reconcile!(context), {
+        code: 'codex-plugin-host-incompatible',
+      });
+      assert.deepEqual(f.calls, [['--version']]);
+      assert.equal(f.locks(), 0);
+    });
+  }
 
   it('should reject parseable incomplete plugin discovery before reconciliation', async () => {
     for (const metadata of [

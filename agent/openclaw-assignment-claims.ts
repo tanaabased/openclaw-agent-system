@@ -5,7 +5,11 @@ import type {
   GitHubNotificationIntakeClient,
   GitHubNotificationItemContextClient,
 } from '../channels/github/provider/work-event-types.ts';
-import { acceptAssignmentClaim, claimAssignment, type ClaimClient } from './assignment-claim.ts';
+import {
+  acceptAssignmentClaim,
+  selectAssignmentClaim,
+  type ClaimClient,
+} from './assignment-claim.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
 import { automationHash } from './automation-hash.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
@@ -25,9 +29,11 @@ export default class OpenClawAssignmentClaims {
     client: Connection;
     caller: DispatchCaller;
     hasCapacity: boolean;
+    mode: 'local' | 'swarm' | 'deny';
   }) {
     const { sessionKey, sessionId, runId } = input.caller;
-    return claimAssignment({
+    return selectAssignmentClaim({
+      mode: input.mode,
       store: this.store,
       client: this.connect(input.client),
       source: source(input.intake),

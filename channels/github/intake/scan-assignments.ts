@@ -210,7 +210,7 @@ export default async function scanAssignments(
             ...scope,
             count: (scopeCounts.get(scopeKey)?.count ?? 0) + 1,
           });
-          if (repository.archived || repository.disabled || scope.decision !== 'local') return;
+          if (repository.archived || repository.disabled || scope.decision === 'deny') return;
           const item = await observeRead('issue', () =>
             client.getItem(coordinates.owner, coordinates.name, candidate.number),
           );

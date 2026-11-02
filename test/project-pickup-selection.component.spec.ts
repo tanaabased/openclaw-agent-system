@@ -45,10 +45,17 @@ describe('project pickup selection through native journals', () => {
     const identity = await new AssignmentClaimStore(instanceRoot).identity();
     const enrollmentStore = new ProjectPickupEnrollmentStore(instanceRoot);
     const caller = { current: true };
+    const tick = { id: 'pickup-turn-1' };
     const assertCurrent = async () => {
       if (!caller.current) throw new Error('project-pickup-native-caller-required');
     };
-    const occurrence = { nativeId: 'pickup-job', assertCurrent };
+    const occurrence = {
+      nativeId: 'pickup-job',
+      get runId() {
+        return tick.id;
+      },
+      assertCurrent,
+    };
 
     const source = JSON.stringify({
       'schema-version': 1,
@@ -99,7 +106,7 @@ describe('project pickup selection through native journals', () => {
           occurrence: async () => {
             await assertCurrent();
             return {
-              id: 'turn',
+              id: tick.id,
               automationId: 'pickup-job',
               currentTimeIso: new Date(f.clock.now).toISOString(),
             };
@@ -164,10 +171,59 @@ describe('project pickup selection through native journals', () => {
         rationale: 'highest explicit priority and impact among ready work',
       };
     };
-    return { ...f, pickup, scan, read, journal, select, caller };
+    return { ...f, pickup, scan, read, journal, select, caller, tick };
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should keep empty ticks quiet and report the window close once through ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      f.candidates.clear();
+      const empty = await f.pickup();
+      assert.equal(empty.status, 'empty');
+      if (runtime === 'codex') assert.match(empty.response, /<decision>DONT_NOTIFY<\/decision>/);
+      else assert.equal(empty.response, '');
+      f.tick.id = 'pickup-empty-2';
+      const quiet = await f.pickup();
+      assert.doesNotMatch(quiet.response, /> ##/);
+      f.clock.now += 7200000;
+      f.tick.id = 'pickup-empty-closed';
+      const closed = await f.pickup();
+      assert.match(closed.response, /Pickup window summary/);
+      assert.match(closed.response, /does not mean completion/);
+      f.tick.id = 'pickup-empty-closed-2';
+      assert.doesNotMatch((await f.pickup()).response, /> ##/);
+      assert.equal(f.effects.writes, 0);
+    });
+
+    it(`should retain selected, quiet, blocked and recovery cards through ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const selection = await f.select();
+      const assign = f.client.assignProjectIssue;
+      f.client.assignProjectIssue = async (...args) => {
+        await assign(...args);
+        throw new Error('lost response');
+      };
+      const blocked = await f.pickup({ selection });
+      assert.equal(blocked.status, 'attempted');
+      assert.match(blocked.response, /> ## ⚠️/);
+      assert.match(blocked.response, /`project-pickup-assignment-uncertain`/);
+      assert.ok(blocked.response.includes((await f.journal.read()).projectPickupReport!.response));
+      const replay = await f.pickup();
+      assert.equal(replay.response, blocked.response);
+      f.tick.id = 'pickup-turn-2';
+      const selected = await f.pickup();
+      assert.equal(selected.status, 'assigned');
+      assert.match(selected.response, /Project pickup resumed/);
+      assert.match(selected.response, /github\.com\/owner\/repo\/milestone\/10/);
+      assert.match(selected.response, /Why selected/);
+      f.tick.id = 'pickup-turn-3';
+      const quiet = await f.pickup();
+      if (runtime === 'codex') assert.match(quiet.response, /<decision>DONT_NOTIFY<\/decision>/);
+      else assert.equal(quiet.response, '');
+      assert.equal(f.effects.writes, 1);
+      assert.equal((await f.journal.read()).projectPickupReport!.notify, false);
+    });
+
     it(`should reject an expired native occurrence before provider assignment in ${runtime}`, async () => {
       const f = await fixture(runtime);
       const selection = await f.select();

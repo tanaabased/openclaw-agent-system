@@ -95,7 +95,7 @@ describe('channels/github/intake/records', () => {
           count: 1,
         },
       ]);
-      policy.routing = ['owner/renamed'];
+      policy.routing = [{ 'owner/renamed': runtime === 'codex' ? 'swarm' : 'local' }];
       const miss = await scanAssignments({ ...input, now: baseline + 180000 });
       assert.equal(miss.repositoryScope![0]!.reason, 'no-match');
       // the search path still uses the old name; the provider redirects to the current name.
@@ -106,6 +106,10 @@ describe('channels/github/intake/records', () => {
       assert.equal(saved.records[0]!.repository.name, 'renamed');
       assert.equal(saved.records[0]!.evidence.ownerPinned, false);
       assert.equal(saved.records[0]!.evidence.repositoryScope!.pattern, 'owner/renamed');
+      assert.equal(
+        saved.records[0]!.evidence.repositoryScope!.decision,
+        runtime === 'codex' ? 'swarm' : 'local',
+      );
       policy.routing = [];
       await scanAssignments({ ...input, now: baseline + 300000 });
       assert.deepEqual((await store.read())!.records, saved.records);

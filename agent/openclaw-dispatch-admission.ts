@@ -1,3 +1,4 @@
+import repositoryScope from '../channels/github/repository-scope.ts';
 import issueChatTitle from './issue-chat-title.ts';
 import { dispatchAdmission, managedPullRequest } from './managed-issue.ts';
 import verifyIssuePullRequest from './issue-pr-selection.ts';
@@ -74,11 +75,18 @@ export default class OpenClawDispatchAdmission {
       !claims &&
       !record.sessionCreation?.attempted &&
       !record.sessionCreation?.verified
-    )
+    ) {
       await assertDormantAssignmentUnclaimed(this.context.dependencies.claimStore, intake);
+      if (repositoryScope(current.policy.policy, intake.repository).decision === 'swarm')
+        throw new Error('claim-runtime-unavailable');
+    }
     if (!('initiation' in intake) && claims && !record.sessionCreation?.verified) {
       const claim = await claims.select({
         intake,
+        mode:
+          record.sessionCreation?.attempted && record.claimId
+            ? 'swarm'
+            : repositoryScope(current.policy.policy, intake.repository).decision,
         client,
         caller,
         hasCapacity:
@@ -90,7 +98,7 @@ export default class OpenClawDispatchAdmission {
             'initiation' in intake ? undefined : intake.evidence?.projectWork?.pickup?.issueNodeId,
           ).available > 0,
       });
-      if (claim.status !== 'owned') {
+      if (claim.status !== 'owned' && claim.status !== 'local') {
         if (claim.status === 'recovery-required') throw new Error(claim.code);
         return {
           status: 'claim-waiting' as const,
@@ -99,7 +107,7 @@ export default class OpenClawDispatchAdmission {
           nextAction: 'next' as const,
         };
       }
-      record.claimId = claim.winnerId;
+      if (claim.status === 'owned') record.claimId = claim.winnerId;
       await save();
     }
     if (input.action === 'prepare') {
