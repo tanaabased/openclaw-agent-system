@@ -144,6 +144,28 @@ function record(): OpenClawDispatchRecord {
 }
 
 describe('agent/openclaw-notifications', () => {
+  it('should retain an awaiting task in inventory without scheduling it or hiding busy custody', async () => {
+    const f = fixture();
+    const item = {
+      ...record(),
+      request: {},
+      issueKey: issueKey(f.state!.records[0]!),
+      retirement: { reason: 'assignment-removed', code: 'retirement-worktree-dirty' },
+    } as OpenClawDispatchRecord;
+    f.records.push(item);
+    for (const idle of [true, false]) {
+      item.nativeInactive = idle;
+      const before = structuredClone(item);
+      const result = await f.service.inspect(f.manifest, '/workspace', selector);
+      assert.equal(result.items.length, 1);
+      assert.equal(result.items[0]?.workflow?.phase, 'awaiting-reassignment');
+      assert.equal(result.items[0]?.reasonCode, 'github-notification-awaiting-reassignment');
+      assert.equal(result.items[0]?.scheduling, undefined);
+      assert.equal(result.capacity?.active, idle ? 0 : 1);
+      assert.deepEqual(item, before);
+    }
+    assert.equal(f.requests, 0);
+  });
   it('should report the same disabled policy across status refresh and wait without starting work', async () => {
     const f = fixture();
     f.manifest.github!.notifications!.issueAssignment!.paused = true;

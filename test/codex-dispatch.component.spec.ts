@@ -1,3 +1,4 @@
+import workflowStatus from '../agent/workflow-status.ts';
 import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 import {
   fixturePullRequest,
@@ -3534,7 +3535,7 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(await next(), { status: 'idle', changed: false });
   });
 
-  for (const reason of ['closure', 'approved removal', 'operator request'] as const) {
+  for (const reason of ['closure', 'closure after removal', 'operator request'] as const) {
     it(`should prepare native archival during intake and retire only after observed reclamation: ${reason}`, async () => {
       worktree = join(codexHome, 'worktrees', 'retiring', 'repo');
       await mkdir(worktree, { recursive: true });
@@ -3544,7 +3545,17 @@ describe('agent/codex-dispatch', () => {
       native!.status = 'idle';
       native!.turnEnded = true;
       if (reason === 'closure') fixture.item.state = 'closed';
-      else if (reason === 'approved removal') removeFixtureAssignment(fixture);
+      else if (reason === 'closure after removal') {
+        removeFixtureAssignment(fixture);
+        now += 60_000;
+        await next();
+        const held = await request('inspect');
+        assert.equal(
+          (held.records as { workflowStatus: string }[])[0]!.workflowStatus,
+          'awaiting-reassignment',
+        );
+        fixture.item.state = 'closed';
+      }
       if (reason !== 'operator request') {
         now += 60_000;
         await next();
@@ -3618,12 +3629,13 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
-  it('should request native inventory for obsolete codex work without deleting resources', async () => {
+  it('should retain unassigned codex work without requesting native cleanup', async () => {
     const prepared = await prepare();
     created();
     await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
     native!.status = 'idle';
     native!.turnEnded = true;
+    await writeFile(join(worktree, 'retained-local.txt'), 'unfinished work');
     removeFixtureAssignment(fixture);
     now += 60_000;
     await next();
@@ -3635,10 +3647,13 @@ describe('agent/codex-dispatch', () => {
     now = pending.retirement!.eligibleAt;
     await next();
     const saved = (await store.read()).records[0]!;
-    assert.equal(saved.retirement?.code, 'retirement-native-inventory-required');
+    assert.equal(saved.retirement?.code, undefined);
+    assert.equal(workflowStatus(saved), 'awaiting-reassignment');
     assert.equal(saved.retired, undefined);
     assert.deepEqual(saved.result, pending.result);
     assert.equal(saved.threadId, pending.threadId);
+    assert.equal(await readFile(join(worktree, 'retained-local.txt'), 'utf8'), 'unfinished work');
+    assert.equal((await store.read()).records.length, 1);
     assert.equal(
       gitCalls.some((args) => args.includes('remove')),
       false,
