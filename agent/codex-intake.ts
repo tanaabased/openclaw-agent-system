@@ -1,4 +1,9 @@
+import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
+import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
 import { codexItemOccupied } from './codex-capacity.ts';
+import { codexInstanceStore } from './codex-assignment-claims.ts';
+import ProjectPickupEnrollmentStore from './project-pickup-enrollment.ts';
+import { projectPickupConfigurationCode, projectPickupErrorCode } from './project-pickup-jobs.ts';
 import projectPickup, { pickupAuthority, type PickupInput } from './project-pickup.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
 import { dispatchStorageNotice } from './dispatch-storage.ts';
@@ -17,7 +22,10 @@ import { join, resolve } from 'node:path';
 import codexIssueNotice from './codex-issue-notice.ts';
 import { CodexAutomationError } from './codex-automation-state.ts';
 import { codexIntakePolicy } from './codex-intake-policy.ts';
-import { inspectCodexDispatchActivation } from './codex-automations.ts';
+import {
+  inspectCodexDispatchActivation,
+  inspectCodexPickupActivation,
+} from './codex-automations.ts';
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import type { SetupProcessRunner } from './setup-runner.ts';
 import IntakeRecordStore, {
@@ -32,6 +40,7 @@ import type { GitHubNotificationIntakeClient } from '../channels/github/provider
 
 export interface CodexIntakeDependencies {
   projectPickup?: ProjectPickupAuthority;
+  pickupActivation?: () => Promise<{ threadId: string; nativeId: string }>;
   assertActive?: () => Promise<void>;
   threadId?: string;
   intakeNative?: Pick<ReturnType<typeof codexDispatchNative>, 'occurrence'>;
@@ -376,8 +385,45 @@ export async function runCodexProjectPickup(
   timezone: string,
   deps: CodexIntakeDependencies = {},
 ) {
-  if (!deps.projectPickup) throw new IntakeError('project-pickup-activation-required');
   const current = await selectCodexIntake(pluginData, deps);
+  const enrollmentStore = new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root);
+  const verifyNative = async (policy: GitHubNotificationPolicy) => {
+    const retained = await enrollmentStore.inspect(policy, 'codex', current.store.location.scope);
+    const activation = await (
+      deps.pickupActivation ??
+      (() =>
+        inspectCodexPickupActivation(pluginData, {
+          codexHome: current.codexHome,
+          inspectBinding: deps.inspectBinding,
+        }))
+    )();
+    if (
+      !deps.threadId ||
+      deps.threadId !== activation.threadId ||
+      retained.nativeId !== activation.nativeId
+    )
+      throw new IntakeError('project-pickup-native-caller-required');
+    const connection = deps.intakeNative
+      ? undefined
+      : await connectCodexThreads(current.workspace, current.codexHome);
+    try {
+      const occurrence = await (
+        deps.intakeNative ?? codexDispatchNative(connection!.request)
+      ).occurrence(deps.threadId);
+      if (occurrence.automationId !== activation.nativeId)
+        throw new IntakeError('project-pickup-native-caller-required');
+    } finally {
+      await connection?.close();
+    }
+    return retained;
+  };
+  let authority = deps.projectPickup;
+  if (!authority) {
+    if (!current.policy) throw new IntakeError('intake-policy-disabled');
+    const retained = await verifyNative(current.policy.policy);
+    authority = { enrollment: retained.enrollment, receipts: [] };
+    timezone = retained.timezone;
+  }
   await assertCodexIntakeActive(pluginData, current, deps);
   const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   return journal.exclusive(async (state, save, signal) => {
@@ -385,6 +431,7 @@ export async function runCodexProjectPickup(
       const live = await selectCodexIntake(pluginData, deps);
       if (live.store.location.scope !== current.store.location.scope || !live.policy)
         throw new IntakeError('intake-workspace-binding-changed');
+      if (!deps.projectPickup) await verifyNative(live.policy.policy);
       return live.policy.policy;
     };
     await readPolicy();
@@ -401,7 +448,7 @@ export async function runCodexProjectPickup(
       scope: current.store.location.scope,
       workspaceDir: current.workspace,
       agentId: current.agentId,
-      enrollment: deps.projectPickup!.enrollment,
+      enrollment: authority.enrollment,
       timezone,
       state,
       save,
@@ -412,4 +459,70 @@ export async function runCodexProjectPickup(
       input,
     });
   });
+}
+
+/** explicit native automation preparation owns provider checks and the durable reservation. */
+export async function prepareCodexPickupEnrollment(
+  pluginData: string,
+  deps: CodexIntakeDependencies = {},
+) {
+  const current = await selectCodexIntake(pluginData, deps);
+  if (!current.policy) throw new IntakeError('intake-policy-disabled');
+  const code = projectPickupConfigurationCode(current.policy.policy, 'codex');
+  if (code) throw new IntakeError(code);
+  const store = new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root);
+  await store.owner(current.policy.policy, 'codex');
+  const client = (await connectSelected(
+    current,
+    deps,
+    AbortSignal.timeout(30_000),
+  )) as ProjectPickupClient;
+  return store.prepare({
+    policy: current.policy.policy,
+    runtime: 'codex',
+    scope: current.store.location.scope,
+    workspaceDir: current.workspace,
+    agentId: current.agentId,
+    client,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    now: (deps.now ?? Date.now)(),
+  });
+}
+
+export async function inspectCodexPickup(
+  pluginData: string,
+  deps: CodexIntakeDependencies = {},
+): Promise<AgentSystemLifecycleFinding[]> {
+  const current = await selectCodexIntake(pluginData, deps, { inspectionOnly: true });
+  const policy = current.policy?.policy;
+  if (!policy?.projectPickup) return [];
+  let code = projectPickupConfigurationCode(policy, 'codex');
+  try {
+    if (!code) {
+      const record = await new ProjectPickupEnrollmentStore(
+        codexInstanceStore(pluginData).root,
+      ).inspect(policy, 'codex', current.store.location.scope);
+      const native = await inspectCodexPickupActivation(pluginData, {
+        codexHome: current.codexHome,
+        inspectBinding: deps.inspectBinding,
+      });
+      if (record.nativeId !== native.nativeId) code = 'project-pickup-enrollment-changed';
+    }
+  } catch (error) {
+    code = projectPickupErrorCode(error);
+  }
+  return [
+    {
+      component: 'github-intake',
+      status: code ? ('drift' as const) : ('healthy' as const),
+      code: code ?? 'project-pickup-ready',
+      message: code ?? 'Project pickup enrollment and native schedule are ready.',
+      ...(code
+        ? {
+            remediation:
+              'Check the designated installation, cadence and window, then run Install and acknowledge its native pickup job. Preserve pending pickup work.',
+          }
+        : {}),
+    },
+  ];
 }

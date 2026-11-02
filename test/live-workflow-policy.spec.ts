@@ -52,6 +52,13 @@ describe('agent/live-workflow-policy', () => {
     assert.equal(liveWorkflowPolicy(manifest, 'codex', intake, 'feedback'), undefined);
     f.policy.allowedRepositoryOwners = [];
     assert.equal(liveWorkflowPolicy(manifest, 'codex', intake, 'implementation'), undefined);
+    f.policy.routing = [];
+    for (const runtime of ['codex', 'openclaw'] as const) {
+      f.policy.runtimes = [runtime];
+      assert.equal(liveWorkflowPolicy(manifest, runtime, intake), 'repository-outside-workflow');
+      for (const effect of ['implementation', 'continued-work', 'feedback'] as const)
+        assert.equal(liveWorkflowPolicy(manifest, runtime, intake, effect), undefined);
+    }
     assert.deepEqual(intake, before);
   });
 });

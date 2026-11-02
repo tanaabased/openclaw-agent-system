@@ -197,11 +197,20 @@ describe('agent/openclaw-notifications', () => {
   });
   it('should inspect native admission and capacity without running intake or exposing provider prose', async () => {
     const f = fixture();
+    const repositoryScope = {
+      source: 'routing',
+      decision: 'local',
+      reason: 'match',
+      index: 0,
+      pattern: 'owner/*',
+    } as const;
+    f.state!.records[0]!.evidence.repositoryScope = repositoryScope;
     const result = await f.service.inspect(f.manifest, '/workspace', selector);
     assert.equal(result.status, 'ready');
     assert.deepEqual(result.capacity, { active: 0, queued: 1, limit: 2 });
     assert.equal(result.items[0]?.workflow?.phase, 'queued');
     assert.equal(result.items[0]?.stage, 'admitted');
+    assert.deepEqual(result.items[0]?.repositoryScope, repositoryScope);
     assert.equal(f.requests, 0);
     assert.equal(JSON.stringify(result).includes('policyDigest'), false);
   });
@@ -461,16 +470,27 @@ describe('agent/openclaw-notifications', () => {
   it('should perform selected intake directly and keep every wait refresh scoped without queueing automation', async () => {
     const f = fixture();
     let scans = 0;
+    const repositoryScope = [
+      {
+        source: 'routing',
+        decision: 'deny',
+        reason: 'excluded',
+        index: 0,
+        pattern: '!owner/repo',
+        count: 1,
+      },
+    ] as const;
     f.service.dependencies.scanSelected = async (_manifest, _workspace, selected) => {
       assert.deepEqual(selected, selector);
       scans++;
-      return { status: 'ready', admitted: 0 };
+      return { status: 'ready', admitted: 0, repositoryScope: [...repositoryScope] };
     };
     const result = await f.service.refresh(f.manifest, '/workspace', {
       selector,
       signal: new AbortController().signal,
     });
     assert.equal(result.status, 'completed');
+    assert.deepEqual(result.repositoryScope, repositoryScope);
     assert.equal(result.runId, undefined);
     await f.service.wait(f.manifest, '/workspace', {
       selector,

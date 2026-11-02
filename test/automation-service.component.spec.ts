@@ -1,3 +1,6 @@
+import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
+import ProjectPickupEnrollmentStore from '../agent/project-pickup-enrollment.ts';
+import selectionFixture from './project-pickup-selection-fixture.ts';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 
@@ -917,6 +920,81 @@ describe('agent/automation-service', () => {
       (await service.inspect(manifest, root)).every((finding) => finding.status === 'healthy'),
       true,
     );
+
+    const fixture = selectionFixture('openclaw');
+    const instanceRoot = join(root, 'instance');
+    const instance = await new AssignmentClaimStore(instanceRoot).identity();
+    const enrollments = new ProjectPickupEnrollmentStore(instanceRoot);
+    policy.projectPickup = {
+      ...fixture.policy.projectPickup!,
+      coordinator: { runtime: 'openclaw', instanceId: instance.instanceId },
+    };
+    service.dependencies.pickup = {
+      prepare: async () =>
+        enrollments.prepare({
+          policy,
+          runtime: 'openclaw',
+          scope: 'pickup-scope',
+          workspaceDir: root,
+          agentId: manifest.agent.id,
+          client: fixture.client,
+          timezone: 'UTC',
+          now,
+        }),
+      activate: (id, nativeId, previous) => enrollments.activate(id, nativeId, previous),
+    };
+    await service.reconcile(manifest, root);
+    const pickup = native.find((job) => job.displayName === '📥 PROJECT PICKUP')!;
+    assert.ok(pickup.enabled);
+    const enrollment = (await enrollments.read()).records[0]!;
+    assert.equal(enrollment.nativeId, pickup.id);
+    const beforePickup = mutations().length;
+    now += 60000;
+    await service.reconcile(manifest, root);
+    assert.equal(mutations().length, beforePickup);
+    assert.deepEqual((await enrollments.read()).records, [enrollment]);
+    assert.equal(native.length, 2);
+    assert.equal(
+      await notificationAutomationReadiness(
+        service,
+        manifest,
+        root,
+        undefined,
+        service.dependencies.request,
+        'github-project-pickup',
+      ),
+      undefined,
+    );
+    assert.equal(
+      await notificationAutomationReadiness(
+        service,
+        manifest,
+        root,
+        undefined,
+        service.dependencies.request,
+        'github-project-pickup',
+        'stale-job',
+      ),
+      'project-pickup-enrollment-changed',
+    );
+    policy.projectPickup.paused = true;
+    await service.reconcile(manifest, root);
+    assert.equal(native.find((job) => job.id === pickup.id)!.enabled, false);
+    assert.equal(
+      await notificationAutomationReadiness(
+        service,
+        manifest,
+        root,
+        undefined,
+        service.dependencies.request,
+        'github-project-pickup',
+      ),
+      'intake-automation-paused',
+    );
+    policy.projectPickup.paused = false;
+    await service.reconcile(manifest, root);
+    assert.equal(native.find((job) => job.id === pickup.id)!.enabled, true);
+    assert.deepEqual((await enrollments.read()).records, [enrollment]);
   });
 
   it('should register without selecting settings and select reports through the enrolled credential', async () => {

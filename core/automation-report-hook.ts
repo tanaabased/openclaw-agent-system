@@ -36,7 +36,8 @@ export default function registerAutomationReportHooks(
     await store.update(record.executionId, (current) => {
       current.guarded = true;
     });
-    return { toolsAllow: [], appendSystemContext: automationReportInstructions };
+    // codex rejects restrictive prompt-hook allowlists; block execution below instead.
+    return { appendSystemContext: automationReportInstructions };
   });
   api.on('before_tool_call', async (event, context) => {
     try {

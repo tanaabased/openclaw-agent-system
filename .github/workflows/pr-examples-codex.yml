@@ -76,8 +76,16 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          if [[ -d "${OPENCLAW_WORKSPACE:-}" ]]; then
-            openclaw-diagnostics
+          if command -v openclaw-diagnostics >/dev/null; then
+            helper_dir=$(dirname "$(command -v openclaw-diagnostics)")
+            if [[ -d "${SETUP_OPENCLAW_STATE_DIR:-}" ]]; then
+              for setup_log in "$SETUP_OPENCLAW_STATE_DIR"/setup-log.*; do
+                [[ -f "$setup_log" ]] || continue
+                printf 'unfinished setup log: %s\n' "$(basename "$setup_log")"
+                node "$helper_dir/lib/redact-stream.mjs" < "$setup_log" | tail -n 30 | tail -c 8192
+              done
+            fi
+            openclaw-diagnostics --debug
           else
-            echo "No OpenClaw workspace was created; see the scenario failure output above."
+            echo "OpenClaw setup helpers are unavailable; see the setup action failure above."
           fi

@@ -24,16 +24,49 @@ These fields select repository scope, runtimes, and intake limits. Add
 [`issue-assignment`](#githubissue-assignment) to declare assignment-driven work;
 omitting it creates no assignment automation.
 
-### `allowed-repository-owners`
+### `routing`
 
-| Type                                       | Required | Default |
-| ------------------------------------------ | -------- | ------- |
-| [Identity list](#identity-lists), nonempty | yes      | none    |
+Use an ordered list of repository name patterns to select new automated work in
+Codex and OpenClaw. The first matching rule wins: a positive pattern permits local
+work, and a leading `!` excludes it. No match, including `routing: []`, admits no
+new work.
+
+```yaml
+routing:
+  - '!tanaabased/archive-*'
+  - tanaabased/*
+  - pirog/me
+```
+
+Patterns match the entire current `owner/repository` name, case-insensitively.
+`*` matches zero or more characters within either segment; it never crosses `/`.
+Quote exclusions and patterns beginning with `*`. URLs, `**`, other glob syntax,
+and object or remote-target rules are not supported.
+
+Routing follows current names, without pinning owner or repository IDs. A rename
+or transfer changes which rules match; a replacement reusing a name can match the
+same rule. Scope changes apply to new admissions without Install and preserve
+already admitted work and its original owner. Routing does not grant GitHub access,
+approve assignment actors, or enable unsupported workflows.
+
+When `routing` is present, it replaces `allowed-repository-owners` completely,
+including its identity lookups. An invalid routing value is an error, not a request
+to use legacy owners. Remove the deprecated property after migrating: removing
+`routing` would otherwise restore the legacy fallback.
+
+### `allowed-repository-owners` (deprecated)
+
+| Type                                       | Required                      | Default |
+| ------------------------------------------ | ----------------------------- | ------- |
+| [Identity list](#identity-lists), nonempty | only when `routing` is absent | none    |
 
 Select the users or organizations whose repositories the workflow may use. These
 are repository owners, not the people allowed to assign work. For example,
 `['@tanaabased', '@pirog']` includes repositories owned by either account, subject
 to the agent's GitHub permissions. It does not grant access to private repositories.
+Existing immutable identity pins remain active only when `routing` is absent.
+To migrate owner-wide scope, replace `['@tanaabased', '@pirog']` with
+`routing: ['tanaabased/*', 'pirog/*']`, accepting the name-based behavior above.
 
 ### `interval-minutes`
 
@@ -87,21 +120,41 @@ versions are rejected. GitHub CLI-only configuration does not require this field
 ## `github.project-pickup`
 
 Declares the policy for one repository and milestone. It requires `issue-assignment`
-and a repository within `allowed-repository-owners`; it does not expand GitHub access
+and a repository included by `routing` (or legacy owners when routing is absent); it does not expand GitHub access
 or approved assignment and feedback authors.
 
 > [!IMPORTANT]
-> This release validates the policy but does not activate project pickup. Scheduled
-> selection and enrollment are not available yet in either runtime. Adding this key
-> or running Install does not self-assign issues or change existing held work to Work.
+> Choose one installation and runtime for this coordinator. Inspect its existing
+> installation identity using the [instance commands](../../CLI.md#openclaw-agent-system-instance-inspect)
+> or [Codex identity actions](../../CODEX.md#workspace-setup), then set `coordinator`
+> below. Run Install there and approve the native pickup schedule. Doctor checks its
+> saved enrollment and schedule. Missing or mismatched designation cannot activate pickup.
 
-| Field                | Required | Meaning                                                                                                                                                                                        |
-| -------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `paused`             | no       | Defaults to `false`; desired pause state for future pickup scheduling.                                                                                                                         |
-| `schedule`           | yes      | Existing [recurring schedule syntax](../../MANIFEST.md#automations): cron with an optional IANA timezone, or `every`. One-shot schedules are rejected. Native adapter limitations still apply. |
-| `window-minutes`     | yes      | Positive integer duration for each pickup window.                                                                                                                                              |
-| `selection.guidance` | no       | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                   |
-| `projects`           | yes      | Exactly one entry with `repository: owner/name` and `milestone: {number: 10, policy: only}`. The milestone number must be positive. Other policies and multi-project selection are rejected.   |
+| Field                | Required       | Meaning                                                                                                                                                                                        |
+| -------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `paused`             | no             | Defaults to `false`; pauses new pickup immediately. Run Install to synchronize the saved native job.                                                                                           |
+| `coordinator`        | for activation | `{runtime: codex, instance-id: <installation UUID>}` or runtime `openclaw`. Other installations reject activation.                                                                             |
+| `schedule`           | yes            | Existing [recurring schedule syntax](../../MANIFEST.md#automations): cron with an optional IANA timezone, or `every`. One-shot schedules are rejected. Native adapter limitations still apply. |
+| `window-minutes`     | yes            | Positive integer duration for each pickup window, at least `github.interval-minutes`.                                                                                                          |
+| `selection.guidance` | no             | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                   |
+| `projects`           | yes            | Exactly one entry with `repository: owner/name` and `milestone: {number: 10, policy: only}`. The milestone number must be positive. Other policies and multi-project selection are rejected.   |
+
+Install adds one `PROJECT PICKUP` job alongside assignment intake, using the intake
+cadence. Each eligible window can select and self-assign at most one actionable,
+unassigned issue in the configured milestone. Verified pickup enters the existing
+assessment and Work workflow; ordinary assignments keep their configured mode.
+Missed windows are not replayed. Accepted issue work may finish after a window or pause.
+Codex uses the low model profile; OpenClaw uses its default automation profile.
+
+The pilot retains its original repository, milestone, schedule, timezone and window
+anchor. Install rejects changes to those enrolled values; restore them to resume.
+Pause and selection guidance can change without reenrollment. Before transferring
+pickup, settle pending pickup operations with the original owner, stop its native
+job, and verify it is stopped. Then designate the new installation. Existing issue
+work stays with its original runtime; do not copy or delete journals to transfer it.
+Conflicting workspaces on one installation are rejected. There is no automatic
+failover, account-wide concurrency cap, or protection against independently divergent
+configuration or copied private installation identities.
 
 ## `github.issue-assignment`
 

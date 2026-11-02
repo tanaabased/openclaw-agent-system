@@ -1,10 +1,11 @@
 # OpenClaw Notification Intake Example
 
-Activate notification intake, start three independent issue assessments before any result completes, retain all three plans, and verify that a repeat scan preserves the same chats, worktrees, and assessment turns.
+Activate notification intake, exclude fixture assignments through repository routing, then reorder the rules to start three independent issue assessments before any result completes. Retain all three plans and verify that narrowing routing preserves the same chats, worktrees, and assessment turns.
 
 ## What Belongs Here
 
 - Native channel readiness and a safe intake baseline before fixture assignment.
+- First-match repository routing overriding legacy owners, with live rule changes preserving admitted work.
 - Custom routing skill/guidance selection during concurrent admission with distinct verified native owners, complete retained assessments, and private routing-method readback.
 - One repeat scan proving that admission does not duplicate chats, checkouts, or turns.
 
@@ -19,7 +20,7 @@ Activate notification intake, start three independent issue assessments before a
 - Native skill discovery and retained guidance are asserted during admission; the fixed mock judgment does not prove interpretation of the custom skill. No additional live-model turn is required.
 - One completed assessment checks that the retained custom method reaches the private routing card. Formatting and debug variants stay in owning renderer tests.
 - Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases all three only after verifying their native starts; model judgment is not under test.
-- V3 object identities preserve supplied names and node IDs through installation and intake. Only Tanaabot receives the three disposable assignments.
+- V3 object identities pin assignment actors; repository routing overrides the retained legacy owner list. Only Tanaabot receives the three disposable assignments.
 - Scoped refreshes and a 24-hour schedule bound discovery. The job owns its workspaces, issues, native state, and SSH registration; cleanup stops the Gateway before changing external fixtures.
 
 ## Setup
@@ -114,8 +115,15 @@ for slot in 1 2 3; do
 done
 cp "$TMPDIR/notification-issue-1.json" "$TMPDIR/notification-issue.json"
 
-# should start three native assessments in one automation run before any plan completes
+# should exclude assignments with the first route despite the legacy owner grant
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number "$number" --json | jq -e '.status == "completed" and .admitted == 0 and any(.repositoryScope[]; .source == "routing" and .reason == "excluded" and .index == 0)'
+jq -es '[.[].records[]] | length == 0' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-intake-v2/"github-intake-*.json
+
+# should start three native assessments after reordering routes without reinstalling
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
+node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github.routing.reverse(); writeFileSync(path,stringify(value));'
 for slot in 1 2 3; do
   number=$(jq -er .number "$TMPDIR/notification-issue-$slot.json")
   openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number "$number" --json | jq -e '.status == "completed"'
@@ -160,8 +168,9 @@ for slot in 1 2 3; do
 done
 openclaw agent-system tool worktree -- list | tee "$TMPDIR/notification-worktrees-before.json" | jq -e 'length == 3'
 
-# should preserve all three native owners on a repeat intake scan
+# should preserve all three native owners after narrowing routing to no new work
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
+node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; import {parse,stringify} from "yaml"; const path="agent.yaml"; const value=parse(readFileSync(path,"utf8")); value.github.routing=[]; writeFileSync(path,stringify(value));'
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es '[.[].records[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-all-after.json"

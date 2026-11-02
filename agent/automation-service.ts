@@ -8,6 +8,7 @@ import {
   type AutomationReportTarget,
 } from './automation-report-delivery.ts';
 import openclawIntakeJobs from './openclaw-intake-policy.ts';
+import { projectPickupAutomationId, projectPickupErrorCode } from './project-pickup-jobs.ts';
 
 import {
   AutomationError,
@@ -54,6 +55,13 @@ import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import { assertPrivateStateLocksHeld } from '../core/private-state-lock-context.ts';
 
 export interface AutomationServiceDependencies {
+  pickup?: {
+    prepare(
+      manifest: AgentManifest,
+      workspace: string,
+    ): Promise<{ enrollment: { id: string }; nativeId?: string }>;
+    activate(id: string, nativeId: string, previousNativeId?: string): Promise<void>;
+  };
   root: string;
   profile: string;
   command: string[];
@@ -814,6 +822,12 @@ export default class AutomationService {
           });
         }
         for (const job of declarations) {
+          const pickup =
+            job.id === projectPickupAutomationId && job.enabled
+              ? await this.dependencies.pickup?.prepare(manifest, context.workspaceDir)
+              : undefined;
+          if (job.id === projectPickupAutomationId && job.enabled && !pickup)
+            throw new AutomationError('project-pickup-activation-required');
           const effective = effectiveAutomation(job, context);
           let record = ledger.records.find(({ id }) => id === job.id);
           if (!record) {
@@ -915,6 +929,12 @@ export default class AutomationService {
             record.completion = String(native.state.lastRunStatus ?? native.state.lastStatus);
           delete record.pending;
           if (changed || initialHash !== automationHash(ledger)) await store.write(ledger);
+          if (pickup)
+            await this.dependencies.pickup!.activate(
+              pickup.enrollment.id,
+              native.id,
+              pickup.nativeId,
+            );
           outcomes.push({
             component: 'automations',
             stepId: job.id,
@@ -974,7 +994,14 @@ export default class AutomationService {
         return { outcomes, warnings: [] };
       });
     } catch (error) {
-      const code = error instanceof AutomationError ? error.code : 'automation-reconcile-failed';
+      const pickupCode = projectPickupErrorCode(error);
+      const code =
+        error instanceof AutomationError
+          ? error.code
+          : pickupCode.startsWith('project-pickup-') &&
+              pickupCode !== 'project-pickup-observation-unavailable'
+            ? pickupCode
+            : 'automation-reconcile-failed';
       throw new AgentSystemLifecycleError(
         'automations',
         code,

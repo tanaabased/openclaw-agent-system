@@ -1,4 +1,12 @@
 import { notificationAuthorityDigest } from './notification-authority.ts';
+import codexAutomationSchedule from './codex-automation-schedule.ts';
+import {
+  projectPickupAutomationId,
+  projectPickupConfigurationCode,
+  projectPickupErrorCode,
+} from './project-pickup-jobs.ts';
+import ProjectPickupEnrollmentStore from './project-pickup-enrollment.ts';
+import { codexInstanceStore } from './codex-assignment-claims.ts';
 import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
 import { mkdir, readdir, realpath, rmdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -18,6 +26,7 @@ import { codexThreadAdapter, connectCodexThreads } from './codex-thread-client.t
 import { codexIntakeJobs, intakeAutomationId } from './codex-intake-policy.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import {
+  prepareCodexPickupEnrollment,
   preflightCodexIntake,
   runCodexIntake,
   type CodexIntakeDependencies,
@@ -239,12 +248,28 @@ async function snapshot(pluginData: string, dependencies: CodexAutomationDepende
   }
   let jobs: ResolvedAutomation[] = [];
   let policyBlocker: string | undefined;
+  let pickupBlocker: string | undefined;
   if (!cleanupOnly) {
     try {
       jobs = codexIntakeJobs(loaded.manifest, {
         entrypoint: resolve(process.argv[1]!),
         pluginData: root,
       });
+      const policy = loaded.manifest.github?.notifications;
+      if (policy?.projectPickup) {
+        pickupBlocker = projectPickupConfigurationCode(policy, 'codex');
+        if (!pickupBlocker) {
+          try {
+            await new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root).owner(
+              policy,
+              'codex',
+            );
+          } catch (error) {
+            pickupBlocker = projectPickupErrorCode(error);
+          }
+        }
+        if (pickupBlocker) jobs = jobs.filter((job) => job.id !== projectPickupAutomationId);
+      }
     } catch (error) {
       cleanupOnly = true;
       policyBlocker =
@@ -266,6 +291,7 @@ async function snapshot(pluginData: string, dependencies: CodexAutomationDepende
     cleanupOnly,
     jobs,
     policyBlocker,
+    pickupBlocker,
   };
 }
 
@@ -468,6 +494,10 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     result.findings.push({ id: intakeAutomationId, code: selected.policyBlocker });
     if (!result.actions.length) result.status = 'blocked';
   }
+  if (selected.pickupBlocker) {
+    result.findings.push({ id: projectPickupAutomationId, code: selected.pickupBlocker });
+    if (!result.actions.length) result.status = 'blocked';
+  }
   if (threadCode) {
     result.findings.push({
       id: threadAutomationId ?? 'threads',
@@ -526,6 +556,47 @@ export async function inspectCodexAutomations(
 ) {
   const selected = await snapshot(pluginData, dependencies);
   return (await plan(selected, inputs)).result;
+}
+
+/** pickup consumes only its saved native job; a generic automation never supplies enrollment. */
+export async function inspectCodexPickupActivation(
+  pluginData: string,
+  dependencies: CodexAutomationDependencies = {},
+) {
+  const selected = await snapshot(pluginData, dependencies);
+  const job = selected.jobs.find((entry) => entry.id === projectPickupAutomationId);
+  const record = selected.ledger.records.find((entry) => entry.id === projectPickupAutomationId);
+  if (
+    !job ||
+    !record ||
+    record.removed ||
+    selected.ledger.pending?.action.manifestId === projectPickupAutomationId ||
+    record.definition.kind !== 'heartbeat' ||
+    job.payload.kind !== 'prompt'
+  )
+    throw new CodexAutomationError('project-pickup-activation-required');
+  const saved = await (dependencies.readAutomations ?? readCodexAutomations)(selected.codexHome);
+  const matches = saved.filter(
+    (item) =>
+      item.id === record.nativeId ||
+      item.definition.prompt.includes(
+        codexAutomationMarker(selected.scope, projectPickupAutomationId),
+      ),
+  );
+  if (
+    matches.length !== 1 ||
+    matches[0]!.id !== record.nativeId ||
+    !savedMatches(matches[0]!, record.definition, selected.workspace) ||
+    record.definition.prompt !==
+      job.payload.prompt +
+        '\n\n' +
+        codexAutomationMarker(selected.scope, projectPickupAutomationId) ||
+    record.definition.rrule !== codexAutomationSchedule(job.schedule, record.definition.rrule)
+  )
+    throw new CodexAutomationError('project-pickup-automation-drift');
+  if (!job.enabled || record.definition.status !== 'ACTIVE')
+    throw new CodexAutomationError('project-pickup-paused');
+  return { threadId: record.definition.targetThreadId, nativeId: record.nativeId };
 }
 
 /** new dispatch requires active consent; retained work may verify its owner after a pause. */
@@ -978,6 +1049,12 @@ export async function prepareCodexAutomation(
       throw new CodexAutomationError('automation-plan-stale-or-blocked');
     }
     const action = result.actions[0];
+    if (action.manifestId === projectPickupAutomationId && action.expected.status === 'ACTIVE')
+      await prepareCodexPickupEnrollment(pluginData, {
+        ...dependencies.intake,
+        codexHome: selected.codexHome,
+        inspectBinding: dependencies.inspectBinding,
+      });
     if (action.manifestId === intakeAutomationId && action.expected.status === 'ACTIVE') {
       const verified = await preflightCodexIntake(pluginData, {
         ...dependencies.intake,
@@ -1064,6 +1141,20 @@ export async function acknowledgeCodexAutomation(
         inspectBinding: dependencies.inspectBinding,
       });
       if (intake.status !== 'ready') throw new CodexAutomationError('intake-activation-blocked');
+    }
+    if (action.manifestId === projectPickupAutomationId && action.expected.status === 'ACTIVE') {
+      if (selected.loaded.digest !== pending.manifestDigest)
+        throw new CodexAutomationError('automation-plan-stale-or-blocked');
+      const enrollment = await prepareCodexPickupEnrollment(pluginData, {
+        ...dependencies.intake,
+        codexHome: selected.codexHome,
+        inspectBinding: dependencies.inspectBinding,
+      });
+      await new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root).activate(
+        enrollment.enrollment.id,
+        actual.id,
+        enrollment.nativeId,
+      );
     }
     const records = selected.ledger.records.filter((record) => record.id !== action.manifestId);
     const completed = {

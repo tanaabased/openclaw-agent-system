@@ -53,6 +53,22 @@ describe('channels/github/identity-cache', () => {
     assert.equal(fresh.issueAssignment!.allowed[1]!.login, actor.login);
   });
 
+  it('should skip ignored owner pins while resolving routing workflow actors', async () => {
+    const input = policy();
+    input.routing = ['owner/*'];
+    input.allowedRepositoryOwners = [{ login: 'missing', nodeId: '', reference: '@missing' }];
+    const references: string[] = [];
+    await new GitHubIdentityCache({ root, scope: 'routing' }).resolve(input, {
+      resolveIdentity: async (reference) => {
+        references.push(reference);
+        return resolveIdentity(reference);
+      },
+    });
+    assert.equal(references.includes('@missing'), false);
+    assert.ok(references.includes('@actor'));
+    assert.equal(input.allowedRepositoryOwners[0]!.nodeId, '');
+  });
+
   it('should batch retained immutable pins during scans while preserving rename and conflict checks', async () => {
     const cache = new GitHubIdentityCache({ root, scope: 'batch' });
     await cache.resolve(policy(), { resolveIdentity });

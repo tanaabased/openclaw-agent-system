@@ -2,7 +2,7 @@ import { delimiter } from 'node:path';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
 import instanceIdentity from './instance-identity.ts';
 
-import { inspectCodexIntake } from './codex-intake.ts';
+import { inspectCodexIntake, inspectCodexPickup } from './codex-intake.ts';
 import { inspectCodexAutomations } from './codex-automations.ts';
 import type { CodexAutomationInputs } from './codex-automation-plan.ts';
 import runCodexSetupProcess from './codex-process-runner.ts';
@@ -183,6 +183,7 @@ export async function inspectCodexSetup(
     manifestDigest: selected.manifestDigest,
     intake,
     findings: [
+      ...(await inspectCodexPickup(pluginData, dependencies)),
       ...(intake.storage && intake.storage.level !== 'normal'
         ? [
             {

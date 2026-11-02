@@ -1,3 +1,4 @@
+import { pickupSchedulingScenario } from '../examples/openclaw-notifications-scheduling/model-fixture.ts';
 import { openClawCollaborationScenario } from '../examples/openclaw-collaboration/model-fixture.ts';
 import { automationRecoveryScenario } from '../examples/openclaw-automation-recovery/model-fixture.ts';
 import { automationCommandChatScenario } from '../examples/openclaw-automation-command-chat/model-fixture.ts';
@@ -39,6 +40,7 @@ import { autoPlanScenario } from '../examples/openclaw-notifications-auto-plan/m
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 
 const scenarios = new Map<string, OpenClawAIMockScenario>([
+  [pickupSchedulingScenario.id, pickupSchedulingScenario],
   [agentExampleScenario.id, agentExampleScenario],
   [openClawCollaborationScenario.id, openClawCollaborationScenario],
   [automationExampleScenario.id, automationExampleScenario],

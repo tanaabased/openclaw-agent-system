@@ -1,0 +1,9 @@
+project-pickup:
+  coordinator:
+    runtime: openclaw
+    instance-id: __INSTANCE_ID__
+  schedule: every 2 days
+  window-minutes: 1440
+  projects:
+    - repository: tanaabased/big-test-bucket
+      milestone: { number: __MILESTONE_NUMBER__, policy: only }

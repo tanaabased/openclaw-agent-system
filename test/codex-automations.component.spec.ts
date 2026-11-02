@@ -1,3 +1,6 @@
+import { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
+import ProjectPickupEnrollmentStore from '../agent/project-pickup-enrollment.ts';
+import selectionFixture from './project-pickup-selection-fixture.ts';
 import assert from 'node:assert/strict';
 import {
   appendFile,
@@ -18,6 +21,7 @@ import { automationHash } from '../agent/automation-hash.ts';
 import { AutomationError } from '../agent/automation-gateway.ts';
 import type { AutomationThread, AutomationThreadAdapter } from '../agent/automation-threads.ts';
 import {
+  inspectCodexPickupActivation,
   acknowledgeCodexAutomation,
   replaceCodexNotificationCoordinator,
   codexNotificationResetAutomation,
@@ -445,6 +449,111 @@ describe('agent/codex-automations', () => {
     await assert.rejects(
       cancelCodexAutomation(pluginData, plan.digest, deps()),
       rejectsCode('automation-cancel-recovery-required'),
+    );
+  });
+
+  it('should enroll one designated pickup job and preserve its window anchor across pause and repeated installs', async () => {
+    const provider = selectionFixture();
+    const instance = await codexInstanceStore(pluginData).identity();
+    const source = {
+      'schema-version': 1,
+      agent: { id: 'fixture' },
+      models: {
+        default: { model: 'openai/gpt-6-astra', effort: 'high' },
+        low: { model: 'openai/gpt-6-luna', effort: 'medium' },
+        medium: { model: 'openai/gpt-6.1-sol', effort: 'high' },
+        high: { model: 'openai/gpt-6-astra', effort: 'high' },
+      },
+      github: {
+        username: 'receiver',
+        runtimes: ['codex'],
+        'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+        'issue-assignment': {
+          mode: 'plan',
+          allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
+        },
+        'project-pickup': {
+          coordinator: { runtime: 'codex', 'instance-id': instance.instanceId },
+          paused: false,
+          schedule: 'every 1 day',
+          'window-minutes': 60,
+          projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
+        },
+      },
+    };
+    const saveManifest = () => writeFile(join(workspace, 'agent.yaml'), JSON.stringify(source));
+    await saveManifest();
+    const conversations = new Map<
+      string,
+      { id: string; name?: string; model?: string; effort?: string }
+    >();
+    const dependencies = {
+      ...deps(),
+      intake: { connect: async () => provider.client },
+      threadAdapter: {
+        async lookup(id: string) {
+          return conversations.get(id) ?? null;
+        },
+        async create(
+          _record: unknown,
+          save: (id: string) => Promise<void>,
+          _fresh: boolean,
+          settings?: { model?: string; effort?: string },
+        ) {
+          const id = `pickup-thread-${conversations.size}`;
+          await save(id);
+          conversations.set(id, { id, ...settings });
+          return id;
+        },
+        async rename(id: string, name: string) {
+          conversations.get(id)!.name = name;
+        },
+      },
+    };
+    await syncThreads(dependencies);
+    const reconcile = async () => {
+      for (let index = 0; index < 4; index++) {
+        const plan = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+        if (plan.status === 'aligned') return;
+        assert.ok(plan.actions[0], JSON.stringify(plan));
+        await syncOne(dependencies, `pickup-native-${index}`);
+      }
+      assert.fail('pickup installation did not converge');
+    };
+    await reconcile();
+    const enrollments = new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root);
+    const first = (await enrollments.read()).records[0]!;
+    const active = await inspectCodexPickupActivation(pluginData, dependencies);
+    assert.equal(active.nativeId, first.nativeId);
+    assert.equal((await readCodexAutomations(codexHome)).length, 2);
+    assert.equal(conversations.size, 2);
+    await reconcile();
+    assert.deepEqual((await enrollments.read()).records, [first]);
+    source.github['project-pickup'].paused = true;
+    await saveManifest();
+    await reconcile();
+    await assert.rejects(
+      inspectCodexPickupActivation(pluginData, dependencies),
+      rejectsCode('project-pickup-paused'),
+    );
+    source.github['project-pickup'].paused = false;
+    await saveManifest();
+    await reconcile();
+    assert.deepEqual(await inspectCodexPickupActivation(pluginData, dependencies), active);
+    assert.deepEqual((await enrollments.read()).records, [first]);
+    const saved = (await readCodexAutomations(codexHome)).find(
+      (job) => job.id === active.nativeId,
+    )!;
+    await nativeWrite({ ...saved.definition, rrule: 'FREQ=DAILY' }, saved.id);
+    await assert.rejects(
+      inspectCodexPickupActivation(pluginData, dependencies),
+      rejectsCode('project-pickup-automation-drift'),
+    );
+    await rm(join(codexHome, 'automations', saved.id), { recursive: true });
+    await nativeWrite(saved.definition, 'copied-marker');
+    await assert.rejects(
+      inspectCodexPickupActivation(pluginData, dependencies),
+      rejectsCode('project-pickup-automation-drift'),
     );
   });
 

@@ -49,7 +49,12 @@ interface Dependencies {
     workspace: string,
     selector: GitHubNotificationItemSelector,
     signal: AbortSignal,
-  ): Promise<{ status: 'ready' | 'blocked'; code?: string; admitted?: number }>;
+  ): Promise<{
+    status: 'ready' | 'blocked';
+    code?: string;
+    admitted?: number;
+    repositoryScope?: GitHubNotificationRefreshResult['repositoryScope'];
+  }>;
   inspectRun(
     manifest: AgentManifest,
     workspace: string,
@@ -157,6 +162,9 @@ export default class OpenClawNotifications {
           itemType: 'issue',
           lifecycleId: 'issue',
           repository: `${item.repository.owner.login}/${item.repository.name}`,
+          ...('repositoryScope' in item.evidence && item.evidence.repositoryScope
+            ? { repositoryScope: item.evidence.repositoryScope }
+            : {}),
           number: item.issue.number,
           disposition: record?.retired ? 'retired' : 'approved',
           reasonCode:
@@ -290,6 +298,7 @@ export default class OpenClawNotifications {
           status: 'completed',
           code: 'github-notification-intake-completed',
           admitted: scan.admitted,
+          ...(scan.repositoryScope ? { repositoryScope: scan.repositoryScope } : {}),
           baselineAt: observation.baseline.observedAt,
         };
       }

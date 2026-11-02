@@ -1,4 +1,5 @@
 import { providerDiagnosticSchema } from '../../../utils/provider-diagnostic.ts';
+import { repositoryScopeDecisionSchema } from '../repository-scope.ts';
 import { projectWorkSchema, projectWorkMatches } from '../../../agent/project-pickup-authority.ts';
 import { historySoftBytes } from '../../../agent/history-state.ts';
 import { refreshStateSnapshot } from '../../../core/merge-state-snapshot.ts';
@@ -56,7 +57,8 @@ export const intakeRecordSchema = Type.Object(
         open: Type.Literal(true),
         assigned: Type.Literal(true),
         repositoryReadable: Type.Literal(true),
-        ownerPinned: Type.Literal(true),
+        ownerPinned: Type.Boolean(),
+        repositoryScope: Type.Optional(repositoryScopeDecisionSchema),
         actorPinned: Type.Literal(true),
         projectWork: Type.Optional(projectWorkSchema),
       },

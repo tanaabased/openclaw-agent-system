@@ -333,6 +333,12 @@ The selected model and effort format stdout and stderr into a report card, addin
 model cost and latency. Markdown, JSON, plain text, and empty output are supported;
 commands without `thread` remain model-free.
 
+Report turns retain the agent's normal tool availability, with instructions to format
+only the captured result. Agent System blocks tool calls that reach its execution
+hook; this is not guaranteed isolation from every runtime-native tool. Agent System
+doesn't turn blocked attempts into separate policy-violation reports or change the
+captured command outcome.
+
 Reports sanitize each stream, cap excerpts at 16 KiB, and disclose truncation; full
 permitted output stays in native run history. Command status, not model explanations
 or stderr alone, determines failure.

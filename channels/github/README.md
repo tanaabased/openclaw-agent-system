@@ -35,7 +35,7 @@ github:
   schema-version: 3
   username: tanaabot
   runtimes: [openclaw]
-  allowed-repository-owners: ['@tanaabased']
+  routing: ['tanaabased/*']
   issue-assignment:
     mode: auto
     allowed: ['@pirog']
@@ -103,7 +103,7 @@ github:
   schema-version: 3
   username: tanaabot
   runtimes: [openclaw]
-  allowed-repository-owners: ['@tanaabased']
+  routing: ['tanaabased/*']
   issue-assignment:
     mode: plan
     allowed: ['@pirog']
@@ -123,7 +123,7 @@ github:
   schema-version: 3
   username: tanaabot
   runtimes: [openclaw]
-  allowed-repository-owners: ['@tanaabased']
+  routing: ['tanaabased/*']
   issue-assignment:
     mode: work
     allowed: ['@pirog']
@@ -144,7 +144,7 @@ github:
   schema-version: 3
   username: tanaabot
   runtimes: [openclaw]
-  allowed-repository-owners: ['@tanaabased']
+  routing: ['tanaabased/*']
   max-concurrent-items: 1
   issue-assignment:
     mode: auto
@@ -204,7 +204,8 @@ and cleanup waits for the agent to be idle and the
 [cleanup grace period](../../CONFIG.md#cleanup), which defaults to
 **60 minutes**. Both runtimes use the shared
 `plugins.entries.agent-system.config.cleanup.graceMinutes` setting.
-New activity can defer cleanup; a restart does not reset the deadline.
+Active work can defer cleanup; cosmetic activity and terminal input history do not
+restart a closed task's deadline. A restart does not reset the deadline.
 
 Retirement archives the chat and removes its owned checkout while preserving
 branches and GitHub content. Unverified unassignment leaves the resources intact
@@ -212,18 +213,22 @@ and reports a warning. Before cleanup begins, verified reassignment or approved
 feedback can reactivate an unarchived chat; reopening the issue alone does not.
 
 > [!WARNING]
-> For a verified closed issue, OpenClaw cleanup can discard modified or untracked
-> checkout files, even if the branch name changed. Save work you need before closing
+> For a verified closed issue, cleanup can discard modified or untracked checkout
+> files and local-only work without a preserving ref, even if pinned or the branch
+> name changed. Save work you need before closing
 > the issue. Other retirement triggers require a clean checkout and the expected branch.
 
 Codex uses native desktop archival and worktree preservation. If desktop settings
-retain the checkout, retirement remains pending. Both runtimes preserve protected
-or shared resources and unreferenced commits, and hold cleanup when ownership or
-activity cannot be verified.
+retain the checkout, retirement remains pending. Both runtimes protect active or
+shared users and hold the affected cleanup effect when ownership or execution
+cannot be verified. Pins alone do not protect closed-task resources. Actual native
+archive restrictions remain pending without blocking independently supported
+checkout cleanup; Codex desktop may couple those effects. Nonterminal retirement
+still requires preservation of unreferenced commits.
 
 To retire one task explicitly, use [Task Retirement](../../skills/task-retirement/SKILL.md).
 It skips the scheduled eligibility and grace period but keeps ownership, activity,
-and preservation checks. It does not close or unassign the GitHub issue. A task
+and nonterminal preservation checks. It does not close or unassign the GitHub issue. A task
 cannot archive its own active turn; intake can finish the pending cleanup later.
 
 ## Further Reading

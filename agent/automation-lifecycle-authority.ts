@@ -31,6 +31,7 @@ export async function verifyAutomationLifecycleRun(
   scheduler: NotificationScheduler | undefined,
   manifest: AgentManifest,
   run: AutomationLifecycleRun,
+  expectedId?: string,
 ): Promise<void> {
   const { context, store } = await service.scope(manifest, run.workspaceDir);
   const records = (await store.read()).records.filter(({ nativeId }) => nativeId === run.jobId);
@@ -41,6 +42,7 @@ export async function verifyAutomationLifecycleRun(
     context.agentId !== run.agentId ||
     records.length !== 1 ||
     !record ||
+    (expectedId !== undefined && record.id !== expectedId) ||
     !declared ||
     !declared.enabled ||
     declared.payload.kind !== 'prompt' ||

@@ -2194,6 +2194,10 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await record()).retirement?.code, 'retirement-native-work-unresolved');
     native!.status = 'idle';
     native!.turnEnded = true;
+    deps.retirementNative = {
+      worktreeUsers: async () => ['issue-thread', 'unowned'],
+      archiveOutcome: async () => 'unverified',
+    };
     const threads = {
       schemaVersion: 4,
       pinnedThreads: [{ id: 'issue-thread' }],
@@ -2202,28 +2206,26 @@ describe('agent/codex-dispatch', () => {
     };
     now += 60_000;
     await request('next', { projects, threads });
-    assert.equal((await record()).retirement?.code, 'retirement-native-resource-protected');
+    assert.equal((await record()).retirement?.code, 'retirement-worktree-shared');
     assert.equal((await record()).retirement?.archiveAttempt, undefined);
     const deadline = (await record()).retirement!.eligibleAt;
     assert.equal(deadline, eligibleAt);
-    threads.pinnedThreads = [];
     deps.retirementNative = {
       worktreeUsers: async () => ['issue-thread'],
       archiveOutcome: async () => 'unverified',
     };
     const git = deps.git!;
     deps.git = async (path, args) => {
-      if (args[0] !== 'for-each-ref') return git(path, args);
-      await writeCleanup(17);
-      return 'refs/heads/preserved';
+      const result = await git(path, args);
+      if (args[0] === 'remote') await writeCleanup(17);
+      return result;
     };
     now += 60_000;
     await request('next', { projects, threads });
     assert.equal((await record()).retirement?.code, 'retirement-configuration-changed');
     assert.equal((await record()).retirement?.archiveAttempt, undefined);
     assert.equal((await record()).retired, undefined);
-    deps.git = async (path, args) =>
-      args[0] === 'for-each-ref' ? 'refs/heads/preserved' : git(path, args);
+    deps.git = git;
     now += 60_000;
     assert.equal((await request('next', { projects, threads })).status, 'retirement-prepared');
     assert.equal((await record()).retirement?.eligibleAt, deadline);

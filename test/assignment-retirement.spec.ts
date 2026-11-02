@@ -116,6 +116,30 @@ function setup() {
 }
 
 describe('assignment retirement', () => {
+  it('should retain a closed task deadline across cosmetic activity and fresh effect checks', async () => {
+    const h = setup();
+    h.fixture.item.state = 'closed';
+    await h.run();
+    const deadline = h.record.retirement!.eligibleAt;
+    h.advance(60);
+    h.activity();
+    await h.run();
+    assert.equal(h.record.retirement!.eligibleAt, deadline);
+    assert.ok(h.record.retired);
+  });
+  for (const closed of [true, false]) {
+    it(`should ${closed ? 'ignore' : 'protect'} activity changes during a fresh effect check for ${closed ? 'closed' : 'nonterminal'} retirement`, async () => {
+      const h = setup();
+      if (closed) h.fixture.item.state = 'closed';
+      else h.setArchived();
+      await h.run();
+      h.advance(60);
+      h.beforeRecheck(h.activity);
+      await h.run();
+      assert.equal(h.cleanups(), closed ? 1 : 0);
+      if (!closed) assert.equal(h.record.retirement?.code, 'retirement-observation-changed');
+    });
+  }
   for (const scenario of ['bot', 'malformed', 'human', 'busy'] as const) {
     it(`should preserve retirement safeguards with ${scenario} feedback on the linked pull request`, async () => {
       const h = setup();
@@ -557,14 +581,11 @@ describe('assignment retirement', () => {
     h.setBusy(false);
     h.advance(1);
     await h.run();
-    assert.equal(h.cleanups(), 0);
-    h.advance(60);
-    await h.run();
     assert.equal(h.cleanups(), 1);
   });
   it('should postpone cleanup for a new native turn without restarting it for polls', async () => {
     const h = setup();
-    h.fixture.item.state = 'closed';
+    h.setArchived();
     await h.run();
     h.advance(30);
     h.activity();
@@ -703,60 +724,54 @@ describe('assignment retirement', () => {
       assert.ok(h.record.retired);
     });
   }
-  it('should archive eligible shared owners before reclaiming their checkout once', async () => {
-    const h = setup();
-    h.fixture.item.state = 'closed';
-    h.record.worktree = '/managed/shared';
-    h.records.push({ ...h.record, id: 'second' });
-    const archived = new Set<string>();
-    let removals = 0;
-    let now = baseline;
-    const run = () =>
-      reconcile({
-        configuration: h.settings.value,
-        readConfiguration: async () => h.settings.value,
-        records: h.records,
-        admitted: h.admissions,
-        policy: {
-          policy: h.fixture.policy,
-          username: 'receiver',
-          digest: 'digest',
-        },
-        client: h.fixture.client,
-        owner: 'intake',
-        now,
-        save: async () => {},
-        fresh: async () => {},
-        observe: async (record) => ({
-          archived: archived.has(record.id),
-          idle: true,
-          activityId: 'turn',
-        }),
-        cleanup: async (record, _intake, fresh, shared) => {
-          await fresh();
-          archived.add(record.id);
-          const removed = shared.every((other) => archived.has(other.id));
-          if (removed && !removals) removals++;
-          return { archived: true, worktreeRemoved: removed };
-        },
-      });
-    await run();
-    now += 3_600_000;
-    await run();
-    now += 60_000;
-    await run();
-    assert.equal(archived.size, 2);
-    assert.equal(removals, 1);
-    assert.ok(h.records.every((record) => record.retired));
-  });
-  for (const condition of [
-    'busy',
-    'unknown',
-    'grace',
-    'reactivated',
-    'pending-deadline',
-    'legacy',
-  ] as const) {
+  for (const count of [2, 14]) {
+    it(`should archive ${count} eligible shared owners across bounded passes and reclaim once`, async () => {
+      const h = setup();
+      h.fixture.item.state = 'closed';
+      h.record.worktree = '/managed/shared';
+      for (let n = 1; n < count; n++) h.records.push({ ...h.record, id: `peer-${n}` });
+      const archived = new Set<string>();
+      let removals = 0;
+      let now = baseline;
+      const run = () =>
+        reconcile({
+          configuration: h.settings.value,
+          readConfiguration: async () => h.settings.value,
+          records: h.records,
+          admitted: h.admissions,
+          policy: {
+            policy: h.fixture.policy,
+            username: 'receiver',
+            digest: 'digest',
+          },
+          client: h.fixture.client,
+          owner: 'intake',
+          now,
+          save: async () => {},
+          fresh: async () => {},
+          observe: async (record) => ({
+            archived: archived.has(record.id),
+            idle: true,
+            activityId: 'turn',
+          }),
+          cleanup: async (record, _intake, fresh, shared) => {
+            await fresh();
+            archived.add(record.id);
+            const removed = shared.every((other) => archived.has(other.id));
+            if (removed && !removals) removals++;
+            return { archived: true, worktreeRemoved: removed };
+          },
+        });
+      for (let pass = 0; pass < (count > 12 ? 6 : 3); pass++) {
+        await run();
+        now += 3_600_000;
+      }
+      assert.equal(archived.size, count);
+      assert.equal(removals, 1);
+      assert.ok(h.records.every((record) => record.retired));
+    });
+  }
+  for (const condition of ['busy', 'unknown', 'grace', 'pending-deadline', 'legacy'] as const) {
     it(`should keep a shared checkout when a pending peer is ${condition}`, async () => {
       const h = setup();
       h.fixture.item.state = 'closed';
@@ -789,7 +804,7 @@ describe('assignment retirement', () => {
             : {
                 archived: false,
                 idle: condition !== 'busy',
-                activityId: condition === 'reactivated' ? 'new-turn' : 'turn-1',
+                activityId: 'turn-1',
               },
         cleanup: async () => {
           cleanups++;
@@ -840,7 +855,7 @@ describe('assignment retirement', () => {
       await h.run();
       h.advance(60);
       await h.run();
-      assert.equal(h.record.retirement?.reason, 'chat-archived');
+      assert.equal(h.record.retirement?.reason, closed ? 'issue-closed' : 'chat-archived');
       assert.deepEqual(h.closedInputs, [closed]);
       assert.equal(h.cleanups(), 1);
     });
