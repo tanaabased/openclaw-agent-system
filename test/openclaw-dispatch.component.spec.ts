@@ -1833,6 +1833,47 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 0);
   });
 
+  it('should enforce pool eligibility before native creation and retain the accepted owner after edits', async () => {
+    const comments = enableClaims();
+    const identity = await service.dependencies.claimStore!.identity();
+    const other = '11111111-1111-4111-8111-111111111111';
+    const route = (target: string | string[]) => {
+      manifest.github!.notifications!.routing = [{ 'owner/repo': target }, 'owner/*'];
+    };
+    route([other]);
+    const excluded = await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal(
+      (excluded as { claim?: { code?: string } }).claim?.code,
+      'claim-route-instance-ineligible',
+    );
+    assert.equal(comments.length, 0);
+    assert.equal(creates().length, 0);
+    route([other, identity.instanceId]);
+    coordinator.runId = 'eligible-first';
+    assert.equal(
+      (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+      'claim-waiting',
+    );
+    coordinator.runId = 'eligible-second';
+    const selected = await next();
+    route(other);
+    const held = await prepare(selected);
+    assert.equal(
+      (held as { claim?: { code?: string } }).claim?.code,
+      'claim-route-owner-ineligible',
+    );
+    assert.equal(creates().length, 0);
+    route(identity.instanceId);
+    coordinator.runId = 'eligible-third';
+    const ready = await next();
+    assert.equal((await prepare(ready)).status, 'session-created');
+    route([other]);
+    coordinator.runId = 'excluded-after-creation';
+    await service.run(manifest, root, coordinator, { action: 'reconcile', id: ready.id });
+    assert.equal(creates().length, 1);
+    assert.match(comments[0]!.body, /Assignment accepted/u);
+  });
+
   it('should hold a pending pilot assignment when claim election becomes dormant', async () => {
     const comments = enableClaims();
     await service.run(manifest, root, coordinator, { action: 'next' });
@@ -1953,25 +1994,26 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 0);
   });
 
-  it('should reconcile uncertain native creation before accepting the retained claim', async () => {
-    const comments = enableClaims();
-    await service.run(manifest, root, coordinator, { action: 'next' });
-    coordinator.runId = 'second-native-occurrence';
-    const routed = await next();
-    lost = true;
-    assert.equal((await prepare(routed)).status, 'waiting');
-    assert.match(comments[0]!.body, /^Assignment claim registered on /u);
-    manifest.github!.notifications!.routing = [{ 'owner/*': 'local' }];
-    service = new OpenClawDispatch(service.dependencies);
-    assert.equal(
-      (await service.run(manifest, root, coordinator, { action: 'reconcile', id: routed.id }))
-        .status,
-      'session-created',
-    );
-    assert.equal(creates().length, 1);
-    assert.equal(preparedWorktrees, 1);
-    assert.match(comments[0]!.body, /^Assignment accepted on /u);
-  });
+  for (const target of ['local', '11111111-1111-4111-8111-111111111111'])
+    it(`should reconcile uncertain native creation after a ${target === 'local' ? 'local' : 'targeted'} route edit`, async () => {
+      const comments = enableClaims();
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      coordinator.runId = 'second-native-occurrence';
+      const routed = await next();
+      lost = true;
+      assert.equal((await prepare(routed)).status, 'waiting');
+      assert.match(comments[0]!.body, /^Assignment claim registered on /u);
+      manifest.github!.notifications!.routing = [{ 'owner/*': target }];
+      service = new OpenClawDispatch(service.dependencies);
+      assert.equal(
+        (await service.run(manifest, root, coordinator, { action: 'reconcile', id: routed.id }))
+          .status,
+        'session-created',
+      );
+      assert.equal(creates().length, 1);
+      assert.equal(preparedWorktrees, 1);
+      assert.match(comments[0]!.body, /^Assignment accepted on /u);
+    });
 
   async function assignments(count: number, limit: number) {
     multiple = true;

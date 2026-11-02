@@ -8,15 +8,38 @@ export const repositoryPatternSchema = Type.String({
   minLength: 3,
   pattern: '^!?(?!.*\\*\\*)[A-Za-z0-9*.-]+/[A-Za-z0-9*_.-]+(?![\\s\\S])',
 });
+const instanceIdSchema = Type.String({
+  pattern: '^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}(?![\\s\\S])',
+});
+const instancePoolSchema = Type.Array(instanceIdSchema, { minItems: 1, uniqueItems: true });
 export const repositoryRouteSchema = Type.Union([
   repositoryPatternSchema,
   Type.Record(
     Type.String({ pattern: '^(?!!)(?!.*\\*\\*)[A-Za-z0-9*.-]+/[A-Za-z0-9*_.-]+(?![\\s\\S])' }),
-    Type.Union([Type.Literal('local'), Type.Literal('swarm')]),
+    Type.Union([
+      Type.Literal('local'),
+      Type.Literal('swarm'),
+      instanceIdSchema,
+      instancePoolSchema,
+    ]),
     { minProperties: 1, maxProperties: 1, additionalProperties: false },
   ),
 ]);
 export type RepositoryRoute = Static<typeof repositoryRouteSchema>;
+
+/** preserve rule order while canonicalizing the unordered destination sets. */
+export function normalizeRepositoryRouting(routes: RepositoryRoute[]) {
+  return routes.map((route) => {
+    if (typeof route === 'string') return route;
+    const [pattern, target] = Object.entries(route)[0]!;
+    return {
+      [pattern]:
+        target === 'local' || target === 'swarm'
+          ? target
+          : (Array.isArray(target) ? [...target] : [target]).sort(),
+    };
+  });
+}
 
 export const repositoryScopeDecisionSchema = Type.Object(
   {
@@ -30,6 +53,7 @@ export const repositoryScopeDecisionSchema = Type.Object(
     ]),
     index: Type.Optional(Type.Integer({ minimum: 0 })),
     pattern: Type.Optional(repositoryPatternSchema),
+    eligibleInstanceIds: Type.Optional(instancePoolSchema),
   },
   { additionalProperties: false },
 );
@@ -56,10 +80,13 @@ export default function repositoryScope(
       if (matches(excluded ? pattern.slice(1) : pattern, path))
         return {
           source: 'routing',
-          decision: excluded ? 'deny' : target,
+          decision: excluded ? 'deny' : target === 'local' ? 'local' : 'swarm',
           reason: excluded ? 'excluded' : 'match',
           index,
           pattern,
+          ...(!excluded && target !== 'local' && target !== 'swarm'
+            ? { eligibleInstanceIds: (Array.isArray(target) ? [...target] : [target]).sort() }
+            : {}),
         };
     }
     return { source: 'routing', decision: 'deny', reason: 'no-match' };

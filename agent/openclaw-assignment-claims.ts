@@ -30,10 +30,14 @@ export default class OpenClawAssignmentClaims {
     caller: DispatchCaller;
     hasCapacity: boolean;
     mode: 'local' | 'swarm' | 'deny';
+    eligibleInstanceIds?: string[];
+    nativeAttempted?: boolean;
   }) {
     const { sessionKey, sessionId, runId } = input.caller;
     return selectAssignmentClaim({
       mode: input.mode,
+      eligibleInstanceIds: input.eligibleInstanceIds,
+      nativeAttempted: input.nativeAttempted,
       store: this.store,
       client: this.connect(input.client),
       source: source(input.intake),

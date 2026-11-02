@@ -14,6 +14,40 @@ import { normalizeAgentManifest } from '../manifest/parse.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
 describe('channels/github/repository-scope', () => {
+  const a = '11111111-1111-4111-8111-111111111111';
+  const b = '22222222-2222-4222-8222-222222222222';
+
+  it('should normalize uuid targets and unordered pools without falling through', () => {
+    const { policy, repository } = intakeFixture();
+    for (const target of [a, [a], [b, a]]) {
+      policy.routing = [{ 'owner/repo': target }, 'owner/*'];
+      const decision = repositoryScope(policy, repository);
+      assert.equal(decision.decision, 'swarm');
+      assert.equal(decision.index, 0);
+      assert.deepEqual(
+        decision.eligibleInstanceIds,
+        typeof target === 'string' ? [a] : [...target].sort(),
+      );
+      assert.equal(repositoryScopeCandidate(policy, 'owner', 'repo'), true);
+      const parsed = normalizeAgentManifest({
+        'schema-version': 1,
+        agent: { id: 'receiver' },
+        github: { username: 'receiver', routing: policy.routing },
+      });
+      assert.equal(parsed.status, 'valid', JSON.stringify(parsed.diagnostics));
+    }
+    for (const target of [[], [a, a], [a, 'local'], ['swarm'], 'my-laptop', a + '\n', [b, null]])
+      assert.equal(Value.Check(repositoryRouteSchema, { 'owner/repo': target }), false);
+    policy.routing = [{ 'owner/repo': [b, a] }];
+    const digest = () => [notificationAuthorityDigest(policy), feedbackAuthorityDigest(policy)];
+    const before = digest();
+    policy.routing = [{ 'owner/repo': [a, b] }];
+    assert.deepEqual(digest(), before);
+    policy.routing = [{ 'owner/repo': a }];
+    const singleton = digest();
+    policy.routing = [{ 'owner/repo': [a] }];
+    assert.deepEqual(digest(), singleton);
+  });
   it('should resolve local and swarm targets in the same ordered scope', () => {
     const { policy, repository } = intakeFixture();
     policy.routing = ['!owner/archive-*', { 'OWNER/REPO': 'swarm' }, 'owner/*'];

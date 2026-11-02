@@ -34,9 +34,11 @@ export default class CodexAssignmentClaims {
     turnId: string;
     hasCapacity: boolean;
     mode: 'local' | 'swarm' | 'deny';
+    eligibleInstanceIds?: string[];
   }) {
     return selectAssignmentClaim({
       mode: input.mode,
+      eligibleInstanceIds: input.eligibleInstanceIds,
       store: this.store,
       client: this.connect(input.client),
       source: source(input.intake),

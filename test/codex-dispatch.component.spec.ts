@@ -662,6 +662,48 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(gitCalls, []);
   });
 
+  it('should enforce uuid eligibility through native preparation and retain accepted ownership after edits', async () => {
+    const { store, comments } = await claiming();
+    const identity = await store.identity();
+    const other = '11111111-1111-4111-8111-111111111111';
+    const route = async (target: string | string[]) =>
+      writeFile(
+        join(workspace, 'agent.yaml'),
+        JSON.stringify({
+          ...manifest,
+          github: { ...manifest.github, routing: [{ 'owner/repo': target }, 'owner/*'] },
+        }),
+      );
+    await route(other);
+    const excluded = await next();
+    assert.equal((excluded.claim as { code: string }).code, 'claim-route-instance-ineligible');
+    assert.equal(comments.length, 0);
+    assert.deepEqual(gitCalls, []);
+    await route(identity.instanceId);
+    now += 300000;
+    assert.equal((await next()).status, 'claim-waiting');
+    now += 300000;
+    const selected = await next();
+    assert.equal(selected.status, 'routing-required');
+    await route([other]);
+    const held = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
+    });
+    assert.equal((held.claim as { code: string }).code, 'claim-route-owner-ineligible');
+    assert.equal(native, undefined);
+    await route([other, identity.instanceId]);
+    now += 300000;
+    const prepared = await prepare();
+    await route(other);
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    assert.equal(comments.length, 1);
+    assert.match(comments[0]!.body, /Assignment accepted/u);
+  });
+
   it('should prepare a first assignment with uncached compact reviewers', async () => {
     const updated = structuredClone(manifest);
     Object.assign(updated.github['issue-assignment'], { reviewers: ['@reviewer', 'U_second'] });
@@ -925,12 +967,23 @@ describe('agent/codex-dispatch', () => {
   });
 
   it('should leave a claim owned by openclaw without preparing any codex repository or chat', async () => {
-    const { client, comments } = await claiming();
+    const { store, client, comments } = await claiming();
     const selected = await selectCodexIntake(pluginData, deps);
     const intake = (await selected.store.read())!.records[0]!;
     const other = new OpenClawAssignmentClaims(
       new AssignmentClaimStore(join(root, 'openclaw-instance')),
       () => client,
+    );
+    const eligibleInstanceIds = [
+      (await store.identity()).instanceId,
+      (await other.store.identity()).instanceId,
+    ];
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        github: { ...manifest.github, routing: [{ 'owner/repo': eligibleInstanceIds }] },
+      }),
     );
     const caller = {
       sessionKey: 'agent:receiver:main',
@@ -940,6 +993,7 @@ describe('agent/codex-dispatch', () => {
     };
     await other.select({
       mode: 'swarm',
+      eligibleInstanceIds: [...eligibleInstanceIds].reverse(),
       intake,
       client: fixture.client as never,
       caller,
@@ -954,6 +1008,7 @@ describe('agent/codex-dispatch', () => {
       (
         await other.select({
           mode: 'swarm',
+          eligibleInstanceIds: [...eligibleInstanceIds].reverse(),
           intake,
           client: fixture.client as never,
           caller: { ...caller, runId: 'second' },
