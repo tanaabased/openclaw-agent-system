@@ -29,6 +29,9 @@ async function fixture() {
   const approval = new AgentLifecycleApproval({
     manifestService: {
       loadForAgentId: async () => loaded,
+      loadForCommandDirectory: async () => {
+        throw new Error('native lifecycle tools must not discover the caller manifest');
+      },
       withSnapshot: async (_snapshot, _signal, operation) => operation(),
     },
     doctorService: {

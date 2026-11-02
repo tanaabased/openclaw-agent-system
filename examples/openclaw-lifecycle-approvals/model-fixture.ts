@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copilotkit/aimock';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
@@ -126,7 +128,14 @@ const fixtures: Fixture[] = [
         );
         if (!text) return false;
         try {
-          return Array.isArray(JSON.parse(text).findings);
+          const result = JSON.parse(text);
+          const codex = request.model.includes('5.4-nano');
+          return (
+            Array.isArray(result.findings) &&
+            result.agentId === (codex ? 'runtime-codex' : 'runtime-openclaw') &&
+            result.workspaceDir ===
+              fileURLToPath(new URL(codex ? './codex' : './openclaw', import.meta.url))
+          );
         } catch {
           return false;
         }

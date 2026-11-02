@@ -8,6 +8,11 @@ models:
   default:
     model: openai/gpt-5.4-nano
     effort: medium
+git:
+  worktrees:
+    repositories:
+      local:
+        fixture: ../source
 setup-agent:
   check: |
     printf 'checked\n' >> "$TMPDIR/agent-system-approval-check"
