@@ -96,6 +96,7 @@ export default function createIntakeTool(
                     Intl.DateTimeFormat().resolvedOptions().timeZone,
                     {
                       nativeId: occurrence!.authorization.nativeId,
+                      runId: occurrence!.runId,
                       async assertCurrent() {
                         context.assertInvocationCurrent();
                         await occurrence!.authorization.assertCurrent();

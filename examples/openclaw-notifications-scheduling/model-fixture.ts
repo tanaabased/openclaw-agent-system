@@ -10,7 +10,7 @@ const call = 'call_project_pickup';
 export const pickupSchedulingScenario: OpenClawAIMockScenario = {
   id: 'openclaw-notifications-scheduling',
   model: { match: model, reference: 'aimock/gpt-5.5' },
-  finalResponses: ['pickup-empty-verified'],
+  finalResponses: ['NO_REPLY'],
   systemPromptSignals: [],
   userPromptSignals: [prompt],
   toolCalls: [{ id: call, name: 'agent_system_intake' }],
@@ -37,13 +37,14 @@ export const pickupSchedulingScenario: OpenClawAIMockScenario = {
           const text = openClawAIMockToolResultText(request.messages, call);
           if (!text) return false;
           try {
-            return JSON.parse(text).status === 'empty';
+            const result = JSON.parse(text);
+            return result.status === 'empty' && result.response === '';
           } catch {
             return false;
           }
         },
       },
-      response: { id: 'pickup-empty', content: 'pickup-empty-verified' },
+      response: { id: 'pickup-empty', content: 'NO_REPLY' },
     },
   ],
 };

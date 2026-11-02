@@ -1,4 +1,5 @@
-import { openClawItemOccupied } from './openclaw-capacity.ts';
+import projectPickupReport from './project-pickup-report.ts';
+import openClawCapacity, { openClawItemOccupied } from './openclaw-capacity.ts';
 import type ProjectPickupEnrollmentStore from './project-pickup-enrollment.ts';
 import {
   projectPickupAutomationId,
@@ -100,7 +101,7 @@ export default class OpenClawIntake {
     workspaceDir: string,
     input: PickupInput,
     timezone: string,
-    occurrence?: { nativeId: string; assertCurrent(): Promise<void> },
+    occurrence?: { nativeId: string; runId?: string; assertCurrent(): Promise<void> },
   ) {
     const { store, workspace } = await this.select(manifest, workspaceDir);
     let authority = this.dependencies.projectPickup;
@@ -157,7 +158,7 @@ export default class OpenClawIntake {
         !client.assignProjectIssue
       )
         throw new IntakeError('project-pickup-provider-unavailable');
-      return projectPickup({
+      const result = await projectPickup({
         runtime: 'openclaw',
         scope: store.location.scope,
         workspaceDir: workspace,
@@ -172,6 +173,47 @@ export default class OpenClawIntake {
         occupied: openClawItemOccupied,
         input,
       });
+      const reportPolicy = await readPolicy();
+      const report = projectPickupReport({
+        policy: reportPolicy,
+        pickup: state.projectPickup,
+        records: state.records,
+        previous: state.projectPickupReport,
+        outcome: result,
+        now: (this.dependencies.now ?? Date.now)(),
+        runId: occurrence?.runId,
+        debug: manifest.debug,
+        capacity: {
+          occupied: openClawCapacity(
+            state.records,
+            reportPolicy.maxConcurrentItems,
+            state.projectPickup,
+          ).occupied,
+          limit: reportPolicy.maxConcurrentItems,
+        },
+        active: (record) =>
+          record.nativeInactive || record.work?.turn?.inactive
+            ? false
+            : record.work?.turn?.status === 'consumed' || record.feedback?.activity?.busy === true
+              ? true
+              : undefined,
+        conversation: (record) =>
+          record.sessionCreation?.verified && record.threadId
+            ? `/chat?session=${encodeURIComponent(record.threadId)}`
+            : undefined,
+      });
+      if (report.report) {
+        state.projectPickupReport = report.report;
+        await save();
+      }
+      return {
+        ...result,
+        response: report.response,
+        instructions:
+          'instructions' in result
+            ? result.instructions
+            : 'Reproduce response unchanged as the whole final report. An empty response means no card. Report preparation does not prove visible delivery.',
+      };
     });
   }
   async preparePickup(manifest: AgentManifest, workspaceDir: string) {
