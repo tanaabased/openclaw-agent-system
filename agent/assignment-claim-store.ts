@@ -208,7 +208,11 @@ export default class AssignmentClaimStore {
 
   /** dormant dispatch may inspect pilot receipts but must never create or mutate them. */
   async assertUnclaimed(key: string) {
-    if ((await this.read())?.claims[key]) throw new Error('claim-disabled-pending');
+    if (await this.hasClaim(key)) throw new Error('claim-disabled-pending');
+  }
+
+  async hasClaim(key: string) {
+    return Boolean((await this.read())?.claims[key]);
   }
 
   rename(name: string) {

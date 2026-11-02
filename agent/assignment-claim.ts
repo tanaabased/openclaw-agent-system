@@ -3,6 +3,22 @@ import { createHash } from 'node:crypto';
 import { claimBody, parseAssignmentClaim } from '../channels/github/provider/assignment-claim.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
+import type { RepositoryScopeDecision } from '../channels/github/repository-scope.ts';
+
+export type ClaimStore = Pick<
+  AssignmentClaimStore,
+  'exclusive' | 'inspect' | 'assertUnclaimed' | 'hasClaim'
+>;
+
+/** reject new participation before a workflow reserves capacity or selects work. */
+export async function claimRouteEligibility(store: ClaimStore, route: RepositoryScopeDecision) {
+  if (route.decision === 'deny') return 'claim-route-denied';
+  if (!route.eligibleInstanceIds) return;
+  const identity = await store.inspect();
+  if (!identity) throw new Error('instance-install-required');
+  if (!route.eligibleInstanceIds.includes(identity.instanceId))
+    return 'claim-route-instance-ineligible';
+}
 
 export interface ClaimSource {
   repositoryNodeId: string;
@@ -13,9 +29,12 @@ export interface ClaimSource {
   receivingNodeId: string;
   assignmentEventId: string;
   assignerNodeId: string;
+  /** pickup uses a stable history boundary before its assignment event exists. */
+  pickup?: { previousEventId: string | null; assignmentEventId?: string };
 }
 
 export interface ClaimClient {
+  resolve?(source: ClaimSource, retained: (key: string) => Promise<boolean>): Promise<ClaimSource>;
   verify(source: ClaimSource): Promise<void>;
   list(source: ClaimSource): Promise<GitHubCanonicalIssueComment[]>;
   create(source: ClaimSource, body: string): Promise<number>;
@@ -34,6 +53,14 @@ export function assignmentClaimKey(source: ClaimSource) {
       ]),
     )
     .digest('hex');
+}
+
+export async function resolveClaimSource(
+  store: ClaimStore,
+  client: ClaimClient,
+  source: ClaimSource,
+) {
+  return (await client.resolve?.(source, (key) => store.hasClaim(key))) ?? source;
 }
 
 export interface ClaimDecision {
@@ -56,6 +83,7 @@ export async function selectAssignmentClaim(
   },
 ): Promise<ClaimDecision> {
   if (input.mode === 'deny') throw new Error('claim-route-denied');
+  input = { ...input, source: await resolveClaimSource(input.store, input.client, input.source) };
   if (input.mode === 'swarm') return claimAssignment(input);
   await input.store.assertUnclaimed(assignmentClaimKey(input.source));
   await input.client.verify(input.source);
@@ -91,7 +119,7 @@ export async function readAssignmentClaims(client: ClaimClient, source: ClaimSou
 
 /** two passes reduce ordinary contention; provider omissions are a documented recovery risk. */
 export async function claimAssignment(input: {
-  store: AssignmentClaimStore;
+  store: ClaimStore;
   client: ClaimClient;
   source: ClaimSource;
   passId: string;
@@ -236,12 +264,13 @@ export async function claimAssignment(input: {
 
 /** the native adapter must verify creation before supplying this receipt. */
 export async function acceptAssignmentClaim(input: {
-  store: AssignmentClaimStore;
+  store: ClaimStore;
   client: ClaimClient;
   source: ClaimSource;
   nativeReceipt: string;
 }) {
   if (!input.nativeReceipt) throw new Error('claim-native-receipt-required');
+  input = { ...input, source: await resolveClaimSource(input.store, input.client, input.source) };
   return input.store.exclusive(async (state, save, signal) => {
     const record = state.claims[assignmentClaimKey(input.source)];
     if (

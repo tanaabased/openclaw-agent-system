@@ -31,6 +31,8 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
   const { previous, outcome, pickup } = input;
   if (['discovering', 'selection-required'].includes(outcome.status))
     return { response: '', notify: false };
+  if (['pending', 'other-owner'].includes(outcome.status) && !outcome.code)
+    return { response: '', notify: false };
   if (input.runId && previous?.runId === input.runId) return { ...previous, report: previous };
   const project = input.policy.projectPickup!.projects[0]!;
   const repository = project.repository;
@@ -125,9 +127,11 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
   );
   const next = uncertain
     ? 'Preserve the uncertain assignment. The next pickup check reconciles the same operation; do not assign it again.'
-    : failed
-      ? 'Check the diagnostic and GitHub access. Resolve or cancel the retained pickup operation through its owning coordinator before selecting again.'
-      : 'Open the issue chat to resolve its work blocker. Implementation stays in that chat.';
+    : outcome.code?.startsWith('claim-')
+      ? 'Check repository routing and the retained claim owner. Restore eligibility or resolve the original pickup operation; do not assign again or transfer ownership by changing routes.'
+      : failed
+        ? 'Check the diagnostic and GitHub access. Resolve or cancel the retained pickup operation through its owning coordinator before selecting again.'
+        : 'Open the issue chat to resolve its work blocker. Implementation stays in that chat.';
   const body = card({
     emoji: warning ? (failed ? '❌' : '⚠️') : '💡',
     title: warning

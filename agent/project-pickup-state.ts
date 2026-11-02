@@ -43,6 +43,15 @@ export const pickupOperationSchema = Type.Object(
     selected: Type.Optional(pickupCandidateSchema),
     rationale: Type.Optional(text),
     beforeEvents: Type.Optional(Type.Array(text, { maxItems: 300 })),
+    claim: Type.Optional(
+      Type.Object(
+        {
+          previousEventId: Type.Union([text, Type.Null()]),
+          mode: Type.Union([Type.Literal('local'), Type.Literal('swarm')]),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     attemptedAt: Type.Optional(time),
     receipt: Type.Optional(projectPickupReceiptSchema),
     code: Type.Optional(text),

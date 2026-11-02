@@ -93,11 +93,7 @@ export function validateGitHubNotificationPolicy(
 }
 
 export interface GitHubNotificationRuntimeDiagnostic {
-  code:
-    | 'github-notification-runtime-unsupported'
-    | 'project-pickup-coordinator-required'
-    | 'project-pickup-coordinator-mismatch'
-    | 'project-pickup-schedule-unsupported';
+  code: 'github-notification-runtime-unsupported' | 'project-pickup-schedule-unsupported';
   fieldPath: string;
   message: string;
   remediation: string;
@@ -112,15 +108,15 @@ export function githubNotificationRuntimeDiagnostics(
 ): GitHubNotificationRuntimeDiagnostic[] {
   if (!declaration || !declaration.runtimes.includes(runtime)) return [];
   const diagnostics: GitHubNotificationRuntimeDiagnostic[] = [];
-  const pickupCode = projectPickupConfigurationCode(declaration, runtime);
+  const pickupCode = projectPickupConfigurationCode(declaration);
   if (pickupCode)
     diagnostics.push({
       code: pickupCode,
       fieldPath: '/github/project-pickup',
       message:
-        'Project pickup requires its designated runtime and installation, with intake cadence no longer than the pickup window.',
+        'Project pickup requires a recurring schedule with intake cadence no longer than the pickup window.',
       remediation:
-        'Set project-pickup.coordinator to the intended runtime and existing installation ID, and choose a supported cadence within window-minutes. Run Install only on the designated installation; ordinary assignments remain independent.',
+        'Choose a supported recurring schedule and an intake cadence within window-minutes. Placement follows github.routing; ordinary assignments remain independent.',
       status: 'warning',
       workflow: 'project-pickup',
     });

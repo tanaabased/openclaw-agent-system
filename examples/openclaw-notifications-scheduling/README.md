@@ -2,11 +2,11 @@
 
 Pause and resume the notification job through native controls and manifest settings.
 Verify that its ID, routing, channel readiness, and dispatch enrollment are preserved.
-Enroll a designated project pickup job and retain its identity across pause/resume.
+Enroll a project pickup job and retain its identity across pause/resume.
 
 ## What Belongs Here
 
-- Designated pickup enrollment against one disposable milestone, with repeated Install and Doctor readback.
+- Pickup enrollment against one disposable milestone, with repeated Install and Doctor readback.
 - Native scheduler enable/disable controls for the installed notification job.
 - Manifest pause/resume through Install without another dispatch enrollment.
 - Unchanged job identities and routing, with the channel remaining enabled while scheduling is paused.
@@ -67,13 +67,12 @@ openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId,
 ## Testing Pickup
 
 ```bash
-# should enroll and pause the same designated pickup job through install
+# should enroll and pause the same pickup job through install
 set -euo pipefail
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/tanaabot"
-instance=$(openclaw agent-system instance inspect --json | jq -er '.instanceId')
 milestone=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method POST repos/tanaabased/big-test-bucket/milestones -f title="pickup-scheduling-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --jq .number)
 printf '%s\n' "$milestone" > "$TMPDIR/pickup-scheduling-milestone"
-sed -e "s|__INSTANCE_ID__|$instance|g" -e "s|__MILESTONE_NUMBER__|$milestone|g" -e 's/^/  /' "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/pickup.yaml" >> agent.yaml
+sed -e "s|__MILESTONE_NUMBER__|$milestone|g" -e 's/^/  /' "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/pickup.yaml" >> agent.yaml
 openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .stepId == "github-project-pickup" and .status == "created")'
 openclaw agent-system automations list --json > "$TMPDIR/pickup-scheduling-jobs.json"
 pickup=$(jq -er '.jobs[] | select(.id == "github-project-pickup" and .nativeEnabled == true) | .nativeId' "$TMPDIR/pickup-scheduling-jobs.json")
