@@ -8,11 +8,20 @@ export const repositoryPatternSchema = Type.String({
   minLength: 3,
   pattern: '^!?(?!.*\\*\\*)[A-Za-z0-9*.-]+/[A-Za-z0-9*_.-]+(?![\\s\\S])',
 });
+export const repositoryRouteSchema = Type.Union([
+  repositoryPatternSchema,
+  Type.Record(
+    Type.String({ pattern: '^(?!!)(?!.*\\*\\*)[A-Za-z0-9*.-]+/[A-Za-z0-9*_.-]+(?![\\s\\S])' }),
+    Type.Union([Type.Literal('local'), Type.Literal('swarm')]),
+    { minProperties: 1, maxProperties: 1, additionalProperties: false },
+  ),
+]);
+export type RepositoryRoute = Static<typeof repositoryRouteSchema>;
 
 export const repositoryScopeDecisionSchema = Type.Object(
   {
     source: Type.Union([Type.Literal('routing'), Type.Literal('allowed-repository-owners')]),
-    decision: Type.Union([Type.Literal('local'), Type.Literal('deny')]),
+    decision: Type.Union([Type.Literal('local'), Type.Literal('swarm'), Type.Literal('deny')]),
     reason: Type.Union([
       Type.Literal('match'),
       Type.Literal('excluded'),
@@ -40,12 +49,14 @@ export default function repositoryScope(
 ): RepositoryScopeDecision {
   if (policy.routing !== undefined) {
     const path = `${repository.owner.login}/${repository.name}`;
-    for (const [index, pattern] of policy.routing.entries()) {
+    for (const [index, route] of policy.routing.entries()) {
+      const [pattern, target] =
+        typeof route === 'string' ? [route, 'local' as const] : Object.entries(route)[0]!;
       const excluded = pattern.startsWith('!');
       if (matches(excluded ? pattern.slice(1) : pattern, path))
         return {
           source: 'routing',
-          decision: excluded ? 'deny' : 'local',
+          decision: excluded ? 'deny' : target,
           reason: excluded ? 'excluded' : 'match',
           index,
           pattern,
@@ -72,7 +83,7 @@ export default function repositoryScope(
 /** offline checks cannot reject an unresolved id-only legacy owner. */
 export function repositoryScopeCandidate(policy: ScopePolicy, owner: string, name: string) {
   return policy.routing !== undefined
-    ? repositoryScope(policy, { name, owner: { login: owner, nodeId: '' } }).decision === 'local'
+    ? repositoryScope(policy, { name, owner: { login: owner, nodeId: '' } }).decision !== 'deny'
     : policy.allowedRepositoryOwners.some(
         (pin) => !pin.login || pin.login.toLowerCase() === owner.toLowerCase(),
       );

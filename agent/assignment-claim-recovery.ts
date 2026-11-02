@@ -1,4 +1,9 @@
-import { assignmentClaimKey, type ClaimClient, type ClaimSource } from './assignment-claim.ts';
+import {
+  assignmentClaimKey,
+  readAssignmentClaims,
+  type ClaimClient,
+  type ClaimSource,
+} from './assignment-claim.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
 import { claimBody, parseAssignmentClaim } from '../channels/github/provider/assignment-claim.ts';
 
@@ -12,15 +17,17 @@ export default async function recoverAssignmentClaim(input: {
   operation: 'preview' | 'reserve' | 'accept';
   successorReceipt?: string;
 }) {
+  if (!(await input.store.inspect())) {
+    await input.client.verify(input.source);
+    if ((await readAssignmentClaims(input.client, input.source)).length)
+      throw new Error('claim-recovery-owner-unresolved');
+    return undefined;
+  }
   return input.store.exclusive(async (state, save) => {
     await input.client.verify(input.source);
-    const claims = (await input.client.list(input.source))
-      .filter(
-        (comment) =>
-          comment.author?.nodeId === input.source.receivingNodeId &&
-          parseAssignmentClaim(comment)?.assignmentEventId === input.source.assignmentEventId,
-      )
-      .sort((a, b) => a.databaseId - b.databaseId);
+    const claims = (await readAssignmentClaims(input.client, input.source)).map(
+      ({ comment }) => comment,
+    );
     const record = state.claims[assignmentClaimKey(input.source)];
     if (!record && !claims.length) return undefined;
     const winner = claims[0];
@@ -73,5 +80,5 @@ export default async function recoverAssignmentClaim(input: {
       predecessorReceipt: input.predecessorReceipt,
       body: winner.body,
     };
-  });
+  }, false);
 }

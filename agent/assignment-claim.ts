@@ -37,9 +37,49 @@ export function assignmentClaimKey(source: ClaimSource) {
 }
 
 export interface ClaimDecision {
-  status: 'pending' | 'owned' | 'other-owner' | 'recovery-required' | 'at-capacity';
+  status: 'local' | 'pending' | 'owned' | 'other-owner' | 'recovery-required' | 'at-capacity';
   code?: string;
   winnerId?: number;
+}
+
+/** a local route must not bypass a visible election or initialize an installation identity. */
+export async function selectAssignmentClaim(
+  input: Parameters<typeof claimAssignment>[0] & {
+    mode: 'local' | 'swarm' | 'deny';
+  },
+): Promise<ClaimDecision> {
+  if (input.mode === 'deny') throw new Error('claim-route-denied');
+  if (input.mode === 'swarm') return claimAssignment(input);
+  await input.store.assertUnclaimed(assignmentClaimKey(input.source));
+  await input.client.verify(input.source);
+  const claims = await readAssignmentClaims(input.client, input.source);
+  if (claims.length)
+    return {
+      status: 'recovery-required',
+      code: 'claim-route-conflict',
+      winnerId: claims[0]!.comment.databaseId,
+    };
+  return { status: 'local' };
+}
+
+export async function readAssignmentClaims(client: ClaimClient, source: ClaimSource) {
+  const comments = await client.list(source);
+  const claims = comments
+    .filter((comment) => comment.author?.nodeId === source.receivingNodeId)
+    .map((comment) => {
+      const claim = parseAssignmentClaim(comment);
+      // unknown or damaged control metadata cannot establish that this work is unclaimed.
+      if (
+        !claim &&
+        /^Assignment (?:claim registered|accepted) on `/u.test(comment.body) &&
+        comment.body.includes('<!-- agent-system-claim:')
+      )
+        throw new Error('claim-metadata-unresolved');
+      return { comment, claim };
+    });
+  return claims
+    .filter(({ claim }) => claim?.assignmentEventId === source.assignmentEventId)
+    .sort((a, b) => a.comment.databaseId - b.comment.databaseId);
 }
 
 /** two passes reduce ordinary contention; provider omissions are a documented recovery risk. */
@@ -55,14 +95,7 @@ export async function claimAssignment(input: {
   return store.exclusive(async (state, save, signal) => {
     signal.throwIfAborted();
     await client.verify(source);
-    const claims = (await client.list(source))
-      .map((comment) => ({ comment, claim: parseAssignmentClaim(comment) }))
-      .filter(
-        ({ comment, claim }) =>
-          comment.author?.nodeId === source.receivingNodeId &&
-          claim?.assignmentEventId === source.assignmentEventId,
-      )
-      .sort((a, b) => a.comment.databaseId - b.comment.databaseId);
+    const claims = await readAssignmentClaims(client, source);
     let record = state.claims[assignmentClaimKey(source)];
     if (record && record.instanceId !== state.instanceId)
       return { status: 'recovery-required', code: 'claim-instance-rotated' };
@@ -186,14 +219,10 @@ export async function acceptAssignmentClaim(input: {
     record.nativeReceipt = input.nativeReceipt;
     await save();
     await input.client.verify(input.source);
-    const comments = await input.client.list(input.source);
-    const winner = comments
-      .filter(
-        (comment) =>
-          comment.author?.nodeId === input.source.receivingNodeId &&
-          parseAssignmentClaim(comment)?.assignmentEventId === input.source.assignmentEventId,
-      )
-      .sort((a, b) => a.databaseId - b.databaseId)[0];
+    const comments = (await readAssignmentClaims(input.client, input.source)).map(
+      ({ comment }) => comment,
+    );
+    const winner = comments[0];
     if (winner?.databaseId !== record.winnerId) throw new Error('claim-winner-changed');
     const current = comments.find((comment) => comment.databaseId === record.commentId);
     const metadata = current && parseAssignmentClaim(current);

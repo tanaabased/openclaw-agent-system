@@ -80,7 +80,7 @@ function fixture() {
 describe('assignment feedback reactivation', () => {
   it('should require a current routing match before reactivating an unassigned conversation', async () => {
     const h = fixture();
-    h.input.policy.policy.routing = ['!owner/repo', '*/*'];
+    h.input.policy.policy.routing = ['!owner/repo', { '*/*': 'swarm' }];
     assert.equal(await h.run(), false);
     assert.equal(h.record.feedbackReactivation, undefined);
     h.input.policy.policy.routing.reverse();

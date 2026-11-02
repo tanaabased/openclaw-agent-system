@@ -1,5 +1,6 @@
 import type { AssessmentConfiguration } from '../../manifest/assessment-schema.ts';
 import type { ProjectPickupPolicy } from './project-pickup-schema.ts';
+import type { RepositoryRoute } from './repository-scope.ts';
 
 /** input provenance is retained without selecting a separate execution engine. */
 export interface GitHubIdentityPin {
@@ -29,7 +30,7 @@ export interface GitHubNotificationPolicy {
   intervalMinutes: number;
   maxConcurrentItems: number;
   allowedRepositoryOwners: GitHubIdentityPin[];
-  routing?: string[];
+  routing?: RepositoryRoute[];
   issueAssignment?: {
     paused?: boolean;
     allowed: GitHubApprovedActor[];
