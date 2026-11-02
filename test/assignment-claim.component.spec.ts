@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import {
   acceptAssignmentClaim,
+  selectAssignmentClaim,
   claimAssignment,
   type ClaimClient,
   type ClaimSource,
@@ -72,6 +73,57 @@ describe('agent/assignment-claim', () => {
     };
   });
   afterEach(async () => rm(root, { recursive: true, force: true }));
+  const local = (index = 0) =>
+    selectAssignmentClaim({
+      store: stores[index]!,
+      client,
+      source,
+      passId: 'local',
+      hasCapacity: true,
+      mode: 'local',
+    });
+
+  it('should keep unclaimed local work free of election writes and installation state', async () => {
+    assert.equal((await local()).status, 'local');
+    assert.equal(writes, 0);
+    assert.equal(await stores[0]!.inspect(), undefined);
+    assert.equal(
+      await recoverAssignmentClaim({
+        store: stores[0]!,
+        client,
+        source,
+        recoveryId: 'local-recovery',
+        predecessorReceipt: 'local-native',
+        operation: 'preview',
+      }),
+      undefined,
+    );
+    assert.equal(await stores[0]!.inspect(), undefined);
+  });
+
+  it('should hold visible swarm ownership when another installation routes locally', async () => {
+    await pass(0, 'first');
+    assert.deepEqual(await local(1), {
+      status: 'recovery-required',
+      code: 'claim-route-conflict',
+      winnerId: 1,
+    });
+    assert.equal(await stores[1]!.inspect(), undefined);
+    await assert.rejects(local(0), /claim-disabled-pending/);
+    assert.equal(writes, 1);
+    assert.equal((await pass(0)).status, 'owned');
+  });
+
+  it('should refuse unresolved control metadata and incomplete reads before local admission', async () => {
+    await pass(0, 'first');
+    comments[0]!.body = comments[0]!.body.replace('claim:v1', 'claim:v99');
+    await assert.rejects(local(1), /claim-metadata-unresolved/);
+    client.list = async () => {
+      throw Error('claim-list-incomplete');
+    };
+    await assert.rejects(local(1), /claim-list-incomplete/);
+    assert.equal(await stores[1]!.inspect(), undefined);
+  });
   const pass = (
     index: number,
     passId = 'second',

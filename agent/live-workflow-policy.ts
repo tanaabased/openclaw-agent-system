@@ -31,7 +31,7 @@ export default function liveWorkflowPolicy(
   if (effect !== 'assignment' || 'initiation' in intake) return;
   if (!policy || !policy.runtimes.includes(runtime)) return 'workflow-disabled';
   if (!policy.issueAssignment) return 'issue-workflow-disabled';
-  if (repositoryScope(policy, intake.repository).decision !== 'local')
+  if (repositoryScope(policy, intake.repository).decision === 'deny')
     return 'repository-outside-workflow';
   if (
     !projectWorkMatches(

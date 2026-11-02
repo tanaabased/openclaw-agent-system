@@ -1,3 +1,4 @@
+import repositoryScope from '../channels/github/repository-scope.ts';
 import projectPickupCapacity from './project-pickup-capacity.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
@@ -740,15 +741,19 @@ export default class OpenClawDispatchCoordinator {
     try {
       const { client, repo, intake } = await this.context.validate(manifest, workspace, record);
       if ('initiation' in intake) throw new Error('dispatch-assignment-required');
-      if (!this.context.dependencies.claims)
+      if (!this.context.dependencies.claims) {
         await assertDormantAssignmentUnclaimed(this.context.dependencies.claimStore, intake);
+        if (repositoryScope(current.policy.policy, intake.repository).decision === 'swarm')
+          throw new Error('claim-runtime-unavailable');
+      }
       const claim = await this.context.dependencies.claims?.select({
         intake,
+        mode: repositoryScope(current.policy.policy, intake.repository).decision,
         client,
         caller,
         hasCapacity: capacity.available > 0,
       });
-      if (claim && claim.status !== 'owned') {
+      if (claim && claim.status !== 'owned' && claim.status !== 'local') {
         if (claim.status === 'recovery-required') throw new Error(claim.code);
         await save();
         return {
@@ -758,7 +763,7 @@ export default class OpenClawDispatchCoordinator {
           nextAction: 'next' as const,
         };
       }
-      if (claim) record.claimId = claim.winnerId;
+      if (claim?.status === 'owned') record.claimId = claim.winnerId;
       const evidence = await client.getItemContext(
         repo.owner.login,
         repo.name,

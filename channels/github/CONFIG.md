@@ -28,26 +28,41 @@ omitting it creates no assignment automation.
 
 Use an ordered list of repository name patterns to select new automated work in
 Codex and OpenClaw. The first matching rule wins: a positive pattern permits local
-work, and a leading `!` excludes it. No match, including `routing: []`, admits no
-new work.
+work by default, and a leading `!` excludes it. Use a single-entry mapping to
+choose `local` or `swarm`. No match, including `routing: []`, admits no new work.
 
 ```yaml
 routing:
   - '!tanaabased/archive-*'
-  - tanaabased/*
-  - pirog/me
+  - 'tanaabased/openclaw-agent-system': local
+  - 'tanaabased/*': swarm
+  - pirog/me # implicitly local
 ```
 
 Patterns match the entire current `owner/repository` name, case-insensitively.
 `*` matches zero or more characters within either segment; it never crosses `/`.
 Quote exclusions and patterns beginning with `*`. URLs, `**`, other glob syntax,
-and object or remote-target rules are not supported.
+multi-entry mappings, exclusion mappings, and targets other than `local` or `swarm`
+are not supported.
 
 Routing follows current names, without pinning owner or repository IDs. A rename
 or transfer changes which rules match; a replacement reusing a name can match the
 same rule. Scope changes apply to new admissions without Install and preserve
 already admitted work and its original owner. Routing does not grant GitHub access,
 approve assignment actors, or enable unsupported workflows.
+
+`swarm` coordinates assignment-driven work across participating installations using
+claim comments and a second native intake pass before starting work. Use `swarm`
+for that repository on every participant sharing the receiving account. This is a
+comment-only proof of concept: incomplete concurrent reads can still produce
+overlapping work. It does not coordinate project pickup allowances or independent
+review requests.
+
+`local` creates no claim. A retained or visible Swarm claim still blocks new local
+work; switching routes does not transfer ownership. If a claim is missing, changed,
+or unresolved, preserve the comments and local state, inspect the original owner,
+and use [managed task recovery](../../tools/dispatch/README.md) for stranded work.
+Do not delete claim comments or rotate an installation ID to retry admission.
 
 When `routing` is present, it replaces `allowed-repository-owners` completely,
 including its identity lookups. An invalid routing value is an error, not a request

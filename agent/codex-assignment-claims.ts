@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
-import { acceptAssignmentClaim, claimAssignment, type ClaimClient } from './assignment-claim.ts';
+import {
+  acceptAssignmentClaim,
+  selectAssignmentClaim,
+  type ClaimClient,
+} from './assignment-claim.ts';
 import source from './assignment-claim-source.ts';
 import AssignmentClaimStore from './assignment-claim-store.ts';
 import { automationHash } from './automation-hash.ts';
@@ -29,8 +33,10 @@ export default class CodexAssignmentClaims {
     threadId: string;
     turnId: string;
     hasCapacity: boolean;
+    mode: 'local' | 'swarm' | 'deny';
   }) {
-    return claimAssignment({
+    return selectAssignmentClaim({
+      mode: input.mode,
       store: this.store,
       client: this.connect(input.client),
       source: source(input.intake),

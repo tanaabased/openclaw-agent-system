@@ -1,7 +1,7 @@
 import { Type, type Static } from 'typebox';
 
 import decodeProjectPickup, { projectPickupSchema } from './project-pickup-schema.ts';
-import { repositoryPatternSchema } from './repository-scope.ts';
+import { repositoryRouteSchema } from './repository-scope.ts';
 
 import {
   assessmentConfigurationSchema,
@@ -75,7 +75,7 @@ export const githubLegacyScopeProperties = {
   'allowed-repository-owners': Type.Array(githubIdentityReferenceSchema, { minItems: 1 }),
 };
 export const githubRoutingScopeProperties = {
-  routing: Type.Array(repositoryPatternSchema),
+  routing: Type.Array(repositoryRouteSchema),
   'allowed-repository-owners': Type.Optional(Type.Unknown()),
 };
 export const externalGitHubV3Schema = Type.Union([
