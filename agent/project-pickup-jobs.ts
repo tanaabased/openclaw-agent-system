@@ -42,7 +42,7 @@ export default function projectPickupJobs(
     runtime === 'codex'
       ? 'Use the shared command block below with runtimeRoute:"intake" and runtimeInput:{action:"pickup"}. For discovering, call pickup again. For selection-required, compare candidates using the returned guidance, priorities, impact and readiness, then call pickup with selection:{id,digest,issueNodeId,rationale}; use issueNodeId:null if none is actionable. Do not retry a denied or uncertain assignment. This operation can self-assign one verified issue on GitHub under the activated pickup policy.'
       : 'Call agent_system_intake with action:"pickup". For discovering, call pickup again. For selection-required, compare candidates using the returned guidance, priorities, impact and readiness, then call pickup with selection:{id,digest,issueNodeId,rationale}; use issueNodeId:null if none is actionable. Do not retry a denied or uncertain assignment.',
-    'Stop on every other outcome. Existing assignment intake owns admission and issue chats; do not launch work, implement, publish replies, or create a replacement coordinator here. Report changed assignments or actionable blockers concisely. Stay quiet on unchanged idle, paused, empty and capacity outcomes. Retained uncertain assignments are reconciled by the same pickup operation, never by direct GitHub commands.',
+    'Stop on every other outcome and reproduce its response unchanged as the whole final report. An empty response means no card. Preserve the native NOTIFY or DONT_NOTIFY envelope when supplied. Never reconstruct cards, add commentary or announce intermediate selection/discovery output. Existing assignment intake owns admission and issue chats; do not launch work, implement, publish replies, or create a replacement coordinator here. Retained uncertain assignments are reconciled by the same pickup operation, never by direct GitHub commands. Report preparation does not prove visible delivery.',
     transport,
   ]
     .filter(Boolean)
@@ -55,7 +55,7 @@ export default function projectPickupJobs(
       enabled: !policy.projectPickup.paused && !policy.issueAssignment.paused,
       runtimes: [runtime],
       schedule: { kind: 'every', seconds: policy.intervalMinutes * 60, missedRun: 'native' },
-      thread: { name: 'PROJECT PICKUP' },
+      thread: policy.projectPickup.thread ?? { name: 'PROJECT PICKUP' },
       overrides: { [runtime]: { model: model.model, effort: model.thinking } },
       payload: { kind: 'prompt', prompt },
     },

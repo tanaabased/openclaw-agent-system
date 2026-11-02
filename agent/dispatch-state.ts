@@ -1,4 +1,4 @@
-import { projectPickupStateSchema } from './project-pickup-state.ts';
+import { pickupReportSchema, projectPickupStateSchema } from './project-pickup-state.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { projectWorkSchema } from './project-pickup-authority.ts';
 import { issueKey } from './dispatch-pending.ts';
@@ -160,6 +160,7 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       resetGeneration: Type.Optional(text),
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
       projectPickup: Type.Optional(projectPickupStateSchema),
+      projectPickupReport: Type.Optional(pickupReportSchema),
       openclawOccurrence: Type.Optional(
         Type.Object(
           { sessionKey: text, sessionId: text, runId: text },
