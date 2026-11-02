@@ -1,4 +1,5 @@
 import { dispatchStorageNotice } from './dispatch-storage.ts';
+import { awaitingReassignment } from './assignment-retirement.ts';
 import { dispatchAdmission, type ManagedIssueState as IntakeState } from './managed-issue.ts';
 import providerErrorMessage from '../utils/provider-error-message.ts';
 import intakeDebug from './intake-debug.ts';
@@ -36,10 +37,14 @@ export default function prepareDispatchReport(input: {
   const active = state.records.filter(
     (record) => !record.retired && !record.retirement && !record.reset,
   );
-  const retiring = state.records.filter((record) => record.retirement && !record.retired);
+  const retiring = state.records.filter(
+    (record) => record.retirement && !record.retired && !awaitingReassignment(record),
+  );
+  const retained = state.records.filter(awaitingReassignment);
   const retirementProblems = state.records.filter(
     (record) =>
       !record.retired &&
+      !awaitingReassignment(record) &&
       record.retirement?.code &&
       (record.retirement.eligibleAt ?? 0) <= Date.parse(input.currentTimeIso) &&
       ![
@@ -101,7 +106,12 @@ export default function prepareDispatchReport(input: {
     }),
     ...state.records
       .filter(
-        (record) => !record.continuation && record.result?.outcome === 'plan-ready' && record.retry,
+        (record) =>
+          !record.retirement &&
+          !record.retired &&
+          !record.continuation &&
+          record.result?.outcome === 'plan-ready' &&
+          record.retry,
       )
       .map((record) => ({
         id: record.id,
@@ -298,6 +308,7 @@ export default function prepareDispatchReport(input: {
     `**Active:** ${managing.length} issues · **Pending:** ${pending}`,
     `**Queued feedback:** ${queuedFeedback.length} item${queuedFeedback.length === 1 ? '' : 's'} across ${queuedOwners} issue${queuedOwners === 1 ? '' : 's'}`,
     `**Retirement pending:** ${retiring.length}`,
+    `**Awaiting reassignment:** ${retained.length}`,
     `**Slots:** ${occupied}/${input.slots} occupied`,
   );
   if (pending && !notices.length)

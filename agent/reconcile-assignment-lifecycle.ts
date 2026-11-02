@@ -3,7 +3,10 @@ import {
   cleanupConfigurationDiagnostic,
   type CleanupConfiguration,
 } from './cleanup-configuration.ts';
-import assignmentRetirement, { type Retirement } from './assignment-retirement.ts';
+import assignmentRetirement, {
+  awaitingReassignment,
+  type Retirement,
+} from './assignment-retirement.ts';
 import { inspectAdmittedIssue, inspectAssignmentRemoval } from './dispatch-assignment.ts';
 import { issueKey } from './dispatch-pending.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
@@ -198,6 +201,8 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         !record.retirement?.archivedAt &&
         !record.retirement?.archiveAttempt &&
         !record.retirement?.archiveRequest &&
+        !record.retirement?.worktreeRemovalAttemptedAt &&
+        !record.retirement?.worktreeRemovedAt &&
         record.retirement?.reason !== 'chat-archived' &&
         successor &&
         (!record.retirement?.operatorRequest ||
@@ -225,6 +230,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           !record.retirement?.archiveAttempt &&
           !record.retirement?.archiveRequest &&
           !record.retirement?.worktreeRemovalAttemptedAt &&
+          !record.retirement?.worktreeRemovedAt &&
           (record.retirement || record.feedbackReactivation) &&
           input.reactivate &&
           (await input.reactivate(record, admitted))
@@ -244,6 +250,8 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         return false;
       };
       if (await reactivate()) continue;
+      // open removal is dormant membership, including old pending effects; only closure resumes cleanup.
+      if (awaitingReassignment(record)) continue;
       record.retirement = assignmentRetirement({
         previous: record.retirement,
         reason:
@@ -328,6 +336,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           const otherReason = await provider(otherIntake, other);
           if (
             !otherNative ||
+            (awaitingReassignment(other) && otherReason !== 'issue-closed') ||
             (!otherNative.idle && !otherNative.unavailableSession) ||
             (other.retirement.reason === 'assignment-removed' &&
               otherReason !== 'assignment-removed') ||

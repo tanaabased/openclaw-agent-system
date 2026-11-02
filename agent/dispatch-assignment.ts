@@ -111,6 +111,7 @@ export async function inspectContinuedIssue(
     if (
       !assignmentObservation ||
       retirement.archiveAttempt ||
+      retirement.archiveRequest ||
       retirement.archivedAt ||
       retirement.worktreeRemovalAttemptedAt ||
       retirement.worktreeRemovedAt
