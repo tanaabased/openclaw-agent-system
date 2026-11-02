@@ -9,7 +9,7 @@ import { Value } from 'typebox/value';
 import { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
 import assertCodexNodeVersion, { CodexNodeVersionError } from './codex-node-version.ts';
 import codexPermission from './codex-permission.ts';
-import { codexInstanceStore } from './codex-assignment-claims.ts';
+import CodexAssignmentClaims, { codexInstanceStore } from './codex-assignment-claims.ts';
 import { operateInstanceIdentity } from './instance-identity.ts';
 
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
@@ -340,7 +340,11 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       ].includes(action)
     )
       throw new Error('dispatch-action-invalid');
-    writeJson(await runCodexDispatch(pluginData, action, input));
+    writeJson(
+      await runCodexDispatch(pluginData, action, input, {
+        claims: new CodexAssignmentClaims(codexInstanceStore(pluginData)),
+      }),
+    );
     return;
   }
   if (command === 'notifications') {

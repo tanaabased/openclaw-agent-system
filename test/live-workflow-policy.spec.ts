@@ -43,6 +43,8 @@ describe('agent/live-workflow-policy', () => {
     );
     f.policy.issueAssignment!.mode = 'work';
     assert.equal(liveWorkflowPolicy(manifest, 'codex', intake, 'implementation'), undefined);
+    f.policy.routing = [{ 'owner/*': 'swarm' }];
+    assert.equal(liveWorkflowPolicy(manifest, 'codex', intake), undefined);
     f.policy.issueAssignment!.allowed = [];
     assert.equal(liveWorkflowPolicy(manifest, 'codex', intake), 'assigner-not-approved');
     // feedback uses its own current source-author rule, independently of the original assigner.

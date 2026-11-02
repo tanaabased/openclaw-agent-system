@@ -160,8 +160,20 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
       'Run Install to create its persistent UUID and readable name before claiming assignments.',
     ],
     'claim-disabled-pending': [
-      'This assignment has a retained claim from the pilot, and claim election is disabled.',
+      'This assignment has a retained claim, but its current route or runtime does not use Swarm.',
       'Inspect its original owner and native work before resolving this assignment. Do not delete claim receipts or start replacement work.',
+    ],
+    'claim-route-conflict': [
+      'This installation routes the assignment locally, but a Swarm claim is visible.',
+      'Inspect the original owner and align the participating installations on Swarm for this repository. Changing a route does not transfer the claim.',
+    ],
+    'claim-metadata-unresolved': [
+      'A claim comment has damaged or unsupported ownership metadata.',
+      'Preserve the comment and inspect its original owner and plugin version before resuming. Do not replace the claim or start another copy of the work.',
+    ],
+    'claim-runtime-unavailable': [
+      'The repository routes to Swarm, but this dispatcher has no claim adapter.',
+      'Use a runtime with Swarm assignment support. Do not switch to local routing to bypass an existing claim.',
     ],
     'claim-winner-missing': [
       'The retained winning claim is missing or its metadata was edited.',

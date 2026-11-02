@@ -1770,7 +1770,8 @@ describe('agent/openclaw issue dispatch', () => {
   }
   const creates = () => calls.filter(({ method }) => method === 'sessions.create');
 
-  function enableClaims() {
+  function enableClaims(mode: 'local' | 'swarm' = 'swarm') {
+    manifest.github!.notifications!.routing = [{ 'owner/*': mode }];
     const comments: GitHubCanonicalIssueComment[] = [];
     const client: ClaimClient = {
       async verify() {},
@@ -1808,13 +1809,28 @@ describe('agent/openclaw issue dispatch', () => {
   }
 
   it('should create a session without claims or initializing installation state', async () => {
-    const store = new AssignmentClaimStore(join(root, 'instance'));
-    service.dependencies.claimStore = store;
+    const comments = enableClaims('local');
+    const store = service.dependencies.claimStore!;
     const selected = await next();
     assert.equal((await prepare(selected)).status, 'session-created');
     assert.equal(creates().length, 1);
     assert.equal((await record()).claimId, undefined);
     assert.equal(await store.inspect(), undefined);
+    assert.equal(comments.length, 0);
+  });
+
+  it('should hold a pending swarm claim after switching its route to local', async () => {
+    const comments = enableClaims();
+    assert.equal(
+      (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+      'claim-waiting',
+    );
+    manifest.github!.notifications!.routing = ['owner/*'];
+    coordinator.runId = 'second-local-pass';
+    const held = await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal('code' in held && held.code, 'claim-disabled-pending');
+    assert.equal(comments.length, 1);
+    assert.equal(creates().length, 0);
   });
 
   it('should hold a pending pilot assignment when claim election becomes dormant', async () => {
@@ -1945,6 +1961,7 @@ describe('agent/openclaw issue dispatch', () => {
     lost = true;
     assert.equal((await prepare(routed)).status, 'waiting');
     assert.match(comments[0]!.body, /^Assignment claim registered on /u);
+    manifest.github!.notifications!.routing = [{ 'owner/*': 'local' }];
     service = new OpenClawDispatch(service.dependencies);
     assert.equal(
       (await service.run(manifest, root, coordinator, { action: 'reconcile', id: routed.id }))

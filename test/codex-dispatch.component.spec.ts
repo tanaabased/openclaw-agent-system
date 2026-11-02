@@ -563,7 +563,14 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await next()).code, 'dispatch-assessment-skill-unavailable');
   });
 
-  async function claiming() {
+  async function claiming(mode: 'local' | 'swarm' = 'swarm') {
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        github: { ...manifest.github, routing: [{ 'owner/*': mode }] },
+      }),
+    );
     const comments: GitHubCanonicalIssueComment[] = [];
     const client: ClaimClient = {
       verify: async () => {},
@@ -594,7 +601,6 @@ describe('agent/codex-dispatch', () => {
       },
     };
     const store = codexInstanceStore(pluginData);
-    await store.identity();
     deps.claims = new CodexAssignmentClaims(store, () => client);
     return { store, client, comments };
   }
@@ -630,6 +636,8 @@ describe('agent/codex-dispatch', () => {
   });
 
   it('should prepare and reconcile without claims or creating installation state', async () => {
+    const { comments } = await claiming('local');
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
     const prepared = await prepare();
     created();
     await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
@@ -640,6 +648,18 @@ describe('agent/codex-dispatch', () => {
     assert.ok(records[0]!.effective);
     assert.equal(records[0]!.claimId, undefined);
     assert.equal(await codexInstanceStore(pluginData).inspect(), undefined);
+    assert.equal(comments.length, 0);
+  });
+
+  it('should hold a pending swarm claim after switching its route to local', async () => {
+    const { comments } = await claiming();
+    assert.equal((await next()).status, 'claim-waiting');
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
+    now += 300000;
+    const held = await next();
+    assert.equal(held.code, 'claim-disabled-pending');
+    assert.equal(comments.length, 1);
+    assert.deepEqual(gitCalls, []);
   });
 
   it('should prepare a first assignment with uncached compact reviewers', async () => {
@@ -785,6 +805,13 @@ describe('agent/codex-dispatch', () => {
   });
 
   it('should claim through the native github connection before preparing and accepting a verified chat', async () => {
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        github: { ...manifest.github, routing: [{ 'owner/*': 'swarm' }] },
+      }),
+    );
     const comments: Array<GitHubCanonicalIssueComment & { bodyLength: number; issueUrl: string }> =
       [];
     const bin = join(root, 'bin');
@@ -804,18 +831,18 @@ describe('agent/codex-dispatch', () => {
           const endpoint = argv.slice(1).find((arg) => arg.startsWith('/'));
           let value: unknown;
           if (argv.includes('graphql')) {
-            const nodeIds = JSON.parse(options.input).variables.ids as string[];
-            value = {
-              data: {
-                nodes: nodeIds.map((nodeId) => {
-                  const identity = [fixture.repository.owner, fixture.client.identity].find(
-                    (entry) => entry.nodeId === nodeId,
-                  );
-                  assert.ok(identity, 'requested identity belongs to the fixture');
-                  return { id: identity.nodeId, login: identity.login, __typename: identity.type };
-                }),
-              },
+            const { id, ids } = JSON.parse(options.input).variables as {
+              id?: string;
+              ids?: string[];
             };
+            const nodes = (ids ?? [id!]).map((nodeId) => {
+              const identity = [fixture.repository.owner, fixture.client.identity].find(
+                (entry) => entry.nodeId === nodeId,
+              );
+              assert.ok(identity, 'requested identity belongs to the fixture');
+              return { id: identity.nodeId, login: identity.login, __typename: identity.type };
+            });
+            value = { data: ids ? { nodes } : { node: nodes[0] } };
           } else if (endpoint === '/user') value = fixture.client.identity;
           else if (endpoint === '/repos/owner/repo') value = fixture.repository;
           else if (endpoint === '/repos/owner/repo/issues/3') {
@@ -911,7 +938,13 @@ describe('agent/codex-dispatch', () => {
       runId: 'first',
       toolCallId: 'tool-first',
     };
-    await other.select({ intake, client: fixture.client as never, caller, hasCapacity: true });
+    await other.select({
+      mode: 'swarm',
+      intake,
+      client: fixture.client as never,
+      caller,
+      hasCapacity: true,
+    });
     assert.equal((await next()).status, 'claim-waiting');
     now += 300000;
     const loser = await next();
@@ -920,6 +953,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(
       (
         await other.select({
+          mode: 'swarm',
           intake,
           client: fixture.client as never,
           caller: { ...caller, runId: 'second' },

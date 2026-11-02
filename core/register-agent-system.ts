@@ -1,3 +1,5 @@
+import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
+import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
 import { commandTerminationGraceMs } from '../api/cli-budget.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import createGitHubStatusChannel from '../channels/github/channel.ts';
@@ -355,8 +357,12 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
   );
   const dispatchV2 = createDispatchTool({
     api,
-    // Claim election stays dormant until the next dispatcher integration.
     claimStore: instanceStore,
+    claims: new OpenClawAssignmentClaims(instanceStore, (connection) => {
+      if (!(connection instanceof GitHubWorkEventClient))
+        throw new Error('claim-provider-binding-required');
+      return new GitHubAssignmentClaimClient(connection);
+    }),
     config: readRuntimeConfig,
     root: join(privateStateRoot ?? api.runtime.state.resolveStateDir(), 'agent-system-dispatch-v2'),
     intake: intakeV2,

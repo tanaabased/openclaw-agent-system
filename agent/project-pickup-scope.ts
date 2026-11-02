@@ -21,7 +21,7 @@ export default async function projectPickupScope(
     repository.disabled ||
     project.repository.toLowerCase() !==
       `${repository.owner.login}/${repository.name}`.toLowerCase() ||
-    repositoryScope(policy, repository).decision !== 'local'
+    repositoryScope(policy, repository).decision === 'deny'
   )
     return;
   if (!client.getMilestone) throw new Error('project-pickup-milestone-unavailable');

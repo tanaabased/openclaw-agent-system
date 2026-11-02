@@ -3,6 +3,7 @@ import { Value } from 'typebox/value';
 
 import repositoryScope, {
   repositoryPatternSchema,
+  repositoryRouteSchema,
   repositoryScopeCandidate,
 } from '../channels/github/repository-scope.ts';
 import {
@@ -13,6 +14,31 @@ import { normalizeAgentManifest } from '../manifest/parse.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
 describe('channels/github/repository-scope', () => {
+  it('should resolve local and swarm targets in the same ordered scope', () => {
+    const { policy, repository } = intakeFixture();
+    policy.routing = ['!owner/archive-*', { 'OWNER/REPO': 'swarm' }, 'owner/*'];
+    assert.deepEqual(repositoryScope(policy, repository), {
+      source: 'routing',
+      decision: 'swarm',
+      reason: 'match',
+      index: 1,
+      pattern: 'OWNER/REPO',
+    });
+    assert.equal(repositoryScopeCandidate(policy, 'owner', 'repo'), true);
+    policy.routing.unshift({ 'owner/*': 'local' });
+    assert.equal(repositoryScope(policy, repository).decision, 'local');
+    for (const route of ['owner/*', '!owner/repo', { 'owner/*': 'local' }, { '*/*': 'swarm' }])
+      assert.equal(Value.Check(repositoryRouteSchema, route), true);
+    for (const route of [
+      {},
+      { '!owner/repo': 'swarm' },
+      { 'owner/repo': 'remote' },
+      { 'owner/repo': 'swarm', 'owner/other': 'local' },
+      { 'owner/**': 'swarm' },
+    ])
+      assert.equal(Value.Check(repositoryRouteSchema, route), false, JSON.stringify(route));
+  });
+
   it('should use the first case-insensitive match with segment-local wildcards', () => {
     const { policy, repository } = intakeFixture();
     policy.routing = ['!OWNER/REPO', 'owner/*'];
@@ -109,6 +135,16 @@ describe('channels/github/repository-scope', () => {
         agent: { id: 'receiver' },
         github: { username: 'receiver', ...github },
       });
+    const routes = [
+      '!owner/archive-*',
+      { 'owner/repo': 'swarm' },
+      { 'owner/*': 'local' },
+      'pirog/*',
+    ];
+    const routed = parse({ routing: routes });
+    assert.equal(routed.status, 'valid', JSON.stringify(routed.diagnostics));
+    if (routed.status !== 'valid') throw Error('invalid routing fixture');
+    assert.deepEqual(routed.manifest.github!.notifications!.routing, routes);
     for (const legacy of [undefined, null, [], 'obsolete', [{ broken: true }]]) {
       const input = {
         routing: [],
