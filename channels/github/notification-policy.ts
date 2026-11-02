@@ -1,4 +1,5 @@
 import { githubIdentitySet } from './provider/work-item.ts';
+import { projectPickupConfigurationCode } from './project-pickup-schema.ts';
 import { repositoryScopeCandidate } from './repository-scope.ts';
 import type { GitHubNotificationsDeclaration } from './workflow-policy.ts';
 import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
@@ -92,7 +93,11 @@ export function validateGitHubNotificationPolicy(
 }
 
 export interface GitHubNotificationRuntimeDiagnostic {
-  code: 'github-notification-runtime-unsupported';
+  code:
+    | 'github-notification-runtime-unsupported'
+    | 'project-pickup-coordinator-required'
+    | 'project-pickup-coordinator-mismatch'
+    | 'project-pickup-schedule-unsupported';
   fieldPath: string;
   message: string;
   remediation: string;
@@ -107,14 +112,15 @@ export function githubNotificationRuntimeDiagnostics(
 ): GitHubNotificationRuntimeDiagnostic[] {
   if (!declaration || !declaration.runtimes.includes(runtime)) return [];
   const diagnostics: GitHubNotificationRuntimeDiagnostic[] = [];
-  if (declaration.projectPickup)
+  const pickupCode = projectPickupConfigurationCode(declaration, runtime);
+  if (pickupCode)
     diagnostics.push({
-      code: 'github-notification-runtime-unsupported',
+      code: pickupCode,
       fieldPath: '/github/project-pickup',
       message:
-        'Project pickup policy is validated, but scheduled selection and activation are not available yet.',
+        'Project pickup requires its designated runtime and installation, with intake cadence no longer than the pickup window.',
       remediation:
-        'Keep ordinary issue assignment configured. Declaring project-pickup does not activate pickup or authorize self-assignment.',
+        'Set project-pickup.coordinator to the intended runtime and existing installation ID, and choose a supported cadence within window-minutes. Run Install only on the designated installation; ordinary assignments remain independent.',
       status: 'warning',
       workflow: 'project-pickup',
     });

@@ -16,7 +16,7 @@ import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexHostAccess from './codex-host-access.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import { runCodexDispatch } from './codex-dispatch.ts';
-import { inspectCodexIntake, runCodexIntake } from './codex-intake.ts';
+import { inspectCodexIntake, runCodexIntake, runCodexProjectPickup } from './codex-intake.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 
 import {
@@ -358,12 +358,21 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     const action = args[1];
     if (action === '--help') {
       process.stdout.write(
-        'Usage: intake <inspect|scan|quiet-response|failure-response> --plugin-data <path>\nInspect is read-only. Scan requires prior authorized native activation and persists admission evidence only. Quiet-response formats JSON polling outcomes from stdin without reading or writing state.\n',
+        'Usage: intake <inspect|scan|pickup|quiet-response|failure-response> --plugin-data <path>\nInspect is read-only. Scan requires prior authorized native activation and persists admission evidence only. Quiet-response formats JSON polling outcomes from stdin without reading or writing state.\n',
       );
       return;
     }
     const pluginData = parsePluginData(args.slice(2));
     if (action === 'inspect') writeJson(await inspectCodexIntake(pluginData));
+    else if (action === 'pickup')
+      writeJson(
+        await runCodexProjectPickup(
+          pluginData,
+          JSON.parse(await readStandardInput()),
+          Intl.DateTimeFormat().resolvedOptions().timeZone,
+          { threadId: process.env.CODEX_THREAD_ID },
+        ),
+      );
     else if (action === 'scan')
       writeJson(await runCodexIntake(pluginData, false, { threadId: process.env.CODEX_THREAD_ID }));
     else if (action === 'failure-response') {
@@ -384,7 +393,8 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       });
     } else if (action === 'quiet-response')
       writeJson(codexHeartbeat(JSON.parse(await readStandardInput())));
-    else throw new Error('expected intake inspect, scan, quiet-response, or failure-response');
+    else
+      throw new Error('expected intake inspect, scan, pickup, quiet-response, or failure-response');
     return;
   }
   if (command === 'setup') return runSetup(args.slice(1));
@@ -500,7 +510,7 @@ runCodexRuntime().catch((error: unknown) => {
             error instanceof RoutingError ||
             error instanceof CodexAutomationError
           ? { code: error.code }
-          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment|assessment-result|implementation|heartbeat|notification-reset)-[a-z-]+$/u.test(
+          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment|assessment-result|implementation|heartbeat|notification-reset|project-pickup)-[a-z-]+$/u.test(
                 message,
               )
             ? { code: message }

@@ -1,4 +1,10 @@
 import { openClawItemOccupied } from './openclaw-capacity.ts';
+import type ProjectPickupEnrollmentStore from './project-pickup-enrollment.ts';
+import {
+  projectPickupAutomationId,
+  projectPickupConfigurationCode,
+  projectPickupErrorCode,
+} from './project-pickup-jobs.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 import projectPickup, { pickupAuthority, type PickupInput } from './project-pickup.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
@@ -27,6 +33,7 @@ import type { GitHubNotificationItemSelector } from '../channels/github/provider
 
 export interface OpenClawIntakeDependencies {
   projectPickup?: ProjectPickupAuthority;
+  pickupStore?: ProjectPickupEnrollmentStore;
   root: string;
   resetRoot?: string;
   namespace: string;
@@ -36,7 +43,12 @@ export interface OpenClawIntakeDependencies {
     signal: AbortSignal,
   ): Promise<GitHubNotificationIntakeClient>;
   now?: () => number;
-  readiness?(manifest: AgentManifest, workspace: string): Promise<string | undefined>;
+  readiness?(
+    manifest: AgentManifest,
+    workspace: string,
+    automationId?: string,
+    expectedNativeId?: string,
+  ): Promise<string | undefined>;
   readinessFailure?(error: unknown): void;
 }
 
@@ -64,9 +76,19 @@ export default class OpenClawIntake {
     await new GitHubIdentityCache(store.location).hydrate(manifest.github?.notifications);
     return { selected, store, workspace };
   }
-  async readiness(manifest: AgentManifest, workspace: string) {
+  async readiness(
+    manifest: AgentManifest,
+    workspace: string,
+    automationId?: string,
+    expectedNativeId?: string,
+  ) {
     try {
-      return await this.dependencies.readiness?.(manifest, workspace);
+      return await this.dependencies.readiness?.(
+        manifest,
+        workspace,
+        automationId,
+        expectedNativeId,
+      );
     } catch (error) {
       this.dependencies.readinessFailure?.(error);
       return 'automation-observation-unavailable';
@@ -78,10 +100,24 @@ export default class OpenClawIntake {
     workspaceDir: string,
     input: PickupInput,
     timezone: string,
+    occurrence?: { nativeId: string; assertCurrent(): Promise<void> },
   ) {
-    if (!this.dependencies.projectPickup)
-      throw new IntakeError('project-pickup-activation-required');
     const { store, workspace } = await this.select(manifest, workspaceDir);
+    let authority = this.dependencies.projectPickup;
+    if (!authority) {
+      if (!this.dependencies.pickupStore || !manifest.github?.notifications || !occurrence)
+        throw new IntakeError('project-pickup-native-caller-required');
+      await occurrence.assertCurrent();
+      const retained = await this.dependencies.pickupStore.inspect(
+        manifest.github.notifications,
+        'openclaw',
+        store.location.scope,
+      );
+      if (retained.nativeId !== occurrence.nativeId)
+        throw new IntakeError('project-pickup-native-caller-required');
+      authority = { enrollment: retained.enrollment, receipts: [] };
+      timezone = retained.timezone;
+    }
     const code = await this.readiness(manifest, workspace);
     if (code) throw new IntakeError(code);
     const journal = new OpenClawDispatchStore(store.location.root, store.location.scope);
@@ -99,6 +135,14 @@ export default class OpenClawIntake {
           throw new IntakeError('intake-workspace-binding-changed');
         const live = assignmentIntakePolicy(loaded.manifest, 'openclaw');
         if (!live) throw new IntakeError('intake-policy-disabled');
+        if (!this.dependencies.projectPickup) {
+          await occurrence!.assertCurrent();
+          await this.dependencies.pickupStore!.inspect(
+            live.policy,
+            'openclaw',
+            store.location.scope,
+          );
+        }
         return live.policy;
       };
       await readPolicy();
@@ -118,7 +162,7 @@ export default class OpenClawIntake {
         scope: store.location.scope,
         workspaceDir: workspace,
         agentId: manifest.agent.id,
-        enrollment: this.dependencies.projectPickup!.enrollment,
+        enrollment: authority.enrollment,
         timezone,
         state,
         save,
@@ -129,6 +173,72 @@ export default class OpenClawIntake {
         input,
       });
     });
+  }
+  async preparePickup(manifest: AgentManifest, workspaceDir: string) {
+    const { selected, store, workspace } = await this.select(manifest, workspaceDir);
+    if (!selected || !this.dependencies.pickupStore)
+      throw new IntakeError('project-pickup-activation-required');
+    const code = projectPickupConfigurationCode(selected.policy, 'openclaw');
+    if (code) throw new IntakeError(code);
+    await this.dependencies.pickupStore.owner(selected.policy, 'openclaw');
+    const client = (await this.dependencies.connect(
+      { manifest, workspaceDir: workspace },
+      AbortSignal.timeout(30_000),
+    )) as ProjectPickupClient;
+    if (client.identity.login.toLowerCase() !== selected.username.toLowerCase())
+      throw new IntakeError('intake-github-identity-mismatch');
+    await new GitHubIdentityCache(store.location).resolve(selected.policy, client, 'assignment');
+    return this.dependencies.pickupStore.prepare({
+      policy: selected.policy,
+      runtime: 'openclaw',
+      scope: store.location.scope,
+      workspaceDir: workspace,
+      agentId: manifest.agent.id,
+      client,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      now: (this.dependencies.now ?? Date.now)(),
+    });
+  }
+  async inspectPickup(manifest: AgentManifest, workspaceDir: string) {
+    const policy = manifest.github?.notifications;
+    if (!policy?.projectPickup) return [];
+    let code = projectPickupConfigurationCode(policy, 'openclaw');
+    try {
+      if (!code) {
+        const { store, workspace } = await this.select(manifest, workspaceDir);
+        if (!this.dependencies.pickupStore) throw new Error('project-pickup-activation-required');
+        const enrollment = await this.dependencies.pickupStore.inspect(
+          policy,
+          'openclaw',
+          store.location.scope,
+        );
+        if (!enrollment.nativeId) throw new Error('project-pickup-activation-required');
+        code = this.dependencies.readiness
+          ? await this.readiness(
+              manifest,
+              workspace,
+              projectPickupAutomationId,
+              enrollment.nativeId,
+            )
+          : 'project-pickup-observation-unavailable';
+      }
+    } catch (error) {
+      code = projectPickupErrorCode(error);
+    }
+    return [
+      {
+        component: 'github-intake',
+        status: code ? ('drift' as const) : ('healthy' as const),
+        code: code ?? 'project-pickup-ready',
+        message: code ?? 'Project pickup enrollment and native schedule are ready.',
+        ...(code
+          ? {
+              remediation:
+                'Check the designated installation, cadence and window, then run Install to reconcile its native pickup job. Preserve pending pickup work.',
+            }
+          : {}),
+      },
+    ];
   }
   async inspect(manifest: AgentManifest, workspaceDir: string) {
     const blocker = githubNotificationRuntimeBlocker(manifest.github?.notifications, 'openclaw');
@@ -286,6 +396,7 @@ export default class OpenClawIntake {
         if (result.code === 'github-notification-runtime-unsupported') return diagnostics;
         return [
           ...diagnostics,
+          ...(await this.inspectPickup(manifest, workspaceDir)),
           ...(result.storage && result.storage.level !== 'normal'
             ? [
                 {

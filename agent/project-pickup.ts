@@ -39,6 +39,10 @@ export interface PickupInput {
   selection?: unknown;
   cancel?: string;
 }
+export const pickupInputSchema = Type.Object(
+  { selection: Type.Optional(pickupSelectionSchema), cancel: Type.Optional(text) },
+  { additionalProperties: false },
+);
 type ManagedRecord = PickupManagedRecord;
 
 export function pickupAuthority(
@@ -84,6 +88,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
   input?: PickupInput;
 }) {
   const { state, client, enrollment, input = {} } = tx;
+  if (!Value.Check(pickupInputSchema, input)) throw new Error('project-pickup-input-invalid');
   const policy = await tx.readPolicy();
   const pickup = policy.projectPickup;
   if (

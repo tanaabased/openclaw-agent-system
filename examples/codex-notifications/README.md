@@ -18,7 +18,7 @@ accept feedback, or publish until activation and native ownership are verified.
 
 ## Notes
 
-- Project pickup selection and uncertain-assignment recovery have controlled native-adapter coverage in `test/project-pickup-selection.component.spec.ts`. Installed pickup activation remains [#527](https://github.com/tanaabased/openclaw-agent-system/issues/527); unattended acceptance remains [#529](https://github.com/tanaabased/openclaw-agent-system/issues/529). This scenario does not establish either outcome.
+- Project pickup selection and uncertain-assignment recovery have controlled native-adapter coverage in `test/project-pickup-selection.component.spec.ts`. The packaged check below rejects pickup designated to another runtime before activation. Native desktop activation still needs app receipts; unattended acceptance remains [#529](https://github.com/tanaabased/openclaw-agent-system/issues/529). This headless scenario does not establish desktop activation or unattended execution.
 
 - These direct Ubuntu checks use isolated Codex state without hosted secrets or model generation. Both active and paused fixtures declare V3; a paused declaration retains configuration while future occurrences remain disabled.
 - Pending relocation: explicit-target reset refusal, host/update/quiet heartbeat cases, restored pre-reset history, removed configuration fields, and cadence-change checks remain below.
@@ -220,12 +220,16 @@ node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-no
   | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "manifest-unknown-key")'
 test ! -d "$CODEX_HOME/automations"
 
-# should validate project pickup policy without activating a native schedule
+# should reject packaged pickup on a runtime other than its designated coordinator
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/project-pickup" \
   | jq -e '.manifest.status == "valid"'
+test ! -d "$CODEX_HOME/automations"
+node "$runtime" binding bind --plugin-data "$root/pickup-data" --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/project-pickup" --confirm | jq -e '.status == "bound"'
+if output=$(printf '%s\n' '{}' | node "$runtime" intake pickup --plugin-data "$root/pickup-data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "project-pickup-coordinator-mismatch"'
 test ! -d "$CODEX_HOME/automations"
 
 # should expose packaged dispatch without letting intake-only state launch work
