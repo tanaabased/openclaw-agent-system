@@ -19,7 +19,7 @@ Enroll a project pickup job, retain its identity across pause/resume, and verify
 
 ## Notes
 
-- Direct installed commands need one GitHub identity and native dispatch enrollment, without creating issues, PRs, worktrees, or SSH registrations. Pickup creates two disposable milestones in `tanaabased/big-test-bucket`. Strict AIMock turns invoke the native pickup job through embedded OpenClaw and hosted Codex against empty milestones and requires its quiet response; the tool, scheduler, provider reads and journal are real. It does not establish unattended timing or assignment-to-PR delivery.
+- Direct installed commands need one GitHub identity and native dispatch enrollment, without creating issues, PRs, worktrees, or SSH registrations. Pickup creates two disposable milestones in `tanaabased/big-test-bucket`. Strict AIMock turns invoke the native pickup job through embedded OpenClaw and hosted Codex against empty milestones and requires its per-scan outcome card; the tool, scheduler, provider reads and journal are real. It does not establish unattended timing or assignment-to-PR delivery.
 - Setup, first Install, and scheduling assertions share one fail-fast block. Failed installation retains its output and automation inspection, then stops before dependent checks. CI enables bounded, redacted native rejection evidence for that first attempt.
 - The pickup fixture has one daily midnight slot and a 24-hour window for forced authorization checks. All scheduler and Gateway state belongs to the ephemeral runner.
 

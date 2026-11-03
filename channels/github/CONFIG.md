@@ -91,9 +91,8 @@ owner. If no eligible installation claims the assignment, it stays pending: an
 unknown, offline, paused, or full target does not trigger fallback. Silence alone
 does not identify which condition applies. Pool edits preserve existing ownership
 and uncertain native creation; an excluded claimant that has not started native
-creation is held for recovery. Project pickup establishes the same ownership before
-self-assignment. Assignment intake retains the verified pickup owner even when
-its own rule chooses a different target or denies new assignments.
+creation is held for recovery. Project pickup checks shared routing eligibility before self-assignment. Ordinary
+assignment intake then selects the work owner under its own routing rule.
 
 `local` creates no claim. A retained or visible Swarm claim still blocks new local
 work; switching routes does not transfer ownership. If a claim is missing, changed,
@@ -195,6 +194,10 @@ Install adds one `PROJECT PICKUP` job alongside assignment intake. The default n
 schedule has eight daily starts: 03:00, 03:15, 03:30, 03:45, 04:00, 04:15, 04:30 and
 04:45 local time. Each scan can select and self-assign at most one actionable,
 unassigned issue in the configured milestone, subject to ordinary work capacity.
+The pilot permits one confirmed assignment per window on each installation. Later scans
+report that the allowance is used; completing the issue does not reopen it. Each scan
+reports its selection and reason, no selection, or the condition that prevented selection.
+
 Verified pickup enters the existing
 assessment and Work workflow; ordinary assignments keep their configured mode.
 Missed windows are not replayed. Accepted issue work may finish after a window or pause.

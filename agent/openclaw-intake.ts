@@ -159,6 +159,7 @@ export default class OpenClawIntake {
         !client.assignProjectIssue
       )
         throw new IntakeError('project-pickup-provider-unavailable');
+      delete state.projectPickupReport;
       const result = await projectPickup({
         runtime: 'openclaw',
         scope: store.location.scope,
@@ -195,12 +196,7 @@ export default class OpenClawIntake {
       const reportPolicy = await readPolicy();
       const report = projectPickupReport({
         policy: reportPolicy,
-        pickup: state.projectPickup,
-        records: state.records,
-        previous: state.projectPickupReport,
         outcome: result,
-        now: (this.dependencies.now ?? Date.now)(),
-        runId: occurrence?.runId,
         debug: manifest.debug,
         capacity: {
           occupied: openClawCapacity(
@@ -210,21 +206,7 @@ export default class OpenClawIntake {
           ).occupied,
           limit: reportPolicy.maxConcurrentItems,
         },
-        active: (record) =>
-          record.nativeInactive || record.work?.turn?.inactive
-            ? false
-            : record.work?.turn?.status === 'consumed' || record.feedback?.activity?.busy === true
-              ? true
-              : undefined,
-        conversation: (record) =>
-          record.sessionCreation?.verified && record.threadId
-            ? `/chat?session=${encodeURIComponent(record.threadId)}`
-            : undefined,
       });
-      if (report.report) {
-        state.projectPickupReport = report.report;
-        await save();
-      }
       return {
         ...result,
         response: report.response,

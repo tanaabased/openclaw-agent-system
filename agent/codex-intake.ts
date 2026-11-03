@@ -452,6 +452,7 @@ export async function runCodexProjectPickup(
       !client.assignProjectIssue
     )
       throw new IntakeError('project-pickup-provider-unavailable');
+    delete state.projectPickupReport;
     const result = await projectPickup({
       runtime: 'codex',
       scope: current.store.location.scope,
@@ -483,33 +484,14 @@ export async function runCodexProjectPickup(
     const reportPolicy = await readPolicy();
     const report = projectPickupReport({
       policy: reportPolicy,
-      pickup: state.projectPickup,
-      records: state.records,
-      previous: state.projectPickupReport,
       outcome: result,
-      now: (deps.now ?? Date.now)(),
-      runId: nativeOccurrence?.id,
       debug: current.manifest.debug,
       capacity: {
         occupied: codexCapacity(state.records, reportPolicy.maxConcurrentItems, state.projectPickup)
           .occupied,
         limit: reportPolicy.maxConcurrentItems,
       },
-      active: (record) =>
-        record.nativeInactive
-          ? false
-          : record.capacityObservation?.code === 'dispatch-capacity-native-active'
-            ? true
-            : undefined,
-      conversation: (record) =>
-        record.effective && record.threadId
-          ? `codex://threads/${encodeURIComponent(record.threadId)}`
-          : undefined,
     });
-    if (report.report) {
-      state.projectPickupReport = report.report;
-      await save();
-    }
     return {
       ...result,
       response: codexHeartbeatEnvelope(

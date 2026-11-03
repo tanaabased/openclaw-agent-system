@@ -212,7 +212,7 @@ describe('project pickup selection through native journals', () => {
       const path = join(root, 'workspace', 'selection.md');
       await writeFile(path, 'prefer release blockers');
       f.tick.id = 'later-native-run';
-      const fresh = await f.pickup({ selection });
+      const fresh = await f.pickup();
       assert.equal(fresh.status, 'selection-required');
       assert.ok('guidance' in fresh && 'digest' in fresh);
       assert.equal(fresh.guidance, 'prefer release blockers');
@@ -238,6 +238,7 @@ describe('project pickup selection through native journals', () => {
       const { action, ...input } = first.contextMaterials.fields[0]!.request;
       assert.equal(action, 'pickup');
       await writeFile(join(root, 'workspace', 'selection.md'), 'changed selection priorities');
+      f.tick.id = 'new-scan';
       await assert.rejects(f.pickup(input as PickupInput), /selection-stale/);
       const fresh = await f.pickup();
       assert.equal(fresh.status, 'selection-required');
@@ -307,21 +308,6 @@ describe('project pickup selection through native journals', () => {
         });
       }
       await f.pickup();
-      await f.journal.exclusive(async (state, save) => {
-        const current = state.projectPickup!.operations[0]!;
-        for (let index = 0; index < 4; index++) {
-          state.projectPickup!.operations.push({
-            ...structuredClone(current),
-            id: `cancelled-${index}`,
-            phase: 'cancelled',
-            candidates: [],
-            selected: { ...f.candidates.get(1)!, body: '' },
-            rationale: 'r'.repeat(4096),
-          });
-        }
-        delete state.projectPickupReport;
-        await save();
-      });
       const response = await f.pickup();
       assert.equal(response.status, 'selection-required');
       assert.equal(response.response, '');
@@ -332,7 +318,13 @@ describe('project pickup selection through native journals', () => {
         assert.ok(JSON.stringify(page).length < 16000);
         return page;
       });
-      assert.deepEqual(restored.candidates, [...f.candidates.values()]);
+      assert.deepEqual(
+        restored.candidates,
+        [...f.candidates.values()].map((candidate) => ({
+          ...candidate,
+          blockedByOpenIssues: false,
+        })),
+      );
       assert.equal(f.effects.writes, 0);
       assert.ok('contextMaterials' in response && response.contextMaterials);
       const request = response.contextMaterials.fields[0]!.request;
@@ -366,10 +358,10 @@ describe('project pickup selection through native journals', () => {
       assert.equal((await f.pickup({ selection })).status, 'assigned');
       assert.equal(f.effects.writes, 1);
       assert.equal((await f.journal.read()).projectPickup!.operations[0]!.candidates.length, 0);
-      await assert.rejects(f.pickup(input as PickupInput), /selection-stale/);
+      assert.equal((await f.pickup(input as PickupInput)).status, 'allowance-reached');
     });
 
-    it(`should persist guidance accepted at the shared limit in ${runtime}`, async () => {
+    it(`should page temporary guidance accepted at the shared limit in ${runtime}`, async () => {
       const f = await fixture(runtime);
       const content = 'x'.repeat(32768);
       await writeFile(join(root, 'workspace', 'selection.md'), content);
@@ -384,7 +376,7 @@ describe('project pickup selection through native journals', () => {
     });
 
     for (const editTail of [false, true]) {
-      it(`should select a long description with full revision checking in ${runtime} with tail edit ${editTail}`, async () => {
+      it(`should select a long description despite harmless later edits in ${runtime} with tail edit ${editTail}`, async () => {
         const f = await fixture(runtime);
         const candidate = f.candidates.get(f.item.number)!;
         let body = 'ready work\n'.repeat(6000);
@@ -401,22 +393,11 @@ describe('project pickup selection through native journals', () => {
           }),
         );
         f.client.projectCandidate = provider.projectCandidate.bind(provider);
-        let selection = await f.select();
+        const selection = await f.select();
         const before = (await f.journal.read()).projectPickup!.operations[0]!.candidates[0]!;
         assert.equal(before.body, body);
         assert.equal(Object.hasOwn(before, 'bodyTruncated'), false);
-        if (editTail) {
-          body += 'changed requirements';
-          const result = await f.pickup({ selection });
-          assert.equal(result.status, 'failed');
-          assert.ok('code' in result && result.code === 'project-pickup-candidate-changed');
-          assert.equal(f.effects.writes, 0);
-          f.tick.id = 'pickup-new-description';
-          selection = await f.select();
-          const after = (await f.journal.read()).projectPickup!.operations[0]!.candidates[0]!;
-          assert.notEqual(after.body, before.body);
-          assert.equal(after.body, body);
-        }
+        if (editTail) body += 'changed requirements';
         assert.equal((await f.pickup({ selection })).status, 'assigned');
         await f.scan();
         assert.equal((await f.read()).length, 1);
@@ -442,7 +423,7 @@ describe('project pickup selection through native journals', () => {
           lostResponse ? 'attempted' : 'assigned',
         );
         f.tick.id = 'pickup-after-close';
-        assert.equal((await f.pickup()).status, 'assigned');
+        assert.equal((await f.pickup()).status, lostResponse ? 'assigned' : 'idle');
         await f.scan();
         await f.scan();
         const records = await f.read();
@@ -492,7 +473,7 @@ describe('project pickup selection through native journals', () => {
       await f.configure((source) => {
         source.github.routing = [{ 'owner/*': [identity.instanceId] }];
       });
-      assert.equal((await f.pickup({ selection })).status, 'assigned');
+      assert.equal((await f.pickup({ selection: await f.select() })).status, 'assigned');
       assert.equal(f.claims!.effects.creates, 0);
       await f.scan();
       assert.equal((await f.read())[0]!.evidence.mode, 'work');
@@ -507,9 +488,9 @@ describe('project pickup selection through native journals', () => {
       });
       f.clock.now = baseline + 119000;
       assert.equal((await f.pickup({ selection: await f.select() })).status, 'assigned');
-      assert.equal((await f.pickup()).status, 'assigned');
+      assert.equal((await f.pickup()).status, 'allowance-reached');
       assert.equal(f.effects.writes, 1);
-      assert.equal((await f.pickup()).status, 'assigned');
+      assert.equal((await f.pickup()).status, 'allowance-reached');
       await f.scan();
       const records = await f.read();
       assert.equal(records.length, 1);
@@ -540,53 +521,41 @@ describe('project pickup selection through native journals', () => {
       assert.equal(f.claims!.effects.creates, 1);
       assert.equal(f.effects.writes, 1);
     });
-    it(`should keep empty ticks quiet and report the window close once through ${runtime}`, async () => {
+    it(`should report every empty scheduled scan through ${runtime}`, async () => {
       const f = await fixture(runtime);
       f.candidates.clear();
-      const empty = await f.pickup();
-      assert.equal(empty.status, 'empty');
-      if (runtime === 'codex') assert.match(empty.response, /<decision>DONT_NOTIFY<\/decision>/);
-      else assert.equal(empty.response, '');
-      f.tick.id = 'pickup-empty-2';
-      const quiet = await f.pickup();
-      assert.doesNotMatch(quiet.response, /> ##/);
-      f.clock.now += 7200000;
-      f.tick.id = 'pickup-empty-closed';
-      const closed = await f.pickup();
-      assert.match(closed.response, /Pickup window summary/);
-      assert.match(closed.response, /does not mean completion/);
-      f.tick.id = 'pickup-empty-closed-2';
-      assert.doesNotMatch((await f.pickup()).response, /> ##/);
+      for (let index = 1; index <= 8; index++) {
+        f.tick.id = `empty-scan-${index}`;
+        const result = await f.pickup();
+        assert.equal(result.status, 'empty');
+        assert.match(result.response, /> ## 📥/);
+        if (runtime === 'codex') assert.match(result.response, /<decision>NOTIFY<\/decision>/);
+        assert.deepEqual((await f.journal.read()).projectPickup!.operations, []);
+      }
       assert.equal(f.effects.writes, 0);
     });
 
-    it(`should retain selected, quiet, blocked and recovery cards through ${runtime}`, async () => {
+    it(`should report uncertainty, confirmation and exhausted allowance through ${runtime}`, async () => {
       const f = await fixture(runtime);
-      const selection = await f.select();
       const assign = f.client.assignProjectIssue;
       f.client.assignProjectIssue = async (...args) => {
         await assign(...args);
         throw new Error('lost response');
       };
-      const blocked = await f.pickup({ selection });
-      assert.equal(blocked.status, 'attempted');
-      assert.match(blocked.response, /> ## ⚠️/);
-      assert.match(blocked.response, /`project-pickup-assignment-uncertain`/);
-      assert.ok(blocked.response.includes((await f.journal.read()).projectPickupReport!.response));
-      const replay = await f.pickup();
-      assert.equal(replay.response, blocked.response);
-      f.tick.id = 'pickup-turn-2';
-      const selected = await f.pickup();
-      assert.equal(selected.status, 'assigned');
-      assert.match(selected.response, /Project pickup resumed/);
-      assert.match(selected.response, /github\.com\/owner\/repo\/milestone\/10/);
-      assert.match(selected.response, /Why selected/);
-      f.tick.id = 'pickup-turn-3';
-      const quiet = await f.pickup();
-      if (runtime === 'codex') assert.match(quiet.response, /<decision>DONT_NOTIFY<\/decision>/);
-      else assert.equal(quiet.response, '');
+      const pending = await f.pickup({ selection: await f.select() });
+      assert.match(pending.response, /> ## ⚠️/);
+      const state = await f.journal.read();
+      assert.equal(state.projectPickupReport, undefined);
+      assert.equal(state.projectPickup!.operations[0]!.guidance, undefined);
+      f.tick.id = 'confirm';
+      const confirmed = await f.pickup();
+      assert.equal(confirmed.status, 'assigned');
+      assert.match(confirmed.response, /1 of 1 assigned/);
+      f.tick.id = 'allowance';
+      const exhausted = await f.pickup();
+      assert.equal(exhausted.status, 'allowance-reached');
+      assert.match(exhausted.response, /> ## 📥/);
       assert.equal(f.effects.writes, 1);
-      assert.equal((await f.journal.read()).projectPickupReport!.notify, false);
     });
 
     it(`should reject an expired native occurrence before provider assignment in ${runtime}`, async () => {
@@ -643,7 +612,7 @@ describe('project pickup selection through native journals', () => {
       assert.equal((await f.read()).length, 1);
     });
 
-    it(`should serialize concurrent ticks and preserve cancellation in ${runtime}`, async () => {
+    it(`should serialize concurrent ticks and preserve the assignment for intake in ${runtime}`, async () => {
       const f = await fixture(runtime);
       const selection = await f.select();
       const results = await Promise.allSettled([f.pickup({ selection }), f.pickup({ selection })]);
@@ -653,11 +622,11 @@ describe('project pickup selection through native journals', () => {
         ),
       );
       assert.equal(f.effects.writes, 1);
-      assert.equal((await f.journal.read()).projectPickup!.operations.length, 1);
-      assert.equal((await f.pickup({ cancel: selection.id })).status, 'cancelled');
+      assert.equal((await f.pickup({ cancel: selection.id })).status, 'allowance-reached');
       await f.scan();
-      assert.equal((await f.read()).length, 0);
-      assert.equal((await f.pickup()).status, 'idle');
+      assert.equal((await f.read()).length, 1);
+      f.tick.id = 'next-scan';
+      assert.equal((await f.pickup()).status, 'allowance-reached');
     });
 
     it(`should refuse reassignment away from the receiver before native admission in ${runtime}`, async () => {

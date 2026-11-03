@@ -21,7 +21,6 @@ export const pickupReportSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type PickupReport = Static<typeof pickupReportSchema>;
 export const pickupOperationSchema = Type.Object(
   {
     id: text,

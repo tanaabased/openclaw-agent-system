@@ -1,4 +1,4 @@
-import { getTextContent } from '@copilotkit/aimock';
+import { getTextContent, type Fixture } from '@copilotkit/aimock';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
@@ -6,11 +6,36 @@ import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.t
 const model = /^(?:aimock\/)?gpt-5\.(?:5|4-nano)$/u;
 const prompt = 'Run the activated project pickup once.';
 const call = 'call_project_pickup';
+const final: Fixture = {
+  match: {
+    model,
+    hasToolResult: true,
+    predicate(request) {
+      const text = openClawAIMockToolResultText(request.messages, call);
+      if (!text) return false;
+      try {
+        const result = JSON.parse(text);
+        return (
+          result.status === 'empty' &&
+          typeof result.response === 'string' &&
+          result.response.includes('📥')
+        );
+      } catch {
+        return false;
+      }
+    },
+  },
+  response(request) {
+    const result = JSON.parse(openClawAIMockToolResultText(request.messages, call)!);
+    return { id: 'pickup-empty', content: result.response };
+  },
+};
 
 export const pickupSchedulingScenario: OpenClawAIMockScenario = {
   id: 'openclaw-notifications-scheduling',
   model: { match: model, reference: 'aimock/gpt-5.5' },
-  finalResponses: ['NO_REPLY'],
+  finalResponses: [],
+  dynamicFinalResponseFixtures: [final],
   systemPromptSignals: [],
   userPromptSignals: [prompt],
   toolCalls: [{ id: call, name: 'agent_system_intake' }],
@@ -29,22 +54,6 @@ export const pickupSchedulingScenario: OpenClawAIMockScenario = {
         toolCalls: [{ id: call, name: 'agent_system_intake', arguments: '{"action":"pickup"}' }],
       },
     },
-    {
-      match: {
-        model,
-        hasToolResult: true,
-        predicate(request) {
-          const text = openClawAIMockToolResultText(request.messages, call);
-          if (!text) return false;
-          try {
-            const result = JSON.parse(text);
-            return result.status === 'empty' && result.response === '';
-          } catch {
-            return false;
-          }
-        },
-      },
-      response: { id: 'pickup-empty', content: 'NO_REPLY' },
-    },
+    final,
   ],
 };
