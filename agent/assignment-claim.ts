@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto';
 
 import { claimBody, parseAssignmentClaim } from '../channels/github/provider/assignment-claim.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
-import type AssignmentClaimStore from './assignment-claim-store.ts';
+import type {
+  default as AssignmentClaimStore,
+  AssignmentClaimState,
+} from './assignment-claim-store.ts';
 import type { RepositoryScopeDecision } from '../channels/github/repository-scope.ts';
 
 export type ClaimStore = Pick<
@@ -139,7 +142,11 @@ export async function claimAssignment(input: {
   const { store, client, source, passId } = input;
   if (!passId) throw new Error('claim-pass-required');
   let routing: ClaimDecision['routing'];
-  const decision = await store.exclusive<ClaimDecision>(async (state, save, signal) => {
+  const select = async (
+    state: AssignmentClaimState,
+    save: () => Promise<void>,
+    signal: AbortSignal,
+  ): Promise<ClaimDecision> => {
     signal.throwIfAborted();
     await client.verify(source);
     const claims = await readAssignmentClaims(client, source);
@@ -268,7 +275,8 @@ export async function claimAssignment(input: {
     await client.verify(source);
     signal.throwIfAborted();
     return { status: 'owned', winnerId: record.winnerId };
-  });
+  };
+  const decision = await store.exclusive(select, !source.pickup?.assignmentEventId);
   if (!routing) return decision;
   const instructions =
     decision.code === 'claim-route-owner-ineligible'

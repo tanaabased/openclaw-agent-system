@@ -380,6 +380,9 @@ describe('project pickup shared claim ownership', () => {
       assert.equal(recovered.status, 'owned');
       assert.equal(recovered.winnerId, winnerId);
       const ordinary = { ...intake, evidence: { ...intake.evidence, projectWork: undefined } };
+      const uninstalled = new AssignmentClaimStore(join(root, 'uninstalled'));
+      await assert.rejects(select(uninstalled, 'local', ordinary), /instance-install-required/);
+      assert.equal(await uninstalled.inspect(), undefined);
       for (const target of ['local', { instance: other }] as const) {
         f.policy.routing![0] = { ...assignmentRoute, target };
         const observerRoute = assignmentClaimRoute(f.policy, ordinary);
