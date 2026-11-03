@@ -12,7 +12,7 @@ previous intake schedule.
 
 ## What Does Not Belong Here
 
-- Retirement assertions themselves: [retirement](../openclaw-notifications-retirement/README.md). Live actor-policy changes: [feedback policy](../openclaw-notifications-feedback-policy/README.md) and [assignment policy](../openclaw-notifications-assignment-policy/README.md).
+- Retirement assertions themselves: [retirement](../openclaw-notifications-retirement/README.md). Live actor-policy changes: [feedback policy](../openclaw-issue-feedback-policy/README.md) and [assignment policy](../openclaw-issue-assignment-policy/README.md).
 - Purge, uncertain session lookup, partial reset recovery, or native desktop sidebar/scheduler behavior. Their separate source/manual evidence is not supplied by this example.
 
 ## Notes

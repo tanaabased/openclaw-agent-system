@@ -15,7 +15,7 @@ Retire a second task whose completed session is missing, preserving its saved ev
 ## What Does Not Belong Here
 
 - Generic worktree removal mechanics: [worktree](../openclaw-worktree/README.md). Coordinator/tracking replacement: [reset](../openclaw-notifications-reset/README.md).
-- Author policy and unassignment reactivation: [feedback policy](../openclaw-notifications-feedback-policy/README.md), [assignment policy](../openclaw-notifications-assignment-policy/README.md), and [reactivation](../openclaw-notifications-reactivation/README.md).
+- Author policy and unassignment reactivation: [feedback policy](../openclaw-issue-feedback-policy/README.md), [assignment policy](../openclaw-issue-assignment-policy/README.md), and [reactivation](../openclaw-issue-reactivation/README.md).
 - Automatic reclamation of the first closed checkout, which is deliberately removed through the public worktree command. The fresh attempt covers automatic removal.
 
 ## Notes

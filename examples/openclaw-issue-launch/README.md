@@ -13,7 +13,7 @@ same-repository draft PR through an authorized update to that original PR.
 
 ## What Does Not Belong Here
 
-- Scheduled intake: [issue journey](../openclaw-notifications-issue-journey/README.md).
+- Scheduled intake: [issue journey](../openclaw-issue-journey/README.md).
 - Assessment in an existing chat: [direct assessment](../openclaw-issue-assessment/README.md).
 - Work/Auto and PR delivery permutations beyond this continuation: their existing journeys and component fixtures.
 

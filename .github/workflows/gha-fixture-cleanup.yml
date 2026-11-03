@@ -2,7 +2,15 @@ name: GHA fixture cleanup
 
 on:
   workflow_run:
-    workflows: [OS tests, Codex tests, OpenClaw tests, Notification tests]
+    workflows:
+      - OS tests
+      - Codex install tests
+      - OpenClaw tests
+      - Notification core tests
+      - Issue assignment tests
+      - PR tests
+      - Project picker tests
+      - Automation tests
     types: [completed]
   workflow_dispatch:
     inputs:

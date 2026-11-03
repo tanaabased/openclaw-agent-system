@@ -15,7 +15,7 @@ describe('scripts/aimock-server diagnostics', () => {
         'tsx',
         'scripts/aimock-server.ts',
         '--scenario',
-        'openclaw-notifications-pr-journey',
+        'openclaw-pr-journey',
         '--port',
         '0',
       ],
@@ -39,7 +39,7 @@ describe('scripts/aimock-server diagnostics', () => {
       const healthy = await fetch(`${url}/proof/diagnostics`, { signal: timeout });
       assert.equal(healthy.status, 200);
       assert.deepEqual(await healthy.json(), {
-        scenario: 'openclaw-notifications-pr-journey',
+        scenario: 'openclaw-pr-journey',
         failed: false,
       });
 

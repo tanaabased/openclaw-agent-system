@@ -7,7 +7,7 @@ import implementationMaterial, {
 } from '../agent/implementation-material.ts';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
-import waitForAssessmentRelease from '../examples/openclaw-notifications-intake/assessment-barrier.ts';
+import waitForAssessmentRelease from '../examples/openclaw-issue-intake/assessment-barrier.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
@@ -17,14 +17,14 @@ import { Value } from 'typebox/value';
 
 import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
 import assessmentSubmission from '../agent/assessment-submission.ts';
-import { issueExampleScenario } from '../examples/openclaw-notifications-issue-journey/model-fixture.ts';
-import { intakeExampleScenario } from '../examples/openclaw-notifications-intake/model-fixture.ts';
+import { issueExampleScenario } from '../examples/openclaw-issue-journey/model-fixture.ts';
+import { intakeExampleScenario } from '../examples/openclaw-issue-intake/model-fixture.ts';
 import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
 import {
   progressionExampleScenario,
   retainedPlan,
-} from '../examples/openclaw-notifications-progression/model-fixture.ts';
-import { prExampleScenario } from '../examples/openclaw-notifications-pr-journey/model-fixture.ts';
+} from '../examples/openclaw-issue-progression/model-fixture.ts';
+import { prExampleScenario } from '../examples/openclaw-pr-journey/model-fixture.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
 import resolveExampleModelScenario from '../scripts/example-model-scenarios.ts';
@@ -151,7 +151,7 @@ for (const scenario of [
   ) {
     assert.equal((await action(input, 'summary', selectedScenario)).operation, 'compose');
     const owner =
-      selectedScenario.id === 'openclaw-notifications-progression' ? summaryFixture() : undefined;
+      selectedScenario.id === 'openclaw-issue-progression' ? summaryFixture() : undefined;
     if (owner) {
       owner.record.id = id;
       owner.retain({ ...owner.result, plan: retainedPlan, fullAssessment: retainedPlan });
@@ -207,7 +207,7 @@ for (const scenario of [
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
-    if (scenario.id === 'openclaw-notifications-issue-journey')
+    if (scenario.id === 'openclaw-issue-journey')
       it('should correct one rejected direct assessment shape without repeating investigation or changing source', async () => {
         const input = request(`Direct issue assessment target: ${source} checkout: /tmp/owned`);
         assert.equal((await action(input, 'assessment')).operation, 'context');
@@ -262,7 +262,7 @@ for (const scenario of [
         assert.deepEqual(await response(input), { content: 'Retained complete assessment.' });
       });
 
-    if (scenario.id === 'openclaw-notifications-issue-journey')
+    if (scenario.id === 'openclaw-issue-journey')
       it('should preserve a failed recovery candidate without retrying or claiming publication', async () => {
         const input = request(`recover only the pending public assessment summary with id ${id}`);
         append(input, 'recovery-present', {
@@ -288,7 +288,7 @@ for (const scenario of [
           content: 'Assessment summary candidate was not recorded: dispatch-operation-failed.',
         });
       });
-    if (scenario.id === 'openclaw-notifications-pr-journey')
+    if (scenario.id === 'openclaw-pr-journey')
       it('should report a retained provider obstacle without retrying it or losing the diagnostic to strict matching', async () => {
         const input = request(intakePrompt);
         append(input, 'scan', { status: 'ready' });
@@ -306,7 +306,7 @@ for (const scenario of [
         });
         assert.deepEqual(await response(input), { content: 'The account identity read failed.' });
       });
-    if (scenario.id === 'openclaw-notifications-intake')
+    if (scenario.id === 'openclaw-issue-intake')
       it('should release only the assessment explicitly unblocked by the native scenario', async () => {
         const directory = '/tmp/notification-barrier-fixture';
         const files = new Set<string>();
@@ -547,11 +547,7 @@ for (const scenario of [
       assert.equal(matchFixture([...scenario.fixtures], missing), null);
     });
 
-    if (
-      !['openclaw-notifications-pr-journey', 'openclaw-notifications-progression'].includes(
-        scenario.id,
-      )
-    )
+    if (!['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id))
       it('should consume fresh later evidence after recovery', async () => {
         const later = request(`Refresh retained assessment for managed issue ${id}`);
         assert.equal(matchFixture([...scenario.fixtures], later), null);
@@ -612,12 +608,12 @@ for (const scenario of [
           id,
           project: { path: '/fixture' },
           assessment:
-            scenario.id === 'openclaw-notifications-issue-journey'
+            scenario.id === 'openclaw-issue-journey'
               ? { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } }
               : {},
           resultContract: 'assessment-result/v1',
         });
-        if (scenario.id === 'openclaw-notifications-issue-journey') {
+        if (scenario.id === 'openclaw-issue-journey') {
           const read = await response(input);
           assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
           append(input, 'assessment-skill', 'Generic Assessment');
@@ -648,16 +644,16 @@ for (const scenario of [
         id,
         project: { path: '/tmp/managed-worktree' },
         assessment: {
-          defaultSkill: scenario.id !== 'openclaw-notifications-issue-journey',
+          defaultSkill: scenario.id !== 'openclaw-issue-journey',
           skill:
-            scenario.id === 'openclaw-notifications-issue-journey'
+            scenario.id === 'openclaw-issue-journey'
               ? { name: 'generic-assessment', path: '/fixture/SKILL.md' }
               : { path: '/fixture/SKILL.md' },
         },
         resultContract: 'assessment-result/v1',
       };
       append(input, 'context', context);
-      if (scenario.id === 'openclaw-notifications-issue-journey') {
+      if (scenario.id === 'openclaw-issue-journey') {
         const read = await response(input);
         assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
         assert.deepEqual(JSON.parse(read.toolCalls![0]!.arguments), { path: '/fixture/SKILL.md' });
@@ -670,7 +666,7 @@ for (const scenario of [
         argv: ['rev-parse', '--show-toplevel'],
       });
       append(input, 'git', { exitCode: 0, stdout: '/tmp/managed-worktree\n', truncated: false });
-      if (scenario.id === 'openclaw-notifications-pr-journey') {
+      if (scenario.id === 'openclaw-pr-journey') {
         const read = await response(input);
         assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
         append(input, 'assessment-skill', 'Default assessment.');
@@ -682,19 +678,11 @@ for (const scenario of [
       append(input, 'result', { status: 'recorded', presentation });
       const nextResponse = await response(input);
       assert.equal('content' in nextResponse && nextResponse.content, presentation);
-      if (
-        ['openclaw-notifications-pr-journey', 'openclaw-notifications-progression'].includes(
-          scenario.id,
-        )
-      ) {
+      if (['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id)) {
         await publishProgressionSummary(input);
         assert.deepEqual(await response(input), { content: 'Published retained plan.' });
       }
-      if (
-        !['openclaw-notifications-pr-journey', 'openclaw-notifications-progression'].includes(
-          scenario.id,
-        )
-      ) {
+      if (!['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id)) {
         assert.deepEqual(await action(input, 'present'), {
           action: 'present',
           id,
@@ -757,11 +745,7 @@ for (const scenario of [
       append(invalid, 'git', { exitCode: 0, stdout: '/tmp/other', truncated: false });
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
     });
-    if (
-      ['openclaw-notifications-pr-journey', 'openclaw-notifications-progression'].includes(
-        scenario.id,
-      )
-    )
+    if (['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id))
       it('should finish response-only recovery without repeating assessment or implementation', async () => {
         const input = request(`recover only the pending public assessment summary with id ${id}`);
         await action(input, 'present');
@@ -772,9 +756,9 @@ for (const scenario of [
         await publishProgressionSummary(input);
         assert.deepEqual(await response(input), { content: 'Published retained plan.' });
       });
-    if (scenario.id === 'openclaw-notifications-progression')
+    if (scenario.id === 'openclaw-issue-progression')
       it('should hold an auto plan and accept only the later operator continuation', async () => {
-        const selected = resolveExampleModelScenario('openclaw-notifications-auto-plan');
+        const selected = resolveExampleModelScenario('openclaw-issue-auto-plan');
         const input = request(`Refresh agent_system_dispatch action context with id ${id}.`);
         await action(input, 'context', selected);
         append(input, 'refresh-context', {
@@ -816,11 +800,11 @@ for (const scenario of [
         const work = await action(followup, 'implementation-result', selected);
         assert.equal(work.implementationResult?.outcome, 'clarification-needed');
       });
-    if (scenario.id === 'openclaw-notifications-progression') {
+    if (scenario.id === 'openclaw-issue-progression') {
       for (const interrupted of [false, true])
         it(`should record an auto decision only after verified context with interruption ${interrupted}`, async () => {
           const selected = interrupted
-            ? resolveExampleModelScenario('openclaw-notifications-decision-recovery')
+            ? resolveExampleModelScenario('openclaw-issue-decision-recovery')
             : scenario;
           const input = request(`Refresh agent_system_dispatch action context with id ${id}.`);
           if (interrupted) {
@@ -1009,7 +993,7 @@ for (const scenario of [
           assert.deepEqual(await response(answer), { content: 'Committed locally.' });
         });
     }
-    if (scenario.id === 'openclaw-notifications-pr-journey') {
+    if (scenario.id === 'openclaw-pr-journey') {
       for (const mode of ['operator', 'work', 'auto', 'custom'])
         it(`should carry ${mode} through implementation and the same delivery on retry`, async () => {
           const input = request(
@@ -1266,7 +1250,7 @@ for (const scenario of [
         );
       });
     }
-    if (scenario.id === 'openclaw-notifications-issue-journey')
+    if (scenario.id === 'openclaw-issue-journey')
       it('should drive typed status composition once and keep no-op independent of composer and publication', async () => {
         const input = request(
           `Operator status update target: ${source}\nDecision: use shared replies.`,
@@ -1305,7 +1289,7 @@ for (const scenario of [
         });
         assert.deepEqual(await response(current), { content: 'Already current.' });
       });
-    if (scenario.id === 'openclaw-notifications-issue-journey')
+    if (scenario.id === 'openclaw-issue-journey')
       it('should answer paired github and direct questions using retained responses without work', async () => {
         const privateText = 'The retained plan documents disposable issue cleanup after evidence.';
         const github = request(
@@ -1334,7 +1318,7 @@ for (const scenario of [
         });
         assert.deepEqual(await response(direct), { content: privateText });
       });
-    if (scenario.id === 'openclaw-notifications-issue-journey')
+    if (scenario.id === 'openclaw-issue-journey')
       it('should adapt ordinary clarification and an answer using retained full output', async () => {
         let previous: Record<string, unknown> = {
           fullAssessment: 'Original findings and uncertainty.',
@@ -1384,19 +1368,19 @@ for (const scenario of [
           previous = submission.result;
         }
       });
-    if (scenario.id !== 'openclaw-notifications-progression')
-      for (const [initial, driver] of scenario.id === 'openclaw-notifications-pr-journey'
+    if (scenario.id !== 'openclaw-issue-progression')
+      for (const [initial, driver] of scenario.id === 'openclaw-pr-journey'
         ? ([
-            [true, 'openclaw-notifications-pr-journey'],
-            [false, 'openclaw-notifications-pr-journey'],
-            [false, 'openclaw-notifications-pr-collaboration'],
-            [false, 'openclaw-notifications-pr-reply-recovery'],
+            [true, 'openclaw-pr-journey'],
+            [false, 'openclaw-pr-journey'],
+            [false, 'openclaw-pr-collaboration'],
+            [false, 'openclaw-pr-reply-recovery'],
           ] as const)
         : ([[false, undefined]] as const))
         it(`should keep feedback ${initial ? 'initial implementation' : (driver ?? scenario.id) + ' continuation'} private retention skill selection candidate and publication as distinct stages`, async () => {
           const selectedScenario = driver ? resolveExampleModelScenario(driver) : scenario;
-          const collaboration = driver === 'openclaw-notifications-pr-collaboration';
-          const replyRecovery = driver === 'openclaw-notifications-pr-reply-recovery';
+          const collaboration = driver === 'openclaw-pr-collaboration';
+          const replyRecovery = driver === 'openclaw-pr-reply-recovery';
           const runResponse = (input: ChatCompletionRequest) => response(input, selectedScenario);
           const runAction = <A extends Action['action']>(
             input: ChatCompletionRequest,
@@ -1414,7 +1398,7 @@ for (const scenario of [
             previousFeedbackWork: [],
             source: { body: '@tanaabot explain the plan.' },
           });
-          if (scenario.id === 'openclaw-notifications-pr-journey') {
+          if (scenario.id === 'openclaw-pr-journey') {
             const last = input.messages.at(-1)!;
             last.content = JSON.stringify({
               status: 'verified',
@@ -1545,7 +1529,7 @@ for (const scenario of [
           }
           const retained = await runAction(input, 'feedback');
           assert.equal(retained.operation, 'result');
-          if (scenario.id !== 'openclaw-notifications-pr-journey')
+          if (scenario.id !== 'openclaw-pr-journey')
             assert.match(retained.privateText!, /implementation remains unstarted/);
           append(input, 'feedback-result', {
             status: 'recorded',
@@ -1578,7 +1562,7 @@ for (const scenario of [
           append(input, 'feedback-skill', { text: 'Selected reply method' });
           const candidate = await runAction(input, 'feedback');
           assert.equal(candidate.operation, 'candidate');
-          if (scenario.id !== 'openclaw-notifications-pr-journey')
+          if (scenario.id !== 'openclaw-pr-journey')
             assert.match(candidate.publicText!, /Implementation has not started/);
           append(input, 'feedback-candidate', { status: 'candidate-recorded' });
           assert.equal((await runAction(input, 'feedback')).digest, undefined);
