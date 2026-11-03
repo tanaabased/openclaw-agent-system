@@ -5,6 +5,10 @@ github:
   username: tanaabot
   runtimes: [codex]
   routing:
+    - id: defer-review-requests
+      match: tanaabased/big-test-bucket
+      workflows: [review-request]
+      target: deny
     - tanaabased/big-test-bucket: swarm
   issue-assignment: {}
   project-pickup:

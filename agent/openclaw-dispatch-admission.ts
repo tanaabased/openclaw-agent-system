@@ -1,4 +1,4 @@
-import repositoryScope from '../channels/github/repository-scope.ts';
+import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import issueChatTitle from './issue-chat-title.ts';
 import { dispatchAdmission, managedPullRequest } from './managed-issue.ts';
 import verifyIssuePullRequest from './issue-pr-selection.ts';
@@ -70,7 +70,7 @@ export default class OpenClawDispatchAdmission {
       await verifyIssuePullRequest(intake, record.adoptedPullRequest, connection.account);
     };
     await verifyPr();
-    const route = repositoryScope(current.policy.policy, intake.repository);
+    const route = assignmentClaimRoute(current.policy.policy, intake);
     if (
       !('initiation' in intake) &&
       !claims &&

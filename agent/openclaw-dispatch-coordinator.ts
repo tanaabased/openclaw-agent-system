@@ -1,4 +1,4 @@
-import repositoryScope from '../channels/github/repository-scope.ts';
+import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import projectPickupCapacity from './project-pickup-capacity.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
@@ -748,7 +748,7 @@ export default class OpenClawDispatchCoordinator {
     try {
       const { client, repo, intake } = await this.context.validate(manifest, workspace, record);
       if ('initiation' in intake) throw new Error('dispatch-assignment-required');
-      const route = repositoryScope(current.policy.policy, intake.repository);
+      const route = assignmentClaimRoute(current.policy.policy, intake);
       if (!this.context.dependencies.claims) {
         await assertDormantAssignmentUnclaimed(this.context.dependencies.claimStore, intake);
         if (route.decision === 'swarm') throw new Error('claim-runtime-unavailable');

@@ -57,5 +57,5 @@ export default function pickupClaims(
     effects.removes++;
   };
   f.tx.claims = { store: new AssignmentClaimStore(root), client, passId: 'first' };
-  return { client, comments, effects, store: f.tx.claims.store };
+  return { client, comments, effects, provider, store: f.tx.claims.store };
 }

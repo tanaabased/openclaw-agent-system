@@ -1,6 +1,6 @@
 import type { AgentManifest } from '../manifest/types.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
-import { projectWorkMatches } from './project-pickup-authority.ts';
+import { projectWorkMatches, retainedPickupReceipt } from './project-pickup-authority.ts';
 import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 import repositoryScope from '../channels/github/repository-scope.ts';
@@ -31,13 +31,14 @@ export default function liveWorkflowPolicy(
   if (effect !== 'assignment' || 'initiation' in intake) return;
   if (!policy || !policy.runtimes.includes(runtime)) return 'workflow-disabled';
   if (!policy.issueAssignment) return 'issue-workflow-disabled';
-  if (repositoryScope(policy, intake.repository).decision === 'deny')
+  const pickup = retainedPickupReceipt(intake);
+  if (
+    (!pickup || policy.routing === undefined) &&
+    repositoryScope(policy, intake.repository, 'issue-assignment').decision === 'deny'
+  )
     return 'repository-outside-workflow';
   if (
-    !projectWorkMatches(
-      intake.evidence?.projectWork?.pickup ? intake.evidence?.projectWork : undefined,
-      intake,
-    ) &&
+    !pickup &&
     !policy.issueAssignment.allowed.some((actor) =>
       githubIdentityMatches(actor, intake.assignment.actor),
     )

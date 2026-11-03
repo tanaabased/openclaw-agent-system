@@ -12,11 +12,17 @@ import {
 } from '../agent/assignment-claim.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import recoverAssignmentClaim from '../agent/assignment-claim-recovery.ts';
-import { pickupClaimSource } from '../agent/assignment-claim-source.ts';
+import { assignmentClaimRoute, pickupClaimSource } from '../agent/assignment-claim-source.ts';
+import CodexAssignmentClaims from '../agent/codex-assignment-claims.ts';
+import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
+import { pickupAuthority } from '../agent/project-pickup.ts';
+import IntakeRecordStore, { intakeLocation } from '../channels/github/intake/record-store.ts';
+import scanAssignments from '../channels/github/intake/scan-assignments.ts';
 import { parseAssignmentClaim } from '../channels/github/provider/assignment-claim.ts';
 import type { RepositoryRoute } from '../channels/github/repository-scope.ts';
 import fixture from './project-pickup-selection-fixture.ts';
 import pickupClaims from './project-pickup-claim-fixture.ts';
+import { baseline } from './github-intake-fixture.ts';
 
 describe('project pickup shared claim ownership', () => {
   let root: string;
@@ -281,6 +287,122 @@ describe('project pickup shared claim ownership', () => {
     assert.deepEqual(await resolveClaimSource(c.store, c.client, external), external);
     assert.equal(c.effects.creates, 0);
   });
+
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should retain the ${runtime} pickup owner across different assignment routes`, async () => {
+      const f = fixture(runtime);
+      const c = pickupClaims(f, join(root, 'owner'));
+      const observer = pickupClaims(fixture(runtime), join(root, 'observer'), c.comments);
+      const observerStore = observer.store as AssignmentClaimStore;
+      const other = (await observerStore.identity()).instanceId;
+      const assignmentRoute = {
+        id: 'assignments',
+        match: 'owner/repo',
+        workflows: ['issue-assignment'] as ['issue-assignment'],
+        target: 'deny' as const,
+      };
+      f.policy.routing = [assignmentRoute, { 'owner/*': 'swarm' }];
+      const store = new IntakeRecordStore(
+        intakeLocation({
+          runtime,
+          root: join(root, 'intake'),
+          namespace: '/profile',
+          workspaceDir: f.tx.workspaceDir,
+          agentId: f.tx.agentId,
+        }),
+      );
+      f.tx.enrollment.scope = f.tx.scope = store.location.scope;
+      const scan = {
+        runtime,
+        store,
+        policy: f.policy,
+        policyDigest: 'policy',
+        workspaceDir: f.tx.workspaceDir,
+        agentId: f.tx.agentId,
+        now: baseline,
+        connect: async () => f.client,
+        assertCurrent: async () => {},
+      };
+      await scanAssignments({ ...scan, activate: true });
+      await f.run({ selection: await f.select() });
+      f.tx.claims.passId = 'second';
+      const write = f.client.assignProjectIssue;
+      f.client.assignProjectIssue = async (...args) => {
+        await write(...args);
+        throw new Error('lost response');
+      };
+      assert.equal((await f.run()).status, 'attempted');
+      assert.equal((await scanAssignments({ ...scan, now: f.clock.now })).admitted, 0);
+      const restarted = new AssignmentClaimStore(join(root, 'owner'));
+      f.tx.claims.store = restarted;
+      assert.equal((await f.run()).status, 'assigned');
+      assert.equal(
+        (
+          await scanAssignments({
+            ...scan,
+            now: f.clock.now,
+            readProjectPickup: async () => pickupAuthority(f.state.projectPickup),
+          })
+        ).admitted,
+        1,
+      );
+      const intake = (await store.read())!.records[0]!;
+      const winnerId = intake.evidence.projectWork!.pickup!.claimCommentId;
+      assert.equal(winnerId, c.comments[0]!.databaseId);
+      assert.equal(intake.evidence.repositoryScope?.ruleId, 'assignments');
+      const route = assignmentClaimRoute(f.policy, intake);
+      const select = (
+        store: AssignmentClaimStore,
+        mode: 'local' | 'swarm' | 'deny',
+        admitted = intake,
+        pool?: string[],
+      ) => {
+        const client = c.provider;
+        const input = {
+          intake: admitted,
+          client,
+          mode,
+          eligibleInstanceIds: pool,
+          hasCapacity: true,
+        };
+        return runtime === 'codex'
+          ? new CodexAssignmentClaims(store, () => c.client).select({
+              ...input,
+              threadId: 'thread',
+              turnId: 'turn',
+            })
+          : new OpenClawAssignmentClaims(store, () => c.client).select({
+              ...input,
+              caller: { sessionKey: 'key', sessionId: 'session', runId: 'run', toolCallId: 'tool' },
+            });
+      };
+      const recovered = await select(restarted, route.decision);
+      assert.equal(recovered.status, 'owned');
+      assert.equal(recovered.winnerId, winnerId);
+      const ordinary = { ...intake, evidence: { ...intake.evidence, projectWork: undefined } };
+      const uninstalled = new AssignmentClaimStore(join(root, 'uninstalled'));
+      await assert.rejects(select(uninstalled, 'local', ordinary), /instance-install-required/);
+      assert.equal(await uninstalled.inspect(), undefined);
+      for (const target of ['local', { instance: other }] as const) {
+        f.policy.routing![0] = { ...assignmentRoute, target };
+        const observerRoute = assignmentClaimRoute(f.policy, ordinary);
+        const decision = await select(
+          observerStore,
+          observerRoute.decision,
+          ordinary,
+          observerRoute.eligibleInstanceIds,
+        );
+        assert.equal(decision.status, 'other-owner');
+        assert.equal(decision.winnerId, winnerId);
+      }
+      c.comments.splice(0);
+      const missing = await select(restarted, route.decision);
+      assert.equal(missing.status, 'recovery-required');
+      assert.equal(missing.code, 'claim-winner-missing');
+      assert.equal(f.effects.writes, 1);
+      assert.equal(c.effects.creates, 1);
+    });
+  }
 
   it('should bind claims to prior assignment history and reject a changed baseline', async () => {
     const f = fixture();

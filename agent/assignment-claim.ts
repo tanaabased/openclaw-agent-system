@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto';
 
 import { claimBody, parseAssignmentClaim } from '../channels/github/provider/assignment-claim.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
-import type AssignmentClaimStore from './assignment-claim-store.ts';
+import type {
+  default as AssignmentClaimStore,
+  AssignmentClaimState,
+} from './assignment-claim-store.ts';
 import type { RepositoryScopeDecision } from '../channels/github/repository-scope.ts';
 
 export type ClaimStore = Pick<
@@ -83,7 +86,15 @@ export async function selectAssignmentClaim(
   },
 ): Promise<ClaimDecision> {
   if (input.mode === 'deny') throw new Error('claim-route-denied');
-  input = { ...input, source: await resolveClaimSource(input.store, input.client, input.source) };
+  const source = await resolveClaimSource(input.store, input.client, input.source);
+  if (input.pickupWinnerId !== undefined && !source.pickup?.assignmentEventId)
+    return { status: 'recovery-required', code: 'claim-winner-missing' };
+  if (
+    input.pickupWinnerId !== undefined ||
+    (!input.source.pickup && source.pickup?.assignmentEventId)
+  )
+    return claimAssignment({ ...input, source, eligibleInstanceIds: undefined });
+  input = { ...input, source };
   if (input.mode === 'swarm') return claimAssignment(input);
   await input.store.assertUnclaimed(assignmentClaimKey(input.source));
   await input.client.verify(input.source);
@@ -126,14 +137,29 @@ export async function claimAssignment(input: {
   hasCapacity: boolean;
   eligibleInstanceIds?: string[];
   nativeAttempted?: boolean;
+  pickupWinnerId?: number;
 }): Promise<ClaimDecision> {
   const { store, client, source, passId } = input;
   if (!passId) throw new Error('claim-pass-required');
   let routing: ClaimDecision['routing'];
-  const decision = await store.exclusive<ClaimDecision>(async (state, save, signal) => {
+  const select = async (
+    state: AssignmentClaimState,
+    save: () => Promise<void>,
+    signal: AbortSignal,
+  ): Promise<ClaimDecision> => {
     signal.throwIfAborted();
     await client.verify(source);
     const claims = await readAssignmentClaims(client, source);
+    if (
+      input.pickupWinnerId !== undefined &&
+      claims[0]?.comment.databaseId !== input.pickupWinnerId
+    )
+      return {
+        status: 'recovery-required',
+        code: claims.some(({ comment }) => comment.databaseId === input.pickupWinnerId)
+          ? 'claim-winner-changed'
+          : 'claim-winner-missing',
+      };
     const eligible =
       !input.eligibleInstanceIds || input.eligibleInstanceIds.includes(state.instanceId);
     if (input.eligibleInstanceIds)
@@ -163,6 +189,8 @@ export async function claimAssignment(input: {
         await save();
         return { status: 'other-owner', winnerId: claims[0]!.comment.databaseId };
       }
+      if (source.pickup?.assignmentEventId)
+        return { status: 'recovery-required', code: 'claim-winner-missing' };
       if (!eligible) return { status: 'pending', code: 'claim-route-instance-ineligible' };
       if (!input.hasCapacity) return { status: 'at-capacity' };
       record = {
@@ -247,7 +275,8 @@ export async function claimAssignment(input: {
     await client.verify(source);
     signal.throwIfAborted();
     return { status: 'owned', winnerId: record.winnerId };
-  });
+  };
+  const decision = await store.exclusive(select, !source.pickup?.assignmentEventId);
   if (!routing) return decision;
   const instructions =
     decision.code === 'claim-route-owner-ineligible'
