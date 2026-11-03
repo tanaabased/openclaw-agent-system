@@ -20,7 +20,7 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
   pickup?: ProjectPickupState;
   records: R[];
   previous?: PickupReport;
-  outcome: { status: string; code?: string };
+  outcome: { status: string; id?: string; code?: string };
   now: number;
   runId?: string;
   debug?: boolean;
@@ -70,6 +70,16 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
       issue: operation.selected?.number,
       rationale: operation.rationale,
       deferred: operation.deferred ?? [],
+      providerDiagnostic: operation.providerDiagnostic,
+      current: outcome.id
+        ? operation.id === outcome.id
+        : input.runId
+          ? operation.runId === input.runId
+          : operation === pickup?.operations.at(-1),
+      unresolved:
+        !record &&
+        operation.attemptedAt !== undefined &&
+        ['attempted', 'assigned', 'failed'].includes(operation.phase),
       status,
       code:
         operation.code ??
@@ -88,13 +98,15 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
   ];
   const problems = [
     ...(outcome.code && !informational.includes(outcome.code) ? [outcome.code] : []),
+    ...items
+      .filter((item) => item.current)
+      .flatMap((item) =>
+        [...new Set(item.deferred.map((candidate) => candidate.code))]
+          .filter((diagnostic) => diagnostic !== 'project-pickup-other-owner')
+          .map((diagnostic) => `${item.id}:${diagnostic}`),
+      ),
     ...items.flatMap((item) =>
-      [...new Set(item.deferred.map((candidate) => candidate.code))]
-        .filter((diagnostic) => diagnostic !== 'project-pickup-other-owner')
-        .map((diagnostic) => `${item.id}:${diagnostic}`),
-    ),
-    ...items.flatMap((item) =>
-      item.code && !informational.includes(item.code)
+      item.code && (item.current || item.unresolved) && !informational.includes(item.code)
         ? [item.id + ':' + item.code]
         : [
               'blocked',
@@ -143,7 +155,7 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
         ? 'Check repository routing and the retained claim owner. Restore eligibility or resolve the original pickup operation; do not assign again or transfer ownership by changing routes.'
         : failed
           ? 'Check the diagnostic and GitHub access. Pickup rechecks failed discovery or selection on the next scheduled run; do not assign manually.'
-          : items.some((item) => item.deferred.length)
+          : items.some((item) => item.current && item.deferred.length)
             ? 'Some candidates could not be verified and were skipped. Check their diagnostics; verified candidates remain eligible.'
             : 'Open the issue chat to resolve its work blocker. Implementation stays in that chat.';
   const body = card({
@@ -236,6 +248,33 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
                 .map((problem) => code(problem.slice(problem.indexOf(':') + 1)))
                 .join(' · '),
             },
+            ...items
+              .filter((item) => item.current || item.unresolved)
+              .flatMap((item) => {
+                const diagnostics = [
+                  ...(item.providerDiagnostic ? [item.providerDiagnostic] : []),
+                  ...(item.current
+                    ? item.deferred.flatMap((candidate) =>
+                        candidate.providerDiagnostic ? [candidate.providerDiagnostic] : [],
+                      )
+                    : []),
+                ];
+                return [
+                  ...new Set(
+                    diagnostics.map((diagnostic) =>
+                      [
+                        diagnostic.httpStatus ? `HTTP ${diagnostic.httpStatus}` : undefined,
+                        diagnostic.providerMessage ?? diagnostic.explanation,
+                      ]
+                        .filter(Boolean)
+                        .join(' · '),
+                    ),
+                  ),
+                ].map((diagnostic) => ({
+                  label: 'GitHub',
+                  value: text(diagnostic),
+                }));
+              }),
             {
               label: 'Next step',
               value: next,

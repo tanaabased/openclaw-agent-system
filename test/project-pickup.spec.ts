@@ -333,20 +333,19 @@ describe('github project pickup policy', () => {
       /project-pickup-milestone-unavailable/,
     );
     for (const status of [403, 404]) {
+      const error = new GitHubWorkEventClientError(
+        'github-failed',
+        'failed',
+        {},
+        undefined,
+        providerDiagnostic('github', 'api-request', 'permission', { httpStatus: status }),
+      );
       f.client.getMilestone = async () => {
-        throw new GitHubWorkEventClientError(
-          'github-failed',
-          'failed',
-          {},
-          undefined,
-          providerDiagnostic('github', 'api-request', 'permission', { httpStatus: status }),
-        );
+        throw error;
       };
       await assert.rejects(
         projectPickupScope(f.policy, f.client, f.repository),
-        status === 404
-          ? /project-pickup-milestone-missing-or-inaccessible/
-          : /project-pickup-milestone-inaccessible/,
+        (caught) => caught === error,
       );
     }
   });

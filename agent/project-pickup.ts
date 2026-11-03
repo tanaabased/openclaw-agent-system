@@ -1,3 +1,4 @@
+import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import itemReadFailure from '../channels/github/provider/item-read-failure.ts';
 import reconcileProjectPickup from './project-pickup-reconcile.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
@@ -13,7 +14,8 @@ import implementationMaterial, {
 import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import { automationHash } from './automation-hash.ts';
 import issueWorkflowProgress from './issue-workflow-progress.ts';
-import authorizeProjectAssignment, {
+import {
+  verifyProjectAssignment,
   projectPickupPolicyDigest,
   type ProjectPickupAuthority,
 } from './project-pickup-authority.ts';
@@ -203,8 +205,19 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     operations: [],
   };
   const journal = state.projectPickup;
-  const finish = async (op: PickupOperation, phase: PickupOperation['phase'], code?: string) => {
-    if (op.phase !== phase || op.code !== code) {
+  const finish = async (
+    op: PickupOperation,
+    phase: PickupOperation['phase'],
+    code?: string,
+    diagnostic: ProviderDiagnostic | undefined = code ? op.providerDiagnostic : undefined,
+  ) => {
+    if (
+      op.phase !== phase ||
+      op.code !== code ||
+      automationHash(op.providerDiagnostic ?? null) !== automationHash(diagnostic ?? null)
+    ) {
+      if (diagnostic) op.providerDiagnostic = diagnostic;
+      else delete op.providerDiagnostic;
       op.phase = phase;
       if (['completed', 'empty', 'expired', 'cancelled', 'failed'].includes(phase)) {
         op.candidates = [];
@@ -270,6 +283,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     delete operation.rationale;
     delete operation.beforeEvents;
     delete operation.code;
+    delete operation.providerDiagnostic;
   };
   if (op && refreshSelection) {
     // No assignment was attempted: ordinary discovery can reconsider fresh evidence.
@@ -401,34 +415,25 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
   const eligible = async (
     number: number,
     nodeId: string,
-    assigned = false,
     observedScope?: Awaited<ReturnType<typeof freshScope>>,
   ) => {
-    const { live, repository } = observedScope ?? (await freshScope(assigned));
+    const { live, repository } = observedScope ?? (await freshScope());
     const item = await client.getItem(owner, name, number);
     if (
       item.nodeId !== nodeId ||
       item.itemType !== 'issue' ||
       item.state !== 'open' ||
-      repository.archived ||
-      repository.disabled ||
-      (assigned &&
-        live.routing === undefined &&
-        repositoryScope(live, repository, 'project-pickup').decision === 'deny') ||
-      (!assigned &&
-        (item.milestone?.nodeId !== enrollment.milestoneNodeId ||
-          item.milestone.state !== 'open')) ||
-      (assigned
-        ? !item.assignees.some((assignee) => githubIdentityMatches(assignee, client.identity))
-        : item.assignees.length !== 0) ||
-      (!assigned && managed(nodeId)) ||
-      (!assigned && (await client.projectBlocked(owner, name, number)))
+      item.milestone?.nodeId !== enrollment.milestoneNodeId ||
+      item.milestone.state !== 'open' ||
+      item.assignees.length !== 0 ||
+      managed(nodeId) ||
+      (await client.projectBlocked(owner, name, number))
     )
       return;
     const evidence = await client.projectCandidate(owner, name, number);
     if (
       evidence.nodeId !== nodeId ||
-      (!assigned && evidence.labels.some((label) => label.toLowerCase() === 'blocked'))
+      evidence.labels.some((label) => label.toLowerCase() === 'blocked')
     )
       return;
     return { live, repository, item, evidence };
@@ -446,11 +451,14 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     }
   };
   try {
-    const scope = await freshScope(operation.attemptedAt !== undefined);
+    const scope =
+      operation.phase === 'discovering' || operation.attemptedAt !== undefined
+        ? await freshScope(operation.attemptedAt !== undefined)
+        : undefined;
     if (operation.attemptedAt === undefined) {
-      const code = await routingEligibility(scope);
+      const code = scope && (await routingEligibility(scope));
       if (code) return { status: 'pending', id: operation.id, code, changed };
-      if (await refreshGuidance(scope.live)) {
+      if (await refreshGuidance(scope?.live ?? policy)) {
         refreshSelection = true;
         if (input.material) throw new Error('project-pickup-selection-stale');
       }
@@ -478,7 +486,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         const candidate = operation.discovery.pending[0]!;
         if (!operation.candidates.some((entry) => entry.nodeId === candidate.nodeId)) {
           try {
-            const current = await eligible(candidate.number, candidate.nodeId, false, scope);
+            const current = await eligible(candidate.number, candidate.nodeId, scope);
             if (current) operation.candidates.push(current.evidence);
           } catch (error) {
             const invalid =
@@ -490,7 +498,10 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
             operation.deferred ??= [];
             operation.deferred.push({
               ...candidate,
-              code: invalid ? (error as Error).message : 'project-pickup-candidate-unavailable',
+              code: invalid ? (error as Error).message : (error as GitHubWorkEventClientError).code,
+              ...(error instanceof GitHubWorkEventClientError && error.providerDiagnostic
+                ? { providerDiagnostic: error.providerDiagnostic }
+                : {}),
             });
           }
         }
@@ -559,18 +570,23 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     }
     const candidate = operation.selected;
     if (!candidate) throw new Error('project-pickup-selection-missing');
+    let wrote = false;
     if (operation.phase === 'reserved') {
-      const current = await eligible(candidate.number, candidate.nodeId);
-      if (!current) return finish(operation, 'failed', 'project-pickup-candidate-ineligible');
-      if (automationHash(current.evidence) !== automationHash(candidate))
-        return finish(operation, 'failed', 'project-pickup-candidate-changed');
       const history = await client.listAssignmentEvents(owner, name, candidate.number);
       if (history.truncated)
         return finish(operation, 'failed', 'project-pickup-assignment-history-incomplete');
+      // Provider reads can cross a window or policy boundary.
+      const authorized = await eligible(candidate.number, candidate.nodeId);
+      if (!authorized) return finish(operation, 'failed', 'project-pickup-candidate-ineligible');
+      if (automationHash(authorized.evidence) !== automationHash(candidate))
+        return finish(operation, 'failed', 'project-pickup-candidate-changed');
       const live = await tx.readPolicy();
-      if (live.projectPickup?.paused) return { status: 'paused', id: operation.id, changed };
       if (projectPickupPolicyDigest(live) !== enrollment.policyDigest)
         throw new Error('project-pickup-policy-changed');
+      if (live.projectPickup?.paused) return { status: 'paused', id: operation.id, changed };
+      if (await refreshGuidance(live)) return { status: 'discovering', id: operation.id, changed };
+      const code = await routingEligibility({ ...authorized, live });
+      if (code) return { status: 'pending', id: operation.id, code, changed };
       if (
         state.records.filter(tx.occupied).length +
           projectPickupCapacity(state.records, journal, candidate.nodeId) >=
@@ -578,24 +594,6 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       )
         return { status: 'at-capacity', id: operation.id, changed };
       if (tx.now() < operation.window.opensAt || tx.now() >= operation.window.closesAt)
-        return finish(operation, 'expired', 'project-pickup-window-closed');
-      // Provider reads can cross a window or policy boundary.
-      const authorized = await eligible(candidate.number, candidate.nodeId);
-      if (!authorized || automationHash(authorized.evidence) !== automationHash(candidate))
-        return finish(operation, 'failed', 'project-pickup-candidate-changed');
-      if (authorized.live.projectPickup?.paused)
-        return { status: 'paused', id: operation.id, changed };
-      if (await refreshGuidance(authorized.live))
-        return { status: 'discovering', id: operation.id, changed };
-      const code = await routingEligibility(authorized);
-      if (code) return { status: 'pending', id: operation.id, code, changed };
-      if (
-        state.records.filter(tx.occupied).length +
-          projectPickupCapacity(state.records, journal, candidate.nodeId) >=
-        authorized.live.maxConcurrentItems
-      )
-        return { status: 'at-capacity', id: operation.id, changed };
-      if (tx.now() >= operation.window.closesAt)
         return finish(operation, 'expired', 'project-pickup-window-closed');
       operation.beforeEvents = history.events.map((event) => event.nodeId);
       operation.runId = tx.runId;
@@ -605,13 +603,36 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       // no retry of this write: even a thrown transport error can mean it reached github.
       try {
         await client.assignProjectIssue(owner, name, candidate.number);
-      } catch {
-        return finish(operation, 'attempted', 'project-pickup-assignment-uncertain');
+        wrote = true;
+      } catch (error) {
+        if (error instanceof GitHubWorkEventClientError) {
+          const diagnostic = error.providerDiagnostic;
+          if (
+            diagnostic?.httpStatusSource === 'structured' &&
+            diagnostic.httpStatus !== null &&
+            diagnostic.httpStatus >= 400 &&
+            diagnostic.httpStatus < 500 &&
+            diagnostic.httpStatus !== 408 &&
+            diagnostic.classification !== 'transport'
+          ) {
+            // A definite rejection has no assignment to recover or capacity to reserve.
+            delete operation.attemptedAt;
+            delete operation.beforeEvents;
+            throw error;
+          }
+        }
+        return finish(
+          operation,
+          'attempted',
+          'project-pickup-assignment-uncertain',
+          error instanceof GitHubWorkEventClientError ? error.providerDiagnostic : undefined,
+        );
       }
     }
     if (operation.phase === 'attempted' || operation.phase === 'assigned') {
-      const current = await eligible(candidate.number, candidate.nodeId, true);
-      if (!current)
+      const current = !wrote && scope ? scope : await freshScope(true);
+      const item = await client.getItem(owner, name, candidate.number);
+      if (item.nodeId !== candidate.nodeId)
         return finish(operation, operation.phase, 'project-pickup-assignment-unverified');
       const history = await client.listAssignmentEvents(owner, name, candidate.number);
       if (history.truncated)
@@ -622,20 +643,14 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
           githubIdentityMatches(event.assignee, client.identity),
       );
       const event = events.length === 1 ? events[0] : undefined;
-      if (
-        !event ||
-        event.event !== 'assigned' ||
-        !githubIdentityMatches(event.actor, client.identity) ||
-        Date.parse(event.createdAt) < operation.window.opensAt
-      )
-        return finish(operation, operation.phase, 'project-pickup-assignment-unverified');
+      if (!event) return finish(operation, operation.phase, 'project-pickup-assignment-unverified');
       const receipt = {
         enrollmentId: enrollment.id,
         issueNodeId: candidate.nodeId,
         assignmentNodeId: event.nodeId,
         window: operation.window,
       };
-      const work = await authorizeProjectAssignment({
+      const work = verifyProjectAssignment({
         authority: { enrollment, receipts: [receipt] },
         runtime: tx.runtime,
         scope: tx.scope,
@@ -644,7 +659,8 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         policy: current.live,
         client,
         repository: current.repository,
-        item: current.item,
+        item,
+        history,
         event,
         now: tx.now(),
       });
@@ -659,12 +675,15 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       return { status: 'discovering', id: operation.id, changed };
     if (input.material) throw error;
     // persistence failures must escape rather than be converted into a successful saved outcome.
-    if (error instanceof GitHubWorkEventClientError)
-      return finish(
+    if (error instanceof GitHubWorkEventClientError) {
+      const result = await finish(
         operation,
         operation.attemptedAt !== undefined ? operation.phase : 'failed',
-        'project-pickup-provider-unavailable',
+        error.code,
+        error.providerDiagnostic,
       );
+      return { ...result, providerDiagnostic: error.providerDiagnostic };
+    }
     if (!(error instanceof Error) || !error.message.startsWith('project-pickup-')) throw error;
     return finish(operation, operation.attemptedAt ? operation.phase : 'failed', error.message);
   }

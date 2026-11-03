@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 
 import report, { type PickupReportRecord } from '../agent/project-pickup-report.ts';
 import type { PickupReport } from '../agent/project-pickup-state.ts';
@@ -19,6 +20,52 @@ describe('agent/project-pickup-report', () => {
     assert.equal(result.report!.problems.length, 1);
     assert.equal(f.pickup.operations[0]!.phase, 'assigned');
     assert.equal(f.run().notify, false);
+  });
+
+  it('should clear historical skipped warnings while retaining their details', async () => {
+    const f = await fixture();
+    const previous = f.pickup.operations[0]!;
+    previous.deferred = [{ nodeId: 'I_skip', number: 99, code: 'github-item-unavailable' }];
+    assert.equal(f.run().report!.problems.length, 1);
+    f.pickup.operations.push({
+      ...structuredClone(previous),
+      id: 'next-operation',
+      runId: 'next-run',
+      deferred: [],
+    });
+    const result = f.run({ runId: 'next-run' });
+    assert.deepEqual(result.report!.problems, []);
+    assert.match(result.response, /resumed/);
+    assert.match(result.response, /1 candidates could not be verified/);
+    assert.doesNotMatch(result.response, /needs attention/);
+  });
+
+  it('should retain unresolved write warnings from earlier runs', async () => {
+    const f = await fixture();
+    const operation = f.pickup.operations[0]!;
+    operation.phase = 'attempted';
+    operation.code = 'project-pickup-assignment-uncertain';
+    delete operation.receipt;
+    const result = f.run({ runId: 'later-run', status: 'attempted' });
+    assert.ok(result.report!.problems.some((problem) => problem.endsWith(operation.code!)));
+    assert.match(result.response, /do not assign it again/);
+  });
+
+  it('should show the preserved github rejection in the pickup report', async () => {
+    const f = await fixture();
+    const operation = f.pickup.operations[0]!;
+    operation.phase = 'failed';
+    operation.code = 'github-notification-request-failed';
+    operation.providerDiagnostic = providerDiagnostic('github', 'api-request', 'permission', {
+      httpStatus: 403,
+      httpStatusSource: 'structured',
+      providerMessage: 'Resource not accessible',
+    });
+    delete operation.attemptedAt;
+    delete operation.receipt;
+    const result = f.run({ status: 'failed', code: operation.code });
+    assert.match(result.response, /Resource not accessible/);
+    assert.match(result.response, /github-notification-request-failed/);
   });
 
   it('should treat a foreign-owned candidate as skipped rather than an error', async () => {

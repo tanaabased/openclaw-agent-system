@@ -17,6 +17,99 @@ import normalizeSchedule from '../manifest/automation-schedule.ts';
 
 describe('agent/project-pickup', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should verify selection once and confirm without rereading candidate content in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const selection = await f.select();
+      const readItem = f.client.getItem;
+      const readCandidate = f.client.projectCandidate;
+      let beforeWrite = 0;
+      let afterWrite = 0;
+      f.client.getItem = async (...args) => {
+        if (f.effects.writes) assert.equal(++afterWrite, 1, 'duplicate confirmation read');
+        else assert.equal(++beforeWrite, 1, 'duplicate eligibility read');
+        return readItem(...args);
+      };
+      f.client.projectCandidate = async (...args) => {
+        assert.equal(f.effects.writes, 0, 'confirmation does not need candidate content');
+        return readCandidate(...args);
+      };
+      assert.equal((await f.run({ selection })).status, 'assigned');
+      assert.equal(beforeWrite, 1);
+      assert.equal(afterWrite, 1);
+      assert.equal(f.effects.writes, 1);
+    });
+
+    for (const status of [401, 403, 404, 422, 429]) {
+      it(`should preserve github rejection ${status} without reserving uncertain work in ${runtime}`, async () => {
+        const f = fixture(runtime);
+        const selection = await f.select();
+        const assign = f.client.assignProjectIssue;
+        const diagnostic = providerDiagnostic('github', 'api-request', 'unknown', {
+          httpStatus: status,
+          httpStatusSource: 'structured',
+          providerMessage: 'GitHub rejected this assignment',
+          retryAfterMs: status === 429 ? 60000 : null,
+        });
+        f.client.assignProjectIssue = async () => {
+          f.effects.writes++;
+          throw new GitHubWorkEventClientError(
+            'github-notification-request-failed',
+            'rejected',
+            {},
+            undefined,
+            diagnostic,
+          );
+        };
+        const result = await f.run({ selection });
+        assert.equal(result.status, 'failed');
+        assert.ok('code' in result && result.code === 'github-notification-request-failed');
+        const operation = f.state.projectPickup!.operations[0]!;
+        assert.deepEqual(operation.providerDiagnostic, diagnostic);
+        assert.equal(operation.attemptedAt, undefined);
+        assert.equal(pickupCapacity(f.state.records, f.state.projectPickup), 0);
+        assert.deepEqual(pickupAuthority(f.state.projectPickup)!.withheldAssignments, []);
+        assert.equal(f.effects.writes, 1);
+        assert.ok(Value.Check(pickupOperationSchema, operation));
+        f.client.assignProjectIssue = assign;
+        f.tx.runId = 'later-scheduled-run';
+        f.clock.now += 60000;
+        assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
+        assert.equal(operation.providerDiagnostic, undefined);
+        assert.equal(f.effects.writes, 2);
+      });
+    }
+
+    for (const [status, source] of [
+      [408, 'structured'],
+      [500, 'structured'],
+      [403, 'message'],
+    ] as const) {
+      it(`should retain uncertain writes for ${status} from ${source} in ${runtime}`, async () => {
+        const f = fixture(runtime);
+        const assign = f.client.assignProjectIssue;
+        const diagnostic = providerDiagnostic('github', 'api-request', 'unknown', {
+          httpStatus: status,
+          httpStatusSource: source,
+        });
+        f.client.assignProjectIssue = async (...args) => {
+          await assign(...args);
+          throw new GitHubWorkEventClientError(
+            'github-notification-request-failed',
+            'unknown outcome',
+            {},
+            undefined,
+            diagnostic,
+          );
+        };
+        assert.equal((await f.run({ selection: await f.select() })).status, 'attempted');
+        assert.deepEqual(f.state.projectPickup!.operations[0]!.providerDiagnostic, diagnostic);
+        assert.equal(pickupCapacity(f.state.records, f.state.projectPickup), 1);
+        assert.equal((await f.run()).status, 'assigned');
+        assert.equal(f.effects.writes, 1);
+        assert.equal(f.state.projectPickup!.operations[0]!.providerDiagnostic, undefined);
+      });
+    }
+
     for (const change of ['replace', 'remove', 'add'] as const) {
       it(`should refresh ${change} guidance before accepting a pending selection in ${runtime}`, async () => {
         const f = fixture(runtime);
@@ -173,7 +266,10 @@ describe('agent/project-pickup', () => {
             {
               nodeId: f.item.nodeId,
               number: f.item.number,
-              code: 'project-pickup-candidate-unavailable',
+              code: 'github-item-unavailable',
+              providerDiagnostic: providerDiagnostic('github', 'api-request', classification, {
+                httpStatus: classification === 'unknown' ? 404 : 403,
+              }),
             },
           ]);
           assert.ok(Value.Check(pickupOperationSchema, op));

@@ -77,8 +77,7 @@ export function projectPickupPolicyDigest(policy: GitHubNotificationPolicy) {
   );
 }
 
-/** admission-time grant: callers must retain it, never derive one for old managed work. */
-export default async function authorizeProjectAssignment(input: {
+interface AssignmentInput {
   authority: ProjectPickupAuthority;
   runtime: 'codex' | 'openclaw' | undefined;
   scope: string;
@@ -90,7 +89,41 @@ export default async function authorizeProjectAssignment(input: {
   item: GitHubCanonicalWorkItem;
   event: GitHubAssignmentEvent;
   now: number;
-}): Promise<ProjectWork | undefined> {
+}
+
+/** admission-time grant: callers must retain it, never derive one for old managed work. */
+export default async function authorizeProjectAssignment(
+  input: AssignmentInput,
+): Promise<ProjectWork | undefined> {
+  const { client, repository, item } = input;
+  const freshRepository = await client.getRepository(repository.owner.login, repository.name);
+  const freshItem = await client.getItem(repository.owner.login, repository.name, item.number);
+  if (
+    freshRepository.nodeId !== repository.nodeId ||
+    freshRepository.databaseId !== repository.databaseId ||
+    freshItem.nodeId !== item.nodeId ||
+    freshItem.databaseId !== item.databaseId
+  )
+    return;
+  const history = await client.listAssignmentEvents(
+    repository.owner.login,
+    repository.name,
+    item.number,
+  );
+  return verifyProjectAssignment({
+    ...input,
+    repository: freshRepository,
+    item: freshItem,
+    history,
+  });
+}
+
+/** verify fresh provider observations supplied by the native pickup or intake owner. */
+export function verifyProjectAssignment(
+  input: AssignmentInput & {
+    history: Awaited<ReturnType<GitHubNotificationIntakeClient['listAssignmentEvents']>>;
+  },
+): ProjectWork | undefined {
   const { authority, policy, client, repository, item, event } = input;
   const retained = authority.retained?.find(
     (work) =>
@@ -138,27 +171,17 @@ export default async function authorizeProjectAssignment(input: {
     assignedAt < receipt.window.opensAt
   )
     return;
-  const freshRepository = await client.getRepository(repository.owner.login, repository.name);
-  const freshItem = await client.getItem(repository.owner.login, repository.name, item.number);
   if (
-    freshRepository.nodeId !== repository.nodeId ||
-    freshRepository.databaseId !== repository.databaseId ||
-    freshRepository.archived ||
-    freshRepository.disabled ||
+    repository.archived ||
+    repository.disabled ||
     (policy.routing === undefined &&
-      repositoryScope(policy, freshRepository, 'project-pickup').decision === 'deny') ||
-    freshItem.nodeId !== item.nodeId ||
-    freshItem.databaseId !== item.databaseId ||
-    freshItem.itemType !== 'issue' ||
-    freshItem.state !== 'open' ||
-    !freshItem.assignees.some((assignee) => githubIdentityMatches(assignee, client.identity))
+      repositoryScope(policy, repository, 'project-pickup').decision === 'deny') ||
+    item.itemType !== 'issue' ||
+    item.state !== 'open' ||
+    !item.assignees.some((assignee) => githubIdentityMatches(assignee, client.identity))
   )
     return;
-  const history = await client.listAssignmentEvents(
-    repository.owner.login,
-    repository.name,
-    item.number,
-  );
+  const { history } = input;
   if (history.truncated) throw new Error('project-pickup-assignment-history-incomplete');
   const latest = history.events
     .filter((entry) => githubIdentityMatches(entry.assignee, client.identity))

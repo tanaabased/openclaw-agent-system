@@ -1,5 +1,6 @@
 import { projectCandidateSchema as pickupCandidateSchema } from '../channels/github/provider/project-pickup-client.ts';
 import { Type, type Static } from 'typebox';
+import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
 import { maximumAssessmentGuidanceBytes } from '../manifest/assessment-schema.ts';
 
 import {
@@ -58,6 +59,7 @@ export const pickupOperationSchema = Type.Object(
             nodeId: text,
             number: Type.Integer({ minimum: 1 }),
             code: text,
+            providerDiagnostic: Type.Optional(providerDiagnosticSchema),
           },
           { additionalProperties: false },
         ),
@@ -80,6 +82,7 @@ export const pickupOperationSchema = Type.Object(
     attemptedAt: Type.Optional(time),
     receipt: Type.Optional(projectPickupReceiptSchema),
     code: Type.Optional(text),
+    providerDiagnostic: Type.Optional(providerDiagnosticSchema),
   },
   { additionalProperties: false },
 );
