@@ -62,6 +62,6 @@ export default function codexCapacity(
 ) {
   if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('dispatch-capacity-invalid');
   const occupied =
-    records.filter(codexItemOccupied).length + projectPickupCapacity(records, pickup, excludeIssue);
+    records.filter(codexItemOccupied).length + projectPickupCapacity(pickup, excludeIssue);
   return { occupied, available: Math.max(0, limit - occupied) };
 }

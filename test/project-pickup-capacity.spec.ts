@@ -28,6 +28,23 @@ describe('project pickup capacity handoff', () => {
       assert.deepEqual(capacity(), { occupied: 1, available: 0 });
     });
 
+    it(`should allow a new window when confirmed work closes before intake in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.policy.maxConcurrentItems = 1;
+      assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
+      f.item.state = 'closed';
+      f.item.assignees = [];
+      assert.equal((await f.run()).status, 'allowance-reached');
+      f.clock.now += 86400000;
+      f.tx.runId = 'next-day';
+      assert.equal((await f.run()).status, 'empty');
+      f.item.state = 'open';
+      f.tx.runId = 'next-scan';
+      assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
+      assert.equal(f.effects.writes, 2);
+      assert.equal(f.state.records.length, 0);
+    });
+
     it(`should recheck ordinary capacity before assignment after selection in ${runtime}`, async () => {
       const f = fixture(runtime);
       f.policy.maxConcurrentItems = 1;
@@ -104,7 +121,7 @@ describe('project pickup capacity handoff', () => {
       );
       assert.equal(f.effects.writes, 2);
       assert.equal(owner.continuation.phase, 'clarification-needed');
-      assert.deepEqual(capacity(), { occupied: 1, available: 0 });
+      assert.deepEqual(capacity(), { occupied: 0, available: 1 });
     });
   }
 });

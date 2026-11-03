@@ -243,7 +243,7 @@ describe('agent/project-pickup', () => {
         const result = await f.run({ selection: await f.select() });
         assert.equal(result.status, 'failed');
         assert.ok('providerDiagnostic' in result && result.providerDiagnostic === diagnostic);
-        assert.equal(pickupCapacity(f.state.records, f.state.projectPickup), 0);
+        assert.equal(pickupCapacity(f.state.projectPickup), 0);
         assert.deepEqual(pickupAuthority(f.state.projectPickup)!.withheldAssignments, []);
         assert.equal(f.state.projectPickup!.windowAssignment, undefined);
         f.client.assignProjectIssue = assign;
@@ -279,7 +279,7 @@ describe('agent/project-pickup', () => {
         assert.deepEqual(pending.candidates, []);
         assert.equal(pending.guidance, undefined);
         assert.equal(pending.rationale, undefined);
-        assert.equal(pickupCapacity(f.state.records, f.state.projectPickup), 1);
+        assert.equal(pickupCapacity(f.state.projectPickup), 1);
         f.tx.runId = 'recover';
         assert.equal((await f.run()).status, 'assigned');
         assert.equal((await f.run()).status, 'allowance-reached');
@@ -418,23 +418,23 @@ describe('agent/project-pickup', () => {
     assert.equal(pickupAuthority(f.state.projectPickup)!.receipts.length, 0);
   });
 
-  it('should reserve pickup only until ordinary intake takes custody', async () => {
+  it('should leave confirmed assignment capacity to ordinary intake', async () => {
     const f = fixture();
     await f.run({ selection: await f.select() });
     const pickup = f.state.projectPickup!;
-    assert.equal(pickupCapacity([], pickup), 1);
-    assert.equal(pickupCapacity([], pickup, f.item.nodeId), 0);
+    assert.equal(pickupCapacity(pickup), 0);
+    assert.equal(pickupCapacity(pickup, f.item.nodeId), 0);
     f.state.records.push({
       projectWork: f.work(),
       phase: 'assessing',
       issueKey: pickupIssueKey(pickup, f.item.nodeId),
       request: {},
     });
-    assert.equal(pickupCapacity(f.state.records, pickup), 0);
+    assert.equal(pickupCapacity(pickup), 0);
     assert.equal((await f.run()).status, 'allowance-reached');
     delete f.state.records[0]!.request;
     f.state.records[0]!.result = { outcome: 'clarification-needed' };
-    assert.equal(pickupCapacity(f.state.records, pickup), 0);
+    assert.equal(pickupCapacity(pickup), 0);
     f.clock.now += 86400000;
     f.tx.runId = `scan-${f.clock.now}`;
     assert.equal((await f.run()).status, 'empty');
@@ -563,6 +563,10 @@ describe('agent/project-pickup', () => {
       issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
     });
     assert.equal((await f.run()).status, 'allowance-reached');
-    assert.equal(pickupCapacity(f.state.records, f.state.projectPickup), 1);
+    assert.equal(pickupCapacity(f.state.projectPickup), 0);
+    assert.equal(
+      pickupAuthority(f.state.projectPickup)!.retained![0]!.assignmentNodeId,
+      f.events[0]!.nodeId,
+    );
   });
 });

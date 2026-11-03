@@ -583,7 +583,7 @@ export default class OpenClawDispatchCoordinator {
         sessionId: caller.sessionId,
         runId: caller.runId,
         limit: current.policy.policy.maxConcurrentItems,
-        allowance: capacity.available + projectPickupCapacity(state.records, state.projectPickup),
+        allowance: capacity.available + projectPickupCapacity(state.projectPickup),
         candidates: [
           ...assignments.map(({ intake }) => ({
             id: intake.id,

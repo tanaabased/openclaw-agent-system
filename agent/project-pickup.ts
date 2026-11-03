@@ -305,7 +305,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       return idle('allowance-reached');
     if (pickup.paused) return idle('paused');
     if (
-      state.records.filter(tx.occupied).length + projectPickupCapacity(state.records, journal) >=
+      state.records.filter(tx.occupied).length + projectPickupCapacity(journal) >=
       policy.maxConcurrentItems
     )
       return idle('at-capacity');
@@ -573,7 +573,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       if (code) return finish(operation, 'pending', code);
       if (
         state.records.filter(tx.occupied).length +
-          projectPickupCapacity(state.records, journal, candidate.nodeId) >=
+          projectPickupCapacity(journal, candidate.nodeId) >=
         live.maxConcurrentItems
       )
         return finish(operation, 'at-capacity');

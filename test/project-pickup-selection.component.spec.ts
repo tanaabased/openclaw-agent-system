@@ -592,7 +592,7 @@ describe('project pickup selection through native journals', () => {
         runtime === 'codex'
           ? codexCapacity([], 1, state.projectPickup)
           : openClawCapacity([], 1, state.projectPickup);
-      assert.deepEqual(capacity, { occupied: 1, available: 0 });
+      assert.deepEqual(capacity, { occupied: 0, available: 1 });
     });
 
     it(`should withhold an uncertain self-assignment even when the actor is approved in ${runtime}`, async () => {

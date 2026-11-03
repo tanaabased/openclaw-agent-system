@@ -17,21 +17,17 @@ export function pickupIssueKey(pickup: ProjectPickupState, nodeId: string | unde
   ]);
 }
 
-/** transfer a reservation into native custody without charging the same issue twice. */
-export default function projectPickupCapacity<R extends PickupManagedRecord>(
-  records: R[],
+/** only an unresolved provider write reserves pickup capacity; intake owns confirmed work. */
+export default function projectPickupCapacity(
   pickup: ProjectPickupState | undefined,
   excludeIssue?: string,
 ) {
-  if (!pickup) return 0;
-  return pickup.operations.filter((operation) => {
-    if (
-      (operation.attemptedAt === undefined && !operation.receipt) ||
-      (excludeIssue && operation.selected?.nodeId === excludeIssue)
-    )
-      return false;
-    return !pickupRecord(records, pickup, operation);
-  }).length;
+  return (pickup?.operations ?? []).filter(
+    (operation) =>
+      operation.attemptedAt !== undefined &&
+      !operation.receipt &&
+      (!excludeIssue || operation.selected?.nodeId !== excludeIssue),
+  ).length;
 }
 
 /** an earlier retired workflow for the same issue cannot take custody of a new assignment. */
