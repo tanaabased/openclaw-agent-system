@@ -2,7 +2,8 @@ import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import {
   automationReportCardValid,
-  automationReportInstructions,
+  automationReportInstructionsFor,
+  default as automationReport,
 } from '../agent/automation-report.ts';
 import type AutomationReportStore from '../agent/automation-report-store.ts';
 import type { AutomationReportRecord } from '../agent/automation-report-store.ts';
@@ -37,7 +38,7 @@ export default function registerAutomationReportHooks(
       current.guarded = true;
     });
     // codex rejects restrictive prompt-hook allowlists; block execution below instead.
-    return { appendSystemContext: automationReportInstructions };
+    return { appendSystemContext: automationReportInstructionsFor(record.input) };
   });
   api.on('before_tool_call', async (event, context) => {
     try {
@@ -75,7 +76,7 @@ export default function registerAutomationReportHooks(
       action: 'revise',
       reason: 'automation-report-card-invalid',
       retry: {
-        instruction: `${automationReportInstructions}\nRequired run line: ${record.input.runLine}\nRunner outcome: ${record.input.outcome}.`,
+        instruction: automationReport(record.input),
         idempotencyKey: `automation-report:${record.executionId}`,
         maxAttempts: 1,
       },

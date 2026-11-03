@@ -52,6 +52,22 @@ const schema = Type.Object(
         stdout: stream,
         stderr: stream,
         captureIncomplete: Type.Boolean(),
+        presentation: Type.Optional(
+          Type.Union([
+            Type.Object(
+              { kind: Type.Literal('fallback'), footer: text },
+              { additionalProperties: false },
+            ),
+            Type.Object(
+              { kind: Type.Literal('preferred'), body: text },
+              { additionalProperties: false },
+            ),
+            Type.Object(
+              { kind: Type.Literal('diagnostic'), body: text, code: text },
+              { additionalProperties: false },
+            ),
+          ]),
+        ),
       },
       { additionalProperties: false },
     ),
