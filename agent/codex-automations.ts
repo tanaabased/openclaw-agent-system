@@ -257,13 +257,10 @@ async function snapshot(pluginData: string, dependencies: CodexAutomationDepende
       });
       const policy = loaded.manifest.github?.notifications;
       if (policy?.projectPickup) {
-        pickupBlocker = projectPickupConfigurationCode(policy, 'codex');
+        pickupBlocker = projectPickupConfigurationCode(policy);
         if (!pickupBlocker) {
           try {
-            await new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root).owner(
-              policy,
-              'codex',
-            );
+            await new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root).owner();
           } catch (error) {
             pickupBlocker = projectPickupErrorCode(error);
           }

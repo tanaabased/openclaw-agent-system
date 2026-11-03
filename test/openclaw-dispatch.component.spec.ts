@@ -2,6 +2,7 @@ import {
   retainAnnouncementFailure,
   retainedAnnouncementPublication,
 } from '../agent/delivery-announcement-recovery.ts';
+import workflowStatus from '../agent/workflow-status.ts';
 import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 import { implementationContextBudget } from '../agent/implementation-material.ts';
 import {
@@ -4365,6 +4366,13 @@ describe('agent/openclaw issue dispatch', () => {
       const checkedAt = service.dependencies.now!();
       service.dependencies.now = () => checkedAt + 60_000;
       await workPass('removal-lifecycle-check');
+      if (scenario === 'approved') {
+        const sent = sends().length;
+        service.dependencies.now = () => checkedAt + 121 * 60_000;
+        await workPass('dormant-removal-check');
+        assert.equal(sends().length, sent);
+        assert.equal(workflowStatus(await record()), 'awaiting-reassignment');
+      }
       const saved = await record();
       assert.equal(
         saved.retirement?.reason,

@@ -23,6 +23,30 @@ const input = {
   currentTimeIso: '2026-10-12T12:00:00.000Z',
 };
 describe('agent/codex-dispatch-report', () => {
+  it('should count dormant owners separately without warning or starting them', () => {
+    const record = {
+      id: 'held',
+      request: {},
+      phase: 'complete',
+      threadId: 'original',
+      effective: { status: 'verified' },
+      dispatchedAt: 1,
+      nativeInactive: true,
+      retirement: {
+        reason: 'assignment-removed',
+        code: 'retirement-worktree-dirty',
+        eligibleAt: 0,
+      },
+    } as DispatchRecord;
+    const before = structuredClone(record);
+    const report = prepareDispatchReport({ ...input, state: { ...state, records: [record] } });
+    assert.equal(report.health, '');
+    assert.match(report.response, /Awaiting reassignment:\*\* 1/);
+    assert.match(report.response, /Retirement pending:\*\* 0/);
+    assert.match(report.response, /Slots:\*\* 0\/2/);
+    assert.doesNotMatch(report.response, /retirement-worktree-dirty|Started|⚠️/);
+    assert.deepEqual(record, before);
+  });
   it('should identify a manual launch blocker without an assignment record', () => {
     const record = {
       id: 'manual',

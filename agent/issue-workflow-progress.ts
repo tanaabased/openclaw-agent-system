@@ -1,3 +1,5 @@
+import { awaitingReassignment } from './assignment-retirement.ts';
+
 interface Delivery {
   adopted?: unknown;
   pullRequest?: { pullRequestNumber: number };
@@ -11,7 +13,7 @@ interface Delivery {
 export interface IssueWorkflowState {
   phase: string;
   retired?: unknown;
-  retirement?: unknown;
+  retirement?: { reason?: string; operatorRequest?: unknown };
   reset?: unknown;
   supersededBy?: string;
   handoff?: unknown;
@@ -54,6 +56,7 @@ type Progress = {
 /** unfinished work is shared; native custody and live authorization remain with each host. */
 export default function issueWorkflowProgress(record: IssueWorkflowState): Progress {
   if (record.supersededBy) return { action: 'stopped', status: 'superseded' };
+  if (awaitingReassignment(record)) return { action: 'stopped', status: 'awaiting-reassignment' };
   if (record.retirement)
     return { action: 'stopped', status: record.retired ? 'retired' : 'retirement-pending' };
   if (

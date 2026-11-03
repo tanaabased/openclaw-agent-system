@@ -168,14 +168,16 @@ export default class OpenClawNotifications {
           number: item.issue.number,
           disposition: record?.retired ? 'retired' : 'approved',
           reasonCode:
-            feedbackFailure ??
-            record?.work?.code ??
-            record?.blocker ??
-            (record?.result?.outcome === 'operator-setup-blocker'
-              ? record.result.code
-              : `github-notification-${phase}`),
+            phase === 'awaiting-reassignment'
+              ? 'github-notification-awaiting-reassignment'
+              : (feedbackFailure ??
+                record?.work?.code ??
+                record?.blocker ??
+                (record?.result?.outcome === 'operator-setup-blocker'
+                  ? record.result.code
+                  : `github-notification-${phase}`)),
           stage: record?.retired ? 'retired' : prepared ? 'prepared' : 'admitted',
-          ...(record?.phase === 'complete' || record?.retired
+          ...(phase === 'awaiting-reassignment' || record?.phase === 'complete' || record?.retired
             ? {}
             : {
                 scheduling:
@@ -187,7 +189,9 @@ export default class OpenClawNotifications {
               }),
           ...(phase === 'clarification-needed' ? { waitingReason: 'clarification-needed' } : {}),
           worktree: record?.worktree ? 'ready' : 'pending',
-          ...(feedbackFailure ? { failureCode: feedbackFailure } : {}),
+          ...(feedbackFailure && phase !== 'awaiting-reassignment'
+            ? { failureCode: feedbackFailure }
+            : {}),
           ...(feedback
             ? {
                 feedback: {
