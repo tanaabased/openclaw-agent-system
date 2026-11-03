@@ -6,7 +6,7 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
-import { createPRExampleScenario } from '../openclaw-notifications-pr-journey/model-fixture.ts';
+import { createPRExampleScenario } from '../openclaw-pr-journey/model-fixture.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 

@@ -13,7 +13,7 @@ export default function fixture() {
     id: 100,
     run_attempt: 2,
     status: 'completed',
-    path: '.github/workflows/pr-examples-notifications.yml',
+    path: '.github/workflows/pr-notifications.yml',
     repository: { id: 77, full_name: project },
     head_repository: { id: 77 },
     run_started_at: '2026-10-25T10:00:00Z',

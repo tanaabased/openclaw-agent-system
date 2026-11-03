@@ -1,3 +1,4 @@
+import itemReadFailure from '../provider/item-read-failure.ts';
 import GitHubIdentityCache from '../identity-cache.ts';
 import repositoryScope, {
   repositoryScopeCandidate,
@@ -216,12 +217,7 @@ export default async function scanAssignments(
             count: (scopeCounts.get(scopeKey)?.count ?? 0) + 1,
           });
           if (repository.archived || repository.disabled) return;
-          const project = input.policy.projectPickup?.projects[0]?.repository;
-          if (
-            scope.decision === 'deny' &&
-            project?.toLowerCase() !== `${repository.owner.login}/${repository.name}`.toLowerCase()
-          )
-            return;
+          if (scope.decision === 'deny') return;
           const item = await observeRead('issue', () =>
             client.getItem(coordinates.owner, coordinates.name, candidate.number),
           );
@@ -334,7 +330,6 @@ export default async function scanAssignments(
                 now: input.now,
               })
             : undefined;
-          if (scope.decision === 'deny' && !projectWork?.pickup) return;
           if (
             pickup?.receipts.some(
               (receipt) =>
@@ -372,8 +367,7 @@ export default async function scanAssignments(
                     error.code,
                   )
                 ? error.code
-                : diagnostic?.classification === 'permission' ||
-                    (diagnostic?.classification === 'unknown' && diagnostic.httpStatus === 404)
+                : itemReadFailure(error)
                   ? 'intake-github-permission'
                   : undefined;
           if (!localCode || error === persistenceError || budget.exhausted || signal.aborted)

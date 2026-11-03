@@ -24,6 +24,22 @@ const admit = (comment: ReturnType<typeof reviewFeedback>) =>
   admitReviewFeedback({ account: notificationAccount, configuration, comment });
 
 describe('channels/github/provider/review-feedback', () => {
+  it('should admit complete findings when their combined bodies and diffs exceed one response', () => {
+    const findings = [1, 2].map((id) =>
+      reviewCommentFixture({
+        nodeId: `finding-${id}`,
+        databaseId: 80 + id,
+        body: `${id}`.repeat(4500),
+        diffHunk: '+line\n'.repeat(6000),
+      }),
+    );
+    const feedback = reviewFeedback(reviewFixture(), findings);
+    assert.equal(admit(feedback).disposition, 'approved');
+    assert.deepEqual(feedback.feedback.comments, findings);
+    findings[1]!.bodyTruncated = true;
+    assert.equal(admit(reviewFeedback(reviewFixture(), findings)).code, 'comment-body-truncated');
+  });
+
   it('should code review metadata without rewriting linked finding bodies', () => {
     const body = 'Check `work`, [a link](https://example.com), and *literal prose*.';
     const finding = reviewCommentFixture({ body, path: 'api/[edge]`case`.ts', side: 'RIGHT' });

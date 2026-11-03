@@ -474,8 +474,8 @@ describe('agent/codex-automations', () => {
         },
         'project-pickup': {
           paused: false,
-          schedule: 'every 1 day',
-          'window-minutes': 60,
+          start: '10:00',
+          window: '1 hour',
           projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
         },
       },
@@ -540,6 +540,21 @@ describe('agent/codex-automations', () => {
     await reconcile();
     assert.deepEqual(await inspectCodexPickupActivation(pluginData, dependencies), active);
     assert.deepEqual((await enrollments.read()).records, [first]);
+    source.github['project-pickup'].projects[0]!.milestone.number = 11;
+    provider.milestone.number = 11;
+    provider.milestone.nodeId = 'MI_next';
+    await saveManifest();
+    const drift = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.equal(drift.status, 'aligned');
+    assert.deepEqual(drift.actions, []);
+    assert.deepEqual(await inspectCodexPickupActivation(pluginData, dependencies), active);
+    await reconcile();
+    const replacement = (await enrollments.read()).records[0]!;
+    assert.equal(replacement.nativeId, first.nativeId);
+    assert.deepEqual(replacement, first);
+    assert.equal(replacement.enrollment.startedAt, first.enrollment.startedAt);
+    assert.equal((await readCodexAutomations(codexHome)).length, 2);
+    assert.equal(conversations.size, 2);
     const saved = (await readCodexAutomations(codexHome)).find(
       (job) => job.id === active.nativeId,
     )!;

@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import { stringify } from 'yaml';
+import { Value } from 'typebox/value';
 
 import { inspectAdmittedIssue } from '../agent/dispatch-assignment.ts';
 import { feedbackMode } from '../agent/feedback-work.ts';
 import issueProgression from '../agent/issue-progression.ts';
 import issueWorkflowMode from '../agent/issue-workflow-mode.ts';
 import liveWorkflowPolicy from '../agent/live-workflow-policy.ts';
-import authorizeProjectAssignment from '../agent/project-pickup-authority.ts';
+import authorizeProjectAssignment, {
+  projectWorkSchema,
+} from '../agent/project-pickup-authority.ts';
 import projectPickupScope from '../agent/project-pickup-scope.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import { githubNotificationRuntimeDiagnostics } from '../channels/github/notification-policy.ts';
@@ -36,14 +39,14 @@ describe('github project pickup policy', () => {
   it('should intersect pickup scope with ordered routing without consulting legacy pins', async () => {
     const f = pickupFixture();
     f.policy.routing = ['!owner/repo', '*/*'];
-    assert.equal(await projectPickupScope(f.policy, f.client, f.repository, f.item), undefined);
+    assert.equal(await projectPickupScope(f.policy, f.client, f.repository), undefined);
     f.policy.routing.reverse();
     f.policy.allowedRepositoryOwners = [{ login: 'other', nodeId: 'O_other' }];
-    assert.equal(await projectPickupScope(f.policy, f.client, f.repository, f.item), f.milestone);
+    assert.equal(await projectPickupScope(f.policy, f.client, f.repository), f.milestone);
     f.policy.routing = [];
-    assert.equal(await projectPickupScope(f.policy, f.client, f.repository, f.item), undefined);
+    assert.equal(await projectPickupScope(f.policy, f.client, f.repository), undefined);
     delete f.policy.routing;
-    assert.equal(await projectPickupScope(f.policy, f.client, f.repository, f.item), undefined);
+    assert.equal(await projectPickupScope(f.policy, f.client, f.repository), undefined);
   });
 
   it('should normalize recurring schedules and both guidance forms without activating work', () => {
@@ -65,10 +68,7 @@ describe('github project pickup policy', () => {
         assert.equal(diagnostic, undefined);
       }
     }
-    assert.equal(
-      parse({ ...pickupDeclaration, schedule: 'every 1 day', paused: true }).status,
-      'valid',
-    );
+    assert.equal(parse({ ...pickupDeclaration, start: '10 am', paused: true }).status, 'valid');
   });
 
   it('should reject unsupported pilot declarations rather than widen scope', () => {
@@ -137,7 +137,7 @@ describe('github project pickup policy', () => {
         receiving: f.client.identity,
         repository: f.repository,
         issue: f.item,
-        assignment: f.events[0],
+        assignment: structuredClone(f.events[0]),
         evidence: { projectWork: work },
       } as unknown as IntakeRecord;
       assert.equal(liveWorkflowPolicy(manifest, runtime, intake), undefined);
@@ -145,7 +145,7 @@ describe('github project pickup policy', () => {
         { match: 'owner/repo', workflows: ['issue-assignment'], target: 'deny' },
         'owner/*',
       ];
-      assert.equal(liveWorkflowPolicy(manifest, runtime, intake), undefined);
+      assert.equal(liveWorkflowPolicy(manifest, runtime, intake), 'repository-outside-workflow');
       assert.equal(
         liveWorkflowPolicy(manifest, runtime, {
           ...intake,
@@ -188,25 +188,64 @@ describe('github project pickup policy', () => {
       );
       assert.equal(issueWorkflowMode(f.policy, {}), 'plan');
       await inspectAdmittedIssue(intake, f.client);
-      f.milestone.nodeId = 'MI_replacement';
+      f.milestone.state = 'closed';
+      await inspectAdmittedIssue(intake, f.client);
+      if (f.item.itemType === 'issue') f.item.milestone = null;
+      f.client.getMilestone = async () => {
+        throw new Error('milestone must not gate admitted work');
+      };
+      f.item.assignees.push({ login: 'collaborator', nodeId: 'U_collaborator', type: 'User' });
+      await inspectAdmittedIssue(intake, f.client);
+      const originalAssignees = f.item.assignees;
+      f.item.assignees = [];
+      await assert.rejects(inspectAdmittedIssue(intake, f.client), /dispatch-assignment-removed/);
+      f.item.assignees = originalAssignees;
+      f.events[0]!.nodeId = 'E_reassigned';
       await assert.rejects(
         inspectAdmittedIssue(intake, f.client),
-        /project-pickup-milestone-changed/,
+        /dispatch-assignment-superseded/,
       );
     });
 
-    it(`should grant only new approved scoped assignments in ${runtime}`, async () => {
+    it(`should admit a receipted assignment after disabling pickup or adding a coassignee in ${runtime}`, async () => {
       const f = pickupFixture(runtime);
+      delete f.policy.projectPickup;
+      f.item.assignees.push({ login: 'collaborator', nodeId: 'U_collaborator', type: 'User' });
+      const work = await authorizeProjectAssignment(f.input);
+      assert.ok(work?.pickup);
+      assert.equal(issueWorkflowMode(f.policy, { projectWork: work }), 'work');
+      f.authority.receipts = [];
+      assert.equal(await authorizeProjectAssignment(f.input), undefined);
+    });
+
+    it(`should require a pickup receipt even for new approved scoped assignments in ${runtime}`, async () => {
+      const f = pickupFixture(runtime);
+      f.authority.receipts[0]!.assignmentNodeId = 'unrelated-assignment';
+      f.client.getRepository =
+        f.client.getItem =
+        f.client.listAssignmentEvents =
+          async () => {
+            throw new Error('pickup must not read providers without a matching receipt');
+          };
+      assert.equal(await authorizeProjectAssignment(f.input), undefined);
       f.authority.receipts = [];
       assert.equal(await authorizeProjectAssignment(f.input), undefined);
       f.input.event.actor = { ...f.policy.issueAssignment!.allowed[0]!, type: 'User' };
-      assert.ok(await authorizeProjectAssignment(f.input));
+      assert.equal(await authorizeProjectAssignment(f.input), undefined);
+      assert.equal(
+        Value.Check(projectWorkSchema, {
+          enrollment: f.authority.enrollment,
+          issueNodeId: f.item.nodeId,
+          assignmentNodeId: f.events[0]!.nodeId,
+        }),
+        false,
+      );
       f.authority.enrollment.startedAt = Date.parse(f.input.event.createdAt);
       assert.equal(await authorizeProjectAssignment(f.input), undefined);
     });
   }
 
-  it('should reject mismatched authority, late assignment and stale provider facts', async () => {
+  it('should reject mismatched authority, future assignment and stale provider facts', async () => {
     const changes: Array<(f: ReturnType<typeof pickupFixture>) => void> = [
       (f) => {
         f.authority.receipts = [];
@@ -224,16 +263,10 @@ describe('github project pickup policy', () => {
         f.authority.enrollment.account = { login: 'other', nodeId: 'U_other' };
       },
       (f) => {
-        f.authority.enrollment.policyDigest = 'old';
-      },
-      (f) => {
         f.authority.enrollment.repositoryNodeId = 'R_other';
       },
       (f) => {
-        f.authority.enrollment.milestoneNodeId = 'MI_other';
-      },
-      (f) => {
-        f.input.event.createdAt = new Date(baseline + 3600000).toISOString();
+        f.input.event.createdAt = new Date(f.input.now + 1000).toISOString();
       },
       (f) => {
         f.input.event.nodeId = 'E_other';
@@ -246,9 +279,6 @@ describe('github project pickup policy', () => {
       },
       (f) => {
         f.policy.allowedRepositoryOwners = [];
-      },
-      (f) => {
-        if (f.item.itemType === 'issue') f.item.milestone = null;
       },
       (f) => {
         f.client.getItem = async () => ({ ...f.item, state: 'closed' });
@@ -282,19 +312,23 @@ describe('github project pickup policy', () => {
     }
   });
 
+  it('should retain a verified assignment after pickup milestone and window changes', async () => {
+    const f = pickupFixture();
+    const original = structuredClone(f.authority.enrollment);
+    f.policy.projectPickup!.projects[0]!.milestone.number = 11;
+    f.policy.projectPickup!.windowMinutes = 30;
+    if (f.item.itemType === 'issue') f.item.milestone = null;
+    const work = await authorizeProjectAssignment(f.input);
+    assert.deepEqual(work!.enrollment, original);
+    f.authority.receipts = [];
+    assert.equal(await authorizeProjectAssignment(f.input), undefined);
+  });
+
   it('should distinguish unavailable milestones from an empty or out-of-scope result', async () => {
     const f = pickupFixture();
     assert.ok(await projectPickupScope(f.policy, f.client, f.repository));
     assert.equal(
       await projectPickupScope(f.policy, f.client, { ...f.repository, name: 'other' }),
-      undefined,
-    );
-    assert.equal(
-      await projectPickupScope(f.policy, f.client, f.repository, {
-        ...f.item,
-        itemType: 'issue',
-        milestone: null,
-      }),
       undefined,
     );
     f.milestone.state = 'closed';
@@ -308,20 +342,19 @@ describe('github project pickup policy', () => {
       /project-pickup-milestone-unavailable/,
     );
     for (const status of [403, 404]) {
+      const error = new GitHubWorkEventClientError(
+        'github-failed',
+        'failed',
+        {},
+        undefined,
+        providerDiagnostic('github', 'api-request', 'permission', { httpStatus: status }),
+      );
       f.client.getMilestone = async () => {
-        throw new GitHubWorkEventClientError(
-          'github-failed',
-          'failed',
-          {},
-          undefined,
-          providerDiagnostic('github', 'api-request', 'permission', { httpStatus: status }),
-        );
+        throw error;
       };
       await assert.rejects(
         projectPickupScope(f.policy, f.client, f.repository),
-        status === 404
-          ? /project-pickup-milestone-missing-or-inaccessible/
-          : /project-pickup-milestone-inaccessible/,
+        (caught) => caught === error,
       );
     }
   });

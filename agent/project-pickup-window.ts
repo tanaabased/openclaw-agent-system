@@ -16,10 +16,7 @@ export default function projectPickupWindow(input: {
   const duration = input.windowMinutes * minute;
   if (![anchor, now, duration].every(Number.isSafeInteger) || duration <= 0 || now < anchor) return;
   let opensAt: number | undefined;
-  if (schedule.kind === 'every') {
-    const interval = schedule.seconds * 1000;
-    opensAt = anchor + Math.floor((now - anchor) / interval) * interval;
-  } else if (schedule.kind === 'cron') {
+  if (schedule.kind === 'cron') {
     const format = new Intl.DateTimeFormat('en-CA', {
       timeZone: schedule.timezone ?? input.timezone,
       year: 'numeric',
@@ -42,7 +39,7 @@ export default function projectPickupWindow(input: {
       );
     };
     const today = Math.floor(wall(now) / day) * day;
-    const earliest = Math.max(anchor, now - duration + 1);
+    const earliest = now - duration + 1;
     const f = schedule.fields;
     // a valid five-field cron repeats within eight years, including leap-day weekday restrictions.
     for (

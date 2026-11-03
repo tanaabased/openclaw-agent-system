@@ -7,9 +7,9 @@ import type {
   SetupProcessRunner,
 } from './setup-runner.ts';
 
-// no host capture API exists here. reuse the prior Codex provider allowance per stream:
-// at most 1 mib of retained raw output by default, without starving stderr behind stdout.
-const defaultStreamBytes = 512 * 1024;
+// Match the pinned Codex 0.164.0 command/exec default: 1 MiB per stream.
+// Keep this process adapter's loss counts: the native buffered response exposes no truncation metadata.
+const defaultStreamBytes = 1024 * 1024;
 
 interface CaptureState {
   kept: number;

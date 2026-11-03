@@ -1,3 +1,4 @@
+import reconcileProjectPickup from './project-pickup-reconcile.ts';
 import projectPickupReport from './project-pickup-report.ts';
 import openClawCapacity, { openClawItemOccupied } from './openclaw-capacity.ts';
 import type ProjectPickupEnrollmentStore from './project-pickup-enrollment.ts';
@@ -7,14 +8,8 @@ import {
   projectPickupErrorCode,
 } from './project-pickup-jobs.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
-import projectPickup, {
-  pickupAuthority,
-  type PickupInput,
-  type PickupClaims,
-} from './project-pickup.ts';
 import AssignmentClaimStore from './assignment-claim-store.ts';
-import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
-import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
+import projectPickup, { pickupAuthority, type PickupInput } from './project-pickup.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
 import { dispatchStorageNotice } from './dispatch-storage.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
@@ -40,7 +35,6 @@ import type AgentManifestService from '../manifest/service.ts';
 import type { GitHubNotificationItemSelector } from '../channels/github/provider/work-item.ts';
 
 export interface OpenClawIntakeDependencies {
-  pickupClaims?: PickupClaims;
   projectPickup?: ProjectPickupAuthority;
   pickupStore?: ProjectPickupEnrollmentStore;
   root: string;
@@ -125,7 +119,6 @@ export default class OpenClawIntake {
       if (retained.nativeId !== occurrence.nativeId)
         throw new IntakeError('project-pickup-native-caller-required');
       authority = { enrollment: retained.enrollment, receipts: [] };
-      timezone = retained.timezone;
     }
     const code = await this.readiness(manifest, workspace);
     if (code) throw new IntakeError(code);
@@ -178,27 +171,31 @@ export default class OpenClawIntake {
         now: this.dependencies.now ?? Date.now,
         readPolicy,
         client,
-        claims: this.dependencies.pickupClaims ?? {
-          store: new AssignmentClaimStore(this.dependencies.pickupStore!.root),
-          client: (() => {
-            if (!(client instanceof GitHubWorkEventClient))
-              throw new Error('claim-provider-binding-required');
-            return new GitHubAssignmentClaimClient(client);
-          })(),
-          passId: occurrence?.runId ?? '',
+        instance: {
+          inspect: async () =>
+            this.dependencies.pickupStore
+              ? new AssignmentClaimStore(this.dependencies.pickupStore.root).inspect()
+              : undefined,
         },
+        runId: occurrence?.runId ?? authority.enrollment.id,
         occupied: openClawItemOccupied,
         input,
       });
+      if (['material', 'selection-required', 'discovering'].includes(result.status))
+        return {
+          ...result,
+          response: '',
+          instructions:
+            'instructions' in result
+              ? result.instructions
+              : result.status === 'discovering'
+                ? 'Call pickup again to continue discovery.'
+                : 'Follow next until the complete material is restored before selection.',
+        };
       const reportPolicy = await readPolicy();
       const report = projectPickupReport({
         policy: reportPolicy,
-        pickup: state.projectPickup,
-        records: state.records,
-        previous: state.projectPickupReport,
         outcome: result,
-        now: (this.dependencies.now ?? Date.now)(),
-        runId: occurrence?.runId,
         debug: manifest.debug,
         capacity: {
           occupied: openClawCapacity(
@@ -208,21 +205,7 @@ export default class OpenClawIntake {
           ).occupied,
           limit: reportPolicy.maxConcurrentItems,
         },
-        active: (record) =>
-          record.nativeInactive || record.work?.turn?.inactive
-            ? false
-            : record.work?.turn?.status === 'consumed' || record.feedback?.activity?.busy === true
-              ? true
-              : undefined,
-        conversation: (record) =>
-          record.sessionCreation?.verified && record.threadId
-            ? `/chat?session=${encodeURIComponent(record.threadId)}`
-            : undefined,
       });
-      if (report.report) {
-        state.projectPickupReport = report.report;
-        await save();
-      }
       return {
         ...result,
         response: report.response,
@@ -237,6 +220,7 @@ export default class OpenClawIntake {
     const { selected, store, workspace } = await this.select(manifest, workspaceDir);
     if (!selected || !this.dependencies.pickupStore)
       throw new IntakeError('project-pickup-activation-required');
+    const pickupStore = this.dependencies.pickupStore;
     const code = projectPickupConfigurationCode(selected.policy);
     if (code) throw new IntakeError(code);
     await this.dependencies.pickupStore.owner();
@@ -247,21 +231,25 @@ export default class OpenClawIntake {
     if (client.identity.login.toLowerCase() !== selected.username.toLowerCase())
       throw new IntakeError('intake-github-identity-mismatch');
     await new GitHubIdentityCache(store.location).resolve(selected.policy, client, 'assignment');
-    return this.dependencies.pickupStore.prepare({
-      policy: selected.policy,
-      runtime: 'openclaw',
-      scope: store.location.scope,
-      workspaceDir: workspace,
-      agentId: manifest.agent.id,
-      client,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      now: (this.dependencies.now ?? Date.now)(),
-    });
+    return new OpenClawDispatchStore(store.location.root, store.location.scope).exclusive(
+      async (state, save) =>
+        pickupStore.prepare({
+          policy: selected.policy,
+          runtime: 'openclaw',
+          scope: store.location.scope,
+          workspaceDir: workspace,
+          agentId: manifest.agent.id,
+          client,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          now: (this.dependencies.now ?? Date.now)(),
+          reconcile: (record, commit) => reconcileProjectPickup(state, save, record, commit),
+        }),
+    );
   }
   async inspectPickup(manifest: AgentManifest, workspaceDir: string) {
     const policy = manifest.github?.notifications;
     if (!policy?.projectPickup) return [];
-    let code = projectPickupConfigurationCode(policy);
+    let code: string | undefined = projectPickupConfigurationCode(policy);
     try {
       if (!code) {
         const { store, workspace } = await this.select(manifest, workspaceDir);

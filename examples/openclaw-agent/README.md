@@ -12,7 +12,7 @@ values in logs.
 
 ## What Does Not Belong Here
 
-- Successful assignment creation, concurrent admission, or duplicate prevention: [notification intake](../openclaw-notifications-intake/README.md).
+- Successful assignment creation, concurrent admission, or duplicate prevention: [notification intake](../openclaw-issue-intake/README.md).
 - Retired-schema permutations or assertions that merely freeze temporary tracing text.
 - General setup convergence: [workspace](../openclaw-workspace/README.md). Native execution: [runtime boundaries](../openclaw-runtimes/README.md), with approvals in [lifecycle approvals](../openclaw-lifecycle-approvals/README.md).
 

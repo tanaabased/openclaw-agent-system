@@ -89,7 +89,7 @@ outcome or call to action.
 
 Use one compact card for the outcome of an intake check:
 
-- **💡 Information:** issues started, pending assignments, or intake recovery.
+- **📥 Information:** issue assignment and project pickup scan outcomes, pending assignments, or intake recovery.
 - **✨ Update:** an available automation update, including a required update that pauses intake.
 - **⚠️ Warning:** an intake action is needed or a temporary provider delay.
 - **❌ Error:** intake or preparation could not complete.
@@ -124,7 +124,7 @@ and supplied HTTP status, and distinguish access failures from temporary delays.
 Preserve successful starts in a report that also contains an obstacle.
 
 ```markdown
-> ## 💡 Intake complete — 2 issues started
+> ## 📥 Intake complete — 2 issues started
 >
 > - **Issue:** [example/project #7](codex://threads/example-7)
 > - **Issue:** [example/project #8](codex://threads/example-8)

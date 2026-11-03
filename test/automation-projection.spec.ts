@@ -1,3 +1,5 @@
+import pickupTiming from '../channels/github/project-pickup-timing.ts';
+import codexSchedule from '../agent/codex-automation-schedule.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -26,6 +28,33 @@ function job(payload: { prompt: string } | { run: string[] }) {
 }
 
 describe('agent/automation-projection', () => {
+  it('should schedule exactly eight default pickup slots in both native adapters', () => {
+    const pickup = job({ prompt: 'Pick up work.' });
+    pickup.schedule = pickupTiming({}).scanSchedule;
+    const record = {
+      id: pickup.id,
+      marker: 'fixture',
+      hash: '',
+      triggerHash: '',
+      generation: 1,
+      anchorMs: 0,
+      removed: false,
+    };
+    const native = projectAutomation(pickup, record, context);
+    assert.deepEqual(native.schedule, {
+      kind: 'cron',
+      expr: '0,15,30,45 3,4 * 1,2,3,4,5,6,7,8,9,10,11,12 *',
+      tz: 'UTC',
+      staggerMs: 0,
+    });
+    assert.equal(codexSchedule(pickup.schedule), 'FREQ=DAILY;BYHOUR=3,4;BYMINUTE=0,15,30,45');
+    assert.equal(native.trigger, undefined);
+    assert.deepEqual(
+      automationPatch({ ...native, id: 'native', state: {} } as NativeAutomation, native),
+      {},
+    );
+  });
+
   it('should disable native fallback only when the prompt declares a resolved model', () => {
     const prompt = job({ prompt: 'Review.' });
     const record = {

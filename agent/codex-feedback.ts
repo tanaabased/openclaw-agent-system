@@ -1,3 +1,4 @@
+import feedbackContextMaterial from './feedback-context-material.ts';
 import implementationMaterial from './implementation-material.ts';
 import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import {
@@ -112,7 +113,8 @@ export default async function runCodexFeedback(
     !Value.Check(requestSchema, input) ||
     (input.action !== 'next' && (!input.id || !input.eventId)) ||
     (input.material !== undefined &&
-      (input.action !== 'implementation-context' || input.decision !== undefined))
+      (!['context', 'implementation-context'].includes(input.action) ||
+        input.decision !== undefined))
   )
     throw new Error('feedback-request-invalid');
   const current = await selectCodexIntake(pluginData, deps);
@@ -979,6 +981,12 @@ export default async function runCodexFeedback(
       return implementationMaterial(
         response,
         { action: 'implementation-context', id: input.id, eventId: input.eventId },
+        input.material,
+      );
+    if (input.action === 'context' && response.status === 'verified')
+      return feedbackContextMaterial(
+        response,
+        { action: 'context', id: input.id, eventId: input.eventId },
         input.material,
       );
     return response;

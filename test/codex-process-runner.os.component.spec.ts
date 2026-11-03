@@ -66,7 +66,7 @@ describe('agent/codex-process-runner', () => {
       [
         process.execPath,
         '-e',
-        'process.stdout.write("x".repeat(600000) + "OUT"); process.stderr.write("y".repeat(600000) + "ERR"); process.exitCode = 17',
+        'process.stdout.write("x".repeat(1200000) + "OUT"); process.stderr.write("y".repeat(1200000) + "ERR"); process.exitCode = 17',
       ],
       options({
         maxOutputBytes: undefined,
@@ -75,12 +75,27 @@ describe('agent/codex-process-runner', () => {
       }),
     );
     assert.equal(result.code, 17);
-    assert.equal(Buffer.byteLength(result.stdout), 512 * 1024);
-    assert.equal(Buffer.byteLength(result.stderr), 512 * 1024);
+    assert.equal(Buffer.byteLength(result.stdout), 1024 * 1024);
+    assert.equal(Buffer.byteLength(result.stderr), 1024 * 1024);
     assert.ok(result.stdout.endsWith('OUT'));
     assert.ok(result.stderr.endsWith('ERR'));
-    assert.equal(result.stdoutTruncatedBytes, 75715);
-    assert.equal(result.stderrTruncatedBytes, 75715);
+    assert.equal(result.stdoutTruncatedBytes, 151427);
+    assert.equal(result.stderrTruncatedBytes, 151427);
+  });
+
+  it('should preserve a response larger than the old cap within the codex native allowance', async () => {
+    const result = await runCodexSetupProcess(
+      [
+        process.execPath,
+        '-e',
+        'process.stdout.write("x".repeat(600000)); process.stderr.write("y".repeat(600000))',
+      ],
+      options({ maxOutputBytes: undefined, maxCombinedOutputBytes: undefined }),
+    );
+    assert.equal(result.stdout.length, 600000);
+    assert.equal(result.stderr.length, 600000);
+    assert.equal(result.stdoutTruncatedBytes, undefined);
+    assert.equal(result.stderrTruncatedBytes, undefined);
   });
 
   it('should honor explicit tail and combined budgets', async () => {

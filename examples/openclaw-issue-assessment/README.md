@@ -11,8 +11,8 @@ implementing changes, or publishing to GitHub.
 
 ## What Does Not Belong Here
 
-- Notification activation, admission, or automatic progression: [issue journey](../openclaw-notifications-issue-journey/README.md).
-- Managed assessment revision and readback: [conversation continuity](../openclaw-notifications-conversation/README.md).
+- Notification activation, admission, or automatic progression: [issue journey](../openclaw-issue-journey/README.md).
+- Managed assessment revision and readback: [conversation continuity](../openclaw-issue-conversation/README.md).
 - Reply composition/publication: [direct GitHub reply](../openclaw-github-reply/README.md).
 
 ## Notes

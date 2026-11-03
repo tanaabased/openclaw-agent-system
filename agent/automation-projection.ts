@@ -1,3 +1,4 @@
+import scheduleCondition from './automation-schedule-condition.ts';
 import { automationReportTimeoutMs } from './automation-report-delivery.ts';
 import { commandTerminationGraceMs } from '../api/cli-budget.ts';
 import type { AutomationThreadModelObservation } from './automation-threads.ts';
@@ -85,6 +86,11 @@ export function projectAutomation(
           : (() => {
               throw new AutomationError('automation-schedule-unsupported');
             })();
+  const triggerScript = scheduleCondition(
+    schedule,
+    context.timezone,
+    job.internalOpenClaw?.trigger.script,
+  );
   const timeoutSeconds = Number(effective.content.timeoutSeconds);
   const override = job.overrides.openclaw;
   return {
@@ -101,7 +107,7 @@ export function projectAutomation(
     wakeMode: 'now',
     delivery: { mode: 'none', bestEffort: false },
     failureAlert: false,
-    ...(job.internalOpenClaw ? { trigger: job.internalOpenClaw.trigger } : {}),
+    ...(triggerScript ? { trigger: { script: triggerScript } } : {}),
     payload:
       job.payload.kind === 'command'
         ? {

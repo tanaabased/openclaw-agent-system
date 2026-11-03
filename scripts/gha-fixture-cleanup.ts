@@ -9,8 +9,21 @@ import type { CliOutput } from '../cli/output.ts';
 
 const project = 'tanaabased/openclaw-agent-system';
 const bucket = 'tanaabased/big-test-bucket';
-const workflows = ['os', 'codex', 'openclaw', 'notifications'].map(
-  (name) => `.github/workflows/pr-examples-${name}.yml`,
+const workflows = [
+  'os',
+  'codex',
+  'openclaw',
+  'notifications',
+  'issue-assignments',
+  'pull-requests',
+  'project-picker',
+  'automations',
+].map((name) => `.github/workflows/pr-${name}.yml`);
+// completed runs from before the rename still own cleanup receipts.
+workflows.push(
+  ...['os', 'codex', 'openclaw', 'notifications'].map(
+    (name) => `.github/workflows/pr-examples-${name}.yml`,
+  ),
 );
 type ObjectValue = Record<string, unknown>;
 type DebugLogger = ((message: string) => void) & {

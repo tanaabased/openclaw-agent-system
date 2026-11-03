@@ -1,0 +1,55 @@
+schema-version: 1
+
+agent:
+  id: pickup-openclaw-tanaabot
+  name: Pickup Tanaabot
+  email: tanaabot@tanaab.dev
+
+models:
+  default:
+    model: aimock/gpt-5.5
+    effort: medium
+
+environment:
+  set:
+    GH_TOKEN_TANAABOT: ${GH_TOKEN_TANAABOT}
+  required: [GH_TOKEN_TANAABOT]
+
+git:
+  worktrees: {}
+  ssh:
+    private-keys:
+      path: keys/id_ed25519
+
+github:
+  username: tanaabot
+  token: GH_TOKEN_TANAABOT
+  ssh-keys:
+    path: keys/id_ed25519.pub
+    title: agent-system-test-__GITHUB_REPOSITORY_ID__-__GITHUB_RUN_ID__-__GITHUB_RUN_ATTEMPT__-pickup-openclaw
+  schema-version: 3
+  runtimes: [openclaw]
+  interval-minutes: 1440
+  max-concurrent-items: 1
+  routing:
+    - match: tanaabased/big-test-bucket
+      workflows: [review-request]
+      target: deny
+    - match: tanaabased/big-test-bucket
+      target: local
+  issue-assignment:
+    mode: plan
+    allowed:
+      - login: emoriwan
+        node-id: __ACTOR_NODE_ID__
+  project-pickup:
+    start: '00:00'
+    window: 24 hours
+    scans: 1
+    selection:
+      guidance: Select the issue describing a bounded cleanup clarification before the larger redesign.
+    projects:
+      - repository: tanaabased/big-test-bucket
+        milestone:
+          number: __MILESTONE_NUMBER__
+          policy: only

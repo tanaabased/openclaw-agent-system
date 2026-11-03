@@ -218,7 +218,7 @@ Run `bun run test:release` when package contents, compatibility metadata, or rel
 > Run [Leia](https://github.com/lando/leia) scenarios only in GitHub Actions. They
 > install plugins and change OpenClaw or provider state on disposable runners.
 
-- [`examples/`](./examples/) covers installed and runtime contracts. [OS tests](./.github/workflows/pr-examples-os.yml) select native installation, dispatch enrollment, execution, and credentials on macOS and Ubuntu. [Codex tests](./.github/workflows/pr-examples-codex.yml), [OpenClaw tests](./.github/workflows/pr-examples-openclaw.yml), and [Notification tests](./.github/workflows/pr-examples-notifications.yml) select their examples on Ubuntu.
+- [`examples/`](./examples/) covers installed and runtime contracts. [OS tests](./.github/workflows/pr-os.yml) cover native installation, dispatch enrollment, execution, and credentials on macOS and Ubuntu. Ubuntu workflows separate [Codex install](./.github/workflows/pr-codex.yml), [OpenClaw](./.github/workflows/pr-openclaw.yml), [notification core](./.github/workflows/pr-notifications.yml), [automations](./.github/workflows/pr-automations.yml), [issue assignment](./.github/workflows/pr-issue-assignments.yml), [PRs](./.github/workflows/pr-pull-requests.yml), and [Project Picker](./.github/workflows/pr-project-picker.yml). Standalone Codex notification and automation checks share their functional workflows; their headless evidence does not prove desktop scheduling or assignment-to-PR execution.
 - Only explicitly selected examples run in CI. Unselected folders remain migration inputs; their presence is not evidence of active coverage.
 - Follow the [example guidance](./examples/AGENTS.md) for drivers, fixtures, credentials, and assertions.
 

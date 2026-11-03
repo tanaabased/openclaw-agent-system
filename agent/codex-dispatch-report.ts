@@ -213,16 +213,16 @@ export default function prepareDispatchReport(input: {
             ? '❌ Intake could not finish'
             : '⚠️ Intake needs attention'
         : started.length
-          ? `💡 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started${sent.length ? ` · ${sent.length} feedback delivered to chats` : ''}`
+          ? `📥 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started${sent.length ? ` · ${sent.length} feedback delivered to chats` : ''}`
           : sent.length
-            ? `💡 Intake complete — ${sent.length} feedback item${sent.length === 1 ? '' : 's'} delivered to chats`
+            ? `📥 Intake complete — ${sent.length} feedback item${sent.length === 1 ? '' : 's'} delivered to chats`
             : recovered
-              ? '💡 Intake resumed'
+              ? '📥 Intake resumed'
               : notices.length
-                ? '💡 Intake checked — retirement in progress'
+                ? '📥 Intake checked — retirement in progress'
                 : pending
-                  ? `💡 Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
-                  : '💡 Intake checked';
+                  ? `📥 Intake checked — ${pending} issue${pending === 1 ? '' : 's'} pending`
+                  : '📥 Intake checked';
   const lines = ['## ' + title, ''];
   if (storage.level !== 'normal' || recovered)
     lines.push(

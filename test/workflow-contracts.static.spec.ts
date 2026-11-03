@@ -4,6 +4,17 @@ import { readFile } from 'node:fs/promises';
 import { parse } from 'yaml';
 import { fixturePrefix } from '../scripts/gha-fixture-cleanup.ts';
 
+const exampleWorkflows = [
+  'codex',
+  'os',
+  'openclaw',
+  'notifications',
+  'issue-assignments',
+  'pull-requests',
+  'project-picker',
+  'automations',
+];
+
 interface Step {
   id?: string;
   if?: string;
@@ -56,9 +67,9 @@ describe('workflow safety and coverage', () => {
     }
   });
 
-  for (const kind of ['codex', 'os', 'openclaw', 'notifications']) {
+  for (const kind of exampleWorkflows) {
     it(`should isolate ${kind} example credentials and consume the packed artifact`, async () => {
-      const workflow = parse(await readFile(`.github/workflows/pr-examples-${kind}.yml`, 'utf8'));
+      const workflow = parse(await readFile(`.github/workflows/pr-${kind}.yml`, 'utf8'));
       assert.deepEqual(workflow.permissions, { contents: 'read' });
       const job = workflow.jobs.examples;
       const steps = job.steps as Step[];
@@ -100,9 +111,8 @@ describe('workflow safety and coverage', () => {
   it('should keep cleanup triggers aligned with source workflow names after renames', async () => {
     const cleanup = parse(await readFile('.github/workflows/gha-fixture-cleanup.yml', 'utf8'));
     const names = await Promise.all(
-      ['codex', 'os', 'openclaw', 'notifications'].map(
-        async (kind) =>
-          parse(await readFile(`.github/workflows/pr-examples-${kind}.yml`, 'utf8')).name,
+      exampleWorkflows.map(
+        async (kind) => parse(await readFile(`.github/workflows/pr-${kind}.yml`, 'utf8')).name,
       ),
     );
     assert.deepEqual([...cleanup.on.workflow_run.workflows].sort(), names.sort());
@@ -110,17 +120,27 @@ describe('workflow safety and coverage', () => {
 
   it('should enumerate distinct existing examples in their owning workflows', async () => {
     const selected = new Set<string>();
-    for (const kind of ['codex', 'os', 'openclaw', 'notifications']) {
-      const workflow = parse(await readFile(`.github/workflows/pr-examples-${kind}.yml`, 'utf8'));
+    for (const kind of exampleWorkflows) {
+      const workflow = parse(await readFile(`.github/workflows/pr-${kind}.yml`, 'utf8'));
       const examples = workflow.jobs.examples.strategy.matrix.example as string[];
       assert.ok(Array.isArray(examples) && examples.length > 0);
       for (const example of examples) {
         assert.match(example, /^[a-z][a-z0-9-]+$/u);
         assert.ok(!selected.has(example), `${example} is selected by more than one workflow`);
         selected.add(example);
-        const owner = example.startsWith('openclaw-notifications-')
-          ? 'notifications'
-          : example.split('-')[0];
+        const owner =
+          example === 'codex-notifications' || example.startsWith('openclaw-notifications-')
+            ? 'notifications'
+            : example === 'codex-automations' || example.startsWith('openclaw-automation-')
+              ? 'automations'
+              : example === 'openclaw-project-picker'
+                ? 'project-picker'
+                : example.startsWith('openclaw-pr-')
+                  ? 'pull-requests'
+                  : example.startsWith('openclaw-issue-') &&
+                      !['openclaw-issue-assessment', 'openclaw-issue-launch'].includes(example)
+                    ? 'issue-assignments'
+                    : example.split('-')[0];
         assert.equal(owner, kind);
         const readme = await readFile(`examples/${example}/README.md`, 'utf8');
         const issueTitles = readme.matchAll(

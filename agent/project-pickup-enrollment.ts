@@ -74,7 +74,8 @@ export default class ProjectPickupEnrollmentStore {
     const record = matches[0]!;
     if (
       record.instanceId !== identity.instanceId ||
-      record.enrollment.policyDigest !== projectPickupPolicyDigest(policy)
+      !policy.projectPickup ||
+      !policy.runtimes.includes(runtime)
     )
       throw new IntakeError('project-pickup-enrollment-changed');
     return record;
@@ -89,6 +90,7 @@ export default class ProjectPickupEnrollmentStore {
     client: ProjectPickupClient;
     timezone: string;
     now: number;
+    reconcile?: (record: PickupEnrollment, commit: () => Promise<void>) => Promise<void>;
   }) {
     const identity = await this.owner();
     const pickup = input.policy.projectPickup!;
@@ -110,31 +112,62 @@ export default class ProjectPickupEnrollmentStore {
       if (currentIdentity.instanceId !== identity.instanceId)
         throw new IntakeError('project-pickup-enrollment-changed');
       const state = await this.read();
-      const existing = state.records.find(
+      const matches = state.records.filter(
         (record) =>
-          (record.enrollment.repositoryNodeId === repository.nodeId &&
-            record.enrollment.milestoneNodeId === milestone.nodeId &&
-            record.enrollment.account.nodeId === input.client.identity.nodeId) ||
-          (record.enrollment.scope === input.scope && record.enrollment.runtime === input.runtime),
+          record.enrollment.scope === input.scope && record.enrollment.runtime === input.runtime,
       );
+      if (matches.length > 1) throw new IntakeError('project-pickup-enrollment-conflict');
+      const existing = matches[0];
       if (existing) {
         if (
-          existing.enrollment.scope !== input.scope ||
-          existing.enrollment.runtime !== input.runtime ||
           existing.enrollment.workspaceDir !== input.workspaceDir ||
           existing.enrollment.agentId !== input.agentId
         )
           throw new IntakeError('project-pickup-enrollment-conflict');
         if (
-          existing.enrollment.repositoryNodeId !== repository.nodeId ||
-          existing.enrollment.milestoneNodeId !== milestone.nodeId ||
           existing.enrollment.account.nodeId !== input.client.identity.nodeId ||
-          existing.instanceId !== identity.instanceId ||
-          existing.enrollment.policyDigest !== projectPickupPolicyDigest(input.policy) ||
-          existing.timezone !== input.timezone
+          existing.instanceId !== identity.instanceId
         )
           throw new IntakeError('project-pickup-enrollment-changed');
-        return existing;
+        const changed =
+          existing.enrollment.repositoryNodeId !== repository.nodeId ||
+          existing.enrollment.milestoneNodeId !== milestone.nodeId ||
+          existing.enrollment.policyDigest !== projectPickupPolicyDigest(input.policy) ||
+          existing.timezone !== input.timezone;
+        if (changed && !input.reconcile) throw new IntakeError('project-pickup-enrollment-changed');
+        const updated: PickupEnrollment = changed
+          ? {
+              ...existing,
+              timezone: input.timezone,
+              enrollment: {
+                ...existing.enrollment,
+                repositoryNodeId: repository.nodeId,
+                milestoneNodeId: milestone.nodeId,
+                policyDigest: projectPickupPolicyDigest(input.policy),
+              },
+            }
+          : existing;
+        // Target and window edits do not change the native job or its activation.
+        const commit = async () => {
+          if (!changed) return;
+          state.records[state.records.indexOf(existing)] = updated;
+          if (!Value.Check(schema, state))
+            throw new IntakeError('project-pickup-enrollment-invalid');
+          if (
+            Buffer.byteLength(
+              JSON.stringify({
+                ...state,
+                records: state.records.map((entry) => ({ ...entry, nativeId: 'x'.repeat(4096) })),
+              }),
+            ) > maximumBytes
+          )
+            throw new IntakeError('project-pickup-enrollment-capacity');
+          lock.assertHeld();
+          await this.file.write(JSON.stringify(state));
+        };
+        if (input.reconcile) await input.reconcile(updated, commit);
+        else await commit();
+        return updated;
       }
       const record: PickupEnrollment = {
         instanceId: identity.instanceId,

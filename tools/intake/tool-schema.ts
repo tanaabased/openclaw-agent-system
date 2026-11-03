@@ -1,9 +1,9 @@
 import { Type } from 'typebox';
-import { pickupSelectionSchema } from '../../agent/project-pickup.ts';
+import { pickupInputSchema } from '../../agent/project-pickup.ts';
 
 export const intakeParameters = Type.Union([
   Type.Object(
-    { action: Type.Literal('pickup'), selection: Type.Optional(pickupSelectionSchema) },
+    { action: Type.Literal('pickup'), ...Type.Omit(pickupInputSchema, ['cancel']).properties },
     { additionalProperties: false },
   ),
   Type.Object({ action: Type.Literal('inspect') }, { additionalProperties: false }),

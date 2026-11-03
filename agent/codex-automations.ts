@@ -27,6 +27,7 @@ import { codexIntakeJobs, intakeAutomationId } from './codex-intake-policy.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import {
   prepareCodexPickupEnrollment,
+  inspectCodexPickup,
   preflightCodexIntake,
   runCodexIntake,
   type CodexIntakeDependencies,
@@ -464,6 +465,20 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
           ? error.message
           : 'automation-thread-inspection-failed';
   }
+  const refreshIds = new Set<string>();
+  if (
+    !selected.pickupBlocker &&
+    jobs.some((job) => job.id === projectPickupAutomationId && job.enabled) &&
+    ledger.records.some((record) => record.id === projectPickupAutomationId)
+  ) {
+    const findings = await inspectCodexPickup(selected.root, {
+      ...selected.dependencies.intake,
+      codexHome: selected.codexHome,
+      inspectBinding: selected.dependencies.inspectBinding,
+    });
+    if (findings.some((finding) => finding.status === 'drift'))
+      refreshIds.add(projectPickupAutomationId);
+  }
   const result = await planCodexAutomations({
     scope,
     workspace,
@@ -483,6 +498,7 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     inputs,
     defaults,
     bindings,
+    refreshIds,
   });
   result.unmanagedCount = selected.cleanupOnly
     ? saved.length - ledger.records.filter((record) => record.id === intakeAutomationId).length

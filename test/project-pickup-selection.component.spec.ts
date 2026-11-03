@@ -1,3 +1,4 @@
+import type { RepositoryRoute } from '../channels/github/repository-scope.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import ProjectPickupEnrollmentStore from '../agent/project-pickup-enrollment.ts';
 import assert from 'node:assert/strict';
@@ -27,6 +28,9 @@ import selectionFixture from './project-pickup-selection-fixture.ts';
 import pickupClaims from './project-pickup-claim-fixture.ts';
 import CodexAssignmentClaims from '../agent/codex-assignment-claims.ts';
 import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
+import GitHubProjectPickupClient from '../channels/github/provider/project-pickup-client.ts';
+import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
+import hydrateImplementation from './implementation-material-fixture.ts';
 
 describe('project pickup selection through native journals', () => {
   let root: string;
@@ -50,7 +54,6 @@ describe('project pickup selection through native journals', () => {
     const caller = { current: true };
     const tick = { id: 'pickup-turn-1' };
     const claims = coordinated ? pickupClaims(f, instanceRoot) : undefined;
-    if (claims) Object.defineProperty(f.tx.claims, 'passId', { get: () => tick.id });
     const assertCurrent = async () => {
       if (!caller.current) throw new Error('project-pickup-native-caller-required');
     };
@@ -62,13 +65,13 @@ describe('project pickup selection through native journals', () => {
       assertCurrent,
     };
 
-    const source = JSON.stringify({
+    const declaration = {
       'schema-version': 1,
       agent: { id: 'receiver' },
       github: {
         username: 'receiver',
         runtimes: [runtime],
-        ...(coordinated ? { routing: [{ 'owner/*': 'swarm' }] } : {}),
+        ...(coordinated ? { routing: [{ 'owner/*': 'swarm' }] as RepositoryRoute[] } : {}),
         'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
         'max-concurrent-items': 1,
         'issue-assignment': {
@@ -79,13 +82,14 @@ describe('project pickup selection through native journals', () => {
           ],
         },
         'project-pickup': {
-          schedule: 'every 1 day',
-          'window-minutes': 60,
+          start: '10:00',
+          window: '1 hour',
           selection: { guidance: { file: 'selection.md' } },
           projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
         },
       },
-    });
+    };
+    const source = JSON.stringify(declaration);
     await writeFile(join(workspace, 'agent.yaml'), source);
     await writeFile(join(workspace, 'selection.md'), 'prefer high impact ready work');
     const parsed = parseAgentManifest(source);
@@ -101,7 +105,6 @@ describe('project pickup selection through native journals', () => {
     if (runtime === 'codex') {
       await bindCodexWorkspace(data, workspace);
       const deps: CodexIntakeDependencies = {
-        pickupClaims: f.tx.claims,
         codexHome: home,
         now: () => f.clock.now,
         assertActive: async () => {},
@@ -131,7 +134,6 @@ describe('project pickup selection through native journals', () => {
       read = async () => (await selected.store.read())!.records;
     } else {
       const intake = new OpenClawIntake({
-        pickupClaims: f.tx.claims,
         root: data,
         pickupStore: enrollmentStore,
         namespace: root,
@@ -178,17 +180,328 @@ describe('project pickup selection through native journals', () => {
         rationale: 'highest explicit priority and impact among ready work',
       };
     };
-    return { ...f, pickup, scan, read, journal, select, caller, tick, claims, instanceRoot };
+    const configure = async (change: (value: typeof declaration) => void) => {
+      change(declaration);
+      const source = JSON.stringify(declaration);
+      const updated = parseAgentManifest(source);
+      assert.equal(updated.status, 'valid');
+      if (updated.status !== 'valid') throw new Error('invalid fixture update');
+      Object.assign(manifest, updated.manifest);
+      await writeFile(join(workspace, 'agent.yaml'), source);
+    };
+    return {
+      ...f,
+      pickup,
+      scan,
+      read,
+      journal,
+      select,
+      caller,
+      tick,
+      claims,
+      instanceRoot,
+      configure,
+      enrollmentStore,
+    };
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
-    it(`should retain the shared owner from pickup through assignment dispatch in ${runtime}`, async () => {
-      const f = await fixture(runtime, true);
-      assert.equal((await f.pickup({ selection: await f.select() })).status, 'pending');
-      assert.equal((await f.pickup()).status, 'pending');
+    it(`should refresh file guidance across runs and preserve uncertain-write recovery in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const selection = await f.select();
+      const path = join(root, 'workspace', 'selection.md');
+      await writeFile(path, 'prefer release blockers');
+      f.tick.id = 'later-native-run';
+      const fresh = await f.pickup();
+      assert.equal(fresh.status, 'selection-required');
+      assert.ok('guidance' in fresh && 'digest' in fresh);
+      assert.equal(fresh.guidance, 'prefer release blockers');
+      assert.notEqual(fresh.digest, selection.digest);
       assert.equal(f.effects.writes, 0);
-      f.tick.id = 'pickup-turn-2';
+      const assign = f.client.assignProjectIssue;
+      f.client.assignProjectIssue = async (...args) => {
+        await assign(...args);
+        throw new Error('response lost');
+      };
+      assert.equal((await f.pickup({ selection: await f.select() })).status, 'attempted');
+      await rm(path);
+      f.tick.id = 'recovery-run';
       assert.equal((await f.pickup()).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+    });
+
+    it(`should invalidate material from the old guidance snapshot in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      f.candidates.get(f.item.number)!.body = 'candidate details '.repeat(2000);
+      const first = await f.pickup();
+      assert.ok('contextMaterials' in first && first.contextMaterials);
+      const { action, ...input } = first.contextMaterials.fields[0]!.request;
+      assert.equal(action, 'pickup');
+      await writeFile(join(root, 'workspace', 'selection.md'), 'changed selection priorities');
+      f.tick.id = 'new-scan';
+      await assert.rejects(f.pickup(input as PickupInput), /selection-stale/);
+      const fresh = await f.pickup();
+      assert.equal(fresh.status, 'selection-required');
+      assert.ok('digest' in fresh && 'digest' in first);
+      assert.notEqual(fresh.digest, first.digest);
+      assert.equal(f.effects.writes, 0);
+    });
+
+    it(`should retain receipt-based work intake after removing pickup configuration in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      assert.equal((await f.pickup({ selection: await f.select() })).status, 'assigned');
+      await f.configure((source) => {
+        Reflect.deleteProperty(source.github, 'project-pickup');
+        source.github['issue-assignment'].allowed = [
+          { login: 'operator', 'node-id': 'U_operator' },
+        ];
+      });
+      f.item.assignees.push({ login: 'collaborator', nodeId: 'U_collaborator', type: 'User' });
+      await f.scan();
+      await f.scan();
+      const records = await f.read();
+      assert.equal(records.length, 1);
+      assert.equal(records[0]!.evidence.mode, 'work');
+      assert.equal(records[0]!.evidence.projectWork!.pickup!.assignmentNodeId, f.events[0]!.nodeId);
+      assert.equal(f.effects.writes, 1);
+    });
+
+    it(`should apply a live milestone change without replacing native activation in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const before = await f.select();
+      const enrollment = await f.enrollmentStore.read();
+      await f.configure((source) => {
+        source.github['project-pickup'].projects[0]!.milestone.number = 11;
+        source.github['project-pickup'].window = '90 minutes';
+      });
+      f.milestone.number = 11;
+      f.milestone.nodeId = 'MI_next';
+      f.item.milestone = { ...f.item.milestone!, number: 11, nodeId: 'MI_next' };
+      const after = await f.select();
+      assert.notEqual(after.id, before.id);
+      assert.equal((await f.pickup({ selection: before })).status, 'failed');
+      const refreshed = await f.select();
+      assert.equal((await f.pickup({ selection: refreshed })).status, 'assigned');
+      const current = (await f.journal.read()).projectPickup!;
+      assert.equal(current.enrollment.milestoneNodeId, 'MI_next');
+      const operation = current.operations.find((op) => op.id === after.id)!;
+      assert.equal(operation.window.closesAt - operation.window.opensAt, 90 * 60000);
+      assert.deepEqual(await f.enrollmentStore.read(), enrollment);
+      assert.equal(f.effects.writes, 1);
+      f.caller.current = false;
+      await assert.rejects(f.pickup(), /native-caller-required/);
+    });
+
+    it(`should deliver complete large candidate material through authorized pages in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const original = structuredClone(f.item);
+      f.items.clear();
+      f.candidates.clear();
+      for (let n = 1; n <= 5; n++) {
+        f.items.set(n, { ...original, number: n, nodeId: `I_large_${n}` });
+        f.candidates.set(n, {
+          number: n,
+          nodeId: `I_large_${n}`,
+          title: `candidate ${n}`,
+          body: `${n} quotes: " slash: \\ unicode: 🦊\n`.repeat(1500),
+          labels: [],
+        });
+      }
+      await f.pickup();
+      const response = await f.pickup();
+      assert.equal(response.status, 'selection-required');
+      assert.equal(response.response, '');
+      assert.ok(JSON.stringify(response).length < 16000);
+      const restored = await hydrateImplementation(response, async ({ action, ...input }) => {
+        assert.equal(action, 'pickup');
+        const page = await f.pickup(input as PickupInput);
+        assert.ok(JSON.stringify(page).length < 16000);
+        return page;
+      });
+      assert.deepEqual(
+        restored.candidates,
+        [...f.candidates.values()].map((candidate) => ({
+          ...candidate,
+          blockedByOpenIssues: false,
+        })),
+      );
+      assert.equal(f.effects.writes, 0);
+      assert.ok('contextMaterials' in response && response.contextMaterials);
+      const request = response.contextMaterials.fields[0]!.request;
+      const { action, ...input } = request;
+      assert.equal(action, 'pickup');
+      const materialInput = input as PickupInput;
+      await assert.rejects(
+        f.pickup({
+          ...materialInput,
+          context: { id: 'other-operation', digest: String(restored.digest) },
+        }),
+        /selection-stale/,
+      );
+      await assert.rejects(
+        f.pickup({
+          ...materialInput,
+          material: { ...materialInput.material!, digest: 'a'.repeat(64) },
+        }),
+        /material-stale/,
+      );
+      assert.equal((await f.journal.read()).projectPickup!.operations[0]!.phase, 'selecting');
+      f.caller.current = false;
+      await assert.rejects(f.pickup(input as PickupInput), /native-caller-required/);
+      f.caller.current = true;
+      const selection = {
+        id: String(restored.id),
+        digest: String(restored.digest),
+        issueNodeId: 'I_large_5',
+        rationale: 'ready work',
+      };
+      assert.equal((await f.pickup({ selection })).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+      assert.equal((await f.journal.read()).projectPickup!.operations[0]!.candidates.length, 0);
+      assert.equal((await f.pickup(input as PickupInput)).status, 'allowance-reached');
+    });
+
+    it(`should page temporary guidance accepted at the shared limit in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const content = 'x'.repeat(32768);
+      await writeFile(join(root, 'workspace', 'selection.md'), content);
+      const response = await f.pickup();
+      assert.equal(response.status, 'selection-required');
+      const restored = await hydrateImplementation(response, async ({ action, ...input }) => {
+        assert.equal(action, 'pickup');
+        return f.pickup(input as PickupInput);
+      });
+      assert.equal(restored.guidance, content);
+      assert.equal((await f.journal.read()).projectPickup!.operations[0]!.guidance, content);
+    });
+
+    for (const editTail of [false, true]) {
+      it(`should select a long description despite harmless later edits in ${runtime} with tail edit ${editTail}`, async () => {
+        const f = await fixture(runtime);
+        const candidate = f.candidates.get(f.item.number)!;
+        let body = 'ready work\n'.repeat(6000);
+        const provider = new GitHubProjectPickupClient(
+          new GitHubWorkEventApiClient({
+            identity: f.client.identity,
+            execute: async () => ({
+              exitCode: 0,
+              timedOut: false,
+              truncated: false,
+              stderr: '',
+              stdout: `HTTP/2 200 OK\n\n${JSON.stringify({
+                item: {
+                  ...f.item,
+                  title: candidate.title,
+                  isPullRequest: false,
+                  milestone:
+                    f.item.itemType === 'issue' && f.item.milestone
+                      ? { ...f.item.milestone, node_id: f.item.milestone.nodeId }
+                      : null,
+                },
+                candidate: { ...candidate, body },
+              })}`,
+            }),
+          }),
+        );
+        f.client.projectCandidate = provider.projectCandidate.bind(provider);
+        const selection = await f.select();
+        const before = (await f.journal.read()).projectPickup!.operations[0]!.candidates[0]!;
+        assert.equal(before.body, body);
+        assert.equal(Object.hasOwn(before, 'bodyTruncated'), false);
+        if (editTail) body += 'changed requirements';
+        assert.equal((await f.pickup({ selection })).status, 'assigned');
+        await f.scan();
+        assert.equal((await f.read()).length, 1);
+        assert.equal(f.effects.writes, 1);
+      });
+    }
+
+    for (const lostResponse of [false, true]) {
+      it(`should admit a write completed after window closure in ${runtime} with lost response ${lostResponse}`, async () => {
+        const f = await fixture(runtime);
+        const selection = await f.select();
+        const window = (await f.journal.read()).projectPickup!.operations[0]!.window;
+        f.clock.now = window.closesAt - 1000;
+        const assign = f.client.assignProjectIssue;
+        f.client.assignProjectIssue = async (...args) => {
+          assert.ok(f.clock.now < window.closesAt);
+          f.clock.now += 2000;
+          await assign(...args);
+          if (lostResponse) throw new Error('lost response');
+        };
+        assert.equal(
+          (await f.pickup({ selection })).status,
+          lostResponse ? 'attempted' : 'assigned',
+        );
+        f.tick.id = 'pickup-after-close';
+        assert.equal((await f.pickup()).status, lostResponse ? 'assigned' : 'idle');
+        await f.scan();
+        await f.scan();
+        const records = await f.read();
+        assert.equal(records.length, 1);
+        assert.equal(records[0]!.evidence.mode, 'work');
+        assert.equal(f.effects.writes, 1);
+        assert.ok(Date.parse(f.events[0]!.createdAt) > window.closesAt);
+        const operation = (await f.journal.read()).projectPickup!.operations[0]!;
+        assert.ok(operation.attemptedAt! < window.closesAt);
+        assert.equal(operation.receipt!.assignmentNodeId, f.events[0]!.nodeId);
+      });
+    }
+
+    it(`should admit newly available work on a later tick in the same window through ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const candidate = structuredClone(f.candidates.get(f.item.number)!);
+      f.candidates.clear();
+      assert.equal((await f.pickup()).status, 'empty');
+      f.candidates.set(f.item.number, candidate);
+      f.clock.now += 60000;
+      f.tick.id = 'pickup-newly-available';
+      assert.equal((await f.pickup({ selection: await f.select() })).status, 'assigned');
+      await f.scan();
+      await f.scan();
+      assert.equal((await f.read()).length, 1);
+      assert.equal(f.effects.writes, 1);
+      assert.equal((await f.journal.read()).projectPickup!.operations.length, 1);
+    });
+
+    it(`should apply the live intake pool before writing through ${runtime}`, async () => {
+      const f = await fixture(runtime, true);
+      const selection = await f.select();
+      await f.configure((source) => {
+        source.github.routing = [
+          {
+            match: 'owner/*',
+            workflows: ['issue-assignment'],
+            target: { instances: ['11111111-1111-4111-8111-111111111111'] },
+          },
+          'owner/*',
+        ];
+      });
+      const held = await f.pickup({ selection });
+      assert.ok('code' in held && held.code === 'claim-route-instance-ineligible');
+      assert.equal(f.effects.writes, 0);
+      const identity = await f.claims!.store.identity();
+      await f.configure((source) => {
+        source.github.routing = [{ 'owner/*': [identity.instanceId] }];
+      });
+      assert.equal((await f.pickup({ selection: await f.select() })).status, 'assigned');
+      assert.equal(f.claims!.effects.creates, 0);
+      await f.scan();
+      assert.equal((await f.read())[0]!.evidence.mode, 'work');
+    });
+
+    it(`should let ordinary intake elect an owner after pickup in ${runtime}`, async () => {
+      const f = await fixture(runtime, true);
+      await f.configure((source) => {
+        source.github['project-pickup'].start = '10:01';
+        source.github['project-pickup'].window = '1 minute';
+        Reflect.set(source.github['project-pickup'], 'scans', 1);
+      });
+      f.clock.now = baseline + 119000;
+      assert.equal((await f.pickup({ selection: await f.select() })).status, 'assigned');
+      assert.equal((await f.pickup()).status, 'allowance-reached');
+      assert.equal(f.effects.writes, 1);
+      assert.equal((await f.pickup()).status, 'allowance-reached');
       await f.scan();
       const records = await f.read();
       assert.equal(records.length, 1);
@@ -215,57 +528,44 @@ describe('project pickup selection through native journals', () => {
                 toolCallId: 'intake-call',
               },
             });
-      assert.equal(ownership.status, 'owned');
+      assert.equal(ownership.status, 'pending');
       assert.equal(f.claims!.effects.creates, 1);
       assert.equal(f.effects.writes, 1);
     });
-    it(`should keep empty ticks quiet and report the window close once through ${runtime}`, async () => {
+    it(`should report every empty scheduled scan through ${runtime}`, async () => {
       const f = await fixture(runtime);
       f.candidates.clear();
-      const empty = await f.pickup();
-      assert.equal(empty.status, 'empty');
-      if (runtime === 'codex') assert.match(empty.response, /<decision>DONT_NOTIFY<\/decision>/);
-      else assert.equal(empty.response, '');
-      f.tick.id = 'pickup-empty-2';
-      const quiet = await f.pickup();
-      assert.doesNotMatch(quiet.response, /> ##/);
-      f.clock.now += 7200000;
-      f.tick.id = 'pickup-empty-closed';
-      const closed = await f.pickup();
-      assert.match(closed.response, /Pickup window summary/);
-      assert.match(closed.response, /does not mean completion/);
-      f.tick.id = 'pickup-empty-closed-2';
-      assert.doesNotMatch((await f.pickup()).response, /> ##/);
+      for (let index = 1; index <= 8; index++) {
+        f.tick.id = `empty-scan-${index}`;
+        const result = await f.pickup();
+        assert.equal(result.status, 'empty');
+        assert.match(result.response, /> ## 📥/);
+        if (runtime === 'codex') assert.match(result.response, /<decision>NOTIFY<\/decision>/);
+        assert.deepEqual((await f.journal.read()).projectPickup!.operations, []);
+      }
       assert.equal(f.effects.writes, 0);
     });
 
-    it(`should retain selected, quiet, blocked and recovery cards through ${runtime}`, async () => {
+    it(`should report uncertainty, confirmation and exhausted allowance through ${runtime}`, async () => {
       const f = await fixture(runtime);
-      const selection = await f.select();
       const assign = f.client.assignProjectIssue;
       f.client.assignProjectIssue = async (...args) => {
         await assign(...args);
         throw new Error('lost response');
       };
-      const blocked = await f.pickup({ selection });
-      assert.equal(blocked.status, 'attempted');
-      assert.match(blocked.response, /> ## ⚠️/);
-      assert.match(blocked.response, /`project-pickup-assignment-uncertain`/);
-      assert.ok(blocked.response.includes((await f.journal.read()).projectPickupReport!.response));
-      const replay = await f.pickup();
-      assert.equal(replay.response, blocked.response);
-      f.tick.id = 'pickup-turn-2';
-      const selected = await f.pickup();
-      assert.equal(selected.status, 'assigned');
-      assert.match(selected.response, /Project pickup resumed/);
-      assert.match(selected.response, /github\.com\/owner\/repo\/milestone\/10/);
-      assert.match(selected.response, /Why selected/);
-      f.tick.id = 'pickup-turn-3';
-      const quiet = await f.pickup();
-      if (runtime === 'codex') assert.match(quiet.response, /<decision>DONT_NOTIFY<\/decision>/);
-      else assert.equal(quiet.response, '');
+      const pending = await f.pickup({ selection: await f.select() });
+      assert.match(pending.response, /> ## ⚠️/);
+      const state = await f.journal.read();
+      assert.equal(state.projectPickup!.operations[0]!.guidance, undefined);
+      f.tick.id = 'confirm';
+      const confirmed = await f.pickup();
+      assert.equal(confirmed.status, 'assigned');
+      assert.match(confirmed.response, /1 of 1 assigned/);
+      f.tick.id = 'allowance';
+      const exhausted = await f.pickup();
+      assert.equal(exhausted.status, 'allowance-reached');
+      assert.match(exhausted.response, /> ## 📥/);
       assert.equal(f.effects.writes, 1);
-      assert.equal((await f.journal.read()).projectPickupReport!.notify, false);
     });
 
     it(`should reject an expired native occurrence before provider assignment in ${runtime}`, async () => {
@@ -303,7 +603,7 @@ describe('project pickup selection through native journals', () => {
         runtime === 'codex'
           ? codexCapacity([], 1, state.projectPickup)
           : openClawCapacity([], 1, state.projectPickup);
-      assert.deepEqual(capacity, { occupied: 1, available: 0 });
+      assert.deepEqual(capacity, { occupied: 0, available: 1 });
     });
 
     it(`should withhold an uncertain self-assignment even when the actor is approved in ${runtime}`, async () => {
@@ -322,7 +622,7 @@ describe('project pickup selection through native journals', () => {
       assert.equal((await f.read()).length, 1);
     });
 
-    it(`should serialize concurrent ticks and preserve cancellation in ${runtime}`, async () => {
+    it(`should serialize concurrent ticks and preserve the assignment for intake in ${runtime}`, async () => {
       const f = await fixture(runtime);
       const selection = await f.select();
       const results = await Promise.allSettled([f.pickup({ selection }), f.pickup({ selection })]);
@@ -332,20 +632,20 @@ describe('project pickup selection through native journals', () => {
         ),
       );
       assert.equal(f.effects.writes, 1);
-      assert.equal((await f.journal.read()).projectPickup!.operations.length, 1);
-      assert.equal((await f.pickup({ cancel: selection.id })).status, 'cancelled');
+      assert.equal((await f.pickup({ cancel: selection.id })).status, 'allowance-reached');
       await f.scan();
-      assert.equal((await f.read()).length, 0);
-      assert.equal((await f.pickup()).status, 'idle');
+      assert.equal((await f.read()).length, 1);
+      f.tick.id = 'next-scan';
+      assert.equal((await f.pickup()).status, 'allowance-reached');
     });
 
-    it(`should refuse competing ownership between pickup and native admission in ${runtime}`, async () => {
+    it(`should refuse reassignment away from the receiver before native admission in ${runtime}`, async () => {
       const f = await fixture(runtime);
       await f.pickup({ selection: await f.select() });
-      f.item.assignees.push({ login: 'other', nodeId: 'U_other', type: 'User' });
+      f.item.assignees = [{ login: 'other', nodeId: 'U_other', type: 'User' }];
       await f.scan();
       assert.equal((await f.read()).length, 0);
-      assert.equal(f.item.assignees.length, 2);
+      assert.equal(f.item.assignees.length, 1);
     });
   }
 });

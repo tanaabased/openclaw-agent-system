@@ -142,18 +142,18 @@ export default function openclawIntakeReport(input: {
           ? '⚠️ Intake needs attention'
           : '⚠️ Intake checked — some items need attention'
         : started.length
-          ? `💡 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
+          ? `📥 Intake complete — ${started.length} issue${started.length === 1 ? '' : 's'} started`
           : recovered.length
             ? recovered.some((problem) =>
                 state.records.some(
                   (record) => problem.startsWith(record.id + ':') && record.retirement,
                 ),
               )
-              ? '💡 Retirement blocker cleared'
-              : '💡 Intake resumed'
+              ? '📥 Retirement blocker cleared'
+              : '📥 Intake resumed'
             : retirementNotices.length
-              ? '💡 Intake checked — retirement in progress'
-              : '💡 Intake checked';
+              ? '📥 Intake checked — retirement in progress'
+              : '📥 Intake checked';
   const lines = ['## ' + title, ''];
   if (storage.level !== 'normal' || recovered.some((entry) => entry.startsWith('storage:')))
     lines.push(

@@ -1,3 +1,5 @@
+import reconcileProjectPickup from '../agent/project-pickup-reconcile.ts';
+import type { ProjectPickupState } from '../agent/project-pickup-state.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -57,7 +59,7 @@ describe('project pickup installation enrollment', () => {
       const f = await fixture();
       const first = await f.store.prepare(f.input);
       await assert.rejects(
-        f.store.prepare({ ...f.input, scope: 'other', workspaceDir: '/other' }),
+        f.store.prepare({ ...f.input, workspaceDir: '/other' }),
         /enrollment-conflict/,
       );
       await assert.rejects(
@@ -67,6 +69,104 @@ describe('project pickup installation enrollment', () => {
       f.policy.projectPickup!.windowMinutes++;
       await assert.rejects(f.store.prepare(f.input), /enrollment-changed/);
       assert.deepEqual((await f.store.read()).records, [first]);
+    });
+
+    it(`should enroll separate workspaces on the same target without replacing either owner in ${runtime}`, async () => {
+      const f = await fixture();
+      const first = await f.store.prepare(f.input);
+      await f.store.activate(first.enrollment.id, 'first-job');
+      const otherInput = { ...f.input, scope: 'other', workspaceDir: '/other' };
+      const other = await f.store.prepare(otherInput);
+      await f.store.activate(other.enrollment.id, 'other-job');
+      assert.notEqual(first.enrollment.id, other.enrollment.id);
+      assert.equal((await f.store.inspect(f.policy, runtime, 'scope')).nativeId, 'first-job');
+      assert.equal((await f.store.inspect(f.policy, runtime, 'other')).nativeId, 'other-job');
+      assert.equal((await f.store.prepare(f.input)).enrollment.id, first.enrollment.id);
+      assert.equal((await f.store.prepare(otherInput)).enrollment.id, other.enrollment.id);
+      assert.equal((await f.store.read()).records.length, 2);
+    });
+
+    it(`should change milestone with retained work and keep original receipts in ${runtime}`, async () => {
+      const f = await fixture();
+      const first = await f.store.prepare(f.input);
+      await f.store.activate(first.enrollment.id, 'native-job');
+      const receipt = {
+        enrollmentId: first.enrollment.id,
+        issueNodeId: 'I_old',
+        assignmentNodeId: 'E_old',
+        window: { id: 'window', opensAt: f.clock.now, closesAt: f.clock.now + 60000 },
+      };
+      const state: { projectPickup?: ProjectPickupState } = {
+        projectPickup: {
+          enrollment: first.enrollment,
+          timezone: 'UTC',
+          windowAssignment: { window: receipt.window, assignedAt: f.clock.now },
+          operations: [
+            {
+              id: 'delivered',
+              runId: 'pickup-run',
+              repository: 'owner/repo',
+              window: receipt.window,
+              phase: 'assigned',
+              page: 1,
+              candidates: [],
+              receipt,
+            },
+            {
+              id: 'uncertain',
+              runId: 'pickup-run',
+              repository: 'owner/repo',
+              window: receipt.window,
+              phase: 'attempted',
+              page: 1,
+              candidates: [],
+              attemptedAt: f.clock.now,
+            },
+            {
+              id: 'selection',
+              runId: 'pickup-run',
+              repository: 'owner/repo',
+              window: receipt.window,
+              phase: 'selecting',
+              page: 1,
+              candidates: [],
+            },
+          ],
+        },
+      };
+      f.policy.projectPickup!.projects[0]!.milestone.number = 11;
+      f.milestone.number = 11;
+      f.milestone.nodeId = 'MI_new';
+      let saves = 0;
+      const updated = await f.store.prepare({
+        ...f.input,
+        reconcile: (record, commit) =>
+          reconcileProjectPickup(
+            state,
+            async () => {
+              saves++;
+            },
+            record,
+            commit,
+          ),
+      });
+      assert.equal(updated.enrollment.milestoneNodeId, 'MI_new');
+      assert.equal(updated.enrollment.startedAt, first.enrollment.startedAt);
+      assert.equal(updated.nativeId, 'native-job');
+      assert.deepEqual(state.projectPickup!.windowAssignment, {
+        window: receipt.window,
+        assignedAt: f.clock.now,
+      });
+      assert.deepEqual(state.projectPickup!.operations[0]!.receipt, receipt);
+      assert.equal(state.projectPickup!.operations[0]!.enrollment!.milestoneNodeId, 'MI_pilot');
+      assert.equal(state.projectPickup!.operations[1]!.phase, 'attempted');
+      assert.deepEqual(
+        state.projectPickup!.operations.map((operation) => operation.id),
+        ['delivered', 'uncertain'],
+      );
+      assert.equal(saves, 1);
+      await f.store.activate(updated.enrollment.id, 'native-job');
+      assert.equal((await f.store.inspect(f.policy, runtime, 'scope')).nativeId, 'native-job');
     });
 
     it(`should enroll participants independently and retain identity after rotation in ${runtime}`, async () => {
@@ -107,8 +207,8 @@ describe('project pickup installation enrollment', () => {
         'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
         'issue-assignment': { allowed: [{ login: 'operator', 'node-id': 'U_operator' }] },
         'project-pickup': {
-          schedule: 'every 1 day',
-          'window-minutes': 10,
+          start: '10:00',
+          window: '10 minutes',
           projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
         },
       },
@@ -122,7 +222,9 @@ describe('project pickup installation enrollment', () => {
       const jobs = projectPickupJobs(manifest, runtime);
       assert.equal(jobs.length, 1);
       assert.equal(jobs[0]!.id, 'github-project-pickup');
-      assert.deepEqual(jobs[0]!.schedule, { kind: 'every', seconds: 300, missedRun: 'native' });
+      assert.equal(jobs[0]!.schedule.kind, 'cron');
+      if (jobs[0]!.schedule.kind === 'cron')
+        assert.deepEqual(jobs[0]!.schedule.times, [600, 601, 602, 603, 605, 606, 607, 608]);
       assert.equal(
         jobs[0]!.overrides?.[runtime]?.model,
         runtime === 'codex' ? 'gpt-6-luna' : 'openai/gpt-6-astra',
@@ -131,7 +233,7 @@ describe('project pickup installation enrollment', () => {
       assert.equal(projectPickupJobs(manifest, runtime)[0]!.enabled, false);
       policy.projectPickup!.paused = false;
       policy.projectPickup!.windowMinutes = 4;
-      assert.equal(projectPickupConfigurationCode(policy), 'project-pickup-schedule-unsupported');
+      assert.equal(projectPickupConfigurationCode(policy), undefined);
       policy.projectPickup!.windowMinutes = 10;
     }
     assert.equal(projectPickupConfigurationCode(policy), undefined);

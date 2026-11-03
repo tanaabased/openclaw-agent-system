@@ -135,6 +135,25 @@ describe('project pickup native intake adapters', () => {
       assert.equal((await f.read()).length, 1, 'repeated scan must not duplicate admission');
     });
 
+    it(`should keep ordinary assignments in their configured mode with active pickup in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      f.events[0]!.actor = { login: 'operator', nodeId: 'U_operator', type: 'User' };
+      f.authority.receipts = [];
+      f.setAuthority(f.authority);
+      const getItem = f.client.getItem;
+      let reads = 0;
+      f.client.getItem = async (...args) => {
+        if (++reads > 1) throw new Error('unnecessary pickup read failed');
+        return getItem(...args);
+      };
+      await f.run();
+      const records = await f.read();
+      assert.equal(records.length, 1);
+      assert.equal(reads, 1);
+      assert.equal(records[0]!.evidence.mode, 'plan');
+      assert.equal(records[0]!.evidence.projectWork, undefined);
+    });
+
     it(`should leave already admitted plan work held after enrollment in ${runtime}`, async () => {
       const f = await fixture(runtime);
       f.events[0]!.actor = { login: 'operator', nodeId: 'U_operator', type: 'User' };

@@ -1,3 +1,4 @@
+import reconcileProjectPickup from './project-pickup-reconcile.ts';
 import workflowFailure from './workflow-failure.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
@@ -7,13 +8,7 @@ import codexCapacity, { codexItemOccupied } from './codex-capacity.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
 import ProjectPickupEnrollmentStore from './project-pickup-enrollment.ts';
 import { projectPickupConfigurationCode, projectPickupErrorCode } from './project-pickup-jobs.ts';
-import projectPickup, {
-  pickupAuthority,
-  type PickupInput,
-  type PickupClaims,
-} from './project-pickup.ts';
-import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
-import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
+import projectPickup, { pickupAuthority, type PickupInput } from './project-pickup.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
 import { dispatchStorageNotice } from './dispatch-storage.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
@@ -48,7 +43,6 @@ import { githubIdentityMatches } from '../channels/github/provider/work-item.ts'
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 
 export interface CodexIntakeDependencies {
-  pickupClaims?: PickupClaims;
   projectPickup?: ProjectPickupAuthority;
   pickupActivation?: () => Promise<{ threadId: string; nativeId: string }>;
   assertActive?: () => Promise<void>;
@@ -438,7 +432,6 @@ export async function runCodexProjectPickup(
     if (!current.policy) throw new IntakeError('intake-policy-disabled');
     const retained = await verifyNative(current.policy.policy);
     authority = { enrollment: retained.enrollment, receipts: [] };
-    timezone = retained.timezone;
   }
   await assertCodexIntakeActive(pluginData, current, deps);
   const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
@@ -471,48 +464,33 @@ export async function runCodexProjectPickup(
       now: deps.now ?? Date.now,
       readPolicy,
       client,
-      claims: deps.pickupClaims ?? {
-        store: codexInstanceStore(pluginData),
-        client: (() => {
-          if (!(client instanceof GitHubWorkEventClient))
-            throw new Error('claim-provider-binding-required');
-          return new GitHubAssignmentClaimClient(client);
-        })(),
-        passId: nativeOccurrence?.id ?? '',
-      },
+      instance: codexInstanceStore(pluginData),
+      runId: nativeOccurrence?.id ?? authority.enrollment.id,
       occupied: codexItemOccupied,
       input,
     });
+    if (['material', 'selection-required', 'discovering'].includes(result.status))
+      return {
+        ...result,
+        response: '',
+        instructions:
+          'instructions' in result
+            ? result.instructions
+            : result.status === 'discovering'
+              ? 'Call pickup again to continue discovery.'
+              : 'Follow next until the complete material is restored before selection.',
+      };
     const reportPolicy = await readPolicy();
     const report = projectPickupReport({
       policy: reportPolicy,
-      pickup: state.projectPickup,
-      records: state.records,
-      previous: state.projectPickupReport,
       outcome: result,
-      now: (deps.now ?? Date.now)(),
-      runId: nativeOccurrence?.id,
       debug: current.manifest.debug,
       capacity: {
         occupied: codexCapacity(state.records, reportPolicy.maxConcurrentItems, state.projectPickup)
           .occupied,
         limit: reportPolicy.maxConcurrentItems,
       },
-      active: (record) =>
-        record.nativeInactive
-          ? false
-          : record.capacityObservation?.code === 'dispatch-capacity-native-active'
-            ? true
-            : undefined,
-      conversation: (record) =>
-        record.effective && record.threadId
-          ? `codex://threads/${encodeURIComponent(record.threadId)}`
-          : undefined,
     });
-    if (report.report) {
-      state.projectPickupReport = report.report;
-      await save();
-    }
     return {
       ...result,
       response: codexHeartbeatEnvelope(
@@ -535,7 +513,8 @@ export async function prepareCodexPickupEnrollment(
 ) {
   const current = await selectCodexIntake(pluginData, deps);
   if (!current.policy) throw new IntakeError('intake-policy-disabled');
-  const code = projectPickupConfigurationCode(current.policy.policy);
+  const policy = current.policy.policy;
+  const code = projectPickupConfigurationCode(policy);
   if (code) throw new IntakeError(code);
   const store = new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root);
   await store.owner();
@@ -544,16 +523,22 @@ export async function prepareCodexPickupEnrollment(
     deps,
     AbortSignal.timeout(30_000),
   )) as ProjectPickupClient;
-  return store.prepare({
-    policy: current.policy.policy,
-    runtime: 'codex',
-    scope: current.store.location.scope,
-    workspaceDir: current.workspace,
-    agentId: current.agentId,
-    client,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    now: (deps.now ?? Date.now)(),
-  });
+  return new CodexDispatchStore(
+    current.store.location.root,
+    current.store.location.scope,
+  ).exclusive(async (state, save) =>
+    store.prepare({
+      policy,
+      runtime: 'codex',
+      scope: current.store.location.scope,
+      workspaceDir: current.workspace,
+      agentId: current.agentId,
+      client,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      now: (deps.now ?? Date.now)(),
+      reconcile: (record, commit) => reconcileProjectPickup(state, save, record, commit),
+    }),
+  );
 }
 
 export async function inspectCodexPickup(
@@ -563,7 +548,7 @@ export async function inspectCodexPickup(
   const current = await selectCodexIntake(pluginData, deps, { inspectionOnly: true });
   const policy = current.policy?.policy;
   if (!policy?.projectPickup) return [];
-  let code = projectPickupConfigurationCode(policy);
+  let code: string | undefined = projectPickupConfigurationCode(policy);
   try {
     if (!code) {
       const record = await new ProjectPickupEnrollmentStore(
