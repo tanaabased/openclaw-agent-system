@@ -257,7 +257,11 @@ export default class OpenClawDispatchCoordinator {
           record,
           issueWorkflowMode(manifest.github?.notifications, record),
         ) ||
-          openClawWorkSlot(record, issueWorkflowMode(manifest.github?.notifications, record))) &&
+          openClawWorkSlot(
+            record,
+            issueWorkflowMode(manifest.github?.notifications, record),
+            (this.context.dependencies.now ?? Date.now)(),
+          )) &&
         (openClawItemOccupied(record) || available(record.projectWork?.pickup?.issueNodeId) > 0),
     );
     const responsePending = state.records.some((record) => openClawResponseEligible(record));
@@ -485,7 +489,7 @@ export default class OpenClawDispatchCoordinator {
         current.workspace,
         record,
         save,
-        { ...authority, signal },
+        { ...authority, signal, caller },
         true,
       );
       if (
@@ -545,6 +549,7 @@ export default class OpenClawDispatchCoordinator {
         const slot = openClawWorkSlot(
           record,
           issueWorkflowMode(manifest.github?.notifications, record),
+          now,
         );
         const decision = openClawDecisionPending(
           record,
@@ -624,6 +629,7 @@ export default class OpenClawDispatchCoordinator {
       await save();
       if (workItems.some((item) => item.record.id === continuing.id && item.recovering))
         return this.issue.continueWork(manifest, current.workspace, continuing, save, {
+          caller,
           ...authority,
           signal,
         });
@@ -674,6 +680,7 @@ export default class OpenClawDispatchCoordinator {
       pass.selected.push(workItem.record.id);
       await save();
       return this.issue.continueWork(manifest, current.workspace, workItem.record, save, {
+        caller,
         ...authority,
         signal,
       });

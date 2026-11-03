@@ -2,15 +2,29 @@ import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
 
 import { automationHash } from './automation-hash.ts';
 import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
+import {
+  announcementBinding,
+  announcementRecoveryAction,
+  retainedAnnouncementPublication,
+  retainAnnouncementFailure,
+  type AnnouncementDelivery,
+  type AnnouncementRecovery,
+} from './delivery-announcement-recovery.ts';
+import type { ManagedIssue } from './managed-issue.ts';
+import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
+import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-client.ts';
+import GitHubWorkEventApiClient, {
+  GitHubWorkEventClientError,
+} from '../channels/github/provider/work-event-api-client.ts';
 import redactFeedback from './feedback-redaction.ts';
 import GitHubNotificationCommentPublisher, {
   type GitHubNotificationCommentPublicationInput,
 } from '../channels/github/publication/comment-publisher.ts';
 import { githubNotificationPublicationText } from '../channels/github/publication/publication-contract.ts';
-import type IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
-import type { IssueDeliveryInput } from '../channels/github/publication/issue-delivery.ts';
+import IssueDeliveryProvider, {
+  type IssueDeliveryInput,
+} from '../channels/github/publication/issue-delivery.ts';
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
-import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import { githubCommentCard } from '../channels/github/presentation/comment.ts';
 import publicResponsePresentation from '../channels/github/presentation/public-response.ts';
 import publicResponse from './public-response.ts';
@@ -19,7 +33,7 @@ type CommentClient = Pick<
   GitHubNotificationPublicationClient,
   'findOwnIssueComment' | 'createIssueComment'
 >;
-type Delivery = { announcement?: DeliveryAnnouncementState };
+type Delivery = AnnouncementDelivery;
 
 export function announcementPublication(
   state: DeliveryAnnouncementState,
@@ -59,8 +73,9 @@ export function announcementPresentation(
   state: DeliveryAnnouncementState | undefined,
   issueUrl: string,
   authorLogin = state?.authorLogin,
+  recovery?: AnnouncementRecovery,
 ) {
-  const confirmed = state?.receipt && !state.code;
+  const confirmed = state?.receipt && !state.code && !recovery;
   const quote = state?.publicText
     ? githubCommentCard({
         body: state.publicText,
@@ -81,17 +96,133 @@ export function announcementPresentation(
         destination: issueUrl,
         attempted: state?.attempted,
         receipt: state?.receipt,
-        code: state?.code,
+        code: recovery?.code ?? state?.code,
       });
-  return [quote, obstacle].filter(Boolean).join('\n\n');
+  const next = recovery
+    ? recovery.status === 'retrying'
+      ? `> **Recovery:** Scheduled read-only check after ${new Date(recovery.retryAfter!).toISOString()}; no delivery model turn while the prerequisite remains unverified.`
+      : `> **Recovery:** ${recovery.status === 'exhausted' ? 'Automatic checks exhausted.' : 'Automatic recovery is held.'} Inspect the existing PR’s closing association or restore the indicated GitHub access, then explicitly continue in this chat. Do not bypass a native denial or create a replacement PR.`
+    : '';
+  return [
+    quote,
+    obstacle,
+    next,
+    recovery?.providerDiagnostic
+      ? `> **Provider:** ${recovery.providerDiagnostic.explanation}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+/** scheduled recovery checks retained intent without a composer, publication, or synthetic native turn. */
+export async function recheckAnnouncement(
+  input: Pick<
+    Parameters<typeof deliveryAnnouncement>[0],
+    'delivery' | 'publication' | 'provider' | 'client' | 'authorId' | 'authorize' | 'save'
+  > & { now: number },
+) {
+  if (announcementRecoveryAction(input.delivery, input.now) !== 'check') return false;
+  try {
+    await input.authorize();
+    if (
+      input.delivery.announcementRecovery &&
+      input.delivery.announcementRecovery.binding !== announcementBinding(input.publication)
+    )
+      throw new Error('delivery-announcement-binding-changed');
+    const state = input.delivery.announcement;
+    if (state?.attempted || state?.receipt) {
+      const item = {
+        lifecycleId: input.publication.adoptedPullRequest
+          ? ('pull-request' as const)
+          : ('issue' as const),
+        number: input.publication.item.number,
+        repositoryOwner: input.publication.item.repositoryOwner,
+        repositoryName: input.publication.item.repositoryName,
+        repositoryNodeId: input.publication.repositoryNodeId!,
+      };
+      state.receipt = await reconcileAnnouncement({
+        state,
+        item,
+        client: input.client,
+        authorId: input.authorId,
+      });
+    } else {
+      await input.provider.announcement(input.publication);
+    }
+    await input.authorize();
+    delete input.delivery.announcementRecovery;
+    if (state) delete state.code;
+    await input.save();
+    return true;
+  } catch (error) {
+    if (
+      error instanceof WorkflowPolicyHeld ||
+      isFilesystemAccessError(error) ||
+      (error instanceof Error && error.name === 'AbortError')
+    )
+      throw error;
+    retainAnnouncementFailure(
+      input.delivery,
+      input.publication,
+      error,
+      input.now,
+      input.delivery.announcement?.attempted ? 'response' : 'prerequisite',
+    );
+    await input.save();
+    return false;
+  }
+}
+
+export async function recoverRetainedAnnouncement(input: {
+  delivery: AnnouncementDelivery & Parameters<typeof retainedAnnouncementPublication>[1];
+  intake: ManagedIssue;
+  now: number;
+  signal?: AbortSignal;
+  connect(): Promise<{ account: IssueDeliveryProvider['client'] }>;
+  authorize(): Promise<void>;
+  save(): Promise<void>;
+}) {
+  if (announcementRecoveryAction(input.delivery, input.now) !== 'check') return false;
+  const publication = retainedAnnouncementPublication(input.intake, input.delivery, input.signal);
+  try {
+    await input.authorize();
+    const { account } = await input.connect();
+    if (account.identity.nodeId !== input.intake.receiving.nodeId)
+      throw new Error('delivery-account-changed');
+    return await recheckAnnouncement({
+      ...input,
+      publication,
+      provider: new IssueDeliveryProvider(account),
+      client: new GitHubIssueCommentClient(new GitHubWorkEventApiClient(account), 8000),
+      authorId: account.identity.nodeId,
+    });
+  } catch (error) {
+    if (
+      error instanceof WorkflowPolicyHeld ||
+      isFilesystemAccessError(error) ||
+      (error instanceof Error && error.name === 'AbortError')
+    )
+      throw error;
+    retainAnnouncementFailure(input.delivery, publication, error, input.now, 'prerequisite');
+    await input.save();
+    return false;
+  }
 }
 
 /** Recovery resumes only the announcement phase that has not finished. */
-export function announcementRecoveryInstructions(state?: DeliveryAnnouncementState) {
+export function announcementRecoveryInstructions(
+  state?: DeliveryAnnouncementState,
+  recovery?: AnnouncementRecovery,
+) {
+  if (recovery)
+    return `Announcement recovery is ${recovery.status}. Do not repeat the failed step in this turn. Automatic checks respect retained eligibility; held or exhausted recovery requires explicit same-chat continuation after correcting the obstacle. Native denials remain stopped.`;
   if (state?.receipt && !state.code)
     return 'The originating-issue announcement is confirmed. Keep its receipt; no announcement operation remains.';
   if (state?.attempted || state?.receipt)
     return 'Call delivery announce to reconcile the retained announcement attempt. Do not compose or post a replacement.';
+  if (state?.publicText)
+    return 'Call delivery announce without a digest to verify and preview the saved draft, then announce with its returned digest through native approval. Preserve the draft; do not compose a replacement merely to resume delivery. A stale snapshot or changed reply skill requires fresh composition before any write.';
   return 'Call delivery compose, invoke the selected reply skill, submit candidate, then execute announce with its preview digest.';
 }
 
@@ -108,7 +239,7 @@ export function deliveryCompletionInstructions(
         : 'Call native attach_artifact for this pull_request URL, then list_artifacts and delivery reconcile. ';
   return (
     attachment +
-    announcementRecoveryInstructions(delivery.announcement) +
+    announcementRecoveryInstructions(delivery.announcement, delivery.announcementRecovery) +
     ' Then call delivery present and reproduce its complete private PR card and announcement outcome. Continue in this same turn; an attachment, announcement, or card failure never requires recreating the PR. ' +
     (runtime === 'codex'
       ? 'For automatic workflows, use continuationRuntime action:delivery with the nested delivery operation.'
@@ -119,6 +250,7 @@ export function deliveryCompletionInstructions(
 /** the native delivery owner supplies authority and serializes state with the PR receipt. */
 export default async function deliveryAnnouncement(input: {
   operation: 'compose' | 'candidate' | 'announce';
+  now?: number;
   digest?: string;
   publicText?: string;
   delivery: Delivery;
@@ -142,6 +274,7 @@ export default async function deliveryAnnouncement(input: {
     repositoryNodeId: publication.repositoryNodeId!,
   };
   let posting = false;
+  let prerequisite = true;
   try {
     await input.authorize();
     if (delivery.announcement?.attempted || delivery.announcement?.receipt) {
@@ -154,6 +287,7 @@ export default async function deliveryAnnouncement(input: {
       });
       if (input.authorLogin) state.authorLogin = input.authorLogin;
       delete state.code;
+      delete delivery.announcementRecovery;
       await input.save();
       return {
         status: 'announced',
@@ -166,6 +300,7 @@ export default async function deliveryAnnouncement(input: {
       };
     }
     const snapshot = await input.provider.announcement(publication);
+    prerequisite = false;
     const composition = await input.select(delivery.announcement);
     const publicationId = automationHash([
       publication.repositoryNodeId,
@@ -183,6 +318,7 @@ export default async function deliveryAnnouncement(input: {
     if (input.operation === 'compose') {
       // a fresh provider snapshot replaces only an unattempted candidate.
       delivery.announcement = current;
+      delete delivery.announcementRecovery;
       await input.save();
       return {
         status: 'composition-ready',
@@ -217,6 +353,7 @@ export default async function deliveryAnnouncement(input: {
         redactFeedback,
       );
       delete state.code;
+      delete delivery.announcementRecovery;
       await input.save();
     }
     const prepared = announcementPublication(state, item);
@@ -277,6 +414,7 @@ export default async function deliveryAnnouncement(input: {
     if (result.status !== 'published') throw new Error('delivery-announcement-unconfirmed');
     if (input.authorLogin) state.authorLogin = input.authorLogin;
     delete state.code;
+    delete delivery.announcementRecovery;
     await input.save();
     return {
       status: 'announced',
@@ -288,7 +426,11 @@ export default async function deliveryAnnouncement(input: {
       ),
     };
   } catch (error) {
-    if (isFilesystemAccessError(error) || (error instanceof Error && error.name === 'AbortError'))
+    if (
+      error instanceof WorkflowPolicyHeld ||
+      isFilesystemAccessError(error) ||
+      (error instanceof Error && error.name === 'AbortError')
+    )
       throw error;
     const state = delivery.announcement;
     const message =
@@ -316,8 +458,15 @@ export default async function deliveryAnnouncement(input: {
       )
         state.attempted = false;
       state.code = code;
-      await input.save();
     }
+    retainAnnouncementFailure(
+      delivery,
+      publication,
+      error,
+      input.now ?? Date.now(),
+      prerequisite ? 'prerequisite' : 'response',
+    );
+    await input.save();
     return {
       status: 'announcement-blocked',
       code,
@@ -325,9 +474,10 @@ export default async function deliveryAnnouncement(input: {
         state,
         issueUrl,
         input.authorLogin ?? state?.authorLogin,
+        delivery.announcementRecovery,
       ),
       instruction:
-        'The delivered PR is retained. Present its full private card and this announcement obstacle. Stop on denial or lost authority. On an authorized retry, compose again for a pre-write failure or announce to reconcile an uncertain write; never recreate the PR.',
+        'The delivered PR and any draft are retained. Present its full private card and this announcement obstacle, then stop announcement retries in this turn. Automatic recovery uses the retained retry eligibility and bounded budget; held or exhausted recovery needs explicit same-chat continuation after correction. Stop on denial or lost authority. Reconcile an uncertain write without reposting; never recreate the PR.',
     };
   }
 }

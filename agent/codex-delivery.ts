@@ -409,7 +409,12 @@ export default async function runCodexDelivery(
               commentFlow,
             }),
             ...(implementationInstructions ? [implementationInstructions] : []),
-            announcementPresentation(previous.announcement, managedTargetUrl(intake)),
+            announcementPresentation(
+              previous.announcement,
+              managedTargetUrl(intake),
+              undefined,
+              previous.announcementRecovery,
+            ),
             ...presentationNotices.map((notice) => notice.message),
           ].join('\n\n'),
         };
@@ -647,6 +652,9 @@ export default async function runCodexDelivery(
         attached: previous?.attached ?? false,
         cardAttempts: previous?.cardAttempts ?? 0,
         ...(previous?.announcement ? { announcement: previous.announcement } : {}),
+        ...(previous?.announcementRecovery
+          ? { announcementRecovery: previous.announcementRecovery }
+          : {}),
         notices: previous?.notices ?? [],
       };
       if (
@@ -703,6 +711,7 @@ export default async function runCodexDelivery(
           signal,
         };
         const announce = await deliveryAnnouncement({
+          now: (deps.now ?? Date.now)(),
           operation: input.action,
           digest: input.digest,
           publicText: input.publicText,

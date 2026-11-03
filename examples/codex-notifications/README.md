@@ -67,6 +67,19 @@ accept feedback, or publish until activation and native ownership are verified.
 
 - **Direct implementation:** invoke the configured body once with a supplied or retained plan, issue and existing checkout, including an explicitly configured default wrapper. Verify local-only scope cannot publish, explicit PR scope uses retained delivery, and interrupted/completed results resume without duplicate work. Managed entry must preserve its owner, stage, source receipts and partial work; supplying scope on feedback-owned re-entry must not reject the entry or rewrite that owner's scope. Compare both runtimes; invalid ownership never falls back to manual entry. Native instruction-following and desktop display remain unverified by headless checks.
 
+## Announcement recovery acceptance
+
+In the native desktop acceptance environment, retain a published PR and its first
+announcement prerequisite failure. Scheduled checks must wait for eligibility,
+recheck without preparing a model turn while linkage is unchanged, and stop after
+the bounded failure budget. If linkage clears before exhaustion, resume only the
+missing announcement and attachment/card work on that same PR. Preserve drafts and
+reconcile uncertain posts without duplicate comments. After exhaustion, verify an
+explicit same-chat continuation after correcting the prerequisite. Native denials
+remain stopped. Component fixtures establish deterministic state and adapter behavior;
+this installed/native acceptance remains unverified until actual receipts are captured.
+Do not run this operational acceptance locally or inject failures into production.
+
 ## Setup
 
 ```bash

@@ -1,3 +1,7 @@
+import {
+  retainAnnouncementFailure,
+  retainedAnnouncementPublication,
+} from '../agent/delivery-announcement-recovery.ts';
 import workflowStatus from '../agent/workflow-status.ts';
 import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 import {
@@ -6656,6 +6660,133 @@ describe('agent/codex-dispatch', () => {
     assert.equal(next.status, 'prepared');
     assert.match(String('request' in next && next.request?.prompt), /only the managed PR delivery/);
     assert.equal(codexItemOccupied((await store.read()).records[0]!), true);
+  });
+
+  it('should use scheduled read-only recovery before resuming codex delivery', async () => {
+    const work = await workIssue();
+    const deliveryId = work.id;
+    assert.ok(typeof deliveryId === 'string');
+    await work.run('next');
+    work.receive();
+    await work.run(
+      'result',
+      { result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' } },
+      true,
+    );
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const intake = (await current.store.read())!.records[0]!;
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.delivery = {
+        id: deliveryId,
+        binding: {
+          repositoryId: intake.repository.nodeId,
+          issueId: intake.issue.nodeId,
+          threadId: record.threadId!,
+          worktree: record.worktree!,
+          branch: 'branch',
+          base: 'main',
+          head: record.continuation!.head!,
+          authorId: 'U_receiver',
+          policyDigest: 'a'.repeat(64),
+        },
+        pushedHead: record.continuation!.head,
+        creationAttempted: true,
+        pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+        reconciled: true,
+        attached: true,
+        cardAttempts: 1,
+      };
+      retainAnnouncementFailure(
+        record.delivery!,
+        retainedAnnouncementPublication(intake, record.delivery!),
+        new Error('github-delivery-linkage-unverified'),
+        now,
+        'prerequisite',
+      );
+      await save();
+    });
+    let checks = 0,
+      linked = false;
+    work.continuation.deliveryDependencies = {
+      connect: async () => {
+        checks++;
+        if (!linked) throw new Error('github-delivery-linkage-unverified');
+        const record = (await store.read()).records[0]!;
+        return {
+          client: Object.assign({}, fixture.client, {
+            async getItemContext() {
+              return { title: 'Issue', body: 'Body', comments: [], labels: [], truncated: false };
+            },
+          }),
+          account: {
+            identity: { login: 'receiver', nodeId: 'U_receiver' },
+            async execute(argv) {
+              assert.ok(!argv.includes('POST') && !argv.includes('PATCH'));
+              const pr = {
+                itemNodeId: 'PR_7',
+                number: 7,
+                state: 'open',
+                baseRef: 'main',
+                headRef: 'branch',
+                headRepository: 'owner/repo',
+                title: 'Title',
+                body: 'Closes #3',
+              };
+              const value = argv.includes('graphql')
+                ? { id: 'PR_7', closingIssuesReferences: { nodes: [{ id: intake.issue.nodeId }] } }
+                : argv.includes('repos/owner/repo/pulls')
+                  ? [pr]
+                  : argv.includes('repos/owner/repo/issues/3')
+                    ? {
+                        databaseId: intake.issue.databaseId,
+                        nodeId: intake.issue.nodeId,
+                        number: 3,
+                        title: 'Issue',
+                      }
+                    : {
+                        ...pr,
+                        nodeId: 'PR_7',
+                        repositoryId: 'R_repo',
+                        headRepositoryId: 'R_repo',
+                        headSha: record.delivery!.binding.head,
+                        authorId: 'U_receiver',
+                        head: record.delivery!.binding.head,
+                        draft: false,
+                      };
+              return {
+                exitCode: 0,
+                stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(value),
+                stderr: '',
+                timedOut: false,
+                truncated: false,
+              };
+            },
+          },
+        };
+      },
+    };
+    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal(checks, 0);
+    now = (await store.read()).records[0]!.delivery!.announcementRecovery!.retryAfter!;
+    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal(checks, 1);
+    assert.equal((await store.read()).records[0]!.continuation!.publicationAttempt, undefined);
+    linked = true;
+    now = (await store.read()).records[0]!.delivery!.announcementRecovery!.retryAfter!;
+    const resumed = await work.run('next');
+    assert.equal(resumed.status, 'prepared', JSON.stringify(resumed));
+    assert.equal(checks, 2);
+    assert.match(
+      String('request' in resumed && resumed.request?.prompt),
+      /only the managed PR delivery/,
+    );
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.delivery!.announcementRecovery, undefined);
+    assert.equal(retained.delivery!.pullRequest!.pullRequestNumber, 7);
   });
 
   it('should resume only delivery after a recorded implementation turn ends', async () => {

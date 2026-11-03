@@ -59,6 +59,7 @@ export default async function openClawDelivery(input: {
   reauthorize(): Promise<void>;
   save(): Promise<void>;
   signal: AbortSignal;
+  now?: number;
 }) {
   const { record, intake, action, assertCurrent, save } = input;
   if (action.pullRequest !== undefined && action.operation !== 'bind')
@@ -400,6 +401,7 @@ export default async function openClawDelivery(input: {
     if (!previous?.pullRequest || !previous.reconciled)
       throw new Error('delivery-reconciliation-required');
     const announcement = await deliveryAnnouncement({
+      now: input.now,
       operation: action.operation,
       digest: action.digest,
       publicText: action.publicText,
@@ -514,7 +516,12 @@ export function presentOpenClawDelivery(
       commentFlow: feedbackEnabled ? 'openclaw' : 'unavailable',
     }) +
     '\n\n' +
-    announcementPresentation(delivery.announcement, managedTargetUrl(intake));
+    announcementPresentation(
+      delivery.announcement,
+      managedTargetUrl(intake),
+      undefined,
+      delivery.announcementRecovery,
+    );
   return {
     status: 'presented',
     retained: true,

@@ -1,3 +1,7 @@
+import {
+  retainAnnouncementFailure,
+  retainedAnnouncementPublication,
+} from '../agent/delivery-announcement-recovery.ts';
 import workflowStatus from '../agent/workflow-status.ts';
 import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 import { implementationContextBudget } from '../agent/implementation-material.ts';
@@ -3485,6 +3489,77 @@ describe('agent/openclaw issue dispatch', () => {
   }
   const workPass = (runId: string) =>
     service.run(manifest, root, { ...coordinator, runId }, { action: 'next' });
+
+  it('should bound scheduled announcement checks without sending another openclaw delivery turn', async () => {
+    const id = await readyWork('work');
+    await workPass('implementation-pass');
+    active = false;
+    inputReceipts = [];
+    const current = await service.scope(manifest, root);
+    const intake = (await current.store.read())!.records[0]!;
+    let clock = service.dependencies.now!();
+    service.dependencies.now = () => clock;
+    await current.journal.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.work!.turn!.status = 'completed';
+      record.work!.turn!.consumedByEventId = 'implementation-input';
+      record.work!.turn!.replyEventId = 'implementation-reply';
+      record.work!.result = { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' };
+      record.work!.delivery = {
+        id,
+        binding: {
+          repositoryId: intake.repository.nodeId,
+          issueId: intake.issue.nodeId,
+          threadId: record.threadId!,
+          sessionId: record.sessionCreation!.sessionId!,
+          worktree: record.worktree!,
+          branch: 'branch',
+          base: 'main',
+          head: 'a'.repeat(40),
+          authorId: fixture.client.identity.nodeId,
+          policyDigest: 'a'.repeat(64),
+        },
+        title: 'Title',
+        body: 'Closes #3',
+        creationAttempted: true,
+        reconciled: true,
+        pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+      };
+      retainAnnouncementFailure(
+        record.work!.delivery,
+        retainedAnnouncementPublication(intake, record.work!.delivery),
+        new Error('github-delivery-linkage-unverified'),
+        clock,
+        'prerequisite',
+      );
+      await save();
+    });
+    const sent = sends().length;
+    let checks = 0;
+    service.dependencies.delivery = async ({ caller }) => {
+      assert.equal(caller.sessionKey, coordinator.sessionKey);
+      checks++;
+      throw new Error('github-delivery-linkage-unverified');
+    };
+    await workPass('before-due');
+    assert.equal(checks, 0);
+    for (let attempt = 2; attempt <= 5; attempt++) {
+      clock = (await record()).work!.delivery!.announcementRecovery!.retryAfter!;
+      await workPass(`due-${attempt}`);
+      assert.equal(checks, attempt - 1);
+      assert.equal((await record()).work!.delivery!.announcementRecovery!.attempts, attempt);
+      assert.equal(sends().length, sent);
+      await workPass(`unchanged-${attempt}`);
+      assert.equal(checks, attempt - 1);
+    }
+    clock += 86400000;
+    await workPass('after-exhaustion');
+    assert.equal((await record()).work!.delivery!.announcementRecovery!.status, 'exhausted');
+    assert.equal((await record()).work!.deliveryTurn, undefined);
+    assert.equal(checks, 4);
+    assert.equal(sends().length, sent);
+    assert.equal(creates().length, 1);
+  });
 
   it('should recover oversized retained implementation context within budget under later plan mode', async () => {
     const input = await next();
