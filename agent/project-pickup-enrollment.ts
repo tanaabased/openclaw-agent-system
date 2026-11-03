@@ -125,8 +125,6 @@ export default class ProjectPickupEnrollmentStore {
       const existing = matches[0];
       if (existing) {
         if (
-          existing.enrollment.scope !== input.scope ||
-          existing.enrollment.runtime !== input.runtime ||
           existing.enrollment.workspaceDir !== input.workspaceDir ||
           existing.enrollment.agentId !== input.agentId
         )
