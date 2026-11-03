@@ -10,37 +10,19 @@ import {
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const time = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
-/** read compatibility for old dispatch journals; new scans never save report history. */
-export const pickupReportSchema = Type.Object(
-  {
-    fingerprint: text,
-    problems: Type.Array(text),
-    runId: Type.Optional(text),
-    response: Type.String({ maxLength: 128000 }),
-    notify: Type.Boolean(),
-  },
-  { additionalProperties: false },
-);
 export const pickupOperationSchema = Type.Object(
   {
     id: text,
-    runId: Type.Optional(text),
+    runId: text,
     enrollment: Type.Optional(projectPickupEnrollmentSchema),
-    repository: Type.Optional(text),
+    repository: text,
     window: projectPickupReceiptSchema.properties.window,
-    // Historical phases are accepted for existing effect receipts, never written by pickup.
     phase: Type.Union([
       Type.Literal('discovering'),
       Type.Literal('selecting'),
       Type.Literal('reserved'),
       Type.Literal('attempted'),
       Type.Literal('assigned'),
-      Type.Literal('admitted'),
-      Type.Literal('completed'),
-      Type.Literal('empty'),
-      Type.Literal('expired'),
-      Type.Literal('failed'),
-      Type.Literal('cancelled'),
     ]),
     page: Type.Integer({ minimum: 1 }),
     candidates: Type.Array(pickupCandidateSchema),
@@ -73,10 +55,6 @@ export const pickupOperationSchema = Type.Object(
         {
           nodeId: text,
           number: Type.Integer({ minimum: 1 }),
-          // Read older receipts without retaining their content on the next scan.
-          title: Type.Optional(Type.String()),
-          body: Type.Optional(Type.String()),
-          labels: Type.Optional(Type.Array(Type.String())),
         },
         { additionalProperties: false },
       ),
@@ -84,15 +62,6 @@ export const pickupOperationSchema = Type.Object(
     shortlist: Type.Optional(Type.Array(text, { maxItems: 5 })),
     rationale: Type.Optional(text),
     beforeEvents: Type.Optional(Type.Array(text, { maxItems: 300 })),
-    claim: Type.Optional(
-      Type.Object(
-        {
-          previousEventId: Type.Union([text, Type.Null()]),
-          mode: Type.Union([Type.Literal('local'), Type.Literal('swarm')]),
-        },
-        { additionalProperties: false },
-      ),
-    ),
     attemptedAt: Type.Optional(time),
     receipt: Type.Optional(projectPickupReceiptSchema),
     code: Type.Optional(text),
@@ -104,7 +73,6 @@ export const projectPickupStateSchema = Type.Object(
   {
     enrollment: projectPickupEnrollmentSchema,
     timezone: text,
-    highWater: Type.Optional(time),
     windowAssignment: Type.Optional(
       Type.Object(
         {

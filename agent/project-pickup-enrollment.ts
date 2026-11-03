@@ -25,7 +25,7 @@ const recordSchema = Type.Object(
     instanceId: text,
     timezone: text,
     nativeId: Type.Optional(text),
-    repository: Type.Optional(text),
+    repository: text,
   },
   { additionalProperties: false },
 );
@@ -91,11 +91,7 @@ export default class ProjectPickupEnrollmentStore {
     client: ProjectPickupClient;
     timezone: string;
     now: number;
-    reconcile?: (
-      record: PickupEnrollment,
-      commit: () => Promise<void>,
-      before?: PickupEnrollment,
-    ) => Promise<void>;
+    reconcile?: (record: PickupEnrollment, commit: () => Promise<void>) => Promise<void>;
   }) {
     const identity = await this.owner();
     const pickup = input.policy.projectPickup!;
@@ -171,7 +167,7 @@ export default class ProjectPickupEnrollmentStore {
           lock.assertHeld();
           await this.file.write(JSON.stringify(state));
         };
-        if (input.reconcile) await input.reconcile(updated, commit, existing);
+        if (input.reconcile) await input.reconcile(updated, commit);
         else await commit();
         return updated;
       }

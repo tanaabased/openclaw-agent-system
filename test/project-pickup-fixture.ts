@@ -64,7 +64,7 @@ export function pickupFixture(runtime: 'codex' | 'openclaw' = 'codex') {
   };
 }
 
-/** stand in for the future selector's already verified admission receipt. */
+/** construct a verified assignment identity for native dispatch fixtures. */
 export function retainedProjectWork(record: IntakeRecord, runtime: 'codex' | 'openclaw') {
   const f = pickupFixture(runtime);
   return {
@@ -98,10 +98,11 @@ export function reservedProjectPickup(
   return {
     enrollment: work.enrollment,
     timezone: 'UTC',
-    highWater: baseline,
     operations: [
       {
         id: 'operation',
+        runId: 'pickup-run',
+        repository: `${record.repository.owner.login}/${record.repository.name}`,
         phase: 'assigned',
         page: 1,
         candidates: [],
@@ -109,11 +110,9 @@ export function reservedProjectPickup(
         selected: {
           nodeId: record.issue.nodeId,
           number: record.issue.number,
-          title: 'ready work',
-          body: '',
-          labels: [],
         },
         receipt,
+        enrollment: work.enrollment,
       },
     ],
   };

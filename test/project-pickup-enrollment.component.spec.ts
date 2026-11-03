@@ -100,19 +100,22 @@ describe('project pickup installation enrollment', () => {
         projectPickup: {
           enrollment: first.enrollment,
           timezone: 'UTC',
-          highWater: f.clock.now,
           windowAssignment: { window: receipt.window, assignedAt: f.clock.now },
           operations: [
             {
               id: 'delivered',
+              runId: 'pickup-run',
+              repository: 'owner/repo',
               window: receipt.window,
-              phase: 'admitted',
+              phase: 'assigned',
               page: 1,
               candidates: [],
               receipt,
             },
             {
               id: 'uncertain',
+              runId: 'pickup-run',
+              repository: 'owner/repo',
               window: receipt.window,
               phase: 'attempted',
               page: 1,
@@ -121,6 +124,8 @@ describe('project pickup installation enrollment', () => {
             },
             {
               id: 'selection',
+              runId: 'pickup-run',
+              repository: 'owner/repo',
               window: receipt.window,
               phase: 'selecting',
               page: 1,
@@ -135,7 +140,7 @@ describe('project pickup installation enrollment', () => {
       let saves = 0;
       const updated = await f.store.prepare({
         ...f.input,
-        reconcile: (record, commit, before) =>
+        reconcile: (record, commit) =>
           reconcileProjectPickup(
             state,
             async () => {
@@ -143,13 +148,11 @@ describe('project pickup installation enrollment', () => {
             },
             record,
             commit,
-            before,
           ),
       });
       assert.equal(updated.enrollment.milestoneNodeId, 'MI_new');
       assert.equal(updated.enrollment.startedAt, first.enrollment.startedAt);
       assert.equal(updated.nativeId, 'native-job');
-      assert.equal(state.projectPickup!.highWater, undefined);
       assert.deepEqual(state.projectPickup!.windowAssignment, {
         window: receipt.window,
         assignedAt: f.clock.now,

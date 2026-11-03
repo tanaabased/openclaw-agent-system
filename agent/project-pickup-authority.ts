@@ -36,7 +36,6 @@ export const projectPickupReceiptSchema = Type.Object(
     enrollmentId: text,
     issueNodeId: text,
     assignmentNodeId: text,
-    claimCommentId: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
     window: Type.Object(
       { id: text, opensAt: time, closesAt: time },
       { additionalProperties: false },
@@ -49,7 +48,7 @@ export const projectWorkSchema = Type.Object(
     enrollment: projectPickupEnrollmentSchema,
     issueNodeId: text,
     assignmentNodeId: text,
-    pickup: Type.Optional(projectPickupReceiptSchema),
+    pickup: projectPickupReceiptSchema,
   },
   { additionalProperties: false },
 );
@@ -227,10 +226,9 @@ export function projectWorkMatches(
     work.enrollment.repositoryNodeId === record.repository.nodeId &&
     work.issueNodeId === record.issue.nodeId &&
     work.assignmentNodeId === record.assignment?.nodeId &&
-    (!work.pickup ||
-      (work.pickup.enrollmentId === work.enrollment.id &&
-        work.pickup.issueNodeId === work.issueNodeId &&
-        work.pickup.assignmentNodeId === work.assignmentNodeId)),
+    work.pickup.enrollmentId === work.enrollment.id &&
+    work.pickup.issueNodeId === work.issueNodeId &&
+    work.pickup.assignmentNodeId === work.assignmentNodeId,
   );
 }
 

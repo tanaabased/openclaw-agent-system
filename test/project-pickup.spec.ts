@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import { stringify } from 'yaml';
+import { Value } from 'typebox/value';
 
 import { inspectAdmittedIssue } from '../agent/dispatch-assignment.ts';
 import { feedbackMode } from '../agent/feedback-work.ts';
 import issueProgression from '../agent/issue-progression.ts';
 import issueWorkflowMode from '../agent/issue-workflow-mode.ts';
 import liveWorkflowPolicy from '../agent/live-workflow-policy.ts';
-import authorizeProjectAssignment from '../agent/project-pickup-authority.ts';
+import authorizeProjectAssignment, {
+  projectWorkSchema,
+} from '../agent/project-pickup-authority.ts';
 import projectPickupScope from '../agent/project-pickup-scope.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import { githubNotificationRuntimeDiagnostics } from '../channels/github/notification-policy.ts';
@@ -222,14 +225,12 @@ describe('github project pickup policy', () => {
       f.input.event.actor = { ...f.policy.issueAssignment!.allowed[0]!, type: 'User' };
       assert.equal(await authorizeProjectAssignment(f.input), undefined);
       assert.equal(
-        issueWorkflowMode(f.policy, {
-          projectWork: {
-            enrollment: f.authority.enrollment,
-            issueNodeId: f.item.nodeId,
-            assignmentNodeId: f.events[0]!.nodeId,
-          },
+        Value.Check(projectWorkSchema, {
+          enrollment: f.authority.enrollment,
+          issueNodeId: f.item.nodeId,
+          assignmentNodeId: f.events[0]!.nodeId,
         }),
-        'plan',
+        false,
       );
       f.authority.enrollment.startedAt = Date.parse(f.input.event.createdAt);
       assert.equal(await authorizeProjectAssignment(f.input), undefined);

@@ -6,10 +6,8 @@ import type { ProjectPickupState } from './project-pickup-state.ts';
 export default async function reconcileProjectPickup(
   state: { projectPickup?: ProjectPickupState },
   save: () => Promise<void>,
-  record: Pick<PickupEnrollment, 'enrollment' | 'timezone' | 'repository'> &
-    Partial<Pick<PickupEnrollment, 'instanceId'>>,
+  record: Pick<PickupEnrollment, 'enrollment' | 'timezone'>,
   commit: () => Promise<void>,
-  before?: PickupEnrollment,
 ) {
   const previous = state.projectPickup;
   const changed =
@@ -26,15 +24,8 @@ export default async function reconcileProjectPickup(
         .map((operation) => ({
           ...operation,
           enrollment: operation.enrollment ?? structuredClone(previous.enrollment),
-          repository:
-            operation.repository ??
-            before?.repository ??
-            (previous.enrollment.repositoryNodeId === record.enrollment.repositoryNodeId
-              ? record.repository
-              : undefined),
         })),
     };
-    delete state.projectPickup.highWater;
     // save original effect ownership before publishing the replacement enrollment.
     await save();
   }

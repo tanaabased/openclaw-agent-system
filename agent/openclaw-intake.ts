@@ -159,7 +159,6 @@ export default class OpenClawIntake {
         !client.assignProjectIssue
       )
         throw new IntakeError('project-pickup-provider-unavailable');
-      delete state.projectPickupReport;
       const result = await projectPickup({
         runtime: 'openclaw',
         scope: store.location.scope,
@@ -243,8 +242,7 @@ export default class OpenClawIntake {
           client,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           now: (this.dependencies.now ?? Date.now)(),
-          reconcile: (record, commit, before) =>
-            reconcileProjectPickup(state, save, record, commit, before),
+          reconcile: (record, commit) => reconcileProjectPickup(state, save, record, commit),
         }),
     );
   }

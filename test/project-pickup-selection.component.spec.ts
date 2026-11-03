@@ -545,7 +545,6 @@ describe('project pickup selection through native journals', () => {
       const pending = await f.pickup({ selection: await f.select() });
       assert.match(pending.response, /> ## ⚠️/);
       const state = await f.journal.read();
-      assert.equal(state.projectPickupReport, undefined);
       assert.equal(state.projectPickup!.operations[0]!.guidance, undefined);
       f.tick.id = 'confirm';
       const confirmed = await f.pickup();

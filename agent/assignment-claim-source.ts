@@ -2,33 +2,9 @@ import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import repositoryScope from '../channels/github/repository-scope.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import type { ManagedIssue } from './managed-issue.ts';
-import type { ClaimSource } from './assignment-claim.ts';
-import { automationHash } from './automation-hash.ts';
-import { retainedPickupReceipt } from './project-pickup-authority.ts';
-
-/** Ordinary intake owns placement; retain only an already-recorded legacy claim owner. */
+/** ordinary intake owns placement through the current shared routing policy. */
 export function assignmentClaimRoute(policy: GitHubNotificationPolicy, intake: ManagedIssue) {
-  const pickup = 'initiation' in intake ? undefined : retainedPickupReceipt(intake);
-  if (pickup?.claimCommentId)
-    return {
-      decision: 'swarm' as const,
-      eligibleInstanceIds: undefined,
-    };
   return repositoryScope(policy, intake.repository, 'issue-assignment');
-}
-
-/** all participants use the same issue history boundary, independent of their native window. */
-export function pickupClaimSource(
-  source: Omit<ClaimSource, 'assignmentEventId' | 'assignerNodeId' | 'pickup'>,
-  previousEventId: string | null,
-  assignmentEventId?: string,
-): ClaimSource {
-  return {
-    ...source,
-    assignmentEventId: `pickup:${automationHash(previousEventId)}`,
-    assignerNodeId: source.receivingNodeId,
-    pickup: { previousEventId, ...(assignmentEventId ? { assignmentEventId } : {}) },
-  };
 }
 
 export default function assignmentClaimSource(intake: IntakeRecord) {

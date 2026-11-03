@@ -93,6 +93,60 @@ describe('agent/project-pickup', () => {
       assert.deepEqual(f.state.projectPickup!.operations, []);
     });
 
+    for (const reason of ['missing', 'permission', 'malformed']) {
+      it(`should keep readable candidates when dependency metadata is ${reason} in ${runtime}`, async () => {
+        const f = fixture(runtime);
+        const diagnostic = providerDiagnostic('github', 'api-request', 'permission', {
+          httpStatus: 403,
+          providerMessage: 'Dependency metadata unavailable',
+        });
+        f.client.projectBlocked = async () => {
+          if (reason === 'malformed') throw new Error('project-pickup-dependencies-invalid');
+          throw new GitHubWorkEventClientError(
+            reason === 'missing'
+              ? 'github-notification-resource-missing'
+              : 'github-notification-request-failed',
+            'dependency read failed',
+            {},
+            undefined,
+            reason === 'permission' ? diagnostic : undefined,
+          );
+        };
+        const result = await f.run();
+        assert.equal(result.status, 'selection-required');
+        assert.ok('candidates' in result && result.candidates?.length === 1);
+        const candidate = result.candidates[0]!;
+        assert.equal(candidate.blockedByOpenIssues, undefined);
+        assert.ok(candidate.dependencyError);
+        if (reason === 'permission')
+          assert.deepEqual(candidate.dependencyError.providerDiagnostic, diagnostic);
+        const selection = await f.select();
+        assert.equal((await f.run({ selection })).status, 'assigned');
+        assert.equal(f.effects.writes, 1);
+      });
+    }
+
+    it(`should preserve account and transport failures during dependency reads in ${runtime}`, async () => {
+      for (const classification of ['authentication', 'rate-limit', 'transport'] as const) {
+        const f = fixture(runtime);
+        const diagnostic = providerDiagnostic('github', 'api-request', classification);
+        f.client.projectBlocked = async () => {
+          throw new GitHubWorkEventClientError(
+            'github-notification-request-failed',
+            'dependency read failed',
+            {},
+            undefined,
+            diagnostic,
+          );
+        };
+        const result = await f.run();
+        assert.equal(result.status, 'failed');
+        assert.ok('providerDiagnostic' in result);
+        assert.deepEqual(result.providerDiagnostic, diagnostic);
+        assert.equal(f.effects.writes, 0);
+      }
+    });
+
     it(`should reconsider new issues after an empty scan in ${runtime}`, async () => {
       const f = fixture(runtime);
       const candidates = [...f.candidates.entries()];
@@ -265,7 +319,7 @@ describe('agent/project-pickup', () => {
       await reconcileProjectPickup(
         f.state,
         f.tx.save,
-        { enrollment, timezone: 'UTC', repository: 'owner/repo' },
+        { enrollment, timezone: 'UTC' },
         async () => {
           f.tx.enrollment = enrollment;
         },

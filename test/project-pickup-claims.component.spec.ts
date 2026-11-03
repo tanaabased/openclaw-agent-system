@@ -157,7 +157,6 @@ describe('project pickup handoff to ordinary assignment claims', () => {
       const admit = await intake(f, 'intake');
       assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
       assert.equal(c.effects.creates, 0);
-      assert.equal(f.state.projectPickup!.operations[0]!.receipt!.claimCommentId, undefined);
       const admitted = await admit();
       assert.equal(admitted.evidence.mode, 'work');
       assert.equal((await elect(f, c, admitted, 'first')).status, 'pending');

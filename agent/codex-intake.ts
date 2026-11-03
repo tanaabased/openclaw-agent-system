@@ -452,7 +452,6 @@ export async function runCodexProjectPickup(
       !client.assignProjectIssue
     )
       throw new IntakeError('project-pickup-provider-unavailable');
-    delete state.projectPickupReport;
     const result = await projectPickup({
       runtime: 'codex',
       scope: current.store.location.scope,
@@ -537,8 +536,7 @@ export async function prepareCodexPickupEnrollment(
       client,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       now: (deps.now ?? Date.now)(),
-      reconcile: (record, commit, before) =>
-        reconcileProjectPickup(state, save, record, commit, before),
+      reconcile: (record, commit) => reconcileProjectPickup(state, save, record, commit),
     }),
   );
 }

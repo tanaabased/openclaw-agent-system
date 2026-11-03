@@ -1,5 +1,6 @@
 import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
+import { providerDiagnosticSchema } from '../../../utils/provider-diagnostic.ts';
 
 import {
   githubRepositoryEndpoint,
@@ -15,6 +16,15 @@ export const projectCandidateSchema = Type.Object(
     title: Type.String({ maxLength: 4096 }),
     body: Type.String(),
     blockedByOpenIssues: Type.Optional(Type.Boolean()),
+    dependencyError: Type.Optional(
+      Type.Object(
+        {
+          code: Type.String(),
+          providerDiagnostic: Type.Optional(providerDiagnosticSchema),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     labels: Type.Array(Type.String({ maxLength: 4096 }), { maxItems: 100 }),
   },
   { additionalProperties: false },
