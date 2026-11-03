@@ -269,19 +269,25 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
   )
     throw new Error('project-pickup-selection-stale');
   const refreshSelection = op?.phase === 'failed' && op.attemptedAt === undefined && !op.receipt;
+  const restartDiscovery = (operation: PickupOperation) => {
+    operation.phase = 'discovering';
+    operation.page = 1;
+    operation.candidates = [];
+    delete operation.discovery;
+    operation.deferred = operation.deferred?.filter(
+      (entry) => entry.code === 'project-pickup-other-owner',
+    );
+    if (!operation.deferred?.length) delete operation.deferred;
+    delete operation.selected;
+    delete operation.selectionDigest;
+    delete operation.rationale;
+    delete operation.claim;
+    delete operation.beforeEvents;
+    delete operation.code;
+  };
   if (op && refreshSelection) {
     // No assignment was attempted: ordinary discovery can reconsider fresh evidence.
-    op.phase = 'discovering';
-    op.page = 1;
-    op.candidates = [];
-    delete op.discovery;
-    delete op.deferred;
-    delete op.selected;
-    delete op.selectionDigest;
-    delete op.rationale;
-    delete op.claim;
-    delete op.beforeEvents;
-    delete op.code;
+    restartDiscovery(op);
     await save();
   }
   if (
@@ -355,6 +361,19 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     await save();
   }
   const operation = op;
+  const continueAfterOtherOwner = async () => {
+    const selected = operation.selected!;
+    operation.deferred ??= [];
+    operation.deferred.push({
+      nodeId: selected.nodeId,
+      number: selected.number,
+      code: 'project-pickup-other-owner',
+    });
+    // Keep the shared claim receipt. Losing one issue does not consume this window.
+    restartDiscovery(operation);
+    await save();
+    return { status: 'discovering' as const, id: operation.id, changed };
+  };
   enrollment = operation.enrollment ?? enrollment;
   if (!operation.repository && enrollment.repositoryNodeId !== journal.enrollment.repositoryNodeId)
     return {
@@ -415,7 +434,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         (item.milestone?.nodeId !== enrollment.milestoneNodeId ||
           item.milestone.state !== 'open')) ||
       (assigned
-        ? item.assignees.length !== 1 || !githubIdentityMatches(item.assignees[0]!, client.identity)
+        ? !item.assignees.some((assignee) => githubIdentityMatches(assignee, client.identity))
         : item.assignees.length !== 0) ||
       (!assigned && managed(nodeId)) ||
       (!assigned && (await client.projectBlocked(owner, name, number)))
@@ -452,7 +471,13 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       while (operation.discovery.pending.length) {
         budget.check();
         const candidate = operation.discovery.pending[0]!;
-        if (!operation.candidates.some((entry) => entry.nodeId === candidate.nodeId)) {
+        if (
+          !operation.candidates.some((entry) => entry.nodeId === candidate.nodeId) &&
+          !operation.deferred?.some(
+            (entry) =>
+              entry.nodeId === candidate.nodeId && entry.code === 'project-pickup-other-owner',
+          )
+        ) {
           try {
             const current = await eligible(candidate.number, candidate.nodeId, false, scope);
             if (current) operation.candidates.push(current.evidence);
@@ -581,8 +606,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
           ) {
             const ownership = await selectOwner(scope, event.nodeId);
             if (ownership.status === 'other-owner') {
-              await finish(operation, 'cancelled');
-              return { status: 'other-owner', id: operation.id, code: ownership.code, changed };
+              return continueAfterOtherOwner();
             }
           }
         }
@@ -616,6 +640,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         await save();
       }
       const ownership = await selectOwner({ live, repository: current.repository });
+      if (ownership.status === 'other-owner') return continueAfterOtherOwner();
       if (!['owned', 'local'].includes(ownership.status))
         return { status: ownership.status, id: operation.id, code: ownership.code, changed };
       // election/provider reads may cross a window or policy boundary.

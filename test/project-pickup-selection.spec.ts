@@ -17,6 +17,19 @@ import normalizeSchedule from '../manifest/automation-schedule.ts';
 
 describe('agent/project-pickup', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should reconcile its assignment when a collaborator is added concurrently in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const write = f.client.assignProjectIssue;
+      f.client.assignProjectIssue = async (...args) => {
+        await write(...args);
+        f.item.assignees.push({ login: 'collaborator', nodeId: 'U_collaborator', type: 'User' });
+      };
+      assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
+      assert.ok(f.state.projectPickup!.operations[0]!.receipt);
+      assert.equal((await f.run()).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+    });
+
     it(`should replace an unused selection after a live milestone edit in ${runtime}`, async () => {
       const f = fixture(runtime);
       const before = await f.select();
@@ -522,13 +535,13 @@ describe('agent/project-pickup', () => {
     }
   });
 
-  it('should preserve a competing assignee and withhold its admission receipt', async () => {
+  it('should withhold its admission receipt when another assignee replaces it', async () => {
     const f = fixture();
     const write = f.client.assignProjectIssue;
     const other = { login: 'another', nodeId: 'U_other', type: 'User' };
     f.client.assignProjectIssue = async (...args) => {
       await write(...args);
-      f.item.assignees.push(other);
+      f.item.assignees = [other];
     };
     const result = await f.run({ selection: await f.select() });
     assert.equal(result.status, 'attempted');

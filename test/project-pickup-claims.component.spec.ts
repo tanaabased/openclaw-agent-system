@@ -131,7 +131,7 @@ describe('project pickup shared claim ownership', () => {
     const write = a.client.assignProjectIssue;
     a.client.assignProjectIssue = async (...args) => {
       await write(...args);
-      assert.equal((await loser.run()).status, 'other-owner');
+      assert.equal((await loser.run()).status, 'discovering');
       assert.equal(
         (
           await selectAssignmentClaim({
@@ -154,6 +154,70 @@ describe('project pickup shared claim ownership', () => {
     assert.equal(ca.effects.creates + cb.effects.creates, 2);
     assert.equal(observed.effects.creates, 0);
     assert.equal(loser.state.projectPickup!.operations[0]!.receipt, undefined);
+  });
+
+  it('should consider another candidate in the same window after losing a shared claim', async () => {
+    const a = fixture('codex');
+    const b = fixture('openclaw');
+    b.tx.client = a.client;
+    a.policy.routing = b.policy.routing = [{ 'owner/*': 'swarm' }];
+    const ca = pickupClaims(a, join(root, 'winner'));
+    const cb = pickupClaims(b, join(root, 'loser'), ca.comments);
+    const histories = new Map<number, typeof a.events>();
+    a.client.listAssignmentEvents = async (_owner, _name, number) => ({
+      events: structuredClone(histories.get(number) ?? []),
+      truncated: false,
+    });
+    const assign = a.client.assignProjectIssue;
+    a.client.assignProjectIssue = async (...args) => {
+      await assign(...args);
+      histories.set(args[2], a.events.slice(-1));
+    };
+    const second = { ...a.item, nodeId: 'I_second', number: a.item.number + 1 };
+    ca.client.list = cb.client.list = async (source) =>
+      structuredClone(
+        source.number === a.item.number ? ca.comments.slice(0, 1) : ca.comments.slice(1),
+      );
+    a.items.set(second.number, second);
+    a.candidates.set(second.number, {
+      ...a.candidates.get(a.item.number)!,
+      nodeId: second.nodeId,
+      number: second.number,
+    });
+    assert.equal((await a.run({ selection: await a.select() })).status, 'pending');
+    assert.equal((await b.run({ selection: await b.select() })).status, 'discovering');
+    const sameWindow = b.state.projectPickup!.operations[0]!.window.id;
+    const next = await b.run();
+    assert.equal(next.status, 'selection-required');
+    assert.ok('digest' in next);
+    assert.deepEqual(
+      b.state.projectPickup!.operations[0]!.candidates.map((item) => item.nodeId),
+      [second.nodeId],
+    );
+    assert.equal(
+      (
+        await b.run({
+          selection: {
+            id: next.id!,
+            digest: next.digest!,
+            issueNodeId: second.nodeId,
+            rationale: 'other eligible work',
+          },
+        })
+      ).status,
+      'pending',
+    );
+    // Each issue has its own provider comment history.
+    ca.client.list = async () => structuredClone(ca.comments.slice(0, 1));
+    cb.client.list = async () => structuredClone(ca.comments.slice(1));
+    a.tx.claims.passId = b.tx.claims.passId = 'second';
+    assert.equal((await a.run()).status, 'assigned');
+    assert.equal((await b.run()).status, 'assigned');
+    assert.equal(a.effects.writes, 2);
+    assert.equal(b.state.projectPickup!.operations.length, 1);
+    assert.equal(b.state.projectPickup!.operations[0]!.window.id, sameWindow);
+    assert.equal(b.state.projectPickup!.operations[0]!.receipt!.issueNodeId, second.nodeId);
+    assert.equal(ca.effects.removes + cb.effects.removes, 0);
   });
 
   it('should refuse non-target, exclusion and no-match before reservation without fallthrough', async () => {

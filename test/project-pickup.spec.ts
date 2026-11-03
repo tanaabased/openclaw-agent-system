@@ -207,6 +207,17 @@ describe('github project pickup policy', () => {
       );
     });
 
+    it(`should admit a receipted assignment after disabling pickup or adding a coassignee in ${runtime}`, async () => {
+      const f = pickupFixture(runtime);
+      delete f.policy.projectPickup;
+      f.item.assignees.push({ login: 'collaborator', nodeId: 'U_collaborator', type: 'User' });
+      const work = await authorizeProjectAssignment(f.input);
+      assert.ok(work?.pickup);
+      assert.equal(issueWorkflowMode(f.policy, { projectWork: work }), 'work');
+      f.authority.receipts = [];
+      assert.equal(await authorizeProjectAssignment(f.input), undefined);
+    });
+
     it(`should require a pickup receipt even for new approved scoped assignments in ${runtime}`, async () => {
       const f = pickupFixture(runtime);
       f.authority.receipts = [];

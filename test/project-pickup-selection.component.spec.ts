@@ -208,6 +208,25 @@ describe('project pickup selection through native journals', () => {
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should retain receipt-based work intake after removing pickup configuration in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      assert.equal((await f.pickup({ selection: await f.select() })).status, 'assigned');
+      await f.configure((source) => {
+        Reflect.deleteProperty(source.github, 'project-pickup');
+        source.github['issue-assignment'].allowed = [
+          { login: 'operator', 'node-id': 'U_operator' },
+        ];
+      });
+      f.item.assignees.push({ login: 'collaborator', nodeId: 'U_collaborator', type: 'User' });
+      await f.scan();
+      await f.scan();
+      const records = await f.read();
+      assert.equal(records.length, 1);
+      assert.equal(records[0]!.evidence.mode, 'work');
+      assert.equal(records[0]!.evidence.projectWork!.pickup!.assignmentNodeId, f.events[0]!.nodeId);
+      assert.equal(f.effects.writes, 1);
+    });
+
     it(`should apply a live milestone change without replacing native activation in ${runtime}`, async () => {
       const f = await fixture(runtime);
       const before = await f.select();
@@ -572,13 +591,13 @@ describe('project pickup selection through native journals', () => {
       assert.equal((await f.pickup()).status, 'idle');
     });
 
-    it(`should refuse competing ownership between pickup and native admission in ${runtime}`, async () => {
+    it(`should refuse reassignment away from the receiver before native admission in ${runtime}`, async () => {
       const f = await fixture(runtime);
       await f.pickup({ selection: await f.select() });
-      f.item.assignees.push({ login: 'other', nodeId: 'U_other', type: 'User' });
+      f.item.assignees = [{ login: 'other', nodeId: 'U_other', type: 'User' }];
       await f.scan();
       assert.equal((await f.read()).length, 0);
-      assert.equal(f.item.assignees.length, 2);
+      assert.equal(f.item.assignees.length, 1);
     });
   }
 });

@@ -40,13 +40,30 @@ no push, installation or live scheduled pilot has been performed.
       milestone and adding collaborators no longer blocks dispatch. exact identity,
       assignment continuity, ownership receipts and duplicate prevention remain enforced.
 
+## current repair and scheduling pass
+
+- [x] retain the verified self-assignment/work exception before intake even if pickup
+      configuration is removed or a collaborator is added. removal of the receiver,
+      stale assignment events and missing receipts still prevent admission.
+- [x] continue discovery in the same window after another instance wins a shared claim.
+      retain the shared ownership record and do not consume an assignment allowance.
+- [ ] replace all-day model wakeups with native scheduling during the pickup period.
+      interface under discussion: local start time, duration and scan count; proposed
+      defaults are 03:00, 120 minutes and eight evenly spaced scans. no scheduler rewrite
+      yet. schedule edits need Install; target and selection edits stay live.
+- [ ] resolve shared claim confirmation within an active pickup run rather than requiring
+      another scheduled occurrence. retain fresh ownership verification and no replay of
+      uncertain writes; do not merely slow the current polling cadence.
+
 ## validation and rollout
 
 - [x] focused boundary regressions: 107 checks passed across shared behavior and both
       native intake adapters. the preceding maintenance snapshot passed 4,393 tests,
       lint, typecheck, build and plugin checks.
-- [x] latest `bun run validate`: 4,422 tests passed, plus lint, typecheck, build and
+- [x] preceding `bun run validate`: 4,422 tests passed, plus lint, typecheck, build and
       plugin checks. `git diff --check` passed.
+- [x] receipt and lost-claim repairs: 109 focused checks plus 34 native intake checks;
+      final `bun run validate` passed 4,430 tests, lint, typecheck, build and plugin checks.
 - [ ] CI exercises the affected installed boundaries; never run Leia examples locally.
 - [ ] approved installation reconciles Me's selected milestone and Doctor confirms readiness.
 - [ ] record real scheduled selection, one self-assignment, ordinary intake and delivery

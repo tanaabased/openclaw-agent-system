@@ -117,7 +117,6 @@ export default async function authorizeProjectAssignment(input: {
   if (
     !Value.Check(projectPickupEnrollmentSchema, enrollment) ||
     enrollment.runtime !== input.runtime ||
-    !policy.projectPickup?.schedule ||
     !policy.issueAssignment ||
     !policy.runtimes.includes(enrollment.runtime) ||
     enrollment.scope !== input.scope ||
@@ -153,7 +152,6 @@ export default async function authorizeProjectAssignment(input: {
     freshItem.databaseId !== item.databaseId ||
     freshItem.itemType !== 'issue' ||
     freshItem.state !== 'open' ||
-    freshItem.assignees.length !== 1 ||
     !freshItem.assignees.some((assignee) => githubIdentityMatches(assignee, client.identity))
   )
     return;

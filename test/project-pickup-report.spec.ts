@@ -21,6 +21,17 @@ describe('agent/project-pickup-report', () => {
     assert.equal(f.run().notify, false);
   });
 
+  it('should treat a foreign-owned candidate as skipped rather than an error', async () => {
+    const f = await fixture();
+    f.pickup.operations[0]!.deferred = [
+      { nodeId: 'I_other', number: 99, code: 'project-pickup-other-owner' },
+    ];
+    const result = f.run();
+    assert.deepEqual(result.report!.problems, []);
+    assert.match(result.response, /1 owned elsewhere/);
+    assert.doesNotMatch(result.response, /needs attention|⚠️/);
+  });
+
   async function fixture() {
     const f = selectionFixture();
     await f.run({ selection: await f.select() });

@@ -89,9 +89,9 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
   const problems = [
     ...(outcome.code && !informational.includes(outcome.code) ? [outcome.code] : []),
     ...items.flatMap((item) =>
-      [...new Set(item.deferred.map((candidate) => candidate.code))].map(
-        (diagnostic) => `${item.id}:${diagnostic}`,
-      ),
+      [...new Set(item.deferred.map((candidate) => candidate.code))]
+        .filter((diagnostic) => diagnostic !== 'project-pickup-other-owner')
+        .map((diagnostic) => `${item.id}:${diagnostic}`),
     ),
     ...items.flatMap((item) =>
       item.code && !informational.includes(item.code)
@@ -189,7 +189,22 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
           ? [
               {
                 label: 'Skipped',
-                value: `${item.deferred.length} candidates could not be verified; other candidates remain eligible.`,
+                value:
+                  [
+                    [
+                      item.deferred.filter((entry) => entry.code === 'project-pickup-other-owner')
+                        .length,
+                      'owned elsewhere',
+                    ],
+                    [
+                      item.deferred.filter((entry) => entry.code !== 'project-pickup-other-owner')
+                        .length,
+                      'candidates could not be verified',
+                    ],
+                  ]
+                    .filter(([count]) => count)
+                    .map(([count, reason]) => `${count} ${reason}`)
+                    .join('; ') + '. Other candidates remain eligible.',
               },
             ]
           : []),
