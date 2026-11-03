@@ -46,6 +46,7 @@ const stepsSchema = Type.Object(
       Type.Object(
         {
           id: Type.String({ pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*(?![\\s\\S])' }),
+          independent: Type.Optional(Type.Boolean()),
           ...stepProperties,
         },
         { additionalProperties: false },
@@ -73,6 +74,7 @@ export type AgentSetupCommand =
 
 export interface AgentSetupStep {
   id: string;
+  independent?: true;
   runtimes?: AgentSetupRuntime[];
   apply: AgentSetupCommand;
   check?: AgentSetupCommand;
@@ -201,6 +203,9 @@ export function normalizeAgentSetup(value: unknown, fieldPath = '/setup'): Norma
     }
     return {
       id: entry.id,
+      ...('independent' in entry && entry.independent === true
+        ? { independent: true as const }
+        : {}),
       ...(entry.runtimes === undefined ? {} : { runtimes: [...entry.runtimes] }),
       apply: decodeCommand(entry.apply, entry.shell ?? shell),
       ...(entry.check === undefined

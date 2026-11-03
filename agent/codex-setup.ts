@@ -12,9 +12,14 @@ import {
 } from './codex-workspace-binding.ts';
 import SetupLifecycleService from './setup-lifecycle.ts';
 import createSetupCommandRunner, { type SetupProcessRunner } from './setup-runner.ts';
-import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
+import {
+  AgentSystemLifecycleError,
+  type AgentSystemLifecycleFinding,
+} from '../core/lifecycle-registry.ts';
 import type { AgentSetupCommand } from '../manifest/setup-schema.ts';
 import { githubNotificationRuntimeDiagnostics } from '../channels/github/notification-policy.ts';
+import setupStepApplies from './setup-runtime.ts';
+import { automationHash } from './automation-hash.ts';
 
 interface CodexSetupSnapshot {
   agentId: string;
@@ -115,10 +120,22 @@ function pauseWarnings(selected: CodexSetupSnapshot) {
     }));
 }
 
+const setupReports = new Set([
+  'absent',
+  'link-blocked',
+  'link-failed',
+  'link-needed',
+  'prepare-failed',
+  'prepared',
+  'install-failed',
+  'cache-failed',
+]);
+
 async function runtime(
   pluginData: string,
   signal: AbortSignal | undefined,
   dependencies: CodexSetupDependencies,
+  reports?: string[],
 ) {
   const inspectBinding = dependencies.inspectBinding ?? inspectCodexWorkspaceBinding;
   const selected = await snapshot(pluginData, inspectBinding);
@@ -132,19 +149,30 @@ async function runtime(
       ? {}
       : { temporaryDirectory: dependencies.temporaryDirectory }),
   });
-  const runStep = (
+  const runStep = async (
     command: AgentSetupCommand,
     target: { workspaceDir: string },
     commandSignal?: AbortSignal,
-  ) =>
-    run(
+  ) => {
+    const result = await run(
       command,
       {
         workspaceDir: target.workspaceDir,
         executableDirectories: (baseEnvironment.PATH ?? '').split(delimiter),
+        ...(reports ? { captureOutput: true } : {}),
       },
       commandSignal,
     );
+    if (reports && !result.truncated) {
+      for (const line of (result.output?.stdout ?? '').split('\n')) {
+        const prefix = 'setup-report-v1 ';
+        if (!line.startsWith(prefix)) continue;
+        const code = line.slice(prefix.length);
+        if (setupReports.has(code) && !reports.includes(code)) reports.push(code);
+      }
+    }
+    return result;
+  };
   const lifecycle = new SetupLifecycleService({ run: runStep, runPreAgent: runStep });
   const context = {
     manifest: selected.manifest.manifest,
@@ -162,6 +190,93 @@ async function runtime(
     },
   };
   return { context, lifecycle, selected };
+}
+
+/** Inspect or reconcile one declared maintenance slice using the ordinary setup executor. */
+export async function runCodexSetupScope(
+  pluginData: string,
+  action: 'inspect-scope' | 'install-scope',
+  input: unknown,
+  signal?: AbortSignal,
+  dependencies: CodexSetupDependencies = {},
+) {
+  if (
+    typeof input !== 'object' ||
+    input === null ||
+    !('scope' in input) ||
+    typeof input.scope !== 'string' ||
+    !/^(?:workspace|(?:host|agent):[a-z0-9]+(?:-[a-z0-9]+)*)$/u.test(input.scope) ||
+    Object.keys(input).some((key) => key !== 'scope' && key !== 'digest') ||
+    (action === 'inspect-scope'
+      ? 'digest' in input
+      : !('digest' in input) || typeof input.digest !== 'string')
+  )
+    throw new CodexSetupError('codex-setup-scope-invalid', 'Expected a declared setup scope.');
+
+  const { scope } = input;
+  const reports: string[] = [];
+  const { context, lifecycle, selected } = await runtime(pluginData, signal, dependencies, reports);
+  const manifest = { ...context.manifest };
+  let stepCount = 0;
+  for (const [field, owner] of [
+    ['setupHost', 'host'],
+    ['setup', 'agent'],
+  ] as const) {
+    const setup = manifest[field];
+    if (!setup) continue;
+    const steps = setup.steps.filter((step) =>
+      scope === 'workspace'
+        ? !step.independent
+        : step.independent && scope === `${owner}:${step.id}` && setupStepApplies(step, 'codex'),
+    );
+    manifest[field] = { ...setup, steps };
+    stepCount += steps.length;
+  }
+  if (scope !== 'workspace' && stepCount !== 1)
+    throw new CodexSetupError(
+      'codex-setup-scope-invalid',
+      'The selected setup step is unavailable.',
+    );
+
+  const digest = automationHash({
+    scope,
+    agentId: selected.agentId,
+    bindingPath: selected.bindingPath,
+    workspaceDir: selected.workspaceDir,
+    manifestPath: selected.manifestPath,
+    manifestDigest: selected.manifestDigest,
+  });
+  const target = { ...context, manifest };
+  if (action === 'inspect-scope') {
+    const findings = await lifecycle.inspect(target);
+    await context.assertCurrent();
+    return { status: 'inspected' as const, scope, digest, findings, reports };
+  }
+  if (!('digest' in input) || input.digest !== digest)
+    throw new CodexSetupError('codex-setup-stale', 'The inspected setup scope is stale.');
+  try {
+    const result = await lifecycle.reconcile(target);
+    await context.assertCurrent();
+    if (scope === 'workspace') {
+      const instance = await instanceIdentity(codexInstanceStore(pluginData)).reconcile!(context);
+      result.outcomes.push(
+        ...instance.outcomes.map((outcome) => ({ ...outcome, component: 'instance-identity' })),
+      );
+    }
+    return { status: 'reconciled' as const, scope, ...result, reports };
+  } catch (error) {
+    if (!(error instanceof AgentSystemLifecycleError)) throw error;
+    await context.assertCurrent();
+    return {
+      status: 'failed' as const,
+      scope,
+      code: error.code,
+      stepId: error.stepId,
+      message: error.rawMessage,
+      ...error.progress,
+      reports,
+    };
+  }
 }
 
 /** inspect standalone setup and desired/saved automation state without applying repairs. */

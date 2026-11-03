@@ -103,6 +103,7 @@ describe('agent/codex-context', () => {
         pluginData: join(root, 'data'),
       },
       setupRuntime: {
+        scoped: true,
         argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'setup'],
         pluginData,
       },

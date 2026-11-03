@@ -21,6 +21,7 @@ setup-agent:
       check: test -f .codex-shared
       apply: touch .codex-shared
     - id: codex-only
+      independent: true
       runtimes: [codex]
       apply: touch .codex-only
     - id: openclaw-only

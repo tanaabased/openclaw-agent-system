@@ -63,6 +63,23 @@ Treat runtime command prefixes and plugin-data paths as trusted ephemeral data. 
 6. Setup may replace the installed runtime. Its `requires-fresh-inspection` automation result is a handoff, not a schedule assessment. Continue with Codex automations below in a fresh command invocation using the trusted `automationRuntime` prefix, even when setup made no changes. Never reuse an automation plan from before setup or rerun setup just to reconcile automations.
 7. Report outcomes in declaration order: `setup-unchanged` as healthy, `setup-applied` as applied, `setup-not-applicable` as skipped, and an error as failed with its stable code and `stepId` when present.
 
+#### Scoped Codex maintenance
+
+Use scoped setup only when the authorized maintenance flow calls for it and trusted
+context has `setupRuntime.scoped: true`. A named step must declare `independent: true`.
+Its scope is `host:<step-id>` or `agent:<step-id>`. The `workspace` scope runs the
+remaining ordered steps and reconciles instance identity.
+
+1. Verify the actual inputs for the selected scope before running its checks. Use
+   `inspect-scope --plugin-data <pluginData>` with `{"scope":"agent:example"}` on stdin.
+2. Recheck source and shared prerequisites before applying. Use
+   `install-scope --plugin-data <pluginData>` with the same scope and the returned
+   `digest` on stdin. The runtime rechecks the declaration and verifies the result.
+3. Report the exact scoped outcome. A completed step-local failure can leave other
+   scopes eligible after rechecking their inputs. Stop affected work on denial,
+   uncertain effects, or stale authority. Use a fresh inspection for any later
+   authorized retry. Reconcile schedules separately through the native flow below.
+
 #### Codex automations
 
 For an explicit automation-only sync, use this sequence without running setup

@@ -152,6 +152,7 @@ export async function createCodexSessionContext(
       pluginData: options.pluginData,
     },
     setupRuntime: {
+      scoped: true,
       argvPrefix: [
         options.nodeExecutable,
         join(options.pluginRoot, codexRuntimeRelativePath),

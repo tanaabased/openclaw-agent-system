@@ -148,6 +148,17 @@ test -f "$GITHUB_WORKSPACE/examples/codex-install/workspace/.codex-only"
 test ! -e "$GITHUB_WORKSPACE/examples/codex-install/workspace/.openclaw-checked"
 test ! -e "$GITHUB_WORKSPACE/examples/codex-install/workspace/.openclaw-only"
 
+# should reconcile one declared setup scope through the packaged runtime
+root="$TMPDIR/agent-system-codex-install"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+plugin_data="$root/plugin-data"
+scope='agent:codex-only'
+digest=$(node "$runtime" setup inspect-scope --plugin-data "$plugin_data" <<<'{"scope":"agent:codex-only"}' | jq -er '.digest')
+jq -nc --arg scope "$scope" --arg digest "$digest" '{scope:$scope,digest:$digest}' \
+  | node "$runtime" setup install-scope --plugin-data "$plugin_data" \
+  | jq -e '.status == "reconciled" and [.outcomes[].stepId] == ["codex-only"]'
+
 # should preserve installed identity while allowing explicit name changes and id rotation
 root="$TMPDIR/agent-system-codex-install"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

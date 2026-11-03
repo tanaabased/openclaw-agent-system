@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
-import { CodexSetupError, inspectCodexSetup, installCodexSetup } from '../agent/codex-setup.ts';
+import {
+  CodexSetupError,
+  inspectCodexSetup,
+  installCodexSetup,
+  runCodexSetupScope,
+} from '../agent/codex-setup.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 
 describe('agent/codex-setup', () => {
@@ -330,5 +335,105 @@ setup-agent:
       },
     );
     assert.match(await readFile(join(workspace, 'setup.yaml'), 'utf8'), /\n\n$/u);
+  });
+
+  it('should isolate selected steps and leave an already repaired peer alone', async () => {
+    await manifest(`setup-host:
+  steps:
+    - id: workspace-check
+      apply: touch .workspace
+setup-agent:
+  steps:
+    - id: failing
+      independent: true
+      check: exit 1
+      apply: |
+        printf '%s\\n' 'setup-report-v1 prepared' 'setup-report-v1 cache-failed' 'secret'
+        exit 2
+    - id: peer
+      independent: true
+      check: test -f .peer
+      apply: echo repaired >> .peer
+    - id: held
+      independent: true
+      check: touch .held-checked
+      apply: touch .held-applied
+    - id: openclaw-only
+      independent: true
+      runtimes: [openclaw]
+      apply: touch .openclaw-only
+`);
+    const manifestPath = join(workspace, 'agent.yaml');
+    await writeFile(manifestPath, '# local manifest edit\n', { flag: 'a' });
+    const localManifest = await readFile(manifestPath, 'utf8');
+    const inspect = (scope: string) =>
+      runCodexSetupScope(pluginData, 'inspect-scope', { scope }, undefined, dependencies);
+    const install = async (scope: string) => {
+      const planned = await inspect(scope);
+      assert.equal(planned.status, 'inspected');
+      return runCodexSetupScope(
+        pluginData,
+        'install-scope',
+        { scope, digest: planned.digest },
+        undefined,
+        dependencies,
+      );
+    };
+
+    const failure = await install('agent:failing');
+    assert.equal(failure.status, 'failed');
+    assert.equal(failure.code, 'setup-apply-failed');
+    assert.deepEqual(failure.reports, ['prepared', 'cache-failed']);
+    assert.doesNotMatch(JSON.stringify(failure), /secret/u);
+    const repaired = await install('agent:peer');
+    assert.equal(repaired.status, 'reconciled');
+    assert.equal(repaired.outcomes[0]?.code, 'setup-applied');
+    const repeated = await install('agent:peer');
+    assert.equal(repeated.status, 'reconciled');
+    assert.equal(repeated.outcomes[0]?.code, 'setup-unchanged');
+    assert.equal(await readFile(join(workspace, '.peer'), 'utf8'), 'repaired\n');
+
+    for (const path of ['.held-checked', '.held-applied', '.workspace', '.openclaw-only']) {
+      await assert.rejects(access(join(workspace, path)));
+    }
+    await assert.rejects(inspect('agent:openclaw-only'), { code: 'codex-setup-scope-invalid' });
+    assert.equal((await install('workspace')).status, 'reconciled');
+    await access(join(workspace, '.workspace'));
+    await assert.rejects(access(join(workspace, '.held-checked')));
+    assert.equal(await readFile(manifestPath, 'utf8'), localManifest);
+  });
+
+  it('should reject a scope when a shared declaration changed after inspection', async () => {
+    await writeFile(
+      join(workspace, 'setup.yaml'),
+      `steps:
+  - id: plugin
+    independent: true
+    check: exit 1
+    apply: touch .unsafe-apply
+`,
+    );
+    await manifest('setup-agent: {file: ./setup.yaml}\n');
+    const scope = 'agent:plugin';
+    const planned = await runCodexSetupScope(
+      pluginData,
+      'inspect-scope',
+      { scope },
+      undefined,
+      dependencies,
+    );
+    assert.equal(planned.status, 'inspected');
+    await writeFile(join(workspace, 'setup.yaml'), '# changed\n', { flag: 'a' });
+    await assert.rejects(
+      runCodexSetupScope(
+        pluginData,
+        'install-scope',
+        { scope, digest: planned.digest },
+        undefined,
+        dependencies,
+      ),
+      { code: 'codex-setup-stale' },
+    );
+    await assert.rejects(access(join(workspace, '.unsafe-apply')));
   });
 });

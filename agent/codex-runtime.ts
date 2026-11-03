@@ -41,7 +41,12 @@ import {
   type CodexWorkspacePreview,
 } from './codex-workspace-binding.ts';
 import { createCodexSessionContext } from './codex-context.ts';
-import { CodexSetupError, inspectCodexSetup, installCodexSetup } from './codex-setup.ts';
+import {
+  CodexSetupError,
+  inspectCodexSetup,
+  installCodexSetup,
+  runCodexSetupScope,
+} from './codex-setup.ts';
 import { AgentSystemLifecycleError } from '../core/lifecycle-registry.ts';
 
 interface SessionStartInput {
@@ -216,20 +221,24 @@ async function runBinding(args: string[]): Promise<void> {
 
 async function runSetup(args: string[]): Promise<void> {
   const action = args[0];
-  if (action !== 'inspect' && action !== 'install') {
-    throw new Error('expected setup inspect or setup install');
-  }
   const pluginData = parsePluginData(args.slice(1));
   const controller = new AbortController();
   const abort = () => controller.abort();
   process.once('SIGINT', abort);
   process.once('SIGTERM', abort);
   try {
-    writeJson(
-      action === 'inspect'
-        ? await inspectCodexSetup(pluginData, controller.signal)
-        : await installCodexSetup(pluginData, controller.signal),
-    );
+    if (action === 'inspect' || action === 'install') {
+      writeJson(
+        action === 'inspect'
+          ? await inspectCodexSetup(pluginData, controller.signal)
+          : await installCodexSetup(pluginData, controller.signal),
+      );
+    } else if (action === 'inspect-scope' || action === 'install-scope') {
+      const input: unknown = JSON.parse(await readStandardInput());
+      writeJson(await runCodexSetupScope(pluginData, action, input, controller.signal));
+    } else {
+      throw new Error('expected setup inspect, install, inspect-scope, or install-scope');
+    }
   } finally {
     process.off('SIGINT', abort);
     process.off('SIGTERM', abort);
