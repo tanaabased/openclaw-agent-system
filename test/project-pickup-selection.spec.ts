@@ -55,7 +55,7 @@ describe('agent/project-pickup', () => {
       const first = await f.select();
       const anchor = f.state.projectPickup!.enrollment.startedAt;
       f.policy.projectPickup!.projects[0]!.repository = 'owner/another';
-      f.policy.projectPickup!.schedule = normalizeSchedule('every 2 days');
+      f.policy.projectPickup!.schedule = normalizeSchedule('0 6 * * *');
       f.tx.timezone = 'America/New_York';
       f.client.getRepository = async () => ({
         ...f.repository,
@@ -440,10 +440,13 @@ describe('agent/project-pickup', () => {
       assert.equal(f.effects.writes, 0);
     });
 
-    it(`should leave instance placement to intake and preserve uncertain assignments in ${runtime}`, async () => {
+    it(`should honor shared routing eligibility and preserve uncertain assignments in ${runtime}`, async () => {
       const target = '11111111-1111-4111-8111-111111111111';
       const f = fixture(runtime);
       f.policy.routing = [{ 'owner/*': [target] }];
+      const held = await f.run();
+      assert.ok('code' in held && held.code === 'claim-route-instance-ineligible');
+      f.identity.instanceId = target;
       assert.equal((await f.run()).status, 'selection-required');
       assert.equal(f.effects.writes, 0);
       const accepted = fixture(runtime);

@@ -137,13 +137,15 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
   );
   const next = uncertain
     ? 'Preserve the uncertain assignment. The next pickup check reconciles the same operation; do not assign it again.'
-    : outcome.code?.startsWith('claim-')
-      ? 'Check repository routing and the retained claim owner. Restore eligibility or resolve the original pickup operation; do not assign again or transfer ownership by changing routes.'
-      : failed
-        ? 'Check the diagnostic and GitHub access. Pickup rechecks failed discovery or selection on the next scheduled run; do not assign manually.'
-        : items.some((item) => item.deferred.length)
-          ? 'Some candidates could not be verified and were skipped. Check their diagnostics; verified candidates remain eligible.'
-          : 'Open the issue chat to resolve its work blocker. Implementation stays in that chat.';
+    : outcome.code?.startsWith('claim-route-')
+      ? 'This installation is not eligible under the current pickup and issue-assignment routing. No assignment was attempted; an eligible installation can select the work.'
+      : outcome.code?.startsWith('claim-')
+        ? 'Check repository routing and the retained claim owner. Restore eligibility or resolve the original pickup operation; do not assign again or transfer ownership by changing routes.'
+        : failed
+          ? 'Check the diagnostic and GitHub access. Pickup rechecks failed discovery or selection on the next scheduled run; do not assign manually.'
+          : items.some((item) => item.deferred.length)
+            ? 'Some candidates could not be verified and were skipped. Check their diagnostics; verified candidates remain eligible.'
+            : 'Open the issue chat to resolve its work blocker. Implementation stays in that chat.';
   const body = card({
     emoji: warning ? (failed ? '❌' : '⚠️') : '💡',
     title: warning

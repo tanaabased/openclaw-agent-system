@@ -1,3 +1,4 @@
+import type { RepositoryRoute } from '../channels/github/repository-scope.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import ProjectPickupEnrollmentStore from '../agent/project-pickup-enrollment.ts';
 import assert from 'node:assert/strict';
@@ -70,7 +71,7 @@ describe('project pickup selection through native journals', () => {
       github: {
         username: 'receiver',
         runtimes: [runtime],
-        ...(coordinated ? { routing: [{ 'owner/*': 'swarm' }] } : {}),
+        ...(coordinated ? { routing: [{ 'owner/*': 'swarm' }] as RepositoryRoute[] } : {}),
         'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
         'max-concurrent-items': 1,
         'issue-assignment': {
@@ -429,6 +430,32 @@ describe('project pickup selection through native journals', () => {
       assert.equal((await f.read()).length, 1);
       assert.equal(f.effects.writes, 1);
       assert.equal((await f.journal.read()).projectPickup!.operations.length, 1);
+    });
+
+    it(`should apply the live intake pool before writing through ${runtime}`, async () => {
+      const f = await fixture(runtime, true);
+      const selection = await f.select();
+      await f.configure((source) => {
+        source.github.routing = [
+          {
+            match: 'owner/*',
+            workflows: ['issue-assignment'],
+            target: { instances: ['11111111-1111-4111-8111-111111111111'] },
+          },
+          'owner/*',
+        ];
+      });
+      const held = await f.pickup({ selection });
+      assert.ok('code' in held && held.code === 'claim-route-instance-ineligible');
+      assert.equal(f.effects.writes, 0);
+      const identity = await f.claims!.store.identity();
+      await f.configure((source) => {
+        source.github.routing = [{ 'owner/*': [identity.instanceId] }];
+      });
+      assert.equal((await f.pickup({ selection })).status, 'assigned');
+      assert.equal(f.claims!.effects.creates, 0);
+      await f.scan();
+      assert.equal((await f.read())[0]!.evidence.mode, 'work');
     });
 
     it(`should let ordinary intake elect an owner after pickup in ${runtime}`, async () => {

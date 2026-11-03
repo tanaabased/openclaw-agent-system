@@ -31,6 +31,7 @@ export default function projectPickupCapacity<R extends PickupManagedRecord>(
   return pickup.operations.filter((operation) => {
     if (
       !pickupUnfinished(operation) ||
+      (operation.attemptedAt === undefined && !operation.receipt) ||
       (excludeIssue && operation.selected?.nodeId === excludeIssue)
     )
       return false;

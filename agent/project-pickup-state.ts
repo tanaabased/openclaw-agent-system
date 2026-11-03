@@ -92,7 +92,6 @@ export const projectPickupStateSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type PickupCandidate = Static<typeof pickupCandidateSchema>;
 export type PickupOperation = Static<typeof pickupOperationSchema>;
 export type ProjectPickupState = Static<typeof projectPickupStateSchema>;
 

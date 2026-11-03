@@ -9,6 +9,37 @@ import fixture from './project-pickup-selection-fixture.ts';
 
 describe('project pickup capacity handoff', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should not reserve capacity for selection and retain only uncertain writes after closing in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const capacity = () =>
+        runtime === 'codex'
+          ? codexCapacity([], 1, f.state.projectPickup)
+          : openClawCapacity([], 1, f.state.projectPickup);
+      const selection = await f.select();
+      assert.deepEqual(capacity(), { occupied: 0, available: 1 });
+      f.clock.now = f.state.projectPickup!.operations[0]!.window.closesAt + 1;
+      assert.deepEqual(capacity(), { occupied: 0, available: 1 });
+      f.clock.now -= 2;
+      f.client.assignProjectIssue = async () => {
+        throw new Error('uncertain transport');
+      };
+      assert.equal((await f.run({ selection })).status, 'attempted');
+      f.clock.now += 2;
+      assert.deepEqual(capacity(), { occupied: 1, available: 0 });
+    });
+
+    it(`should recheck ordinary capacity before assignment after selection in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.policy.maxConcurrentItems = 1;
+      const selection = await f.select();
+      f.state.records.push({ issueKey: 'ordinary', phase: 'assessing', request: {} });
+      assert.equal((await f.run({ selection })).status, 'at-capacity');
+      assert.equal(f.effects.writes, 0);
+      f.state.records = [];
+      assert.equal((await f.run()).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+    });
+
     it(`should use native capacity for idle and busy pickup owners in ${runtime}`, async () => {
       const f = fixture(runtime);
       await f.run({ selection: await f.select() });

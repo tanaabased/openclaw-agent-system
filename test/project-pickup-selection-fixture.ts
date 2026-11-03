@@ -9,13 +9,12 @@ import type {
   GitHubAssignmentEvent,
   GitHubCanonicalWorkItem,
 } from '../channels/github/provider/work-item.ts';
-import normalize from '../manifest/automation-schedule.ts';
+import type { ClaimStore } from '../agent/assignment-claim.ts';
 import { pickupFixture } from './project-pickup-fixture.ts';
 import { baseline } from './github-intake-fixture.ts';
 
 export default function selectionFixture(runtime: 'codex' | 'openclaw' = 'codex') {
   const f = pickupFixture(runtime);
-  f.policy.projectPickup!.schedule = normalize('every 1 day');
   f.authority.enrollment.policyDigest = projectPickupPolicyDigest(f.policy);
   f.authority.receipts = [];
   f.item.assignees = [];
@@ -68,6 +67,8 @@ export default function selectionFixture(runtime: 'codex' | 'openclaw' = 'codex'
       continuation?: { phase: string; result?: { outcome: string }; scope?: 'local' };
     }>;
   } = { records: [] };
+  const identity = { instanceId: '22222222-2222-4222-8222-222222222222', displayName: 'fixture' };
+  const instance: Pick<ClaimStore, 'inspect'> = { inspect: async () => identity };
   const tx = {
     runtime,
     scope: f.authority.enrollment.scope,
@@ -77,6 +78,7 @@ export default function selectionFixture(runtime: 'codex' | 'openclaw' = 'codex'
     timezone: 'UTC',
     state,
     client,
+    instance,
     runId: 'pickup-run',
     now: () => clock.now,
     readPolicy: async () => f.policy,
@@ -106,5 +108,19 @@ export default function selectionFixture(runtime: 'codex' | 'openclaw' = 'codex'
       pickup: receipt,
     };
   };
-  return { work, ...f, client, events, clock, effects, state, tx, run, select, items, candidates };
+  return {
+    work,
+    identity,
+    ...f,
+    client,
+    events,
+    clock,
+    effects,
+    state,
+    tx,
+    run,
+    select,
+    items,
+    candidates,
+  };
 }

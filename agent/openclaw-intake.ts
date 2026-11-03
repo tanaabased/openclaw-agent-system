@@ -8,6 +8,7 @@ import {
   projectPickupErrorCode,
 } from './project-pickup-jobs.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
+import AssignmentClaimStore from './assignment-claim-store.ts';
 import projectPickup, { pickupAuthority, type PickupInput } from './project-pickup.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
 import { dispatchStorageNotice } from './dispatch-storage.ts';
@@ -170,6 +171,12 @@ export default class OpenClawIntake {
         now: this.dependencies.now ?? Date.now,
         readPolicy,
         client,
+        instance: {
+          inspect: async () =>
+            this.dependencies.pickupStore
+              ? new AssignmentClaimStore(this.dependencies.pickupStore.root).inspect()
+              : undefined,
+        },
         runId: occurrence?.runId ?? authority.enrollment.id,
         occupied: openClawItemOccupied,
         input,

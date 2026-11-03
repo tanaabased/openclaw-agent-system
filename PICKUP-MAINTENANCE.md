@@ -52,10 +52,17 @@ no push, installation or live scheduled pilot has been performed.
       two hours, eight scans. accept clock variants, window/duration units and closing-time
       alternatives; reject conflicting values. remove the former schedule/window-minutes
       input fields. schedule edits require Install; target and selection edits stay live.
-- [x] remove pickup’s pre-assignment election and instance placement checks. new receipts
+- [x] remove pickup’s pre-assignment election. new receipts
       use ordinary assignment routing and claim election. preserve verified self-assignment
       and Work exceptions, uncertain-write recovery and previously retained claim owners.
       controlled sequential and overlapping scans exercise the shared intake handoff.
+- [x] reuse shared routing eligibility for pickup and ordinary intake before selection and
+      assignment. excluded installations leave the issue unassigned for an eligible participant;
+      uncertain writes retain their original recovery path.
+- [x] stop reserving capacity for discovery or selection. reserve only an assignment attempt
+      awaiting ordinary intake, with a fresh capacity check before the write.
+- [x] remove the retired interval-window path and unused candidate type; selection fixtures
+      use the same daily clock schedule as production.
 
 ## validation and rollout
 
@@ -69,6 +76,11 @@ no push, installation or live scheduled pilot has been performed.
 - [x] daily scheduling and thin pickup handoff: full validation passed 4,426 checks.
       the final resumed-scan accounting fix passed 192 focused checks, lint, typecheck,
       build and plugin checks; sequential and overlapping scans use ordinary intake ownership.
+- [x] routing eligibility and capacity cleanup: 196 focused checks passed; final
+      `bun run validate` passed 4,433 checks, lint, typecheck, build and plugin checks.
+      the subsequent read-only optimizer found no further actionable defects in the
+      maintenance scope. retain uncertain-write recovery and prior ownership receipts;
+      installed and live scheduled behavior remains unverified below.
 - [ ] CI exercises the affected installed boundaries; never run Leia examples locally.
 - [ ] approved installation reconciles Me's selected milestone and Doctor confirms readiness.
 - [ ] record real scheduled selection, one self-assignment, ordinary intake and delivery

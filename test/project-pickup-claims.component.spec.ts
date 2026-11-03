@@ -120,6 +120,36 @@ describe('project pickup handoff to ordinary assignment claims', () => {
     return second;
   }
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should leave assignment to the eligible participant when the ${runtime} picker is excluded`, async () => {
+      const a = fixture(runtime),
+        b = fixture(runtime === 'codex' ? 'openclaw' : 'codex');
+      shared(a, b);
+      const ca = claimFixture(a, join(root, 'excluded'));
+      const cb = claimFixture(b, join(root, 'eligible'), ca.comments);
+      await ca.store.identity();
+      const identity = await cb.store.identity();
+      a.policy.routing = b.policy.routing = [
+        {
+          match: 'owner/*',
+          workflows: ['issue-assignment'],
+          target: { instances: [identity.instanceId] },
+        },
+        'owner/*',
+      ];
+      const admitA = await intake(a, 'intake-a'),
+        admitB = await intake(b, 'intake-b');
+      const held = await a.run();
+      assert.ok('code' in held && held.code === 'claim-route-instance-ineligible');
+      assert.equal(a.effects.writes, 0);
+      assert.equal((await b.run({ selection: await b.select() })).status, 'assigned');
+      assert.equal(ca.comments.length, 0);
+      assert.equal(await admitA(), undefined);
+      const admitted = await admitB();
+      assert.equal(admitted.evidence.mode, 'work');
+      assert.equal((await elect(b, cb, admitted, 'first')).status, 'pending');
+      assert.equal((await elect(b, cb, admitted, 'second')).status, 'owned');
+    });
+
     it(`should self-assign without publishing a claim and use ordinary routing in ${runtime}`, async () => {
       const f = fixture(runtime);
       f.policy.routing = [{ 'owner/*': 'swarm' }];

@@ -14,7 +14,10 @@ export type ClaimStore = Pick<
 >;
 
 /** reject new participation before a workflow reserves capacity or selects work. */
-export async function claimRouteEligibility(store: ClaimStore, route: RepositoryScopeDecision) {
+export async function claimRouteEligibility(
+  store: Pick<ClaimStore, 'inspect'>,
+  route: RepositoryScopeDecision,
+) {
   if (route.decision === 'deny') return 'claim-route-denied';
   if (!route.eligibleInstanceIds) return;
   const identity = await store.inspect();

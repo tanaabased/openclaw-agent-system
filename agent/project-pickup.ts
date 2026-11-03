@@ -5,6 +5,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import assessmentGuidance from './assessment-guidance.ts';
+import { claimRouteEligibility, type ClaimStore } from './assignment-claim.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,
@@ -118,6 +119,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
   now(): number;
   readPolicy(): Promise<GitHubNotificationPolicy>;
   client: ProjectPickupClient;
+  instance: Pick<ClaimStore, 'inspect'>;
   runId: string;
   occupied(record: R): boolean;
   input?: PickupInput;
@@ -420,8 +422,24 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       return;
     return { live, repository, item, evidence };
   };
+  const routingEligibility = async ({
+    live,
+    repository,
+  }: Awaited<ReturnType<typeof freshScope>>) => {
+    for (const workflow of ['project-pickup', 'issue-assignment'] as const) {
+      const code = await claimRouteEligibility(
+        tx.instance,
+        repositoryScope(live, repository, workflow),
+      );
+      if (code) return code;
+    }
+  };
   try {
     const scope = await freshScope(operation.attemptedAt !== undefined);
+    if (operation.attemptedAt === undefined) {
+      const code = await routingEligibility(scope);
+      if (code) return { status: 'pending', id: operation.id, code, changed };
+    }
     if (operation.phase === 'discovering') {
       const budget = tx.discoveryBudget ?? new DiscoveryBudget();
       budget.check();
@@ -552,6 +570,8 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         return finish(operation, 'failed', 'project-pickup-candidate-changed');
       if (authorized.live.projectPickup?.paused)
         return { status: 'paused', id: operation.id, changed };
+      const code = await routingEligibility(authorized);
+      if (code) return { status: 'pending', id: operation.id, code, changed };
       if (
         state.records.filter(tx.occupied).length +
           projectPickupCapacity(state.records, journal, candidate.nodeId) >=

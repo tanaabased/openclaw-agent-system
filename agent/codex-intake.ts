@@ -464,6 +464,7 @@ export async function runCodexProjectPickup(
       now: deps.now ?? Date.now,
       readPolicy,
       client,
+      instance: codexInstanceStore(pluginData),
       runId: nativeOccurrence?.id ?? authority.enrollment.id,
       occupied: codexItemOccupied,
       input,

@@ -16,10 +16,7 @@ export default function projectPickupWindow(input: {
   const duration = input.windowMinutes * minute;
   if (![anchor, now, duration].every(Number.isSafeInteger) || duration <= 0 || now < anchor) return;
   let opensAt: number | undefined;
-  if (schedule.kind === 'every') {
-    const interval = schedule.seconds * 1000;
-    opensAt = anchor + Math.floor((now - anchor) / interval) * interval;
-  } else if (schedule.kind === 'cron') {
+  if (schedule.kind === 'cron') {
     const format = new Intl.DateTimeFormat('en-CA', {
       timeZone: schedule.timezone ?? input.timezone,
       year: 'numeric',
