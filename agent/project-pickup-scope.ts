@@ -13,6 +13,7 @@ export default async function projectPickupScope(
   client: GitHubNotificationIntakeClient,
   repository: GitHubRepositoryIdentity,
   item?: GitHubCanonicalWorkItem,
+  retainedAssignment = false,
 ) {
   const project = policy.projectPickup?.projects[0];
   if (
@@ -21,7 +22,8 @@ export default async function projectPickupScope(
     repository.disabled ||
     project.repository.toLowerCase() !==
       `${repository.owner.login}/${repository.name}`.toLowerCase() ||
-    repositoryScope(policy, repository).decision === 'deny'
+    ((!retainedAssignment || policy.routing === undefined) &&
+      repositoryScope(policy, repository, 'project-pickup').decision === 'deny')
   )
     return;
   if (!client.getMilestone) throw new Error('project-pickup-milestone-unavailable');

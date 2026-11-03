@@ -190,7 +190,10 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
   if (!op) {
     const [owner, name] = pickup.projects[0]!.repository.split('/') as [string, string];
     const repository = await client.getRepository(owner, name);
-    const code = await claimRouteEligibility(tx.claims.store, repositoryScope(policy, repository));
+    const code = await claimRouteEligibility(
+      tx.claims.store,
+      repositoryScope(policy, repository, 'project-pickup'),
+    );
     if (code) return { status: 'pending', code, changed };
     const window = projectPickupWindow({
       schedule: pickup.schedule,
@@ -237,24 +240,30 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         !record.supersededBy &&
         !record.retired,
     );
-  const freshScope = async () => {
+  const freshScope = async (retainedAssignment = false) => {
     const live = await tx.readPolicy();
     if (projectPickupPolicyDigest(live) !== enrollment.policyDigest)
       throw new Error('project-pickup-policy-changed');
     const repository = await client.getRepository(owner, name);
     if (repository.nodeId !== enrollment.repositoryNodeId)
       throw new Error('project-pickup-repository-changed');
-    const milestone = await projectPickupScope(live, client, repository);
+    const milestone = await projectPickupScope(
+      live,
+      client,
+      repository,
+      undefined,
+      retainedAssignment,
+    );
     if (milestone?.nodeId !== enrollment.milestoneNodeId)
       throw new Error('project-pickup-milestone-changed');
     return { live, repository };
   };
   const eligible = async (number: number, nodeId: string, assigned = false) => {
-    const { live, repository } = await freshScope();
+    const { live, repository } = await freshScope(assigned);
     const item = await client.getItem(owner, name, number);
     if (
       item.nodeId !== nodeId ||
-      !(await projectPickupScope(live, client, repository, item)) ||
+      !(await projectPickupScope(live, client, repository, item, assigned)) ||
       (assigned
         ? item.assignees.length !== 1 || !githubIdentityMatches(item.assignees[0]!, client.identity)
         : item.assignees.length !== 0) ||
@@ -271,7 +280,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     return { live, repository, item, evidence };
   };
   try {
-    const scope = await freshScope();
+    const scope = await freshScope(operation.attemptedAt !== undefined);
     if (operation.phase === 'discovering') {
       const page = await client.discoverProject(
         owner,
@@ -340,7 +349,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       { live, repository }: Awaited<ReturnType<typeof freshScope>>,
       assignmentEventId?: string,
     ) => {
-      const route = repositoryScope(live, repository);
+      const route = repositoryScope(live, repository, 'project-pickup');
       return selectAssignmentClaim({
         ...tx.claims,
         source: pickupClaimSource(
@@ -406,7 +415,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         return { status: 'at-capacity', id: operation.id, changed };
       if (tx.now() < operation.window.opensAt || tx.now() >= operation.window.closesAt)
         return finish(operation, 'expired', 'project-pickup-window-closed');
-      const route = repositoryScope(live, current.repository);
+      const route = repositoryScope(live, current.repository, 'project-pickup');
       if (route.decision === 'deny') throw new Error('claim-route-denied');
       if (!operation.claim) {
         const events = [...history.events].sort(
@@ -425,9 +434,15 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         return finish(operation, 'failed', 'project-pickup-candidate-changed');
       if (authorized.live.projectPickup?.paused)
         return { status: 'paused', id: operation.id, changed };
+      const authorizedRoute = repositoryScope(
+        authorized.live,
+        authorized.repository,
+        'project-pickup',
+      );
       if (
-        automationHash(repositoryScope(authorized.live, authorized.repository)) !==
-        automationHash(route)
+        authorizedRoute.decision !== route.decision ||
+        automationHash(authorizedRoute.eligibleInstanceIds ?? null) !==
+          automationHash(route.eligibleInstanceIds ?? null)
       )
         return { status: 'pending', id: operation.id, code: 'claim-route-changed', changed };
       if (
@@ -472,12 +487,6 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         Date.parse(event.createdAt) >= operation.window.closesAt
       )
         return finish(operation, operation.phase, 'project-pickup-assignment-unverified');
-      const receipt = {
-        enrollmentId: enrollment.id,
-        issueNodeId: candidate.nodeId,
-        assignmentNodeId: event.nodeId,
-        window: operation.window,
-      };
       if (!operation.claim) throw new Error('project-pickup-claim-missing');
       const ownership = await selectOwner(current, event.nodeId);
       if (!['owned', 'local'].includes(ownership.status))
@@ -486,6 +495,13 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
           operation.phase,
           ownership.code ?? 'project-pickup-owner-unverified',
         );
+      const receipt = {
+        enrollmentId: enrollment.id,
+        issueNodeId: candidate.nodeId,
+        assignmentNodeId: event.nodeId,
+        ...(ownership.winnerId ? { claimCommentId: ownership.winnerId } : {}),
+        window: operation.window,
+      };
       const work = await authorizeProjectAssignment({
         authority: { enrollment, receipts: [receipt] },
         runtime: tx.runtime,

@@ -199,18 +199,29 @@ export default async function scanAssignments(
           const coordinates = githubRepositoryPath(candidate.repositoryPath);
           if (
             input.policy.routing === undefined &&
-            !repositoryScopeCandidate(input.policy, coordinates.owner, coordinates.name)
+            !repositoryScopeCandidate(
+              input.policy,
+              coordinates.owner,
+              coordinates.name,
+              'issue-assignment',
+            )
           )
             return;
           // search paths and saved observations may predate a rename or transfer.
           const repository = await client.getRepository(coordinates.owner, coordinates.name);
-          const scope = repositoryScope(input.policy, repository);
+          const scope = repositoryScope(input.policy, repository, 'issue-assignment');
           const scopeKey = JSON.stringify(scope);
           scopeCounts.set(scopeKey, {
             ...scope,
             count: (scopeCounts.get(scopeKey)?.count ?? 0) + 1,
           });
-          if (repository.archived || repository.disabled || scope.decision === 'deny') return;
+          if (repository.archived || repository.disabled) return;
+          const project = input.policy.projectPickup?.projects[0]?.repository;
+          if (
+            scope.decision === 'deny' &&
+            project?.toLowerCase() !== `${repository.owner.login}/${repository.name}`.toLowerCase()
+          )
+            return;
           const item = await observeRead('issue', () =>
             client.getItem(coordinates.owner, coordinates.name, candidate.number),
           );
@@ -323,6 +334,7 @@ export default async function scanAssignments(
                 now: input.now,
               })
             : undefined;
+          if (scope.decision === 'deny' && !projectWork?.pickup) return;
           if (
             pickup?.receipts.some(
               (receipt) =>

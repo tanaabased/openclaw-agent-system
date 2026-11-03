@@ -10,6 +10,7 @@ import {
   type ClaimClient,
 } from './assignment-claim.ts';
 import source from './assignment-claim-source.ts';
+import { retainedPickupReceipt } from './project-pickup-authority.ts';
 import AssignmentClaimStore from './assignment-claim-store.ts';
 import { automationHash } from './automation-hash.ts';
 import type { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
@@ -42,6 +43,7 @@ export default class CodexAssignmentClaims {
       store: this.store,
       client: this.connect(input.client),
       source: source(input.intake),
+      pickupWinnerId: retainedPickupReceipt(input.intake)?.claimCommentId,
       passId: automationHash({ threadId: input.threadId, turnId: input.turnId }),
       hasCapacity: input.hasCapacity,
     });

@@ -1,6 +1,6 @@
 import { githubIdentitySet } from './provider/work-item.ts';
 import { projectPickupConfigurationCode } from './project-pickup-schema.ts';
-import { repositoryScopeCandidate } from './repository-scope.ts';
+import { repositoryRoutingDiagnostics, repositoryScopeCandidate } from './repository-scope.ts';
 import type { GitHubNotificationsDeclaration } from './workflow-policy.ts';
 import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
 import type { ManifestDiagnostic } from '../../manifest/types.ts';
@@ -12,7 +12,7 @@ export function validateGitHubNotificationPolicy(
 ): ManifestDiagnostic[] {
   const policy = github?.notifications;
   if (!policy) return [];
-  const diagnostics: ManifestDiagnostic[] = [];
+  const diagnostics = policy.routing ? repositoryRoutingDiagnostics(policy.routing) : [];
   if (legacyOwnersDeclared)
     diagnostics.push({
       code:
@@ -44,7 +44,7 @@ export function validateGitHubNotificationPolicy(
         severity: 'error',
       });
     const [owner, name] = policy.projectPickup.projects[0]!.repository.split('/');
-    if (!repositoryScopeCandidate(policy, owner!, name!))
+    if (!repositoryScopeCandidate(policy, owner!, name!, 'project-pickup'))
       diagnostics.push({
         code: 'github-project-pickup-repository-outside-workflow',
         fieldPath: '/github/project-pickup/projects/0/repository',

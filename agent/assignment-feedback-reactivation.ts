@@ -85,7 +85,8 @@ export default async function reactivateAssignmentFeedback(input: {
   }
   if (record.feedback) observeFeedbackPolicy(record.feedback, policy.policy, input.now);
   const active = await inspectActiveIssue(intake, client, true);
-  if (repositoryScope(policy.policy, active.repo).decision === 'deny') return false;
+  if (repositoryScope(policy.policy, active.repo, 'issue-assignment').decision === 'deny')
+    return false;
   const history = await client.listAssignmentEvents(
     intake.repository.owner.login,
     intake.repository.name,

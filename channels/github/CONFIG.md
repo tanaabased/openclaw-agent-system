@@ -32,17 +32,34 @@ work by default, and a leading `!` excludes it. Use a single-entry mapping to
 choose `local`, `swarm`, an installation UUID, or a nonempty list of unique UUIDs.
 No match, including `routing: []`, admits no new work.
 
+Use a full rule to name a match or limit it to specific workflows. The rule
+matches when the repository matches `match` and the current workflow appears in
+`workflows`. Omit `workflows` to include all three workflows. Put exceptions
+before broader rules and put an explicit `*/*` last if you want a fallback.
+
+| Field       | Values                                                                                       | Required |
+| ----------- | -------------------------------------------------------------------------------------------- | -------- |
+| `id`        | Unique name without whitespace. Matched-rule diagnostics include this name.                  | no       |
+| `match`     | Repository pattern without a leading `!`.                                                    | yes      |
+| `workflows` | Nonempty list of distinct `issue-assignment`, `project-pickup`, and `review-request` values. | no       |
+| `target`    | `local`, `deny`, `swarm`, `{instance: UUID}`, or `{instances: [UUID, ...]}`.                 | yes      |
+
 ```yaml
 routing:
   - '!tanaabased/archive-*'
-  - 'tanaabased/openclaw-agent-system': local
-  - 'tanaabased/canon': '11111111-1111-4111-8111-111111111111'
-  - 'tanaabased/theme':
+  - id: review-exception
+    match: 'tanaabased/openclaw-agent-system'
+    workflows: [review-request]
+    target: { instance: '11111111-1111-4111-8111-111111111111' }
+  - 'tanaabased/*':
       - '11111111-1111-4111-8111-111111111111'
       - '22222222-2222-4222-8222-222222222222'
-  - 'tanaabased/*': swarm
-  - pirog/me # implicitly local
+  - pirog/me
 ```
+
+The example shows a review placement rule. Independent review requests still
+require runtime support in Codex and OpenClaw. Validation warns when earlier
+rules can be shown to cover every workflow and repository of a later rule.
 
 Patterns match the entire current `owner/repository` name, case-insensitively.
 `*` matches zero or more characters within either segment; it never crosses `/`.
@@ -75,7 +92,8 @@ unknown, offline, paused, or full target does not trigger fallback. Silence alon
 does not identify which condition applies. Pool edits preserve existing ownership
 and uncertain native creation; an excluded claimant that has not started native
 creation is held for recovery. Project pickup establishes the same ownership before
-self-assignment; assignment intake retains that owner.
+self-assignment. Assignment intake retains the verified pickup owner even when
+its own rule chooses a different target or denies new assignments.
 
 `local` creates no claim. A retained or visible Swarm claim still blocks new local
 work; switching routes does not transfer ownership. If a claim is missing, changed,
