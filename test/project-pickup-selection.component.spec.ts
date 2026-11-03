@@ -388,7 +388,18 @@ describe('project pickup selection through native journals', () => {
               timedOut: false,
               truncated: false,
               stderr: '',
-              stdout: `HTTP/2 200 OK\n\n${JSON.stringify({ ...candidate, body })}`,
+              stdout: `HTTP/2 200 OK\n\n${JSON.stringify({
+                item: {
+                  ...f.item,
+                  title: candidate.title,
+                  isPullRequest: false,
+                  milestone:
+                    f.item.itemType === 'issue' && f.item.milestone
+                      ? { ...f.item.milestone, node_id: f.item.milestone.nodeId }
+                      : null,
+                },
+                candidate: { ...candidate, body },
+              })}`,
             }),
           }),
         );

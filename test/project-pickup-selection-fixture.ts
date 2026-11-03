@@ -38,7 +38,11 @@ export default function selectionFixture(runtime: 'codex' | 'openclaw' = 'codex'
     ...f.client,
     getItem: async (_owner, _name, number) => structuredClone(items.get(number)!),
     discoverProject: async () => ({ candidates: [...candidates.values()] }),
-    projectCandidate: async (_owner, _name, number) => structuredClone(candidates.get(number)!),
+    projectCandidate: async (_owner, _name, number) =>
+      structuredClone({
+        item: { ...items.get(number)!, title: candidates.get(number)!.title },
+        candidate: candidates.get(number)!,
+      }),
     projectBlocked: async () => false,
     listAssignmentEvents: async () => ({ events: structuredClone(events), truncated: false }),
     assignProjectIssue: async (_owner, _name, number) => {

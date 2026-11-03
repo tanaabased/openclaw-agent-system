@@ -387,7 +387,10 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     readContent = true,
   ) => {
     const { live, repository } = observedScope ?? (await freshScope());
-    const item = await client.getItem(owner, name, number);
+    const observation = readContent
+      ? await client.projectCandidate(owner, name, number)
+      : undefined;
+    const item = observation ? observation.item : await client.getItem(owner, name, number);
     if (
       item.nodeId !== nodeId ||
       item.itemType !== 'issue' ||
@@ -398,9 +401,8 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       managed(nodeId)
     )
       return;
-    if (!readContent) return { live, repository, item };
-    const evidence = await client.projectCandidate(owner, name, number);
-    if (evidence.nodeId !== nodeId) return;
+    const evidence = observation?.candidate;
+    if (evidence && evidence.nodeId !== nodeId) return;
     return { live, repository, item, evidence };
   };
   const routingEligibility = async ({

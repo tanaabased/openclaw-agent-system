@@ -1,6 +1,9 @@
 import resolveGitHubIdentity, { resolveGitHubIdentities } from './resolve-identity.ts';
 import {
   githubResponseBoolean,
+  githubResponseMilestone,
+  githubResponseWorkItem,
+  githubWorkItemProjection,
   githubResponseGitRef,
   githubResponseGitSha,
   githubResponseHasControlCharacter,
@@ -37,18 +40,6 @@ import {
 const pageSize = 100;
 const maximumSearchPages = 10;
 const maximumEventPages = 3;
-
-function milestone(value: unknown): GitHubMilestone {
-  const object = githubResponseRecord(value, 'milestone');
-  const state = githubResponseString(object.state, 'milestone state');
-  if (state !== 'open' && state !== 'closed')
-    throw new Error('GitHub returned an invalid milestone state.');
-  return {
-    nodeId: githubResponseNodeId(object.node_id, 'milestone node id'),
-    number: githubResponsePositiveInteger(object.number, 'milestone number'),
-    state,
-  };
-}
 
 /** Read bounded assignment, repository, and work-item control facts from GitHub. */
 export default class GitHubWorkItemClient implements GitHubNotificationIntakeClient {
@@ -183,7 +174,7 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
       [`${githubRepositoryEndpoint(owner, name)}/milestones/${number}`],
       'milestone',
     );
-    const result = milestone(response.value);
+    const result = githubResponseMilestone(response.value);
     if (result.number !== number) throw new Error('project-pickup-milestone-changed');
     return result;
   }
@@ -191,39 +182,11 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
   async getItem(owner: string, name: string, number: number): Promise<GitHubCanonicalWorkItem> {
     const endpoint = githubWorkItemEndpoint(owner, name, number);
     const response = await this.#api.request(
-      [
-        endpoint,
-        '--jq',
-        '{databaseId:.id,nodeId:.node_id,number,state,updatedAt:.updated_at,title,milestone,isPullRequest:(.pull_request!=null),assignees:[.assignees[]|{login,nodeId:.node_id,type}]}',
-      ],
+      [endpoint, '--jq', githubWorkItemProjection],
       'work item',
     );
-    const value = githubResponseRecord(response.value, 'work item');
-    const state = githubResponseString(value.state, 'work-item state');
-    if (state !== 'open' && state !== 'closed') {
-      throw new Error('GitHub returned an unsupported work-item state.');
-    }
-    if (!Array.isArray(value.assignees)) throw new Error('GitHub returned invalid assignees.');
-    const item = {
-      assignees: value.assignees.map((item) => githubResponseIdentity(item, 'assignee')),
-      databaseId: githubResponsePositiveInteger(value.databaseId, 'work-item database id'),
-      nodeId: githubResponseNodeId(value.nodeId, 'work-item node id'),
-      number: githubResponsePositiveInteger(value.number, 'work-item number'),
-      state: state as 'closed' | 'open',
-      updatedAt: githubResponseTimestamp(value.updatedAt, 'work-item update time'),
-    };
-    if (!githubResponseBoolean(value.isPullRequest, 'work-item type')) {
-      if (typeof value.title !== 'string')
-        throw new Error('GitHub returned an invalid issue title.');
-      return {
-        ...item,
-        itemType: 'issue',
-        title: value.title,
-        ...(value.milestone === undefined
-          ? {}
-          : { milestone: value.milestone === null ? null : milestone(value.milestone) }),
-      };
-    }
+    const item = githubResponseWorkItem(response.value);
+    if (item.itemType === 'issue') return item;
 
     const pullResponse = await this.#api.request(
       [

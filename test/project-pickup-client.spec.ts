@@ -35,6 +35,23 @@ function fixture() {
   return { calls, reply, client: new GitHubProjectPickupClient(api) };
 }
 
+function observation(candidate: Record<string, unknown>) {
+  return {
+    item: {
+      databaseId: 1,
+      nodeId: candidate.nodeId,
+      number: candidate.number,
+      state: 'open',
+      updatedAt: '2026-11-03T03:00:00Z',
+      title: candidate.title,
+      isPullRequest: false,
+      assignees: [],
+      milestone: { node_id: 'M_pilot', number: 4, state: 'open' },
+    },
+    candidate,
+  };
+}
+
 describe('github project pickup provider', () => {
   it('should keep complete descriptions and reject malformed provider data', async () => {
     const f = fixture();
@@ -45,9 +62,14 @@ describe('github project pickup provider', () => {
       body: 'a'.repeat(32000),
       labels: [],
     };
-    f.reply.value = candidate;
-    assert.deepEqual(await f.client.projectCandidate('owner', 'repo', 1), candidate);
-    f.reply.value = { ...candidate, body: 42 };
+    f.reply.value = observation(candidate);
+    const result = await f.client.projectCandidate('owner', 'repo', 1);
+    assert.deepEqual(result.candidate, candidate);
+    assert.equal(result.item.itemType, 'issue');
+    assert.equal(result.item.state, 'open');
+    assert.deepEqual(result.item.assignees, []);
+    assert.equal(f.calls.length, 1);
+    f.reply.value = observation({ ...candidate, body: 42 });
     await assert.rejects(f.client.projectCandidate('owner', 'repo', 1), /candidate-invalid/);
   });
 
@@ -55,14 +77,14 @@ describe('github project pickup provider', () => {
     it(`should retain complete large descriptions containing ${character}`, async () => {
       const f = fixture();
       const body = character.repeat(64000);
-      f.reply.value = { nodeId: 'I_one', number: 1, title: 'ready', body, labels: [] };
-      const candidate = await f.client.projectCandidate('owner', 'repo', 1);
+      f.reply.value = observation({ nodeId: 'I_one', number: 1, title: 'ready', body, labels: [] });
+      const { candidate } = await f.client.projectCandidate('owner', 'repo', 1);
       assert.equal(candidate.body, body);
       assert.equal(Object.hasOwn(candidate, 'bodyTruncated'), false);
       assert.ok(Value.Check(projectCandidateSchema, candidate));
-      f.reply.value = { ...(f.reply.value as object), body: `${character.repeat(63999)}b` };
+      f.reply.value = observation({ ...candidate, body: `${character.repeat(63999)}b` });
       const changed = await f.client.projectCandidate('owner', 'repo', 1);
-      assert.notEqual(changed.body, candidate.body);
+      assert.notEqual(changed.candidate.body, candidate.body);
     });
   }
 

@@ -21,6 +21,19 @@ describe('agent/project-pickup', () => {
       assert.equal(f.effects.writes, 0);
     });
 
+    it(`should read discovery eligibility and content together in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const getItem = f.client.getItem;
+      f.client.getItem = async () => {
+        throw new Error('discovery must use the combined candidate read');
+      };
+      const selection = await f.select();
+      f.client.getItem = getItem;
+      f.item.assignees = [f.client.identity];
+      assert.equal((await f.run({ selection })).status, 'failed');
+      assert.equal(f.effects.writes, 0);
+    });
+
     it(`should discard prior scan material and load current guidance in ${runtime}`, async () => {
       const f = fixture(runtime);
       const old = await f.select();
@@ -366,21 +379,21 @@ describe('agent/project-pickup', () => {
 
     it(`should defer unreadable issues but stop for account failures in ${runtime}`, async () => {
       const f = fixture(runtime);
-      const read = f.client.getItem;
-      f.client.getItem = async () => {
+      const read = f.client.projectCandidate;
+      f.client.projectCandidate = async () => {
         throw new GitHubWorkEventClientError('github-notification-resource-missing', 'missing');
       };
       const result = await f.run();
       assert.equal(result.status, 'empty');
       assert.ok('summary' in result && result.summary?.skipped === 1);
-      f.client.getItem = async () => {
+      f.client.projectCandidate = async () => {
         throw new GitHubWorkEventClientError(
           'github-notification-request-failed',
           'account unavailable',
         );
       };
       assert.equal((await f.run()).status, 'failed');
-      f.client.getItem = read;
+      f.client.projectCandidate = read;
       assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
     });
   }

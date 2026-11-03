@@ -7,6 +7,11 @@ import {
   githubWorkItemEndpoint,
   type default as GitHubWorkEventApiClient,
 } from './work-event-api-client.ts';
+import {
+  githubResponseRecord,
+  githubResponseWorkItem,
+  githubWorkItemProjection,
+} from './work-event-normalization.ts';
 import type { GitHubNotificationIntakeClient } from './work-event-types.ts';
 
 export const projectCandidateSchema = Type.Object(
@@ -30,6 +35,10 @@ export const projectCandidateSchema = Type.Object(
   { additionalProperties: false },
 );
 export type ProjectCandidate = Static<typeof projectCandidateSchema>;
+export interface ProjectCandidateObservation {
+  item: ReturnType<typeof githubResponseWorkItem>;
+  candidate: ProjectCandidate;
+}
 const discoveryCandidateSchema = Type.Pick(projectCandidateSchema, ['nodeId', 'number']);
 export interface ProjectPickupClient extends GitHubNotificationIntakeClient {
   discoverProject(
@@ -38,7 +47,11 @@ export interface ProjectPickupClient extends GitHubNotificationIntakeClient {
     milestone: number,
     page: number,
   ): Promise<{ candidates: Array<Pick<ProjectCandidate, 'nodeId' | 'number'>>; nextPage?: number }>;
-  projectCandidate(owner: string, name: string, number: number): Promise<ProjectCandidate>;
+  projectCandidate(
+    owner: string,
+    name: string,
+    number: number,
+  ): Promise<ProjectCandidateObservation>;
   projectBlocked(owner: string, name: string, number: number): Promise<boolean>;
   assignProjectIssue(owner: string, name: string, number: number): Promise<void>;
 }
@@ -75,14 +88,26 @@ export default class GitHubProjectPickupClient {
     return { candidates: result.value, ...(result.hasNextPage ? { nextPage: page + 1 } : {}) };
   }
 
-  async projectCandidate(owner: string, name: string, number: number): Promise<ProjectCandidate> {
+  async projectCandidate(
+    owner: string,
+    name: string,
+    number: number,
+  ): Promise<ProjectCandidateObservation> {
     const result = await this.api.request(
-      [githubWorkItemEndpoint(owner, name, number), '--jq', projection],
+      [
+        githubWorkItemEndpoint(owner, name, number),
+        '--jq',
+        `{item:${githubWorkItemProjection},candidate:${projection}}`,
+      ],
       'pickup candidate',
     );
-    if (!Value.Check(projectCandidateSchema, result.value))
+    const observation = githubResponseRecord(result.value, 'pickup candidate');
+    if (!Value.Check(projectCandidateSchema, observation.candidate))
       throw new Error('project-pickup-candidate-invalid');
-    return result.value;
+    return {
+      item: githubResponseWorkItem(observation.item),
+      candidate: observation.candidate,
+    };
   }
 
   async projectBlocked(owner: string, name: string, number: number) {

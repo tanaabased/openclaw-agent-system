@@ -1,5 +1,5 @@
 import type { GitHubCanonicalIssueComment } from './comment-admission.ts';
-import type { GitHubIdentity } from './work-item.ts';
+import type { GitHubIdentity, GitHubMilestone } from './work-item.ts';
 import { defaultMaximumCommentCharacters } from './comment-limit.ts';
 
 export const maximumPublicationBodyLength = 1_200;
@@ -176,4 +176,52 @@ export function githubResponseIssueComment(
     nodeId: githubResponseNodeId(item.nodeId, 'issue-comment node id'),
     updatedAt: githubResponseTimestamp(item.updatedAt, 'issue-comment update time'),
   };
+}
+
+export const githubWorkItemProjection =
+  '{databaseId:.id,nodeId:.node_id,number,state,updatedAt:.updated_at,title,milestone,isPullRequest:(.pull_request!=null),assignees:[.assignees[]|{login,nodeId:.node_id,type}]}';
+
+export function githubResponseMilestone(value: unknown): GitHubMilestone {
+  const object = githubResponseRecord(value, 'milestone');
+  const state = githubResponseString(object.state, 'milestone state');
+  if (state !== 'open' && state !== 'closed')
+    throw new Error('GitHub returned an invalid milestone state.');
+  return {
+    nodeId: githubResponseNodeId(object.node_id, 'milestone node id'),
+    number: githubResponsePositiveInteger(object.number, 'milestone number'),
+    state,
+  };
+}
+
+/** Normalize shared issue control facts before any optional pull-request enrichment. */
+export function githubResponseWorkItem(input: unknown) {
+  const value = githubResponseRecord(input, 'work item');
+  const state = githubResponseString(value.state, 'work-item state');
+  if (state !== 'open' && state !== 'closed') {
+    throw new Error('GitHub returned an unsupported work-item state.');
+  }
+  if (!Array.isArray(value.assignees)) throw new Error('GitHub returned invalid assignees.');
+  const item = {
+    assignees: value.assignees.map((item) => githubResponseIdentity(item, 'assignee')),
+    databaseId: githubResponsePositiveInteger(value.databaseId, 'work-item database id'),
+    nodeId: githubResponseNodeId(value.nodeId, 'work-item node id'),
+    number: githubResponsePositiveInteger(value.number, 'work-item number'),
+    state: state as 'closed' | 'open',
+    updatedAt: githubResponseTimestamp(value.updatedAt, 'work-item update time'),
+  };
+  if (!githubResponseBoolean(value.isPullRequest, 'work-item type')) {
+    if (typeof value.title !== 'string') throw new Error('GitHub returned an invalid issue title.');
+    return {
+      ...item,
+      itemType: 'issue' as const,
+      title: value.title,
+      ...(value.milestone === undefined
+        ? {}
+        : {
+            milestone: value.milestone === null ? null : githubResponseMilestone(value.milestone),
+          }),
+    };
+  }
+
+  return { ...item, itemType: 'pull-request' as const };
 }
