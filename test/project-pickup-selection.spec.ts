@@ -17,6 +17,41 @@ import normalizeSchedule from '../manifest/automation-schedule.ts';
 
 describe('agent/project-pickup', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
+    for (const change of ['replace', 'remove', 'add'] as const) {
+      it(`should refresh ${change} guidance before accepting a pending selection in ${runtime}`, async () => {
+        const f = fixture(runtime);
+        f.policy.projectPickup!.selection =
+          change === 'add' ? undefined : { guidance: 'prefer documentation' };
+        const selection = await f.select();
+        const guidance = change === 'remove' ? undefined : 'prefer release blockers';
+        f.policy.projectPickup!.selection = guidance ? { guidance } : undefined;
+        f.tx.runId = 'later-native-run';
+        const fresh = await f.run({ selection });
+        assert.equal(fresh.status, 'selection-required');
+        assert.ok('digest' in fresh && 'guidance' in fresh);
+        assert.notEqual(fresh.digest, selection.digest);
+        assert.equal(fresh.guidance, guidance);
+        assert.equal(f.effects.writes, 0);
+        assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
+      });
+    }
+
+    it(`should refresh guidance changed during provider reads before attempting assignment in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const selection = await f.select();
+      const history = f.client.listAssignmentEvents;
+      f.client.listAssignmentEvents = async (...args) => {
+        f.policy.projectPickup!.selection = { guidance: 'new priorities' };
+        return history(...args);
+      };
+      assert.equal((await f.run({ selection })).status, 'discovering');
+      assert.equal(f.effects.writes, 0);
+      const fresh = await f.run();
+      assert.ok('guidance' in fresh && 'digest' in fresh);
+      assert.equal(fresh.guidance, 'new priorities');
+      assert.notEqual(fresh.digest, selection.digest);
+    });
+
     it(`should reconcile its assignment when a collaborator is added concurrently in ${runtime}`, async () => {
       const f = fixture(runtime);
       const write = f.client.assignProjectIssue;

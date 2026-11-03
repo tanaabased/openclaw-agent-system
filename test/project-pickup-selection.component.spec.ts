@@ -206,6 +206,46 @@ describe('project pickup selection through native journals', () => {
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should refresh file guidance across runs and preserve uncertain-write recovery in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const selection = await f.select();
+      const path = join(root, 'workspace', 'selection.md');
+      await writeFile(path, 'prefer release blockers');
+      f.tick.id = 'later-native-run';
+      const fresh = await f.pickup({ selection });
+      assert.equal(fresh.status, 'selection-required');
+      assert.ok('guidance' in fresh && 'digest' in fresh);
+      assert.equal(fresh.guidance, 'prefer release blockers');
+      assert.notEqual(fresh.digest, selection.digest);
+      assert.equal(f.effects.writes, 0);
+      const assign = f.client.assignProjectIssue;
+      f.client.assignProjectIssue = async (...args) => {
+        await assign(...args);
+        throw new Error('response lost');
+      };
+      assert.equal((await f.pickup({ selection: await f.select() })).status, 'attempted');
+      await rm(path);
+      f.tick.id = 'recovery-run';
+      assert.equal((await f.pickup()).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+    });
+
+    it(`should invalidate material from the old guidance snapshot in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      f.candidates.get(f.item.number)!.body = 'candidate details '.repeat(2000);
+      const first = await f.pickup();
+      assert.ok('contextMaterials' in first && first.contextMaterials);
+      const { action, ...input } = first.contextMaterials.fields[0]!.request;
+      assert.equal(action, 'pickup');
+      await writeFile(join(root, 'workspace', 'selection.md'), 'changed selection priorities');
+      await assert.rejects(f.pickup(input as PickupInput), /selection-stale/);
+      const fresh = await f.pickup();
+      assert.equal(fresh.status, 'selection-required');
+      assert.ok('digest' in fresh && 'digest' in first);
+      assert.notEqual(fresh.digest, first.digest);
+      assert.equal(f.effects.writes, 0);
+    });
+
     it(`should retain receipt-based work intake after removing pickup configuration in ${runtime}`, async () => {
       const f = await fixture(runtime);
       assert.equal((await f.pickup({ selection: await f.select() })).status, 'assigned');

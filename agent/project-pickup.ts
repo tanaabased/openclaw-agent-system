@@ -258,7 +258,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       input.context.digest !== op.selectionDigest)
   )
     throw new Error('project-pickup-selection-stale');
-  const refreshSelection = op?.phase === 'failed' && op.attemptedAt === undefined && !op.receipt;
+  let refreshSelection = op?.phase === 'failed' && op.attemptedAt === undefined && !op.receipt;
   const restartDiscovery = (operation: PickupOperation) => {
     operation.phase = 'discovering';
     operation.page = 1;
@@ -352,6 +352,19 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     await save();
   }
   const operation = op;
+  const refreshGuidance = async (live: GitHubNotificationPolicy) => {
+    if (operation.attemptedAt !== undefined || operation.receipt) return false;
+    const guidance = await assessmentGuidance(
+      tx.workspaceDir,
+      live.projectPickup?.selection?.guidance,
+    );
+    if (guidance?.content === operation.guidance) return false;
+    if (guidance) operation.guidance = guidance.content;
+    else delete operation.guidance;
+    restartDiscovery(operation);
+    await save();
+    return true;
+  };
   enrollment = operation.enrollment ?? enrollment;
   if (!operation.repository && enrollment.repositoryNodeId !== journal.enrollment.repositoryNodeId)
     return {
@@ -437,6 +450,10 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     if (operation.attemptedAt === undefined) {
       const code = await routingEligibility(scope);
       if (code) return { status: 'pending', id: operation.id, code, changed };
+      if (await refreshGuidance(scope.live)) {
+        refreshSelection = true;
+        if (input.material) throw new Error('project-pickup-selection-stale');
+      }
     }
     if (operation.phase === 'discovering') {
       const budget = tx.discoveryBudget ?? new DiscoveryBudget();
@@ -568,6 +585,8 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         return finish(operation, 'failed', 'project-pickup-candidate-changed');
       if (authorized.live.projectPickup?.paused)
         return { status: 'paused', id: operation.id, changed };
+      if (await refreshGuidance(authorized.live))
+        return { status: 'discovering', id: operation.id, changed };
       const code = await routingEligibility(authorized);
       if (code) return { status: 'pending', id: operation.id, code, changed };
       if (

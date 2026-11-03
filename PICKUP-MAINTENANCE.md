@@ -69,9 +69,9 @@ no push, installation or live scheduled pilot has been performed.
       helper; candidate eligibility remains with the selection owner.
 - [x] bound expired, unattempted cancellations with ordinary terminal history. preserve
       current-window stops and all cancelled attempted-assignment/receipt evidence.
-- [ ] refresh selection guidance for pending, unattempted work. both runtimes retain old
-      guidance and accept the old selection after a live guidance edit and a later native
-      run. refresh the selection without Install; preserve recovery for attempted writes.
+- [x] refresh inline and file guidance for pending, unattempted work. restart discovery
+      and selection when content changes, including removal and edits during provider reads;
+      invalidate old material pages without Install and preserve attempted-write recovery.
 
 ## validation and rollout
 
@@ -97,6 +97,10 @@ no push, installation or live scheduled pilot has been performed.
 - [x] cancellation-history cleanup: 203 focused checks and full `bun run validate`
       passed 4,440 checks, lint, typecheck, build and plugin checks. the follow-up
       read-only audit reproduced the pending-guidance mismatch listed above in both runtimes.
+- [x] live guidance refresh: 215 focused checks and full `bun run validate` passed
+      4,452 checks, lint, typecheck, build and plugin checks. coverage includes inline
+      replacement/addition/removal, file edits across runs, changes during provider reads,
+      stale material rejection and uncertain-write recovery without rereading guidance.
 - [ ] CI exercises the affected installed boundaries; never run Leia examples locally.
 - [ ] approved installation reconciles Me's selected milestone and Doctor confirms readiness.
 - [ ] record real scheduled selection, one self-assignment, ordinary intake and delivery
