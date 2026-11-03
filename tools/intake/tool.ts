@@ -2,6 +2,7 @@ import { Value } from 'typebox/value';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import { IntakeError } from '../../channels/github/intake/record-store.ts';
+import { AutomationError } from '../../agent/automation-gateway.ts';
 
 import type OpenClawIntake from '../../agent/openclaw-intake.ts';
 import type AutomationLifecycleAuthority from '../../agent/automation-lifecycle-authority.ts';
@@ -38,6 +39,10 @@ export default function createIntakeTool(
         context: { agentId?: string; sessionKey?: string; sessionId?: string },
         call: string,
       ) => JSON.stringify([context.agentId, context.sessionKey, context.sessionId, call]);
+      const blocked = (reason: string) => ({
+        block: true,
+        blockReason: `project-pickup-native-caller-required (${reason})`,
+      });
       hooks?.on('before_tool_call', async (event, context) => {
         if (
           event.toolName !== 'agent_system_intake' ||
@@ -45,19 +50,29 @@ export default function createIntakeTool(
         )
           return;
         const call = context.toolCallId ?? event.toolCallId;
-        if (
-          !call ||
-          !authorizePickup ||
-          !context.runId ||
-          (event.toolCallId && context.toolCallId && event.toolCallId !== context.toolCallId)
-        )
-          return { block: true, blockReason: 'project-pickup-native-caller-required' };
+        if (!call) return blocked('tool-call-id-missing');
+        if (!authorizePickup) return blocked('automation-verifier-unavailable');
+        if (!context.runId) return blocked('run-id-missing');
+        if (event.toolCallId && context.toolCallId && event.toolCallId !== context.toolCallId)
+          return blocked('tool-call-id-mismatch');
         pending.delete(key(context, call));
         try {
           const authorization = await authorizePickup(context);
           pending.set(key(context, call), { authorization, runId: context.runId });
-        } catch {
-          return { block: true, blockReason: 'project-pickup-native-caller-required' };
+        } catch (error) {
+          const known = new Set([
+            'automation-lifecycle-unverified',
+            'automation-lifecycle-drift',
+            'automation-observation-unavailable',
+            'automation-native-response-invalid',
+            'automation-run-context-missing',
+            'automation-workspace-mismatch',
+          ]);
+          return blocked(
+            error instanceof AutomationError && known.has(error.code)
+              ? error.code
+              : 'automation-authority-unavailable',
+          );
         }
       });
       hooks?.on('after_tool_call', (event, context) => {
@@ -86,13 +101,17 @@ export default function createIntakeTool(
             const occurrence = pending.get(key(context, _id));
             pending.delete(key(context, _id));
             if (params.action === 'pickup' && !occurrence)
-              throw new IntakeError('project-pickup-native-caller-required');
+              throw new IntakeError('project-pickup-tool-call-authorization-missing');
             const result =
               params.action === 'pickup'
                 ? await service.pickup(
                     loaded.manifest,
                     loaded.scope.workspaceDir,
-                    { selection: params.selection },
+                    {
+                      selection: params.selection,
+                      context: params.context,
+                      material: params.material,
+                    },
                     Intl.DateTimeFormat().resolvedOptions().timeZone,
                     {
                       nativeId: occurrence!.authorization.nativeId,

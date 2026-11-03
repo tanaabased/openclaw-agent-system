@@ -1,6 +1,10 @@
 import type AutomationService from './automation-service.ts';
 import type { NotificationScheduler } from './automation-readiness.ts';
-import { AutomationError } from './automation-gateway.ts';
+import {
+  AutomationError,
+  listNativeAutomations,
+  type AutomationGateway,
+} from './automation-gateway.ts';
 import { effectiveAutomation, nativeAutomationHash } from './automation-projection.ts';
 import openclawIntakeJobs from './openclaw-intake-policy.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -32,6 +36,7 @@ export async function verifyAutomationLifecycleRun(
   manifest: AgentManifest,
   run: AutomationLifecycleRun,
   expectedId?: string,
+  request?: AutomationGateway,
 ): Promise<void> {
   const { context, store } = await service.scope(manifest, run.workspaceDir);
   const records = (await store.read()).records.filter(({ nativeId }) => nativeId === run.jobId);
@@ -51,11 +56,13 @@ export async function verifyAutomationLifecycleRun(
     record.retired ||
     record.removed ||
     record.hash !== effectiveAutomation(declared, context).hash ||
-    !record.nativeHash ||
-    !scheduler
+    !record.nativeHash
   )
     throw new AutomationError('automation-lifecycle-unverified');
-  const jobs = await scheduler.list({ includeDisabled: true });
+  if (!scheduler && !request) throw new AutomationError('automation-observation-unavailable');
+  const jobs = scheduler
+    ? await scheduler.list({ includeDisabled: true })
+    : await listNativeAutomations(request!);
   if (!Array.isArray(jobs)) throw new AutomationError('automation-observation-unavailable');
   const matches = jobs.filter(
     (job) => job?.id === run.jobId || job?.declarationKey === record.marker,

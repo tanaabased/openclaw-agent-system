@@ -443,7 +443,7 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
       },
       async (context) => {
         const admitted = automationLifecycle.resolve(context);
-        if (!admitted) throw new Error('project-pickup-native-caller-required');
+        if (!admitted) throw new AutomationError('automation-run-context-missing');
         const assertCurrent = async () => {
           admitted.assertCurrent();
           const loaded = await lifecycleManifestService.loadForAgentId(
@@ -455,13 +455,21 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
             (await realpath(loaded.scope.workspaceDir)) !==
               (await realpath(admitted.run.workspaceDir))
           )
-            throw new Error('project-pickup-native-caller-required');
-          await verifyAutomationLifecycleRun(
-            automationService,
-            readScheduler?.(),
-            loaded.manifest,
-            admitted.run,
-            projectPickupAutomationId,
+            throw new AutomationError('automation-workspace-mismatch');
+          await sessionDispatch.use({ signal: context.abortSignal }, async (request) =>
+            verifyAutomationLifecycleRun(
+              automationService,
+              undefined,
+              loaded.manifest,
+              admitted.run,
+              projectPickupAutomationId,
+              async (method, params) => {
+                const result = await request(method, params);
+                if (!nativeObject(result))
+                  throw new AutomationError('automation-native-response-invalid');
+                return result;
+              },
+            ),
           );
           admitted.assertCurrent();
         };

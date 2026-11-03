@@ -3,7 +3,7 @@ import { getTextContent } from '@copilotkit/aimock';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
-const model = /^(?:aimock\/)?gpt-5\.5$/u;
+const model = /^(?:aimock\/)?gpt-5\.(?:5|4-nano)$/u;
 const prompt = 'Run the activated project pickup once.';
 const call = 'call_project_pickup';
 

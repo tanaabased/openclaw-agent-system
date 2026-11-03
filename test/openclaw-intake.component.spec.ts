@@ -20,7 +20,7 @@ import doctorAgentSystem from '../cli/doctor.ts';
 import AgentSystemLifecycleRegistry from '../core/lifecycle-registry.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { automationPatch, projectAutomation } from '../agent/automation-projection.ts';
-import type { NativeAutomation } from '../agent/automation-gateway.ts';
+import { AutomationError, type NativeAutomation } from '../agent/automation-gateway.ts';
 import { intakeLocation } from '../channels/github/intake/record-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
@@ -815,16 +815,20 @@ describe('openclaw v2 intake slice', () => {
       (
         event: { toolName: string; params: object; toolCallId: string },
         context: Context,
-      ) => Promise<{ block?: boolean } | void>
+      ) => Promise<{ block?: boolean; blockReason?: string } | void>
     >();
     let factory: Parameters<OpenClawPluginApi['registerTool']>[0] | undefined;
     let current = true;
+    let failure: Error | undefined;
     let calls = 0;
     const assertCurrent = async () => {
+      if (failure) throw failure;
       if (!current) throw Error('expired');
     };
-    f.service.pickup = async (_manifest, _workspace, _input, _timezone, occurrence) => {
+    let received: unknown;
+    f.service.pickup = async (_manifest, _workspace, input, _timezone, occurrence) => {
       await occurrence!.assertCurrent();
+      received = input;
       calls++;
       return {
         status: 'idle',
@@ -863,11 +867,23 @@ describe('openclaw v2 intake slice', () => {
       params: { action: 'pickup' },
     };
     const hook = hooks.get('before_tool_call')!;
-    await assert.rejects(tool.execute('call', event.params), /native-caller-required/);
+    await assert.rejects(tool.execute('call', event.params), /tool-call-authorization-missing/);
     assert.equal(await hook(event, context), undefined);
-    await assert.rejects(tool.execute('different-call', event.params), /native-caller-required/);
+    await assert.rejects(
+      tool.execute('different-call', event.params),
+      /tool-call-authorization-missing/,
+    );
     await tool.execute('call', event.params);
-    await assert.rejects(tool.execute('call', event.params), /native-caller-required/);
+    const material = { path: ['candidates'], digest: 'a'.repeat(64), offset: 0 };
+    const selectionContext = { id: 'pickup-id', digest: 'b'.repeat(64) };
+    const materialEvent = {
+      ...event,
+      params: { action: 'pickup', context: selectionContext, material },
+    };
+    await hook(materialEvent, context);
+    await tool.execute('call', materialEvent.params);
+    assert.deepEqual(received, { selection: undefined, context: selectionContext, material });
+    await assert.rejects(tool.execute('call', event.params), /tool-call-authorization-missing/);
     await hook(event, context);
     current = false;
     await assert.rejects(tool.execute('call', event.params), /expired/);
@@ -875,7 +891,14 @@ describe('openclaw v2 intake slice', () => {
     current = true;
     await hook(event, context);
     await hooks.get('after_tool_call')!(event, context);
-    await assert.rejects(tool.execute('call', event.params), /native-caller-required/);
-    assert.equal(calls, 1);
+    await assert.rejects(tool.execute('call', event.params), /tool-call-authorization-missing/);
+    assert.equal(calls, 2);
+    assert.match((await hook(event, { ...context, runId: '' }))!.blockReason!, /run-id-missing/);
+    failure = new AutomationError('automation-lifecycle-drift');
+    assert.match((await hook(event, context))!.blockReason!, /automation-lifecycle-drift/);
+    failure = new Error('private filesystem and credential details');
+    const denied = (await hook(event, context))!.blockReason!;
+    assert.match(denied, /automation-authority-unavailable/);
+    assert.equal(denied.includes('private'), false);
   });
 });

@@ -129,6 +129,26 @@ describe('agent/automation-lifecycle-authority', () => {
     const run: AutomationLifecycleRun = { ...fixture().context, jobId: 'native-job' };
     const verify = () => verifyAutomationLifecycleRun(service, scheduler, manifest, run);
     await verify();
+    const methods: string[] = [];
+    await verifyAutomationLifecycleRun(
+      service,
+      undefined,
+      manifest,
+      run,
+      undefined,
+      async (method) => {
+        methods.push(method);
+        return { jobs: [{ ...native, configRevision: '1', state: {} }], hasMore: false };
+      },
+    );
+    assert.deepEqual(methods, ['cron.list']);
+    await assert.rejects(
+      verifyAutomationLifecycleRun(service, undefined, manifest, run, undefined, async () => ({
+        jobs: [{ ...native, agentId: 'foreign', configRevision: '1', state: {} }],
+        hasMore: false,
+      })),
+      /automation-lifecycle-drift/,
+    );
     for (const change of [
       () => {
         native.agentId = 'foreign';
