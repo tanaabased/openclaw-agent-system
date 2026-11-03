@@ -126,11 +126,16 @@ async function fixture(
   };
 }
 
-async function managedFixture() {
+async function managedFixture(backing: 'managed' | 'local' = 'managed') {
   const f = await fixture();
   await writeFile(join(f.root, 'agent.yaml'), `${manifest}\ngit:\n  worktrees: {}\n`);
   const workspaceDir = join(f.root, '.agent-system/worktrees/repo-id/issue-id');
-  const admin = join(f.root, '.agent-system/repositories/repo-id.git/worktrees/issue-id');
+  const admin = join(
+    f.root,
+    backing === 'managed'
+      ? '.agent-system/repositories/repo-id.git/worktrees/issue-id'
+      : 'source/.git/worktrees/issue-id',
+  );
   await mkdir(workspaceDir, { recursive: true });
   await mkdir(admin, { recursive: true });
   await writeFile(join(workspaceDir, '.git'), `gitdir: ${admin}\n`);
@@ -146,22 +151,24 @@ afterEach(async () => {
 
 describe('agent/lifecycle-approval', () => {
   for (const name of lifecycleToolNames) {
-    it(`should execute approved ${name} from a managed worktree against the canonical target`, async () => {
-      const f = await managedFixture();
-      const request = await f.request(name, {}, f.context);
-      assert.ok(request.requireApproval.description.includes(f.root));
-      request.requireApproval.onResolution('allow-once');
-      const result = await f.approval.execute(name, {}, 'call', f.toolContext);
-      assert.equal(result.agentId, 'data');
-      assert.equal(result.workspaceDir, f.root);
-      assert.ok(f.calls.includes(name === 'agent_system_doctor' ? 'inspect' : 'reconcile'));
-      assert.ok(f.calls.includes('check-approved'));
-      const completed = [...f.calls];
-      await assert.rejects(f.approval.execute(name, {}, 'call', f.toolContext), {
-        code: 'approval_denied',
+    for (const backing of ['managed', 'local'] as const) {
+      it(`should execute approved ${name} from a ${backing} backed worktree against the canonical target`, async () => {
+        const f = await managedFixture(backing);
+        const request = await f.request(name, {}, f.context);
+        assert.ok(request.requireApproval.description.includes(f.root));
+        request.requireApproval.onResolution('allow-once');
+        const result = await f.approval.execute(name, {}, 'call', f.toolContext);
+        assert.equal(result.agentId, 'data');
+        assert.equal(result.workspaceDir, f.root);
+        assert.ok(f.calls.includes(name === 'agent_system_doctor' ? 'inspect' : 'reconcile'));
+        assert.ok(f.calls.includes('check-approved'));
+        const completed = [...f.calls];
+        await assert.rejects(f.approval.execute(name, {}, 'call', f.toolContext), {
+          code: 'approval_denied',
+        });
+        assert.deepEqual(f.calls, completed);
       });
-      assert.deepEqual(f.calls, completed);
-    });
+    }
   }
 
   it('should report invalid worktree bindings before inspection rather than request new approval', async () => {

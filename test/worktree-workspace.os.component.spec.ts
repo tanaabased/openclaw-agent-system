@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import isManagedWorktreeWorkspace from '../tools/git/worktree-workspace.ts';
 import loadBoundToolManifest from '../api/manifest-binding.ts';
 import worktreeGuidance from '../agent/worktree-guidance.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
+
+const git = promisify(execFile);
 
 describe('managed worktree workspace binding', () => {
   let root: string;
@@ -78,7 +82,116 @@ describe('managed worktree workspace binding', () => {
     assert.equal(await isManagedWorktreeWorkspace(workspace, {}, cwd), false);
   });
 
-  it('should reject foreign repositories and aliases before reading their metadata', async () => {
+  it('should bind two agents sharing a local source only to their own worktrees', async () => {
+    const source = join(root, 'source');
+    await mkdir(source);
+    await git('git', ['init', '--initial-branch=main', source]);
+    await git('git', [
+      '-C',
+      source,
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@example.invalid',
+      '-c',
+      'commit.gpgsign=false',
+      '-c',
+      'core.hooksPath=/dev/null',
+      'commit',
+      '--allow-empty',
+      '-m',
+      'seed',
+    ]);
+    const agents = [
+      { id: 'data', workspace, configuration: { repositories: { local: { fixture: source } } } },
+      {
+        id: 'other',
+        workspace: join(root, 'other'),
+        configuration: {
+          root: join(root, 'other-worktrees'),
+          repositories: { local: { fixture: source } },
+        },
+      },
+    ];
+    const checkouts = agents.map((agent) =>
+      join(
+        agent.configuration.root ?? join(agent.workspace, '.agent-system/worktrees'),
+        'fixture',
+        'task',
+      ),
+    );
+    for (const [index, agent] of agents.entries()) {
+      await mkdir(agent.workspace, { recursive: true });
+      await git('git', ['-C', source, 'worktree', 'add', '--detach', checkouts[index]!, 'HEAD']);
+    }
+    for (const [index, agent] of agents.entries()) {
+      const checkout = checkouts[index]!;
+      const canonical: typeof loaded = {
+        ...loaded,
+        scope: { agentId: agent.id, workspaceDir: agent.workspace },
+        manifest: {
+          schemaVersion: 1,
+          agent: { id: agent.id },
+          git: { worktrees: agent.configuration },
+        },
+      };
+      const service = {
+        loadForAgentId: async () => canonical,
+        loadForCommandDirectory: async () => canonical,
+      };
+      const toolContext = {
+        ...context(),
+        agentId: agent.id,
+        sessionKey: `agent:${agent.id}:test`,
+        workspaceDir: checkout,
+      };
+      assert.equal(
+        await isManagedWorktreeWorkspace(agent.workspace, agent.configuration, checkout),
+        true,
+      );
+      assert.equal(
+        (await loadBoundToolManifest(service, { source: 'tool', toolContext })).scope.workspaceDir,
+        agent.workspace,
+      );
+      await writeFile(join(agent.workspace, 'SOUL.md'), `canonical ${agent.id}`);
+      assert.ok(
+        (await worktreeGuidance(canonical, toolContext))?.includes(`canonical ${agent.id}`),
+      );
+      await assert.rejects(
+        loadBoundToolManifest(service, {
+          source: 'tool',
+          toolContext: { ...toolContext, workspaceDir: checkouts[1 - index]! },
+        }),
+        { code: 'agent_not_resolved' },
+      );
+      assert.equal(
+        await isManagedWorktreeWorkspace(agent.workspace, agent.configuration, source),
+        false,
+      );
+    }
+  });
+
+  it('should reject broken registration and aliases for external backing repositories', async () => {
+    const repository = join(root, 'source/.git');
+    const externalAdmin = join(repository, 'worktrees/task');
+    await mkdir(externalAdmin, { recursive: true });
+    await writeFile(join(cwd, '.git'), `gitdir: ${externalAdmin}\n`);
+    await writeFile(join(externalAdmin, 'commondir'), '../..\n');
+    await writeFile(join(externalAdmin, 'gitdir'), `${cwd}/.git\n`);
+    assert.equal(await isManagedWorktreeWorkspace(workspace, {}, cwd), true);
+    await writeFile(join(externalAdmin, 'gitdir'), `${workspace}/.git\n`);
+    assert.equal(await isManagedWorktreeWorkspace(workspace, {}, cwd), false);
+    await writeFile(join(externalAdmin, 'gitdir'), `${cwd}/.git\n`);
+    await writeFile(join(externalAdmin, 'commondir'), '../../elsewhere\n');
+    assert.equal(await isManagedWorktreeWorkspace(workspace, {}, cwd), false);
+    await writeFile(join(externalAdmin, 'commondir'), '../..\n');
+    const alias = join(root, 'source-alias');
+    await symlink(repository, alias);
+    await writeFile(join(cwd, '.git'), `gitdir: ${alias}/worktrees/task\n`);
+    assert.equal(await isManagedWorktreeWorkspace(workspace, {}, cwd), false);
+  });
+
+  it('should reject missing registration and aliases before reading their metadata', async () => {
     const outside = join(root, 'foreign');
     await mkdir(outside);
     await writeFile(join(cwd, '.git'), `gitdir: ${outside}/worktrees/item\n`);
