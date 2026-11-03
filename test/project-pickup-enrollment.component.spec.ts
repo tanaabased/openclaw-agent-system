@@ -59,7 +59,7 @@ describe('project pickup installation enrollment', () => {
       const f = await fixture();
       const first = await f.store.prepare(f.input);
       await assert.rejects(
-        f.store.prepare({ ...f.input, scope: 'other', workspaceDir: '/other' }),
+        f.store.prepare({ ...f.input, workspaceDir: '/other' }),
         /enrollment-conflict/,
       );
       await assert.rejects(
@@ -69,6 +69,21 @@ describe('project pickup installation enrollment', () => {
       f.policy.projectPickup!.windowMinutes++;
       await assert.rejects(f.store.prepare(f.input), /enrollment-changed/);
       assert.deepEqual((await f.store.read()).records, [first]);
+    });
+
+    it(`should enroll separate workspaces on the same target without replacing either owner in ${runtime}`, async () => {
+      const f = await fixture();
+      const first = await f.store.prepare(f.input);
+      await f.store.activate(first.enrollment.id, 'first-job');
+      const otherInput = { ...f.input, scope: 'other', workspaceDir: '/other' };
+      const other = await f.store.prepare(otherInput);
+      await f.store.activate(other.enrollment.id, 'other-job');
+      assert.notEqual(first.enrollment.id, other.enrollment.id);
+      assert.equal((await f.store.inspect(f.policy, runtime, 'scope')).nativeId, 'first-job');
+      assert.equal((await f.store.inspect(f.policy, runtime, 'other')).nativeId, 'other-job');
+      assert.equal((await f.store.prepare(f.input)).enrollment.id, first.enrollment.id);
+      assert.equal((await f.store.prepare(otherInput)).enrollment.id, other.enrollment.id);
+      assert.equal((await f.store.read()).records.length, 2);
     });
 
     it(`should change milestone with retained work and keep original receipts in ${runtime}`, async () => {

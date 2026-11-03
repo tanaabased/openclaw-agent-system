@@ -376,13 +376,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     if (repository.nodeId !== enrollment.repositoryNodeId)
       throw new Error('project-pickup-repository-changed');
     if (retainedAssignment) return { live, repository };
-    const milestone = await projectPickupScope(
-      live,
-      client,
-      repository,
-      undefined,
-      retainedAssignment,
-    );
+    const milestone = await projectPickupScope(live, client, repository);
     if (milestone?.nodeId !== enrollment.milestoneNodeId)
       throw new Error('project-pickup-milestone-changed');
     return { live, repository };

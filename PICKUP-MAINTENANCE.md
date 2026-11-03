@@ -63,6 +63,14 @@ no push, installation or live scheduled pilot has been performed.
       awaiting ordinary intake, with a fresh capacity check before the write.
 - [x] remove the retired interval-window path and unused candidate type; selection fixtures
       use the same daily clock schedule as production.
+- [x] enroll workspaces independently even when their GitHub account and target match.
+      preserve scope/runtime ownership and existing account and installation identity checks.
+- [x] remove unused item-validation and retained-assignment branches from the pickup scope
+      helper; candidate eligibility remains with the selection owner.
+- [ ] bound expired, unattempted cancellation history. a controlled 40-day run retained
+      all 40 cancelled selections in both runtimes. keep current-window cancellation and
+      all attempted-assignment/receipt evidence; only effect-free old cancellations are
+      cleanup candidates. this is retained state growth, not a reproduced intake failure.
 
 ## validation and rollout
 
@@ -81,6 +89,10 @@ no push, installation or live scheduled pilot has been performed.
       the subsequent read-only optimizer found no further actionable defects in the
       maintenance scope. retain uncertain-write recovery and prior ownership receipts;
       installed and live scheduled behavior remains unverified below.
+- [x] independent workspace enrollment and scope-helper cleanup: 198 focused checks and
+      full `bun run validate` passed 4,435 checks, lint, typecheck, build and plugin checks.
+      the follow-up read-only audit reproduced only the unattempted cancellation-history
+      cleanup listed above; no additional immediate blocker was established.
 - [ ] CI exercises the affected installed boundaries; never run Leia examples locally.
 - [ ] approved installation reconciles Me's selected milestone and Doctor confirms readiness.
 - [ ] record real scheduled selection, one self-assignment, ordinary intake and delivery

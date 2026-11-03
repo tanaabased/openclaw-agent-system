@@ -36,14 +36,14 @@ describe('github project pickup policy', () => {
   it('should intersect pickup scope with ordered routing without consulting legacy pins', async () => {
     const f = pickupFixture();
     f.policy.routing = ['!owner/repo', '*/*'];
-    assert.equal(await projectPickupScope(f.policy, f.client, f.repository, f.item), undefined);
+    assert.equal(await projectPickupScope(f.policy, f.client, f.repository), undefined);
     f.policy.routing.reverse();
     f.policy.allowedRepositoryOwners = [{ login: 'other', nodeId: 'O_other' }];
-    assert.equal(await projectPickupScope(f.policy, f.client, f.repository, f.item), f.milestone);
+    assert.equal(await projectPickupScope(f.policy, f.client, f.repository), f.milestone);
     f.policy.routing = [];
-    assert.equal(await projectPickupScope(f.policy, f.client, f.repository, f.item), undefined);
+    assert.equal(await projectPickupScope(f.policy, f.client, f.repository), undefined);
     delete f.policy.routing;
-    assert.equal(await projectPickupScope(f.policy, f.client, f.repository, f.item), undefined);
+    assert.equal(await projectPickupScope(f.policy, f.client, f.repository), undefined);
   });
 
   it('should normalize recurring schedules and both guidance forms without activating work', () => {
@@ -320,14 +320,6 @@ describe('github project pickup policy', () => {
     assert.ok(await projectPickupScope(f.policy, f.client, f.repository));
     assert.equal(
       await projectPickupScope(f.policy, f.client, { ...f.repository, name: 'other' }),
-      undefined,
-    );
-    assert.equal(
-      await projectPickupScope(f.policy, f.client, f.repository, {
-        ...f.item,
-        itemType: 'issue',
-        milestone: null,
-      }),
       undefined,
     );
     f.milestone.state = 'closed';

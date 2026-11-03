@@ -119,10 +119,7 @@ export default class ProjectPickupEnrollmentStore {
       const state = await this.read();
       const matches = state.records.filter(
         (record) =>
-          (record.enrollment.repositoryNodeId === repository.nodeId &&
-            record.enrollment.milestoneNodeId === milestone.nodeId &&
-            record.enrollment.account.nodeId === input.client.identity.nodeId) ||
-          (record.enrollment.scope === input.scope && record.enrollment.runtime === input.runtime),
+          record.enrollment.scope === input.scope && record.enrollment.runtime === input.runtime,
       );
       if (matches.length > 1) throw new IntakeError('project-pickup-enrollment-conflict');
       const existing = matches[0];
