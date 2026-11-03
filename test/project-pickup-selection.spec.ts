@@ -1,11 +1,276 @@
+import reconcileProjectPickup from '../agent/project-pickup-reconcile.ts';
+import {
+  projectPickupPolicyDigest,
+  default as authorizeProjectAssignment,
+} from '../agent/project-pickup-authority.ts';
 import assert from 'node:assert/strict';
 
 import pickupCapacity, { pickupIssueKey } from '../agent/project-pickup-capacity.ts';
-import { pickupAuthority } from '../agent/project-pickup.ts';
+import projectPickup, { pickupAuthority } from '../agent/project-pickup.ts';
+import DiscoveryBudget from '../agent/discovery-budget.ts';
+import { pickupOperationSchema } from '../agent/project-pickup-state.ts';
+import { Value } from 'typebox/value';
+import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import fixture from './project-pickup-selection-fixture.ts';
 
 describe('agent/project-pickup', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should continue beyond ten pages and one thousand candidates in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const original = structuredClone(f.item);
+      f.items.clear();
+      f.candidates.clear();
+      for (let n = 1; n <= 1001; n++) {
+        const nodeId = `I_${n}`;
+        f.items.set(n, { ...original, number: n, nodeId });
+        f.candidates.set(n, { number: n, nodeId, title: 'ready', body: 'ready work', labels: [] });
+      }
+      f.client.discoverProject = async (_owner, _name, _milestone, page) => ({
+        candidates: [...f.candidates.values()].slice((page - 1) * 100, page * 100),
+        ...(page < 11 ? { nextPage: page + 1 } : {}),
+      });
+      for (let page = 1; page <= 10; page++) assert.equal((await f.run()).status, 'discovering');
+      assert.equal((await f.run()).status, 'selection-required');
+      const operation = f.state.projectPickup!.operations[0]!;
+      assert.equal(operation.candidates.length, 1001);
+      assert.ok(Value.Check(pickupOperationSchema, operation));
+      assert.equal(f.effects.writes, 0);
+    });
+
+    it(`should checkpoint within discovery and resume without rereading completed candidates in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const first = structuredClone(f.candidates.get(f.item.number)!);
+      const second = { ...first, nodeId: 'I_second', number: first.number + 1 };
+      f.items.set(second.number, { ...f.item, nodeId: second.nodeId, number: second.number });
+      f.candidates.set(second.number, second);
+      let time = 0;
+      const reads: number[] = [];
+      const read = f.client.projectCandidate;
+      f.client.projectCandidate = async (...args) => {
+        reads.push(args[2]);
+        time += 21000;
+        return read(...args);
+      };
+      const run = () =>
+        projectPickup({
+          ...f.tx,
+          discoveryBudget: new DiscoveryBudget(20000, undefined, () => time),
+        });
+      assert.equal((await run()).status, 'discovering');
+      const saved = f.state.projectPickup!.operations[0]!;
+      assert.ok(Value.Check(pickupOperationSchema, saved));
+      assert.deepEqual(saved.discovery!.pending, [
+        { nodeId: second.nodeId, number: second.number },
+      ]);
+      f.state.projectPickup = structuredClone(f.state.projectPickup);
+      assert.equal((await run()).status, 'selection-required');
+      assert.deepEqual(reads, [first.number, second.number]);
+      assert.equal(f.effects.writes, 0);
+    });
+
+    for (const reason of ['no-candidates', 'blocked', 'none-selected'] as const) {
+      it(`should reconsider an empty window after ${reason} in ${runtime}`, async () => {
+        const f = fixture(runtime);
+        const candidate = structuredClone(f.candidates.get(f.item.number)!);
+        if (reason === 'no-candidates') f.candidates.clear();
+        if (reason === 'blocked') f.client.projectBlocked = async () => true;
+        const empty =
+          reason === 'none-selected'
+            ? await f.run({ selection: { ...(await f.select()), issueNodeId: null } })
+            : await f.run();
+        assert.equal(empty.status, 'empty');
+        const window = structuredClone(f.state.projectPickup!.operations[0]!.window);
+        f.candidates.set(f.item.number, candidate);
+        f.client.projectBlocked = async () => false;
+        f.clock.now += 60000;
+        const selection = await f.select();
+        assert.equal((await f.run({ selection })).status, 'assigned');
+        assert.equal(f.effects.writes, 1);
+        assert.equal(f.state.projectPickup!.operations.length, 1);
+        assert.deepEqual(f.state.projectPickup!.operations[0]!.window, window);
+        await f.run();
+        assert.equal(f.effects.writes, 1);
+      });
+    }
+
+    it(`should keep cancellation and window closure effective after an empty scan in ${runtime}`, async () => {
+      for (const stop of ['cancelled', 'closed'] as const) {
+        const f = fixture(runtime);
+        const candidate = structuredClone(f.candidates.get(f.item.number)!);
+        f.candidates.clear();
+        const empty = await f.run();
+        if (stop === 'cancelled') await f.run({ cancel: empty.id! });
+        else f.clock.now = f.state.projectPickup!.operations[0]!.window.closesAt;
+        f.candidates.set(f.item.number, candidate);
+        assert.equal((await f.run()).status, 'idle');
+        assert.equal(f.effects.writes, 0);
+      }
+    });
+
+    it(`should use a changed milestone after an empty scan in the same window in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const candidate = structuredClone(f.candidates.get(f.item.number)!);
+      f.candidates.clear();
+      assert.equal((await f.run()).status, 'empty');
+      f.policy.projectPickup!.projects[0]!.milestone.number = 11;
+      f.milestone.number = 11;
+      f.milestone.nodeId = 'MI_new';
+      const enrollment = {
+        ...f.tx.enrollment,
+        milestoneNodeId: 'MI_new',
+        policyDigest: projectPickupPolicyDigest(f.policy),
+      };
+      await reconcileProjectPickup(
+        f.state,
+        f.tx.save,
+        { enrollment, instanceId: 'instance', timezone: 'UTC', repository: 'owner/repo' },
+        async () => {
+          f.tx.enrollment = enrollment;
+        },
+      );
+      f.candidates.set(f.item.number, candidate);
+      f.clock.now += 60000;
+      let requested: number | undefined;
+      const discover = f.client.discoverProject;
+      f.client.discoverProject = async (owner, name, milestone, page) => {
+        requested = milestone;
+        return discover(owner, name, milestone, page);
+      };
+      assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
+      assert.equal(requested, 11);
+      assert.equal(f.effects.writes, 1);
+      assert.equal(f.state.projectPickup!.operations.length, 1);
+    });
+
+    for (const nextWindow of [false, true]) {
+      it(`should reconsider failed reads without manual recovery in ${runtime} with next window ${nextWindow}`, async () => {
+        const f = fixture(runtime);
+        const discover = f.client.discoverProject;
+        f.client.discoverProject = async () => {
+          throw new GitHubWorkEventClientError('network-error', 'temporary read failure');
+        };
+        assert.equal((await f.run()).status, 'failed');
+        f.client.discoverProject = discover;
+        if (nextWindow) f.clock.now += 86400000;
+        const selection = await f.select();
+        assert.equal(f.effects.writes, 0);
+        assert.equal((await f.run({ selection })).status, 'assigned');
+        assert.equal(f.effects.writes, 1);
+      });
+    }
+
+    it(`should refresh an edited candidate instead of blocking later pickup in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const selection = await f.select();
+      f.candidates.get(f.item.number)!.body += ' updated requirements';
+      assert.equal((await f.run({ selection })).status, 'failed');
+      const refreshed = await f.run({ selection });
+      assert.equal(refreshed.status, 'selection-required');
+      assert.ok('digest' in refreshed && refreshed.digest !== selection.digest);
+      assert.equal(f.effects.writes, 0);
+      assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+    });
+
+    it(`should leave an attempted assignment held even if its phase is failed in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.client.assignProjectIssue = async () => {
+        f.effects.writes++;
+        throw new Error('lost response');
+      };
+      await f.run({ selection: await f.select() });
+      f.state.projectPickup!.operations[0]!.phase = 'failed';
+      f.clock.now += 86400000;
+      assert.equal((await f.run()).status, 'failed');
+      assert.equal(f.effects.writes, 1);
+    });
+
+    it(`should reconcile an earlier assignment after a milestone change without another write in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const original = structuredClone(f.tx.enrollment);
+      const assign = f.client.assignProjectIssue;
+      f.client.assignProjectIssue = async (...args) => {
+        await assign(...args);
+        throw Error('lost response');
+      };
+      assert.equal((await f.run({ selection: await f.select() })).status, 'attempted');
+      const highWater = f.state.projectPickup!.highWater;
+      f.policy.projectPickup!.projects[0]!.milestone.number = 11;
+      f.policy.projectPickup!.windowMinutes = 30;
+      const updated = {
+        ...original,
+        milestoneNodeId: 'MI_new',
+        policyDigest: projectPickupPolicyDigest(f.policy),
+      };
+      await reconcileProjectPickup(
+        f.state,
+        f.tx.save,
+        {
+          enrollment: updated,
+          instanceId: 'instance',
+          timezone: 'UTC',
+          repository: 'owner/repo',
+        },
+        async () => {
+          f.tx.enrollment = updated;
+        },
+      );
+      assert.equal(f.state.projectPickup!.highWater, highWater);
+      assert.equal((await f.run()).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+      const authority = pickupAuthority(f.state.projectPickup)!;
+      assert.equal(authority.retained!.length, 1);
+      const item = await f.client.getItem('owner', 'repo', f.item.number);
+      const work = await authorizeProjectAssignment({
+        ...f.input,
+        authority,
+        client: f.client,
+        item,
+        event: f.events[0]!,
+        now: f.clock.now,
+      });
+      assert.deepEqual(work!.enrollment, original);
+      assert.equal(work!.pickup!.assignmentNodeId, f.events[0]!.nodeId);
+    });
+
+    it(`should cancel stale selection and use the new milestone next window in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const selection = await f.select();
+      f.policy.projectPickup!.projects[0]!.milestone.number = 11;
+      f.milestone.number = 11;
+      f.milestone.nodeId = 'MI_new';
+      const updated = {
+        ...f.tx.enrollment,
+        milestoneNodeId: 'MI_new',
+        policyDigest: projectPickupPolicyDigest(f.policy),
+      };
+      await reconcileProjectPickup(
+        f.state,
+        f.tx.save,
+        {
+          enrollment: updated,
+          instanceId: 'instance',
+          timezone: 'UTC',
+          repository: 'owner/repo',
+        },
+        async () => {
+          f.tx.enrollment = updated;
+        },
+      );
+      assert.equal((await f.run({ selection })).status, 'idle');
+      assert.equal(f.effects.writes, 0);
+      f.clock.now += 86400000;
+      let requested: number | undefined;
+      const discover = f.client.discoverProject;
+      f.client.discoverProject = async (owner, name, milestone, page) => {
+        requested = milestone;
+        return discover(owner, name, milestone, page);
+      };
+      assert.equal((await f.run()).status, 'selection-required');
+      assert.equal(requested, 11);
+      assert.equal(f.effects.writes, 0);
+    });
+
     it(`should hold non-target pickup and preserve uncertain assignments in ${runtime}`, async () => {
       const target = '11111111-1111-4111-8111-111111111111';
       const f = fixture(runtime);
@@ -84,6 +349,25 @@ describe('agent/project-pickup', () => {
     }
   });
 
+  it('should preserve provider eligibility when recovering an uncertain assignment', async () => {
+    for (const reason of ['closed', 'archived', 'disabled'] as const) {
+      const f = fixture();
+      const assign = f.client.assignProjectIssue;
+      f.client.assignProjectIssue = async (...args) => {
+        await assign(...args);
+        throw Error('lost response');
+      };
+      assert.equal((await f.run({ selection: await f.select() })).status, 'attempted');
+      if (reason === 'closed') f.item.state = 'closed';
+      else f.input.repository[reason] = true;
+      const result = await f.run();
+      assert.equal(result.status, 'attempted');
+      assert.ok('code' in result && result.code === 'project-pickup-assignment-unverified');
+      assert.equal(f.effects.writes, 1);
+      assert.equal(f.state.projectPickup!.operations[0]!.receipt, undefined);
+    }
+  });
+
   it('should preserve a competing assignee and withhold its admission receipt', async () => {
     const f = fixture();
     const write = f.client.assignProjectIssue;
@@ -117,25 +401,25 @@ describe('agent/project-pickup', () => {
     }
   });
 
-  it('should count queued pickup and unfinished work once through transfer and blocked outcomes', async () => {
+  it('should reserve pickup only until ordinary intake takes custody', async () => {
     const f = fixture();
     await f.run({ selection: await f.select() });
     const pickup = f.state.projectPickup!;
-    assert.equal(pickupCapacity([], pickup, f.tx.occupied), 1);
-    assert.equal(pickupCapacity([], pickup, f.tx.occupied, f.item.nodeId), 0);
+    assert.equal(pickupCapacity([], pickup), 1);
+    assert.equal(pickupCapacity([], pickup, f.item.nodeId), 0);
     f.state.records.push({
       projectWork: f.work(),
       phase: 'assessing',
       issueKey: pickupIssueKey(pickup, f.item.nodeId),
       request: {},
     });
-    assert.equal(pickupCapacity(f.state.records, pickup, f.tx.occupied), 0);
-    assert.equal((await f.run()).status, 'admitted');
+    assert.equal(pickupCapacity(f.state.records, pickup), 0);
+    assert.equal((await f.run()).status, 'idle');
     delete f.state.records[0]!.request;
     f.state.records[0]!.result = { outcome: 'clarification-needed' };
-    assert.equal(pickupCapacity(f.state.records, pickup, f.tx.occupied), 1);
+    assert.equal(pickupCapacity(f.state.records, pickup), 0);
     f.clock.now += 86400000;
-    assert.equal((await f.run()).status, 'admitted');
+    assert.equal((await f.run()).status, 'empty');
     assert.equal(f.effects.writes, 1);
   });
 
@@ -197,7 +481,13 @@ describe('agent/project-pickup', () => {
     assert.equal(f.effects.writes, 0);
   });
   it('should recover each durable boundary without replaying an attempted write', async () => {
-    for (const boundary of [1, 2, 3, 4, 5, 6])
+    const baseline = fixture();
+    let boundaryCount = 0;
+    baseline.tx.save = async () => {
+      boundaryCount++;
+    };
+    await baseline.run({ selection: await baseline.select() });
+    for (let boundary = 1; boundary <= boundaryCount; boundary++)
       for (const after of [false, true]) {
         const f = fixture();
         let disk = structuredClone(f.state);
@@ -211,6 +501,9 @@ describe('agent/project-pickup', () => {
         await assert.rejects(async () => f.run({ selection: await f.select() }));
         delete f.state.projectPickup;
         Object.assign(f.state, structuredClone(disk));
+        const uncertain =
+          disk.projectPickup?.operations.some((op) => op.attemptedAt !== undefined) &&
+          f.effects.writes === 0;
         f.tx.save = async () => {
           disk = structuredClone(f.state);
         };
@@ -218,13 +511,13 @@ describe('agent/project-pickup', () => {
         if (recovered.status === 'selection-required') await f.run({ selection: await f.select() });
         await f.run();
         assert.ok(f.effects.writes <= 1, `boundary ${boundary}, after ${after}`);
-        if (boundary === 5 && after) assert.equal(f.effects.writes, 0);
+        if (uncertain) assert.equal(f.effects.writes, 0);
         else assert.equal(f.effects.writes, 1);
       }
   });
 
-  it('should hold incomplete history and late or ambiguous assignment events', async () => {
-    for (const reason of ['history', 'late', 'actor', 'duplicate']) {
+  it('should hold incomplete history and ambiguous assignment events', async () => {
+    for (const reason of ['history', 'actor', 'duplicate']) {
       const f = fixture();
       const selection = await f.select();
       const write = f.client.assignProjectIssue;
@@ -232,10 +525,6 @@ describe('agent/project-pickup', () => {
         await write(...args);
         if (reason === 'history')
           f.client.listAssignmentEvents = async () => ({ events: f.events, truncated: true });
-        if (reason === 'late')
-          f.events[0]!.createdAt = new Date(
-            f.state.projectPickup!.operations[0]!.window.closesAt,
-          ).toISOString();
         if (reason === 'actor')
           f.events[0]!.actor = { login: 'other', nodeId: 'U_other', type: 'User' };
         if (reason === 'duplicate')
@@ -259,6 +548,7 @@ describe('agent/project-pickup', () => {
   });
   it('should retain occupied retirement and release the pilot after native retirement completes', async () => {
     const f = fixture();
+    f.policy.maxConcurrentItems = 1;
     await f.run({ selection: await f.select() });
     f.state.records.push({
       phase: 'complete',
@@ -268,7 +558,7 @@ describe('agent/project-pickup', () => {
       issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
     });
     f.clock.now += 86400000;
-    assert.equal((await f.run()).status, 'admitted');
+    assert.equal((await f.run()).status, 'at-capacity');
     delete f.state.records[0]!.request;
     assert.equal((await f.run()).status, 'empty');
     assert.equal(f.state.projectPickup!.operations[0]!.phase, 'cancelled');
@@ -286,7 +576,7 @@ describe('agent/project-pickup', () => {
       issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
     });
     assert.equal((await f.run()).status, 'assigned');
-    assert.equal(pickupCapacity(f.state.records, f.state.projectPickup, f.tx.occupied), 1);
+    assert.equal(pickupCapacity(f.state.records, f.state.projectPickup), 1);
   });
   it('should retain cancellation evidence when ordinary window history is pruned', async () => {
     const f = fixture();

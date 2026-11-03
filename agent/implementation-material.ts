@@ -19,7 +19,12 @@ export default function implementationMaterial<T extends Record<string, unknown>
   context: T,
   request: Record<string, unknown>,
   read?: ImplementationMaterialRead,
-  delivery: { instruction?: string; controls?: string[]; purpose?: string } = {},
+  delivery: {
+    instruction?: string;
+    controls?: string[];
+    purpose?: string;
+    pagedFields?: string[];
+  } = {},
 ) {
   const values = new Map<string, string>();
   const aliases: Array<{ path: string[]; from: string[] }> = [];
@@ -85,6 +90,10 @@ export default function implementationMaterial<T extends Record<string, unknown>
       else scan(item, at);
     }
   };
+  for (const name of delivery.pagedFields ?? []) {
+    if (projected[name] !== undefined && JSON.stringify(projected[name]).length > pageCharacters)
+      defer(projected, name, [name]);
+  }
   scan(projected, []);
   const material = () => ({
     version: 1,

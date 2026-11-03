@@ -1,5 +1,5 @@
 import { automationHash } from './automation-hash.ts';
-import issueWorkflowProgress, { type IssueWorkflowState } from './issue-workflow-progress.ts';
+import type { IssueWorkflowState } from './issue-workflow-progress.ts';
 import type { ProjectWork } from './project-pickup-authority.ts';
 import {
   pickupUnfinished,
@@ -25,7 +25,6 @@ export function pickupIssueKey(pickup: ProjectPickupState, nodeId: string | unde
 export default function projectPickupCapacity<R extends PickupManagedRecord>(
   records: R[],
   pickup: ProjectPickupState | undefined,
-  occupied: (record: R) => boolean,
   excludeIssue?: string,
 ) {
   if (!pickup) return 0;
@@ -35,8 +34,7 @@ export default function projectPickupCapacity<R extends PickupManagedRecord>(
       (excludeIssue && operation.selected?.nodeId === excludeIssue)
     )
       return false;
-    const record = pickupRecord(records, pickup, operation);
-    return !record || (issueWorkflowProgress(record).action !== 'complete' && !occupied(record));
+    return !pickupRecord(records, pickup, operation);
   }).length;
 }
 
@@ -50,7 +48,11 @@ export function pickupRecord<R extends PickupManagedRecord>(
     operation.receipt &&
     records.find(
       (record) =>
-        record.issueKey === pickupIssueKey(pickup, operation.selected?.nodeId) &&
+        record.issueKey ===
+          pickupIssueKey(
+            { ...pickup, enrollment: operation.enrollment ?? pickup.enrollment },
+            operation.selected?.nodeId,
+          ) &&
         !record.reset &&
         !record.supersededBy &&
         record.projectWork?.pickup?.assignmentNodeId === operation.receipt!.assignmentNodeId,

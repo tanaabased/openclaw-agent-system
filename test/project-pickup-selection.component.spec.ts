@@ -27,6 +27,9 @@ import selectionFixture from './project-pickup-selection-fixture.ts';
 import pickupClaims from './project-pickup-claim-fixture.ts';
 import CodexAssignmentClaims from '../agent/codex-assignment-claims.ts';
 import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
+import GitHubProjectPickupClient from '../channels/github/provider/project-pickup-client.ts';
+import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
+import hydrateImplementation from './implementation-material-fixture.ts';
 
 describe('project pickup selection through native journals', () => {
   let root: string;
@@ -182,6 +185,187 @@ describe('project pickup selection through native journals', () => {
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should deliver complete large candidate material through authorized pages in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const original = structuredClone(f.item);
+      f.items.clear();
+      f.candidates.clear();
+      for (let n = 1; n <= 5; n++) {
+        f.items.set(n, { ...original, number: n, nodeId: `I_large_${n}` });
+        f.candidates.set(n, {
+          number: n,
+          nodeId: `I_large_${n}`,
+          title: `candidate ${n}`,
+          body: `${n} quotes: " slash: \\ unicode: 🦊\n`.repeat(1500),
+          labels: [],
+        });
+      }
+      await f.pickup();
+      await f.journal.exclusive(async (state, save) => {
+        const current = state.projectPickup!.operations[0]!;
+        for (let index = 0; index < 4; index++) {
+          state.projectPickup!.operations.push({
+            ...structuredClone(current),
+            id: `cancelled-${index}`,
+            phase: 'cancelled',
+            candidates: [],
+            selected: { ...f.candidates.get(1)!, body: '' },
+            rationale: 'r'.repeat(4096),
+          });
+        }
+        delete state.projectPickupReport;
+        await save();
+      });
+      const response = await f.pickup();
+      assert.equal(response.status, 'selection-required');
+      assert.equal(response.response, '');
+      assert.ok(JSON.stringify(response).length < 16000);
+      const restored = await hydrateImplementation(response, async ({ action, ...input }) => {
+        assert.equal(action, 'pickup');
+        const page = await f.pickup(input as PickupInput);
+        assert.ok(JSON.stringify(page).length < 16000);
+        return page;
+      });
+      assert.deepEqual(restored.candidates, [...f.candidates.values()]);
+      assert.equal(f.effects.writes, 0);
+      assert.ok('contextMaterials' in response && response.contextMaterials);
+      const request = response.contextMaterials.fields[0]!.request;
+      const { action, ...input } = request;
+      assert.equal(action, 'pickup');
+      const materialInput = input as PickupInput;
+      await assert.rejects(
+        f.pickup({
+          ...materialInput,
+          context: { id: 'other-operation', digest: String(restored.digest) },
+        }),
+        /selection-stale/,
+      );
+      await assert.rejects(
+        f.pickup({
+          ...materialInput,
+          material: { ...materialInput.material!, digest: 'a'.repeat(64) },
+        }),
+        /material-stale/,
+      );
+      assert.equal((await f.journal.read()).projectPickup!.operations[0]!.phase, 'selecting');
+      f.caller.current = false;
+      await assert.rejects(f.pickup(input as PickupInput), /native-caller-required/);
+      f.caller.current = true;
+      const selection = {
+        id: String(restored.id),
+        digest: String(restored.digest),
+        issueNodeId: 'I_large_5',
+        rationale: 'ready work',
+      };
+      assert.equal((await f.pickup({ selection })).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+      assert.equal((await f.journal.read()).projectPickup!.operations[0]!.candidates.length, 0);
+      await assert.rejects(f.pickup(input as PickupInput), /selection-stale/);
+    });
+
+    it(`should persist guidance accepted at the shared limit in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const content = 'x'.repeat(32768);
+      await writeFile(join(root, 'workspace', 'selection.md'), content);
+      const response = await f.pickup();
+      assert.equal(response.status, 'selection-required');
+      const restored = await hydrateImplementation(response, async ({ action, ...input }) => {
+        assert.equal(action, 'pickup');
+        return f.pickup(input as PickupInput);
+      });
+      assert.equal(restored.guidance, content);
+      assert.equal((await f.journal.read()).projectPickup!.operations[0]!.guidance, content);
+    });
+
+    for (const editTail of [false, true]) {
+      it(`should select a long description with full revision checking in ${runtime} with tail edit ${editTail}`, async () => {
+        const f = await fixture(runtime);
+        const candidate = f.candidates.get(f.item.number)!;
+        let body = 'ready work\n'.repeat(6000);
+        const provider = new GitHubProjectPickupClient(
+          new GitHubWorkEventApiClient({
+            identity: f.client.identity,
+            execute: async () => ({
+              exitCode: 0,
+              timedOut: false,
+              truncated: false,
+              stderr: '',
+              stdout: `HTTP/2 200 OK\n\n${JSON.stringify({ ...candidate, body })}`,
+            }),
+          }),
+        );
+        f.client.projectCandidate = provider.projectCandidate.bind(provider);
+        let selection = await f.select();
+        const before = (await f.journal.read()).projectPickup!.operations[0]!.candidates[0]!;
+        assert.equal(before.body, body);
+        assert.equal(Object.hasOwn(before, 'bodyTruncated'), false);
+        if (editTail) {
+          body += 'changed requirements';
+          const result = await f.pickup({ selection });
+          assert.equal(result.status, 'failed');
+          assert.ok('code' in result && result.code === 'project-pickup-candidate-changed');
+          assert.equal(f.effects.writes, 0);
+          f.tick.id = 'pickup-new-description';
+          selection = await f.select();
+          const after = (await f.journal.read()).projectPickup!.operations[0]!.candidates[0]!;
+          assert.notEqual(after.body, before.body);
+          assert.equal(after.body, body);
+        }
+        assert.equal((await f.pickup({ selection })).status, 'assigned');
+        await f.scan();
+        assert.equal((await f.read()).length, 1);
+        assert.equal(f.effects.writes, 1);
+      });
+    }
+
+    for (const lostResponse of [false, true]) {
+      it(`should admit a write completed after window closure in ${runtime} with lost response ${lostResponse}`, async () => {
+        const f = await fixture(runtime);
+        const selection = await f.select();
+        const window = (await f.journal.read()).projectPickup!.operations[0]!.window;
+        f.clock.now = window.closesAt - 1000;
+        const assign = f.client.assignProjectIssue;
+        f.client.assignProjectIssue = async (...args) => {
+          assert.ok(f.clock.now < window.closesAt);
+          f.clock.now += 2000;
+          await assign(...args);
+          if (lostResponse) throw new Error('lost response');
+        };
+        assert.equal(
+          (await f.pickup({ selection })).status,
+          lostResponse ? 'attempted' : 'assigned',
+        );
+        f.tick.id = 'pickup-after-close';
+        assert.equal((await f.pickup()).status, 'assigned');
+        await f.scan();
+        await f.scan();
+        const records = await f.read();
+        assert.equal(records.length, 1);
+        assert.equal(records[0]!.evidence.mode, 'work');
+        assert.equal(f.effects.writes, 1);
+        assert.ok(Date.parse(f.events[0]!.createdAt) > window.closesAt);
+        const operation = (await f.journal.read()).projectPickup!.operations[0]!;
+        assert.ok(operation.attemptedAt! < window.closesAt);
+        assert.equal(operation.receipt!.assignmentNodeId, f.events[0]!.nodeId);
+      });
+    }
+
+    it(`should admit newly available work on a later tick in the same window through ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const candidate = structuredClone(f.candidates.get(f.item.number)!);
+      f.candidates.clear();
+      assert.equal((await f.pickup()).status, 'empty');
+      f.candidates.set(f.item.number, candidate);
+      f.clock.now += 60000;
+      f.tick.id = 'pickup-newly-available';
+      assert.equal((await f.pickup({ selection: await f.select() })).status, 'assigned');
+      await f.scan();
+      await f.scan();
+      assert.equal((await f.read()).length, 1);
+      assert.equal(f.effects.writes, 1);
+      assert.equal((await f.journal.read()).projectPickup!.operations.length, 1);
+    });
+
     it(`should retain the shared owner from pickup through assignment dispatch in ${runtime}`, async () => {
       const f = await fixture(runtime, true);
       assert.equal((await f.pickup({ selection: await f.select() })).status, 'pending');

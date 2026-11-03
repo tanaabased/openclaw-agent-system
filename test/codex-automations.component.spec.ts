@@ -540,6 +540,20 @@ describe('agent/codex-automations', () => {
     await reconcile();
     assert.deepEqual(await inspectCodexPickupActivation(pluginData, dependencies), active);
     assert.deepEqual((await enrollments.read()).records, [first]);
+    source.github['project-pickup'].projects[0]!.milestone.number = 11;
+    provider.milestone.number = 11;
+    provider.milestone.nodeId = 'MI_next';
+    await saveManifest();
+    const drift = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.equal(drift.status, 'requires-native-app-sync');
+    assert.equal(drift.actions[0]!.manifestId, 'github-project-pickup');
+    await reconcile();
+    const replacement = (await enrollments.read()).records[0]!;
+    assert.equal(replacement.nativeId, first.nativeId);
+    assert.equal(replacement.enrollment.milestoneNodeId, 'MI_next');
+    assert.equal(replacement.enrollment.startedAt, first.enrollment.startedAt);
+    assert.equal((await readCodexAutomations(codexHome)).length, 2);
+    assert.equal(conversations.size, 2);
     const saved = (await readCodexAutomations(codexHome)).find(
       (job) => job.id === active.nativeId,
     )!;

@@ -13,19 +13,20 @@ export const projectCandidateSchema = Type.Object(
     nodeId: Type.String({ minLength: 1, maxLength: 4096 }),
     number: Type.Integer({ minimum: 1 }),
     title: Type.String({ maxLength: 4096 }),
-    body: Type.String({ maxLength: 32000 }),
+    body: Type.String(),
     labels: Type.Array(Type.String({ maxLength: 4096 }), { maxItems: 100 }),
   },
   { additionalProperties: false },
 );
 export type ProjectCandidate = Static<typeof projectCandidateSchema>;
+const discoveryCandidateSchema = Type.Pick(projectCandidateSchema, ['nodeId', 'number']);
 export interface ProjectPickupClient extends GitHubNotificationIntakeClient {
   discoverProject(
     owner: string,
     name: string,
     milestone: number,
     page: number,
-  ): Promise<{ candidates: ProjectCandidate[]; nextPage?: number }>;
+  ): Promise<{ candidates: Array<Pick<ProjectCandidate, 'nodeId' | 'number'>>; nextPage?: number }>;
   projectCandidate(owner: string, name: string, number: number): Promise<ProjectCandidate>;
   projectBlocked(owner: string, name: string, number: number): Promise<boolean>;
   assignProjectIssue(owner: string, name: string, number: number): Promise<void>;
@@ -54,16 +55,16 @@ export default class GitHubProjectPickupClient {
         '-F',
         `page=${page}`,
         '--jq',
-        `[.[]|select(.pull_request==null)|${projection}]`,
+        '[.[]|select(.pull_request==null)|{nodeId:.node_id,number}]',
       ],
       'milestone issues',
     );
-    if (!Value.Check(Type.Array(projectCandidateSchema, { maxItems: 100 }), result.value))
+    if (!Value.Check(Type.Array(discoveryCandidateSchema, { maxItems: 100 }), result.value))
       throw new Error('project-pickup-candidates-invalid');
     return { candidates: result.value, ...(result.hasNextPage ? { nextPage: page + 1 } : {}) };
   }
 
-  async projectCandidate(owner: string, name: string, number: number) {
+  async projectCandidate(owner: string, name: string, number: number): Promise<ProjectCandidate> {
     const result = await this.api.request(
       [githubWorkItemEndpoint(owner, name, number), '--jq', projection],
       'pickup candidate',
@@ -74,27 +75,31 @@ export default class GitHubProjectPickupClient {
   }
 
   async projectBlocked(owner: string, name: string, number: number) {
-    const result = await this.api.request(
-      [
-        '--method',
-        'GET',
-        `${githubWorkItemEndpoint(owner, name, number)}/dependencies/blocked_by`,
-        '-F',
-        'per_page=100',
-        '--jq',
-        '[.[].state]',
-      ],
-      'pickup dependencies',
-    );
-    if (
-      !Value.Check(
-        Type.Array(Type.Union([Type.Literal('open'), Type.Literal('closed')])),
-        result.value,
+    for (let page = 1; ; page++) {
+      const result = await this.api.request(
+        [
+          '--method',
+          'GET',
+          `${githubWorkItemEndpoint(owner, name, number)}/dependencies/blocked_by`,
+          '-F',
+          'per_page=100',
+          '-F',
+          `page=${page}`,
+          '--jq',
+          '[.[].state]',
+        ],
+        'pickup dependencies',
+      );
+      if (
+        !Value.Check(
+          Type.Array(Type.Union([Type.Literal('open'), Type.Literal('closed')])),
+          result.value,
+        )
       )
-    )
-      throw new Error('project-pickup-dependencies-invalid');
-    // incomplete dependencies cannot establish readiness.
-    return result.hasNextPage || result.value.includes('open');
+        throw new Error('project-pickup-dependencies-invalid');
+      if (result.value.includes('open')) return true;
+      if (!result.hasNextPage) return false;
+    }
   }
 
   async assignProjectIssue(owner: string, name: string, number: number) {

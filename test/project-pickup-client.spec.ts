@@ -1,16 +1,26 @@
 import assert from 'node:assert/strict';
-import GitHubProjectPickupClient from '../channels/github/provider/project-pickup-client.ts';
+import { Value } from 'typebox/value';
+import GitHubProjectPickupClient, {
+  projectCandidateSchema,
+} from '../channels/github/provider/project-pickup-client.ts';
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
 import retryGitHubRead from '../core/github-read-retry.ts';
 
 function fixture() {
   const calls: Array<{ argv: string[]; stdin?: string }> = [];
-  const reply = { value: [] as unknown, status: 200, next: false };
+  const reply = {
+    value: [] as unknown,
+    status: 200,
+    next: false,
+    pages: [] as Array<{ value: unknown; next: boolean }>,
+  };
   const api = new GitHubWorkEventApiClient(
     {
       identity: { login: 'receiver', nodeId: 'U_receiver' },
       async execute(argv, stdin) {
         calls.push({ argv, stdin });
+        const page = reply.pages.shift();
+        if (page) Object.assign(reply, page);
         return {
           exitCode: reply.status >= 400 ? 1 : 0,
           timedOut: false,
@@ -26,9 +36,39 @@ function fixture() {
 }
 
 describe('github project pickup provider', () => {
+  it('should keep complete descriptions and reject malformed provider data', async () => {
+    const f = fixture();
+    const candidate = {
+      nodeId: 'I_one',
+      number: 1,
+      title: 'ready',
+      body: 'a'.repeat(32000),
+      labels: [],
+    };
+    f.reply.value = candidate;
+    assert.deepEqual(await f.client.projectCandidate('owner', 'repo', 1), candidate);
+    f.reply.value = { ...candidate, body: 42 };
+    await assert.rejects(f.client.projectCandidate('owner', 'repo', 1), /candidate-invalid/);
+  });
+
+  for (const character of ['a', '🦊']) {
+    it(`should retain complete large descriptions containing ${character}`, async () => {
+      const f = fixture();
+      const body = character.repeat(64000);
+      f.reply.value = { nodeId: 'I_one', number: 1, title: 'ready', body, labels: [] };
+      const candidate = await f.client.projectCandidate('owner', 'repo', 1);
+      assert.equal(candidate.body, body);
+      assert.equal(Object.hasOwn(candidate, 'bodyTruncated'), false);
+      assert.ok(Value.Check(projectCandidateSchema, candidate));
+      f.reply.value = { ...(f.reply.value as object), body: `${character.repeat(63999)}b` };
+      const changed = await f.client.projectCandidate('owner', 'repo', 1);
+      assert.notEqual(changed.body, candidate.body);
+    });
+  }
+
   it('should preserve milestone page scope and provider continuation', async () => {
     const f = fixture();
-    f.reply.value = [{ nodeId: 'I_one', number: 1, title: 'ready', body: '', labels: [] }];
+    f.reply.value = [{ nodeId: 'I_one', number: 1 }];
     f.reply.next = true;
     assert.equal((await f.client.discoverProject('owner', 'repo', 4, 2)).nextPage, 3);
     const argv = f.calls[0]!.argv;
@@ -45,7 +85,16 @@ describe('github project pickup provider', () => {
     f.reply.value = ['open'];
     assert.equal(await f.client.projectBlocked('owner', 'repo', 1), true);
     f.reply.value = ['closed'];
-    f.reply.next = true;
+    f.reply.pages = [
+      { value: ['closed'], next: true },
+      { value: ['closed'], next: false },
+    ];
+    assert.equal(await f.client.projectBlocked('owner', 'repo', 1), false);
+    assert.ok(f.calls.at(-1)!.argv.includes('page=2'));
+    f.reply.pages = [
+      { value: ['closed'], next: true },
+      { value: ['open'], next: false },
+    ];
     assert.equal(await f.client.projectBlocked('owner', 'repo', 1), true);
     f.reply.value = ['unknown'];
     await assert.rejects(f.client.projectBlocked('owner', 'repo', 1), /dependencies-invalid/);

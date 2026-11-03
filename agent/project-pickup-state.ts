@@ -1,5 +1,6 @@
 import { projectCandidateSchema as pickupCandidateSchema } from '../channels/github/provider/project-pickup-client.ts';
 import { Type, type Static } from 'typebox';
+import { maximumAssessmentGuidanceBytes } from '../manifest/assessment-schema.ts';
 
 import {
   projectPickupEnrollmentSchema,
@@ -22,6 +23,8 @@ export type PickupReport = Static<typeof pickupReportSchema>;
 export const pickupOperationSchema = Type.Object(
   {
     id: text,
+    enrollment: Type.Optional(projectPickupEnrollmentSchema),
+    repository: Type.Optional(text),
     window: projectPickupReceiptSchema.properties.window,
     phase: Type.Union([
       Type.Literal('discovering'),
@@ -37,8 +40,17 @@ export const pickupOperationSchema = Type.Object(
       Type.Literal('cancelled'),
     ]),
     page: Type.Integer({ minimum: 1 }),
-    candidates: Type.Array(pickupCandidateSchema, { maxItems: 1000 }),
-    guidance: Type.Optional(Type.String({ maxLength: 32000 })),
+    candidates: Type.Array(pickupCandidateSchema),
+    discovery: Type.Optional(
+      Type.Object(
+        {
+          pending: Type.Array(Type.Pick(pickupCandidateSchema, ['nodeId', 'number'])),
+          nextPage: Type.Optional(Type.Integer({ minimum: 1 })),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    guidance: Type.Optional(Type.String({ maxLength: maximumAssessmentGuidanceBytes })),
     selectionDigest: Type.Optional(text),
     selected: Type.Optional(pickupCandidateSchema),
     rationale: Type.Optional(text),

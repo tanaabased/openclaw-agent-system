@@ -64,6 +64,7 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
     const delivery = record?.delivery ?? record?.work?.delivery;
     return {
       id: operation.id,
+      repository: operation.repository ?? repository,
       window: operation.window,
       closed: input.now >= operation.window.closesAt,
       issue: operation.selected?.number,
@@ -82,6 +83,7 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
     'project-pickup-window-closed',
     'project-pickup-native-retired',
     'project-pickup-cancelled',
+    'project-pickup-configuration-changed',
   ];
   const problems = [
     ...(outcome.code && !informational.includes(outcome.code) ? [outcome.code] : []),
@@ -130,7 +132,7 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
     : outcome.code?.startsWith('claim-')
       ? 'Check repository routing and the retained claim owner. Restore eligibility or resolve the original pickup operation; do not assign again or transfer ownership by changing routes.'
       : failed
-        ? 'Check the diagnostic and GitHub access. Resolve or cancel the retained pickup operation through its owning coordinator before selecting again.'
+        ? 'Check the diagnostic and GitHub access. Pickup rechecks failed discovery or selection on the next scheduled run; do not assign manually.'
         : 'Open the issue chat to resolve its work blocker. Implementation stays in that chat.';
   const body = card({
     emoji: warning ? (failed ? '❌' : '⚠️') : '💡',
@@ -166,7 +168,7 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
           ? [
               {
                 label: 'Issue',
-                value: `[${text(repository)}#${item.issue}](${url}/issues/${item.issue}) · ${text(item.status)}`,
+                value: `[${text(item.repository)}#${item.issue}](https://github.com/${item.repository}/issues/${item.issue}) · ${text(item.status)}`,
               },
             ]
           : [{ label: 'Status', value: text(item.status) }]),
@@ -185,7 +187,7 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
           ? [
               {
                 label: 'PR delivery',
-                value: `[#${item.pullRequest}](${url}/pull/${item.pullRequest}) · ${item.status === 'delivered' ? 'delivered' : item.status === 'delivered-response-pending' ? 'response pending' : 'existing PR'}`,
+                value: `[#${item.pullRequest}](https://github.com/${item.repository}/pull/${item.pullRequest}) · ${item.status === 'delivered' ? 'delivered' : item.status === 'delivered-response-pending' ? 'response pending' : 'existing PR'}`,
               },
             ]
           : []),

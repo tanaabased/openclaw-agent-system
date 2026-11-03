@@ -85,6 +85,42 @@ describe('agent/project-pickup-report', () => {
     assert.equal(f.run({ status: 'admitted' }).notify, false);
   });
 
+  it('should keep retained issue and pr links after changing the pickup repository', async () => {
+    const f = await fixture();
+    const record = f.managed();
+    record.delivery = { pullRequest: { pullRequestNumber: 42 }, reconciled: true };
+    f.records.push(record);
+    f.pickup.operations[0]!.repository = 'owner/repo';
+    f.policy.projectPickup!.projects[0]!.repository = 'owner/next';
+    const result = f.run();
+    assert.match(result.response, /github\.com\/owner\/next\/milestone\/10/);
+    assert.match(result.response, /github\.com\/owner\/repo\/issues\//);
+    assert.match(result.response, /github\.com\/owner\/repo\/pull\/42/);
+    assert.doesNotMatch(result.response, /github\.com\/owner\/next\/(issues|pull)\//);
+  });
+
+  it('should not report an obsolete selection as a configuration failure', async () => {
+    const f = await fixture();
+    const operation = f.pickup.operations[0]!;
+    operation.phase = 'cancelled';
+    operation.code = 'project-pickup-configuration-changed';
+    const result = f.run({ status: 'cancelled', code: operation.code });
+    assert.deepEqual(result.report!.problems, []);
+    assert.doesNotMatch(result.response, /needs attention|⚠️/);
+  });
+
+  it('should explain automatic reconsideration after a pre-assignment failure', async () => {
+    const f = await fixture();
+    const operation = f.pickup.operations[0]!;
+    operation.phase = 'failed';
+    operation.code = 'project-pickup-provider-unavailable';
+    delete operation.attemptedAt;
+    delete operation.receipt;
+    const result = f.run({ status: 'failed', code: operation.code });
+    assert.match(result.response, /next scheduled run/);
+    assert.doesNotMatch(result.response, /cancel.*before selecting/);
+  });
+
   it(`should distinguish window closure from blocked, running and delivered work`, async () => {
     const f = await fixture();
     const record = f.managed();

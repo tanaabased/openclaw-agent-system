@@ -1,3 +1,5 @@
+import reconcileProjectPickup from '../agent/project-pickup-reconcile.ts';
+import type { ProjectPickupState } from '../agent/project-pickup-state.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -67,6 +69,78 @@ describe('project pickup installation enrollment', () => {
       f.policy.projectPickup!.windowMinutes++;
       await assert.rejects(f.store.prepare(f.input), /enrollment-changed/);
       assert.deepEqual((await f.store.read()).records, [first]);
+    });
+
+    it(`should change milestone with retained work and keep original receipts in ${runtime}`, async () => {
+      const f = await fixture();
+      const first = await f.store.prepare(f.input);
+      await f.store.activate(first.enrollment.id, 'native-job');
+      const receipt = {
+        enrollmentId: first.enrollment.id,
+        issueNodeId: 'I_old',
+        assignmentNodeId: 'E_old',
+        window: { id: 'window', opensAt: f.clock.now, closesAt: f.clock.now + 60000 },
+      };
+      const state: { projectPickup?: ProjectPickupState } = {
+        projectPickup: {
+          enrollment: first.enrollment,
+          timezone: 'UTC',
+          highWater: f.clock.now,
+          operations: [
+            {
+              id: 'delivered',
+              window: receipt.window,
+              phase: 'admitted',
+              page: 1,
+              candidates: [],
+              receipt,
+            },
+            {
+              id: 'uncertain',
+              window: receipt.window,
+              phase: 'attempted',
+              page: 1,
+              candidates: [],
+              attemptedAt: f.clock.now,
+            },
+            {
+              id: 'selection',
+              window: receipt.window,
+              phase: 'selecting',
+              page: 1,
+              candidates: [],
+            },
+          ],
+        },
+      };
+      f.policy.projectPickup!.projects[0]!.milestone.number = 11;
+      f.milestone.number = 11;
+      f.milestone.nodeId = 'MI_new';
+      let saves = 0;
+      const updated = await f.store.prepare({
+        ...f.input,
+        reconcile: (record, commit, before) =>
+          reconcileProjectPickup(
+            state,
+            async () => {
+              saves++;
+            },
+            record,
+            commit,
+            before,
+          ),
+      });
+      assert.equal(updated.enrollment.milestoneNodeId, 'MI_new');
+      assert.equal(updated.enrollment.startedAt, first.enrollment.startedAt);
+      assert.equal(updated.nativeId, undefined);
+      assert.equal(state.projectPickup!.highWater, f.clock.now);
+      assert.deepEqual(state.projectPickup!.operations[0]!.receipt, receipt);
+      assert.equal(state.projectPickup!.operations[0]!.enrollment!.milestoneNodeId, 'MI_pilot');
+      assert.equal(state.projectPickup!.operations[1]!.phase, 'attempted');
+      assert.equal(state.projectPickup!.operations[2]!.phase, 'cancelled');
+      assert.equal(saves, 1);
+      await f.store.activate(updated.enrollment.id, 'native-job');
+      assert.equal((await f.store.inspect(f.policy, runtime, 'scope')).nativeId, 'native-job');
     });
 
     it(`should enroll participants independently and retain identity after rotation in ${runtime}`, async () => {

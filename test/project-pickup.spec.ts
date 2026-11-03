@@ -206,7 +206,7 @@ describe('github project pickup policy', () => {
     });
   }
 
-  it('should reject mismatched authority, late assignment and stale provider facts', async () => {
+  it('should reject mismatched authority, future assignment and stale provider facts', async () => {
     const changes: Array<(f: ReturnType<typeof pickupFixture>) => void> = [
       (f) => {
         f.authority.receipts = [];
@@ -224,16 +224,10 @@ describe('github project pickup policy', () => {
         f.authority.enrollment.account = { login: 'other', nodeId: 'U_other' };
       },
       (f) => {
-        f.authority.enrollment.policyDigest = 'old';
-      },
-      (f) => {
         f.authority.enrollment.repositoryNodeId = 'R_other';
       },
       (f) => {
-        f.authority.enrollment.milestoneNodeId = 'MI_other';
-      },
-      (f) => {
-        f.input.event.createdAt = new Date(baseline + 3600000).toISOString();
+        f.input.event.createdAt = new Date(f.input.now + 1000).toISOString();
       },
       (f) => {
         f.input.event.nodeId = 'E_other';
@@ -246,9 +240,6 @@ describe('github project pickup policy', () => {
       },
       (f) => {
         f.policy.allowedRepositoryOwners = [];
-      },
-      (f) => {
-        if (f.item.itemType === 'issue') f.item.milestone = null;
       },
       (f) => {
         f.client.getItem = async () => ({ ...f.item, state: 'closed' });
@@ -280,6 +271,18 @@ describe('github project pickup policy', () => {
       change(f);
       assert.equal(await authorizeProjectAssignment(f.input), undefined, change.toString());
     }
+  });
+
+  it('should retain a verified assignment after pickup milestone and window changes', async () => {
+    const f = pickupFixture();
+    const original = structuredClone(f.authority.enrollment);
+    f.policy.projectPickup!.projects[0]!.milestone.number = 11;
+    f.policy.projectPickup!.windowMinutes = 30;
+    if (f.item.itemType === 'issue') f.item.milestone = null;
+    const work = await authorizeProjectAssignment(f.input);
+    assert.deepEqual(work!.enrollment, original);
+    f.authority.receipts = [];
+    assert.equal(await authorizeProjectAssignment(f.input), undefined);
   });
 
   it('should distinguish unavailable milestones from an empty or out-of-scope result', async () => {

@@ -184,6 +184,7 @@ export default async function planCodexAutomations(options: {
   inputs: CodexAutomationInputs;
   defaults?: { model: string; effort: string };
   bindings?: Map<string, { id: string; settings?: AutomationThreadModelObservation }>;
+  refreshIds?: ReadonlySet<string>;
 }): Promise<CodexAutomationPlan> {
   const { scope, workspace, jobs, records, saved, inputs } = options;
   const findings: CodexAutomationPlan['findings'] = [];
@@ -285,7 +286,12 @@ export default async function planCodexAutomations(options: {
         findings.push({ id: job.id, code: 'automation-target-migration-pending' });
         continue;
       }
-      if (!actual || !savedMatches(actual, expected, workspace) || record?.removed) {
+      if (
+        !actual ||
+        !savedMatches(actual, expected, workspace) ||
+        record?.removed ||
+        options.refreshIds?.has(job.id)
+      ) {
         actions.push({
           manifestId: job.id,
           mode: actual ? 'update' : 'create',

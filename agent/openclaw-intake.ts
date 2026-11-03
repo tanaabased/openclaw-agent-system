@@ -1,3 +1,4 @@
+import reconcileProjectPickup from './project-pickup-reconcile.ts';
 import projectPickupReport from './project-pickup-report.ts';
 import openClawCapacity, { openClawItemOccupied } from './openclaw-capacity.ts';
 import type ProjectPickupEnrollmentStore from './project-pickup-enrollment.ts';
@@ -190,6 +191,17 @@ export default class OpenClawIntake {
         occupied: openClawItemOccupied,
         input,
       });
+      if (['material', 'selection-required', 'discovering'].includes(result.status))
+        return {
+          ...result,
+          response: '',
+          instructions:
+            'instructions' in result
+              ? result.instructions
+              : result.status === 'discovering'
+                ? 'Call pickup again to continue discovery.'
+                : 'Follow next until the complete material is restored before selection.',
+        };
       const reportPolicy = await readPolicy();
       const report = projectPickupReport({
         policy: reportPolicy,
@@ -237,6 +249,7 @@ export default class OpenClawIntake {
     const { selected, store, workspace } = await this.select(manifest, workspaceDir);
     if (!selected || !this.dependencies.pickupStore)
       throw new IntakeError('project-pickup-activation-required');
+    const pickupStore = this.dependencies.pickupStore;
     const code = projectPickupConfigurationCode(selected.policy);
     if (code) throw new IntakeError(code);
     await this.dependencies.pickupStore.owner();
@@ -247,16 +260,21 @@ export default class OpenClawIntake {
     if (client.identity.login.toLowerCase() !== selected.username.toLowerCase())
       throw new IntakeError('intake-github-identity-mismatch');
     await new GitHubIdentityCache(store.location).resolve(selected.policy, client, 'assignment');
-    return this.dependencies.pickupStore.prepare({
-      policy: selected.policy,
-      runtime: 'openclaw',
-      scope: store.location.scope,
-      workspaceDir: workspace,
-      agentId: manifest.agent.id,
-      client,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      now: (this.dependencies.now ?? Date.now)(),
-    });
+    return new OpenClawDispatchStore(store.location.root, store.location.scope).exclusive(
+      async (state, save) =>
+        pickupStore.prepare({
+          policy: selected.policy,
+          runtime: 'openclaw',
+          scope: store.location.scope,
+          workspaceDir: workspace,
+          agentId: manifest.agent.id,
+          client,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          now: (this.dependencies.now ?? Date.now)(),
+          reconcile: (record, commit, before) =>
+            reconcileProjectPickup(state, save, record, commit, before),
+        }),
+    );
   }
   async inspectPickup(manifest: AgentManifest, workspaceDir: string) {
     const policy = manifest.github?.notifications;

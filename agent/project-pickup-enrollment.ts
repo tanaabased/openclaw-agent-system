@@ -25,6 +25,7 @@ const recordSchema = Type.Object(
     instanceId: text,
     timezone: text,
     nativeId: Type.Optional(text),
+    repository: Type.Optional(text),
   },
   { additionalProperties: false },
 );
@@ -89,6 +90,11 @@ export default class ProjectPickupEnrollmentStore {
     client: ProjectPickupClient;
     timezone: string;
     now: number;
+    reconcile?: (
+      record: PickupEnrollment,
+      commit: () => Promise<void>,
+      before?: PickupEnrollment,
+    ) => Promise<void>;
   }) {
     const identity = await this.owner();
     const pickup = input.policy.projectPickup!;
@@ -110,13 +116,15 @@ export default class ProjectPickupEnrollmentStore {
       if (currentIdentity.instanceId !== identity.instanceId)
         throw new IntakeError('project-pickup-enrollment-changed');
       const state = await this.read();
-      const existing = state.records.find(
+      const matches = state.records.filter(
         (record) =>
           (record.enrollment.repositoryNodeId === repository.nodeId &&
             record.enrollment.milestoneNodeId === milestone.nodeId &&
             record.enrollment.account.nodeId === input.client.identity.nodeId) ||
           (record.enrollment.scope === input.scope && record.enrollment.runtime === input.runtime),
       );
+      if (matches.length > 1) throw new IntakeError('project-pickup-enrollment-conflict');
+      const existing = matches[0];
       if (existing) {
         if (
           existing.enrollment.scope !== input.scope ||
@@ -126,18 +134,55 @@ export default class ProjectPickupEnrollmentStore {
         )
           throw new IntakeError('project-pickup-enrollment-conflict');
         if (
-          existing.enrollment.repositoryNodeId !== repository.nodeId ||
-          existing.enrollment.milestoneNodeId !== milestone.nodeId ||
           existing.enrollment.account.nodeId !== input.client.identity.nodeId ||
-          existing.instanceId !== identity.instanceId ||
-          existing.enrollment.policyDigest !== projectPickupPolicyDigest(input.policy) ||
-          existing.timezone !== input.timezone
+          existing.instanceId !== identity.instanceId
         )
           throw new IntakeError('project-pickup-enrollment-changed');
-        return existing;
+        const changed =
+          existing.enrollment.repositoryNodeId !== repository.nodeId ||
+          existing.enrollment.milestoneNodeId !== milestone.nodeId ||
+          existing.enrollment.policyDigest !== projectPickupPolicyDigest(input.policy) ||
+          existing.timezone !== input.timezone;
+        if (changed && !input.reconcile) throw new IntakeError('project-pickup-enrollment-changed');
+        const updated: PickupEnrollment = changed
+          ? {
+              ...existing,
+              timezone: input.timezone,
+              repository: pickup.projects[0]!.repository,
+              enrollment: {
+                ...existing.enrollment,
+                repositoryNodeId: repository.nodeId,
+                milestoneNodeId: milestone.nodeId,
+                policyDigest: projectPickupPolicyDigest(input.policy),
+              },
+            }
+          : existing;
+        // a changed enrollment must be activated again after native schedule readback.
+        if (changed) delete updated.nativeId;
+        const commit = async () => {
+          if (!changed) return;
+          state.records[state.records.indexOf(existing)] = updated;
+          if (!Value.Check(schema, state))
+            throw new IntakeError('project-pickup-enrollment-invalid');
+          if (
+            Buffer.byteLength(
+              JSON.stringify({
+                ...state,
+                records: state.records.map((entry) => ({ ...entry, nativeId: 'x'.repeat(4096) })),
+              }),
+            ) > maximumBytes
+          )
+            throw new IntakeError('project-pickup-enrollment-capacity');
+          lock.assertHeld();
+          await this.file.write(JSON.stringify(state));
+        };
+        if (input.reconcile) await input.reconcile(updated, commit, existing);
+        else await commit();
+        return updated;
       }
       const record: PickupEnrollment = {
         instanceId: identity.instanceId,
+        repository: pickup.projects[0]!.repository,
         timezone: input.timezone,
         enrollment: {
           id: randomUUID(),

@@ -1,3 +1,4 @@
+import reconcileProjectPickup from './project-pickup-reconcile.ts';
 import workflowFailure from './workflow-failure.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
@@ -483,6 +484,17 @@ export async function runCodexProjectPickup(
       occupied: codexItemOccupied,
       input,
     });
+    if (['material', 'selection-required', 'discovering'].includes(result.status))
+      return {
+        ...result,
+        response: '',
+        instructions:
+          'instructions' in result
+            ? result.instructions
+            : result.status === 'discovering'
+              ? 'Call pickup again to continue discovery.'
+              : 'Follow next until the complete material is restored before selection.',
+      };
     const reportPolicy = await readPolicy();
     const report = projectPickupReport({
       policy: reportPolicy,
@@ -535,7 +547,8 @@ export async function prepareCodexPickupEnrollment(
 ) {
   const current = await selectCodexIntake(pluginData, deps);
   if (!current.policy) throw new IntakeError('intake-policy-disabled');
-  const code = projectPickupConfigurationCode(current.policy.policy);
+  const policy = current.policy.policy;
+  const code = projectPickupConfigurationCode(policy);
   if (code) throw new IntakeError(code);
   const store = new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root);
   await store.owner();
@@ -544,16 +557,23 @@ export async function prepareCodexPickupEnrollment(
     deps,
     AbortSignal.timeout(30_000),
   )) as ProjectPickupClient;
-  return store.prepare({
-    policy: current.policy.policy,
-    runtime: 'codex',
-    scope: current.store.location.scope,
-    workspaceDir: current.workspace,
-    agentId: current.agentId,
-    client,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    now: (deps.now ?? Date.now)(),
-  });
+  return new CodexDispatchStore(
+    current.store.location.root,
+    current.store.location.scope,
+  ).exclusive(async (state, save) =>
+    store.prepare({
+      policy,
+      runtime: 'codex',
+      scope: current.store.location.scope,
+      workspaceDir: current.workspace,
+      agentId: current.agentId,
+      client,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      now: (deps.now ?? Date.now)(),
+      reconcile: (record, commit, before) =>
+        reconcileProjectPickup(state, save, record, commit, before),
+    }),
+  );
 }
 
 export async function inspectCodexPickup(
