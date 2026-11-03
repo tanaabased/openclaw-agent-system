@@ -6,10 +6,11 @@ no push, installation or live scheduled pilot has been performed.
 
 ## completed source repairs
 
-- [x] allow live pickup repository, milestone, schedule, timezone and window changes without
-      Install. preserve original assignment scope and receipts, reconcile uncertain effects
+- [x] allow live pickup repository, milestone and selection changes without Install.
+      timing changes reconcile the native schedule through Install. preserve original
+      assignment scope and receipts, reconcile uncertain effects
       without another write, and cancel obsolete unattempted selections.
-- [x] keep native activation stable across live target/window edits; still detect actual
+- [x] keep native activation stable across live target edits; still detect actual
       native automation drift and installation identity changes.
 - [x] reuse an unused current window after a target edit, retaining explicit cancellation
       and attempted-assignment allowance.
@@ -45,15 +46,16 @@ no push, installation or live scheduled pilot has been performed.
 - [x] retain the verified self-assignment/work exception before intake even if pickup
       configuration is removed or a collaborator is added. removal of the receiver,
       stale assignment events and missing receipts still prevent admission.
-- [x] continue discovery in the same window after another instance wins a shared claim.
-      retain the shared ownership record and do not consume an assignment allowance.
-- [ ] replace all-day model wakeups with native scheduling during the pickup period.
-      interface under discussion: local start time, duration and scan count; proposed
-      defaults are 03:00, 120 minutes and eight evenly spaced scans. no scheduler rewrite
-      yet. schedule edits need Install; target and selection edits stay live.
-- [ ] resolve shared claim confirmation within an active pickup run rather than requiring
-      another scheduled occurrence. retain fresh ownership verification and no replay of
-      uncertain writes; do not merely slow the current polling cadence.
+- [x] let later native scans select more work after ordinary intake takes custody,
+      under its normal capacity limit. retain one successful assignment per native scan.
+- [x] replace all-day model wakeups with daily native scan slots. defaults: 03:00 local,
+      two hours, eight scans. accept clock variants, window/duration units and closing-time
+      alternatives; reject conflicting values. remove the former schedule/window-minutes
+      input fields. schedule edits require Install; target and selection edits stay live.
+- [x] remove pickup’s pre-assignment election and instance placement checks. new receipts
+      use ordinary assignment routing and claim election. preserve verified self-assignment
+      and Work exceptions, uncertain-write recovery and previously retained claim owners.
+      controlled sequential and overlapping scans exercise the shared intake handoff.
 
 ## validation and rollout
 
@@ -64,6 +66,9 @@ no push, installation or live scheduled pilot has been performed.
       plugin checks. `git diff --check` passed.
 - [x] receipt and lost-claim repairs: 109 focused checks plus 34 native intake checks;
       final `bun run validate` passed 4,430 tests, lint, typecheck, build and plugin checks.
+- [x] daily scheduling and thin pickup handoff: full validation passed 4,426 checks.
+      the final resumed-scan accounting fix passed 192 focused checks, lint, typecheck,
+      build and plugin checks; sequential and overlapping scans use ordinary intake ownership.
 - [ ] CI exercises the affected installed boundaries; never run Leia examples locally.
 - [ ] approved installation reconciles Me's selected milestone and Doctor confirms readiness.
 - [ ] record real scheduled selection, one self-assignment, ordinary intake and delivery

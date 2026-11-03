@@ -320,6 +320,7 @@ describe('agent/project-pickup', () => {
         assert.equal((await f.run()).status, 'failed');
         f.client.discoverProject = discover;
         if (nextWindow) f.clock.now += 86400000;
+        f.tx.runId = `scan-${f.clock.now}`;
         const selection = await f.select();
         assert.equal(f.effects.writes, 0);
         assert.equal((await f.run({ selection })).status, 'assigned');
@@ -349,6 +350,7 @@ describe('agent/project-pickup', () => {
       await f.run({ selection: await f.select() });
       f.state.projectPickup!.operations[0]!.phase = 'failed';
       f.clock.now += 86400000;
+      f.tx.runId = `scan-${f.clock.now}`;
       assert.equal((await f.run()).status, 'failed');
       assert.equal(f.effects.writes, 1);
     });
@@ -438,12 +440,11 @@ describe('agent/project-pickup', () => {
       assert.equal(f.effects.writes, 0);
     });
 
-    it(`should hold non-target pickup and preserve uncertain assignments in ${runtime}`, async () => {
+    it(`should leave instance placement to intake and preserve uncertain assignments in ${runtime}`, async () => {
       const target = '11111111-1111-4111-8111-111111111111';
       const f = fixture(runtime);
       f.policy.routing = [{ 'owner/*': [target] }];
-      const held = await f.run();
-      assert.ok('code' in held && held.code === 'claim-route-instance-ineligible');
+      assert.equal((await f.run()).status, 'selection-required');
       assert.equal(f.effects.writes, 0);
       const accepted = fixture(runtime);
       const write = accepted.client.assignProjectIssue;
@@ -497,6 +498,7 @@ describe('agent/project-pickup', () => {
     };
     await f.run({ selection: await f.select() });
     f.clock.now += 86400000;
+    f.tx.runId = `scan-${f.clock.now}`;
     assert.equal((await f.run()).status, 'attempted');
     assert.equal(f.effects.writes, 1);
     assert.equal(f.state.projectPickup!.operations.length, 1);
@@ -586,13 +588,16 @@ describe('agent/project-pickup', () => {
     f.state.records[0]!.result = { outcome: 'clarification-needed' };
     assert.equal(pickupCapacity(f.state.records, pickup), 0);
     f.clock.now += 86400000;
+    f.tx.runId = `scan-${f.clock.now}`;
     assert.equal((await f.run()).status, 'empty');
     assert.equal(f.effects.writes, 1);
   });
 
-  it('should not refill a completed window, but permit the next window after completion', async () => {
+  it('should not repeat a successful scan and allow later scans after intake takes custody', async () => {
     const f = fixture();
-    await f.run({ selection: await f.select() });
+    const selection = await f.select();
+    f.tx.runId = 'resumed-scan';
+    await f.run({ selection });
     f.state.records.push({
       phase: 'complete',
       issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
@@ -601,6 +606,7 @@ describe('agent/project-pickup', () => {
     });
     assert.equal((await f.run()).status, 'idle');
     f.clock.now += 86400000;
+    f.tx.runId = `scan-${f.clock.now}`;
     assert.equal((await f.run()).status, 'empty');
     assert.equal(f.state.projectPickup!.operations.length, 2);
   });
@@ -699,6 +705,7 @@ describe('agent/project-pickup', () => {
       };
       assert.equal((await f.run({ selection })).status, 'attempted');
       f.clock.now += 86400000;
+      f.tx.runId = `scan-${f.clock.now}`;
       await f.run();
       assert.equal(f.effects.writes, 1);
       assert.equal(pickupAuthority(f.state.projectPickup)!.receipts.length, 0);
@@ -725,6 +732,7 @@ describe('agent/project-pickup', () => {
       issueKey: pickupIssueKey(f.state.projectPickup!, f.item.nodeId),
     });
     f.clock.now += 86400000;
+    f.tx.runId = `scan-${f.clock.now}`;
     assert.equal((await f.run()).status, 'at-capacity');
     delete f.state.records[0]!.request;
     assert.equal((await f.run()).status, 'empty');
@@ -752,6 +760,7 @@ describe('agent/project-pickup', () => {
     await f.run({ cancel: selection.id });
     for (let day = 0; day < 33; day++) {
       f.clock.now += 86400000;
+      f.tx.runId = `scan-${f.clock.now}`;
       await f.run();
     }
     assert.deepEqual(pickupAuthority(f.state.projectPickup)!.withheldAssignments, [

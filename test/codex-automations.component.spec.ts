@@ -474,8 +474,8 @@ describe('agent/codex-automations', () => {
         },
         'project-pickup': {
           paused: false,
-          schedule: 'every 1 day',
-          'window-minutes': 60,
+          start: '10:00',
+          window: '1 hour',
           projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
         },
       },

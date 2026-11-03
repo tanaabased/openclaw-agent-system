@@ -181,8 +181,8 @@ describe('project pickup installation enrollment', () => {
         'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
         'issue-assignment': { allowed: [{ login: 'operator', 'node-id': 'U_operator' }] },
         'project-pickup': {
-          schedule: 'every 1 day',
-          'window-minutes': 10,
+          start: '10:00',
+          window: '10 minutes',
           projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
         },
       },
@@ -196,7 +196,9 @@ describe('project pickup installation enrollment', () => {
       const jobs = projectPickupJobs(manifest, runtime);
       assert.equal(jobs.length, 1);
       assert.equal(jobs[0]!.id, 'github-project-pickup');
-      assert.deepEqual(jobs[0]!.schedule, { kind: 'every', seconds: 300, missedRun: 'native' });
+      assert.equal(jobs[0]!.schedule.kind, 'cron');
+      if (jobs[0]!.schedule.kind === 'cron')
+        assert.deepEqual(jobs[0]!.schedule.times, [600, 601, 602, 603, 605, 606, 607, 608]);
       assert.equal(
         jobs[0]!.overrides?.[runtime]?.model,
         runtime === 'codex' ? 'gpt-6-luna' : 'openai/gpt-6-astra',
@@ -205,7 +207,7 @@ describe('project pickup installation enrollment', () => {
       assert.equal(projectPickupJobs(manifest, runtime)[0]!.enabled, false);
       policy.projectPickup!.paused = false;
       policy.projectPickup!.windowMinutes = 4;
-      assert.equal(projectPickupConfigurationCode(policy), 'project-pickup-schedule-unsupported');
+      assert.equal(projectPickupConfigurationCode(policy), undefined);
       policy.projectPickup!.windowMinutes = 10;
     }
     assert.equal(projectPickupConfigurationCode(policy), undefined);

@@ -65,10 +65,7 @@ describe('github project pickup policy', () => {
         assert.equal(diagnostic, undefined);
       }
     }
-    assert.equal(
-      parse({ ...pickupDeclaration, schedule: 'every 1 day', paused: true }).status,
-      'valid',
-    );
+    assert.equal(parse({ ...pickupDeclaration, start: '10 am', paused: true }).status, 'valid');
   });
 
   it('should reject unsupported pilot declarations rather than widen scope', () => {
@@ -145,7 +142,7 @@ describe('github project pickup policy', () => {
         { match: 'owner/repo', workflows: ['issue-assignment'], target: 'deny' },
         'owner/*',
       ];
-      assert.equal(liveWorkflowPolicy(manifest, runtime, intake), undefined);
+      assert.equal(liveWorkflowPolicy(manifest, runtime, intake), 'repository-outside-workflow');
       assert.equal(
         liveWorkflowPolicy(manifest, runtime, {
           ...intake,

@@ -12,10 +12,8 @@ github:
     - tanaabased/big-test-bucket: swarm
   issue-assignment: {}
   project-pickup:
-    schedule:
-      cron: '0 22 * * *'
-      timezone: America/New_York
-    window-minutes: 60
+    start: '10 pm'
+    window: '1 hour'
     selection:
       guidance: choose useful, ready work within the milestone
     projects:

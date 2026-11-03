@@ -33,7 +33,7 @@ export default function liveWorkflowPolicy(
   if (!policy.issueAssignment) return 'issue-workflow-disabled';
   const pickup = retainedPickupReceipt(intake);
   if (
-    (!pickup || policy.routing === undefined) &&
+    (!pickup?.claimCommentId || policy.routing === undefined) &&
     repositoryScope(policy, intake.repository, 'issue-assignment').decision === 'deny'
   )
     return 'repository-outside-workflow';

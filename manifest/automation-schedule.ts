@@ -1,3 +1,5 @@
+import duration from './duration.ts';
+
 const maximumMonthDays = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 export interface AutomationCronFields {
@@ -14,22 +16,11 @@ export interface AutomationCronFields {
 export type AutomationSchedule = (
   | { kind: 'every' | 'in'; seconds: number }
   | { kind: 'at'; at: string }
-  | { kind: 'cron'; fields: AutomationCronFields; timezone: string | null }
+  | { kind: 'cron'; fields: AutomationCronFields; timezone: string | null; times?: number[] }
 ) & { missedRun: 'native' };
 
 function invalid(): never {
   throw new Error('Invalid automation schedule.');
-}
-
-function duration(source: string): number {
-  const match = /^(\d+) (second|minute|hour|day)(s?)$/u.exec(source);
-  if (!match) return invalid();
-  const amount = Number(match[1]);
-  if (amount < 1 || (amount === 1 ? match[3] !== '' : match[3] !== 's')) return invalid();
-  const multiplier = { second: 1, minute: 60, hour: 3600, day: 86400 }[match[2]!]!;
-  const seconds = amount * multiplier;
-  if (!Number.isSafeInteger(seconds) || !Number.isSafeInteger(seconds * 1000)) return invalid();
-  return seconds;
 }
 
 function timestamp(source: string): string {

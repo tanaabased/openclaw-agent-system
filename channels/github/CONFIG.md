@@ -183,26 +183,30 @@ or approved assignment and feedback authors.
 | Field                | Required | Meaning                                                                                                                                                                                                                                                                                |
 | -------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `paused`             | no       | Defaults to `false`; pauses new pickup immediately. Run Install to synchronize the saved native job.                                                                                                                                                                                   |
-| `schedule`           | yes      | Existing [recurring schedule syntax](../../MANIFEST.md#automations): cron with an optional IANA timezone, or `every`. One-shot schedules are rejected. Native adapter limitations still apply.                                                                                         |
-| `window-minutes`     | yes      | Positive integer duration for each pickup window, at least `github.interval-minutes`.                                                                                                                                                                                                  |
+| `start`              | no       | Daily local start time; defaults to `"03:00"`. Accepts `"3 am"`, `"3 A.M."`, `"3:00am"` and 24-hour clocks.                                                                                                                                                                            |
+| `window`             | no       | Duration, default `"2 hours"`; accepts seconds, minutes, hours, days, short units (`"2h"`) and compounds (`"1 hour 30 minutes"`). Maximum 24 hours. `duration` is an alias.                                                                                                            |
+| `end`                | no       | Closing clock time instead of a duration. An earlier or equal time closes the following day. Supplied duration fields must agree.                                                                                                                                                      |
+| `scans`              | no       | Defaults to `8`, evenly distributed from the start up to—but excluding—the closing time, rounded down to minute slots. Multiple scans need at least one minute each.                                                                                                                   |
 | `selection.guidance` | no       | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                                                                                                           |
 | `thread`             | no       | Persistent coordination chat: a name string or `{name, id}`, using the existing [automation thread convention](../../MANIFEST.md#automations). Defaults to `PROJECT PICKUP`. Run Install to reconcile a changed choice; missing conversations use the native automation recovery flow. |
 | `projects`           | yes      | Exactly one entry with `repository: owner/name` and `milestone: {number: 10, policy: only}`. The milestone number must be positive. Other policies and multi-project selection are rejected.                                                                                           |
 
-Install adds one `PROJECT PICKUP` job alongside assignment intake, using the intake
-cadence. Each installation’s eligible window can select and self-assign at most one actionable,
-unassigned issue in the configured milestone. Verified pickup enters the existing
+Install adds one `PROJECT PICKUP` job alongside assignment intake. The default native
+schedule has eight daily starts: 03:00, 03:15, 03:30, 03:45, 04:00, 04:15, 04:30 and
+04:45 local time. Each scan can select and self-assign at most one actionable,
+unassigned issue in the configured milestone, subject to ordinary work capacity.
+Verified pickup enters the existing
 assessment and Work workflow; ordinary assignments keep their configured mode.
 Missed windows are not replayed. Accepted issue work may finish after a window or pause.
 Codex uses the low model profile; OpenClaw uses its default automation profile.
 
-Pickup repository, milestone, schedule, timezone, window, guidance and route changes
-apply on the next run without Install. An unused open window can select from the new
-target; accepted assignments keep their original receipts. Run Install for changes to
-the native job, such as its intake cadence, chat or model.
-Route edits do not transfer pending claims or attempted assignments: restore the
-original owner’s eligibility to resume pending pickup. Existing issue work stays
-with its original runtime; do not copy or delete journals to transfer it.
+Repository, milestone, guidance and route changes apply on the next run without Install.
+An unused open window can select from the new target; accepted assignments keep their
+original receipts. Run Install after changing timing, chat or model settings. Replace
+the former `schedule` and `window-minutes` fields with `start`, `window` and `scans`.
+Ordinary assignment intake handles routing and execution ownership, including races
+between pickup scans. Existing issue work stays with its original runtime; do not
+copy or delete journals to transfer it.
 Conflicting workspaces on one installation are rejected. There is no automatic
 failover, account-wide concurrency cap, or protection against independently divergent
 configuration or copied private installation identities.

@@ -53,7 +53,6 @@ describe('project pickup selection through native journals', () => {
     const caller = { current: true };
     const tick = { id: 'pickup-turn-1' };
     const claims = coordinated ? pickupClaims(f, instanceRoot) : undefined;
-    if (claims) Object.defineProperty(f.tx.claims, 'passId', { get: () => tick.id });
     const assertCurrent = async () => {
       if (!caller.current) throw new Error('project-pickup-native-caller-required');
     };
@@ -82,8 +81,8 @@ describe('project pickup selection through native journals', () => {
           ],
         },
         'project-pickup': {
-          schedule: 'every 1 day',
-          'window-minutes': 60,
+          start: '10:00',
+          window: '1 hour',
           selection: { guidance: { file: 'selection.md' } },
           projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
         },
@@ -105,7 +104,6 @@ describe('project pickup selection through native journals', () => {
     if (runtime === 'codex') {
       await bindCodexWorkspace(data, workspace);
       const deps: CodexIntakeDependencies = {
-        pickupClaims: f.tx.claims,
         codexHome: home,
         now: () => f.clock.now,
         assertActive: async () => {},
@@ -135,7 +133,6 @@ describe('project pickup selection through native journals', () => {
       read = async () => (await selected.store.read())!.records;
     } else {
       const intake = new OpenClawIntake({
-        pickupClaims: f.tx.claims,
         root: data,
         pickupStore: enrollmentStore,
         namespace: root,
@@ -233,7 +230,7 @@ describe('project pickup selection through native journals', () => {
       const enrollment = await f.enrollmentStore.read();
       await f.configure((source) => {
         source.github['project-pickup'].projects[0]!.milestone.number = 11;
-        source.github['project-pickup']['window-minutes'] = 90;
+        source.github['project-pickup'].window = '90 minutes';
       });
       f.milestone.number = 11;
       f.milestone.nodeId = 'MI_next';
@@ -434,12 +431,17 @@ describe('project pickup selection through native journals', () => {
       assert.equal((await f.journal.read()).projectPickup!.operations.length, 1);
     });
 
-    it(`should retain the shared owner from pickup through assignment dispatch in ${runtime}`, async () => {
+    it(`should let ordinary intake elect an owner after pickup in ${runtime}`, async () => {
       const f = await fixture(runtime, true);
-      assert.equal((await f.pickup({ selection: await f.select() })).status, 'pending');
-      assert.equal((await f.pickup()).status, 'pending');
-      assert.equal(f.effects.writes, 0);
-      f.tick.id = 'pickup-turn-2';
+      await f.configure((source) => {
+        source.github['project-pickup'].start = '10:01';
+        source.github['project-pickup'].window = '1 minute';
+        Reflect.set(source.github['project-pickup'], 'scans', 1);
+      });
+      f.clock.now = baseline + 119000;
+      assert.equal((await f.pickup({ selection: await f.select() })).status, 'assigned');
+      assert.equal((await f.pickup()).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
       assert.equal((await f.pickup()).status, 'assigned');
       await f.scan();
       const records = await f.read();
@@ -467,7 +469,7 @@ describe('project pickup selection through native journals', () => {
                 toolCallId: 'intake-call',
               },
             });
-      assert.equal(ownership.status, 'owned');
+      assert.equal(ownership.status, 'pending');
       assert.equal(f.claims!.effects.creates, 1);
       assert.equal(f.effects.writes, 1);
     });

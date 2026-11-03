@@ -134,7 +134,6 @@ export default async function authorizeProjectAssignment(input: {
     return;
   if (
     !githubIdentityMatches(event.actor, client.identity) ||
-    receipt.window.opensAt < enrollment.startedAt ||
     receipt.window.closesAt <= receipt.window.opensAt ||
     assignedAt < receipt.window.opensAt
   )

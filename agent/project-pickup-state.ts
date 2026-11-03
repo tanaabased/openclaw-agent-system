@@ -23,6 +23,7 @@ export type PickupReport = Static<typeof pickupReportSchema>;
 export const pickupOperationSchema = Type.Object(
   {
     id: text,
+    runId: Type.Optional(text),
     enrollment: Type.Optional(projectPickupEnrollmentSchema),
     repository: Type.Optional(text),
     window: projectPickupReceiptSchema.properties.window,

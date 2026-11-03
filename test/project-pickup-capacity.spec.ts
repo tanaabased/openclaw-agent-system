@@ -41,6 +41,7 @@ describe('project pickup capacity handoff', () => {
       assert.deepEqual(capacity(), { occupied: 1, available: 0 });
       f.policy.maxConcurrentItems = 1;
       f.clock.now += 86400000;
+      f.tx.runId = `scan-${f.clock.now}`;
       assert.equal((await f.run()).status, 'at-capacity');
 
       owner.phase = 'complete';

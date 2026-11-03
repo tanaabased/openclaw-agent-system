@@ -32,6 +32,21 @@ function compile(schedule: AutomationSchedule): string {
   }
   if (schedule.kind !== 'cron') throw new CodexAutomationError('automation-one-shot-unsupported');
   const f = schedule.fields;
+  if (schedule.times) {
+    const grid = f.hours.flatMap((hour) => f.minutes.map((minute) => hour * 60 + minute));
+    const rule = `FREQ=DAILY;BYHOUR=${f.hours.join(',')};BYMINUTE=${f.minutes.join(',')}`;
+    if (schedule.times.length === grid.length) return rule;
+    const positions = schedule.times.map((time) => {
+      const index = grid.indexOf(time);
+      if (index < 0) return 0;
+      return index < 366 ? index + 1 : index - grid.length;
+    });
+    // RFC 5545 limits each BYSETPOS value to -366..-1 or 1..366.
+    if (!positions.length || positions.some((position) => !position || Math.abs(position) > 366))
+      throw new CodexAutomationError('automation-schedule-unsupported');
+    return `${rule};BYSETPOS=${positions.join(',')}`;
+  }
+
   if (f.months.length !== 12 || f.minutes.length !== 1 || (!f.dayWildcard && !f.weekdayWildcard)) {
     throw new CodexAutomationError('automation-schedule-unsupported');
   }

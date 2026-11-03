@@ -19,7 +19,7 @@ export function projectPickupErrorCode(error: unknown): string {
     : 'project-pickup-observation-unavailable';
 }
 
-/** native cadence wakes the existing window evaluator; there is no second opening timer. */
+/** Native daily scan slots own invocation; the runtime checks the window again before assigning. */
 export default function projectPickupJobs(
   manifest: AgentManifest,
   runtime: 'codex' | 'openclaw',
@@ -28,6 +28,7 @@ export default function projectPickupJobs(
   const policy = manifest.github?.notifications;
   if (
     !policy?.projectPickup ||
+    !policy.projectPickup.scanSchedule ||
     !policy.issueAssignment ||
     !policy.runtimes.includes(runtime) ||
     projectPickupConfigurationCode(policy)
@@ -54,7 +55,7 @@ export default function projectPickupJobs(
       displayName: '📥 PROJECT PICKUP',
       enabled: !policy.projectPickup.paused && !policy.issueAssignment.paused,
       runtimes: [runtime],
-      schedule: { kind: 'every', seconds: policy.intervalMinutes * 60, missedRun: 'native' },
+      schedule: policy.projectPickup.scanSchedule,
       thread: policy.projectPickup.thread ?? { name: 'PROJECT PICKUP' },
       overrides: { [runtime]: { model: model.model, effort: model.thinking } },
       payload: { kind: 'prompt', prompt },

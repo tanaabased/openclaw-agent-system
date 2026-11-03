@@ -38,9 +38,11 @@ export function validateGitHubNotificationPolicy(
     if (!policy.projectPickup.schedule)
       diagnostics.push({
         code: 'github-project-pickup-schedule-invalid',
-        fieldPath: '/github/project-pickup/schedule',
+        fieldPath: '/github/project-pickup',
         message:
-          'Use a recurring automation schedule (cron with an optional IANA timezone, or every). One-shot schedules are not supported.',
+          policy.projectPickup.timingError === 'project-pickup-timing-conflict'
+            ? 'window, duration and end must describe the same pickup period.'
+            : 'Use a local start time, a positive window of at most 24 hours, and scans spaced at least one minute apart.',
         severity: 'error',
       });
     const [owner, name] = policy.projectPickup.projects[0]!.repository.split('/');
@@ -93,7 +95,11 @@ export function validateGitHubNotificationPolicy(
 }
 
 export interface GitHubNotificationRuntimeDiagnostic {
-  code: 'github-notification-runtime-unsupported' | 'project-pickup-schedule-unsupported';
+  code:
+    | 'github-notification-runtime-unsupported'
+    | 'project-pickup-schedule-unsupported'
+    | 'project-pickup-timing-conflict'
+    | 'project-pickup-schedule-precision';
   fieldPath: string;
   message: string;
   remediation: string;
@@ -113,10 +119,9 @@ export function githubNotificationRuntimeDiagnostics(
     diagnostics.push({
       code: pickupCode,
       fieldPath: '/github/project-pickup',
-      message:
-        'Project pickup requires a recurring schedule with intake cadence no longer than the pickup window.',
+      message: 'Project pickup timing is invalid or conflicting.',
       remediation:
-        'Choose a supported recurring schedule and an intake cadence within window-minutes. Placement follows github.routing; ordinary assignments remain independent.',
+        'Set start, window (or duration/end), and scans. Use matching duration fields and at least one minute between scans; the daily window cannot exceed 24 hours.',
       status: 'warning',
       workflow: 'project-pickup',
     });

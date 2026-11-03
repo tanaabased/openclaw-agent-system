@@ -42,7 +42,7 @@ export default function projectPickupWindow(input: {
       );
     };
     const today = Math.floor(wall(now) / day) * day;
-    const earliest = Math.max(anchor, now - duration + 1);
+    const earliest = now - duration + 1;
     const f = schedule.fields;
     // a valid five-field cron repeats within eight years, including leap-day weekday restrictions.
     for (

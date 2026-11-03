@@ -3,28 +3,22 @@ import {
   projectPickupPolicyDigest,
   type ProjectPickupAuthority,
 } from '../agent/project-pickup-authority.ts';
-import normalizeAutomationSchedule from '../manifest/automation-schedule.ts';
+import decodeProjectPickup from '../channels/github/project-pickup-schema.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 
 export const pickupDeclaration = {
-  schedule: { cron: '0 22 * * *', timezone: 'America/New_York' },
-  'window-minutes': 60,
+  start: '10:00',
+  window: '1 hour',
   selection: { guidance: 'choose useful, ready work' },
-  projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
+  projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' as const } }],
 };
 
 export function pickupFixture(runtime: 'codex' | 'openclaw' = 'codex') {
   const f = intakeFixture();
   f.policy.runtimes = [runtime];
   f.policy.issueAssignment!.allowed = [{ login: 'operator', nodeId: 'U_operator' }];
-  f.policy.projectPickup = {
-    paused: false,
-    schedule: normalizeAutomationSchedule(pickupDeclaration.schedule),
-    windowMinutes: 60,
-    selection: pickupDeclaration.selection,
-    projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
-  };
+  f.policy.projectPickup = decodeProjectPickup(structuredClone(pickupDeclaration));
   const milestone = { nodeId: 'MI_pilot', number: 10, state: 'open' as 'open' | 'closed' };
   if (f.item.itemType === 'issue') f.item.milestone = milestone;
   f.client.getMilestone = async () => milestone;

@@ -335,7 +335,7 @@ export default async function scanAssignments(
                 now: input.now,
               })
             : undefined;
-          if (scope.decision === 'deny' && !projectWork?.pickup) return;
+          if (scope.decision === 'deny' && !projectWork?.pickup?.claimCommentId) return;
           if (
             pickup?.receipts.some(
               (receipt) =>

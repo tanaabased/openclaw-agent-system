@@ -6,12 +6,12 @@ import type { ClaimSource } from './assignment-claim.ts';
 import { automationHash } from './automation-hash.ts';
 import { retainedPickupReceipt } from './project-pickup-authority.ts';
 
-/** new placement applies only until pickup has verified its assignment. */
+/** Ordinary intake owns placement; retain only an already-recorded legacy claim owner. */
 export function assignmentClaimRoute(policy: GitHubNotificationPolicy, intake: ManagedIssue) {
   const pickup = 'initiation' in intake ? undefined : retainedPickupReceipt(intake);
-  if (pickup)
+  if (pickup?.claimCommentId)
     return {
-      decision: pickup.claimCommentId ? ('swarm' as const) : ('local' as const),
+      decision: 'swarm' as const,
       eligibleInstanceIds: undefined,
     };
   return repositoryScope(policy, intake.repository, 'issue-assignment');
