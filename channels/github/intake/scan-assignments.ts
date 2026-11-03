@@ -1,3 +1,4 @@
+import itemReadFailure from '../provider/item-read-failure.ts';
 import GitHubIdentityCache from '../identity-cache.ts';
 import repositoryScope, {
   repositoryScopeCandidate,
@@ -372,8 +373,7 @@ export default async function scanAssignments(
                     error.code,
                   )
                 ? error.code
-                : diagnostic?.classification === 'permission' ||
-                    (diagnostic?.classification === 'unknown' && diagnostic.httpStatus === 404)
+                : itemReadFailure(error)
                   ? 'intake-github-permission'
                   : undefined;
           if (!localCode || error === persistenceError || budget.exhausted || signal.aborted)

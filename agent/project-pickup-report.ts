@@ -69,6 +69,7 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
       closed: input.now >= operation.window.closesAt,
       issue: operation.selected?.number,
       rationale: operation.rationale,
+      deferred: operation.deferred ?? [],
       status,
       code:
         operation.code ??
@@ -87,6 +88,11 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
   ];
   const problems = [
     ...(outcome.code && !informational.includes(outcome.code) ? [outcome.code] : []),
+    ...items.flatMap((item) =>
+      [...new Set(item.deferred.map((candidate) => candidate.code))].map(
+        (diagnostic) => `${item.id}:${diagnostic}`,
+      ),
+    ),
     ...items.flatMap((item) =>
       item.code && !informational.includes(item.code)
         ? [item.id + ':' + item.code]
@@ -109,7 +115,9 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
     !uniqueProblems.length &&
     ['assigned', 'admitted', 'completed'].includes(outcome.status),
   );
-  const visible = items.filter((item) => item.issue || item.closed || item.code);
+  const visible = items.filter(
+    (item) => item.issue || item.closed || item.code || item.deferred.length,
+  );
   const facts = {
     repository,
     milestone: project.milestone.number,
@@ -133,7 +141,9 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
       ? 'Check repository routing and the retained claim owner. Restore eligibility or resolve the original pickup operation; do not assign again or transfer ownership by changing routes.'
       : failed
         ? 'Check the diagnostic and GitHub access. Pickup rechecks failed discovery or selection on the next scheduled run; do not assign manually.'
-        : 'Open the issue chat to resolve its work blocker. Implementation stays in that chat.';
+        : items.some((item) => item.deferred.length)
+          ? 'Some candidates could not be verified and were skipped. Check their diagnostics; verified candidates remain eligible.'
+          : 'Open the issue chat to resolve its work blocker. Implementation stays in that chat.';
   const body = card({
     emoji: warning ? (failed ? '❌' : '⚠️') : '💡',
     title: warning
@@ -174,6 +184,14 @@ export default function projectPickupReport<R extends PickupReportRecord>(input:
           : [{ label: 'Status', value: text(item.status) }]),
         ...(item.rationale
           ? [{ label: item.issue ? 'Why selected' : 'Selection', value: text(item.rationale) }]
+          : []),
+        ...(item.deferred.length
+          ? [
+              {
+                label: 'Skipped',
+                value: `${item.deferred.length} candidates could not be verified; other candidates remain eligible.`,
+              },
+            ]
           : []),
         ...(item.conversation
           ? [

@@ -196,9 +196,10 @@ assessment and Work workflow; ordinary assignments keep their configured mode.
 Missed windows are not replayed. Accepted issue work may finish after a window or pause.
 Codex uses the low model profile; OpenClaw uses its default automation profile.
 
-Run Install after changing the pickup repository, milestone, schedule, timezone or
-window. New pickups use the updated configuration; accepted assignments keep their
-original receipts. Selection guidance and repository routes apply without reenrollment.
+Pickup repository, milestone, schedule, timezone, window, guidance and route changes
+apply on the next run without Install. An unused open window can select from the new
+target; accepted assignments keep their original receipts. Run Install for changes to
+the native job, such as its intake cadence, chat or model.
 Route edits do not transfer pending claims or attempted assignments: restore the
 original owner’s eligibility to resume pending pickup. Existing issue work stays
 with its original runtime; do not copy or delete journals to transfer it.

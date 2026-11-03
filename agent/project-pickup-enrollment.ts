@@ -75,7 +75,8 @@ export default class ProjectPickupEnrollmentStore {
     const record = matches[0]!;
     if (
       record.instanceId !== identity.instanceId ||
-      record.enrollment.policyDigest !== projectPickupPolicyDigest(policy)
+      !policy.projectPickup ||
+      !policy.runtimes.includes(runtime)
     )
       throw new IntakeError('project-pickup-enrollment-changed');
     return record;
@@ -157,8 +158,7 @@ export default class ProjectPickupEnrollmentStore {
               },
             }
           : existing;
-        // a changed enrollment must be activated again after native schedule readback.
-        if (changed) delete updated.nativeId;
+        // Target and window edits do not change the native job or its activation.
         const commit = async () => {
           if (!changed) return;
           state.records[state.records.indexOf(existing)] = updated;

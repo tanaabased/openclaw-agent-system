@@ -12,9 +12,164 @@ import { pickupOperationSchema } from '../agent/project-pickup-state.ts';
 import { Value } from 'typebox/value';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import fixture from './project-pickup-selection-fixture.ts';
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
+import normalizeSchedule from '../manifest/automation-schedule.ts';
 
 describe('agent/project-pickup', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should replace an unused selection after a live milestone edit in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const before = await f.select();
+      const installed = structuredClone(f.tx.enrollment);
+      f.policy.projectPickup!.projects[0]!.milestone.number = 11;
+      f.milestone.number = 11;
+      f.milestone.nodeId = 'MI_new';
+      f.item.milestone = { ...f.item.milestone!, nodeId: 'MI_new', number: 11 };
+      const after = await f.select();
+      assert.notEqual(after.id, before.id);
+      assert.deepEqual(f.tx.enrollment, installed);
+      assert.equal((await f.run({ selection: before })).status, 'failed');
+      const refreshed = await f.select();
+      assert.equal((await f.run({ selection: refreshed })).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+      assert.equal(f.state.projectPickup!.enrollment.milestoneNodeId, 'MI_new');
+      assert.equal((await f.run()).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+    });
+
+    it(`should use live repository, schedule and timezone settings in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const first = await f.select();
+      const anchor = f.state.projectPickup!.enrollment.startedAt;
+      f.policy.projectPickup!.projects[0]!.repository = 'owner/another';
+      f.policy.projectPickup!.schedule = normalizeSchedule('every 2 days');
+      f.tx.timezone = 'America/New_York';
+      f.client.getRepository = async () => ({
+        ...f.repository,
+        nodeId: 'R_another',
+        name: 'another',
+      });
+      const selection = await f.select();
+      assert.notEqual(selection.id, first.id);
+      const current = f.state.projectPickup!;
+      assert.equal(current.enrollment.startedAt, anchor);
+      assert.equal(current.enrollment.repositoryNodeId, 'R_another');
+      assert.equal(current.timezone, 'America/New_York');
+      assert.equal((await f.run({ selection })).status, 'assigned');
+      assert.equal(current.operations[0]!.repository, 'owner/another');
+      assert.equal(f.effects.writes, 1);
+    });
+
+    it(`should preserve an attempted assignment across a live target edit in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      await f.run({ selection: await f.select() });
+      const before = structuredClone(f.state.projectPickup!.operations[0]!);
+      f.policy.projectPickup!.projects[0]!.milestone.number = 11;
+      f.client.getMilestone = async () => {
+        throw new Error('new target unavailable');
+      };
+      assert.equal((await f.run()).status, 'assigned');
+      assert.deepEqual(f.state.projectPickup!.operations[0], before);
+      assert.equal(f.effects.writes, 1);
+    });
+
+    it(`should keep an explicitly cancelled window stopped after a live target edit in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      await f.run({ cancel: (await f.select()).id });
+      f.policy.projectPickup!.windowMinutes = 90;
+      assert.equal((await f.run()).status, 'idle');
+      assert.equal(f.effects.writes, 0);
+    });
+
+    for (const classification of [
+      'permission',
+      'unknown',
+      'authentication',
+      'rate-limit',
+      'transport',
+    ] as const) {
+      it(`should ${['permission', 'unknown'].includes(classification) ? 'defer one unreadable candidate' : 'stop on a provider-wide failure'} for ${classification} in ${runtime}`, async () => {
+        const f = fixture(runtime);
+        const second = { ...f.item, nodeId: 'I_second', number: f.item.number + 1 };
+        f.items.set(second.number, second);
+        f.candidates.set(second.number, {
+          ...f.candidates.get(f.item.number)!,
+          nodeId: second.nodeId,
+          number: second.number,
+        });
+        const read = f.client.getItem;
+        const reads: number[] = [];
+        f.client.getItem = async (...args) => {
+          reads.push(args[2]);
+          if (args[2] === f.item.number)
+            throw new GitHubWorkEventClientError(
+              'github-item-unavailable',
+              'safe provider failure',
+              {},
+              undefined,
+              providerDiagnostic('github', 'api-request', classification, {
+                httpStatus: classification === 'unknown' ? 404 : 403,
+              }),
+            );
+          return read(...args);
+        };
+        if (['permission', 'unknown'].includes(classification)) {
+          const result = await f.run();
+          assert.equal(result.status, 'selection-required');
+          const op = f.state.projectPickup!.operations[0]!;
+          assert.deepEqual(
+            op.candidates.map(({ nodeId }) => nodeId),
+            [second.nodeId],
+          );
+          assert.deepEqual(op.deferred, [
+            {
+              nodeId: f.item.nodeId,
+              number: f.item.number,
+              code: 'project-pickup-candidate-unavailable',
+            },
+          ]);
+          assert.ok(Value.Check(pickupOperationSchema, op));
+          assert.ok(reads.includes(second.number));
+          assert.ok('digest' in result);
+          assert.equal(
+            (
+              await f.run({
+                selection: {
+                  id: result.id!,
+                  digest: result.digest!,
+                  issueNodeId: second.nodeId,
+                  rationale: 'verified ready candidate',
+                },
+              })
+            ).status,
+            'assigned',
+          );
+          assert.equal(f.effects.writes, 1);
+        } else {
+          const result = await f.run();
+          assert.equal(result.status, 'failed');
+          assert.ok(!reads.includes(second.number));
+          assert.equal(f.state.projectPickup!.operations[0]!.deferred, undefined);
+          assert.equal(f.effects.writes, 0);
+        }
+      });
+    }
+
+    it(`should retry deferred candidates after an empty scan in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const read = f.client.getItem;
+      f.client.getItem = async () => {
+        throw new GitHubWorkEventClientError(
+          'github-notification-resource-missing',
+          'missing item',
+        );
+      };
+      assert.equal((await f.run()).status, 'empty');
+      f.client.getItem = read;
+      assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+    });
+
     it(`should continue beyond ten pages and one thousand candidates in ${runtime}`, async () => {
       const f = fixture(runtime);
       const original = structuredClone(f.item);
@@ -233,7 +388,7 @@ describe('agent/project-pickup', () => {
       assert.equal(work!.pickup!.assignmentNodeId, f.events[0]!.nodeId);
     });
 
-    it(`should cancel stale selection and use the new milestone next window in ${runtime}`, async () => {
+    it(`should cancel stale selection and use the new milestone in the same window in ${runtime}`, async () => {
       const f = fixture(runtime);
       const selection = await f.select();
       f.policy.projectPickup!.projects[0]!.milestone.number = 11;
@@ -257,9 +412,8 @@ describe('agent/project-pickup', () => {
           f.tx.enrollment = updated;
         },
       );
-      assert.equal((await f.run({ selection })).status, 'idle');
+      assert.equal((await f.run({ selection })).status, 'failed');
       assert.equal(f.effects.writes, 0);
-      f.clock.now += 86400000;
       let requested: number | undefined;
       const discover = f.client.discoverProject;
       f.client.discoverProject = async (owner, name, milestone, page) => {

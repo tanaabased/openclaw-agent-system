@@ -65,7 +65,7 @@ describe('project pickup selection through native journals', () => {
       assertCurrent,
     };
 
-    const source = JSON.stringify({
+    const declaration = {
       'schema-version': 1,
       agent: { id: 'receiver' },
       github: {
@@ -88,7 +88,8 @@ describe('project pickup selection through native journals', () => {
           projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
         },
       },
-    });
+    };
+    const source = JSON.stringify(declaration);
     await writeFile(join(workspace, 'agent.yaml'), source);
     await writeFile(join(workspace, 'selection.md'), 'prefer high impact ready work');
     const parsed = parseAgentManifest(source);
@@ -181,10 +182,58 @@ describe('project pickup selection through native journals', () => {
         rationale: 'highest explicit priority and impact among ready work',
       };
     };
-    return { ...f, pickup, scan, read, journal, select, caller, tick, claims, instanceRoot };
+    const configure = async (change: (value: typeof declaration) => void) => {
+      change(declaration);
+      const source = JSON.stringify(declaration);
+      const updated = parseAgentManifest(source);
+      assert.equal(updated.status, 'valid');
+      if (updated.status !== 'valid') throw new Error('invalid fixture update');
+      Object.assign(manifest, updated.manifest);
+      await writeFile(join(workspace, 'agent.yaml'), source);
+    };
+    return {
+      ...f,
+      pickup,
+      scan,
+      read,
+      journal,
+      select,
+      caller,
+      tick,
+      claims,
+      instanceRoot,
+      configure,
+      enrollmentStore,
+    };
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should apply a live milestone change without replacing native activation in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const before = await f.select();
+      const enrollment = await f.enrollmentStore.read();
+      await f.configure((source) => {
+        source.github['project-pickup'].projects[0]!.milestone.number = 11;
+        source.github['project-pickup']['window-minutes'] = 90;
+      });
+      f.milestone.number = 11;
+      f.milestone.nodeId = 'MI_next';
+      f.item.milestone = { ...f.item.milestone!, number: 11, nodeId: 'MI_next' };
+      const after = await f.select();
+      assert.notEqual(after.id, before.id);
+      assert.equal((await f.pickup({ selection: before })).status, 'failed');
+      const refreshed = await f.select();
+      assert.equal((await f.pickup({ selection: refreshed })).status, 'assigned');
+      const current = (await f.journal.read()).projectPickup!;
+      assert.equal(current.enrollment.milestoneNodeId, 'MI_next');
+      const operation = current.operations.find((op) => op.id === after.id)!;
+      assert.equal(operation.window.closesAt - operation.window.opensAt, 90 * 60000);
+      assert.deepEqual(await f.enrollmentStore.read(), enrollment);
+      assert.equal(f.effects.writes, 1);
+      f.caller.current = false;
+      await assert.rejects(f.pickup(), /native-caller-required/);
+    });
+
     it(`should deliver complete large candidate material through authorized pages in ${runtime}`, async () => {
       const f = await fixture(runtime);
       const original = structuredClone(f.item);

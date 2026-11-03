@@ -2,11 +2,12 @@ import { automationHash } from './automation-hash.ts';
 import type { PickupEnrollment } from './project-pickup-enrollment.ts';
 import type { ProjectPickupState } from './project-pickup-state.ts';
 
-/** installed policy selects future work; retained effects keep their original scope. */
+/** live selection policy owns future work; retained effects keep their original scope. */
 export default async function reconcileProjectPickup(
   state: { projectPickup?: ProjectPickupState },
   save: () => Promise<void>,
-  record: PickupEnrollment,
+  record: Pick<PickupEnrollment, 'enrollment' | 'timezone' | 'repository'> &
+    Partial<Pick<PickupEnrollment, 'instanceId'>>,
   commit: () => Promise<void>,
   before?: PickupEnrollment,
 ) {
@@ -45,6 +46,16 @@ export default async function reconcileProjectPickup(
         return retained;
       }),
     };
+    const consumed = state.projectPickup.operations.filter(
+      (operation) =>
+        operation.attemptedAt !== undefined ||
+        operation.receipt ||
+        (operation.phase === 'cancelled' &&
+          operation.code !== 'project-pickup-configuration-changed'),
+    );
+    state.projectPickup.highWater = consumed.length
+      ? Math.max(...consumed.map((operation) => operation.window.opensAt))
+      : undefined;
     // save original effect ownership before publishing the replacement enrollment.
     await save();
   }

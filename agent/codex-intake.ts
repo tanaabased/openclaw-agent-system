@@ -439,7 +439,6 @@ export async function runCodexProjectPickup(
     if (!current.policy) throw new IntakeError('intake-policy-disabled');
     const retained = await verifyNative(current.policy.policy);
     authority = { enrollment: retained.enrollment, receipts: [] };
-    timezone = retained.timezone;
   }
   await assertCodexIntakeActive(pluginData, current, deps);
   const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);

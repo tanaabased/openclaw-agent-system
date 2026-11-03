@@ -132,7 +132,7 @@ describe('project pickup installation enrollment', () => {
       });
       assert.equal(updated.enrollment.milestoneNodeId, 'MI_new');
       assert.equal(updated.enrollment.startedAt, first.enrollment.startedAt);
-      assert.equal(updated.nativeId, undefined);
+      assert.equal(updated.nativeId, 'native-job');
       assert.equal(state.projectPickup!.highWater, f.clock.now);
       assert.deepEqual(state.projectPickup!.operations[0]!.receipt, receipt);
       assert.equal(state.projectPickup!.operations[0]!.enrollment!.milestoneNodeId, 'MI_pilot');

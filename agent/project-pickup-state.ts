@@ -50,6 +50,18 @@ export const pickupOperationSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+    deferred: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            nodeId: text,
+            number: Type.Integer({ minimum: 1 }),
+            code: text,
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
     guidance: Type.Optional(Type.String({ maxLength: maximumAssessmentGuidanceBytes })),
     selectionDigest: Type.Optional(text),
     selected: Type.Optional(pickupCandidateSchema),

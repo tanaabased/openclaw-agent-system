@@ -6,6 +6,21 @@ import { pickupIssueKey } from '../agent/project-pickup-capacity.ts';
 import selectionFixture from './project-pickup-selection-fixture.ts';
 
 describe('agent/project-pickup-report', () => {
+  it('should report skipped candidates without treating the selected assignment as failed', async () => {
+    const f = await fixture();
+    f.pickup.operations[0]!.deferred = [1, 2].map((number) => ({
+      nodeId: `I_skip_${number}`,
+      number,
+      code: 'project-pickup-candidate-unavailable',
+    }));
+    const result = f.run();
+    assert.ok(result.response.includes('2 candidates could not be verified'));
+    assert.ok(result.response.includes('project-pickup-candidate-unavailable'));
+    assert.equal(result.report!.problems.length, 1);
+    assert.equal(f.pickup.operations[0]!.phase, 'assigned');
+    assert.equal(f.run().notify, false);
+  });
+
   async function fixture() {
     const f = selectionFixture();
     await f.run({ selection: await f.select() });

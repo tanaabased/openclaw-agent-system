@@ -126,7 +126,6 @@ export default class OpenClawIntake {
       if (retained.nativeId !== occurrence.nativeId)
         throw new IntakeError('project-pickup-native-caller-required');
       authority = { enrollment: retained.enrollment, receipts: [] };
-      timezone = retained.timezone;
     }
     const code = await this.readiness(manifest, workspace);
     if (code) throw new IntakeError(code);
