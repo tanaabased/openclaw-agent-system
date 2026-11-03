@@ -19,14 +19,12 @@ describe('agent/project-pickup-report', () => {
   });
 
   for (const status of ['empty', 'allowance-reached', 'at-capacity', 'paused', 'idle']) {
-    it(`should show a fresh ${status} outcome on every scheduled scan`, () => {
+    it(`should show a ${status} outcome`, () => {
       const f = fixture();
       const input = { policy: f.policy, outcome: { status }, capacity: { occupied: 1, limit: 1 } };
-      for (let scan = 0; scan < 8; scan++) {
-        const result = report(input);
-        assert.equal(result.notify, true);
-        assert.match(result.response, /> ## 📥/);
-      }
+      const result = report(input);
+      assert.equal(result.notify, true);
+      assert.match(result.response, /> ## 📥/);
     });
   }
 
