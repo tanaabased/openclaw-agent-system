@@ -1,11 +1,12 @@
 # OpenClaw Notification Reactivation Example
 
-Unassign an assessed issue, then post approved feedback to resume the original chat
+Unassign an assessed issue with local changes, verify it waits without cleanup, then post approved feedback to resume the original chat
 and publish a reply to that comment. Verify that another scan keeps the chat, checkout,
 and assessment without posting again.
 
 ## What Belongs Here
 
+- An open unassigned task awaiting reassignment without occupying an idle slot or removing local changes.
 - Approved comment evidence reactivating the unassigned issue in its existing native chat and worktree.
 - The original assessment and stage receipt remaining intact without implementation.
 - Exact private/public reply evidence, retained reactivation receipt, and replay-safe repeat scanning.
@@ -20,6 +21,7 @@ and assessment without posting again.
 
 - Strict AIMock supplies the assessment and reply text; the GitHub comment, native dispatch, managed checkout, and publication receipts remain real.
 - The reply assertion selects its exact requested native run and compares publication against retained source/response receipts. It permits retained plan summaries while rejecting duplicate replies.
+- The dormant-state check adds one scoped refresh with zero cleanup grace. Selected refreshes recheck membership immediately; no extra model turn, installation, wait, or GitHub fixture is needed.
 - CI owns one disposable issue and its workspaces/SSH registration. Only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule isolate discovery; cleanup stops the Gateway before external changes.
 
 ## Setup
@@ -107,10 +109,22 @@ reconcile_run=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notificatio
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$reconcile_run" 600000
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
 
-# should reactivate an unassigned issue from approved feedback in its original chat
+# should retain open unassigned work without cleanup or an idle execution slot
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-reactivation/tanaabot"
+worktree=$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")
+printf '%s\n' 'unfinished task work' > "$worktree/unassigned-local.txt"
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-reactivation/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api --method DELETE "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'all(.assignees[]; .login != "tanaabot")'
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-reactivation/tanaabot"
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
+openclaw agent-system notifications status --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")" --json | jq -e '.capacity.active == 0 and (.items | length) == 1 and .items[0].workflow.phase == "awaiting-reassignment"'
+grep -Fx 'unfinished task work' "$(jq -er .worktree "$TMPDIR/notification-dispatch-before.json")/unassigned-local.txt"
+
+# should reactivate an unassigned issue from approved feedback in its original chat
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-reactivation/emori"
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot explain the retained plan.' > "$TMPDIR/notification-feedback-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-reactivation/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
@@ -121,6 +135,7 @@ conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json | jq --arg run "$feedback_run" '. + {requestedRunId:$run}' > "$TMPDIR/notification-feedback-history.json"
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-feedback.json"
 jq -e --slurp '.[1].retirement == null and .[1].feedbackReactivation.eventId != null and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[0].stageReceipt == .[1].stageReceipt and .[1].work == null and (.[1].feedback.events | length) == 1 and all(.[1].feedback.events[]; .phase == "published" and .itemType == "issue" and .receipt.nodeId != null and (.result.privateText | length > 0) and (.result.publicText | length > 0) and .composition.skill.path != null)' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-feedback.json"
+grep -Fx 'unfinished task work' "$(jq -er .worktree "$TMPDIR/notification-feedback.json")/unassigned-local.txt"
 
 # should verify the exact response and suppress another reply on a repeat scan
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-reactivation/tanaabot"

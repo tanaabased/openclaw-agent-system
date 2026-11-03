@@ -24,6 +24,9 @@ import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 import { baseline } from './github-intake-fixture.ts';
 import selectionFixture from './project-pickup-selection-fixture.ts';
+import pickupClaims from './project-pickup-claim-fixture.ts';
+import CodexAssignmentClaims from '../agent/codex-assignment-claims.ts';
+import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
 
 describe('project pickup selection through native journals', () => {
   let root: string;
@@ -34,7 +37,7 @@ describe('project pickup selection through native journals', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  async function fixture(runtime: 'codex' | 'openclaw') {
+  async function fixture(runtime: 'codex' | 'openclaw', coordinated = false) {
     const f = selectionFixture(runtime);
     const workspace = join(root, 'workspace');
     const data = join(root, 'data');
@@ -42,10 +45,12 @@ describe('project pickup selection through native journals', () => {
     await mkdir(workspace);
     await mkdir(home);
     const instanceRoot = join(data, 'instance');
-    const identity = await new AssignmentClaimStore(instanceRoot).identity();
+    await new AssignmentClaimStore(instanceRoot).identity();
     const enrollmentStore = new ProjectPickupEnrollmentStore(instanceRoot);
     const caller = { current: true };
     const tick = { id: 'pickup-turn-1' };
+    const claims = coordinated ? pickupClaims(f, instanceRoot) : undefined;
+    if (claims) Object.defineProperty(f.tx.claims, 'passId', { get: () => tick.id });
     const assertCurrent = async () => {
       if (!caller.current) throw new Error('project-pickup-native-caller-required');
     };
@@ -63,6 +68,7 @@ describe('project pickup selection through native journals', () => {
       github: {
         username: 'receiver',
         runtimes: [runtime],
+        ...(coordinated ? { routing: [{ 'owner/*': 'swarm' }] } : {}),
         'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
         'max-concurrent-items': 1,
         'issue-assignment': {
@@ -73,7 +79,6 @@ describe('project pickup selection through native journals', () => {
           ],
         },
         'project-pickup': {
-          coordinator: { runtime, 'instance-id': identity.instanceId },
           schedule: 'every 1 day',
           'window-minutes': 60,
           selection: { guidance: { file: 'selection.md' } },
@@ -96,6 +101,7 @@ describe('project pickup selection through native journals', () => {
     if (runtime === 'codex') {
       await bindCodexWorkspace(data, workspace);
       const deps: CodexIntakeDependencies = {
+        pickupClaims: f.tx.claims,
         codexHome: home,
         now: () => f.clock.now,
         assertActive: async () => {},
@@ -125,6 +131,7 @@ describe('project pickup selection through native journals', () => {
       read = async () => (await selected.store.read())!.records;
     } else {
       const intake = new OpenClawIntake({
+        pickupClaims: f.tx.claims,
         root: data,
         pickupStore: enrollmentStore,
         namespace: root,
@@ -171,10 +178,47 @@ describe('project pickup selection through native journals', () => {
         rationale: 'highest explicit priority and impact among ready work',
       };
     };
-    return { ...f, pickup, scan, read, journal, select, caller, tick };
+    return { ...f, pickup, scan, read, journal, select, caller, tick, claims, instanceRoot };
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should retain the shared owner from pickup through assignment dispatch in ${runtime}`, async () => {
+      const f = await fixture(runtime, true);
+      assert.equal((await f.pickup({ selection: await f.select() })).status, 'pending');
+      assert.equal((await f.pickup()).status, 'pending');
+      assert.equal(f.effects.writes, 0);
+      f.tick.id = 'pickup-turn-2';
+      assert.equal((await f.pickup()).status, 'assigned');
+      await f.scan();
+      const records = await f.read();
+      assert.equal(records.length, 1);
+      const store = new AssignmentClaimStore(f.instanceRoot);
+      const input = {
+        intake: records[0]!,
+        client: f.claims!.client.client,
+        hasCapacity: true,
+        mode: 'swarm' as const,
+      };
+      const ownership =
+        runtime === 'codex'
+          ? await new CodexAssignmentClaims(store, () => f.claims!.client).select({
+              ...input,
+              threadId: 'intake-thread',
+              turnId: 'intake-turn',
+            })
+          : await new OpenClawAssignmentClaims(store, () => f.claims!.client).select({
+              ...input,
+              caller: {
+                sessionKey: 'intake',
+                sessionId: 'intake-session',
+                runId: 'intake-run',
+                toolCallId: 'intake-call',
+              },
+            });
+      assert.equal(ownership.status, 'owned');
+      assert.equal(f.claims!.effects.creates, 1);
+      assert.equal(f.effects.writes, 1);
+    });
     it(`should keep empty ticks quiet and report the window close once through ${runtime}`, async () => {
       const f = await fixture(runtime);
       f.candidates.clear();

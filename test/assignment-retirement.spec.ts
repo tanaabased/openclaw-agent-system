@@ -7,6 +7,7 @@ import {
 } from '../agent/cleanup-configuration.ts';
 import assert from 'node:assert/strict';
 import assignmentRetirement from '../agent/assignment-retirement.ts';
+import workflowStatus from '../agent/workflow-status.ts';
 import reconcile from '../agent/reconcile-assignment-lifecycle.ts';
 import pendingAssignments, { issueKey } from '../agent/dispatch-pending.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
@@ -116,6 +117,130 @@ function setup() {
 }
 
 describe('assignment retirement', () => {
+  it('should retain open unassigned work past grace without attempting cleanup', async () => {
+    const h = setup();
+    removeFixtureAssignment(h.fixture);
+    await h.run();
+    h.advance(120);
+    await h.run();
+    assert.equal(h.cleanups(), 0);
+    assert.equal(workflowStatus(h.record), 'awaiting-reassignment');
+    assert.equal(h.record.nativeInactive, true);
+    assert.equal(h.record.retired, undefined);
+    assert.equal(h.records.length, 1);
+  });
+  for (const assigned of [false, true]) {
+    it(`should start closure retirement after dormant removal with assignment ${assigned}`, async () => {
+      const h = setup();
+      removeFixtureAssignment(h.fixture);
+      await h.run();
+      h.advance(120);
+      if (assigned) h.fixture.item.assignees = [account];
+      h.fixture.item.state = 'closed';
+      await h.run();
+      assert.equal(h.cleanups(), 0);
+      assert.equal(workflowStatus(h.record), 'retirement-pending');
+      assert.equal(h.record.retirement?.at, baseline + 120 * 60_000);
+      h.advance(60);
+      await h.run();
+      assert.equal(h.cleanups(), 1);
+      assert.deepEqual(h.closedInputs, [true]);
+      assert.ok(h.record.retired);
+    });
+  }
+  for (const receipt of [
+    { code: 'retirement-worktree-dirty' },
+    { archiveAttempt: { at: baseline, turnId: 'archive-turn' } },
+    { archiveRequest: { at: baseline, sessionId: 'original' } },
+    { archivedAt: baseline },
+    { worktreeRemovalAttemptedAt: baseline },
+    { worktreeRemovedAt: baseline },
+  ]) {
+    it(`should retain legacy removal ${Object.keys(receipt)[0]!.toLowerCase()} evidence without replay`, async () => {
+      const h = setup();
+      removeFixtureAssignment(h.fixture);
+      h.record.retirement = {
+        ...assignmentRetirement({
+          reason: 'assignment-removed',
+          intakeId: h.admitted.id,
+          now: baseline,
+          graceMinutes: 0,
+        })!,
+        ...receipt,
+      };
+      await h.run();
+      h.advance(120);
+      await h.run();
+      assert.equal(workflowStatus(h.record), 'awaiting-reassignment');
+      for (const [key, value] of Object.entries(receipt))
+        assert.deepEqual(h.record.retirement![key as keyof typeof h.record.retirement], value);
+      assert.equal(h.record.retired, undefined);
+      assert.equal(h.cleanups(), 0);
+      assert.equal(pendingAssignments({ records: h.records }, { records: h.admissions }).length, 0);
+      if (!('code' in receipt)) {
+        const event = {
+          ...h.fixture.events[0]!,
+          nodeId: 'reassigned',
+          databaseId: 40,
+          event: 'assigned' as const,
+          createdAt: new Date(baseline + 120 * 60_000).toISOString(),
+        };
+        h.fixture.item.assignees = [account];
+        h.fixture.events.push(event);
+        h.admissions.push({ ...h.admitted, id: 'successor', assignment: event });
+        h.advance(1);
+        let feedbackChecks = 0;
+        await h.run(undefined, async () => {
+          feedbackChecks++;
+          return true;
+        });
+        assert.equal(feedbackChecks, 0);
+        assert.equal(h.record.intakeId, h.admitted.id);
+        assert.equal(workflowStatus(h.record), 'awaiting-reassignment');
+        for (const [key, value] of Object.entries(receipt))
+          assert.deepEqual(h.record.retirement![key as keyof typeof h.record.retirement], value);
+        assert.equal(h.cleanups(), 0);
+        assert.equal(h.records.length, 1);
+      }
+    });
+  }
+  it('should protect a dormant owner sharing a checkout with a closed task', async () => {
+    const h = setup();
+    h.record.worktree = '/shared';
+    const peer = {
+      ...h.record,
+      id: 'dormant-peer',
+      sourceThreadId: 'intake',
+      worktree: '/shared',
+      retirement: assignmentRetirement({
+        reason: 'assignment-removed',
+        intakeId: h.admitted.id,
+        now: baseline,
+        graceMinutes: 0,
+      }),
+    };
+    const peerAdmission = {
+      ...h.admitted,
+      id: 'peer-intake',
+      issue: { ...h.admitted.issue, number: 99, nodeId: 'I_peer', databaseId: 99 },
+    };
+    peer.issueKey = issueKey(peerAdmission);
+    peer.intakeId = peerAdmission.id;
+    h.admissions.push(peerAdmission);
+    h.records.push(peer);
+    const getItem = h.fixture.client.getItem;
+    h.fixture.client.getItem = async (owner, name, number) =>
+      number === 99
+        ? { ...h.fixture.item, ...peerAdmission.issue, state: 'open', assignees: [] }
+        : getItem(owner, name, number);
+    removeFixtureAssignment(h.fixture);
+    h.fixture.item.state = 'closed';
+    await h.run();
+    h.advance(60);
+    await h.run();
+    assert.equal(h.cleanups(), 0);
+    assert.equal(h.record.retirement?.code, 'retirement-worktree-shared');
+  });
   it('should retain a closed task deadline across cosmetic activity and fresh effect checks', async () => {
     const h = setup();
     h.fixture.item.state = 'closed';
@@ -423,15 +548,13 @@ describe('assignment retirement', () => {
       assert.equal(h.cleanups(), 0);
     });
   }
-  it('should revalidate the live actor list immediately before destructive cleanup', async () => {
+  it('should release dormant removal when the live actor list no longer approves it', async () => {
     const h = setup();
     removeFixtureAssignment(h.fixture);
     await h.run();
     assert.equal(h.record.retirement?.reason, 'assignment-removed');
     h.advance(60);
-    h.beforeRecheck(() => {
-      h.fixture.policy.issueAssignment!.allowed = [];
-    });
+    h.fixture.policy.issueAssignment!.allowed = [];
     await h.run();
     assert.equal(h.cleanups(), 0);
     assert.equal(h.record.retired, undefined);
@@ -440,21 +563,19 @@ describe('assignment retirement', () => {
     assert.equal(h.record.retirement, undefined);
     assert.equal(h.record.assignmentObservation?.code, 'assignment-removal-unapproved');
   });
-  it('should restart removal grace after newer evidence invalidates an earlier cleanup decision', async () => {
+  it('should retain newer removal evidence without making it eligible for cleanup', async () => {
     const h = setup();
     const event = removeFixtureAssignment(h.fixture);
     await h.run();
     h.advance(60);
-    h.beforeRecheck(() => {
-      h.fixture.events.push({ ...event, nodeId: 'E_later_removal', databaseId: 33 });
-    });
+    h.fixture.events.push({ ...event, nodeId: 'E_later_removal', databaseId: 33 });
     await h.run();
     assert.equal(h.cleanups(), 0);
     h.beforeRecheck(() => {});
     h.advance(1);
     await h.run();
     assert.equal(h.record.retirement?.removalEventId, 'E_later_removal');
-    assert.equal(h.record.retirement?.eligibleAt, baseline + 121 * 60_000);
+    assert.equal(workflowStatus(h.record), 'awaiting-reassignment');
     assert.equal(h.cleanups(), 0);
   });
   it('should resolve missing assignment authority through the current approved actor list', async () => {
@@ -503,7 +624,7 @@ describe('assignment retirement', () => {
     await h.run();
     assert.equal(h.cleanups(), 1);
   });
-  it('should treat unassignment as pending retirement and cancel it on verified reassignment', async () => {
+  it('should reuse awaiting work on verified reassignment', async () => {
     const h = setup();
     removeFixtureAssignment(h.fixture);
     await h.run();
@@ -833,7 +954,8 @@ describe('assignment retirement', () => {
     h.advance(1);
     await h.run();
     assert.equal(h.record.retired, undefined);
-    assert.equal(h.record.retirement?.code, 'retirement-configuration-invalid');
+    assert.equal(workflowStatus(h.record), 'awaiting-reassignment');
+    assert.equal(h.record.retirement?.code, undefined);
     assert.equal(h.record.nativeInactive, true);
     assert.equal(h.cleanups(), 0);
   });

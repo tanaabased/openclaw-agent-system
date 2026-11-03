@@ -7,7 +7,14 @@ import {
   projectPickupErrorCode,
 } from './project-pickup-jobs.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
-import projectPickup, { pickupAuthority, type PickupInput } from './project-pickup.ts';
+import projectPickup, {
+  pickupAuthority,
+  type PickupInput,
+  type PickupClaims,
+} from './project-pickup.ts';
+import AssignmentClaimStore from './assignment-claim-store.ts';
+import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
+import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
 import { dispatchStorageNotice } from './dispatch-storage.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
@@ -33,6 +40,7 @@ import type AgentManifestService from '../manifest/service.ts';
 import type { GitHubNotificationItemSelector } from '../channels/github/provider/work-item.ts';
 
 export interface OpenClawIntakeDependencies {
+  pickupClaims?: PickupClaims;
   projectPickup?: ProjectPickupAuthority;
   pickupStore?: ProjectPickupEnrollmentStore;
   root: string;
@@ -170,6 +178,15 @@ export default class OpenClawIntake {
         now: this.dependencies.now ?? Date.now,
         readPolicy,
         client,
+        claims: this.dependencies.pickupClaims ?? {
+          store: new AssignmentClaimStore(this.dependencies.pickupStore!.root),
+          client: (() => {
+            if (!(client instanceof GitHubWorkEventClient))
+              throw new Error('claim-provider-binding-required');
+            return new GitHubAssignmentClaimClient(client);
+          })(),
+          passId: occurrence?.runId ?? '',
+        },
         occupied: openClawItemOccupied,
         input,
       });
@@ -220,9 +237,9 @@ export default class OpenClawIntake {
     const { selected, store, workspace } = await this.select(manifest, workspaceDir);
     if (!selected || !this.dependencies.pickupStore)
       throw new IntakeError('project-pickup-activation-required');
-    const code = projectPickupConfigurationCode(selected.policy, 'openclaw');
+    const code = projectPickupConfigurationCode(selected.policy);
     if (code) throw new IntakeError(code);
-    await this.dependencies.pickupStore.owner(selected.policy, 'openclaw');
+    await this.dependencies.pickupStore.owner();
     const client = (await this.dependencies.connect(
       { manifest, workspaceDir: workspace },
       AbortSignal.timeout(30_000),
@@ -244,7 +261,7 @@ export default class OpenClawIntake {
   async inspectPickup(manifest: AgentManifest, workspaceDir: string) {
     const policy = manifest.github?.notifications;
     if (!policy?.projectPickup) return [];
-    let code = projectPickupConfigurationCode(policy, 'openclaw');
+    let code = projectPickupConfigurationCode(policy);
     try {
       if (!code) {
         const { store, workspace } = await this.select(manifest, workspaceDir);

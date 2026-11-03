@@ -106,6 +106,20 @@ export const retirementSchema = Type.Object(
 );
 export type Retirement = Static<typeof retirementSchema>;
 
+/** retain removal receipts as scheduling and replay fences, not automatic cleanup intent. */
+export function awaitingReassignment(record: {
+  retirement?: { reason?: string; operatorRequest?: unknown };
+  retired?: unknown;
+  reset?: unknown;
+}) {
+  return Boolean(
+    !record.retired &&
+    !record.reset &&
+    record.retirement?.reason === 'assignment-removed' &&
+    !record.retirement.operatorRequest,
+  );
+}
+
 /** retirement removes scheduling eligibility immediately; the deadline only delays cleanup. */
 export default function assignmentRetirement(input: {
   previous?: Retirement;
@@ -120,6 +134,8 @@ export default function assignmentRetirement(input: {
   if (input.reactivate) return undefined;
   if (!input.reason && !input.previous) return undefined;
   const previous = input.previous;
+  const closureAfterRemoval =
+    input.reason === 'issue-closed' && previous?.reason === 'assignment-removed';
   const operatorRequest = previous?.operatorRequest ?? input.operatorRequest;
   const activity = Boolean(
     previous && input.activityId && previous.activityId !== input.activityId,
@@ -128,7 +144,7 @@ export default function assignmentRetirement(input: {
     ...previous,
     reason: operatorRequest ? 'operator-requested' : (input.reason ?? previous!.reason),
     ...(operatorRequest ? { operatorRequest, reactivationAfter: operatorRequest.at } : {}),
-    at: previous?.at ?? input.now,
+    at: closureAfterRemoval ? input.now : (previous?.at ?? input.now),
     intakeId: previous?.intakeId ?? input.intakeId,
     checkedAt: input.now,
     ...(!operatorRequest && input.reason === 'issue-closed' && previous?.reason !== 'issue-closed'
@@ -136,14 +152,14 @@ export default function assignmentRetirement(input: {
       : {}),
     eligibleAt: operatorRequest
       ? operatorRequest.at
-      : !previous || activity || previous.deadlinePending
+      : !previous || closureAfterRemoval || activity || previous.deadlinePending
         ? input.graceMinutes === undefined
           ? (previous?.eligibleAt ?? input.now)
           : input.now + input.graceMinutes * 60_000
         : previous.eligibleAt,
     deadlinePending:
       !operatorRequest &&
-      (!previous || activity || previous.deadlinePending) &&
+      (!previous || closureAfterRemoval || activity || previous.deadlinePending) &&
       input.graceMinutes === undefined
         ? true
         : undefined,

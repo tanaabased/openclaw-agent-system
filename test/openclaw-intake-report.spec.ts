@@ -9,6 +9,31 @@ function state(): OpenClawDispatchState {
 }
 
 describe('agent/openclaw-intake-report', () => {
+  it('should count dormant owners separately without warning or starting them', () => {
+    const journal = state();
+    const record = {
+      id: 'held',
+      request: {},
+      phase: 'complete',
+      threadId: 'original',
+      sessionCreation: { verified: true },
+      nativeInactive: true,
+      retirement: { reason: 'assignment-removed', code: 'retirement-worktree-dirty' },
+    } as OpenClawDispatchState['records'][number];
+    journal.records.push(record);
+    const before = structuredClone(record);
+    const report = openclawIntakeReport({
+      state: journal,
+      slots: 2,
+      observation: { status: 'ready', changed: false },
+    });
+    assert.deepEqual(report.problems, []);
+    assert.match(report.response, /Awaiting reassignment:\*\* 1/);
+    assert.match(report.response, /Retirement pending:\*\* 0/);
+    assert.match(report.response, /Slots:\*\* 0\/2/);
+    assert.doesNotMatch(report.response, /retirement-worktree-dirty|Started|⚠️/);
+    assert.deepEqual(record, before);
+  });
   it('should keep retirement progress quiet and report real blockers once', () => {
     const journal = state();
     const record = {

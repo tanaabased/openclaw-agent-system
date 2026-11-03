@@ -32,7 +32,7 @@ describe('project pickup conversation selection', () => {
               'issue-assignment': { allowed: [{ login: 'operator', 'node-id': 'U_operator' }] },
               'project-pickup': {
                 ...pickupDeclaration,
-                coordinator: { runtime, 'instance-id': '11111111-1111-4111-8111-111111111111' },
+
                 thread,
               },
             },
