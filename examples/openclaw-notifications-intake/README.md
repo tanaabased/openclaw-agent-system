@@ -19,7 +19,7 @@ Activate notification intake, exclude fixture assignments through repository rou
 
 - Native skill discovery and retained guidance are asserted during admission; the fixed mock judgment does not prove interpretation of the custom skill. No additional live-model turn is required.
 - One completed assessment checks that the retained custom method reaches the private routing card. Formatting and debug variants stay in owning renderer tests.
-- Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases all three only after verifying their native starts; model judgment is not under test.
+- Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases one after verifying three native starts, requires its result while two responses remain held, then releases the others; model judgment is not under test.
 - Swarm adds one coordinator turn to verify that claims precede native creation. This single-installation journey does not prove cross-installation exclusion; the comment-only POC can overlap under incomplete provider views.
 - V3 object identities pin assignment actors; repository routing overrides the retained legacy owner list. Only Tanaabot receives the three disposable assignments.
 - Scoped refreshes and a 24-hour schedule bound discovery. The job owns its workspaces, issues, native state, and SSH registration; cleanup stops the Gateway before changing external fixtures.
@@ -149,7 +149,14 @@ for conversation in $(jq -r '.[].threadId' "$TMPDIR/notification-started.json");
   openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.parentSessionKey == "agent:intake-tanaabot:main" and .session.spawnDepth == 0 and .session.spawnedBy == null'
 done
 
-# should release all held responses together after the three native starts and retain every plan
+# should commit one result while two unrelated native responses remain held
+receipt=$(jq -er '.[0].id' "$TMPDIR/notification-started.json")
+assessment_run=$(jq -er '.[0].assessmentTurn.runId' "$TMPDIR/notification-started.json")
+touch "$TMPDIR/notification-assessment-released-$receipt"
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$assessment_run" 600000
+jq -es --arg receipt "$receipt" '[.[].records[]] | length == 3 and any(.[]; .id == $receipt and .result.outcome == "plan-ready") and all(.[] | select(.id != $receipt); .result == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+
+# should release the remaining responses and retain every plan
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-intake/tanaabot"
 for receipt in $(jq -r '.[].id' "$TMPDIR/notification-started.json"); do
   touch "$TMPDIR/notification-assessment-released-$receipt"

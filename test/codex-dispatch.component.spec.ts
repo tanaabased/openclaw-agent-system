@@ -3762,22 +3762,11 @@ describe('agent/codex-dispatch', () => {
       await save();
     });
     await entered.promise;
-    const lock = properLockfile.lock;
-    properLockfile.lock = async (path, options) => {
-      const retries = options?.retries;
-      if (
-        String(path) === store.path &&
-        retries &&
-        typeof retries !== 'number' &&
-        retries.retries
-      ) {
-        release.resolve();
-        await writer;
-      }
-      return lock(path, options);
-    };
     try {
-      const recheck = await report();
+      const reporting = report();
+      release.resolve();
+      await writer;
+      const recheck = await reporting;
       assert.equal(recheck.status, 'continue');
       assert.equal(recheck.nextAction, 'next');
       await next();
@@ -3786,7 +3775,6 @@ describe('agent/codex-dispatch', () => {
       assert.doesNotMatch(String(completed.response), /1 issue started/);
       assert.equal((await store.read()).records[0]!.intakeReportedAt, now);
     } finally {
-      properLockfile.lock = lock;
       release.resolve();
       await writer;
     }
@@ -3801,7 +3789,9 @@ describe('agent/codex-dispatch', () => {
     const lock = properLockfile.lock;
     properLockfile.lock = async (path, options) => {
       if (String(path).includes('codex-dispatch-'))
-        throw Object.assign(new Error('The journal remains busy.'), { code: 'ELOCKED' });
+        throw Object.assign(new Error('The journal remains busy.'), {
+          code: 'private-state-file-lock-busy',
+        });
       return lock(path, options);
     };
     try {
@@ -3820,13 +3810,13 @@ describe('agent/codex-dispatch', () => {
     const prepared = await prepare();
     created();
     const lock = properLockfile.lock;
-    let contenders = 0;
+    let refuse = true;
     properLockfile.lock = async (path, options) => {
       if (String(path).includes('codex-dispatch-')) {
-        contenders++;
-        const retries = options?.retries;
-        if (!retries || typeof retries === 'number' || !retries.retries)
+        if (refuse) {
+          refuse = false;
           throw Object.assign(new Error('The intake journal lease is held.'), { code: 'ELOCKED' });
+        }
       }
       return lock(path, options);
     };
@@ -3835,11 +3825,12 @@ describe('agent/codex-dispatch', () => {
         (await request('context', { id: prepared.id }, { threadId: 'issue-thread' })).status,
         'verified',
       );
+      refuse = true;
       assert.equal(
         (await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' })).status,
         'recorded',
       );
-      assert.equal(contenders, 2);
+      assert.equal(refuse, false);
     } finally {
       properLockfile.lock = lock;
     }
@@ -3902,6 +3893,93 @@ describe('agent/codex-dispatch', () => {
       work.run('context', { material: read.material }, 'foreign-thread'),
       /caller-required/,
     );
+  });
+
+  it('should defer pre-transaction continuation contention without consuming work or action counters', async () => {
+    const work = await workIssue();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const before = await store.read();
+    const lock = properLockfile.lock;
+    properLockfile.lock = async (path, options) => {
+      if (String(path) === store.path)
+        throw Object.assign(new Error('acquisition exhausted'), {
+          code: 'private-state-file-lock-busy',
+        });
+      return lock(path, options);
+    };
+    try {
+      const response = await work.run('next');
+      assert.equal(response.status, 'busy');
+      assert.ok('changed' in response && response.changed === false);
+      assert.deepEqual(await store.read(), before);
+    } finally {
+      properLockfile.lock = lock;
+    }
+    assert.equal((await work.run('next')).status, 'prepared');
+  });
+
+  it('should reserve only one continuation request across competing native observations', async () => {
+    const work = await workIssue();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const occurrence = work.continuation.native!.occurrence;
+    let observations = 0;
+    work.continuation.native = {
+      ...work.continuation.native!,
+      occurrence: async (...args) => {
+        if (++observations === 2) entered.resolve();
+        await release.promise;
+        return occurrence(...args);
+      },
+    };
+    const attempts = [work.run('next'), work.run('next')];
+    const completed = Promise.allSettled(attempts);
+    await entered.promise;
+    release.resolve();
+    const outcomes = await completed;
+    assert.equal(
+      outcomes.filter((r) => r.status === 'fulfilled' && r.value.status === 'prepared').length,
+      1,
+    );
+    const rejected = outcomes.filter((r) => r.status === 'rejected');
+    assert.equal(rejected.length, 1);
+    assert.match(String(rejected[0]!.reason), /private-state-snapshot-conflict/);
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    assert.equal((await store.read()).continuationRun?.actions, 1);
+  });
+
+  it('should commit unrelated progress while continuation native readback is delayed', async () => {
+    const work = await workIssue();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const occurrence = work.continuation.native!.occurrence;
+    work.continuation.native = {
+      ...work.continuation.native!,
+      occurrence: async (...args) => {
+        entered.resolve();
+        await release.promise;
+        return occurrence(...args);
+      },
+    };
+    const pending = work.run('next');
+    await entered.promise;
+    try {
+      const current = await selectCodexIntake(pluginData, deps);
+      const other = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      await other.exclusive(async (state, save) => {
+        state.discoveryCheckedAt = baseline;
+        await save();
+      });
+      assert.equal((await other.read()).discoveryCheckedAt, baseline);
+    } finally {
+      release.resolve();
+      await pending;
+    }
   });
 
   for (const setting of ['model', 'effort'] as const)

@@ -1,3 +1,5 @@
+import workflowFailure from './workflow-failure.ts';
+import codexCommit from './codex-commit.ts';
 import implementationMaterial from './implementation-material.ts';
 import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
 import codexCapacity from './codex-capacity.ts';
@@ -80,8 +82,14 @@ export default async function runCodexContinuation(
   const continuationNative =
     deps.continuationNative ?? codexContinuationNative(connection!.request);
   const git = deps.git ?? dispatchGit;
+  let entered = false;
+  const commitOptions = {
+    ...codexCommit(current.policy?.policy.maxConcurrentItems, input.id),
+    operation: 'continuation-checkpoint' as const,
+  };
   try {
-    const response = await store.exclusive(async (state, save, signal) => {
+    const response = await store.transaction(async (state, save, signal) => {
+      entered = true;
       if (
         retry &&
         state.records.some(
@@ -203,7 +211,7 @@ export default async function runCodexContinuation(
         if (result !== undefined) return result;
       }
       return decisionPending ?? { status: 'idle' as const };
-    }, input.action !== 'next');
+    }, commitOptions);
     if (
       input.action === 'context' &&
       'resultContract' in response &&
@@ -255,6 +263,15 @@ export default async function runCodexContinuation(
       },
     );
     return delivery;
+  } catch (error) {
+    const failure = workflowFailure(error, 'continuation-operation-failed');
+    if (
+      !entered &&
+      ['next', 'reconcile'].includes(input.action) &&
+      failure.code === 'private-state-file-lock-busy'
+    )
+      return { status: 'busy' as const, changed: false, ...failure };
+    throw error;
   } finally {
     await connection?.close();
   }

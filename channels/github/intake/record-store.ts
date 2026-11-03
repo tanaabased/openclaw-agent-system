@@ -256,6 +256,12 @@ export default class IntakeRecordStore {
     });
     const lock = await acquirePrivateStateFileLock(this.location.path, {
       staleMs: 30_000,
+      contention: {
+        category: 'intake',
+        operation: 'intake-commit',
+        timeoutMs: 10_000,
+        retryMs: 250,
+      },
       retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
     });
     try {

@@ -560,12 +560,16 @@ describe('channels/github/intake/records', () => {
       },
     });
     await ready;
-    await assert.rejects(
-      scanAssignments({ ...input, store: new IntakeRecordStore(store.location) }),
-      { code: 'private-state-file-lock-busy' },
-    );
+    const second = scanAssignments({
+      ...input,
+      store: new IntakeRecordStore(store.location),
+    });
     release();
-    await first;
+    const outcomes = await Promise.all([first, second]);
+    assert.equal(
+      outcomes.every((outcome) => outcome.status === 'ready'),
+      true,
+    );
     const before = (await store.read())!.checkpoint;
     const failed = await scanAssignments({
       ...input,

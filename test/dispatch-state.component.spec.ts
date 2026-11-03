@@ -1,3 +1,4 @@
+import codexCommit from '../agent/codex-commit.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -280,6 +281,52 @@ describe('agent/shared dispatch state', () => {
       assert.equal(state.records.length, 2);
     });
     assert.equal((await store.read()).records[0]!.context, 'outer observation');
+  });
+
+  it('should cancel transaction acquisition while an independent writer still holds its lease', async () => {
+    const store = new CodexDispatchStore(root, scope);
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const held = store.exclusive(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    await entered.promise;
+    const controller = new AbortController();
+    const other = new CodexDispatchStore(root, scope);
+    const pending = other.transaction(async () => assert.fail('cancelled transaction entered'), {
+      signal: controller.signal,
+    });
+    controller.abort(new Error('cancelled transaction'));
+    try {
+      await assert.rejects(pending, /cancelled transaction/);
+    } finally {
+      release.resolve();
+      await held;
+    }
+    await other.exclusive(async () => {});
+  });
+
+  it('should refresh durable checkpoints without treating omitted optional fields as competing edits', async () => {
+    const store = new CodexDispatchStore(root, scope);
+    await store.exclusive(async (state, save) => {
+      state.records.push(pending());
+      await save();
+    });
+    await store.transaction(
+      async (state, save) => {
+        state.records[0]!.context = undefined;
+        state.records[0]!.routingNote = 'updated';
+        await save();
+        await save();
+        state.records[0]!.routingNote = 'next checkpoint';
+        await save();
+      },
+      codexCommit(1, pending().id),
+    );
+    const saved = (await store.read()).records[0]!;
+    assert.equal(saved.routingNote, 'next checkpoint');
+    assert.equal(Object.hasOwn(saved, 'context'), false);
   });
 
   it('should reject an identical concurrent reservation before either caller can duplicate its side effect', async () => {

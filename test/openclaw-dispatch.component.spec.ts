@@ -33,6 +33,7 @@ import { sessionDispatchRequest } from '../credentials/session-dispatch-client.t
 import GitCommandError from '../tools/git/command-error.ts';
 import GitWorktreeConflict from '../tools/git/worktree-conflict.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
+import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
 import type { ClaimClient } from '../agent/assignment-claim.ts';
@@ -559,6 +560,66 @@ describe('agent/openclaw issue dispatch', () => {
     workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'foreign' };
     assert.equal((await context(routed.id)).status, 'verified');
   });
+  it('should commit unrelated progress while native readiness is delayed', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const intake = service.dependencies.intake;
+    const readiness = intake.readiness.bind(intake);
+    intake.readiness = async (...args) => {
+      entered.resolve();
+      await release.promise;
+      return readiness(...args);
+    };
+    const current = await service.scope(manifest, root);
+    const other = new OpenClawDispatchStore(current.journal.root, current.journal.scope);
+    const pending = next();
+    await entered.promise;
+    try {
+      await other.exclusive(async (state, save) => {
+        state.discoveryCheckedAt = baseline;
+        await save();
+      });
+      assert.equal((await other.read()).discoveryCheckedAt, baseline);
+    } finally {
+      release.resolve();
+      await pending;
+    }
+  });
+
+  for (const competing of ['reset', 'occurrence'] as const)
+    it(`should reject stale readiness after a competing ${competing}`, async () => {
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      service.dependencies.intake.readiness = async () => {
+        entered.resolve();
+        await release.promise;
+        return undefined;
+      };
+      const journal = (await service.scope(manifest, root)).journal;
+      const expected =
+        competing === 'reset'
+          ? /notification-reset-stale-operation/
+          : /dispatch-occurrence-mismatch/;
+      const pending = assert.rejects(next(), expected);
+      await entered.promise;
+      if (competing === 'reset') await journal.reset('new-generation');
+      else
+        await journal.exclusive(async (state, save) => {
+          state.openclawOccurrence = {
+            sessionKey: coordinator.sessionKey,
+            sessionId: coordinator.sessionId,
+            runId: 'successor',
+          };
+          await save();
+        });
+      release.resolve();
+      await pending;
+      const saved = await journal.read();
+      assert.equal(creates().length, 0);
+      if (competing === 'reset') assert.equal(saved.resetGeneration, 'new-generation');
+      else assert.equal(saved.openclawOccurrence?.runId, 'successor');
+    });
+
   for (const pause of ['native', 'manifest'] as const)
     it(`should finish an accepted run through ${pause} pause and gate the next occurrence`, async () => {
       const routed = await next();

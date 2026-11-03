@@ -1,13 +1,19 @@
+import {
+  PrivateStateFileLockBusyError,
+  type PrivateStateContention,
+} from '../core/private-state-file-lock.ts';
 import { providerDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 
 /** preserve public codes and bounded provider evidence through wrapped runtime failures. */
 export default function workflowFailure(error: unknown, fallback: string) {
   let code: string | undefined;
   let diagnostic: ProviderDiagnostic | undefined;
+  let contention: PrivateStateContention | undefined;
   const seen = new Set<unknown>();
   for (let value = error; value && typeof value === 'object' && !seen.has(value);) {
     seen.add(value);
     if (seen.size > 8) break;
+    if (value instanceof PrivateStateFileLockBusyError) contention ??= value.contention;
     const entry = value as {
       code?: unknown;
       message?: unknown;
@@ -27,7 +33,11 @@ export default function workflowFailure(error: unknown, fallback: string) {
       );
     value = entry.cause;
   }
-  return { code: code ?? fallback, ...(diagnostic ? { providerDiagnostic: diagnostic } : {}) };
+  return {
+    code: code ?? fallback,
+    ...(diagnostic ? { providerDiagnostic: diagnostic } : {}),
+    ...(contention ? { contention } : {}),
+  };
 }
 
 /** return bounded operation identity without copying prompts, paths, or other request content. */

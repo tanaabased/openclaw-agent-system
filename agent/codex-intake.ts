@@ -1,3 +1,4 @@
+import workflowFailure from './workflow-failure.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
 import projectPickupReport from './project-pickup-report.ts';
@@ -305,7 +306,11 @@ export async function runCodexIntake(
       'code' in error &&
       error.code === 'private-state-file-lock-busy'
     )
-      return { status: 'busy', changed: false };
+      return {
+        status: 'busy',
+        changed: false,
+        ...workflowFailure(error, 'private-state-file-lock-busy'),
+      };
     // a revoked policy cannot admit work, but its retained evidence can suppress repeated notices.
     if (
       activate ||

@@ -933,7 +933,7 @@ export default class OpenClawDispatchIssue {
         )
           throw new Error('dispatch-assessment-caller-mismatch');
         return structuredClone(retained);
-      });
+      }, false);
       const snapshot = automationHash(record);
       if (record.retainedHistory?.terminal) {
         await authority.assertCurrent?.();
@@ -1003,7 +1003,7 @@ export default class OpenClawDispatchIssue {
         signal.throwIfAborted();
         await save();
         return result;
-      });
+      }, false);
     } catch (error) {
       signal.throwIfAborted();
       const code = openClawDispatchFailureCode(error);
@@ -1011,7 +1011,7 @@ export default class OpenClawDispatchIssue {
         return {
           status: 'busy' as const,
           id: action.id,
-          code,
+          ...workflowFailure(error, code),
           operation: 'present' as const,
           retryable: true,
           stage,
