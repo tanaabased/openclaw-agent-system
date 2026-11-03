@@ -1,0 +1,60 @@
+{
+  "type": "object",
+  "required": ["schema", "version", "cards"],
+  "properties": {
+    "schema": { "type": "string", "const": "agent-system.report" },
+    "version": { "type": "number", "const": 1 },
+    "cards": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": ["id", "format", "title", "status", "summary"],
+            "properties": {
+              "id": { "type": "string", "pattern": "\\S" },
+              "format": { "type": "string", "const": "structured" },
+              "title": { "type": "string", "pattern": "^(?=.*\\S)[^\\r\\n]+(?![\\s\\S])" },
+              "status": {
+                "anyOf": [
+                  { "type": "string", "const": "success" },
+                  { "type": "string", "const": "warning" },
+                  { "type": "string", "const": "error" },
+                  { "type": "string", "const": "unknown" }
+                ]
+              },
+              "summary": { "type": "string", "pattern": "\\S" },
+              "facts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["label", "value"],
+                  "properties": {
+                    "label": { "type": "string", "pattern": "^(?=.*\\S)[^\\r\\n]+(?![\\s\\S])" },
+                    "value": { "type": "string", "pattern": "\\S" }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "findings": { "type": "array", "items": { "type": "string", "pattern": "\\S" } },
+              "actions": { "type": "array", "items": { "type": "string", "pattern": "\\S" } }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["id", "format", "body"],
+            "properties": {
+              "id": { "type": "string", "pattern": "\\S" },
+              "format": { "type": "string", "const": "markdown" },
+              "body": { "type": "string", "pattern": "\\S" }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false
+}

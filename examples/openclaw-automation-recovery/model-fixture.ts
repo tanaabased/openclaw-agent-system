@@ -14,8 +14,14 @@ function reportInput(request: ChatCompletionRequest) {
   if (at < 0) return;
   try {
     const value = JSON.parse(content.slice(at + marker.length).trim());
-    if (value.id === 'identity' && value.outcome === 'success' && typeof value.runLine === 'string')
-      return value as { runLine: string };
+    if (
+      value.id === 'identity' &&
+      value.outcome === 'success' &&
+      typeof value.runLine === 'string' &&
+      value.presentation?.kind === 'fallback' &&
+      typeof value.presentation.footer === 'string'
+    )
+      return value as { runLine: string; presentation: { footer: string } };
   } catch {
     return;
   }
@@ -24,7 +30,7 @@ const reportFixture: Fixture = {
   match: { model, predicate: (request) => Boolean(reportInput(request)) },
   response: (request) => ({
     id: 'recovered-report',
-    content: `> ## ✅ Identity completed\n>\n> ${reportInput(request)!.runLine}\n>\n> The command completed successfully.`,
+    content: `> ## ✅ Identity completed\n>\n> The command completed successfully.\n\n${reportInput(request)!.presentation.footer}`,
   }),
 };
 

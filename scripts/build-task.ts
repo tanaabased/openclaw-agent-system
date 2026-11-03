@@ -1,3 +1,15 @@
+import { format, resolveConfig } from 'prettier';
+
+import { automationReportSchema } from '../agent/automation-report-schema.ts';
+
+await Bun.write(
+  'agent/automation-report.schema.json',
+  await format(JSON.stringify(automationReportSchema), {
+    ...(await resolveConfig('agent/automation-report.schema.json')),
+    parser: 'json',
+  }),
+);
+
 const results = await Promise.all([
   Bun.build({
     entrypoints: ['index.ts', 'environment/memory-secret-provider-entry.ts'],

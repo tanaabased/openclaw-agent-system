@@ -51,6 +51,36 @@ describe('agent/automation-report-store', () => {
     await store.withLock(record.executionId, () => store.write(record));
   }
 
+  it('should reopen every legacy state without adding preferred presentation or replay', async () => {
+    const records = ['pending', 'sending', 'submitted', 'uncertain', 'delivered', 'failed'].map(
+      (state) => {
+        const value = report(state as AutomationReportRecord['state']);
+        delete value.input.presentation;
+        return value;
+      },
+    );
+    for (const record of records) await save(record);
+    const reopened = new AutomationReportStore(root, () => now);
+    for (const record of records) {
+      const retained = await reopened.read(record.executionId);
+      assert.equal(retained?.state, record.state);
+      assert.equal(retained?.input.presentation, undefined);
+    }
+  });
+
+  it('should preserve committed presentation when an expanded replacement exceeds storage budget', async () => {
+    const record = report('pending');
+    await save(record);
+    const before = await store.read(record.executionId);
+    await assert.rejects(
+      store.update(record.executionId, (current) => {
+        current.input.presentation = { kind: 'preferred', body: 'x'.repeat(256 * 1024) };
+      }),
+      /size limit/u,
+    );
+    assert.deepEqual(await store.read(record.executionId), before);
+  });
+
   it('should recover only unresolved reports across reopen without rereading terminal history', async () => {
     const active = ['pending', 'sending', 'submitted', 'uncertain'].map((state) =>
       report(state as AutomationReportRecord['state']),

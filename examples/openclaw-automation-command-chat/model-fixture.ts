@@ -17,15 +17,25 @@ function reportInput(request: ChatCompletionRequest) {
       (value.id === 'success' &&
         value.outcome === 'success' &&
         value.reason === 'Exit 0' &&
-        value.stdout?.body === 'Archive alpha saved.\n' &&
+        value.stdout?.body === '' &&
+        value.presentation?.kind === 'preferred' &&
+        value.presentation.body ===
+          `> ## ⚠️ Source alpha\n>\n> Archive alpha saved; activation unverified.\n\n## Source beta\n\nArchive beta already current.\n\n**Runner result:** ✅ success · Exit 0\n\n${value.runLine}` &&
         value.stderr?.body === '') ||
       (value.id === 'failure' &&
         value.outcome === 'error' &&
         value.reason === 'Exit 17' &&
         value.stdout?.body === 'Everything succeeded!\n' &&
-        value.stderr?.body === 'Archive delta failed: destination unavailable.\n')
+        value.stderr?.body === 'Archive delta failed: destination unavailable.\n' &&
+        value.presentation?.kind === 'fallback' &&
+        typeof value.presentation.footer === 'string' &&
+        value.presentation.footer.includes(value.runLine))
     )
-      return value as { id: 'success' | 'failure'; runLine: string };
+      return value as {
+        id: 'success' | 'failure';
+        runLine: string;
+        presentation: { kind: 'preferred'; body: string } | { kind: 'fallback'; footer: string };
+      };
   } catch {
     return;
   }
@@ -35,11 +45,13 @@ const reportFixture: Fixture = {
   match: { model, predicate: (request) => Boolean(reportInput(request)) },
   response: (request) => {
     const input = reportInput(request)!;
-    const result =
-      input.id === 'success'
-        ? '✅ success completed\n>\n> Archive alpha saved.'
-        : '❌ failure failed\n>\n> Archive delta failed: destination unavailable.';
-    return { id: `report-${input.id}`, content: `> ## ${result}\n>\n> ${input.runLine}` };
+    return {
+      id: `report-${input.id}`,
+      content:
+        input.presentation.kind === 'preferred'
+          ? input.presentation.body
+          : `> ## ❌ failure failed\n>\n> Archive delta failed: destination unavailable.\n\n${input.presentation.footer}`,
+    };
   },
 };
 

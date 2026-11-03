@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { matchFixture, type ChatCompletionRequest, type ContentPart } from '@copilotkit/aimock';
 
+import { prepareAutomationReport } from '../agent/automation-report.ts';
 import { credentialExampleChecks } from '../examples/openclaw-credentials/model-fixture.ts';
 import {
   githubExampleEmoriCallId,
@@ -64,15 +65,40 @@ describe('scripts/example-model-scenarios', () => {
   it('should accept only the captured command streams and outcomes for reporting fixtures', () => {
     const scenario = resolveExampleModelScenario('openclaw-automation-command-chat');
     for (const failure of [false, true]) {
-      const captured = {
+      const captured = prepareAutomationReport({
         id: failure ? 'failure' : 'success',
         executionId: 'execution-fixture',
-        outcome: failure ? 'error' : 'success',
-        reason: failure ? 'Exit 17' : 'Exit 0',
-        runLine: '**Run:** execution-fixture',
-        stdout: { body: failure ? 'Everything succeeded!\n' : 'Archive alpha saved.\n' },
-        stderr: { body: failure ? 'Archive delta failed: destination unavailable.\n' : '' },
-      };
+        startedAt: '2026-11-03T00:00:00Z',
+        cancelled: false,
+        result: {
+          exitCode: failure ? 17 : 0,
+          timedOut: false,
+          truncated: false,
+          output: {
+            stdout: failure
+              ? 'Everything succeeded!\n'
+              : JSON.stringify({
+                  schema: 'agent-system.report',
+                  version: 1,
+                  cards: [
+                    {
+                      id: 'alpha',
+                      format: 'structured',
+                      title: 'Source alpha',
+                      status: 'warning',
+                      summary: 'Archive alpha saved; activation unverified.',
+                    },
+                    {
+                      id: 'beta',
+                      format: 'markdown',
+                      body: '## Source beta\n\nArchive beta already current.',
+                    },
+                  ],
+                }),
+            stderr: failure ? 'Archive delta failed: destination unavailable.\n' : '',
+          },
+        },
+      });
       const input = (value: unknown) => ({
         ...request(
           failure ? 'command-chat-codex-tanaabot' : 'command-chat-tanaabot',
@@ -91,7 +117,7 @@ describe('scripts/example-model-scenarios', () => {
       assert.equal(matchFixture([...scenario.fixtures], { ...valid, model: 'gpt-5.4-nano' }), null);
       for (const changed of [
         { ...captured, reason: 'Exit 99' },
-        { ...captured, stdout: { body: '' } },
+        { ...captured, stdout: { body: 'unexpected output' } },
         { ...captured, stderr: { body: 'unexpected diagnostics' } },
       ])
         assert.equal(matchFixture([...scenario.fixtures], input(changed)), null);
