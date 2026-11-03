@@ -1,3 +1,4 @@
+import feedbackContextMaterial from './feedback-context-material.ts';
 import { isDeepStrictEqual } from 'node:util';
 
 import assessmentMaterial from './assessment-material.ts';
@@ -126,7 +127,7 @@ export default class OpenClawDispatch {
           !input.publicText &&
           !input.diagnostic) ||
         (input.action === 'feedback' &&
-          input.operation === 'implementation-context' &&
+          ['context', 'implementation-context'].includes(input.operation) &&
           !input.decision) ||
         (input.action === 'implementation' &&
           input.operation === 'context' &&
@@ -155,6 +156,16 @@ export default class OpenClawDispatch {
         return implementationMaterial(response, request, input.material);
       }
     }
+    if (
+      input.action === 'feedback' &&
+      input.operation === 'context' &&
+      response.status === 'verified'
+    )
+      return feedbackContextMaterial(
+        { ...response, id: input.id },
+        { action: 'feedback', operation: 'context', id: input.id, eventId: input.eventId },
+        input.material,
+      );
     if (
       input.action === 'context' &&
       'resultContract' in response &&

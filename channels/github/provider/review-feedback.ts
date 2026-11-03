@@ -153,12 +153,6 @@ export function admitReviewFeedback(
     )
       return admission;
   }
-  const length = pieces.reduce((total, piece) => total + [...piece.body].length, 0);
-  if (
-    comments.reduce((total, comment) => total + comment.diffHunk.length, 0) > 64_000 ||
-    length > (input.maximumCommentCharacters ?? 8_000)
-  )
-    return { disposition: 'rejected', code: 'comment-body-truncated' };
   return approved ?? { disposition: 'rejected', code: 'comment-mention-missing' };
 }
 

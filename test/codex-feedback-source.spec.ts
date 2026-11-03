@@ -23,6 +23,52 @@ const comment = (nodeId: string, body = '@receiver explain this') => ({
   updatedAt: '2026-10-13T01:00:00Z',
 });
 describe('agent/codex-feedback-source', () => {
+  it('should persist complete grouped review checkpoints and baselines beyond transport page sizes', async () => {
+    const policy = intakeFixture().policy;
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [] };
+    const state: CodexFeedback = { baseline: { PR: {} }, events: [] };
+    const review = reviewFixture({ author: account, body: '@receiver address these findings' });
+    const findings = [1, 2].map((id) =>
+      reviewCommentFixture({
+        author: account,
+        nodeId: `finding-${id}`,
+        databaseId: 100 + id,
+        body: `${id}: complete finding`,
+        diffHunk: '+complete code context\n'.repeat(12000),
+      }),
+    );
+    let largest = 0;
+    const save = async () => {
+      for (const progress of Object.values(state.discovery ?? {}))
+        for (const read of Object.values(progress.reads)) largest = Math.max(largest, read.length);
+      assert.ok(Value.Check(codexFeedbackSchema, state));
+      assert.ok(Value.Check(openclawFeedbackSchema, state));
+    };
+    await discoverCodexFeedback({
+      state,
+      policy,
+      owner: 'owner',
+      name: 'repo',
+      number: 3,
+      nodeId: 'PR',
+      itemType: 'pull-request',
+      now: 10,
+      client: {
+        identity: account,
+        listIssueComments: async () => ({ comments: [], truncated: false }),
+        getIssueComment: async () => comment('C'),
+        reviews: reviewClientFixture(review, findings),
+      },
+      discovery: { budget: new DiscoveryBudget(), save },
+    });
+    assert.ok(largest > 512000);
+    assert.equal(state.events.length, 1);
+    const restored = JSON.parse(JSON.stringify(state)) as CodexFeedback;
+    assert.deepEqual(JSON.parse(restored.events[0]!.source).feedback.comments, findings);
+    assert.ok(Value.Check(codexFeedbackSchema, restored));
+    assert.ok(Value.Check(openclawFeedbackSchema, restored));
+  });
+
   it('should reject completed-source replay and own replies after cold history expires while accepting edits', async () => {
     const policy = intakeFixture().policy;
     const state: CodexFeedback = {

@@ -6,11 +6,17 @@ no push, installation or live scheduled pilot has been performed.
 
 ## completed source repairs
 
-- [x] allow pickup repository, milestone, schedule, timezone and window changes through
+- [x] allow live pickup repository, milestone, schedule, timezone and window changes without
       Install. preserve original assignment scope and receipts, reconcile uncertain effects
       without another write, and cancel obsolete unattempted selections.
-- [x] make Codex installation readiness detect enrollment drift even when the saved
-      automation schedule is unchanged.
+- [x] keep native activation stable across live target/window edits; still detect actual
+      native automation drift and installation identity changes.
+- [x] reuse an unused current window after a target edit, retaining explicit cancellation
+      and attempted-assignment allowance.
+- [x] defer unreadable individual candidates while checking other candidates; stop the
+      scan on account, throttle or transport failures. share item-error classification with intake.
+- [x] admit complete grouped reviews without an aggregate body/diff cap, retain them in
+      the journal, and page context through both authorized native adapters.
 - [x] verify OpenClaw pickup authority through the existing enrolled read transport,
       without depending on a service-start scheduler handle. add specific denial diagnostics
       and CI-only hosted Codex adapter coverage. the reported live failure's cause remains
@@ -39,7 +45,7 @@ no push, installation or live scheduled pilot has been performed.
 - [x] focused boundary regressions: 107 checks passed across shared behavior and both
       native intake adapters. the preceding maintenance snapshot passed 4,393 tests,
       lint, typecheck, build and plugin checks.
-- [x] final `bun run validate`: 4,395 tests passed, plus lint, typecheck, build and
+- [x] latest `bun run validate`: 4,422 tests passed, plus lint, typecheck, build and
       plugin checks. `git diff --check` passed.
 - [ ] CI exercises the affected installed boundaries; never run Leia examples locally.
 - [ ] approved installation reconciles Me's selected milestone and Doctor confirms readiness.
