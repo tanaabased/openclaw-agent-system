@@ -1,0 +1,54 @@
+# project pickup maintenance
+
+repair checklist for `pirog-project-pickup-maintenance`, started 2026-11-03
+from `main` at `5eb440f2`. repairs are grouped into local commits;
+no push, installation or live scheduled pilot has been performed.
+
+## completed source repairs
+
+- [x] allow pickup repository, milestone, schedule, timezone and window changes through
+      Install. preserve original assignment scope and receipts, reconcile uncertain effects
+      without another write, and cancel obsolete unattempted selections.
+- [x] make Codex installation readiness detect enrollment drift even when the saved
+      automation schedule is unchanged.
+- [x] verify OpenClaw pickup authority through the existing enrolled read transport,
+      without depending on a service-start scheduler handle. add specific denial diagnostics
+      and CI-only hosted Codex adapter coverage. the reported live failure's cause remains
+      unproven until that path is exercised.
+- [x] reconsider pre-assignment failures and empty scans within an open window. retain
+      cancellation and uncertain-assignment protections.
+- [x] release pickup's extra reservation when ordinary intake takes ownership. native
+      capacity governs subsequent work without charging the same issue twice.
+- [x] enforce the pickup deadline before assignment starts. accept verified delayed
+      completion, including a lost response, without issuing another assignment.
+- [x] preserve full candidate descriptions and guidance through shared material paging;
+      remove the 128 KiB candidate rejection. keep history cards out of intermediate output.
+- [x] use the shared 32,768-byte guidance limit. make discovery resumable within pages,
+      remove ten-page/1,000-candidate ceilings, and follow dependency pagination.
+- [x] match standalone Codex capture to the measured native 1 MiB per-stream default
+      in Codex 0.164.0 and 0.165.0, retaining explicit overrides and loss accounting.
+      OpenClaw keeps its native capture defaults.
+- [x] restrict the work-mode exception to verified pickup receipts. ordinary assignments
+      in the configured milestone keep their configured mode; no global settings change.
+- [x] let admitted pickup issues use ordinary assignment checks. closing or changing their
+      milestone and adding collaborators no longer blocks dispatch. exact identity,
+      assignment continuity, ownership receipts and duplicate prevention remain enforced.
+
+## validation and rollout
+
+- [x] focused boundary regressions: 107 checks passed across shared behavior and both
+      native intake adapters. the preceding maintenance snapshot passed 4,393 tests,
+      lint, typecheck, build and plugin checks.
+- [x] final `bun run validate`: 4,395 tests passed, plus lint, typecheck, build and
+      plugin checks. `git diff --check` passed.
+- [ ] CI exercises the affected installed boundaries; never run Leia examples locally.
+- [ ] approved installation reconciles Me's selected milestone and Doctor confirms readiness.
+- [ ] record real scheduled selection, one self-assignment, ordinary intake and delivery
+      for both runtimes under [#529](https://github.com/tanaabased/openclaw-agent-system/issues/529).
+      controlled fixtures do not establish live scheduled success.
+
+## boundaries
+
+pickup owns selection, its window, the assignment attempt and its verified receipt.
+ordinary issue assignment owns assessment, chats, worktrees, implementation and PR delivery.
+no new routing configuration, scheduler or execution pipeline. no issue or PR created yet.

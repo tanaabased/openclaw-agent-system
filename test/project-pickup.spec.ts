@@ -137,7 +137,7 @@ describe('github project pickup policy', () => {
         receiving: f.client.identity,
         repository: f.repository,
         issue: f.item,
-        assignment: f.events[0],
+        assignment: structuredClone(f.events[0]),
         evidence: { projectWork: work },
       } as unknown as IntakeRecord;
       assert.equal(liveWorkflowPolicy(manifest, runtime, intake), undefined);
@@ -188,19 +188,41 @@ describe('github project pickup policy', () => {
       );
       assert.equal(issueWorkflowMode(f.policy, {}), 'plan');
       await inspectAdmittedIssue(intake, f.client);
-      f.milestone.nodeId = 'MI_replacement';
+      f.milestone.state = 'closed';
+      await inspectAdmittedIssue(intake, f.client);
+      if (f.item.itemType === 'issue') f.item.milestone = null;
+      f.client.getMilestone = async () => {
+        throw new Error('milestone must not gate admitted work');
+      };
+      f.item.assignees.push({ login: 'collaborator', nodeId: 'U_collaborator', type: 'User' });
+      await inspectAdmittedIssue(intake, f.client);
+      const originalAssignees = f.item.assignees;
+      f.item.assignees = [];
+      await assert.rejects(inspectAdmittedIssue(intake, f.client), /dispatch-assignment-removed/);
+      f.item.assignees = originalAssignees;
+      f.events[0]!.nodeId = 'E_reassigned';
       await assert.rejects(
         inspectAdmittedIssue(intake, f.client),
-        /project-pickup-milestone-changed/,
+        /dispatch-assignment-superseded/,
       );
     });
 
-    it(`should grant only new approved scoped assignments in ${runtime}`, async () => {
+    it(`should require a pickup receipt even for new approved scoped assignments in ${runtime}`, async () => {
       const f = pickupFixture(runtime);
       f.authority.receipts = [];
       assert.equal(await authorizeProjectAssignment(f.input), undefined);
       f.input.event.actor = { ...f.policy.issueAssignment!.allowed[0]!, type: 'User' };
-      assert.ok(await authorizeProjectAssignment(f.input));
+      assert.equal(await authorizeProjectAssignment(f.input), undefined);
+      assert.equal(
+        issueWorkflowMode(f.policy, {
+          projectWork: {
+            enrollment: f.authority.enrollment,
+            issueNodeId: f.item.nodeId,
+            assignmentNodeId: f.events[0]!.nodeId,
+          },
+        }),
+        'plan',
+      );
       f.authority.enrollment.startedAt = Date.parse(f.input.event.createdAt);
       assert.equal(await authorizeProjectAssignment(f.input), undefined);
     });

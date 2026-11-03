@@ -2,7 +2,6 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { automationHash } from './automation-hash.ts';
-import projectPickupScope from './project-pickup-scope.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import {
   githubIdentityMatches,
@@ -113,6 +112,7 @@ export default async function authorizeProjectAssignment(input: {
         entry.issueNodeId === item.nodeId &&
         entry.assignmentNodeId === event.nodeId,
     );
+  if (!receipt) return;
   const assignedAt = Date.parse(event.createdAt);
   if (
     !Value.Check(projectPickupEnrollmentSchema, enrollment) ||
@@ -125,7 +125,6 @@ export default async function authorizeProjectAssignment(input: {
     enrollment.agentId !== input.agentId ||
     !githubIdentityMatches(enrollment.account, client.identity) ||
     enrollment.repositoryNodeId !== repository.nodeId ||
-    (!receipt && enrollment.policyDigest !== projectPickupPolicyDigest(policy)) ||
     !Number.isSafeInteger(input.now) ||
     !Number.isFinite(assignedAt) ||
     assignedAt <= enrollment.startedAt ||
@@ -135,17 +134,12 @@ export default async function authorizeProjectAssignment(input: {
   )
     return;
   if (
-    receipt &&
-    (!githubIdentityMatches(event.actor, client.identity) ||
-      receipt.window.opensAt < enrollment.startedAt ||
-      receipt.window.closesAt <= receipt.window.opensAt ||
-      assignedAt < receipt.window.opensAt)
+    !githubIdentityMatches(event.actor, client.identity) ||
+    receipt.window.opensAt < enrollment.startedAt ||
+    receipt.window.closesAt <= receipt.window.opensAt ||
+    assignedAt < receipt.window.opensAt
   )
     return;
-  const approved = policy.issueAssignment.allowed.some((actor) =>
-    githubIdentityMatches(actor, event.actor),
-  );
-  if (!receipt && (!approved || policy.projectPickup.paused)) return;
   const freshRepository = await client.getRepository(repository.owner.login, repository.name);
   const freshItem = await client.getItem(repository.owner.login, repository.name, item.number);
   if (
@@ -159,14 +153,10 @@ export default async function authorizeProjectAssignment(input: {
     freshItem.databaseId !== item.databaseId ||
     freshItem.itemType !== 'issue' ||
     freshItem.state !== 'open' ||
-    (receipt && freshItem.assignees.length !== 1) ||
+    freshItem.assignees.length !== 1 ||
     !freshItem.assignees.some((assignee) => githubIdentityMatches(assignee, client.identity))
   )
     return;
-  const milestone = receipt
-    ? undefined
-    : await projectPickupScope(policy, client, freshRepository, freshItem, Boolean(receipt));
-  if (!receipt && (!milestone || milestone.nodeId !== enrollment.milestoneNodeId)) return;
   const history = await client.listAssignmentEvents(
     repository.owner.login,
     repository.name,
@@ -190,7 +180,7 @@ export default async function authorizeProjectAssignment(input: {
     enrollment: structuredClone(enrollment),
     issueNodeId: item.nodeId,
     assignmentNodeId: event.nodeId,
-    ...(receipt ? { pickup: structuredClone(receipt) } : {}),
+    pickup: structuredClone(receipt),
   };
 }
 

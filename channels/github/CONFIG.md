@@ -196,9 +196,9 @@ assessment and Work workflow; ordinary assignments keep their configured mode.
 Missed windows are not replayed. Accepted issue work may finish after a window or pause.
 Codex uses the low model profile; OpenClaw uses its default automation profile.
 
-The pilot retains its original repository, milestone, schedule, timezone and window
-anchor. Install rejects changes to those enrolled values; restore them to resume.
-Pause, selection guidance and repository routes can change without reenrollment.
+Run Install after changing the pickup repository, milestone, schedule, timezone or
+window. New pickups use the updated configuration; accepted assignments keep their
+original receipts. Selection guidance and repository routes apply without reenrollment.
 Route edits do not transfer pending claims or attempted assignments: restore the
 original owner’s eligibility to resume pending pickup. Existing issue work stays
 with its original runtime; do not copy or delete journals to transfer it.

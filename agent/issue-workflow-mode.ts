@@ -10,6 +10,6 @@ export default function issueWorkflowMode(
 ): Mode {
   return (
     record.manualIssue?.selections?.mode ??
-    (record.projectWork ? 'work' : (policy?.issueAssignment?.mode ?? 'auto'))
+    (record.projectWork?.pickup ? 'work' : (policy?.issueAssignment?.mode ?? 'auto'))
   );
 }
