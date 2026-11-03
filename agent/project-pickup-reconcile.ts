@@ -21,8 +21,9 @@ export default async function reconcileProjectPickup(
       ...previous,
       enrollment: structuredClone(record.enrollment),
       timezone: record.timezone,
-      operations: previous.operations.map((operation) => {
-        const retained = {
+      operations: previous.operations
+        .filter((operation) => operation.attemptedAt !== undefined || operation.receipt)
+        .map((operation) => ({
           ...operation,
           enrollment: operation.enrollment ?? structuredClone(previous.enrollment),
           repository:
@@ -31,31 +32,9 @@ export default async function reconcileProjectPickup(
             (previous.enrollment.repositoryNodeId === record.enrollment.repositoryNodeId
               ? record.repository
               : undefined),
-        };
-        if (
-          operation.attemptedAt === undefined &&
-          !operation.receipt &&
-          ['discovering', 'selecting', 'reserved', 'failed'].includes(operation.phase)
-        )
-          return {
-            ...retained,
-            phase: 'cancelled' as const,
-            candidates: [],
-            code: 'project-pickup-configuration-changed',
-          };
-        return retained;
-      }),
+        })),
     };
-    const consumed = state.projectPickup.operations.filter(
-      (operation) =>
-        operation.attemptedAt !== undefined ||
-        operation.receipt ||
-        (operation.phase === 'cancelled' &&
-          operation.code !== 'project-pickup-configuration-changed'),
-    );
-    state.projectPickup.highWater = consumed.length
-      ? Math.max(...consumed.map((operation) => operation.window.opensAt))
-      : undefined;
+    delete state.projectPickup.highWater;
     // save original effect ownership before publishing the replacement enrollment.
     await save();
   }

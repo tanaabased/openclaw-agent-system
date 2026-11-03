@@ -14,6 +14,7 @@ export const projectCandidateSchema = Type.Object(
     number: Type.Integer({ minimum: 1 }),
     title: Type.String({ maxLength: 4096 }),
     body: Type.String(),
+    blockedByOpenIssues: Type.Optional(Type.Boolean()),
     labels: Type.Array(Type.String({ maxLength: 4096 }), { maxItems: 100 }),
   },
   { additionalProperties: false },

@@ -1,11 +1,7 @@
 import { automationHash } from './automation-hash.ts';
 import type { IssueWorkflowState } from './issue-workflow-progress.ts';
 import type { ProjectWork } from './project-pickup-authority.ts';
-import {
-  pickupUnfinished,
-  type PickupOperation,
-  type ProjectPickupState,
-} from './project-pickup-state.ts';
+import { type PickupOperation, type ProjectPickupState } from './project-pickup-state.ts';
 
 export type PickupManagedRecord = IssueWorkflowState & {
   issueKey: string;
@@ -30,7 +26,6 @@ export default function projectPickupCapacity<R extends PickupManagedRecord>(
   if (!pickup) return 0;
   return pickup.operations.filter((operation) => {
     if (
-      !pickupUnfinished(operation) ||
       (operation.attemptedAt === undefined && !operation.receipt) ||
       (excludeIssue && operation.selected?.nodeId === excludeIssue)
     )

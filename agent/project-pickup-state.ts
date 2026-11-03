@@ -10,6 +10,7 @@ import {
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const time = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
+/** read compatibility for old dispatch journals; new scans never save report history. */
 export const pickupReportSchema = Type.Object(
   {
     fingerprint: text,
@@ -28,6 +29,7 @@ export const pickupOperationSchema = Type.Object(
     enrollment: Type.Optional(projectPickupEnrollmentSchema),
     repository: Type.Optional(text),
     window: projectPickupReceiptSchema.properties.window,
+    // Historical phases are accepted for existing effect receipts, never written by pickup.
     phase: Type.Union([
       Type.Literal('discovering'),
       Type.Literal('selecting'),
@@ -67,7 +69,20 @@ export const pickupOperationSchema = Type.Object(
     ),
     guidance: Type.Optional(Type.String({ maxLength: maximumAssessmentGuidanceBytes })),
     selectionDigest: Type.Optional(text),
-    selected: Type.Optional(pickupCandidateSchema),
+    selected: Type.Optional(
+      Type.Object(
+        {
+          nodeId: text,
+          number: Type.Integer({ minimum: 1 }),
+          // Read older receipts without retaining their content on the next scan.
+          title: Type.Optional(Type.String()),
+          body: Type.Optional(Type.String()),
+          labels: Type.Optional(Type.Array(Type.String())),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    shortlist: Type.Optional(Type.Array(text, { maxItems: 5 })),
     rationale: Type.Optional(text),
     beforeEvents: Type.Optional(Type.Array(text, { maxItems: 300 })),
     claim: Type.Optional(
@@ -91,13 +106,18 @@ export const projectPickupStateSchema = Type.Object(
     enrollment: projectPickupEnrollmentSchema,
     timezone: text,
     highWater: Type.Optional(time),
+    windowAssignment: Type.Optional(
+      Type.Object(
+        {
+          window: projectPickupReceiptSchema.properties.window,
+          assignedAt: time,
+        },
+        { additionalProperties: false },
+      ),
+    ),
     operations: Type.Array(pickupOperationSchema),
   },
   { additionalProperties: false },
 );
 export type PickupOperation = Static<typeof pickupOperationSchema>;
 export type ProjectPickupState = Static<typeof projectPickupStateSchema>;
-
-export function pickupUnfinished(operation: PickupOperation) {
-  return !['completed', 'empty', 'expired', 'cancelled'].includes(operation.phase);
-}
