@@ -220,6 +220,14 @@ describe('github project pickup policy', () => {
 
     it(`should require a pickup receipt even for new approved scoped assignments in ${runtime}`, async () => {
       const f = pickupFixture(runtime);
+      f.authority.receipts[0]!.assignmentNodeId = 'unrelated-assignment';
+      f.client.getRepository =
+        f.client.getItem =
+        f.client.listAssignmentEvents =
+          async () => {
+            throw new Error('pickup must not read providers without a matching receipt');
+          };
+      assert.equal(await authorizeProjectAssignment(f.input), undefined);
       f.authority.receipts = [];
       assert.equal(await authorizeProjectAssignment(f.input), undefined);
       f.input.event.actor = { ...f.policy.issueAssignment!.allowed[0]!, type: 'User' };

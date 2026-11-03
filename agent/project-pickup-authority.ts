@@ -90,10 +90,35 @@ interface AssignmentInput {
   now: number;
 }
 
+function assignmentReceipt({ authority, item, event }: AssignmentInput) {
+  const retained = authority.retained?.find(
+    (work) =>
+      Value.Check(projectWorkSchema, work) &&
+      work.issueNodeId === item.nodeId &&
+      work.assignmentNodeId === event.nodeId &&
+      work.pickup &&
+      work.pickup.enrollmentId === work.enrollment.id &&
+      work.pickup.issueNodeId === work.issueNodeId &&
+      work.pickup.assignmentNodeId === work.assignmentNodeId,
+  );
+  const enrollment = retained?.enrollment ?? authority.enrollment;
+  const receipt =
+    retained?.pickup ??
+    authority.receipts.find(
+      (entry) =>
+        Value.Check(projectPickupReceiptSchema, entry) &&
+        entry.enrollmentId === enrollment.id &&
+        entry.issueNodeId === item.nodeId &&
+        entry.assignmentNodeId === event.nodeId,
+    );
+  return receipt ? { enrollment, receipt } : undefined;
+}
+
 /** admission-time grant: callers must retain it, never derive one for old managed work. */
 export default async function authorizeProjectAssignment(
   input: AssignmentInput,
 ): Promise<ProjectWork | undefined> {
+  if (!assignmentReceipt(input)) return;
   const { client, repository, item } = input;
   const freshRepository = await client.getRepository(repository.owner.login, repository.name);
   const freshItem = await client.getItem(repository.owner.login, repository.name, item.number);
@@ -123,28 +148,10 @@ export function verifyProjectAssignment(
     history: Awaited<ReturnType<GitHubNotificationIntakeClient['listAssignmentEvents']>>;
   },
 ): ProjectWork | undefined {
-  const { authority, policy, client, repository, item, event } = input;
-  const retained = authority.retained?.find(
-    (work) =>
-      Value.Check(projectWorkSchema, work) &&
-      work.issueNodeId === item.nodeId &&
-      work.assignmentNodeId === event.nodeId &&
-      work.pickup &&
-      work.pickup.enrollmentId === work.enrollment.id &&
-      work.pickup.issueNodeId === work.issueNodeId &&
-      work.pickup.assignmentNodeId === work.assignmentNodeId,
-  );
-  const enrollment = retained?.enrollment ?? authority.enrollment;
-  const receipt =
-    retained?.pickup ??
-    authority.receipts.find(
-      (entry) =>
-        Value.Check(projectPickupReceiptSchema, entry) &&
-        entry.enrollmentId === enrollment.id &&
-        entry.issueNodeId === item.nodeId &&
-        entry.assignmentNodeId === event.nodeId,
-    );
-  if (!receipt) return;
+  const { policy, client, repository, item, event } = input;
+  const matched = assignmentReceipt(input);
+  if (!matched) return;
+  const { enrollment, receipt } = matched;
   const assignedAt = Date.parse(event.createdAt);
   if (
     !Value.Check(projectPickupEnrollmentSchema, enrollment) ||
