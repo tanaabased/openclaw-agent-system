@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { mock } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { matchFixture, type ChatCompletionRequest, type ContentPart } from '@copilotkit/aimock';
 
@@ -215,7 +216,13 @@ describe('scripts/example-model-scenarios', () => {
         'agent_system_doctor',
         'Call agent_system_doctor exactly once',
         'call_runtime_doctor',
-        '{"findings":[]}',
+        JSON.stringify({
+          agentId: 'runtime-openclaw',
+          workspaceDir: fileURLToPath(
+            new URL('../examples/openclaw-lifecycle-approvals/openclaw', import.meta.url),
+          ),
+          findings: [],
+        }),
         '{"status":"error"}',
         'runtime-doctor-ready',
       ],
@@ -255,6 +262,29 @@ describe('scripts/example-model-scenarios', () => {
       )?.response;
       assert.ok(final && typeof final !== 'function' && 'content' in final);
       assert.equal(final.content, expected);
+    }
+  });
+
+  it('should require the canonical doctor target in both lifecycle approval runtimes', () => {
+    const scenario = resolveExampleModelScenario('openclaw-lifecycle-approvals');
+    for (const runtime of ['openclaw', 'codex']) {
+      const agentId = `runtime-${runtime}`;
+      const workspaceDir = fileURLToPath(
+        new URL(`../examples/openclaw-lifecycle-approvals/${runtime}`, import.meta.url),
+      );
+      for (const target of [workspaceDir, `${workspaceDir}/.agent-system/worktrees/repo/issue`]) {
+        const input = request(
+          agentId,
+          'Call agent_system_doctor exactly once',
+          ['agent_system_doctor'],
+          {
+            callId: runtime === 'codex' ? 'call_runtime_codex_doctor' : 'call_runtime_doctor',
+            content: JSON.stringify({ agentId, workspaceDir: target, findings: [] }),
+          },
+        );
+        if (runtime === 'codex') input.model = 'gpt-5.4-nano';
+        assert.equal(matchFixture([...scenario.fixtures], input) !== null, target === workspaceDir);
+      }
     }
   });
 

@@ -225,9 +225,10 @@ Inspect the active workspace:
 For a managed checkout, pass its returned canonical path as `cwd`. Results include
 `exitCode`, `stdout`, `stderr`, and `truncated`.
 
-In a session bound to a registered worktree under the managed bare-repository
-layout, omitted and relative `cwd` values use that worktree. Otherwise they use the
-agent workspace. Identity and policy always come from the agent workspace.
+In a session bound to a registered worktree under the agent's configured worktree
+root, omitted and relative `cwd` values use that worktree, including when agents
+share a local source repository. Otherwise they use the agent workspace. Identity
+and policy always come from the agent workspace.
 
 <a id="agent_system_git_worktree"></a>
 

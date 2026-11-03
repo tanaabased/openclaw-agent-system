@@ -1,6 +1,6 @@
 import { constants } from 'node:fs';
 import { open, realpath } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 
 import type { GitWorktreeConfiguration } from './config-schema.ts';
 import resolveGitWorktreeLayout from './worktree-layout.ts';
@@ -26,7 +26,8 @@ async function readMarker(path: string): Promise<string> {
   }
 }
 
-/** verify linked-worktree metadata inside this agent's managed bare-repository layout.
+/** verify linked-worktree registration under this agent's configured worktree root.
+ * the backing repository may be shared; it does not establish agent identity.
  * this binds execution location, not issue admission or permission to publish.
  */
 export default async function isManagedWorktreeWorkspace(
@@ -45,7 +46,7 @@ export default async function isManagedWorktreeWorkspace(
     )
       return false;
     // reject aliases before reading any repository-owned marker.
-    for (const path of [layout.workspaceDir, layout.worktreeRoot, layout.repositoryRoot, cwd])
+    for (const path of [layout.workspaceDir, layout.worktreeRoot, cwd])
       if ((await realpath(path)) !== path) return false;
     const marker = await readMarker(join(cwd, '.git'));
     if (!marker.startsWith('gitdir: ')) return false;
@@ -53,8 +54,6 @@ export default async function isManagedWorktreeWorkspace(
     const repository = dirname(dirname(admin));
     if (
       dirname(admin) !== join(repository, 'worktrees') ||
-      dirname(repository) !== layout.repositoryRoot ||
-      basename(repository) !== `${basename(dirname(cwd))}.git` ||
       (await realpath(admin)) !== admin ||
       (await realpath(repository)) !== repository
     )
