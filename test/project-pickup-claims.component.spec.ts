@@ -171,7 +171,7 @@ describe('project pickup handoff to ordinary assignment claims', () => {
     });
   }
 
-  it('should elect one intake owner for simultaneous self-assignment and let the loser pick other work next scan', async () => {
+  it('should elect one intake owner and preserve the pilot allowance until the next window', async () => {
     const a = fixture('codex'),
       b = fixture('openclaw');
     a.policy.routing = b.policy.routing = [{ 'owner/*': 'swarm' }];
@@ -220,6 +220,13 @@ describe('project pickup handoff to ordinary assignment claims', () => {
       f.tx.runId = 'next-scan';
     }
     a.policy.maxConcurrentItems = b.policy.maxConcurrentItems = 1;
+    assert.equal((await a.run()).status, 'allowance-reached');
+    assert.equal((await b.run()).status, 'allowance-reached');
+    assert.equal(a.effects.writes, 1);
+    for (const f of [a, b]) {
+      f.clock.now += 86400000;
+      f.tx.runId = 'next-window';
+    }
     assert.equal((await a.run()).status, 'at-capacity');
     const next = await b.run();
     assert.equal(next.status, 'selection-required');

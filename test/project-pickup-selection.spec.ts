@@ -285,6 +285,7 @@ describe('agent/project-pickup', () => {
       assert.equal((await f.run({ selection })).status, 'pending');
       assert.equal(f.effects.writes, 0);
       f.policy.routing = undefined;
+      f.policy.maxConcurrentItems = 1;
       f.state.records.push({ issueKey: 'busy', phase: 'running', request: {} });
       assert.equal((await f.run()).status, 'at-capacity');
       f.state.records = [];

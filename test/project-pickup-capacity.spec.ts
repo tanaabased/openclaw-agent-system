@@ -35,8 +35,10 @@ describe('project pickup capacity handoff', () => {
       f.state.records.push({ issueKey: 'ordinary', phase: 'assessing', request: {} });
       assert.equal((await f.run({ selection })).status, 'at-capacity');
       assert.equal(f.effects.writes, 0);
+      assert.deepEqual(f.state.projectPickup!.operations, []);
       f.state.records = [];
-      assert.equal((await f.run()).status, 'assigned');
+      f.tx.runId = 'later-scan';
+      assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
       assert.equal(f.effects.writes, 1);
     });
 

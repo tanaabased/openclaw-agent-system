@@ -101,6 +101,7 @@ describe('project pickup installation enrollment', () => {
           enrollment: first.enrollment,
           timezone: 'UTC',
           highWater: f.clock.now,
+          windowAssignment: { window: receipt.window, assignedAt: f.clock.now },
           operations: [
             {
               id: 'delivered',
@@ -148,11 +149,18 @@ describe('project pickup installation enrollment', () => {
       assert.equal(updated.enrollment.milestoneNodeId, 'MI_new');
       assert.equal(updated.enrollment.startedAt, first.enrollment.startedAt);
       assert.equal(updated.nativeId, 'native-job');
-      assert.equal(state.projectPickup!.highWater, f.clock.now);
+      assert.equal(state.projectPickup!.highWater, undefined);
+      assert.deepEqual(state.projectPickup!.windowAssignment, {
+        window: receipt.window,
+        assignedAt: f.clock.now,
+      });
       assert.deepEqual(state.projectPickup!.operations[0]!.receipt, receipt);
       assert.equal(state.projectPickup!.operations[0]!.enrollment!.milestoneNodeId, 'MI_pilot');
       assert.equal(state.projectPickup!.operations[1]!.phase, 'attempted');
-      assert.equal(state.projectPickup!.operations[2]!.phase, 'cancelled');
+      assert.deepEqual(
+        state.projectPickup!.operations.map((operation) => operation.id),
+        ['delivered', 'uncertain'],
+      );
       assert.equal(saves, 1);
       await f.store.activate(updated.enrollment.id, 'native-job');
       assert.equal((await f.store.inspect(f.policy, runtime, 'scope')).nativeId, 'native-job');
