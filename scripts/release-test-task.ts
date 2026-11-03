@@ -227,6 +227,7 @@ try {
     'hooks/hooks.json',
     'index.ts',
     'agent/assessment-result.ts',
+    'agent/automation-report.schema.json',
     'bin/agent-system-ssh',
     'bin/agent-system-ssh-keygen',
     'bin/agent-system-ssh-signing-key',

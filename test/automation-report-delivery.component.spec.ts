@@ -7,7 +7,10 @@ import deliverAutomationReport, {
   reconcileAutomationReport,
 } from '../agent/automation-report-delivery.ts';
 import AutomationReportStore from '../agent/automation-report-store.ts';
-import type { AutomationReportInput } from '../agent/automation-report.ts';
+import {
+  prepareLegacyAutomationReport,
+  type AutomationReportInput,
+} from '../agent/automation-report.ts';
 import type SessionDispatchCredential from '../credentials/session-dispatch.ts';
 import { sessionDispatchRequest } from '../credentials/session-dispatch-client.ts';
 import registerAutomationReportHooks from '../core/automation-report-hook.ts';
@@ -52,6 +55,9 @@ describe('agent/automation-report-delivery', () => {
       effectiveMismatch?: boolean;
       effectiveEffort?: string;
       historyFailure?: boolean;
+      stdout?: string;
+      alteredPreferred?: boolean;
+      legacy?: boolean;
     } = {},
   ) {
     const calls: string[] = [];
@@ -159,12 +165,19 @@ describe('agent/automation-report-delivery', () => {
             context,
           );
           const record = await store.read(String(params.idempotencyKey));
-          const body = `> ## ${options.badCard ? '✅' : '❌'} Backup failed\n>\n> ${record!.input.runLine}\n>\n> The command exited unsuccessfully.`;
+          const presentation = record!.input.presentation;
+          const body =
+            presentation && presentation.kind !== 'fallback'
+              ? (options.alteredPreferred ? 'Changed report\n' : '') + presentation.body
+              : presentation?.kind === 'fallback'
+                ? `> ## ${options.badCard ? '✅' : '❌'} Backup failed\n>\n> The command exited unsuccessfully.\n\n${presentation.footer}`
+                : `> ## ❌ Backup failed\n>\n> ${record!.input.runLine}\n>\n> The command exited unsuccessfully.`;
           const validation = await hooks.get('before_agent_finalize')!(
             { lastAssistantMessage: body },
             context,
           );
-          if (options.badCard) assert.equal(validation?.retry?.maxAttempts, 1);
+          if (options.badCard || options.alteredPreferred)
+            assert.equal(validation?.retry?.maxAttempts, 1);
           else assert.equal(validation, undefined);
           if (!options.pending)
             replies.push({
@@ -196,10 +209,27 @@ describe('agent/automation-report-delivery', () => {
       if (options.selectionError) throw new AutomationError(options.selectionError);
       selected = true;
     }
-    const deliver = (executionId = input.executionId) =>
-      deliverAutomationReport({
+    const deliver = async (executionId = input.executionId) => {
+      const runInput = {
+        ...input,
+        executionId,
+        ...(options.stdout === undefined
+          ? {}
+          : { result: { ...input.result, output: { stdout: options.stdout, stderr: '' } } }),
+      };
+      if (options.legacy && !(await store.read(executionId)))
+        await store.write({
+          version: 1,
+          executionId,
+          hash: 'hash',
+          manifestDigest: 'manifest',
+          target,
+          input: prepareLegacyAutomationReport(runInput),
+          state: 'pending',
+        });
+      return deliverAutomationReport({
         target,
-        input: { ...input, executionId },
+        input: runInput,
         store,
         hash: 'hash',
         manifestDigest: 'manifest',
@@ -207,10 +237,45 @@ describe('agent/automation-report-delivery', () => {
         assertCurrent,
         selectSettings,
       });
+    };
     const recover = (executionId = input.executionId) =>
       reconcileAutomationReport({ store, executionId, credential, assertCurrent, selectSettings });
     return { deliver, recover, calls, messages, store, hooks, selections: () => selections };
   }
+  it('should deliver one retained mixed response and reconcile its original receipt without replay', async () => {
+    const stdout = JSON.stringify({
+      schema: 'agent-system.report',
+      version: 1,
+      cards: [
+        {
+          id: 'a',
+          format: 'structured',
+          title: 'Saved',
+          status: 'success',
+          summary: 'Archive saved.',
+        },
+        { id: 'b', format: 'markdown', body: '## Warning\n\nActivation unverified.' },
+      ],
+    });
+    const f = fixture({ stdout, malformed: true });
+    assert.equal((await f.deliver()).status, 'uncertain');
+    const retained = await f.store.read(input.executionId);
+    assert.equal(retained?.input.presentation?.kind, 'preferred');
+    assert.equal((await f.recover()).status, 'delivered');
+    assert.equal(f.messages.length, 1);
+    assert.equal(f.selections(), 1);
+    assert.equal(f.calls.includes('chat.inject'), false);
+    const bad = fixture({ stdout, alteredPreferred: true });
+    const badId = randomUUID();
+    assert.equal((await bad.deliver(badId)).status, 'failed');
+    assert.equal((await bad.store.read(badId))?.code, 'automation-report-card-invalid');
+  });
+  it('should preserve admitted legacy formatting and native identity', async () => {
+    const f = fixture({ legacy: true });
+    assert.equal((await f.deliver()).status, 'delivered');
+    assert.equal((await f.store.read(input.executionId))?.input.presentation, undefined);
+    assert.equal(f.messages.length, 1);
+  });
   it('should verify final cards and settings while preserving unrelated chat tools', async () => {
     const f = fixture();
     const results = await Promise.all([f.deliver(), f.deliver(randomUUID())]);

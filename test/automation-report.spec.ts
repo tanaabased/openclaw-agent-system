@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import automationReport, {
   automationReportCardValid,
-  prepareAutomationReport,
+  prepareLegacyAutomationReport as prepareAutomationReport,
   type AutomationReportInput,
 } from '../agent/automation-report.ts';
 
@@ -19,7 +19,7 @@ const input: AutomationReportInput = {
     output: { stdout: '', stderr: '' },
   },
 };
-describe('agent/automation-report', () => {
+describe('agent/automation-report legacy', () => {
   it('should retain useful markdown and separately classify both streams without promoting stderr to failure', () => {
     const markdown =
       '# Backup\n\n- [archive](https://example.test/archive)\n\n| item | result |\n| --- | --- |\n| data | saved |\n\n```sh\necho done\n```';
