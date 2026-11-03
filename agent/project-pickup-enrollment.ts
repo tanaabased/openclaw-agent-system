@@ -25,7 +25,6 @@ const recordSchema = Type.Object(
     instanceId: text,
     timezone: text,
     nativeId: Type.Optional(text),
-    repository: text,
   },
   { additionalProperties: false },
 );
@@ -140,7 +139,6 @@ export default class ProjectPickupEnrollmentStore {
           ? {
               ...existing,
               timezone: input.timezone,
-              repository: pickup.projects[0]!.repository,
               enrollment: {
                 ...existing.enrollment,
                 repositoryNodeId: repository.nodeId,
@@ -173,7 +171,6 @@ export default class ProjectPickupEnrollmentStore {
       }
       const record: PickupEnrollment = {
         instanceId: identity.instanceId,
-        repository: pickup.projects[0]!.repository,
         timezone: input.timezone,
         enrollment: {
           id: randomUUID(),

@@ -162,10 +162,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     enrollment = retained;
   }
   const recovering = state.projectPickup?.operations.some(
-    (operation) =>
-      operation.attemptedAt !== undefined &&
-      !operation.receipt &&
-      !pickupRecord(state.records, state.projectPickup!, operation),
+    (operation) => operation.attemptedAt !== undefined && !operation.receipt,
   );
   if (
     !recovering &&
