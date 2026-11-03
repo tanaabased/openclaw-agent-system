@@ -756,19 +756,49 @@ describe('agent/project-pickup', () => {
     assert.equal((await f.run()).status, 'assigned');
     assert.equal(pickupCapacity(f.state.records, f.state.projectPickup), 1);
   });
-  it('should retain cancellation evidence when ordinary window history is pruned', async () => {
-    const f = fixture();
-    const selection = await f.select();
-    await f.run({ selection });
-    await f.run({ cancel: selection.id });
-    for (let day = 0; day < 33; day++) {
-      f.clock.now += 86400000;
-      f.tx.runId = `scan-${f.clock.now}`;
-      await f.run();
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should bound expired unattempted cancellations and preserve the current stop in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const first = (await f.select()).id;
+      for (let day = 0; day < 40; day++) {
+        const selection = await f.select();
+        await f.run({ cancel: selection.id });
+        assert.equal((await f.run()).status, 'idle');
+        f.clock.now += 86400000;
+        f.tx.runId = `scan-${f.clock.now}`;
+      }
+      const current = await f.select();
+      assert.equal(f.state.projectPickup!.operations.length, 32);
+      assert.ok(!f.state.projectPickup!.operations.some((entry) => entry.id === first));
+      await f.run({ cancel: current.id });
+      assert.equal((await f.run()).status, 'idle');
+      assert.equal(f.effects.writes, 0);
+    });
+
+    for (const uncertain of [false, true]) {
+      it(`should retain cancellation evidence with uncertain write ${uncertain} when history is pruned in ${runtime}`, async () => {
+        const f = fixture(runtime);
+        if (uncertain)
+          f.client.assignProjectIssue = async () => {
+            f.effects.writes++;
+            throw new Error('response lost');
+          };
+        const selection = await f.select();
+        await f.run({ selection });
+        await f.run({ cancel: selection.id });
+        for (let day = 0; day < 40; day++) {
+          f.clock.now += 86400000;
+          f.tx.runId = `scan-${f.clock.now}`;
+          await f.run();
+        }
+        assert.deepEqual(pickupAuthority(f.state.projectPickup)!.withheldAssignments, [
+          {
+            issueNodeId: f.item.nodeId,
+            ...(uncertain ? {} : { assignmentNodeId: f.events[0]!.nodeId }),
+          },
+        ]);
+        assert.equal(f.effects.writes, 1);
+      });
     }
-    assert.deepEqual(pickupAuthority(f.state.projectPickup)!.withheldAssignments, [
-      { issueNodeId: f.item.nodeId, assignmentNodeId: f.events[0]!.nodeId },
-    ]);
-    assert.equal(f.effects.writes, 1);
-  });
+  }
 });

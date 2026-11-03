@@ -67,10 +67,11 @@ no push, installation or live scheduled pilot has been performed.
       preserve scope/runtime ownership and existing account and installation identity checks.
 - [x] remove unused item-validation and retained-assignment branches from the pickup scope
       helper; candidate eligibility remains with the selection owner.
-- [ ] bound expired, unattempted cancellation history. a controlled 40-day run retained
-      all 40 cancelled selections in both runtimes. keep current-window cancellation and
-      all attempted-assignment/receipt evidence; only effect-free old cancellations are
-      cleanup candidates. this is retained state growth, not a reproduced intake failure.
+- [x] bound expired, unattempted cancellations with ordinary terminal history. preserve
+      current-window stops and all cancelled attempted-assignment/receipt evidence.
+- [ ] refresh selection guidance for pending, unattempted work. both runtimes retain old
+      guidance and accept the old selection after a live guidance edit and a later native
+      run. refresh the selection without Install; preserve recovery for attempted writes.
 
 ## validation and rollout
 
@@ -93,6 +94,9 @@ no push, installation or live scheduled pilot has been performed.
       full `bun run validate` passed 4,435 checks, lint, typecheck, build and plugin checks.
       the follow-up read-only audit reproduced only the unattempted cancellation-history
       cleanup listed above; no additional immediate blocker was established.
+- [x] cancellation-history cleanup: 203 focused checks and full `bun run validate`
+      passed 4,440 checks, lint, typecheck, build and plugin checks. the follow-up
+      read-only audit reproduced the pending-guidance mismatch listed above in both runtimes.
 - [ ] CI exercises the affected installed boundaries; never run Leia examples locally.
 - [ ] approved installation reconciles Me's selected milestone and Doctor confirms readiness.
 - [ ] record real scheduled selection, one self-assignment, ordinary intake and delivery

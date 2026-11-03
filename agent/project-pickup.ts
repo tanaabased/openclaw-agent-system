@@ -338,11 +338,15 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     };
     journal.highWater = window.opensAt;
     const retained = journal.operations.filter((entry) => entry !== empty);
+    const historyAt = tx.now();
+    // A cancellation after a write protects admission; otherwise it only stops its window.
+    const protectedHistory = (entry: PickupOperation) =>
+      pickupUnfinished(entry) ||
+      (entry.phase === 'cancelled' &&
+        (entry.attemptedAt !== undefined || entry.receipt || entry.window.closesAt > historyAt));
     journal.operations = [
-      ...retained.filter((entry) => pickupUnfinished(entry) || entry.phase === 'cancelled'),
-      ...retained
-        .filter((entry) => !pickupUnfinished(entry) && entry.phase !== 'cancelled')
-        .slice(-31),
+      ...retained.filter(protectedHistory),
+      ...retained.filter((entry) => !protectedHistory(entry)).slice(-31),
       op,
     ];
     await save();
