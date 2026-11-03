@@ -6,12 +6,12 @@ import fixture from './project-pickup-selection-fixture.ts';
 
 describe('agent/project-pickup', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
-    it(`should hold new instance-routed pickup and preserve uncertain assignments in ${runtime}`, async () => {
+    it(`should hold non-target pickup and preserve uncertain assignments in ${runtime}`, async () => {
       const target = '11111111-1111-4111-8111-111111111111';
       const f = fixture(runtime);
       f.policy.routing = [{ 'owner/*': [target] }];
       const held = await f.run();
-      assert.ok('code' in held && held.code === 'project-pickup-instance-routing-unsupported');
+      assert.ok('code' in held && held.code === 'claim-route-instance-ineligible');
       assert.equal(f.effects.writes, 0);
       const accepted = fixture(runtime);
       const write = accepted.client.assignProjectIssue;
@@ -197,7 +197,7 @@ describe('agent/project-pickup', () => {
     assert.equal(f.effects.writes, 0);
   });
   it('should recover each durable boundary without replaying an attempted write', async () => {
-    for (const boundary of [1, 2, 3, 4, 5])
+    for (const boundary of [1, 2, 3, 4, 5, 6])
       for (const after of [false, true]) {
         const f = fixture();
         let disk = structuredClone(f.state);
@@ -218,7 +218,7 @@ describe('agent/project-pickup', () => {
         if (recovered.status === 'selection-required') await f.run({ selection: await f.select() });
         await f.run();
         assert.ok(f.effects.writes <= 1, `boundary ${boundary}, after ${after}`);
-        if (boundary === 4 && after) assert.equal(f.effects.writes, 0);
+        if (boundary === 5 && after) assert.equal(f.effects.writes, 0);
         else assert.equal(f.effects.writes, 1);
       }
   });

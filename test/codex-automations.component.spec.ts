@@ -452,9 +452,9 @@ describe('agent/codex-automations', () => {
     );
   });
 
-  it('should enroll one designated pickup job and preserve its window anchor across pause and repeated installs', async () => {
+  it('should enroll one coordinator-free pickup job and preserve its window anchor across pause and repeated installs', async () => {
     const provider = selectionFixture();
-    const instance = await codexInstanceStore(pluginData).identity();
+    await codexInstanceStore(pluginData).identity();
     const source = {
       'schema-version': 1,
       agent: { id: 'fixture' },
@@ -473,7 +473,6 @@ describe('agent/codex-automations', () => {
           allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
         },
         'project-pickup': {
-          coordinator: { runtime: 'codex', 'instance-id': instance.instanceId },
           paused: false,
           schedule: 'every 1 day',
           'window-minutes': 60,

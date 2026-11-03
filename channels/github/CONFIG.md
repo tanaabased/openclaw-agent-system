@@ -56,8 +56,8 @@ same rule. Scope changes apply to new admissions without Install and preserve
 already admitted work and its original owner. Routing does not grant GitHub access,
 approve assignment actors, or enable unsupported workflows.
 
-`swarm` coordinates assignment-driven work across participating installations using
-claim comments and a second native intake pass before starting work. Use `swarm`
+`swarm` coordinates assignment-driven work and project pickup across participating
+installations using claim comments and a second native pass before starting work. Use `swarm`
 for that repository on every participant sharing the receiving account. This is a
 comment-only proof of concept: incomplete concurrent reads can still produce
 overlapping work. It does not coordinate project pickup allowances or independent
@@ -74,9 +74,8 @@ owner. If no eligible installation claims the assignment, it stays pending: an
 unknown, offline, paused, or full target does not trigger fallback. Silence alone
 does not identify which condition applies. Pool edits preserve existing ownership
 and uncertain native creation; an excluded claimant that has not started native
-creation is held for recovery. New project pickup with UUID/pool routing reports
-`project-pickup-instance-routing-unsupported`; pickup allowances and review
-integration remain separate work.
+creation is held for recovery. Project pickup establishes the same ownership before
+self-assignment; assignment intake retains that owner.
 
 `local` creates no claim. A retained or visible Swarm claim still blocks new local
 work; switching routes does not transfer ownership. If a claim is missing, changed,
@@ -159,24 +158,21 @@ and a repository included by `routing` (or legacy owners when routing is absent)
 or approved assignment and feedback authors.
 
 > [!IMPORTANT]
-> Choose one installation and runtime for this coordinator. Inspect its existing
-> installation identity using the [instance commands](../../CLI.md#openclaw-agent-system-instance-inspect)
-> or [Codex identity actions](../../CODEX.md#workspace-setup), then set `coordinator`
-> below. Run Install there and approve the native pickup schedule. Doctor checks its
-> saved enrollment and schedule. Missing or mismatched designation cannot activate pickup.
+> Set placement through `github.routing`. Run Install on each intended participant
+> and approve its native pickup schedule. Doctor checks that installation’s saved
+> enrollment and schedule; routing alone does not activate pickup.
 
-| Field                | Required       | Meaning                                                                                                                                                                                                                                                                                |
-| -------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `paused`             | no             | Defaults to `false`; pauses new pickup immediately. Run Install to synchronize the saved native job.                                                                                                                                                                                   |
-| `coordinator`        | for activation | `{runtime: codex, instance-id: <installation UUID>}` or runtime `openclaw`. Other installations reject activation.                                                                                                                                                                     |
-| `schedule`           | yes            | Existing [recurring schedule syntax](../../MANIFEST.md#automations): cron with an optional IANA timezone, or `every`. One-shot schedules are rejected. Native adapter limitations still apply.                                                                                         |
-| `window-minutes`     | yes            | Positive integer duration for each pickup window, at least `github.interval-minutes`.                                                                                                                                                                                                  |
-| `selection.guidance` | no             | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                                                                                                           |
-| `thread`             | no             | Persistent coordination chat: a name string or `{name, id}`, using the existing [automation thread convention](../../MANIFEST.md#automations). Defaults to `PROJECT PICKUP`. Run Install to reconcile a changed choice; missing conversations use the native automation recovery flow. |
-| `projects`           | yes            | Exactly one entry with `repository: owner/name` and `milestone: {number: 10, policy: only}`. The milestone number must be positive. Other policies and multi-project selection are rejected.                                                                                           |
+| Field                | Required | Meaning                                                                                                                                                                                                                                                                                |
+| -------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `paused`             | no       | Defaults to `false`; pauses new pickup immediately. Run Install to synchronize the saved native job.                                                                                                                                                                                   |
+| `schedule`           | yes      | Existing [recurring schedule syntax](../../MANIFEST.md#automations): cron with an optional IANA timezone, or `every`. One-shot schedules are rejected. Native adapter limitations still apply.                                                                                         |
+| `window-minutes`     | yes      | Positive integer duration for each pickup window, at least `github.interval-minutes`.                                                                                                                                                                                                  |
+| `selection.guidance` | no       | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                                                                                                           |
+| `thread`             | no       | Persistent coordination chat: a name string or `{name, id}`, using the existing [automation thread convention](../../MANIFEST.md#automations). Defaults to `PROJECT PICKUP`. Run Install to reconcile a changed choice; missing conversations use the native automation recovery flow. |
+| `projects`           | yes      | Exactly one entry with `repository: owner/name` and `milestone: {number: 10, policy: only}`. The milestone number must be positive. Other policies and multi-project selection are rejected.                                                                                           |
 
 Install adds one `PROJECT PICKUP` job alongside assignment intake, using the intake
-cadence. Each eligible window can select and self-assign at most one actionable,
+cadence. Each installation’s eligible window can select and self-assign at most one actionable,
 unassigned issue in the configured milestone. Verified pickup enters the existing
 assessment and Work workflow; ordinary assignments keep their configured mode.
 Missed windows are not replayed. Accepted issue work may finish after a window or pause.
@@ -184,10 +180,10 @@ Codex uses the low model profile; OpenClaw uses its default automation profile.
 
 The pilot retains its original repository, milestone, schedule, timezone and window
 anchor. Install rejects changes to those enrolled values; restore them to resume.
-Pause and selection guidance can change without reenrollment. Before transferring
-pickup, settle pending pickup operations with the original owner, stop its native
-job, and verify it is stopped. Then designate the new installation. Existing issue
-work stays with its original runtime; do not copy or delete journals to transfer it.
+Pause, selection guidance and repository routes can change without reenrollment.
+Route edits do not transfer pending claims or attempted assignments: restore the
+original owner’s eligibility to resume pending pickup. Existing issue work stays
+with its original runtime; do not copy or delete journals to transfer it.
 Conflicting workspaces on one installation are rejected. There is no automatic
 failover, account-wide concurrency cap, or protection against independently divergent
 configuration or copied private installation identities.

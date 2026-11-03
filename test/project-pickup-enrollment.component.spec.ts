@@ -22,8 +22,7 @@ describe('project pickup installation enrollment', () => {
     async function fixture() {
       const f = selectionFixture(runtime);
       const identity = new AssignmentClaimStore(root);
-      const installed = await identity.identity();
-      f.policy.projectPickup!.coordinator = { runtime, instanceId: installed.instanceId };
+      await identity.identity();
       const store = new ProjectPickupEnrollmentStore(root);
       const input = {
         policy: f.policy,
@@ -54,12 +53,12 @@ describe('project pickup installation enrollment', () => {
       assert.equal((await f.store.read()).records.length, 1);
     });
 
-    it(`should reject a conflicting local coordinator and changed policy without replacing ownership in ${runtime}`, async () => {
+    it(`should reject a conflicting enrollment and changed policy without replacing ownership in ${runtime}`, async () => {
       const f = await fixture();
       const first = await f.store.prepare(f.input);
       await assert.rejects(
         f.store.prepare({ ...f.input, scope: 'other', workspaceDir: '/other' }),
-        /coordinator-conflict/,
+        /enrollment-conflict/,
       );
       await assert.rejects(
         f.store.prepare({ ...f.input, timezone: 'America/New_York' }),
@@ -70,32 +69,28 @@ describe('project pickup installation enrollment', () => {
       assert.deepEqual((await f.store.read()).records, [first]);
     });
 
-    it(`should reject another installation and rotation before provider access in ${runtime}`, async () => {
+    it(`should enroll participants independently and retain identity after rotation in ${runtime}`, async () => {
       const f = await fixture();
       const first = await f.store.prepare(f.input);
-      f.client.getRepository = async () => {
-        assert.fail('provider access before ownership');
-      };
       const otherRoot = join(root, 'other');
       await new AssignmentClaimStore(otherRoot).identity();
-      await assert.rejects(
-        new ProjectPickupEnrollmentStore(otherRoot).prepare(f.input),
-        /coordinator-mismatch/,
-      );
+      const other = await new ProjectPickupEnrollmentStore(otherRoot).prepare(f.input);
+      assert.notEqual(other.instanceId, first.instanceId);
+      assert.notEqual(other.enrollment.id, first.enrollment.id);
       await f.identity.rotate(first.instanceId);
-      await assert.rejects(f.store.prepare(f.input), /coordinator-mismatch/);
+      await assert.rejects(f.store.inspect(f.policy, runtime, 'scope'), /enrollment-changed/);
+      await assert.rejects(f.store.prepare(f.input), /enrollment-changed/);
       assert.deepEqual((await f.store.read()).records, [first]);
     });
   }
 
   it('should inspect missing installation state without creating files', async () => {
-    const f = selectionFixture();
     const store = new ProjectPickupEnrollmentStore(root);
-    await assert.rejects(store.owner(f.policy, 'codex'), /coordinator-required/);
+    await assert.rejects(store.owner(), /instance-install-required/);
     assert.deepEqual(await readdir(root), []);
   });
 
-  it('should derive one native job with runtime model routing and reject unsupported designation or cadence', () => {
+  it('should derive one native job with runtime model routing and reject unsupported cadence', () => {
     const source = {
       'schema-version': 1,
       agent: { id: 'receiver' },
@@ -112,7 +107,6 @@ describe('project pickup installation enrollment', () => {
         'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
         'issue-assignment': { allowed: [{ login: 'operator', 'node-id': 'U_operator' }] },
         'project-pickup': {
-          coordinator: { runtime: 'codex', 'instance-id': '00000000-0000-4000-8000-000000000001' },
           schedule: 'every 1 day',
           'window-minutes': 10,
           projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
@@ -125,7 +119,6 @@ describe('project pickup installation enrollment', () => {
     const manifest = parsed.manifest;
     const policy = manifest.github!.notifications!;
     for (const runtime of ['codex', 'openclaw'] as const) {
-      policy.projectPickup!.coordinator!.runtime = runtime;
       const jobs = projectPickupJobs(manifest, runtime);
       assert.equal(jobs.length, 1);
       assert.equal(jobs[0]!.id, 'github-project-pickup');
@@ -137,18 +130,15 @@ describe('project pickup installation enrollment', () => {
       policy.projectPickup!.paused = true;
       assert.equal(projectPickupJobs(manifest, runtime)[0]!.enabled, false);
       policy.projectPickup!.paused = false;
-      assert.deepEqual(projectPickupJobs(manifest, runtime === 'codex' ? 'openclaw' : 'codex'), []);
       policy.projectPickup!.windowMinutes = 4;
-      assert.equal(
-        projectPickupConfigurationCode(policy, runtime),
-        'project-pickup-schedule-unsupported',
-      );
+      assert.equal(projectPickupConfigurationCode(policy), 'project-pickup-schedule-unsupported');
       policy.projectPickup!.windowMinutes = 10;
     }
-    delete policy.projectPickup!.coordinator;
-    assert.equal(
-      projectPickupConfigurationCode(policy, 'codex'),
-      'project-pickup-coordinator-required',
-    );
+    assert.equal(projectPickupConfigurationCode(policy), undefined);
+    const obsolete = structuredClone(source);
+    Object.assign(obsolete.github['project-pickup'], {
+      coordinator: { runtime: 'codex', 'instance-id': '00000000-0000-4000-8000-000000000001' },
+    });
+    assert.equal(parseAgentManifest(JSON.stringify(obsolete)).status, 'invalid');
   });
 });

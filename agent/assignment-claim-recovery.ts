@@ -1,6 +1,7 @@
 import {
   assignmentClaimKey,
   readAssignmentClaims,
+  resolveClaimSource,
   type ClaimClient,
   type ClaimSource,
 } from './assignment-claim.ts';
@@ -17,6 +18,7 @@ export default async function recoverAssignmentClaim(input: {
   operation: 'preview' | 'reserve' | 'accept';
   successorReceipt?: string;
 }) {
+  input = { ...input, source: await resolveClaimSource(input.store, input.client, input.source) };
   if (!(await input.store.inspect())) {
     await input.client.verify(input.source);
     if ((await readAssignmentClaims(input.client, input.source)).length)

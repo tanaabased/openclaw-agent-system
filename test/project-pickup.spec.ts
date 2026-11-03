@@ -62,7 +62,7 @@ describe('github project pickup policy', () => {
         const diagnostic = githubNotificationRuntimeDiagnostics(policy, runtime).find(
           (entry) => entry.workflow === 'project-pickup',
         );
-        assert.equal(diagnostic?.status, 'warning');
+        assert.equal(diagnostic, undefined);
       }
     }
     assert.equal(

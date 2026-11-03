@@ -1,4 +1,11 @@
-import type { ClaimClient, ClaimSource } from '../../../agent/assignment-claim.ts';
+import {
+  assignmentClaimKey,
+  readAssignmentClaims,
+  type ClaimClient,
+  type ClaimSource,
+} from '../../../agent/assignment-claim.ts';
+import { pickupClaimSource } from '../../../agent/assignment-claim-source.ts';
+import type { GitHubAssignmentEvent } from './work-item.ts';
 import type { GitHubCanonicalIssueComment } from './comment-admission.ts';
 import GitHubIssueCommentClient from './issue-comment-client.ts';
 import GitHubWorkEventApiClient, { githubRepositoryEndpoint } from './work-event-api-client.ts';
@@ -14,6 +21,35 @@ export default class GitHubAssignmentClaimClient implements ClaimClient {
     this.#comments = new GitHubIssueCommentClient(this.#api, 2048);
   }
 
+  async #history(source: ClaimSource) {
+    const history = await this.client.listAssignmentEvents(
+      source.owner,
+      source.repository,
+      source.number,
+    );
+    if (history.truncated) throw new Error('claim-assignment-history-incomplete');
+    return history.events.sort(eventOrder);
+  }
+
+  /** carry a pre-assignment owner into intake without publishing or holding a second election. */
+  async resolve(
+    source: ClaimSource,
+    retained: (key: string) => Promise<boolean>,
+  ): Promise<ClaimSource> {
+    if (source.pickup) return source;
+    await this.verify(source);
+    const events = await this.#history(source);
+    const index = events.findIndex((event) => event.nodeId === source.assignmentEventId);
+    if (index < 0) throw new Error('claim-assignment-changed');
+    const event = events[index]!;
+    if (event.actor.nodeId !== source.receivingNodeId) return source;
+    const pickup = pickupClaimSource(source, events[index + 1]?.nodeId ?? null, event.nodeId);
+    return (await retained(assignmentClaimKey(pickup))) ||
+      (await readAssignmentClaims(this, pickup)).length
+      ? pickup
+      : source;
+  }
+
   async verify(source: ClaimSource) {
     if (this.client.identity.nodeId !== source.receivingNodeId)
       throw new Error('claim-receiving-account-mismatch');
@@ -25,27 +61,34 @@ export default class GitHubAssignmentClaimClient implements ClaimClient {
       item.nodeId !== source.issueNodeId ||
       item.itemType !== 'issue' ||
       item.state !== 'open' ||
-      !item.assignees.some(({ nodeId }) => nodeId === source.receivingNodeId)
+      (source.pickup && !source.pickup.assignmentEventId
+        ? item.assignees.length !== 0
+        : !item.assignees.some(({ nodeId }) => nodeId === source.receivingNodeId))
     )
       throw new Error('claim-assignment-changed');
-    const history = await this.client.listAssignmentEvents(
-      source.owner,
-      source.repository,
-      source.number,
-    );
-    if (history.truncated) throw new Error('claim-assignment-history-incomplete');
-    const latest = history.events
-      .filter((event) => event.assignee.nodeId === source.receivingNodeId)
-      .sort(
-        (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.databaseId - a.databaseId,
-      )[0];
+    const events = await this.#history(source);
+    if (source.pickup && !source.pickup.assignmentEventId) {
+      if ((events[0]?.nodeId ?? null) !== source.pickup.previousEventId)
+        throw new Error('claim-assignment-changed');
+      return;
+    }
+    const eventId = source.pickup?.assignmentEventId ?? source.assignmentEventId;
+    const latest = events.find((event) => event.assignee.nodeId === source.receivingNodeId);
     if (
-      latest?.nodeId !== source.assignmentEventId ||
+      latest?.nodeId !== eventId ||
       latest.event !== 'assigned' ||
       latest.actor.nodeId !== source.assignerNodeId ||
       latest.actor.type !== 'User'
     )
       throw new Error('claim-assignment-changed');
+    if (source.pickup) {
+      const index = events.findIndex((event) => event.nodeId === eventId);
+      if (
+        item.assignees.length !== 1 ||
+        (events[index + 1]?.nodeId ?? null) !== source.pickup.previousEventId
+      )
+        throw new Error('claim-assignment-changed');
+    }
   }
 
   async list(source: ClaimSource): Promise<GitHubCanonicalIssueComment[]> {
@@ -109,4 +152,8 @@ export default class GitHubAssignmentClaimClient implements ClaimClient {
     const endpoint = await this.#current(source, commentId, previousBody);
     await this.#api.request(['--method', 'DELETE', endpoint], 'claim cleanup');
   }
+}
+
+function eventOrder(a: GitHubAssignmentEvent, b: GitHubAssignmentEvent) {
+  return Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.databaseId - a.databaseId;
 }

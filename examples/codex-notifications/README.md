@@ -18,7 +18,7 @@ accept feedback, or publish until activation and native ownership are verified.
 
 ## Notes
 
-- Project pickup selection and uncertain-assignment recovery have controlled native-adapter coverage in `test/project-pickup-selection.component.spec.ts`. The packaged check below rejects pickup designated to another runtime before activation. Native desktop activation still needs app receipts; unattended acceptance remains [#529](https://github.com/tanaabased/openclaw-agent-system/issues/529). This headless scenario does not establish desktop activation or unattended execution.
+- Project pickup selection and uncertain-assignment recovery have controlled native-adapter coverage in `test/project-pickup-selection.component.spec.ts`. The packaged check below validates coordinator-free routing and rejects pickup before installation activation. Native desktop activation still needs app receipts; unattended acceptance remains [#529](https://github.com/tanaabased/openclaw-agent-system/issues/529). This headless scenario does not establish desktop activation or unattended execution.
 
 - These direct Ubuntu checks use isolated Codex state without hosted secrets or model generation. Both active and paused fixtures declare V3; a paused declaration retains configuration while future occurrences remain disabled.
 - Pending relocation: explicit-target reset refusal, host/update/quiet heartbeat cases, restored pre-reset history, removed configuration fields, and cadence-change checks remain below.
@@ -34,6 +34,7 @@ accept feedback, or publish until activation and native ownership are verified.
 
 - **Custom initial routing:** configure a discoverable routing skill with file guidance, admit one disposable issue, and verify the method and guidance reach scheduled preparation. Inspect **Routing method** after **Selected**, with the linked code-formatted skill and `+ custom guidance`; with debug on, inspect separate **Model routing instructions** details. Repeat through manual launch. Guidance-only reads `Default routing + custom guidance`; default-only and legacy missing metadata add no method line. Later configuration edits must not rewrite that decision or its **Source** fact, and exact guidance must stay out of public summaries. Confirm verified Complexity and explicit overrides win, instruction edits before preparation require reassessment, and recovery/follow-ups keep the retained choice. This includes native skill interpretation and is not proved by headless checks; no automatic planning-to-implementation switch is promised.
 
+- **Project pickup routing:** activate coordinator-free pickup on isolated Codex and OpenClaw participants sharing a receiving account and a UUID pool. Use one disposable unassigned issue in the configured milestone. Require ownership before self-assignment, then retain the same claim and owner through assignment intake and native creation. Observe the assignment from the losing participant before winner readback; it must not create work. Repeat after interruption with the original assignment and claim, and verify that a later route edit cannot transfer ownership. Native scheduled timing and delivery remain the #529 acceptance boundary.
 - **Admission and denial recovery:** reconcile the installed schedule, preserve exact commands through host-access/busy retries, and verify one native creation independently. Deny one disposable issue's exact preparation/create request while another eligible issue proceeds. Report the denied operation, safely redacted actual reason or its unavailability, recovery IDs, and the other issue's started link. Preserve the denied issue's hold/source across restart, coordinator replacement, and reassignment; only a digest-bound operator `retry-denied` permits a fresh attempt. Verified non-creation releases capacity; uncertain creation retains it. Shared refusals, unrelated denials, altered commands, or incomplete history cannot authorize continuation.
 - **Routing:** verified medium Complexity must win over a high coordinator content assessment, retaining source/reason and one chat. Without verified Complexity, bounded content assessment selects the profile. Verify the same contract in OpenClaw without credential edits or reassignment.
 - **Operator tuning:** after verified creation, change only model, then only reasoning effort through native controls. Continue assessment, work, feedback, and summary recovery in the same chat/worktree without settings overrides. Preserve original routing and recorded assessment receipts; verify current readback separately, including unavailable settings. Initial creation mismatches, changed custody, native denial, and missing results must still fail. Component checks exercise fake native boundaries; this installed/desktop acceptance remains separate.
@@ -222,7 +223,7 @@ node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-no
   | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "manifest-unknown-key")'
 test ! -d "$CODEX_HOME/automations"
 
-# should reject packaged pickup on a runtime other than its designated coordinator
+# should validate routed pickup and require explicit installation activation
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
@@ -231,7 +232,7 @@ node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-no
 test ! -d "$CODEX_HOME/automations"
 node "$runtime" binding bind --plugin-data "$root/pickup-data" --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/project-pickup" --confirm | jq -e '.status == "bound"'
 if output=$(printf '%s\n' '{}' | node "$runtime" intake pickup --plugin-data "$root/pickup-data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "project-pickup-coordinator-mismatch"'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "instance-install-required"'
 test ! -d "$CODEX_HOME/automations"
 
 # should expose packaged dispatch without letting intake-only state launch work
