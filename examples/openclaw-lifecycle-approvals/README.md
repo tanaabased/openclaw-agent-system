@@ -42,10 +42,10 @@ git add tracked.txt
 git -c user.name=Fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false commit -m 'seed local fixture'
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/codex"
 openclaw agent-system install --skip-setup --yes
-openclaw agent-system tool worktree -- prepare fixture lifecycle-approval HEAD > "$TMPDIR/lifecycle-runtime-codex-worktree.json"
+openclaw agent-system tool worktree -- prepare fixture lifecycle-approval-codex HEAD > "$TMPDIR/lifecycle-runtime-codex-worktree.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/openclaw"
 openclaw agent-system install --skip-setup --yes
-openclaw agent-system tool worktree -- prepare fixture lifecycle-approval HEAD > "$TMPDIR/lifecycle-runtime-openclaw-worktree.json"
+openclaw agent-system tool worktree -- prepare fixture lifecycle-approval-openclaw HEAD > "$TMPDIR/lifecycle-runtime-openclaw-worktree.json"
 openclaw-gateway start
 ```
 
