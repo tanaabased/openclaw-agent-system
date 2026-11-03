@@ -373,6 +373,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     run: (state: DispatchState<R>, save: () => Promise<void>, signal: AbortSignal) => Promise<T>,
     options: {
       signal?: AbortSignal;
+      operation?: 'delivery-checkpoint' | 'continuation-checkpoint';
       reconcile?: (
         before: DispatchState<R>,
         proposed: DispatchState<R>,
@@ -384,69 +385,83 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     const signal = options.signal ?? new AbortController().signal;
     signal.throwIfAborted();
     await assertNotificationManagement(this.root, this.scope);
-    await this.reconcile();
+    await this.reconcile(signal);
     const state = await this.read();
     let before = structuredClone(state);
     return run(
       state,
       async () => {
         signal.throwIfAborted();
-        await this.exclusive(async (current, save) => {
-          signal.throwIfAborted();
-          if (before.resetGeneration !== current.resetGeneration)
-            throw new Error('notification-reset-stale-operation');
-          for (const record of state.records) {
-            const previous = before.records.find((entry) => entry.id === record.id);
-            const fresh = current.records.find((entry) => entry.id === record.id);
-            if (!previous || isDeepStrictEqual(previous, record)) continue;
-            if (
-              !fresh ||
-              [
-                'reset',
-                'retired',
-                'retirement',
-                'supersededBy',
-                'feedbackReactivation',
-                'intakeId',
-                'manualIssue',
-                'handoff',
-                'manifestDigest',
-                'request',
-                'assessment',
-                'threadId',
-                'worktree',
-                'effective',
-                'retainedHistory',
-              ].some((key) => !isDeepStrictEqual(previous[key as keyof R], fresh[key as keyof R]))
-            )
-              throw Object.assign(new Error(stateSnapshotConflictCode), {
-                code: stateSnapshotConflictCode,
-              });
-          }
-          options.reconcile?.(before, state, current);
-          const merged = mergeStateSnapshot(before, state, current) as DispatchState<R>;
-          options.validate?.(current, merged);
-          this.validate(merged);
-          if (!isDeepStrictEqual(current, merged)) {
-            refreshStateSnapshot(current, merged);
-            await save();
-          }
-          refreshStateSnapshot(state, current);
-          before = structuredClone(current);
-        }, true);
+        await this.exclusive(
+          async (current, save) => {
+            signal.throwIfAborted();
+            if (before.resetGeneration !== current.resetGeneration)
+              throw new Error('notification-reset-stale-operation');
+            for (const record of state.records) {
+              const previous = before.records.find((entry) => entry.id === record.id);
+              const fresh = current.records.find((entry) => entry.id === record.id);
+              if (!previous || isDeepStrictEqual(previous, record)) continue;
+              if (
+                !fresh ||
+                [
+                  'reset',
+                  'retired',
+                  'retirement',
+                  'supersededBy',
+                  'feedbackReactivation',
+                  'intakeId',
+                  'manualIssue',
+                  'handoff',
+                  'manifestDigest',
+                  'request',
+                  'assessment',
+                  'threadId',
+                  'worktree',
+                  'effective',
+                  'retainedHistory',
+                ].some((key) => !isDeepStrictEqual(previous[key as keyof R], fresh[key as keyof R]))
+              )
+                throw Object.assign(new Error(stateSnapshotConflictCode), {
+                  code: stateSnapshotConflictCode,
+                });
+            }
+            options.reconcile?.(before, state, current);
+            const merged = mergeStateSnapshot(before, state, current) as DispatchState<R>;
+            options.validate?.(current, merged);
+            this.validate(merged);
+            if (!isDeepStrictEqual(current, merged)) {
+              refreshStateSnapshot(current, merged);
+              await save();
+            }
+            // checkpoints compare durable json, not optional properties omitted by serialization.
+            const committed = JSON.parse(JSON.stringify(current)) as DispatchState<R>;
+            refreshStateSnapshot(state, committed);
+            before = structuredClone(committed);
+          },
+          true,
+          options.operation,
+          signal,
+        );
       },
       signal,
     );
   }
 
   /** Existing runtime transactions recover eligible history before accepting new effects. */
-  async reconcile() {
-    await this.exclusive(async () => {}, true);
+  async reconcile(signal?: AbortSignal) {
+    await this.exclusive(async () => {}, true, 'dispatch-reconcile', signal);
   }
 
   async exclusive<T>(
     run: (state: DispatchState<R>, save: () => Promise<void>, signal: AbortSignal) => Promise<T>,
-    waitForLock = false,
+    waitForLock = true,
+    operation:
+      | 'dispatch-commit'
+      | 'dispatch-reconcile'
+      | 'occurrence-registration'
+      | 'delivery-checkpoint'
+      | 'continuation-checkpoint' = 'dispatch-commit',
+    signal?: AbortSignal,
   ): Promise<T> {
     await ensurePrivateStateDirectories({
       directories: [this.root],
@@ -458,9 +473,15 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     const acquire = (wait: boolean) =>
       acquirePrivateStateFileLock(this.path, {
         staleMs: 30000,
-        retries: wait
-          ? { retries: 40, factor: 1, minTimeout: 250, maxTimeout: 250 }
-          : { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
+        contention: {
+          category: 'dispatch',
+          operation,
+          // preserve the existing forty 250-ms retry envelope, including local queue time.
+          timeoutMs: wait ? 10_000 : 0,
+          retryMs: 250,
+          signal,
+        },
+        retries: { retries: 0, factor: 1, minTimeout: 250, maxTimeout: 250 },
       });
     let lock: PrivateStateFileLockHandle | undefined = await acquire(waitForLock);
     const controller = new AbortController();
@@ -471,6 +492,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
     };
     followLease();
     const guard = {
+      path: lock.path,
       signal: controller.signal,
       assertHeld() {
         if (!lock) throw reacquireFailure ?? new Error('dispatch-journal-lease-suspended');
@@ -572,7 +594,7 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
               archiveFailed = true;
             }
             try {
-              lock = await acquire(true);
+              lock = await outsideJournal(() => acquire(true));
               followLease();
             } catch (error) {
               reacquireFailure = error;

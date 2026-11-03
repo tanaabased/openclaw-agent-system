@@ -1,3 +1,4 @@
+import codexCommit from './codex-commit.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import { managedPullRequest, managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
 
@@ -175,8 +176,12 @@ export default async function runCodexDelivery(
     ? undefined
     : await connectCodexThreads(current.workspace, current.codexHome);
   const native = deps.native ?? codexDispatchNative(connection!.request);
+  const commitOptions = {
+    ...codexCommit(current.policy?.policy.maxConcurrentItems, input.id),
+    operation: 'delivery-checkpoint' as const,
+  };
   try {
-    return await store.exclusive(async (state, save, signal) => {
+    return await store.transaction(async (state, save, signal) => {
       const record = state.records.find((entry) => entry.id === input.id);
       if (
         !record?.request ||
@@ -404,7 +409,12 @@ export default async function runCodexDelivery(
               commentFlow,
             }),
             ...(implementationInstructions ? [implementationInstructions] : []),
-            announcementPresentation(previous.announcement, managedTargetUrl(intake)),
+            announcementPresentation(
+              previous.announcement,
+              managedTargetUrl(intake),
+              undefined,
+              previous.announcementRecovery,
+            ),
             ...presentationNotices.map((notice) => notice.message),
           ].join('\n\n'),
         };
@@ -642,6 +652,9 @@ export default async function runCodexDelivery(
         attached: previous?.attached ?? false,
         cardAttempts: previous?.cardAttempts ?? 0,
         ...(previous?.announcement ? { announcement: previous.announcement } : {}),
+        ...(previous?.announcementRecovery
+          ? { announcementRecovery: previous.announcementRecovery }
+          : {}),
         notices: previous?.notices ?? [],
       };
       if (
@@ -698,6 +711,7 @@ export default async function runCodexDelivery(
           signal,
         };
         const announce = await deliveryAnnouncement({
+          now: (deps.now ?? Date.now)(),
           operation: input.action,
           digest: input.digest,
           publicText: input.publicText,
@@ -871,7 +885,7 @@ export default async function runCodexDelivery(
         }
       }
       throw new Error('delivery-action-invalid');
-    }, true);
+    }, commitOptions);
   } finally {
     await connection?.close();
   }

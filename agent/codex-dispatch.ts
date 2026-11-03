@@ -1,3 +1,4 @@
+import workflowFailure from './workflow-failure.ts';
 import { automationHash } from './automation-hash.ts';
 import codexIssueLaunch from './codex-issue-launch.ts';
 import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
@@ -463,10 +464,12 @@ async function executeCodexDispatch(
       return result;
     })
     .catch((error: unknown) => {
-      if (nativeObject(error) && error.code === 'private-state-file-lock-busy')
+      if (nativeObject(error) && error.code === 'private-state-file-lock-busy') {
+        const contention = workflowFailure(error, error.code).contention;
         return {
           status: 'busy',
           changed: false,
+          ...(contention ? { contention } : {}),
           ...(childAction
             ? {
                 instruction:
@@ -474,6 +477,7 @@ async function executeCodexDispatch(
               }
             : {}),
         };
+      }
       throw error;
     });
 }

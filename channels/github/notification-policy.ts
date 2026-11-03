@@ -1,6 +1,6 @@
 import { githubIdentitySet } from './provider/work-item.ts';
 import { projectPickupConfigurationCode } from './project-pickup-schema.ts';
-import { repositoryScopeCandidate } from './repository-scope.ts';
+import { repositoryRoutingDiagnostics, repositoryScopeCandidate } from './repository-scope.ts';
 import type { GitHubNotificationsDeclaration } from './workflow-policy.ts';
 import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
 import type { ManifestDiagnostic } from '../../manifest/types.ts';
@@ -12,7 +12,7 @@ export function validateGitHubNotificationPolicy(
 ): ManifestDiagnostic[] {
   const policy = github?.notifications;
   if (!policy) return [];
-  const diagnostics: ManifestDiagnostic[] = [];
+  const diagnostics = policy.routing ? repositoryRoutingDiagnostics(policy.routing) : [];
   if (legacyOwnersDeclared)
     diagnostics.push({
       code:
@@ -44,7 +44,7 @@ export function validateGitHubNotificationPolicy(
         severity: 'error',
       });
     const [owner, name] = policy.projectPickup.projects[0]!.repository.split('/');
-    if (!repositoryScopeCandidate(policy, owner!, name!))
+    if (!repositoryScopeCandidate(policy, owner!, name!, 'project-pickup'))
       diagnostics.push({
         code: 'github-project-pickup-repository-outside-workflow',
         fieldPath: '/github/project-pickup/projects/0/repository',
@@ -93,11 +93,7 @@ export function validateGitHubNotificationPolicy(
 }
 
 export interface GitHubNotificationRuntimeDiagnostic {
-  code:
-    | 'github-notification-runtime-unsupported'
-    | 'project-pickup-coordinator-required'
-    | 'project-pickup-coordinator-mismatch'
-    | 'project-pickup-schedule-unsupported';
+  code: 'github-notification-runtime-unsupported' | 'project-pickup-schedule-unsupported';
   fieldPath: string;
   message: string;
   remediation: string;
@@ -112,15 +108,15 @@ export function githubNotificationRuntimeDiagnostics(
 ): GitHubNotificationRuntimeDiagnostic[] {
   if (!declaration || !declaration.runtimes.includes(runtime)) return [];
   const diagnostics: GitHubNotificationRuntimeDiagnostic[] = [];
-  const pickupCode = projectPickupConfigurationCode(declaration, runtime);
+  const pickupCode = projectPickupConfigurationCode(declaration);
   if (pickupCode)
     diagnostics.push({
       code: pickupCode,
       fieldPath: '/github/project-pickup',
       message:
-        'Project pickup requires its designated runtime and installation, with intake cadence no longer than the pickup window.',
+        'Project pickup requires a recurring schedule with intake cadence no longer than the pickup window.',
       remediation:
-        'Set project-pickup.coordinator to the intended runtime and existing installation ID, and choose a supported cadence within window-minutes. Run Install only on the designated installation; ordinary assignments remain independent.',
+        'Choose a supported recurring schedule and an intake cadence within window-minutes. Placement follows github.routing; ordinary assignments remain independent.',
       status: 'warning',
       workflow: 'project-pickup',
     });

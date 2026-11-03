@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util';
+
 import assessmentMaterial from './assessment-material.ts';
 import implementationMaterial from './implementation-material.ts';
 import recoverOpenClawTask from './openclaw-dispatch-recovery.ts';
@@ -349,7 +351,10 @@ export default class OpenClawDispatch {
         .report(manifest, workspace, caller, authority)
         .catch((error: unknown) => {
           if (openClawDispatchFailureCode(error) === privateStateFileLockBusyErrorCode)
-            return { status: 'busy' as const, code: privateStateFileLockBusyErrorCode };
+            return {
+              status: 'busy' as const,
+              ...workflowFailure(error, privateStateFileLockBusyErrorCode),
+            };
           throw error;
         });
     if (
@@ -398,24 +403,30 @@ export default class OpenClawDispatch {
     )
       throw new Error('dispatch-intake-caller-required');
     if (!childAction && !operator) {
-      await current.journal.exclusive(async (state, save) => {
-        const accepted = state.openclawOccurrence;
-        if (
-          accepted &&
-          accepted.sessionKey === caller.sessionKey &&
-          accepted.sessionId === caller.sessionId &&
-          accepted.runId === caller.runId
-        )
-          return;
+      const before = await current.journal.read();
+      if (!before.openclawOccurrence || !sameIntakeRun(before.openclawOccurrence, caller)) {
         const code = await this.dependencies.intake.readiness(manifest, current.workspace);
         if (code) throw new Error(code);
-        state.openclawOccurrence = {
-          sessionKey: caller.sessionKey,
-          sessionId: caller.sessionId,
-          runId: caller.runId,
-        };
-        await save();
-      });
+        await authority.assertCurrent?.();
+        await current.journal.exclusive(
+          async (state, save) => {
+            await authority.assertCurrent?.();
+            if (state.resetGeneration !== before.resetGeneration)
+              throw new Error('notification-reset-stale-operation');
+            if (state.openclawOccurrence && sameIntakeRun(state.openclawOccurrence, caller)) return;
+            if (!isDeepStrictEqual(state.openclawOccurrence, before.openclawOccurrence))
+              throw new Error('dispatch-occurrence-mismatch');
+            state.openclawOccurrence = {
+              sessionKey: caller.sessionKey,
+              sessionId: caller.sessionId,
+              runId: caller.runId,
+            };
+            await save();
+          },
+          true,
+          'occurrence-registration',
+        );
+      }
     }
     if (input.action === 'next')
       await reconcileOpenClawLifecycle({ service: this, manifest, workspace, authority });
@@ -623,7 +634,7 @@ export default class OpenClawDispatch {
           authority.signal?.throwIfAborted();
           return {
             status: 'busy' as const,
-            code: privateStateFileLockBusyErrorCode,
+            ...workflowFailure(error, privateStateFileLockBusyErrorCode),
             ...('id' in input ? { id: input.id } : {}),
           };
         }

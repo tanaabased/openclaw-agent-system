@@ -129,6 +129,7 @@ describe('agent/assignment-claim', () => {
     passId = 'second',
     override: Partial<ClaimClient> = {},
     hasCapacity = true,
+    eligibleInstanceIds?: string[],
   ) =>
     claimAssignment({
       store: stores[index]!,
@@ -136,8 +137,9 @@ describe('agent/assignment-claim', () => {
       source,
       passId,
       hasCapacity,
+      eligibleInstanceIds,
     });
-  const race = async () => {
+  const race = async (eligibleInstanceIds?: string[]) => {
     let reads = 0;
     let release!: () => void;
     const barrier = new Promise<void>((resolve) => {
@@ -151,8 +153,86 @@ describe('agent/assignment-claim', () => {
         return snapshot;
       },
     };
-    return Promise.all([pass(0, 'first', override), pass(1, 'first', override)]);
+    return Promise.all([
+      pass(0, 'first', override, true, eligibleInstanceIds),
+      pass(1, 'first', override, true, eligibleInstanceIds && [...eligibleInstanceIds].reverse()),
+    ]);
   };
+
+  it('should elect one eligible claimant regardless of pool ordering', async () => {
+    const pool = await Promise.all(
+      stores.map(async (store) => (await store.identity()).instanceId),
+    );
+    assert.ok((await race(pool)).every((claim) => claim.status === 'pending'));
+    const results = await Promise.all(
+      stores.map((_store, index) => pass(index, 'second', {}, true, [...pool].reverse())),
+    );
+    assert.deepEqual(results.map((result) => result.status).sort(), ['other-owner', 'owned']);
+    assert.equal(comments.length, 1);
+    assert.ok(results.every((result) => result.winnerId === comments[0]!.databaseId));
+  });
+
+  it('should restrict new claims to the eligible pool without transferring visible ownership', async () => {
+    const a = (await stores[0]!.identity()).instanceId;
+    const b = (await stores[1]!.identity()).instanceId;
+    const select = (
+      index: number,
+      eligibleInstanceIds: string[],
+      passId = 'first',
+      hasCapacity = true,
+      nativeAttempted = false,
+    ) =>
+      selectAssignmentClaim({
+        store: stores[index]!,
+        client,
+        source,
+        passId,
+        hasCapacity,
+        mode: 'swarm',
+        eligibleInstanceIds,
+        nativeAttempted,
+      });
+    const excluded = await select(1, [a]);
+    assert.equal(excluded.code, 'claim-route-instance-ineligible');
+    assert.equal(excluded.routing?.eligible, false);
+    assert.deepEqual(excluded.routing?.eligibleInstanceIds, [a]);
+    assert.equal((await select(0, [a], 'first', false)).status, 'at-capacity');
+    assert.equal(writes, 0);
+    assert.equal((await select(0, [a])).status, 'pending');
+    assert.equal((await select(0, [a, b], 'second')).status, 'owned');
+    const moved = await select(0, [b], 'third');
+    assert.equal(moved.code, 'claim-route-owner-ineligible');
+    assert.equal(moved.routing?.ownerInstanceId, a);
+    assert.equal((await select(1, [b], 'second')).status, 'other-owner');
+    assert.equal(writes, 1);
+    assert.equal((await select(0, [b], 'fourth', true, true)).status, 'owned');
+    await acceptAssignmentClaim({
+      store: stores[0]!,
+      client,
+      source,
+      nativeReceipt: 'original-chat',
+    });
+    await stores[0]!.rename('renamed-owner');
+    assert.equal((await select(0, [b], 'fifth')).status, 'owned');
+    assert.equal((await select(1, [b], 'third')).status, 'other-owner');
+    assert.equal(writes, 1);
+  });
+
+  it('should leave an unknown or rotated target pending without falling back', async () => {
+    const identity = await stores[0]!.identity();
+    await stores[0]!.rotate(identity.instanceId);
+    const result = await selectAssignmentClaim({
+      store: stores[0]!,
+      client,
+      source,
+      passId: 'new',
+      hasCapacity: true,
+      mode: 'swarm',
+      eligibleInstanceIds: [identity.instanceId],
+    });
+    assert.equal(result.code, 'claim-route-instance-ineligible');
+    assert.equal(writes, 0);
+  });
 
   it('should transfer only the exact accepted local claim and converge after reservation', async () => {
     await pass(0, 'first');

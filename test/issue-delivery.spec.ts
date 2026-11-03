@@ -71,6 +71,50 @@ function fixture() {
 }
 
 describe('github delivery head observation', () => {
+  for (const variant of ['missing', 'unobserved', 'malformed'] as const)
+    it(`should distinguish ${variant} closing association without writing a link`, async () => {
+      const f = fixture();
+      f.observed.headSha = f.input.headSha;
+      const execute = f.provider.client.execute;
+      f.provider.client.execute = async (argv) => {
+        assert.ok(!argv.includes('POST') && !argv.includes('PATCH'));
+        let value: unknown;
+        if (argv.includes('graphql'))
+          value =
+            variant === 'malformed' ? null : { id: 'PR_7', closingIssuesReferences: { nodes: [] } };
+        else if (argv.includes('repos/owner/repo/issues/3'))
+          value = { databaseId: 3, nodeId: 'I_issue', number: 3, title: 'Issue' };
+        else if (argv.includes('repos/owner/repo/pulls'))
+          value = [
+            {
+              baseRef: 'main',
+              body: variant === 'missing' ? 'Mentions #3' : 'Closes #3',
+              headRef: 'task',
+              headRepository: 'owner/repo',
+              itemNodeId: 'PR_7',
+              number: 7,
+              state: 'open',
+              title: 'Title',
+            },
+          ];
+        else return execute(argv);
+        return {
+          exitCode: 0,
+          stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(value),
+          stderr: '',
+          timedOut: false,
+          truncated: false,
+        };
+      };
+      await assert.rejects(f.provider.announcement(f.input), {
+        message:
+          variant === 'missing'
+            ? 'github-delivery-closing-reference-missing'
+            : variant === 'unobserved'
+              ? 'github-delivery-linkage-unverified'
+              : 'github-delivery-linkage-observation-invalid',
+      });
+    });
   it('should conditionally revalidate delivery reads and still reject a changed remote head', async () => {
     const f = fixture();
     f.observed.headSha = f.input.headSha;
@@ -193,6 +237,20 @@ describe('shared delivery push recovery', () => {
       },
     };
   }
+
+  it('should never replay a reserved push when its remote outcome is still unknown', async () => {
+    const f = publicationFixture();
+    let attempts = 0;
+    f.input.push = async () => {
+      attempts++;
+      throw new Error('transport-lost');
+    };
+    await assert.rejects(publishIssueDelivery(f.input), /transport-lost/);
+    f.restore();
+    await assert.rejects(publishIssueDelivery(f.input), /delivery-push-uncertain/);
+    assert.equal(attempts, 1);
+    assert.equal(f.input.delivery.pendingPush?.head, f.input.publication.headSha);
+  });
 
   it('should retain the exact pre-push head across restart and reconcile without pushing twice', async () => {
     const f = publicationFixture();

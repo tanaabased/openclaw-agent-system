@@ -170,6 +170,105 @@ describe('agent/codex-delivery', () => {
     });
     return { eventId, source };
   }
+  it('should commit unrelated progress while delivery native readback is delayed', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const find = deps.native!.find;
+    const pending = request(
+      'prepare',
+      {},
+      {
+        native: {
+          ...deps.native!,
+          find: async (...args) => {
+            entered.resolve();
+            await release.promise;
+            return find(...args);
+          },
+        },
+      },
+    );
+    await entered.promise;
+    try {
+      const other = new CodexDispatchStore(store.root, store.scope);
+      await other.exclusive(async (state, save) => {
+        state.discoveryCheckedAt = baseline;
+        await save();
+      });
+      assert.equal((await other.read()).discoveryCheckedAt, baseline);
+    } finally {
+      release.resolve();
+      await pending;
+    }
+  });
+
+  it('should reserve one push and pr creation while another delivery and unrelated commit overlap', async () => {
+    const content = { title: 'Authored title', body: 'Authored body.' };
+    const preview = await request('prepare', content);
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const git = deps.git!;
+    const pending = request(
+      'publish',
+      { ...content, digest: requiredDigest(preview) },
+      {
+        git: async (...args) => {
+          if (args[1].includes('push')) {
+            entered.resolve();
+            await release.promise;
+          }
+          return git(...args);
+        },
+      },
+    );
+    await entered.promise;
+    try {
+      const other = new CodexDispatchStore(store.root, store.scope);
+      await other.exclusive(async (state, save) => {
+        state.discoveryCheckedAt = baseline;
+        await save();
+      });
+      assert.deepEqual((await other.read()).records[0]!.delivery!.pendingPush, {
+        previousHead: '',
+        head,
+      });
+      const competitor = await request('publish', { ...content, digest: requiredDigest(preview) });
+      assert.equal(competitor.status, 'prepared');
+      assert.equal(creates, 0);
+    } finally {
+      release.resolve();
+    }
+    assert.equal((await pending).status, 'published');
+    assert.equal(creates, 1);
+    assert.equal(gitCalls.filter((args) => args.includes('push')).length, 1);
+    assert.equal((await store.read()).discoveryCheckedAt, baseline);
+  });
+
+  it('should retain attempted effects when contention arrives after a push', async () => {
+    const git = deps.git!;
+    deps.git = async (...args) => {
+      const result = await git(...args);
+      if (args[1].includes('push'))
+        throw Object.assign(new Error('checkpoint unavailable'), {
+          code: 'private-state-file-lock-busy',
+        });
+      return result;
+    };
+    await assert.rejects(publish(), (error: unknown) => {
+      assert.ok(error instanceof CodexDeliveryFailure);
+      assert.equal(error.code, 'private-state-file-lock-busy');
+      return true;
+    });
+    const attempted = (await store.read()).records[0]!.delivery!;
+    assert.equal(attempted.pendingPush!.head, head);
+    assert.equal(attempted.reconciled, false);
+    assert.equal(creates, 0);
+    deps.git = git;
+    assert.equal((await publish()).status, 'published');
+    assert.equal(creates, 1);
+    assert.equal(gitCalls.filter((args) => args.includes('push')).length, 1);
+  });
+
   it('should retry pr creation after a definite provider rejection', async () => {
     rejectCreation = true;
     await assert.rejects(publish(), /403/);
@@ -1163,7 +1262,7 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 1);
     assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
   });
-  it('should serialize competing publications and invalidate the consumed preview', async () => {
+  it('should reject a competing publication reservation without replaying its effects', async () => {
     const preview = await request('prepare');
     const outcomes = await Promise.allSettled([
       request('publish', { digest: requiredDigest(preview) }),
@@ -1174,10 +1273,14 @@ describe('agent/codex-delivery', () => {
         (outcome) => outcome.status === 'fulfilled' && outcome.value.status === 'published',
       ).length,
       1,
+      JSON.stringify(outcomes),
     );
     assert.equal(
       outcomes.filter(
-        (outcome) => outcome.status === 'fulfilled' && outcome.value.status === 'prepared',
+        (outcome) =>
+          (outcome.status === 'fulfilled' && outcome.value.status === 'prepared') ||
+          (outcome.status === 'rejected' &&
+            /private-state-snapshot-conflict/.test(String(outcome.reason))),
       ).length,
       1,
     );

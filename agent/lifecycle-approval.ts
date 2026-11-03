@@ -14,6 +14,7 @@ import type AgentManifestService from '../manifest/service.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
 import { lifecycleParameters, type LifecycleToolName } from './lifecycle-tool-contract.ts';
 import AgentSystemToolError from '../api/error.ts';
+import loadBoundToolManifest from '../api/manifest-binding.ts';
 
 type LoadedManifest = Extract<AgentManifestLoadResult, { status: 'loaded' }>;
 export interface ApprovalContext {
@@ -69,7 +70,10 @@ export default class AgentLifecycleApproval {
 
   constructor(
     private readonly dependencies: {
-      manifestService: Pick<AgentManifestService, 'loadForAgentId' | 'withSnapshot'>;
+      manifestService: Pick<
+        AgentManifestService,
+        'loadForAgentId' | 'loadForCommandDirectory' | 'withSnapshot'
+      >;
       doctorService: Pick<AgentDoctorService, 'inspect'>;
       installService: Pick<AgentInstallService, 'install'>;
       automation?(
@@ -260,14 +264,11 @@ export default class AgentLifecycleApproval {
         await pending.automation.assertCurrent();
       }
       assertEnrollmentCurrent();
-      if (!context.workspaceDir || (await realpath(context.workspaceDir)) !== pending.workspaceDir)
-        denied();
-      const current = await this.dependencies.manifestService.loadForAgentId(
-        context.agentId!,
-        'service',
-      );
+      const current = await loadBoundToolManifest(this.dependencies.manifestService, {
+        source: 'tool',
+        toolContext: context,
+      });
       if (
-        current.status !== 'loaded' ||
         current.digest !== pending.loaded.digest ||
         current.path !== pending.loaded.path ||
         current.manifest.agent.id !== context.agentId ||

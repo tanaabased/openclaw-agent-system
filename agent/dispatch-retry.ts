@@ -3,13 +3,28 @@ import { Type } from 'typebox';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import workflowFailure from './workflow-failure.ts';
 
+export const dispatchRetryLimit = 5;
+
+export function dispatchRetryDeadline(
+  attempts: number,
+  now: number,
+  diagnostic?: ProviderDiagnostic,
+  recheck = false,
+) {
+  return Math.max(
+    now + (recheck ? 300000 : Math.min(300000 * 2 ** (attempts - 1), 3600000)),
+    now + (diagnostic?.retryAfterMs ?? 0),
+    diagnostic?.resetAt ?? 0,
+  );
+}
+
 export const dispatchRetryProperties = {
   providerDiagnostic: Type.Optional(providerDiagnosticSchema),
   retry: Type.Optional(
     Type.Object(
       {
         code: Type.String({ minLength: 1, maxLength: 4096 }),
-        attempts: Type.Integer({ minimum: 1, maximum: 5 }),
+        attempts: Type.Integer({ minimum: 1, maximum: dispatchRetryLimit }),
       },
       { additionalProperties: false },
     ),
@@ -80,13 +95,9 @@ export function scheduleDispatchRetry(
     delete record.retryAfter;
     return false;
   }
-  const attempts = Math.min(5, (record.retry?.attempts ?? 0) + 1);
+  const attempts = Math.min(dispatchRetryLimit, (record.retry?.attempts ?? 0) + 1);
   record.retry = { code, attempts };
-  record.retryAfter = Math.max(
-    now + (recheck ? 300000 : Math.min(300000 * 2 ** (attempts - 1), 3600000)),
-    now + (diagnostic?.retryAfterMs ?? 0),
-    diagnostic?.resetAt ?? 0,
-  );
+  record.retryAfter = dispatchRetryDeadline(attempts, now, diagnostic, recheck);
   return true;
 }
 

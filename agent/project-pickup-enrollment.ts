@@ -34,7 +34,7 @@ const schema = Type.Object(
 );
 export type PickupEnrollment = Static<typeof recordSchema>;
 
-/** one installation owns coordinator reservations; native journals still own all issue work. */
+/** installation enrollment owns native timing; repository routing owns work placement. */
 export default class ProjectPickupEnrollmentStore {
   readonly file: PrivateStateFile;
   readonly path: string;
@@ -59,19 +59,14 @@ export default class ProjectPickupEnrollmentStore {
     return state;
   }
 
-  async owner(policy: GitHubNotificationPolicy, runtime: 'codex' | 'openclaw') {
-    const selected = policy.projectPickup?.coordinator;
-    if (!selected) throw new IntakeError('project-pickup-coordinator-required');
-    if (selected.runtime !== runtime) throw new IntakeError('project-pickup-coordinator-mismatch');
+  async owner() {
     const identity = await new AssignmentClaimStore(this.root).inspect();
     if (!identity) throw new IntakeError('instance-install-required');
-    if (selected.instanceId !== identity.instanceId)
-      throw new IntakeError('project-pickup-coordinator-mismatch');
     return identity;
   }
 
   async inspect(policy: GitHubNotificationPolicy, runtime: 'codex' | 'openclaw', scope: string) {
-    const identity = await this.owner(policy, runtime);
+    const identity = await this.owner();
     const matches = (await this.read()).records.filter(
       (record) => record.enrollment.scope === scope && record.enrollment.runtime === runtime,
     );
@@ -95,7 +90,7 @@ export default class ProjectPickupEnrollmentStore {
     timezone: string;
     now: number;
   }) {
-    const identity = await this.owner(input.policy, input.runtime);
+    const identity = await this.owner();
     const pickup = input.policy.projectPickup!;
     const [owner, name] = pickup.projects[0]!.repository.split('/') as [string, string];
     const repository = await input.client.getRepository(owner, name);
@@ -111,7 +106,7 @@ export default class ProjectPickupEnrollmentStore {
       retries: { retries: 0, factor: 1, minTimeout: 25, maxTimeout: 25 },
     });
     try {
-      const currentIdentity = await this.owner(input.policy, input.runtime);
+      const currentIdentity = await this.owner();
       if (currentIdentity.instanceId !== identity.instanceId)
         throw new IntakeError('project-pickup-enrollment-changed');
       const state = await this.read();
@@ -129,7 +124,7 @@ export default class ProjectPickupEnrollmentStore {
           existing.enrollment.workspaceDir !== input.workspaceDir ||
           existing.enrollment.agentId !== input.agentId
         )
-          throw new IntakeError('project-pickup-coordinator-conflict');
+          throw new IntakeError('project-pickup-enrollment-conflict');
         if (
           existing.enrollment.repositoryNodeId !== repository.nodeId ||
           existing.enrollment.milestoneNodeId !== milestone.nodeId ||

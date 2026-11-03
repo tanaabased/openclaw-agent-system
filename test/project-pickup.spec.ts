@@ -62,7 +62,7 @@ describe('github project pickup policy', () => {
         const diagnostic = githubNotificationRuntimeDiagnostics(policy, runtime).find(
           (entry) => entry.workflow === 'project-pickup',
         );
-        assert.equal(diagnostic?.status, 'warning');
+        assert.equal(diagnostic, undefined);
       }
     }
     assert.equal(
@@ -141,6 +141,19 @@ describe('github project pickup policy', () => {
         evidence: { projectWork: work },
       } as unknown as IntakeRecord;
       assert.equal(liveWorkflowPolicy(manifest, runtime, intake), undefined);
+      f.policy.routing = [
+        { match: 'owner/repo', workflows: ['issue-assignment'], target: 'deny' },
+        'owner/*',
+      ];
+      assert.equal(liveWorkflowPolicy(manifest, runtime, intake), undefined);
+      assert.equal(
+        liveWorkflowPolicy(manifest, runtime, {
+          ...intake,
+          evidence: { ...intake.evidence, projectWork: undefined },
+        }),
+        'repository-outside-workflow',
+      );
+      f.policy.routing = undefined;
       assert.equal(liveWorkflowPolicy(manifest, runtime, intake, 'implementation'), undefined);
       const record = {
         projectWork: work,

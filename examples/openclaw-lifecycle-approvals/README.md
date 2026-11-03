@@ -5,7 +5,7 @@ Request lifecycle tools through native OpenClaw and hosted Codex, deny installat
 ## What Belongs Here
 
 - Native approval requests and decisions bound to the originating agent/tool call.
-- Denied Install leaves check/apply markers absent, approved Install applies once, and both Doctor routes remain read-only.
+- Denied Install leaves check/apply markers absent, approved Install applies once, and both Doctor routes inspect the canonical agent from verified managed worktree sessions without applying setup.
 - Activated scheduled hosted-Codex maintenance uses the same native tools without approval, while the ordinary interactive calls still require it.
 
 ## What Does Not Belong Here
@@ -17,6 +17,7 @@ Request lifecycle tools through native OpenClaw and hosted Codex, deny installat
 
 - Strict AIMock supplies four interactive turns and one scheduled hosted-Codex maintenance turn with synthetic credentials. The Gateway, hosted Codex app server, approval protocol, and lifecycle effects remain real. The scheduled turn adds the runtime-specific proof that host occurrence identity reaches these tools; no global plugin-approval bypass is enabled.
 - The driver connects as the native Control UI approval client. It verifies protocol decisions and filesystem effects, not rendered UI. Denial may end the chat before another model request.
+- The existing interactive Doctor turns use disposable local worktrees and native `sessions.create` working directories. This adds no model turns, installs, restarts, or provider requests; canonical-workspace approval safety remains covered by Install and source components.
 
 ## Setup
 
@@ -35,10 +36,16 @@ openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
 openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","app-server","--listen","stdio://"]' --strict-json
 
 # should install both runtime workspaces without applying approval probe setup
+cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/source"
+git init --initial-branch=main
+git add tracked.txt
+git -c user.name=Fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false commit -m 'seed local fixture'
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/codex"
 openclaw agent-system install --skip-setup --yes
+openclaw agent-system tool worktree -- prepare fixture lifecycle-approval-codex HEAD > "$TMPDIR/lifecycle-runtime-codex-worktree.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/openclaw"
 openclaw agent-system install --skip-setup --yes
+openclaw agent-system tool worktree -- prepare fixture lifecycle-approval-openclaw HEAD > "$TMPDIR/lifecycle-runtime-openclaw-worktree.json"
 openclaw-gateway start
 ```
 
@@ -51,10 +58,10 @@ node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/appro
 # should allow exactly one installation through the hosted codex approval route
 node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/approval-scenario.mts" runtime-codex
 
-# should approve native openclaw doctor checks without applying setup
+# should approve native openclaw doctor from a managed worktree without applying setup
 node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/approval-scenario.mts" runtime-openclaw doctor
 
-# should resolve and approve the hosted codex doctor tool without applying setup
+# should approve hosted codex doctor from a managed worktree without applying setup
 node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-lifecycle-approvals/approval-scenario.mts" runtime-codex doctor
 
 # should complete activated hosted codex maintenance without another native approval

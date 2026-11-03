@@ -1,11 +1,16 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 export interface PrivateStateLockGuard {
+  readonly path?: string;
   assertHeld(): void;
   readonly signal: AbortSignal;
 }
 
 const guards = new AsyncLocalStorage<readonly PrivateStateLockGuard[]>();
+
+export function holdsPrivateStateLock(path: string): boolean {
+  return (guards.getStore() ?? []).some((guard) => guard.path === path);
+}
 
 /** check every enclosing lease, including an outer lease during nested state updates. */
 export function assertPrivateStateLocksHeld(): void {

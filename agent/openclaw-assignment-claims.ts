@@ -1,5 +1,6 @@
 import recoverAssignmentClaim from './assignment-claim-recovery.ts';
 import source from './assignment-claim-source.ts';
+import { retainedPickupReceipt } from './project-pickup-authority.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type {
   GitHubNotificationIntakeClient,
@@ -30,13 +31,18 @@ export default class OpenClawAssignmentClaims {
     caller: DispatchCaller;
     hasCapacity: boolean;
     mode: 'local' | 'swarm' | 'deny';
+    eligibleInstanceIds?: string[];
+    nativeAttempted?: boolean;
   }) {
     const { sessionKey, sessionId, runId } = input.caller;
     return selectAssignmentClaim({
       mode: input.mode,
+      eligibleInstanceIds: input.eligibleInstanceIds,
+      nativeAttempted: input.nativeAttempted,
       store: this.store,
       client: this.connect(input.client),
       source: source(input.intake),
+      pickupWinnerId: retainedPickupReceipt(input.intake)?.claimCommentId,
       passId: automationHash({ sessionKey, sessionId, runId }),
       hasCapacity: input.hasCapacity,
     });

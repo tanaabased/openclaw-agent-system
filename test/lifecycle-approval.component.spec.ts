@@ -4,7 +4,7 @@ import { Value } from 'typebox/value';
 
 import createInstallTool from '../tools/install/tool.ts';
 import createDoctorTool from '../tools/doctor/tool.ts';
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -126,11 +126,118 @@ async function fixture(
   };
 }
 
+async function managedFixture(backing: 'managed' | 'local' = 'managed') {
+  const f = await fixture();
+  await writeFile(join(f.root, 'agent.yaml'), `${manifest}\ngit:\n  worktrees: {}\n`);
+  const workspaceDir = join(f.root, '.agent-system/worktrees/repo-id/issue-id');
+  const admin = join(
+    f.root,
+    backing === 'managed'
+      ? '.agent-system/repositories/repo-id.git/worktrees/issue-id'
+      : 'source/.git/worktrees/issue-id',
+  );
+  await mkdir(workspaceDir, { recursive: true });
+  await mkdir(admin, { recursive: true });
+  await writeFile(join(workspaceDir, '.git'), `gitdir: ${admin}\n`);
+  await writeFile(join(admin, 'commondir'), '../..\n');
+  await writeFile(join(admin, 'gitdir'), `${workspaceDir}/.git\n`);
+  await writeFile(join(workspaceDir, 'agent.yaml'), 'agent: { id: other }\n');
+  return { ...f, admin, toolContext: { ...f.toolContext, workspaceDir } };
+}
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
 describe('agent/lifecycle-approval', () => {
+  for (const name of lifecycleToolNames) {
+    for (const backing of ['managed', 'local'] as const) {
+      it(`should execute approved ${name} from a ${backing} backed worktree against the canonical target`, async () => {
+        const f = await managedFixture(backing);
+        const request = await f.request(name, {}, f.context);
+        assert.ok(request.requireApproval.description.includes(f.root));
+        request.requireApproval.onResolution('allow-once');
+        const result = await f.approval.execute(name, {}, 'call', f.toolContext);
+        assert.equal(result.agentId, 'data');
+        assert.equal(result.workspaceDir, f.root);
+        assert.ok(f.calls.includes(name === 'agent_system_doctor' ? 'inspect' : 'reconcile'));
+        assert.ok(f.calls.includes('check-approved'));
+        const completed = [...f.calls];
+        await assert.rejects(f.approval.execute(name, {}, 'call', f.toolContext), {
+          code: 'approval_denied',
+        });
+        assert.deepEqual(f.calls, completed);
+      });
+    }
+  }
+
+  it('should report invalid worktree bindings before inspection rather than request new approval', async () => {
+    for (const change of [
+      'missing-workspace',
+      'canonical-subdirectory',
+      'worktree-subdirectory',
+      'session-agent',
+      'missing-session',
+      'missing-marker',
+      'foreign-registration',
+    ]) {
+      const f = await managedFixture();
+      if (change === 'missing-marker') await rm(join(f.toolContext.workspaceDir, '.git'));
+      if (change === 'foreign-registration')
+        await writeFile(join(f.admin, 'gitdir'), `${f.root}/.git\n`);
+      const context = {
+        ...f.toolContext,
+        ...(change === 'missing-workspace' ? { workspaceDir: undefined } : {}),
+        ...(change === 'canonical-subdirectory' ? { workspaceDir: join(f.root, 'child') } : {}),
+        ...(change === 'worktree-subdirectory'
+          ? { workspaceDir: join(f.toolContext.workspaceDir, 'child') }
+          : {}),
+        ...(change === 'session-agent' ? { sessionKey: 'agent:other:test' } : {}),
+        ...(change === 'missing-session' ? { sessionId: undefined } : {}),
+      };
+      if (context.workspaceDir) await mkdir(context.workspaceDir, { recursive: true });
+      // retain the approval key so the resolver, not missing consent, rejects the session binding.
+      const matching = await f.request('agent_system_doctor', {}, { ...f.context, ...context });
+      matching.requireApproval.onResolution('allow-once');
+      await assert.rejects(f.approval.execute('agent_system_doctor', {}, 'call', context), {
+        code: 'agent_not_resolved',
+      });
+      assert.deepEqual(f.calls, []);
+      await assert.rejects(f.approval.execute('agent_system_doctor', {}, 'call', context), {
+        code: 'approval_denied',
+      });
+    }
+  });
+
+  it('should revalidate worktree ownership before later doctor checks', async () => {
+    const f = await managedFixture();
+    const request = await f.request('agent_system_doctor', {}, f.context);
+    request.requireApproval.onResolution('allow-once');
+    f.afterInspect(async () => rm(join(f.toolContext.workspaceDir, '.git')));
+    await assert.rejects(f.approval.execute('agent_system_doctor', {}, 'call', f.toolContext), {
+      code: 'agent_not_resolved',
+    });
+    assert.deepEqual(f.calls, ['inspect']);
+  });
+
+  it('should reject an unresolved agent binding and a changed canonical approval target', async () => {
+    for (const agentId of ['other', 'data']) {
+      const f = await managedFixture();
+      const request = await f.request('agent_system_doctor', {}, f.context);
+      request.requireApproval.onResolution('allow-once');
+      const replacement = await fixture(agentId);
+      f.workspaces.data = replacement.root;
+      await assert.rejects(
+        f.approval.execute('agent_system_doctor', {}, 'call', {
+          ...f.toolContext,
+          workspaceDir: replacement.root,
+        }),
+        { code: agentId === 'other' ? 'agent_not_resolved' : 'approval_denied' },
+      );
+      assert.deepEqual(f.calls, []);
+    }
+  });
+
   it('should require interactive approval on a later turn in the same persistent automation chat', async () => {
     let scheduled = true;
     const authorization = { assertActive() {}, async assertCurrent() {} };

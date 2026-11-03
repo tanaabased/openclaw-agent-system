@@ -1,4 +1,5 @@
 import { dispatchStorageNotice } from './dispatch-storage.ts';
+import { awaitingReassignment } from './assignment-retirement.ts';
 import intakeDebug from './intake-debug.ts';
 import retirementNotice from './retirement-notice.ts';
 import workflowRecovery from './workflow-recovery.ts';
@@ -35,11 +36,19 @@ export default function openclawIntakeReport(input: {
     (record) => !record.retired && !record.retirement && !record.reset,
   );
   const retiring = state.records.filter(
-    (record) => record.retirement && !record.retired && !record.reset,
+    (record) =>
+      record.retirement && !record.retired && !record.reset && !awaitingReassignment(record),
   );
+  const retained = state.records.filter(awaitingReassignment);
   const retirementPending = retiring.length;
   const retirementNotices = state.records
-    .filter((record) => !record.reset && !record.retired && record.retirement?.code)
+    .filter(
+      (record) =>
+        !record.reset &&
+        !record.retired &&
+        record.retirement?.code &&
+        !awaitingReassignment(record),
+    )
     .map((record) => {
       const code = record.retirement!.code!;
       return {
@@ -279,6 +288,7 @@ export default function openclawIntakeReport(input: {
   lines.push(
     `**Active:** ${managing.length} issues${pending === undefined ? '' : ` · **Pending:** ${pending}`}`,
     `**Retirement pending:** ${retirementPending}`,
+    `**Awaiting reassignment:** ${retained.length}`,
     `**Slots:** ${capacity.occupied}/${input.slots} occupied · ${capacity.available} available`,
   );
   if (pending && !capacity.available)

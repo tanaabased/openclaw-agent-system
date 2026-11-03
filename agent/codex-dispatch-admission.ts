@@ -1,4 +1,4 @@
-import repositoryScope from '../channels/github/repository-scope.ts';
+import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import issueChatTitle from './issue-chat-title.ts';
@@ -199,14 +199,15 @@ async function selectClaim(
 ) {
   if ('initiation' in intake) return;
   const { state, deps, current, save } = tx;
+  const route = assignmentClaimRoute(current.policy!.policy, intake);
   if (!deps.claims) {
     await assertDormantAssignmentUnclaimed(deps.claimStore, intake);
-    if (repositoryScope(current.policy!.policy, intake.repository).decision === 'swarm')
-      throw new Error('claim-runtime-unavailable');
+    if (route.decision === 'swarm') throw new Error('claim-runtime-unavailable');
     return;
   }
   const claim = await deps.claims.select({
-    mode: repositoryScope(current.policy!.policy, intake.repository).decision,
+    mode: route.decision,
+    eligibleInstanceIds: route.eligibleInstanceIds,
     intake,
     client,
     threadId: tx.caller,

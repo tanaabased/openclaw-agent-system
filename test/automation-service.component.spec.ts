@@ -923,11 +923,10 @@ describe('agent/automation-service', () => {
 
     const fixture = selectionFixture('openclaw');
     const instanceRoot = join(root, 'instance');
-    const instance = await new AssignmentClaimStore(instanceRoot).identity();
+    await new AssignmentClaimStore(instanceRoot).identity();
     const enrollments = new ProjectPickupEnrollmentStore(instanceRoot);
     policy.projectPickup = {
       ...fixture.policy.projectPickup!,
-      coordinator: { runtime: 'openclaw', instanceId: instance.instanceId },
     };
     service.dependencies.pickup = {
       prepare: async () =>

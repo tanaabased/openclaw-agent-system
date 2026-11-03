@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { readFile, rm, stat } from 'node:fs/promises';
+import { readFile, realpath, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 
 import { getRuntimeConfig } from 'openclaw/plugin-sdk/runtime-config-snapshot';
 import { GatewayClient } from 'openclaw/plugin-sdk/gateway-runtime';
@@ -146,6 +147,25 @@ try {
   ]);
   await Promise.all([rm(checkFile, { force: true }), rm(applyFile, { force: true })]);
   const sessionKey: string = `agent:${agentId}:lifecycle-${randomUUID()}`;
+  let sessionId: string | undefined;
+  const canonicalWorkspace = await realpath(
+    fileURLToPath(new URL(agentId === 'runtime-codex' ? './codex' : './openclaw', import.meta.url)),
+  );
+  if (operation === 'doctor') {
+    const worktree = JSON.parse(
+      await readFile(join(temporaryDirectory, `lifecycle-${agentId}-worktree.json`), 'utf8'),
+    );
+    assert.equal(worktree.status, 'created');
+    assert.equal(typeof worktree.path, 'string');
+    assert.notEqual(worktree.path, canonicalWorkspace);
+    const created = await client!.request<{ sessionId: string; runStarted: boolean }>(
+      'sessions.create',
+      { key: sessionKey, agentId, label: 'Managed worktree Doctor fixture', cwd: worktree.path },
+    );
+    assert.equal(created.runStarted, false);
+    assert.equal(typeof created.sessionId, 'string');
+    sessionId = created.sessionId;
+  }
   activeSessionKey = sessionKey;
   activeRunId = undefined;
   approvalIds.clear();
@@ -153,6 +173,9 @@ try {
   const message = `Call ${testCase.toolName} exactly once with {"timeoutMs":600000} for this active agent. Discover the native OpenClaw tool if necessary. Do not invoke shell commands, another agent, or any other lifecycle tool. Let OpenClaw present its approval; after the tool finishes or is blocked, stop without retrying. This is an approval-boundary acceptance test.`;
   const accepted = await client!.request<{ runId: string }>('chat.send', {
     sessionKey,
+    ...(sessionId
+      ? { agentId, sessionId, queueMode: 'followup', deliver: false, expectedLeafEntryId: null }
+      : {}),
     message,
     idempotencyKey: randomUUID(),
   });
@@ -167,6 +190,7 @@ try {
   assert.equal(approval.request.agentId, agentId);
   assert.deepEqual(approval.request.allowedDecisions, ['allow-once', 'deny']);
   assert.ok(approval.request.description.includes(agentId));
+  assert.ok(approval.request.description.includes(canonicalWorkspace));
   assert.match(approval.request.description, /Manifest [a-f0-9]{12}/);
   await assertUntouched();
   await client!.request('plugin.approval.resolve', {

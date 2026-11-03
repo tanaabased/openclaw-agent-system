@@ -1,3 +1,8 @@
+import {
+  retainAnnouncementFailure,
+  retainedAnnouncementPublication,
+} from '../agent/delivery-announcement-recovery.ts';
+import workflowStatus from '../agent/workflow-status.ts';
 import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 import { implementationContextBudget } from '../agent/implementation-material.ts';
 import {
@@ -32,6 +37,7 @@ import { sessionDispatchRequest } from '../credentials/session-dispatch-client.t
 import GitCommandError from '../tools/git/command-error.ts';
 import GitWorktreeConflict from '../tools/git/worktree-conflict.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
+import OpenClawDispatchStore from '../agent/openclaw-dispatch-state.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
 import type { ClaimClient } from '../agent/assignment-claim.ts';
@@ -558,6 +564,66 @@ describe('agent/openclaw issue dispatch', () => {
     workflow.allowed[0] = { ...workflow.allowed[0]!, nodeId: 'foreign' };
     assert.equal((await context(routed.id)).status, 'verified');
   });
+  it('should commit unrelated progress while native readiness is delayed', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const intake = service.dependencies.intake;
+    const readiness = intake.readiness.bind(intake);
+    intake.readiness = async (...args) => {
+      entered.resolve();
+      await release.promise;
+      return readiness(...args);
+    };
+    const current = await service.scope(manifest, root);
+    const other = new OpenClawDispatchStore(current.journal.root, current.journal.scope);
+    const pending = next();
+    await entered.promise;
+    try {
+      await other.exclusive(async (state, save) => {
+        state.discoveryCheckedAt = baseline;
+        await save();
+      });
+      assert.equal((await other.read()).discoveryCheckedAt, baseline);
+    } finally {
+      release.resolve();
+      await pending;
+    }
+  });
+
+  for (const competing of ['reset', 'occurrence'] as const)
+    it(`should reject stale readiness after a competing ${competing}`, async () => {
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      service.dependencies.intake.readiness = async () => {
+        entered.resolve();
+        await release.promise;
+        return undefined;
+      };
+      const journal = (await service.scope(manifest, root)).journal;
+      const expected =
+        competing === 'reset'
+          ? /notification-reset-stale-operation/
+          : /dispatch-occurrence-mismatch/;
+      const pending = assert.rejects(next(), expected);
+      await entered.promise;
+      if (competing === 'reset') await journal.reset('new-generation');
+      else
+        await journal.exclusive(async (state, save) => {
+          state.openclawOccurrence = {
+            sessionKey: coordinator.sessionKey,
+            sessionId: coordinator.sessionId,
+            runId: 'successor',
+          };
+          await save();
+        });
+      release.resolve();
+      await pending;
+      const saved = await journal.read();
+      assert.equal(creates().length, 0);
+      if (competing === 'reset') assert.equal(saved.resetGeneration, 'new-generation');
+      else assert.equal(saved.openclawOccurrence?.runId, 'successor');
+    });
+
   for (const pause of ['native', 'manifest'] as const)
     it(`should finish an accepted run through ${pause} pause and gate the next occurrence`, async () => {
       const routed = await next();
@@ -1833,6 +1899,47 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 0);
   });
 
+  it('should enforce pool eligibility before native creation and retain the accepted owner after edits', async () => {
+    const comments = enableClaims();
+    const identity = await service.dependencies.claimStore!.identity();
+    const other = '11111111-1111-4111-8111-111111111111';
+    const route = (target: string | string[]) => {
+      manifest.github!.notifications!.routing = [{ 'owner/repo': target }, 'owner/*'];
+    };
+    route([other]);
+    const excluded = await service.run(manifest, root, coordinator, { action: 'next' });
+    assert.equal(
+      (excluded as { claim?: { code?: string } }).claim?.code,
+      'claim-route-instance-ineligible',
+    );
+    assert.equal(comments.length, 0);
+    assert.equal(creates().length, 0);
+    route([other, identity.instanceId]);
+    coordinator.runId = 'eligible-first';
+    assert.equal(
+      (await service.run(manifest, root, coordinator, { action: 'next' })).status,
+      'claim-waiting',
+    );
+    coordinator.runId = 'eligible-second';
+    const selected = await next();
+    route(other);
+    const held = await prepare(selected);
+    assert.equal(
+      (held as { claim?: { code?: string } }).claim?.code,
+      'claim-route-owner-ineligible',
+    );
+    assert.equal(creates().length, 0);
+    route(identity.instanceId);
+    coordinator.runId = 'eligible-third';
+    const ready = await next();
+    assert.equal((await prepare(ready)).status, 'session-created');
+    route([other]);
+    coordinator.runId = 'excluded-after-creation';
+    await service.run(manifest, root, coordinator, { action: 'reconcile', id: ready.id });
+    assert.equal(creates().length, 1);
+    assert.match(comments[0]!.body, /Assignment accepted/u);
+  });
+
   it('should hold a pending pilot assignment when claim election becomes dormant', async () => {
     const comments = enableClaims();
     await service.run(manifest, root, coordinator, { action: 'next' });
@@ -1953,25 +2060,26 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 0);
   });
 
-  it('should reconcile uncertain native creation before accepting the retained claim', async () => {
-    const comments = enableClaims();
-    await service.run(manifest, root, coordinator, { action: 'next' });
-    coordinator.runId = 'second-native-occurrence';
-    const routed = await next();
-    lost = true;
-    assert.equal((await prepare(routed)).status, 'waiting');
-    assert.match(comments[0]!.body, /^Assignment claim registered on /u);
-    manifest.github!.notifications!.routing = [{ 'owner/*': 'local' }];
-    service = new OpenClawDispatch(service.dependencies);
-    assert.equal(
-      (await service.run(manifest, root, coordinator, { action: 'reconcile', id: routed.id }))
-        .status,
-      'session-created',
-    );
-    assert.equal(creates().length, 1);
-    assert.equal(preparedWorktrees, 1);
-    assert.match(comments[0]!.body, /^Assignment accepted on /u);
-  });
+  for (const target of ['local', '11111111-1111-4111-8111-111111111111'])
+    it(`should reconcile uncertain native creation after a ${target === 'local' ? 'local' : 'targeted'} route edit`, async () => {
+      const comments = enableClaims();
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      coordinator.runId = 'second-native-occurrence';
+      const routed = await next();
+      lost = true;
+      assert.equal((await prepare(routed)).status, 'waiting');
+      assert.match(comments[0]!.body, /^Assignment claim registered on /u);
+      manifest.github!.notifications!.routing = [{ 'owner/*': target }];
+      service = new OpenClawDispatch(service.dependencies);
+      assert.equal(
+        (await service.run(manifest, root, coordinator, { action: 'reconcile', id: routed.id }))
+          .status,
+        'session-created',
+      );
+      assert.equal(creates().length, 1);
+      assert.equal(preparedWorktrees, 1);
+      assert.match(comments[0]!.body, /^Assignment accepted on /u);
+    });
 
   async function assignments(count: number, limit: number) {
     multiple = true;
@@ -3382,6 +3490,77 @@ describe('agent/openclaw issue dispatch', () => {
   const workPass = (runId: string) =>
     service.run(manifest, root, { ...coordinator, runId }, { action: 'next' });
 
+  it('should bound scheduled announcement checks without sending another openclaw delivery turn', async () => {
+    const id = await readyWork('work');
+    await workPass('implementation-pass');
+    active = false;
+    inputReceipts = [];
+    const current = await service.scope(manifest, root);
+    const intake = (await current.store.read())!.records[0]!;
+    let clock = service.dependencies.now!();
+    service.dependencies.now = () => clock;
+    await current.journal.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.work!.turn!.status = 'completed';
+      record.work!.turn!.consumedByEventId = 'implementation-input';
+      record.work!.turn!.replyEventId = 'implementation-reply';
+      record.work!.result = { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' };
+      record.work!.delivery = {
+        id,
+        binding: {
+          repositoryId: intake.repository.nodeId,
+          issueId: intake.issue.nodeId,
+          threadId: record.threadId!,
+          sessionId: record.sessionCreation!.sessionId!,
+          worktree: record.worktree!,
+          branch: 'branch',
+          base: 'main',
+          head: 'a'.repeat(40),
+          authorId: fixture.client.identity.nodeId,
+          policyDigest: 'a'.repeat(64),
+        },
+        title: 'Title',
+        body: 'Closes #3',
+        creationAttempted: true,
+        reconciled: true,
+        pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+      };
+      retainAnnouncementFailure(
+        record.work!.delivery,
+        retainedAnnouncementPublication(intake, record.work!.delivery),
+        new Error('github-delivery-linkage-unverified'),
+        clock,
+        'prerequisite',
+      );
+      await save();
+    });
+    const sent = sends().length;
+    let checks = 0;
+    service.dependencies.delivery = async ({ caller }) => {
+      assert.equal(caller.sessionKey, coordinator.sessionKey);
+      checks++;
+      throw new Error('github-delivery-linkage-unverified');
+    };
+    await workPass('before-due');
+    assert.equal(checks, 0);
+    for (let attempt = 2; attempt <= 5; attempt++) {
+      clock = (await record()).work!.delivery!.announcementRecovery!.retryAfter!;
+      await workPass(`due-${attempt}`);
+      assert.equal(checks, attempt - 1);
+      assert.equal((await record()).work!.delivery!.announcementRecovery!.attempts, attempt);
+      assert.equal(sends().length, sent);
+      await workPass(`unchanged-${attempt}`);
+      assert.equal(checks, attempt - 1);
+    }
+    clock += 86400000;
+    await workPass('after-exhaustion');
+    assert.equal((await record()).work!.delivery!.announcementRecovery!.status, 'exhausted');
+    assert.equal((await record()).work!.deliveryTurn, undefined);
+    assert.equal(checks, 4);
+    assert.equal(sends().length, sent);
+    assert.equal(creates().length, 1);
+  });
+
   it('should recover oversized retained implementation context within budget under later plan mode', async () => {
     const input = await next();
     await prepare(input);
@@ -4248,6 +4427,13 @@ describe('agent/openclaw issue dispatch', () => {
       const checkedAt = service.dependencies.now!();
       service.dependencies.now = () => checkedAt + 60_000;
       await workPass('removal-lifecycle-check');
+      if (scenario === 'approved') {
+        const sent = sends().length;
+        service.dependencies.now = () => checkedAt + 121 * 60_000;
+        await workPass('dormant-removal-check');
+        assert.equal(sends().length, sent);
+        assert.equal(workflowStatus(await record()), 'awaiting-reassignment');
+      }
       const saved = await record();
       assert.equal(
         saved.retirement?.reason,

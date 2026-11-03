@@ -297,7 +297,15 @@ export default class IssueDeliveryProvider {
       !input.adopted &&
       !(await this.#linkedIssue(input, pullRequest))
     )
-      throw new Error('github-delivery-linkage-unverified');
+      throw new Error(
+        hasClosingReference(
+          pullRequest.body,
+          `${input.item.repositoryOwner}/${input.item.repositoryName}`,
+          input.item.number,
+        )
+          ? 'github-delivery-linkage-unverified'
+          : 'github-delivery-closing-reference-missing',
+      );
     const observed = record(
       await this.#github(
         this.client,
@@ -687,25 +695,27 @@ export default class IssueDeliveryProvider {
     input: IssueDeliveryInput,
     pullRequest: PullRequestIdentity,
   ): Promise<boolean> {
-    const linked = record(
-      await this.#github(
-        this.client,
-        ['api', 'graphql', '--input', '-', '--jq', '.data.node'],
-        input.signal,
-        JSON.stringify({
-          query:
-            'query($id:ID!){node(id:$id){... on PullRequest{id closingIssuesReferences(first:100){nodes{id}}}}}',
-          variables: { id: pullRequest.itemNodeId },
-        }),
-      ),
-      'pull request issue linkage',
+    const observed = await this.#github(
+      this.client,
+      ['api', 'graphql', '--input', '-', '--jq', '.data.node'],
+      input.signal,
+      JSON.stringify({
+        query:
+          'query($id:ID!){node(id:$id){... on PullRequest{id closingIssuesReferences(first:100){nodes{id}}}}}',
+        variables: { id: pullRequest.itemNodeId },
+      }),
     );
-    const references = record(linked.closingIssuesReferences, 'closing issue references');
-    if (linked.id !== pullRequest.itemNodeId || !Array.isArray(references.nodes))
-      throw new Error('github-delivery-linkage-unverified');
-    return references.nodes.some(
-      (node) => record(node, 'closing issue reference').id === input.item.itemNodeId,
-    );
+    try {
+      const linked = record(observed, 'pull request issue linkage');
+      const references = record(linked.closingIssuesReferences, 'closing issue references');
+      if (linked.id !== pullRequest.itemNodeId || !Array.isArray(references.nodes))
+        throw new Error('invalid linkage');
+      return references.nodes.some(
+        (node) => record(node, 'closing issue reference').id === input.item.itemNodeId,
+      );
+    } catch {
+      throw new Error('github-delivery-linkage-observation-invalid');
+    }
   }
 
   async #reconcileRecipients(

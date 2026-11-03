@@ -1,3 +1,4 @@
+import workflowFailure from './workflow-failure.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import type { AgentSystemLifecycleFinding } from '../core/lifecycle-registry.ts';
 import projectPickupReport from './project-pickup-report.ts';
@@ -6,7 +7,13 @@ import codexCapacity, { codexItemOccupied } from './codex-capacity.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
 import ProjectPickupEnrollmentStore from './project-pickup-enrollment.ts';
 import { projectPickupConfigurationCode, projectPickupErrorCode } from './project-pickup-jobs.ts';
-import projectPickup, { pickupAuthority, type PickupInput } from './project-pickup.ts';
+import projectPickup, {
+  pickupAuthority,
+  type PickupInput,
+  type PickupClaims,
+} from './project-pickup.ts';
+import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-claim-client.ts';
+import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
 import { dispatchStorageNotice } from './dispatch-storage.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
@@ -41,6 +48,7 @@ import { githubIdentityMatches } from '../channels/github/provider/work-item.ts'
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 
 export interface CodexIntakeDependencies {
+  pickupClaims?: PickupClaims;
   projectPickup?: ProjectPickupAuthority;
   pickupActivation?: () => Promise<{ threadId: string; nativeId: string }>;
   assertActive?: () => Promise<void>;
@@ -298,7 +306,11 @@ export async function runCodexIntake(
       'code' in error &&
       error.code === 'private-state-file-lock-busy'
     )
-      return { status: 'busy', changed: false };
+      return {
+        status: 'busy',
+        changed: false,
+        ...workflowFailure(error, 'private-state-file-lock-busy'),
+      };
     // a revoked policy cannot admit work, but its retained evidence can suppress repeated notices.
     if (
       activate ||
@@ -459,6 +471,15 @@ export async function runCodexProjectPickup(
       now: deps.now ?? Date.now,
       readPolicy,
       client,
+      claims: deps.pickupClaims ?? {
+        store: codexInstanceStore(pluginData),
+        client: (() => {
+          if (!(client instanceof GitHubWorkEventClient))
+            throw new Error('claim-provider-binding-required');
+          return new GitHubAssignmentClaimClient(client);
+        })(),
+        passId: nativeOccurrence?.id ?? '',
+      },
       occupied: codexItemOccupied,
       input,
     });
@@ -514,10 +535,10 @@ export async function prepareCodexPickupEnrollment(
 ) {
   const current = await selectCodexIntake(pluginData, deps);
   if (!current.policy) throw new IntakeError('intake-policy-disabled');
-  const code = projectPickupConfigurationCode(current.policy.policy, 'codex');
+  const code = projectPickupConfigurationCode(current.policy.policy);
   if (code) throw new IntakeError(code);
   const store = new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root);
-  await store.owner(current.policy.policy, 'codex');
+  await store.owner();
   const client = (await connectSelected(
     current,
     deps,
@@ -542,7 +563,7 @@ export async function inspectCodexPickup(
   const current = await selectCodexIntake(pluginData, deps, { inspectionOnly: true });
   const policy = current.policy?.policy;
   if (!policy?.projectPickup) return [];
-  let code = projectPickupConfigurationCode(policy, 'codex');
+  let code = projectPickupConfigurationCode(policy);
   try {
     if (!code) {
       const record = await new ProjectPickupEnrollmentStore(

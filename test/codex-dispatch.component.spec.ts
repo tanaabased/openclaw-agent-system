@@ -1,3 +1,8 @@
+import {
+  retainAnnouncementFailure,
+  retainedAnnouncementPublication,
+} from '../agent/delivery-announcement-recovery.ts';
+import workflowStatus from '../agent/workflow-status.ts';
 import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 import {
   fixturePullRequest,
@@ -662,6 +667,48 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(gitCalls, []);
   });
 
+  it('should enforce uuid eligibility through native preparation and retain accepted ownership after edits', async () => {
+    const { store, comments } = await claiming();
+    const identity = await store.identity();
+    const other = '11111111-1111-4111-8111-111111111111';
+    const route = async (target: string | string[]) =>
+      writeFile(
+        join(workspace, 'agent.yaml'),
+        JSON.stringify({
+          ...manifest,
+          github: { ...manifest.github, routing: [{ 'owner/repo': target }, 'owner/*'] },
+        }),
+      );
+    await route(other);
+    const excluded = await next();
+    assert.equal((excluded.claim as { code: string }).code, 'claim-route-instance-ineligible');
+    assert.equal(comments.length, 0);
+    assert.deepEqual(gitCalls, []);
+    await route(identity.instanceId);
+    now += 300000;
+    assert.equal((await next()).status, 'claim-waiting');
+    now += 300000;
+    const selected = await next();
+    assert.equal(selected.status, 'routing-required');
+    await route([other]);
+    const held = await request('prepare', {
+      id: selected.id,
+      digest: selected.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
+    });
+    assert.equal((held.claim as { code: string }).code, 'claim-route-owner-ineligible');
+    assert.equal(native, undefined);
+    await route([other, identity.instanceId]);
+    now += 300000;
+    const prepared = await prepare();
+    await route(other);
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    assert.equal(comments.length, 1);
+    assert.match(comments[0]!.body, /Assignment accepted/u);
+  });
+
   it('should prepare a first assignment with uncached compact reviewers', async () => {
     const updated = structuredClone(manifest);
     Object.assign(updated.github['issue-assignment'], { reviewers: ['@reviewer', 'U_second'] });
@@ -925,12 +972,23 @@ describe('agent/codex-dispatch', () => {
   });
 
   it('should leave a claim owned by openclaw without preparing any codex repository or chat', async () => {
-    const { client, comments } = await claiming();
+    const { store, client, comments } = await claiming();
     const selected = await selectCodexIntake(pluginData, deps);
     const intake = (await selected.store.read())!.records[0]!;
     const other = new OpenClawAssignmentClaims(
       new AssignmentClaimStore(join(root, 'openclaw-instance')),
       () => client,
+    );
+    const eligibleInstanceIds = [
+      (await store.identity()).instanceId,
+      (await other.store.identity()).instanceId,
+    ];
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        github: { ...manifest.github, routing: [{ 'owner/repo': eligibleInstanceIds }] },
+      }),
     );
     const caller = {
       sessionKey: 'agent:receiver:main',
@@ -940,6 +998,7 @@ describe('agent/codex-dispatch', () => {
     };
     await other.select({
       mode: 'swarm',
+      eligibleInstanceIds: [...eligibleInstanceIds].reverse(),
       intake,
       client: fixture.client as never,
       caller,
@@ -954,6 +1013,7 @@ describe('agent/codex-dispatch', () => {
       (
         await other.select({
           mode: 'swarm',
+          eligibleInstanceIds: [...eligibleInstanceIds].reverse(),
           intake,
           client: fixture.client as never,
           caller: { ...caller, runId: 'second' },
@@ -3479,7 +3539,7 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(await next(), { status: 'idle', changed: false });
   });
 
-  for (const reason of ['closure', 'approved removal', 'operator request'] as const) {
+  for (const reason of ['closure', 'closure after removal', 'operator request'] as const) {
     it(`should prepare native archival during intake and retire only after observed reclamation: ${reason}`, async () => {
       worktree = join(codexHome, 'worktrees', 'retiring', 'repo');
       await mkdir(worktree, { recursive: true });
@@ -3489,7 +3549,17 @@ describe('agent/codex-dispatch', () => {
       native!.status = 'idle';
       native!.turnEnded = true;
       if (reason === 'closure') fixture.item.state = 'closed';
-      else if (reason === 'approved removal') removeFixtureAssignment(fixture);
+      else if (reason === 'closure after removal') {
+        removeFixtureAssignment(fixture);
+        now += 60_000;
+        await next();
+        const held = await request('inspect');
+        assert.equal(
+          (held.records as { workflowStatus: string }[])[0]!.workflowStatus,
+          'awaiting-reassignment',
+        );
+        fixture.item.state = 'closed';
+      }
       if (reason !== 'operator request') {
         now += 60_000;
         await next();
@@ -3563,12 +3633,13 @@ describe('agent/codex-dispatch', () => {
     });
   }
 
-  it('should request native inventory for obsolete codex work without deleting resources', async () => {
+  it('should retain unassigned codex work without requesting native cleanup', async () => {
     const prepared = await prepare();
     created();
     await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
     native!.status = 'idle';
     native!.turnEnded = true;
+    await writeFile(join(worktree, 'retained-local.txt'), 'unfinished work');
     removeFixtureAssignment(fixture);
     now += 60_000;
     await next();
@@ -3580,10 +3651,13 @@ describe('agent/codex-dispatch', () => {
     now = pending.retirement!.eligibleAt;
     await next();
     const saved = (await store.read()).records[0]!;
-    assert.equal(saved.retirement?.code, 'retirement-native-inventory-required');
+    assert.equal(saved.retirement?.code, undefined);
+    assert.equal(workflowStatus(saved), 'awaiting-reassignment');
     assert.equal(saved.retired, undefined);
     assert.deepEqual(saved.result, pending.result);
     assert.equal(saved.threadId, pending.threadId);
+    assert.equal(await readFile(join(worktree, 'retained-local.txt'), 'utf8'), 'unfinished work');
+    assert.equal((await store.read()).records.length, 1);
     assert.equal(
       gitCalls.some((args) => args.includes('remove')),
       false,
@@ -3692,22 +3766,11 @@ describe('agent/codex-dispatch', () => {
       await save();
     });
     await entered.promise;
-    const lock = properLockfile.lock;
-    properLockfile.lock = async (path, options) => {
-      const retries = options?.retries;
-      if (
-        String(path) === store.path &&
-        retries &&
-        typeof retries !== 'number' &&
-        retries.retries
-      ) {
-        release.resolve();
-        await writer;
-      }
-      return lock(path, options);
-    };
     try {
-      const recheck = await report();
+      const reporting = report();
+      release.resolve();
+      await writer;
+      const recheck = await reporting;
       assert.equal(recheck.status, 'continue');
       assert.equal(recheck.nextAction, 'next');
       await next();
@@ -3716,7 +3779,6 @@ describe('agent/codex-dispatch', () => {
       assert.doesNotMatch(String(completed.response), /1 issue started/);
       assert.equal((await store.read()).records[0]!.intakeReportedAt, now);
     } finally {
-      properLockfile.lock = lock;
       release.resolve();
       await writer;
     }
@@ -3731,7 +3793,9 @@ describe('agent/codex-dispatch', () => {
     const lock = properLockfile.lock;
     properLockfile.lock = async (path, options) => {
       if (String(path).includes('codex-dispatch-'))
-        throw Object.assign(new Error('The journal remains busy.'), { code: 'ELOCKED' });
+        throw Object.assign(new Error('The journal remains busy.'), {
+          code: 'private-state-file-lock-busy',
+        });
       return lock(path, options);
     };
     try {
@@ -3750,13 +3814,13 @@ describe('agent/codex-dispatch', () => {
     const prepared = await prepare();
     created();
     const lock = properLockfile.lock;
-    let contenders = 0;
+    let refuse = true;
     properLockfile.lock = async (path, options) => {
       if (String(path).includes('codex-dispatch-')) {
-        contenders++;
-        const retries = options?.retries;
-        if (!retries || typeof retries === 'number' || !retries.retries)
+        if (refuse) {
+          refuse = false;
           throw Object.assign(new Error('The intake journal lease is held.'), { code: 'ELOCKED' });
+        }
       }
       return lock(path, options);
     };
@@ -3765,11 +3829,12 @@ describe('agent/codex-dispatch', () => {
         (await request('context', { id: prepared.id }, { threadId: 'issue-thread' })).status,
         'verified',
       );
+      refuse = true;
       assert.equal(
         (await request('result', { id: prepared.id, result }, { threadId: 'issue-thread' })).status,
         'recorded',
       );
-      assert.equal(contenders, 2);
+      assert.equal(refuse, false);
     } finally {
       properLockfile.lock = lock;
     }
@@ -3832,6 +3897,93 @@ describe('agent/codex-dispatch', () => {
       work.run('context', { material: read.material }, 'foreign-thread'),
       /caller-required/,
     );
+  });
+
+  it('should defer pre-transaction continuation contention without consuming work or action counters', async () => {
+    const work = await workIssue();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const before = await store.read();
+    const lock = properLockfile.lock;
+    properLockfile.lock = async (path, options) => {
+      if (String(path) === store.path)
+        throw Object.assign(new Error('acquisition exhausted'), {
+          code: 'private-state-file-lock-busy',
+        });
+      return lock(path, options);
+    };
+    try {
+      const response = await work.run('next');
+      assert.equal(response.status, 'busy');
+      assert.ok('changed' in response && response.changed === false);
+      assert.deepEqual(await store.read(), before);
+    } finally {
+      properLockfile.lock = lock;
+    }
+    assert.equal((await work.run('next')).status, 'prepared');
+  });
+
+  it('should reserve only one continuation request across competing native observations', async () => {
+    const work = await workIssue();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const occurrence = work.continuation.native!.occurrence;
+    let observations = 0;
+    work.continuation.native = {
+      ...work.continuation.native!,
+      occurrence: async (...args) => {
+        if (++observations === 2) entered.resolve();
+        await release.promise;
+        return occurrence(...args);
+      },
+    };
+    const attempts = [work.run('next'), work.run('next')];
+    const completed = Promise.allSettled(attempts);
+    await entered.promise;
+    release.resolve();
+    const outcomes = await completed;
+    assert.equal(
+      outcomes.filter((r) => r.status === 'fulfilled' && r.value.status === 'prepared').length,
+      1,
+    );
+    const rejected = outcomes.filter((r) => r.status === 'rejected');
+    assert.equal(rejected.length, 1);
+    assert.match(String(rejected[0]!.reason), /private-state-snapshot-conflict/);
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    assert.equal((await store.read()).continuationRun?.actions, 1);
+  });
+
+  it('should commit unrelated progress while continuation native readback is delayed', async () => {
+    const work = await workIssue();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const occurrence = work.continuation.native!.occurrence;
+    work.continuation.native = {
+      ...work.continuation.native!,
+      occurrence: async (...args) => {
+        entered.resolve();
+        await release.promise;
+        return occurrence(...args);
+      },
+    };
+    const pending = work.run('next');
+    await entered.promise;
+    try {
+      const current = await selectCodexIntake(pluginData, deps);
+      const other = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      await other.exclusive(async (state, save) => {
+        state.discoveryCheckedAt = baseline;
+        await save();
+      });
+      assert.equal((await other.read()).discoveryCheckedAt, baseline);
+    } finally {
+      release.resolve();
+      await pending;
+    }
   });
 
   for (const setting of ['model', 'effort'] as const)
@@ -6508,6 +6660,133 @@ describe('agent/codex-dispatch', () => {
     assert.equal(next.status, 'prepared');
     assert.match(String('request' in next && next.request?.prompt), /only the managed PR delivery/);
     assert.equal(codexItemOccupied((await store.read()).records[0]!), true);
+  });
+
+  it('should use scheduled read-only recovery before resuming codex delivery', async () => {
+    const work = await workIssue();
+    const deliveryId = work.id;
+    assert.ok(typeof deliveryId === 'string');
+    await work.run('next');
+    work.receive();
+    await work.run(
+      'result',
+      { result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' } },
+      true,
+    );
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const intake = (await current.store.read())!.records[0]!;
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.delivery = {
+        id: deliveryId,
+        binding: {
+          repositoryId: intake.repository.nodeId,
+          issueId: intake.issue.nodeId,
+          threadId: record.threadId!,
+          worktree: record.worktree!,
+          branch: 'branch',
+          base: 'main',
+          head: record.continuation!.head!,
+          authorId: 'U_receiver',
+          policyDigest: 'a'.repeat(64),
+        },
+        pushedHead: record.continuation!.head,
+        creationAttempted: true,
+        pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+        reconciled: true,
+        attached: true,
+        cardAttempts: 1,
+      };
+      retainAnnouncementFailure(
+        record.delivery!,
+        retainedAnnouncementPublication(intake, record.delivery!),
+        new Error('github-delivery-linkage-unverified'),
+        now,
+        'prerequisite',
+      );
+      await save();
+    });
+    let checks = 0,
+      linked = false;
+    work.continuation.deliveryDependencies = {
+      connect: async () => {
+        checks++;
+        if (!linked) throw new Error('github-delivery-linkage-unverified');
+        const record = (await store.read()).records[0]!;
+        return {
+          client: Object.assign({}, fixture.client, {
+            async getItemContext() {
+              return { title: 'Issue', body: 'Body', comments: [], labels: [], truncated: false };
+            },
+          }),
+          account: {
+            identity: { login: 'receiver', nodeId: 'U_receiver' },
+            async execute(argv) {
+              assert.ok(!argv.includes('POST') && !argv.includes('PATCH'));
+              const pr = {
+                itemNodeId: 'PR_7',
+                number: 7,
+                state: 'open',
+                baseRef: 'main',
+                headRef: 'branch',
+                headRepository: 'owner/repo',
+                title: 'Title',
+                body: 'Closes #3',
+              };
+              const value = argv.includes('graphql')
+                ? { id: 'PR_7', closingIssuesReferences: { nodes: [{ id: intake.issue.nodeId }] } }
+                : argv.includes('repos/owner/repo/pulls')
+                  ? [pr]
+                  : argv.includes('repos/owner/repo/issues/3')
+                    ? {
+                        databaseId: intake.issue.databaseId,
+                        nodeId: intake.issue.nodeId,
+                        number: 3,
+                        title: 'Issue',
+                      }
+                    : {
+                        ...pr,
+                        nodeId: 'PR_7',
+                        repositoryId: 'R_repo',
+                        headRepositoryId: 'R_repo',
+                        headSha: record.delivery!.binding.head,
+                        authorId: 'U_receiver',
+                        head: record.delivery!.binding.head,
+                        draft: false,
+                      };
+              return {
+                exitCode: 0,
+                stdout: 'HTTP/2 200 OK\n\n' + JSON.stringify(value),
+                stderr: '',
+                timedOut: false,
+                truncated: false,
+              };
+            },
+          },
+        };
+      },
+    };
+    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal(checks, 0);
+    now = (await store.read()).records[0]!.delivery!.announcementRecovery!.retryAfter!;
+    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal(checks, 1);
+    assert.equal((await store.read()).records[0]!.continuation!.publicationAttempt, undefined);
+    linked = true;
+    now = (await store.read()).records[0]!.delivery!.announcementRecovery!.retryAfter!;
+    const resumed = await work.run('next');
+    assert.equal(resumed.status, 'prepared', JSON.stringify(resumed));
+    assert.equal(checks, 2);
+    assert.match(
+      String('request' in resumed && resumed.request?.prompt),
+      /only the managed PR delivery/,
+    );
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.delivery!.announcementRecovery, undefined);
+    assert.equal(retained.delivery!.pullRequest!.pullRequestNumber, 7);
   });
 
   it('should resume only delivery after a recorded implementation turn ends', async () => {

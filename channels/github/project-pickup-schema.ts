@@ -1,6 +1,5 @@
 import type { GitHubNotificationPolicy } from './workflow-policy.ts';
 import { Type, type Static } from 'typebox';
-import { instanceIdPattern } from './provider/assignment-claim.ts';
 
 import { assessmentConfigurationSchema } from '../../manifest/assessment-schema.ts';
 import {
@@ -15,15 +14,6 @@ export const projectPickupSchema = Type.Object(
   {
     paused: Type.Optional(Type.Boolean()),
     thread: Type.Optional(automationThreadValueSchema),
-    coordinator: Type.Optional(
-      Type.Object(
-        {
-          runtime: Type.Union([Type.Literal('codex'), Type.Literal('openclaw')]),
-          'instance-id': Type.String({ pattern: instanceIdPattern.source }),
-        },
-        { additionalProperties: false },
-      ),
-    ),
     schedule: Type.Unknown(),
     'window-minutes': Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER / 60000 }),
     selection: Type.Optional(
@@ -59,7 +49,6 @@ type Declaration = Static<typeof projectPickupSchema>;
 export interface ProjectPickupPolicy {
   paused: boolean;
   thread?: { id?: string; name?: string };
-  coordinator?: { runtime: 'codex' | 'openclaw'; instanceId: string };
   /** undefined is rejected by semantic validation, without throwing from manifest decoding. */
   schedule?: AutomationSchedule;
   windowMinutes: number;
@@ -78,14 +67,6 @@ export default function decodeProjectPickup(value: Declaration): ProjectPickupPo
   return {
     paused: value.paused ?? false,
     ...(value.thread === undefined ? {} : { thread: normalizeAutomationThread(value.thread) }),
-    ...(value.coordinator
-      ? {
-          coordinator: {
-            runtime: value.coordinator.runtime,
-            instanceId: value.coordinator['instance-id'],
-          },
-        }
-      : {}),
     schedule,
     windowMinutes: value['window-minutes'],
     ...(value.selection ? { selection: value.selection } : {}),
@@ -93,14 +74,9 @@ export default function decodeProjectPickup(value: Declaration): ProjectPickupPo
   };
 }
 
-export function projectPickupConfigurationCode(
-  policy: GitHubNotificationPolicy,
-  runtime: 'codex' | 'openclaw',
-) {
+export function projectPickupConfigurationCode(policy: GitHubNotificationPolicy) {
   const pickup = policy.projectPickup;
   if (!pickup) return;
-  if (!pickup.coordinator) return 'project-pickup-coordinator-required';
-  if (pickup.coordinator.runtime !== runtime) return 'project-pickup-coordinator-mismatch';
   if (!pickup.schedule || pickup.windowMinutes < policy.intervalMinutes)
     return 'project-pickup-schedule-unsupported';
 }

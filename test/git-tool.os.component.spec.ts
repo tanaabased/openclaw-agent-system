@@ -128,10 +128,10 @@ describe('tools/git/tool', () => {
     });
   }
 
-  it('should execute native git in its registered worktree using canonical agent identity', async () => {
+  it('should execute native git in a local backed worktree using canonical agent identity', async () => {
     manifest.git = { worktrees: {} };
     const cwd = join(workspaceDir, '.agent-system/worktrees/repo-id/issue-id');
-    const admin = join(workspaceDir, '.agent-system/repositories/repo-id.git/worktrees/issue-id');
+    const admin = join(root, 'source/.git/worktrees/issue-id');
     await mkdir(join(cwd, 'src'), { recursive: true });
     await mkdir(admin, { recursive: true });
     await writeFile(join(cwd, '.git'), `gitdir: ${admin}\n`);

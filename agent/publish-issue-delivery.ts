@@ -77,8 +77,8 @@ export default async function publishIssueDelivery(input: {
     throw new Error('delivery-push-destination-mismatch');
   if (remoteHead !== head) {
     await authorize();
-    if (remoteHead) delivery.pendingPush = { previousHead: remoteHead, head };
-    else delete delivery.pendingPush;
+    if (delivery.pendingPush) throw new Error('delivery-push-uncertain');
+    delivery.pendingPush = { previousHead: remoteHead, head };
     await save();
     if (input.push) await input.push(head, ref, remotes);
     else await git(['push', '--set-upstream', 'origin', `${head}:${ref}`]);

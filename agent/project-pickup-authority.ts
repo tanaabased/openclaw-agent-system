@@ -11,6 +11,7 @@ import {
   type GitHubRepositoryIdentity,
 } from '../channels/github/provider/work-item.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
+import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const time = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
@@ -35,6 +36,7 @@ export const projectPickupReceiptSchema = Type.Object(
     enrollmentId: text,
     issueNodeId: text,
     assignmentNodeId: text,
+    claimCommentId: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
     window: Type.Object(
       { id: text, opensAt: time, closesAt: time },
       { additionalProperties: false },
@@ -67,7 +69,6 @@ export function projectPickupPolicyDigest(policy: GitHubNotificationPolicy) {
     pickup
       ? {
           projects: pickup.projects,
-          coordinator: pickup.coordinator,
           schedule: pickup.schedule,
           windowMinutes: pickup.windowMinutes,
         }
@@ -144,7 +145,13 @@ export default async function authorizeProjectAssignment(input: {
     !freshItem.assignees.some((assignee) => githubIdentityMatches(assignee, client.identity))
   )
     return;
-  const milestone = await projectPickupScope(policy, client, freshRepository, freshItem);
+  const milestone = await projectPickupScope(
+    policy,
+    client,
+    freshRepository,
+    freshItem,
+    Boolean(receipt),
+  );
   if (!milestone || milestone.nodeId !== enrollment.milestoneNodeId) return;
   const history = await client.listAssignmentEvents(
     repository.owner.login,
@@ -195,6 +202,15 @@ export function projectWorkMatches(
     githubIdentityMatches(work.enrollment.account, record.receiving) &&
     work.enrollment.repositoryNodeId === record.repository.nodeId &&
     work.issueNodeId === record.issue.nodeId &&
-    work.assignmentNodeId === record.assignment?.nodeId,
+    work.assignmentNodeId === record.assignment?.nodeId &&
+    (!work.pickup ||
+      (work.pickup.enrollmentId === work.enrollment.id &&
+        work.pickup.issueNodeId === work.issueNodeId &&
+        work.pickup.assignmentNodeId === work.assignmentNodeId)),
   );
+}
+
+export function retainedPickupReceipt(record: IntakeRecord) {
+  const work = record.evidence?.projectWork;
+  return work?.pickup && projectWorkMatches(work, record) ? work.pickup : undefined;
 }

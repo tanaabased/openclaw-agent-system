@@ -3,6 +3,13 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import assessmentGuidance from './assessment-guidance.ts';
+import {
+  claimRouteEligibility,
+  selectAssignmentClaim,
+  type ClaimClient,
+  type ClaimStore,
+} from './assignment-claim.ts';
+import { pickupClaimSource } from './assignment-claim-source.ts';
 import { automationHash } from './automation-hash.ts';
 import issueWorkflowProgress from './issue-workflow-progress.ts';
 import authorizeProjectAssignment, {
@@ -24,6 +31,7 @@ import projectPickupWindow from './project-pickup-window.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
+import repositoryScope from '../channels/github/repository-scope.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 export const pickupSelectionSchema = Type.Object(
@@ -44,6 +52,11 @@ export const pickupInputSchema = Type.Object(
   { additionalProperties: false },
 );
 type ManagedRecord = PickupManagedRecord;
+export interface PickupClaims {
+  store: ClaimStore;
+  client: ClaimClient;
+  passId: string;
+}
 
 export function pickupAuthority(
   state: ProjectPickupState | undefined,
@@ -84,6 +97,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
   now(): number;
   readPolicy(): Promise<GitHubNotificationPolicy>;
   client: ProjectPickupClient;
+  claims: PickupClaims;
   occupied(record: R): boolean;
   input?: PickupInput;
 }) {
@@ -174,6 +188,13 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     return { status: op.phase, id: op.id, code: op.code, changed };
   if (pickup.paused && !op?.attemptedAt) return { status: 'paused', changed };
   if (!op) {
+    const [owner, name] = pickup.projects[0]!.repository.split('/') as [string, string];
+    const repository = await client.getRepository(owner, name);
+    const code = await claimRouteEligibility(
+      tx.claims.store,
+      repositoryScope(policy, repository, 'project-pickup'),
+    );
+    if (code) return { status: 'pending', code, changed };
     const window = projectPickupWindow({
       schedule: pickup.schedule,
       windowMinutes: pickup.windowMinutes,
@@ -219,24 +240,30 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         !record.supersededBy &&
         !record.retired,
     );
-  const freshScope = async () => {
+  const freshScope = async (retainedAssignment = false) => {
     const live = await tx.readPolicy();
     if (projectPickupPolicyDigest(live) !== enrollment.policyDigest)
       throw new Error('project-pickup-policy-changed');
     const repository = await client.getRepository(owner, name);
     if (repository.nodeId !== enrollment.repositoryNodeId)
       throw new Error('project-pickup-repository-changed');
-    const milestone = await projectPickupScope(live, client, repository);
+    const milestone = await projectPickupScope(
+      live,
+      client,
+      repository,
+      undefined,
+      retainedAssignment,
+    );
     if (milestone?.nodeId !== enrollment.milestoneNodeId)
       throw new Error('project-pickup-milestone-changed');
     return { live, repository };
   };
   const eligible = async (number: number, nodeId: string, assigned = false) => {
-    const { live, repository } = await freshScope();
+    const { live, repository } = await freshScope(assigned);
     const item = await client.getItem(owner, name, number);
     if (
       item.nodeId !== nodeId ||
-      !(await projectPickupScope(live, client, repository, item)) ||
+      !(await projectPickupScope(live, client, repository, item, assigned)) ||
       (assigned
         ? item.assignees.length !== 1 || !githubIdentityMatches(item.assignees[0]!, client.identity)
         : item.assignees.length !== 0) ||
@@ -253,7 +280,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     return { live, repository, item, evidence };
   };
   try {
-    await freshScope();
+    const scope = await freshScope(operation.attemptedAt !== undefined);
     if (operation.phase === 'discovering') {
       const page = await client.discoverProject(
         owner,
@@ -318,9 +345,59 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     }
     const candidate = operation.selected;
     if (!candidate) throw new Error('project-pickup-selection-missing');
+    const selectOwner = async (
+      { live, repository }: Awaited<ReturnType<typeof freshScope>>,
+      assignmentEventId?: string,
+    ) => {
+      const route = repositoryScope(live, repository, 'project-pickup');
+      return selectAssignmentClaim({
+        ...tx.claims,
+        source: pickupClaimSource(
+          {
+            owner,
+            repository: name,
+            repositoryNodeId: enrollment.repositoryNodeId,
+            issueNodeId: candidate.nodeId,
+            number: candidate.number,
+            receivingNodeId: client.identity.nodeId,
+          },
+          operation.claim!.previousEventId,
+          assignmentEventId,
+        ),
+        mode: operation.attemptedAt !== undefined ? operation.claim!.mode : route.decision,
+        eligibleInstanceIds: route.eligibleInstanceIds,
+        nativeAttempted: operation.attemptedAt !== undefined,
+        hasCapacity:
+          state.records.filter(tx.occupied).length +
+            projectPickupCapacity(state.records, journal, tx.occupied, candidate.nodeId) <
+          live.maxConcurrentItems,
+      });
+    };
     if (operation.phase === 'reserved') {
       const current = await eligible(candidate.number, candidate.nodeId);
-      if (!current) return finish(operation, 'failed', 'project-pickup-candidate-ineligible');
+      if (!current) {
+        // a losing participant may observe the winner's assignment before its next pass.
+        if (operation.claim) {
+          const history = await client.listAssignmentEvents(owner, name, candidate.number);
+          if (history.truncated) throw new Error('claim-assignment-history-incomplete');
+          const event = [...history.events].sort(
+            (a, b) =>
+              Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.databaseId - a.databaseId,
+          )[0];
+          if (
+            event?.event === 'assigned' &&
+            event.actor.nodeId === client.identity.nodeId &&
+            event.assignee.nodeId === client.identity.nodeId
+          ) {
+            const ownership = await selectOwner(scope, event.nodeId);
+            if (ownership.status === 'other-owner') {
+              await finish(operation, 'cancelled');
+              return { status: 'other-owner', id: operation.id, code: ownership.code, changed };
+            }
+          }
+        }
+        return finish(operation, 'failed', 'project-pickup-candidate-ineligible');
+      }
       if (automationHash(current.evidence) !== automationHash(candidate))
         return finish(operation, 'failed', 'project-pickup-candidate-changed');
       const history = await client.listAssignmentEvents(owner, name, candidate.number);
@@ -338,6 +415,45 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         return { status: 'at-capacity', id: operation.id, changed };
       if (tx.now() < operation.window.opensAt || tx.now() >= operation.window.closesAt)
         return finish(operation, 'expired', 'project-pickup-window-closed');
+      const route = repositoryScope(live, current.repository, 'project-pickup');
+      if (route.decision === 'deny') throw new Error('claim-route-denied');
+      if (!operation.claim) {
+        const events = [...history.events].sort(
+          (a, b) =>
+            Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.databaseId - a.databaseId,
+        );
+        operation.claim = { previousEventId: events[0]?.nodeId ?? null, mode: route.decision };
+        await save();
+      }
+      const ownership = await selectOwner({ live, repository: current.repository });
+      if (!['owned', 'local'].includes(ownership.status))
+        return { status: ownership.status, id: operation.id, code: ownership.code, changed };
+      // election/provider reads may cross a window or policy boundary.
+      const authorized = await eligible(candidate.number, candidate.nodeId);
+      if (!authorized || automationHash(authorized.evidence) !== automationHash(candidate))
+        return finish(operation, 'failed', 'project-pickup-candidate-changed');
+      if (authorized.live.projectPickup?.paused)
+        return { status: 'paused', id: operation.id, changed };
+      const authorizedRoute = repositoryScope(
+        authorized.live,
+        authorized.repository,
+        'project-pickup',
+      );
+      if (
+        authorizedRoute.decision !== route.decision ||
+        automationHash(authorizedRoute.eligibleInstanceIds ?? null) !==
+          automationHash(route.eligibleInstanceIds ?? null)
+      )
+        return { status: 'pending', id: operation.id, code: 'claim-route-changed', changed };
+      if (
+        state.records.filter(tx.occupied).length +
+          projectPickupCapacity(state.records, journal, tx.occupied, candidate.nodeId) >=
+        authorized.live.maxConcurrentItems
+      )
+        return { status: 'at-capacity', id: operation.id, changed };
+      if (tx.now() >= operation.window.closesAt)
+        return finish(operation, 'expired', 'project-pickup-window-closed');
+      operation.claim.mode = route.decision;
       operation.beforeEvents = history.events.map((event) => event.nodeId);
       operation.attemptedAt = tx.now();
       operation.phase = 'attempted';
@@ -371,10 +487,19 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         Date.parse(event.createdAt) >= operation.window.closesAt
       )
         return finish(operation, operation.phase, 'project-pickup-assignment-unverified');
+      if (!operation.claim) throw new Error('project-pickup-claim-missing');
+      const ownership = await selectOwner(current, event.nodeId);
+      if (!['owned', 'local'].includes(ownership.status))
+        return finish(
+          operation,
+          operation.phase,
+          ownership.code ?? 'project-pickup-owner-unverified',
+        );
       const receipt = {
         enrollmentId: enrollment.id,
         issueNodeId: candidate.nodeId,
         assignmentNodeId: event.nodeId,
+        ...(ownership.winnerId ? { claimCommentId: ownership.winnerId } : {}),
         window: operation.window,
       };
       const work = await authorizeProjectAssignment({
@@ -401,9 +526,11 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     if (error instanceof GitHubWorkEventClientError)
       return finish(
         operation,
-        operation.attemptedAt ? operation.phase : 'failed',
+        operation.claim ? operation.phase : 'failed',
         'project-pickup-provider-unavailable',
       );
+    if (error instanceof Error && error.message.startsWith('claim-'))
+      return { status: 'recovery-required', id: operation.id, code: error.message, changed };
     if (!(error instanceof Error) || !error.message.startsWith('project-pickup-')) throw error;
     return finish(operation, operation.attemptedAt ? operation.phase : 'failed', error.message);
   }

@@ -1,4 +1,4 @@
-import repositoryScope from '../channels/github/repository-scope.ts';
+import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import issueChatTitle from './issue-chat-title.ts';
 import { dispatchAdmission, managedPullRequest } from './managed-issue.ts';
 import verifyIssuePullRequest from './issue-pr-selection.ts';
@@ -70,6 +70,7 @@ export default class OpenClawDispatchAdmission {
       await verifyIssuePullRequest(intake, record.adoptedPullRequest, connection.account);
     };
     await verifyPr();
+    const route = assignmentClaimRoute(current.policy.policy, intake);
     if (
       !('initiation' in intake) &&
       !claims &&
@@ -77,16 +78,14 @@ export default class OpenClawDispatchAdmission {
       !record.sessionCreation?.verified
     ) {
       await assertDormantAssignmentUnclaimed(this.context.dependencies.claimStore, intake);
-      if (repositoryScope(current.policy.policy, intake.repository).decision === 'swarm')
-        throw new Error('claim-runtime-unavailable');
+      if (route.decision === 'swarm') throw new Error('claim-runtime-unavailable');
     }
     if (!('initiation' in intake) && claims && !record.sessionCreation?.verified) {
       const claim = await claims.select({
         intake,
-        mode:
-          record.sessionCreation?.attempted && record.claimId
-            ? 'swarm'
-            : repositoryScope(current.policy.policy, intake.repository).decision,
+        mode: record.sessionCreation?.attempted && record.claimId ? 'swarm' : route.decision,
+        eligibleInstanceIds: route.eligibleInstanceIds,
+        nativeAttempted: Boolean(record.sessionCreation?.attempted && record.claimId),
         client,
         caller,
         hasCapacity:

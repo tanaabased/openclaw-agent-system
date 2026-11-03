@@ -1,9 +1,32 @@
+import { PrivateStateFileLockBusyError } from '../core/private-state-file-lock.ts';
 import assert from 'node:assert/strict';
 import workflowFailure, { workflowFailureScope } from '../agent/workflow-failure.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { scheduleDispatchRetry, dispatchFailurePhase } from '../agent/dispatch-retry.ts';
 
 describe('agent/workflow-failure', () => {
+  it('should preserve only owned contention fields through wrapped failures', () => {
+    const contention = {
+      category: 'dispatch' as const,
+      operation: 'delivery-checkpoint' as const,
+      waitedMs: 10_000,
+      holderOperation: 'unknown' as const,
+    };
+    const failure = workflowFailure(
+      new Error('wrapped acquisition failure', {
+        cause: new PrivateStateFileLockBusyError(contention),
+      }),
+      'fallback',
+    );
+    assert.equal(failure.code, 'private-state-file-lock-busy');
+    assert.deepEqual(failure.contention, contention);
+    assert.equal(
+      workflowFailure({ code: failure.code, contention: { path: '/secret' } }, 'fallback')
+        .contention,
+      undefined,
+    );
+  });
+
   it('should preserve provider codes and retry evidence through delivery wrappers', () => {
     const cause = Object.assign(new Error('provider details'), {
       code: 'github-rate-limited',

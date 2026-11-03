@@ -1,3 +1,5 @@
+import { awaitingReassignment } from './assignment-retirement.ts';
+
 interface Delivery {
   adopted?: unknown;
   pullRequest?: { pullRequestNumber: number };
@@ -6,11 +8,12 @@ interface Delivery {
   cardAttempts?: number;
   pushedHead?: string;
   announcement?: { receipt?: unknown; code?: string };
+  announcementRecovery?: { status: string };
 }
 export interface IssueWorkflowState {
   phase: string;
   retired?: unknown;
-  retirement?: unknown;
+  retirement?: { reason?: string; operatorRequest?: unknown };
   reset?: unknown;
   supersededBy?: string;
   handoff?: unknown;
@@ -53,6 +56,7 @@ type Progress = {
 /** unfinished work is shared; native custody and live authorization remain with each host. */
 export default function issueWorkflowProgress(record: IssueWorkflowState): Progress {
   if (record.supersededBy) return { action: 'stopped', status: 'superseded' };
+  if (awaitingReassignment(record)) return { action: 'stopped', status: 'awaiting-reassignment' };
   if (record.retirement)
     return { action: 'stopped', status: record.retired ? 'retired' : 'retirement-pending' };
   if (
@@ -116,12 +120,17 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
       delivery.attached !== false &&
       delivery.cardAttempts !== 0 &&
       delivery.announcement?.receipt &&
-      !delivery.announcement.code;
+      !delivery.announcement.code &&
+      !delivery.announcementRecovery;
     return complete
       ? { action: 'complete', status: 'delivered' }
       : {
           action: 'delivery',
-          status: published ? 'delivered-response-pending' : 'delivery',
+          status: published
+            ? delivery.announcementRecovery
+              ? `announcement-${delivery.announcementRecovery.status}`
+              : 'delivered-response-pending'
+            : 'delivery',
           publicationPending: !published,
         };
   }
