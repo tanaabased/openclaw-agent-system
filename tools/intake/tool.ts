@@ -50,15 +50,18 @@ export default function createIntakeTool(
         )
           return;
         const call = context.toolCallId ?? event.toolCallId;
+        const runId = event.runId ?? context.runId;
         if (!call) return blocked('tool-call-id-missing');
         if (!authorizePickup) return blocked('automation-verifier-unavailable');
-        if (!context.runId) return blocked('run-id-missing');
+        if (!runId) return blocked('run-id-missing');
+        if (event.runId && context.runId && event.runId !== context.runId)
+          return blocked('run-id-mismatch');
         if (event.toolCallId && context.toolCallId && event.toolCallId !== context.toolCallId)
           return blocked('tool-call-id-mismatch');
         pending.delete(key(context, call));
         try {
-          const authorization = await authorizePickup(context);
-          pending.set(key(context, call), { authorization, runId: context.runId });
+          const authorization = await authorizePickup({ ...context, runId });
+          pending.set(key(context, call), { authorization, runId });
         } catch (error) {
           const known = new Set([
             'automation-lifecycle-unverified',
