@@ -202,11 +202,20 @@ export default class AutomationThreads {
   resolve(jobs: ResolvedAutomation[], apply = false) {
     return this.reconcile(jobs, apply, false);
   }
+  /** inspect verified Codex destinations without making pending model changes a schedule gate. */
+  inspectSchedules(jobs: ResolvedAutomation[]) {
+    return this.reconcile(jobs, false, false, true);
+  }
   /** execution selects settings only on an already registered conversation. */
   selectSettings(jobs: ResolvedAutomation[]) {
     return this.reconcile(jobs, true, true);
   }
-  private async reconcile(jobs: ResolvedAutomation[], apply: boolean, execution: boolean) {
+  private async reconcile(
+    jobs: ResolvedAutomation[],
+    apply: boolean,
+    execution: boolean,
+    inspectSchedules = false,
+  ) {
     const manageSettings = this.options.runtime === 'codex' || execution;
     let automationId: string | undefined;
     const run = async () => {
@@ -359,6 +368,7 @@ export default class AutomationThreads {
           outcome: 'created' | 'bound' | 'reused';
           name?: string;
           settings?: AutomationThreadModelObservation;
+          settingsCode?: string;
         }
       >();
       const reconciledNative = new Map<string, AutomationThread>();
@@ -449,92 +459,117 @@ export default class AutomationThreads {
         });
         const settingsError = (code: string) =>
           new AutomationThreadSettingsError(code, observation());
-        if (manageSettings && record?.settingsUpdate) {
-          const pending = record.settingsUpdate;
-          if (pending.nativeId !== native.id || pending.incarnation !== native.incarnation)
-            throw new AutomationError('automation-thread-settings-conflict');
-          const pendingMatch =
-            (pending.desired.model === undefined || native.model === pending.desired.model) &&
-            (pending.desired.effort === undefined || native.effort === pending.desired.effort);
-          // withdrawing a denied change needs no native write; uncertain writes still need proof.
-          const withdrawnDenial =
-            !pendingMatch && pending.phase === 'denied' && settingsMatch(native);
-          if (withdrawnDenial && !apply) throw settingsError('automation-thread-sync-required');
-          if (!pendingMatch && !withdrawnDenial) {
-            const retrySafe = pending.phase === 'busy' || pending.phase === 'unsupported';
-            if (!apply || !retrySafe)
-              throw new AutomationThreadSettingsError(
-                `automation-thread-settings-${pending.phase}`,
-                {
-                  requested: pending.desired,
-                  observed: observation().observed,
-                },
-              );
-            if (
-              native.model !== pending.baseline.model ||
-              native.effort !== pending.baseline.effort
-            )
-              throw settingsError('automation-thread-settings-conflict');
-          }
-          if (apply) {
-            delete record.settingsUpdate;
-            await save();
-          }
-        }
-        if (manageSettings && !settingsMatch(native)) {
-          if (!this.adapter.updateSettings)
-            throw settingsError('automation-thread-settings-unsupported');
-          if (!apply) throw settingsError('automation-thread-model-drift');
-          if (!record) {
-            record = { key, phase: 'ready', nativeId: native.id };
-            ledger.records.push(record);
-          }
-          record.settingsUpdate = {
-            nativeId: native.id,
-            ...(native.incarnation ? { incarnation: native.incarnation } : {}),
-            desired: settings!,
-            baseline: { model: native.model, effort: native.effort },
-            phase: 'uncertain',
-          };
-          await save();
-          let failure: unknown;
-          try {
-            await this.adapter.updateSettings(native, settings!);
-          } catch (error) {
-            failure = error;
-          }
-          // a lost acknowledgement can still have committed; read before considering any replay.
-          const observed = await (
-            this.adapter.lookupFresh
-              ? this.adapter.lookupFresh(native.id)
-              : this.adapter.lookup(native.id)
-          ).catch(() => null);
-          if (observed && observed.incarnation === native.incarnation && settingsMatch(observed)) {
-            delete record.settingsUpdate;
-            await save();
-            native = observed;
-          } else {
-            if (failure instanceof AutomationError) {
+        let pendingSettings: AutomationThreadSettingsError | undefined;
+        try {
+          if (manageSettings && record?.settingsUpdate) {
+            const pending = record.settingsUpdate;
+            if (pending.nativeId !== native.id || pending.incarnation !== native.incarnation)
+              throw new AutomationError('automation-thread-settings-conflict');
+            const pendingMatch =
+              (pending.desired.model === undefined || native.model === pending.desired.model) &&
+              (pending.desired.effort === undefined || native.effort === pending.desired.effort);
+            // withdrawing a denied change needs no native write; uncertain writes still need proof.
+            const withdrawnDenial =
+              !pendingMatch && pending.phase === 'denied' && settingsMatch(native);
+            if (withdrawnDenial && !apply) throw settingsError('automation-thread-sync-required');
+            if (!pendingMatch && !withdrawnDenial) {
+              const retrySafe = pending.phase === 'busy' || pending.phase === 'unsupported';
+              if (!apply || !retrySafe)
+                throw new AutomationThreadSettingsError(
+                  `automation-thread-settings-${pending.phase}`,
+                  {
+                    requested: pending.desired,
+                    observed: observation().observed,
+                  },
+                );
               if (
-                [
-                  'automation-thread-settings-conflict',
-                  'automation-model-unsupported',
-                  'automation-model-unavailable',
-                  'automation-effort-unsupported',
-                ].includes(failure.code)
+                native.model !== pending.baseline.model ||
+                native.effort !== pending.baseline.effort
               )
-                delete record.settingsUpdate;
-              else if (failure.code === 'automation-thread-settings-denied')
-                record.settingsUpdate.phase = 'denied';
-              else if (failure.code === 'automation-thread-settings-busy')
-                record.settingsUpdate.phase = 'busy';
-              else if (failure.code === 'automation-thread-settings-unsupported')
-                record.settingsUpdate.phase = 'unsupported';
-              await save();
-              throw settingsError(failure.code);
+                throw settingsError('automation-thread-settings-conflict');
             }
-            throw settingsError('automation-thread-settings-uncertain');
+            if (apply) {
+              delete record.settingsUpdate;
+              await save();
+            }
           }
+          if (manageSettings && !settingsMatch(native)) {
+            if (!this.adapter.updateSettings)
+              throw settingsError('automation-thread-settings-unsupported');
+            if (!apply) throw settingsError('automation-thread-model-drift');
+            if (!record) {
+              record = { key, phase: 'ready', nativeId: native.id };
+              ledger.records.push(record);
+            }
+            record.settingsUpdate = {
+              nativeId: native.id,
+              ...(native.incarnation ? { incarnation: native.incarnation } : {}),
+              desired: settings!,
+              baseline: { model: native.model, effort: native.effort },
+              phase: 'uncertain',
+            };
+            await save();
+            let failure: unknown;
+            try {
+              await this.adapter.updateSettings(native, settings!);
+            } catch (error) {
+              failure = error;
+            }
+            // a lost acknowledgement can still have committed; read before considering any replay.
+            const observed = await (
+              this.adapter.lookupFresh
+                ? this.adapter.lookupFresh(native.id)
+                : this.adapter.lookup(native.id)
+            ).catch(() => null);
+            if (
+              observed &&
+              observed.incarnation === native.incarnation &&
+              settingsMatch(observed)
+            ) {
+              delete record.settingsUpdate;
+              await save();
+              native = observed;
+            } else {
+              if (failure instanceof AutomationError) {
+                if (
+                  [
+                    'automation-thread-settings-conflict',
+                    'automation-model-unsupported',
+                    'automation-model-unavailable',
+                    'automation-effort-unsupported',
+                  ].includes(failure.code)
+                )
+                  delete record.settingsUpdate;
+                else if (failure.code === 'automation-thread-settings-denied')
+                  record.settingsUpdate.phase = 'denied';
+                else if (failure.code === 'automation-thread-settings-busy')
+                  record.settingsUpdate.phase = 'busy';
+                else if (failure.code === 'automation-thread-settings-unsupported')
+                  record.settingsUpdate.phase = 'unsupported';
+                await save();
+                throw settingsError(failure.code);
+              }
+              throw settingsError('automation-thread-settings-uncertain');
+            }
+          }
+        } catch (error) {
+          const pending = record?.settingsUpdate;
+          if (
+            !inspectSchedules ||
+            this.options.runtime !== 'codex' ||
+            record?.phase !== 'ready' ||
+            !native.model ||
+            !native.effort ||
+            !(error instanceof AutomationThreadSettingsError) ||
+            !['automation-thread-model-drift', 'automation-thread-settings-busy'].includes(
+              error.code,
+            ) ||
+            (pending &&
+              (native.model !== pending.baseline.model ||
+                native.effort !== pending.baseline.effort))
+          )
+            throw error;
+          pendingSettings = error;
         }
         if (selection.managed && apply && (!record || record.phase !== 'ready')) {
           if (!record) {
@@ -549,7 +584,10 @@ export default class AutomationThreads {
         resolved.set(key, {
           id: native.id,
           outcome,
-          ...(selection.managed && manageSettings ? { settings: observation() } : {}),
+          ...(selection.managed && manageSettings
+            ? { settings: pendingSettings?.settings ?? observation() }
+            : {}),
+          ...(pendingSettings ? { settingsCode: pendingSettings.code } : {}),
           ...(native.name ? { name: native.name } : {}),
         });
       }

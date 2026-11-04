@@ -370,7 +370,7 @@ async function resolveThreads(
         group: section && !pendingGroups.has(section.name) ? section.name : undefined,
       };
     };
-    const bindings = await new AutomationThreads(
+    const threads = new AutomationThreads(
       { root: selected.root, scope: selected.scope, runtime: 'codex' },
       {
         ...adapter,
@@ -388,7 +388,10 @@ async function resolveThreads(
           pendingGroups.delete(group);
         },
       },
-    ).resolve(jobs, apply);
+    );
+    const bindings = apply
+      ? await threads.resolve(jobs, true)
+      : await threads.inspectSchedules(jobs);
     if (apply) {
       // retain the verified destination even when the chat was already correctly placed.
       for (const job of jobs) {
@@ -448,7 +451,11 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     ? await readCodexAutomationDefaults(codexHome).catch(() => undefined)
     : undefined;
   let bindings:
-    Map<string, { id: string; settings?: AutomationThreadModelObservation }> | undefined;
+    | Map<
+        string,
+        { id: string; settings?: AutomationThreadModelObservation; settingsCode?: string }
+      >
+    | undefined;
   let threadSettings: AutomationThreadModelObservation | undefined;
   let threadCode: string | undefined;
   let threadAutomationId: string | undefined;
@@ -503,6 +510,14 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
   result.unmanagedCount = selected.cleanupOnly
     ? saved.length - ledger.records.filter((record) => record.id === intakeAutomationId).length
     : result.unmanagedCount - (ledger.retired?.length ?? 0);
+  const pendingSettings = [...(bindings ?? [])].flatMap(([id, binding]) =>
+    binding.settingsCode ? [{ id, code: binding.settingsCode, settings: binding.settings }] : [],
+  );
+  if (pendingSettings.length) {
+    result.findings.push(...pendingSettings);
+    if (result.status === 'aligned') result.status = 'requires-native-app-sync';
+    result.digest = automationHash({ plan: result.digest, pendingSettings });
+  }
   if (selected.policyBlocker) {
     result.findings.push({ id: intakeAutomationId, code: selected.policyBlocker });
     if (!result.actions.length) result.status = 'blocked';
