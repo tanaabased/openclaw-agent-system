@@ -54,7 +54,7 @@ describe('scripts/wait-for-automation-run', () => {
           assert.equal(args[2], 'cron.runs');
           return { status: 0, stdout: '{"entries":[]}' };
         }) as never,
-        report: (nativeId: string, runId: string) => reports.push({ nativeId, runId }),
+        report: (nativeId: string, runId: string | undefined) => reports.push({ nativeId, runId }),
       }),
       /no scheduled occurrence/,
     );
@@ -131,7 +131,7 @@ describe('scripts/wait-for-automation-run', () => {
           elapsed += timeout;
           return { status: null, error: { code: 'ETIMEDOUT' } };
         }) as never,
-        report: (nativeId: string, runId: string) => {
+        report: (nativeId: string, runId: string | undefined) => {
           reports.push({ nativeId, runId });
         },
       }),
@@ -195,7 +195,7 @@ describe('scripts/wait-for-automation-run', () => {
           'job-1',
           'run-1',
           17,
-          (nativeId: string, runId: string) => reports.push({ nativeId, runId }),
+          (nativeId: string, runId: string | undefined) => reports.push({ nativeId, runId }),
         ),
       );
       assert.deepEqual(reports, [{ nativeId: 'job-1', runId: 'run-1' }]);
@@ -227,7 +227,8 @@ describe('scripts/wait-for-automation-run', () => {
   });
   it('should diagnose the exact failed run before preserving the execution assertion', () => {
     const reports: unknown[] = [];
-    const report = (nativeId: string, runId: string) => reports.push({ nativeId, runId });
+    const report = (nativeId: string, runId: string | undefined) =>
+      reports.push({ nativeId, runId });
     const page = {
       nativeId: 'native-job',
       entries: [{ runId: 'requested-run', execution: 'error' }],
@@ -320,6 +321,20 @@ describe('scripts/wait-for-automation-run', () => {
       assert.ok(!output.join('').includes('secret'));
       assert.ok(output.join('').includes(redactionFails ? 'withheld' : 'no substitute run'));
     }
+  });
+
+  it('should not use the latest record when scheduled history omits a run id', () => {
+    const output: string[] = [];
+    reportAutomationFailure('native-job', undefined, {
+      run(command: string, _args: string[], input?: string) {
+        assert.notEqual(command, 'openclaw');
+        if (command === '/bin/sh') return { status: 0, stdout: '/ci/openclaw-gateway' };
+        if (command === process.execPath) return { status: 0, stdout: input ?? '' };
+        return { status: 1, stdout: '' };
+      },
+      write: (text: string) => output.push(text),
+    });
+    assert.ok(output.join('').includes('no substitute run'));
   });
 
   it('should retain the native error and latest gateway evidence when bounding redacted output', () => {

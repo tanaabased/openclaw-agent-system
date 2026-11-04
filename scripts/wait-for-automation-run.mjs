@@ -16,7 +16,7 @@ function runCommand(command, args, input, timeoutMs = 30_000) {
 /**
  * collect ci-only failure evidence without changing the failed run's outcome.
  * @param {string} nativeId
- * @param {string} runId
+ * @param {string | undefined} runId
  * @param {{run?: (command: string, args: string[], input?: string) => {status: number | null, stdout: string}, write?: (text: string) => void}} options
  */
 export function reportAutomationFailure(
@@ -27,6 +27,7 @@ export function reportAutomationFailure(
   const evidence = [];
   try {
     assert.ok(typeof nativeId === 'string' && nativeId.trim());
+    assert.ok(typeof runId === 'string' && runId.trim());
     const result = run('openclaw', [
       'gateway',
       'call',
