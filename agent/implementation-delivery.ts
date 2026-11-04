@@ -9,9 +9,10 @@ export function hasDeliveredImplementation(record: IssueWorkflowState): boolean 
     (work?.scope !== 'local' &&
       delivery?.pullRequest &&
       delivery.reconciled &&
-      (work?.resultHistory?.some(({ result }) => result.outcome === 'done') ||
-        (work?.result?.outcome === 'done' &&
-          (!record.continuation?.head || delivery.pushedHead === record.continuation.head)))) ||
+      (work?.result?.outcome === 'done' ||
+        (work?.resultHistory?.some(({ result }) => result.outcome === 'done') &&
+          (!record.continuation?.phase || record.continuation.head))) &&
+      (!record.continuation?.head || delivery.pushedHead === record.continuation.head)) ||
     record.feedback?.events.some((event) => {
       const linked = event.workDelivery ?? delivery;
       return (

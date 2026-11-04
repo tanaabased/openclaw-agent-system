@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import advance from '../agent/codex-work-turn.ts';
 import { automationHash } from '../agent/automation-hash.ts';
+import { hasDeliveredImplementation } from '../agent/implementation-delivery.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 import type { CodexWorkContext } from '../agent/codex-continuation-context.ts';
 
@@ -167,6 +168,38 @@ describe('agent/codex-work-turn', () => {
     assert.deepEqual(work.retries?.[0]?.attempt, older);
     assert.equal(work.attempt?.inputId, 'human-input');
     assert.equal(record.worktree, '/tmp');
+  });
+
+  it('should not mistake an unpublished completed revision for delivered work when a human continues', async () => {
+    const { record, context, verified, source } = fixture();
+    const work = record.continuation!;
+    work.scope = 'pull-request';
+    work.phase = 'delivery';
+    work.head = 'b'.repeat(40);
+    work.result = { outcome: 'done', summary: 'Done locally.', fullResult: 'Not yet published.' };
+    work.resultSource = source;
+    record.delivery = {
+      reconciled: true,
+      pushedHead: 'a'.repeat(40),
+      pullRequest: { pullRequestNodeId: 'pr', pullRequestNumber: 7 },
+    } as NonNullable<DispatchRecord['delivery']>;
+    context.input.action = 'context';
+    context.operatorInput = { turnId: 'human-turn', inputId: 'human-input' };
+    context.caller = 'chat';
+    verified.found.turnId = 'human-turn';
+    verified.found.turnEnded = false;
+    verified.found.turnStatus = 'inProgress';
+    context.continuationNative = async () => ({
+      status: 'verified',
+      turnId: 'human-turn',
+      ended: false,
+    });
+    assert.equal(hasDeliveredImplementation(record), false);
+    assert.equal((await advance(record, context, verified)).ready, true);
+    assert.equal(work.result, undefined);
+    assert.equal(work.resultHistory?.[0]?.result.outcome, 'done');
+    assert.equal(hasDeliveredImplementation(record), false);
+    assert.equal(record.delivery.pushedHead, 'a'.repeat(40));
   });
 
   it('should preserve earlier work when the current human turn has a native denial', async () => {

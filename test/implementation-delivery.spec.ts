@@ -120,12 +120,12 @@ describe('agent/implementation-delivery', () => {
     assert.equal(hasDeliveredImplementation(record), true);
   });
 
-  it('should treat a legacy reopened round as history after its original pr was delivered', () => {
+  it('should require the completed head when recognizing a legacy reopened codex round', () => {
     const record: IssueWorkflowState = {
       phase: 'complete',
       continuation: {
         phase: 'blocked',
-        head: 'later-edit',
+        head: 'original',
         code: 'continuation-send-unverified',
         resultHistory: [{ result: { outcome: 'done' } }],
       },
@@ -133,6 +133,10 @@ describe('agent/implementation-delivery', () => {
     };
     assert.deepEqual(issueWorkflowProgress(record), { action: 'complete', status: 'delivered' });
     assert.equal(record.continuation!.code, 'continuation-send-unverified');
+    record.continuation!.head = 'unpublished';
+    assert.equal(hasDeliveredImplementation(record), false);
+    delete record.continuation!.head;
+    assert.equal(hasDeliveredImplementation(record), false);
   });
 
   it('should return native facts without routing a delivered task into an implementation owner', async () => {
