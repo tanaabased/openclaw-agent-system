@@ -16,21 +16,25 @@ import type { AgentManifest } from '../manifest/types.ts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import registerAutomationLifecycleHooks from '../core/automation-lifecycle-hook.ts';
 
-function fixture() {
+function fixture(options: { rejectStorage?: boolean; messages?: string[] } = {}) {
   const controller = new AbortController();
   const contexts = new Map<string, unknown>();
-  const authority = new AutomationLifecycleAuthority({
-    setRunContext({ runId, value }) {
-      contexts.set(runId, structuredClone(value));
-      return true;
+  const authority = new AutomationLifecycleAuthority(
+    {
+      setRunContext({ runId, value }) {
+        if (options.rejectStorage) return false;
+        contexts.set(runId, structuredClone(value));
+        return true;
+      },
+      getRunContext({ runId }) {
+        return contexts.get(runId);
+      },
+      clearRunContext({ runId }) {
+        contexts.delete(runId);
+      },
     },
-    getRunContext({ runId }) {
-      return contexts.get(runId);
-    },
-    clearRunContext({ runId }) {
-      contexts.delete(runId);
-    },
-  });
+    { debug: (message) => options.messages?.push(message) },
+  );
   const context = {
     runId: 'run',
     jobId: 'native-job',
@@ -52,6 +56,37 @@ function fixture() {
 }
 
 describe('agent/automation-lifecycle-authority', () => {
+  it('should diagnose missing initialization, rejected storage and lookup identity without exposing values', () => {
+    const messages: string[] = [];
+    const f = fixture({ messages });
+    f.authority.begin({ ...f.context, sessionId: undefined });
+    assert.equal(f.authority.resolve(f.context), undefined);
+    f.authority.begin(f.context);
+    assert.ok(f.authority.resolve(f.context));
+    assert.equal(f.authority.resolve({ ...f.context, runId: 'different-run' }), undefined);
+    f.authority.end(f.context.runId);
+    assert.equal(f.authority.resolve(f.context), undefined);
+    const rejected = fixture({ rejectStorage: true, messages });
+    rejected.authority.begin(rejected.context);
+    assert.equal(rejected.authority.resolve(rejected.context), undefined);
+    for (const outcome of [
+      'incomplete-or-not-cron',
+      'stored',
+      'storage-rejected',
+      'found',
+      'missing',
+    ])
+      assert.ok(messages.some((message) => message.includes(`outcome=${outcome}`)));
+    const identities = messages.map((message) => JSON.parse(message.split('identity=')[1]!));
+    assert.equal(identities[0].sessionId, null);
+    assert.equal(identities[0].runId, identities[1].runId);
+    assert.notEqual(identities[4].runId, identities[0].runId);
+    for (const identity of identities)
+      for (const value of Object.values(identity))
+        assert.ok(value === null || /^[a-f0-9]{16}$/.test(String(value)));
+    for (const value of ['/workspace', 'native-job', 'agent:agent:session', 'different-run'])
+      assert.ok(!messages.join('\n').includes(value));
+  });
   it('should bind scheduler identity through the shared host hook and clear it on run end', () => {
     const f = fixture();
     const hooks = new Map<

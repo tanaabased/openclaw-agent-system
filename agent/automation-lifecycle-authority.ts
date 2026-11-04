@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type AutomationService from './automation-service.ts';
 import type { NotificationScheduler } from './automation-readiness.ts';
 import {
@@ -93,7 +95,27 @@ type RunContextApi = {
 
 /** Host-owned run context retains scheduler identity, not a hook-scoped authority handle. */
 export default class AutomationLifecycleAuthority {
-  constructor(private readonly contexts: RunContextApi) {}
+  constructor(
+    private readonly contexts: RunContextApi,
+    private readonly logger?: { debug?(message: string): void },
+  ) {}
+
+  private trace(stage: string, context: RunHookContext, outcome: string): void {
+    if (!this.logger?.debug) return;
+    const identity = Object.fromEntries(
+      (['runId', 'jobId', 'agentId', 'workspaceDir', 'sessionKey', 'sessionId'] as const).map(
+        (key) => [
+          key,
+          typeof context[key] === 'string' && context[key]
+            ? createHash('sha256').update(context[key]).digest('hex').slice(0, 16)
+            : null,
+        ],
+      ),
+    );
+    this.logger.debug(
+      `automation: code=automation-lifecycle-${stage} outcome=${outcome} cron=${context.trigger === 'cron'} identity=${JSON.stringify(identity)}`,
+    );
+  }
 
   begin(context: RunHookContext): void {
     if (
@@ -104,9 +126,11 @@ export default class AutomationLifecycleAuthority {
       !context.workspaceDir ||
       !context.sessionKey ||
       !context.sessionId
-    )
+    ) {
+      this.trace('begin', context, 'incomplete-or-not-cron');
       return;
-    this.contexts.setRunContext({
+    }
+    const stored = this.contexts.setRunContext({
       runId: context.runId,
       namespace,
       value: {
@@ -118,6 +142,7 @@ export default class AutomationLifecycleAuthority {
         sessionId: context.sessionId,
       },
     });
+    this.trace('begin', context, stored ? 'stored' : 'storage-rejected');
   }
 
   resolve(
@@ -125,8 +150,12 @@ export default class AutomationLifecycleAuthority {
       abortSignal?: AbortSignal;
     },
   ) {
-    if (!context.runId) return;
+    if (!context.runId) {
+      this.trace('resolve', context, 'run-id-missing');
+      return;
+    }
     const stored = this.contexts.getRunContext({ runId: context.runId, namespace });
+    this.trace('resolve', context, stored && typeof stored === 'object' ? 'found' : 'missing');
     if (!stored || typeof stored !== 'object') return;
     const run = structuredClone(stored) as AutomationLifecycleRun;
     const assertCurrent = () => {
@@ -154,6 +183,7 @@ export default class AutomationLifecycleAuthority {
   }
 
   end(runId: string | undefined): void {
+    this.trace('end', { runId }, 'clear');
     if (runId) this.contexts.clearRunContext({ runId, namespace });
   }
 }

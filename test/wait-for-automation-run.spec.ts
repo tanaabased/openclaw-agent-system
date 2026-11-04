@@ -4,10 +4,95 @@ import {
   assertAutomationRun,
   assertFailedCommandRun,
   waitForAutomationRun,
+  waitForScheduledAutomationRun,
   reportAutomationFailure,
 } from '../scripts/wait-for-automation-run.mjs';
 
 describe('scripts/wait-for-automation-run', () => {
+  it('should observe the due job and await its exact run without submitting a replacement', async () => {
+    let elapsed = 1000;
+    const calls: string[][] = [];
+    const runId = await waitForScheduledAutomationRun('pickup', 'job-1', 2000, {
+      now: () => elapsed,
+      sleep: async (ms: number) => {
+        elapsed += ms;
+      },
+      run: ((_command: string, args: string[]) => {
+        calls.push(args);
+        const entries = [
+          { jobId: 'job-1', runId: 'old', runAtMs: 1999 },
+          { jobId: 'foreign', runId: 'foreign-run', runAtMs: 3000 },
+          ...(calls.length > 1 ? [{ jobId: 'job-1', runId: 'due', runAtMs: 2000 }] : []),
+        ];
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            entries: args[2] === 'cron.runs' ? entries : [{ runId: 'due', execution: 'ok' }],
+          }),
+        };
+      }) as never,
+      report: () => assert.fail('successful observation must not report a failure'),
+    });
+    assert.equal(runId, 'due');
+    assert.equal(calls.length, 3);
+    assert.deepEqual(calls[2], [
+      'agent-system',
+      'automations',
+      'runs',
+      'pickup',
+      '--run-id',
+      'due',
+      '--limit',
+      '1',
+      '--json',
+    ]);
+    assert.ok(calls.every((args) => args.includes('cron.runs') || args[2] === 'runs'));
+  });
+
+  it('should bound scheduled observation and report its missing occurrence without running it', async () => {
+    let elapsed = 0;
+    const reports: unknown[] = [];
+    await assert.rejects(
+      waitForScheduledAutomationRun('pickup', 'job-1', 1000, {
+        now: () => elapsed,
+        maxWaitMs: 3000,
+        sleep: async (ms: number) => {
+          elapsed += ms;
+        },
+        run: ((_command: string, args: string[]) => {
+          assert.equal(args[2], 'cron.runs');
+          return { status: 0, stdout: '{"entries":[]}' };
+        }) as never,
+        report: (nativeId: string, runId: string) => reports.push({ nativeId, runId }),
+      }),
+      /no scheduled occurrence/,
+    );
+    assert.equal(elapsed, 3000);
+    assert.deepEqual(reports, [{ nativeId: 'job-1', runId: undefined }]);
+  });
+
+  it('should reject ambiguous or invalid scheduled history instead of choosing another run', async () => {
+    const due = { jobId: 'job-1', runId: 'due', runAtMs: 2000 };
+    for (const page of [
+      {},
+      { entries: [{ ...due, runId: undefined }] },
+      { entries: [due, { ...due, runId: 'second' }] },
+    ]) {
+      let calls = 0;
+      await assert.rejects(
+        waitForScheduledAutomationRun('pickup', 'job-1', 2000, {
+          run: (() => {
+            calls++;
+            return { status: 0, stdout: JSON.stringify(page) };
+          }) as never,
+          sleep: async () => assert.fail('invalid history must not retry'),
+          report: () => {},
+        }),
+      );
+      assert.equal(calls, 1);
+    }
+  });
+
   it('should retry timed-out status reads for the same run without submitting work', async () => {
     let elapsed = 0;
     const calls: string[][] = [];
@@ -199,12 +284,14 @@ describe('scripts/wait-for-automation-run', () => {
           stdout = JSON.stringify({ entries: [entry] });
         } else if (command === 'openclaw-gateway') stdout = '/tmp/gateway.log\n';
         else if (command === 'tail') stdout = 'gateway command failure: sensitive-value';
+        else if (command === 'grep') stdout = 'code=automation-lifecycle-begin sensitive-value';
         else if (command === '/bin/sh') stdout = '/ci/helpers/openclaw-gateway\n';
         else {
           assert.equal(command, process.execPath);
           assert.deepEqual(args, ['/ci/helpers/lib/redact-stream.mjs']);
           assert.ok(input?.includes('command failed: sensitive-value'));
           assert.ok(input?.includes('gateway command failure: sensitive-value'));
+          assert.ok(input?.includes('code=automation-lifecycle-begin sensitive-value'));
           assert.ok(!input?.includes(entry.summary));
           stdout = input!.replaceAll('sensitive-value', '[REDACTED]');
         }

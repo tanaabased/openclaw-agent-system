@@ -2,12 +2,15 @@ name: Project picker tests
 
 on:
   pull_request:
+  push:
+    branches:
+      - 627-repair-scheduled-pickup-context-e71a0c7aec2dcd7d
 
 permissions:
   contents: read
 
 concurrency:
-  group: pr-project-picker-${{ github.event.pull_request.number }}
+  group: pr-project-picker-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:

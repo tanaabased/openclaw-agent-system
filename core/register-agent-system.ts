@@ -760,11 +760,15 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
     credentialManager,
     lifecycleRegistry,
   });
-  const automationLifecycle = new AutomationLifecycleAuthority({
-    setRunContext: (patch) => api.runContext.setRunContext({ ...patch, value: { ...patch.value } }),
-    getRunContext: (params) => api.runContext.getRunContext(params),
-    clearRunContext: (params) => api.runContext.clearRunContext(params),
-  });
+  const automationLifecycle = new AutomationLifecycleAuthority(
+    {
+      setRunContext: (patch) =>
+        api.runContext.setRunContext({ ...patch, value: { ...patch.value } }),
+      getRunContext: (params) => api.runContext.getRunContext(params),
+      clearRunContext: (params) => api.runContext.clearRunContext(params),
+    },
+    logger,
+  );
   registerAutomationLifecycleHooks(api, automationLifecycle);
   const lifecycleApproval = new AgentLifecycleApproval({
     manifestService,

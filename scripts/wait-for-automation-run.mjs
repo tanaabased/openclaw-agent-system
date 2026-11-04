@@ -63,6 +63,11 @@ export function reportAutomationFailure(
     const tail = run('tail', ['-n', '120', log.stdout.trim()]);
     assert.equal(tail.status, 0);
     evidence.push('gateway diagnostic tail:\n' + tail.stdout);
+    const lifecycle = run('grep', ['-F', 'code=automation-lifecycle-', log.stdout.trim()]);
+    if (lifecycle.status === 0)
+      evidence.push(
+        'automation lifecycle trace:\n' + lifecycle.stdout.split('\n').slice(-80).join('\n'),
+      );
   } catch {
     evidence.push('gateway diagnostic tail: unavailable');
   }
@@ -169,11 +174,79 @@ export async function waitForAutomationRun(
   }
 }
 
+/** observe a due-time occurrence without submitting an on-demand replacement. */
+export async function waitForScheduledAutomationRun(
+  id,
+  nativeId,
+  scheduledAfterMs,
+  {
+    run = runCommand,
+    now = Date.now,
+    sleep = (ms) => setTimeout(ms),
+    report = reportAutomationFailure,
+    maxWaitMs = 600_000,
+  } = {},
+) {
+  assert.ok(Number.isSafeInteger(scheduledAfterMs) && scheduledAfterMs > 0);
+  const deadline = now() + maxWaitMs;
+  let runId;
+  try {
+    while (now() < deadline) {
+      const result = run(
+        'openclaw',
+        [
+          'gateway',
+          'call',
+          'cron.runs',
+          '--params',
+          JSON.stringify({ id: nativeId, limit: 10, offset: 0 }),
+          '--json',
+        ],
+        undefined,
+        Math.min(30_000, deadline - now()),
+      );
+      if (result.error?.code !== 'ETIMEDOUT') {
+        assert.equal(result.status, 0, result.error?.message ?? result.stderr);
+        const page = JSON.parse(result.stdout);
+        assert.ok(Array.isArray(page.entries), 'native run history is invalid');
+        const matches = page.entries.filter(
+          (entry) => entry.jobId === nativeId && entry.runAtMs >= scheduledAfterMs,
+        );
+        assert.ok(matches.length <= 1, 'multiple due-time occurrences need investigation');
+        if (matches.length) {
+          runId = matches[0].runId;
+          assert.ok(typeof runId === 'string' && runId.trim(), 'native run identity is missing');
+          break;
+        }
+      }
+      if (now() < deadline) await sleep(Math.min(2000, deadline - now()));
+    }
+    assert.ok(runId, `${id}: no scheduled occurrence observed before the deadline`);
+    await waitForAutomationRun(id, runId, 'ok', {
+      run,
+      now,
+      sleep,
+      report: () => {},
+      maxWaitMs: Math.max(0, deadline - now()),
+    });
+    return runId;
+  } catch (error) {
+    report(nativeId, runId);
+    throw error;
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('GitHub Actions only.');
-  const [id, runId, expected = 'ok'] = process.argv.slice(2);
-  assert.ok(id && runId, 'an automation id and native run id are required');
-  assert.ok(['ok', 'error'].includes(expected), 'expected execution must be ok or error');
-  await waitForAutomationRun(id, runId, expected);
-  process.stdout.write(`${id}: native run completed\n`);
+  if (process.argv[2] === '--scheduled-after') {
+    const [, id, nativeId, after] = process.argv.slice(2);
+    assert.ok(id && nativeId && after, 'an automation id, native job id and due time are required');
+    process.stdout.write((await waitForScheduledAutomationRun(id, nativeId, Number(after))) + '\n');
+  } else {
+    const [id, runId, expected = 'ok'] = process.argv.slice(2);
+    assert.ok(id && runId, 'an automation id and native run id are required');
+    assert.ok(['ok', 'error'].includes(expected), 'expected execution must be ok or error');
+    await waitForAutomationRun(id, runId, expected);
+    process.stdout.write(`${id}: native run completed\n`);
+  }
 }
