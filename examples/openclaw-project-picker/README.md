@@ -20,7 +20,7 @@ native OpenClaw and OpenClaw-hosted Codex, then verify the window allows no seco
 
 ## Notes
 
-- Strict AIMock supplies the selection and assessment. Scheduler authority, GitHub reads/writes, intake, chat creation, and checkout creation remain real. This does not prove model judgment, long-running unattended reliability, or desktop rendering.
+- Strict AIMock supplies the selection and assessment. Scheduler authority, GitHub reads/writes, intake, chat creation, and checkout creation remain real. Hosted Codex keeps its native searchable-tool default. This does not prove model judgment, long-running unattended reliability, or desktop rendering.
 - Each execution path gets its own disposable milestone, two issues, agent workspace, and native job. Empty and exhausted-window checks run on demand. Selection waits for the installed daily schedule, moved through the manifest to a slot two to three minutes ahead; it never substitutes a forced run if that occurrence fails. This adds up to three minutes of scheduler waiting per runtime.
 - Debug logs correlate lifecycle initialization, storage acceptance, pickup lookup, and cleanup with hashed identities. These diagnostics investigate [missing scheduled context](https://github.com/tanaabased/openclaw-agent-system/issues/627); the scenario must run in hosted CI before it supplies acceptance evidence.
 - Ordinary assignments permit EMORI, not Tanaabot, and default to Plan. The selected issue asks a clarification question: the assessment asserts Work mode, retains the question, and stops before implementation or publication.
@@ -39,7 +39,6 @@ openclaw config set models.mode merge
 openclaw config set memory.search.enabled false --strict-json
 openclaw config set skills.workshop.autonomous.mode off
 openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
-openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
 openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","app-server","--listen","stdio://"]' --strict-json
 mkdir -p "$HOME/.ssh"
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
