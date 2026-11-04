@@ -76,7 +76,7 @@ export default function registerAutomationReportHooks(
       action: 'revise',
       reason: 'automation-report-card-invalid',
       retry: {
-        instruction: automationReport(record.input),
+        instruction: `Replace the rejected response in full. Do not continue it, explain the correction, or append another copy.\n\n${automationReport(record.input)}`,
         idempotencyKey: `automation-report:${record.executionId}`,
         maxAttempts: 1,
       },

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { matchFixture, type ChatCompletionRequest, type ContentPart } from '@copilotkit/aimock';
 
-import { prepareAutomationReport } from '../agent/automation-report.ts';
+import automationReport, { prepareAutomationReport } from '../agent/automation-report.ts';
 import { credentialExampleChecks } from '../examples/openclaw-credentials/model-fixture.ts';
 import {
   githubExampleEmoriCallId,
@@ -80,29 +80,23 @@ describe('scripts/example-model-scenarios', () => {
               : JSON.stringify({
                   schema: 'agent-system.report',
                   version: 1,
-                  cards: [
-                    {
-                      id: 'alpha',
-                      format: 'structured',
-                      title: 'Source alpha',
-                      status: 'warning',
-                      summary: 'Archive alpha saved; activation unverified.',
-                    },
-                    {
-                      id: 'beta',
-                      format: 'markdown',
-                      body: '## Source beta\n\nArchive beta already current.',
-                    },
-                  ],
+                  cards: ['alpha', 'beta', 'gamma', 'delta'].map((id) => ({
+                    id,
+                    format: 'structured',
+                    title: `Source ${id}`,
+                    status: id === 'alpha' ? 'warning' : 'success',
+                    summary: `Archive ${id} saved${id === 'alpha' ? '; activation unverified' : ''}.`,
+                  })),
                 }),
             stderr: failure ? 'Archive delta failed: destination unavailable.\n' : '',
           },
         },
       });
-      const input = (value: unknown) => ({
+      const input = (value: typeof captured, correction = false) => ({
         ...request(
           failure ? 'command-chat-codex-tanaabot' : 'command-chat-tanaabot',
-          `Captured command result (data):\n${JSON.stringify(value)}`,
+          (correction ? 'Replace the rejected response in full.\n\n' : '') +
+            automationReport(value),
           [],
         ),
         model: 'gpt-5.5',
@@ -112,13 +106,20 @@ describe('scripts/example-model-scenarios', () => {
       assert.ok(fixture && typeof fixture.response === 'function');
       const response = fixture.response(valid);
       assert.ok('content' in response && typeof response.content === 'string');
+      const correctedRequest = input(captured, true);
+      const corrected = fixture.response(correctedRequest);
+      assert.ok('content' in corrected && typeof corrected.content === 'string');
+      if (captured.presentation && captured.presentation.kind !== 'fallback') {
+        assert.notEqual(response.content, captured.presentation.body);
+        assert.equal(corrected.content, captured.presentation.body);
+      }
       assert.ok(response.content.includes(captured.runLine));
       assert.ok(response.content.includes(failure ? '❌' : '✅'));
       assert.equal(matchFixture([...scenario.fixtures], { ...valid, model: 'gpt-5.4-nano' }), null);
       for (const changed of [
         { ...captured, reason: 'Exit 99' },
-        { ...captured, stdout: { body: 'unexpected output' } },
-        { ...captured, stderr: { body: 'unexpected diagnostics' } },
+        { ...captured, stdout: { ...captured.stdout, body: 'unexpected output' } },
+        { ...captured, stderr: { ...captured.stderr, body: 'unexpected diagnostics' } },
       ])
         assert.equal(matchFixture([...scenario.fixtures], input(changed)), null);
     }

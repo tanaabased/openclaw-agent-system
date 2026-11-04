@@ -5,13 +5,20 @@ import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 const model = /^(?:aimock\/)?gpt-5\.5$/u;
 
 function reportInput(request: ChatCompletionRequest) {
-  const user = request.messages.findLast((message) => message.role === 'user');
-  const content = user ? (getTextContent(user.content) ?? '') : '';
   const marker = 'Captured command result (data):\n';
+  const content =
+    request.messages
+      .filter((message) => message.role === 'user')
+      .map((message) => getTextContent(message.content) ?? '')
+      .findLast((text) => text.includes(marker)) ?? '';
+  const bodyMarker = '\n\nResponse body (copy literally from the next line to end of message):\n';
   const at = content.lastIndexOf(marker);
   if (at < 0) return;
   try {
-    const value = JSON.parse(content.slice(at + marker.length).trim());
+    const captured = content.slice(at + marker.length);
+    const bodyAt = captured.indexOf(bodyMarker);
+    const value = JSON.parse((bodyAt < 0 ? captured : captured.slice(0, bodyAt)).trim());
+    const body = bodyAt < 0 ? undefined : captured.slice(bodyAt + bodyMarker.length);
     if (typeof value.runLine !== 'string' || typeof value.executionId !== 'string') return;
     if (
       (value.id === 'success' &&
@@ -19,8 +26,14 @@ function reportInput(request: ChatCompletionRequest) {
         value.reason === 'Exit 0' &&
         value.stdout?.body === '' &&
         value.presentation?.kind === 'preferred' &&
-        value.presentation.body ===
-          `> ## ⚠️ Source alpha\n>\n> Archive alpha saved; activation unverified.\n\n## Source beta\n\nArchive beta already current.\n\n**Runner result:** ✅ success · Exit 0\n\n${value.runLine}` &&
+        body ===
+          ['alpha', 'beta', 'gamma', 'delta']
+            .map(
+              (source) =>
+                `> ## ${source === 'alpha' ? '⚠️' : '✅'} Source ${source}\n>\n> Archive ${source} saved${source === 'alpha' ? '; activation unverified' : ''}.`,
+            )
+            .join('\n\n') +
+            `\n\n**Runner result:** ✅ success · Exit 0\n\n${value.runLine}` &&
         value.stderr?.body === '') ||
       (value.id === 'failure' &&
         value.outcome === 'error' &&
@@ -31,10 +44,16 @@ function reportInput(request: ChatCompletionRequest) {
         typeof value.presentation.footer === 'string' &&
         value.presentation.footer.includes(value.runLine))
     )
-      return value as {
+      return {
+        ...value,
+        body,
+        correction: content.includes('Replace the rejected response in full.'),
+      } as {
         id: 'success' | 'failure';
         runLine: string;
-        presentation: { kind: 'preferred'; body: string } | { kind: 'fallback'; footer: string };
+        body?: string;
+        correction: boolean;
+        presentation: { kind: 'preferred' } | { kind: 'fallback'; footer: string };
       };
   } catch {
     return;
@@ -49,7 +68,9 @@ const reportFixture: Fixture = {
       id: `report-${input.id}`,
       content:
         input.presentation.kind === 'preferred'
-          ? input.presentation.body
+          ? input.correction
+            ? input.body!
+            : input.body!.replaceAll('\n\n', '\n>\n') + '\n\n' + JSON.stringify(input.body)
           : `> ## ❌ failure failed\n>\n> Archive delta failed: destination unavailable.\n\n${input.presentation.footer}`,
     };
   },

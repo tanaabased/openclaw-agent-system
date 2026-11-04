@@ -46,6 +46,39 @@ function expected(report: ReturnType<typeof prepareAutomationReport>) {
 }
 
 describe('agent/automation-report-document', () => {
+  it('should supply four separate cards once as literal copy-ready text', () => {
+    const cards = ['canon', 'emori', 'smutlord', 'openclaw-agent-system'].map((id) => ({
+      ...structured,
+      id,
+      title: id,
+      summary: 'Saved [source] at C:\\archive.',
+    }));
+    const report = prepare(envelope(cards));
+    const body = expected(report);
+    const prompt = automationReport(report);
+    const marker = '\n\nResponse body (copy literally from the next line to end of message):\n';
+    const [metadata, literal] = prompt.split(marker);
+    assert.equal(literal, body);
+    assert.ok(!metadata!.includes(JSON.stringify(body)));
+    assert.ok(!metadata!.includes('> ## ⚠️ canon'));
+    assert.equal(body.split('\n\n> ##').length, 4);
+    assert.ok(body.includes('\n\n**Runner result:**'));
+    assert.equal(automationReportCardValid(body, report), true);
+    for (const changed of [
+      body.replaceAll('\n\n> ##', '\n>\n> ##'),
+      body + '\n\n' + body,
+      body + '\n\n' + JSON.stringify(body),
+      body +
+        '\n\n' +
+        renderStructuredReport({
+          ...cards[0]!,
+          format: 'structured',
+          status: 'warning',
+          summary: body,
+        }),
+    ])
+      assert.equal(automationReportCardValid(changed, report), false);
+  });
   it('should prepare mixed cards in order without interpreting or wrapping authored markdown', () => {
     const report = prepare(envelope([structured, { id: 'b', format: 'markdown', body: markdown }]));
     assert.equal(report.presentation?.kind, 'preferred');

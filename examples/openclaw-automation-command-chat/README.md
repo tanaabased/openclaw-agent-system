@@ -7,7 +7,8 @@ reports through the real Gateway response path.
 ## What belongs here
 
 - Shared persistent destination creation and reuse by command automations.
-- Preferred mixed structured/Markdown cards and fallback diagnostics reaching the existing posting model.
+- Four separately quoted source cards and fallback diagnostics reaching the existing posting model.
+- One bounded correction replacing merged cards and an escaped duplicate before terminal delivery.
 - Corresponding durable reports after reconnect, without repeating commands.
 - Report-time model selection with an effort different from the agent default.
 - Hosted Codex report formatting without an unsupported prompt-hook tool allowlist.
@@ -23,7 +24,7 @@ reports through the real Gateway response path.
 - Strict AIMock supplies both runtimes' provider responses with synthetic credentials and no live fallback. Commands, chat creation, report delivery, and history remain real; no live-model credential is required.
 - Hosted Codex uses `gpt-5.5` from its native catalog. After install, capture the agent's catalog before and after provider refresh and require that model to be available through Codex; inference routing to AIMock alone does not establish runtime support.
 - The fixture accepts only the expected captured streams and process outcome. Assertions verify the returned message in native history, not prose quality or browser rendering.
-- The success mode emits one mixed report document, including an application warning on exit zero; failure mode keeps arbitrary output. Both runtimes call one script with a mode flag. Each command runs once per runtime. Output-format, empty-output, and timeout permutations remain in source tests.
+- The success mode emits four structured source cards, including an application warning on exit zero; failure mode keeps arbitrary output. Both runtimes call one script with a mode flag. Each command runs once per runtime. The mock first merges the cards and appends an escaped copy, then returns the literal body only after the replacement instruction. This adds one synthetic correction response per runtime, without another command run or restart. Mixed authored Markdown, empty-output, and timeout permutations remain in source tests.
 - This proves report delivery, not model judgment or exhaustive native-tool interception. Source components exercise the blanket blocker and preserve the automation result after blocked attempts.
 - Observation deadlines include CLI startup and RPC time.
 - Native OpenClaw output hooks omit executed effort. Verify the model in the retained report and high effort in the formatter's exact native run trace; do not substitute requested settings for missing execution telemetry.
@@ -99,10 +100,13 @@ for runtime in openclaw codex; do
     grep -F "$reason" "$TMPDIR/card-$runtime-$mode.md"
   done
   grep -F '> ## ⚠️ Source alpha' "$TMPDIR/card-$runtime-success.md"
-  grep -F '## Source beta' "$TMPDIR/card-$runtime-success.md"
+  for source in beta gamma delta; do
+    grep -F "> ## ✅ Source $source" "$TMPDIR/card-$runtime-success.md"
+  done
   grep -F '**Runner result:** ✅ success' "$TMPDIR/card-$runtime-success.md"
-  test "$(grep -c '^> ##' "$TMPDIR/card-$runtime-success.md")" = 1
-  test "$(grep -c '^## Source beta' "$TMPDIR/card-$runtime-success.md")" = 1
+  node "$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat/assert-report.mjs" "$TMPDIR/card-$runtime-success.md"
+  if grep -F '&gt; ##' "$TMPDIR/card-$runtime-success.md"; then exit 1; fi
+  if grep -F '\n' "$TMPDIR/card-$runtime-success.md"; then exit 1; fi
   grep -Fi delta "$TMPDIR/card-$runtime-failure.md"
   grep -F '❌' "$TMPDIR/card-$runtime-failure.md"
   test "$(wc -l < command.runs | tr -d ' ')" = 2

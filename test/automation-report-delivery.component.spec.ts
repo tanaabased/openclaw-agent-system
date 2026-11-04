@@ -57,12 +57,14 @@ describe('agent/automation-report-delivery', () => {
       historyFailure?: boolean;
       stdout?: string;
       alteredPreferred?: boolean;
+      correction?: 'valid' | 'duplicate' | 'multipart';
       legacy?: boolean;
     } = {},
   ) {
     const calls: string[] = [];
     const messages: string[] = [];
     const replies: unknown[] = [];
+    const stages: { first: string; instruction: string; corrected: string; saved: string[] }[] = [];
     let selections = 0;
     let selected = false;
     const store = new AutomationReportStore(`${workspaceDir}/reports`, () =>
@@ -73,7 +75,7 @@ describe('agent/automation-report-delivery', () => {
           toolsAllow?: string[];
           appendSystemContext?: string;
           block?: boolean;
-          retry?: { maxAttempts?: number };
+          retry?: { maxAttempts?: number; instruction?: string; idempotencyKey?: string };
         }
       | undefined;
     type Hook = (
@@ -166,24 +168,51 @@ describe('agent/automation-report-delivery', () => {
           );
           const record = await store.read(String(params.idempotencyKey));
           const presentation = record!.input.presentation;
-          const body =
+          let body =
             presentation && presentation.kind !== 'fallback'
               ? (options.alteredPreferred ? 'Changed report\n' : '') + presentation.body
               : presentation?.kind === 'fallback'
                 ? `> ## ${options.badCard ? '✅' : '❌'} Backup failed\n>\n> The command exited unsuccessfully.\n\n${presentation.footer}`
                 : `> ## ❌ Backup failed\n>\n> ${record!.input.runLine}\n>\n> The command exited unsuccessfully.`;
+          if (options.correction) {
+            const escaped = body.replaceAll('&', '&amp;').replaceAll('>', '&gt;');
+            body = body.replaceAll('\n\n', '\n>\n') + '\n\n' + JSON.stringify(escaped);
+          }
           const validation = await hooks.get('before_agent_finalize')!(
             { lastAssistantMessage: body },
             context,
           );
-          if (options.badCard || options.alteredPreferred)
+          if (options.badCard || options.alteredPreferred || options.correction)
             assert.equal(validation?.retry?.maxAttempts, 1);
           else assert.equal(validation, undefined);
+          let saved = [body];
+          if (options.correction) {
+            const instruction = validation?.retry?.instruction;
+            assert.ok(instruction);
+            assert.equal(
+              validation?.retry?.idempotencyKey,
+              `automation-report:${params.idempotencyKey}`,
+            );
+            const marker =
+              '\n\nResponse body (copy literally from the next line to end of message):\n';
+            const corrected = instruction.slice(instruction.indexOf(marker) + marker.length);
+            assert.ok(instruction.includes('Replace the rejected response in full'));
+            saved =
+              options.correction === 'multipart'
+                ? [corrected, JSON.stringify(corrected)]
+                : [corrected + (options.correction === 'duplicate' ? '\n\n' + corrected : '')];
+            stages.push({ first: body, instruction, corrected, saved });
+            const finalValidation = await hooks.get('before_agent_finalize')!(
+              { lastAssistantMessage: saved.join('\n') },
+              context,
+            );
+            assert.equal(Boolean(finalValidation), options.correction !== 'valid');
+          }
           if (!options.pending)
             replies.push({
               role: 'assistant',
               stopReason: 'stop',
-              content: [{ type: 'text', text: body }],
+              content: saved.map((text) => ({ type: 'text', text })),
               __openclaw: {
                 id: `reply-${params.idempotencyKey}`,
                 runId: params.idempotencyKey,
@@ -240,8 +269,52 @@ describe('agent/automation-report-delivery', () => {
     };
     const recover = (executionId = input.executionId) =>
       reconcileAutomationReport({ store, executionId, credential, assertCurrent, selectSettings });
-    return { deliver, recover, calls, messages, store, hooks, selections: () => selections };
+    return {
+      deliver,
+      recover,
+      calls,
+      messages,
+      store,
+      hooks,
+      stages,
+      replies,
+      selections: () => selections,
+    };
   }
+  it('should validate the corrected saved four-card reply rather than the first candidate', async () => {
+    const stdout = JSON.stringify({
+      schema: 'agent-system.report',
+      version: 1,
+      cards: ['canon', 'emori', 'smutlord', 'openclaw-agent-system'].map((id) => ({
+        id,
+        format: 'structured',
+        title: id,
+        status: 'success',
+        summary: 'Source saved.',
+      })),
+    });
+    for (const correction of ['valid', 'duplicate', 'multipart'] as const) {
+      const executionId = randomUUID();
+      const f = fixture({ stdout, correction });
+      const result = await f.deliver(executionId);
+      const record = await f.store.read(executionId);
+      assert.ok(record?.input.presentation && record.input.presentation.kind !== 'fallback');
+      const expected = record.input.presentation.body;
+      const stage = f.stages[0]!;
+      assert.notEqual(stage.first, expected);
+      assert.equal(stage.corrected, expected);
+      assert.equal(stage.corrected.split('\n\n> ##').length, 4);
+      assert.ok(stage.corrected.includes('\n\n**Runner result:**'));
+      assert.equal(f.replies.length, 1);
+      assert.equal(result.status, correction === 'valid' ? 'delivered' : 'failed');
+      if (correction === 'valid') {
+        assert.deepEqual(stage.saved, [expected]);
+        assert.equal(result.messageId, `reply-${executionId}`);
+      } else assert.equal(result.code, 'automation-report-card-invalid');
+      assert.equal((await f.recover(executionId)).status, result.status);
+      assert.equal(f.messages.length, 1);
+    }
+  });
   it('should deliver one retained mixed response and reconcile its original receipt without replay', async () => {
     const stdout = JSON.stringify({
       schema: 'agent-system.report',
