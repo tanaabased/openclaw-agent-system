@@ -253,7 +253,7 @@ export function deliveryCompletionInstructions(
   return (
     attachment +
     announcementRecoveryInstructions(delivery.announcement, delivery.announcementRecovery) +
-    ' Then call delivery present and reproduce its complete private PR card and announcement outcome. Continue in this same turn; an attachment, announcement, or card failure never requires recreating the PR. ' +
+    ' Then call delivery present and reproduce its complete private PR card and announcement outcome. Attempt these steps in this turn; retain any specific failure without reopening implementation or preparing a generic resume. Never recreate the verified PR. ' +
     (runtime === 'codex'
       ? 'For automatic workflows, use continuationRuntime action:delivery with the nested delivery operation.'
       : 'Use agent_system_dispatch action delivery with the requested operation.')

@@ -67,19 +67,28 @@ describe('agent/issue-workflow-progress', () => {
       }
 
       delivery.announcement.code = 'delivery-announcement-unconfirmed';
-      assert.deepEqual(issueWorkflowProgress(issue), {
-        action: 'delivery',
-        status: 'delivered-response-pending',
-        publicationPending: false,
-      });
-      delivery.announcement.code = undefined;
       delivery.attached = false;
-      assert.equal(issueWorkflowProgress(issue).action, 'delivery');
-      delivery.attached = true;
       delivery.cardAttempts = 0;
-      assert.equal(issueWorkflowProgress(issue).action, 'delivery');
+      assert.deepEqual(issueWorkflowProgress(issue), { action: 'complete', status: 'delivered' });
+      assert.equal(workflowStatus(issue), 'delivered');
       issue.retirement = {};
       assert.equal(issueWorkflowProgress(issue).action, 'stopped');
+    });
+    it(`should require a completed ${runtime} implementation even when a pr was published early`, () => {
+      const issue = record('done');
+      const delivery = { pullRequest: { pullRequestNumber: 7 }, reconciled: true, adopted: {} };
+      if (runtime === 'codex') {
+        issue.delivery = delivery;
+        delete issue.continuation!.result;
+        issue.continuation!.phase = 'running';
+      } else {
+        issue.work!.delivery = delivery;
+        delete issue.work!.result;
+        issue.work!.implementation = {};
+      }
+      assert.equal(issueWorkflowProgress(issue).action, 'implementation');
+      delete (delivery as { adopted?: unknown }).adopted;
+      assert.equal(issueWorkflowProgress(issue).action, 'implementation');
     });
     it(`should finish ${runtime} local-only work without scheduling publication`, () => {
       const issue = record('done');
@@ -102,7 +111,7 @@ describe('agent/issue-workflow-progress', () => {
       } else issue.work!.code = 'dispatch-turn-cancelled';
       assert.deepEqual(issueWorkflowProgress(issue), { action: 'stopped', status: 'blocked' });
     });
-    it(`should expose unfinished ${runtime} announcement recovery without declaring delivery complete`, () => {
+    it(`should retain ${runtime} announcement failures without reopening delivered implementation`, () => {
       const issue = record('done');
       const delivery = {
         pullRequest: { pullRequestNumber: 7 },
@@ -114,9 +123,8 @@ describe('agent/issue-workflow-progress', () => {
       for (const status of ['retrying', 'exhausted', 'needs-attention', 'stopped']) {
         delivery.announcementRecovery.status = status;
         assert.deepEqual(issueWorkflowProgress(issue), {
-          action: 'delivery',
-          status: `announcement-${status}`,
-          publicationPending: false,
+          action: 'complete',
+          status: 'delivered',
         });
       }
     });

@@ -200,7 +200,12 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       work.blockedTurnId ?? work.activeTurnId ?? work.binding?.turnId ?? work.attempt?.turnId;
     const progress = issueWorkflowProgress(record);
     if (!retry && !resumeBlocked && ['stopped', 'complete'].includes(progress.action)) {
-      if (input.action === 'next') return undefined;
+      if (
+        input.action === 'next' &&
+        (progress.action !== 'complete' ||
+          announcementRecoveryAction(record.delivery, (deps.now ?? Date.now)()) !== 'check')
+      )
+        return undefined;
       if (progress.action === 'stopped' || !work.result)
         return { status: progress.status, id: record.id, code: work.code };
     }
@@ -309,7 +314,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     );
     if (
       input.action === 'next' &&
-      progress.action === 'delivery' &&
+      progress.action === 'complete' &&
       record.delivery &&
       ['idle', 'notLoaded'].includes(found.status) &&
       announcementRecoveryAction(record.delivery, (deps.now ?? Date.now)()) !== 'ready'
@@ -355,6 +360,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       if (announcementRecoveryAction(record.delivery, (deps.now ?? Date.now)()) !== 'ready')
         return undefined;
     }
+    if (input.action === 'next' && progress.action === 'complete') return undefined;
     if (input.material) {
       if (!retainedIssueProgression(record))
         throw new Error('implementation-material-context-required');

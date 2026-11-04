@@ -220,22 +220,18 @@ describe('agent/workflow-status', () => {
       'blocked',
     );
   });
-  it('should preserve published work when delivery remains incomplete in either runtime', () => {
+  it('should require implementation completion and keep ancillary delivery failures separate in both runtimes', () => {
     const delivery = { pullRequest: { pullRequestNumber: 7 }, reconciled: true };
-    assert.equal(workflowStatus({ phase: 'complete', delivery }), 'delivered-response-pending');
-    assert.equal(
-      workflowStatus({ phase: 'complete', work: { delivery } }),
-      'delivered-response-pending',
-    );
-    const completed = {
-      ...delivery,
-      attached: true,
-      announcement: { receipt: { nodeId: 'comment' } },
-    };
-    assert.equal(workflowStatus({ phase: 'complete', delivery: completed }), 'delivered');
-    assert.equal(
-      workflowStatus({ phase: 'complete', delivery: { ...completed, attached: false } }),
-      'delivered-response-pending',
-    );
+    assert.equal(workflowStatus({ phase: 'complete', delivery }), 'complete');
+    for (const work of [
+      { continuation: { phase: 'delivery', result: { outcome: 'done' } }, delivery },
+      { work: { result: { outcome: 'done' }, delivery } },
+    ]) {
+      assert.equal(workflowStatus({ phase: 'complete', ...work }), 'delivered');
+      delivery.reconciled = false;
+      assert.equal(workflowStatus({ phase: 'complete', ...work }), 'delivery');
+      delivery.reconciled = true;
+    }
+    assert.equal(workflowStatus({ phase: 'complete', delivery, work: { delivery } }), 'running');
   });
 });

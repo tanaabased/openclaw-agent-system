@@ -46,9 +46,11 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   execution identity and chat attachment. Resume missing effects from retained receipts.
 - Derive unfinished issue work and status from the same results and delivery receipts.
   Keep task ownership, native activity, processed input, and pending effects distinct.
-  Idle native turns release capacity without retiring their task. PR publication,
-  announcement, and supported presentation receipts settle a delivery round, not the
-  issue conversation. Displaying a card must not require another saved phase transition.
+  Idle native turns release capacity without retiring their task. Completed implementation
+  and verified linked PR publication settle autonomous work. Attempt native attachment,
+  announcement, and presentation separately; their failures never reopen implementation
+  or prepare a generic resume. Reconcile uncertain announcements without sending a chat turn.
+  Displaying a card must not require another saved phase transition.
 - Retain explicit implementation stages across interrupted current workflows, preserving
   the issue, assessment, and execution receipts. A plan, default mode, publication-only
   request, or historical execution payload is not evidence of an implementation stage.

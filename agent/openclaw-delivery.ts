@@ -488,7 +488,7 @@ export default async function openClawDelivery(input: {
     status: action.operation === 'publish' ? 'published' : 'ready',
     id: record.id,
     pullRequest: receipt,
-    workflowStatus: workflowStatus({ phase: 'complete', delivery }),
+    workflowStatus: workflowStatus(record),
     url,
     instructions: deliveryCompletionInstructions('openclaw', delivery),
   };
@@ -525,7 +525,7 @@ export function presentOpenClawDelivery(
   return {
     status: 'presented',
     retained: true,
-    workflowStatus: workflowStatus({ phase: 'complete', delivery }),
+    workflowStatus: workflowStatus(record),
     id: record.id,
     url,
     presentation: delivery.presentation,

@@ -102,8 +102,9 @@ branches, commits, pushes, and PR delivery; manual work follows its explicit sco
 skill and guidance returned by context. Later default-mode edits and clarification
 do not revoke an entered implementation stage. Respect explicit user restrictions,
 retirement, reset, supersession, cancellation, and actual native denial.
-An idle chat still owns its task. A delivered PR or a local-only result settles the
-current implementation round; a new verified user input can continue in the same
+An idle chat still owns its task. Completed implementation with verified linked PR publication, or a local-only result, settles the
+current implementation round. Attempt native attachment and the announcement/card response separately;
+a failure there never reopens implementation or authorizes a generic resume. A new verified user input can continue in the same
 chat and PR. Preserve local-only publication scope until the operator changes it.
 
 ## Workflow

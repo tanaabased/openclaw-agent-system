@@ -6662,7 +6662,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(codexItemOccupied((await store.read()).records[0]!), true);
   });
 
-  it('should use scheduled read-only recovery before resuming codex delivery', async () => {
+  it('should finish scheduled announcement recovery without resuming delivered codex work', async () => {
     const work = await workIssue();
     const deliveryId = work.id;
     assert.ok(typeof deliveryId === 'string');
@@ -6778,15 +6778,13 @@ describe('agent/codex-dispatch', () => {
     linked = true;
     now = (await store.read()).records[0]!.delivery!.announcementRecovery!.retryAfter!;
     const resumed = await work.run('next');
-    assert.equal(resumed.status, 'prepared', JSON.stringify(resumed));
+    assert.equal(resumed.status, 'idle', JSON.stringify(resumed));
+    assert.equal('request' in resumed, false);
     assert.equal(checks, 2);
-    assert.match(
-      String('request' in resumed && resumed.request?.prompt),
-      /only the managed PR delivery/,
-    );
     const retained = (await store.read()).records[0]!;
     assert.equal(retained.delivery!.announcementRecovery, undefined);
     assert.equal(retained.delivery!.pullRequest!.pullRequestNumber, 7);
+    assert.equal(retained.continuation!.publicationAttempt, undefined);
   });
 
   it('should resume only delivery after a recorded implementation turn ends', async () => {
@@ -7223,7 +7221,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal('code' in stopped && stopped.code, 'dispatch-assessment-skill-unavailable');
   });
 
-  it('should release intake capacity while retaining announcement recovery after pr delivery', async () => {
+  it('should finish autonomous work with pending attachment and presentation while retaining announcement recovery', async () => {
     const work = await workIssue();
     const deliveryId = work.id;
     assert.ok(typeof deliveryId === 'string');
@@ -7244,7 +7242,7 @@ describe('agent/codex-dispatch', () => {
         const record = state.records.find((entry) => entry.id === work.id)!;
         const announcement = attemptedAnnouncement('U_receiver').state;
         if (confirmed) announcement.receipt = { nodeId: 'IC_announcement', databaseId: 99 };
-        else announcement.code = 'delivery-announcement-failed';
+        else announcement.code = 'delivery-announcement-unconfirmed';
         record.delivery = {
           id: deliveryId,
           binding: {
@@ -7262,8 +7260,8 @@ describe('agent/codex-dispatch', () => {
           creationAttempted: true,
           pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
           reconciled: true,
-          attached: true,
-          cardAttempts: 1,
+          attached: confirmed,
+          cardAttempts: confirmed ? 1 : 0,
           announcement,
         };
         await save();
@@ -7271,7 +7269,7 @@ describe('agent/codex-dispatch', () => {
       return {
         status: 'linked',
         retained: true,
-        workflowStatus: 'delivered-response-pending',
+        workflowStatus: 'delivered',
         instruction: 'Present the card.',
         notices: [],
         url: 'https://github.com/owner/repo/pull/7',
@@ -7282,10 +7280,14 @@ describe('agent/codex-dispatch', () => {
     await work.run('delivery', { delivery: { action: 'present' } }, true);
     assert.equal((await store.read()).records[0]!.continuation!.phase, 'delivery');
     assert.equal(codexItemOccupied((await store.read()).records[0]!), true);
+    assert.equal(issueWorkflowProgress((await store.read()).records[0]!).action, 'complete');
+    const attempt = structuredClone((await store.read()).records[0]!.continuation!.attempt);
     native!.status = 'idle';
     native!.turnEnded = true;
     await next();
     assert.equal(codexItemOccupied((await store.read()).records[0]!), false);
+    assert.equal((await work.run('next')).status, 'idle');
+    assert.deepEqual((await store.read()).records[0]!.continuation!.attempt, attempt);
     const context = await work.run('context', {}, true);
     assert.equal('deliveryOnly' in context && context.deliveryOnly, true);
     confirmed = true;

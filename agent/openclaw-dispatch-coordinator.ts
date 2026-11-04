@@ -1,3 +1,5 @@
+import { announcementRecoveryAction } from './delivery-announcement-recovery.ts';
+import issueWorkflowProgress from './issue-workflow-progress.ts';
 import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import projectPickupCapacity from './project-pickup-capacity.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
@@ -257,11 +259,12 @@ export default class OpenClawDispatchCoordinator {
           record,
           issueWorkflowMode(manifest.github?.notifications, record),
         ) ||
-          openClawWorkSlot(
-            record,
-            issueWorkflowMode(manifest.github?.notifications, record),
-            (this.context.dependencies.now ?? Date.now)(),
-          )) &&
+          openClawWorkSlot(record, issueWorkflowMode(manifest.github?.notifications, record)) ||
+          (issueWorkflowProgress(record).action === 'complete' &&
+            announcementRecoveryAction(
+              record.work?.delivery,
+              (this.context.dependencies.now ?? Date.now)(),
+            ) === 'check')) &&
         (openClawItemOccupied(record) || available(record.projectWork?.pickup?.issueNodeId) > 0),
     );
     const responsePending = state.records.some((record) => openClawResponseEligible(record));
@@ -549,24 +552,29 @@ export default class OpenClawDispatchCoordinator {
         const slot = openClawWorkSlot(
           record,
           issueWorkflowMode(manifest.github?.notifications, record),
-          now,
         );
         const decision = openClawDecisionPending(
           record,
           issueWorkflowMode(manifest.github?.notifications, record),
         );
-        return slot || decision || openClawResponseEligible(record)
+        const announcementCheck =
+          issueWorkflowProgress(record).action === 'complete' &&
+          announcementRecoveryAction(record.work?.delivery, now) === 'check';
+        return slot || decision || openClawResponseEligible(record) || announcementCheck
           ? [
               {
                 record,
                 slot,
                 candidateId: automationHash({ implementation: record.id }),
-                recovering: Boolean(
-                  (record.summaryRecovery && record.summaryRecovery.turn.status !== 'completed') ||
-                  (decision
-                    ? record.decisionTurn
-                    : slot && record.work?.[slot] && record.work[slot].status !== 'completed'),
-                ),
+                recovering:
+                  announcementCheck ||
+                  Boolean(
+                    (record.summaryRecovery &&
+                      record.summaryRecovery.turn.status !== 'completed') ||
+                    (decision
+                      ? record.decisionTurn
+                      : slot && record.work?.[slot] && record.work[slot].status !== 'completed'),
+                  ),
               },
             ]
           : [];

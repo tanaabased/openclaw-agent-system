@@ -1,3 +1,4 @@
+import { announcementRecoveryAction } from './delivery-announcement-recovery.ts';
 import workflowFailure from './workflow-failure.ts';
 import codexCommit from './codex-commit.ts';
 import implementationMaterial from './implementation-material.ts';
@@ -197,6 +198,9 @@ export default async function runCodexContinuation(
                 !record.feedbackReactivation &&
                 !record.reset &&
                 (['implementation', 'delivery'].includes(issueWorkflowProgress(record).action) ||
+                  (issueWorkflowProgress(record).action === 'complete' &&
+                    announcementRecoveryAction(record.delivery, (deps.now ?? Date.now)()) ===
+                      'check') ||
                   [
                     'continuation-auto-wait',
                     'continuation-assessment-not-actionable',

@@ -29,5 +29,8 @@ export default function workflowStatus(record: State) {
   if (feedback.work?.result?.outcome === 'clarification-needed') return 'clarification-needed';
   if (!feedback.work?.result) return 'running';
   if (!delivery?.reconciled || delivery.pushedHead !== feedback.work.head) return 'delivery';
-  return issueWorkflowProgress({ phase: 'complete', delivery }).status;
+  return issueWorkflowProgress({
+    phase: 'complete',
+    work: { result: feedback.work.result, delivery },
+  }).status;
 }

@@ -497,6 +497,12 @@ describe('agent/openclaw-delivery', () => {
   }
 
   it('should finish a new implementation through the same pr after earlier delivery completed', async () => {
+    record.work!.result = {
+      outcome: 'done',
+      summary: 'First pass.',
+      fullResult: 'First pass checked.',
+    };
+    record.work!.resultSource = { turnId: 'first-run', inputId: 'first-input' };
     await publish();
     const composed = await request('compose');
     assert.ok('digest' in composed);
@@ -510,6 +516,22 @@ describe('agent/openclaw-delivery', () => {
     const receipt = structuredClone(record.work!.delivery!.pullRequest);
     record.work!.caller = input.source;
     head = 'b'.repeat(40);
+    await openClawWorkAction({
+      record,
+      source: input.source,
+      caller: {
+        sessionKey: record.threadId!,
+        sessionId: 'issue-session',
+        runId: input.source.runId,
+        toolCallId: 'context',
+      },
+      revisionAuthorized: true,
+      progression: { stage: 'implementation', via: 'operator' },
+      action: { action: 'implementation-context', id: record.id },
+      now: 3,
+      assertCurrent: input.assertCurrent,
+      save: input.save,
+    });
     await openClawWorkAction({
       record,
       source: input.source,
@@ -606,7 +628,7 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(pushes, 1);
   });
 
-  it('should wait and recheck the same published pr before making delivery runnable', async () => {
+  it('should recheck the published pr without waking delivery after announcement recovery', async () => {
     await publish();
     let linked = false,
       checks = 0;
@@ -633,7 +655,7 @@ describe('agent/openclaw-delivery', () => {
     record.work!.result = { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' };
     const delivery = record.work!.delivery!;
     const first = delivery.announcementRecovery!.retryAfter!;
-    assert.equal(openClawWorkSlot(record, 'work', first - 1), undefined);
+    assert.equal(openClawWorkSlot(record, 'work'), undefined);
     const check = (now: number) =>
       recoverRetainedAnnouncement({
         delivery,
@@ -648,10 +670,10 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(checks, 1);
     assert.equal(await check(first), false);
     assert.equal(checks, 2);
-    assert.equal(openClawWorkSlot(record, 'work', first), undefined);
+    assert.equal(openClawWorkSlot(record, 'work'), undefined);
     linked = true;
     assert.equal(await check(delivery.announcementRecovery!.retryAfter!), true);
-    assert.equal(openClawWorkSlot(record, 'work', first), 'deliveryTurn');
+    assert.equal(openClawWorkSlot(record, 'work'), undefined);
     const composed = await request('compose');
     assert.ok('digest' in composed);
     const candidate = await request('candidate', {

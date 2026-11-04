@@ -831,8 +831,10 @@ function respond(
       if (isPendingDelivery(published))
         throw new Error(`notification-delivery-reconciliation-exhausted: ${published.code}`);
       if (published.status !== 'published') return;
-      if (!update && published.workflowStatus !== 'delivered-response-pending')
-        throw new Error('published pr must retain pending announcement as partial delivery');
+      if (!update && published.workflowStatus !== 'delivered')
+        throw new Error(
+          'completed implementation with verified pr linkage must be delivered before its announcement',
+        );
     }
     if (!retry && !update) {
       const composed = result('delivery-compose');

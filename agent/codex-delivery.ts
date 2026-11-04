@@ -88,7 +88,7 @@ export interface CodexDeliveryDependencies extends Omit<CodexIntakeDependencies,
   delay?: typeof abortableDelay;
   native?: Pick<ReturnType<typeof codexDispatchNative>, 'find'> &
     Partial<Pick<ReturnType<typeof codexDispatchNative>, 'assessmentSkill' | 'operatorInput'>>;
-  attachment?: (threadId: string, turnId: string, url: string) => Promise<boolean>;
+  attachment?: (threadId: string, turnId: string, url: string) => Promise<boolean | undefined>;
   threadId?: string;
   // only the owning continuation runtime may supply verified schedule state, never request json.
   authorizeSchedule?: () => Promise<void>;
@@ -115,10 +115,10 @@ export async function codexDeliveryAttachment(
   threadId: string,
   turnId: string,
   url: string,
-): Promise<boolean> {
+): Promise<boolean | undefined> {
   const turns = await dispatchHistory(request, threadId);
   const turn = turns.find((entry) => entry.id === turnId);
-  if (!turn || !Array.isArray(turn.items)) return false;
+  if (!turn || !Array.isArray(turn.items)) return undefined;
   const calls = turn.items.filter(
     (item) =>
       nativeObject(item) &&
@@ -128,28 +128,25 @@ export async function codexDeliveryAttachment(
   );
   const call = calls.at(-1);
   if (!nativeObject(call) || call.status !== 'completed' || !nativeObject(call.result))
-    return false;
+    return undefined;
   const result = call.result;
-  if (result.isError === true || !Array.isArray(result.content)) return false;
+  if (result.isError === true || !Array.isArray(result.content)) return undefined;
   const content = result.content.find(
     (entry) => nativeObject(entry) && entry.type === 'text' && typeof entry.text === 'string',
   );
-  if (!nativeObject(content) || typeof content.text !== 'string') return false;
+  if (!nativeObject(content) || typeof content.text !== 'string') return undefined;
   let inventory: unknown;
   try {
     inventory = JSON.parse(content.text);
   } catch {
-    return false;
+    return undefined;
   }
-  return (
-    nativeObject(inventory) &&
-    Array.isArray(inventory.artifacts) &&
-    inventory.artifacts.some(
-      (entry) =>
-        nativeObject(entry) &&
-        entry.attachmentType === 'pull_request' &&
-        (entry.identityKey === url || (nativeObject(entry.payload) && entry.payload.url === url)),
-    )
+  if (!nativeObject(inventory) || !Array.isArray(inventory.artifacts)) return undefined;
+  return inventory.artifacts.some(
+    (entry) =>
+      nativeObject(entry) &&
+      entry.attachmentType === 'pull_request' &&
+      (entry.identityKey === url || (nativeObject(entry.payload) && entry.payload.url === url)),
   );
 }
 
@@ -330,9 +327,9 @@ export default async function runCodexDelivery(
         if (!previous?.pullRequest) throw new Error('delivery-reconciliation-required');
         const pullRequestUrl = url(previous.pullRequest.pullRequestNumber);
         if (input.action === 'reconcile') {
-          let attached = false;
+          let attached = previous.attached;
           try {
-            attached = deps.attachment
+            const observed = deps.attachment
               ? await deps.attachment(record.threadId, found.turnId, pullRequestUrl)
               : await codexDeliveryAttachment(
                   connection!.request,
@@ -340,6 +337,7 @@ export default async function runCodexDelivery(
                   found.turnId,
                   pullRequestUrl,
                 );
+            if (observed !== undefined) attached = observed;
           } catch {
             signal.throwIfAborted();
           }
@@ -852,7 +850,7 @@ export default async function runCodexDelivery(
             notices: notices(delivery.attached),
             id: input.id,
             pullRequest: delivery.pullRequest,
-            workflowStatus: workflowStatus({ phase: 'complete', delivery }),
+            workflowStatus: workflowStatus(record),
             url: url(delivery.pullRequest!.pullRequestNumber),
             instruction: deliveryCompletionInstructions('codex', delivery),
           };

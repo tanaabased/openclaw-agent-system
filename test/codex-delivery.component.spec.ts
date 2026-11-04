@@ -1162,7 +1162,7 @@ describe('agent/codex-delivery', () => {
     assert.ok(!gitCalls.some((argv) => argv.includes('push')));
     const published = await publish();
     assert.equal(published.status, 'published');
-    assert.equal(published.workflowStatus, 'delivered-response-pending');
+    assert.equal(published.workflowStatus, 'running');
     assert.equal(pr!.title, 'Authored title');
     assert.equal(pr!.body, 'Authored body.\n\nCloses https://github.com/owner/repo/issues/3');
     assert.deepEqual(
@@ -1192,8 +1192,13 @@ describe('agent/codex-delivery', () => {
       /Feedback is configured.*active intake could not be verified/,
     );
     assert.equal(creates, 1);
+    deps.attachment = async () => undefined;
+    await request('reconcile');
+    assert.equal((await store.read()).records[0]!.delivery!.attached, true);
+    deps.attachment = async () => attached;
     attached = false;
     await request('reconcile');
+    assert.equal((await store.read()).records[0]!.delivery!.attached, false);
     assert.equal((await request('present')).status, 'linked');
   });
   it('should resume a failed linkage or recipient phase on the checkpointed pr', async () => {
@@ -1292,7 +1297,7 @@ describe('agent/codex-delivery', () => {
     assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
     assert.equal(linkReads, 5);
     const retained = await request('present');
-    assert.equal(retained.workflowStatus, 'delivery');
+    assert.equal(retained.workflowStatus, 'running');
     assert.match(String(retained.presentation), /pull\/7/);
     wrongIssueLink = false;
     await publish();
@@ -1788,7 +1793,7 @@ describe('agent/codex-delivery native attachment', () => {
         ? { data: [{ id: 'turn' }] }
         : { data: items.map((entry) => ({ turnId: 'turn', item: entry })) };
     assert.equal(await codexDeliveryAttachment(request, 'child', 'turn', url), true);
-    assert.equal(await codexDeliveryAttachment(request, 'child', 'other-turn', url), false);
+    assert.equal(await codexDeliveryAttachment(request, 'child', 'other-turn', url), undefined);
     items = [item, { ...item, result: { content: [{ type: 'text', text: '{"artifacts":[]}' }] } }];
     assert.equal(await codexDeliveryAttachment(request, 'child', 'turn', url), false);
     for (const invalid of [
@@ -1798,7 +1803,7 @@ describe('agent/codex-delivery native attachment', () => {
       { ...item, result: { isError: true, content: item.result.content } },
     ]) {
       items = [invalid];
-      assert.equal(await codexDeliveryAttachment(request, 'child', 'turn', url), false);
+      assert.equal(await codexDeliveryAttachment(request, 'child', 'turn', url), undefined);
     }
   });
 });

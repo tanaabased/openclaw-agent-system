@@ -100,39 +100,14 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
   if (result?.outcome === 'done' && (continuation?.scope ?? work?.scope) === 'local')
     return { action: 'complete', status: 'publication-held' };
   const delivery = record.delivery ?? work?.delivery;
-  const implementing =
-    (result && result.outcome !== 'done' && resumed) ||
-    (!result &&
-      (work?.implementation ||
-        work?.turn ||
-        (continuation && !['delivery', 'complete'].includes(continuation.phase!))));
-  const observationOnly = Boolean(delivery?.adopted && !delivery.pushedHead);
-  if (
-    !implementing &&
-    (result?.outcome === 'done' || (delivery?.pullRequest && !observationOnly))
-  ) {
+  if (result?.outcome === 'done') {
     const published =
       delivery?.pullRequest &&
       delivery.reconciled &&
       (!continuation?.head || delivery.pushedHead === continuation.head);
-    const complete =
-      published &&
-      delivery.attached !== false &&
-      delivery.cardAttempts !== 0 &&
-      delivery.announcement?.receipt &&
-      !delivery.announcement.code &&
-      !delivery.announcementRecovery;
-    return complete
+    return published
       ? { action: 'complete', status: 'delivered' }
-      : {
-          action: 'delivery',
-          status: published
-            ? delivery.announcementRecovery
-              ? `announcement-${delivery.announcementRecovery.status}`
-              : 'delivered-response-pending'
-            : 'delivery',
-          publicationPending: !published,
-        };
+      : { action: 'delivery', status: 'delivery', publicationPending: true };
   }
   if (record.progression?.stage !== 'implementation') {
     if (record.autoDecision && !record.autoDecision.ended)
