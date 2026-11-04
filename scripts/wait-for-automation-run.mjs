@@ -210,26 +210,31 @@ export async function waitForScheduledAutomationRun(
         const page = JSON.parse(result.stdout);
         assert.ok(Array.isArray(page.entries), 'native run history is invalid');
         const matches = page.entries.filter(
-          (entry) => entry.jobId === nativeId && entry.runAtMs >= scheduledAfterMs,
+          (entry) =>
+            entry.jobId === nativeId &&
+            Number.isSafeInteger(entry.runAtMs) &&
+            entry.runAtMs >= scheduledAfterMs &&
+            entry.action === 'finished',
         );
         assert.ok(matches.length <= 1, 'multiple due-time occurrences need investigation');
         if (matches.length) {
-          runId = matches[0].runId;
-          assert.ok(typeof runId === 'string' && runId.trim(), 'native run identity is missing');
-          break;
+          const entry = matches[0];
+          runId = entry.runId;
+          assert.ok(
+            runId === undefined || (typeof runId === 'string' && runId.trim()),
+            'native run identity is invalid',
+          );
+          assert.equal(entry.status, 'ok', `${id}: scheduled execution failed`);
+          assert.ok(
+            entry.completionStatus === undefined || entry.completionStatus === 'succeeded',
+            `${id}: scheduled completion failed`,
+          );
+          return entry;
         }
       }
       if (now() < deadline) await sleep(Math.min(2000, deadline - now()));
     }
-    assert.ok(runId, `${id}: no scheduled occurrence observed before the deadline`);
-    await waitForAutomationRun(id, runId, 'ok', {
-      run,
-      now,
-      sleep,
-      report: () => {},
-      maxWaitMs: Math.max(0, deadline - now()),
-    });
-    return runId;
+    throw new Error(`${id}: no scheduled occurrence observed before the deadline`);
   } catch (error) {
     report(nativeId, runId);
     throw error;
@@ -241,7 +246,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (process.argv[2] === '--scheduled-after') {
     const [, id, nativeId, after] = process.argv.slice(2);
     assert.ok(id && nativeId && after, 'an automation id, native job id and due time are required');
-    process.stdout.write((await waitForScheduledAutomationRun(id, nativeId, Number(after))) + '\n');
+    process.stdout.write(
+      JSON.stringify(await waitForScheduledAutomationRun(id, nativeId, Number(after))) + '\n',
+    );
   } else {
     const [id, runId, expected = 'ok'] = process.argv.slice(2);
     assert.ok(id && runId, 'an automation id and native run id are required');

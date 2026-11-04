@@ -52,7 +52,7 @@ OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 # should hand one pickup assignment to ordinary work intake through each runtime
 set -euo pipefail
 actor_node=$(GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id')
-for runtime in openclaw codex; do
+for runtime in codex openclaw; do
   cd "$GITHUB_WORKSPACE/examples/openclaw-project-picker/$runtime"
   milestone=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method POST repos/tanaabased/big-test-bucket/milestones -f title="agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-pickup-$runtime" --jq .number)
   printf '%s\n' "$milestone" > "$TMPDIR/pickup-$runtime-milestone"
@@ -95,8 +95,7 @@ for runtime in openclaw codex; do
   mv "$TMPDIR/pickup-$runtime-scheduled.yaml" agent.yaml
   openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .stepId == "github-project-pickup" and .status == "updated")'
   openclaw agent-system automations list --json | jq -e --arg id "$native" --arg chat "$chat" 'any(.jobs[]; .id == "github-project-pickup" and .nativeId == $id and .routing == $chat and .nativeEnabled == true)'
-  run_id=$(node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" --scheduled-after github-project-pickup "$native" "$due")
-  printf '%s\n' "$run_id" > "$TMPDIR/pickup-$runtime-scheduled-run"
+  node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" --scheduled-after github-project-pickup "$native" "$due" > "$TMPDIR/pickup-$runtime-scheduled.json"
   grep -F 'code=automation-lifecycle-' "$(openclaw-gateway log-path)" | tail -n 80 | node "$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
   number=$(jq -er .number "$TMPDIR/pickup-$runtime-selected.json")
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api "repos/tanaabased/big-test-bucket/issues/$number" | jq -e '.assignees | length == 1 and .[0].login == "tanaabot"'

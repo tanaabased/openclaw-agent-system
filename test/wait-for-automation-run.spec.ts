@@ -9,10 +9,11 @@ import {
 } from '../scripts/wait-for-automation-run.mjs';
 
 describe('scripts/wait-for-automation-run', () => {
-  it('should observe the due job and await its exact run without submitting a replacement', async () => {
+  it('should observe the exact completed job slot when scheduled history has no run id', async () => {
     let elapsed = 1000;
     const calls: string[][] = [];
-    const runId = await waitForScheduledAutomationRun('pickup', 'job-1', 2000, {
+    const due = { jobId: 'job-1', action: 'finished', status: 'ok', runAtMs: 2000 };
+    const observed = await waitForScheduledAutomationRun('pickup', 'job-1', 2000, {
       now: () => elapsed,
       sleep: async (ms: number) => {
         elapsed += ms;
@@ -20,33 +21,23 @@ describe('scripts/wait-for-automation-run', () => {
       run: ((_command: string, args: string[]) => {
         calls.push(args);
         const entries = [
-          { jobId: 'job-1', runId: 'old', runAtMs: 1999 },
-          { jobId: 'foreign', runId: 'foreign-run', runAtMs: 3000 },
-          ...(calls.length > 1 ? [{ jobId: 'job-1', runId: 'due', runAtMs: 2000 }] : []),
+          { ...due, runAtMs: 1999 },
+          { ...due, jobId: 'foreign', runAtMs: 3000 },
+          { ...due, action: 'started' },
+          ...(calls.length > 1 ? [due] : []),
         ];
         return {
           status: 0,
           stdout: JSON.stringify({
-            entries: args[2] === 'cron.runs' ? entries : [{ runId: 'due', execution: 'ok' }],
+            entries,
           }),
         };
       }) as never,
       report: () => assert.fail('successful observation must not report a failure'),
     });
-    assert.equal(runId, 'due');
-    assert.equal(calls.length, 3);
-    assert.deepEqual(calls[2], [
-      'agent-system',
-      'automations',
-      'runs',
-      'pickup',
-      '--run-id',
-      'due',
-      '--limit',
-      '1',
-      '--json',
-    ]);
-    assert.ok(calls.every((args) => args.includes('cron.runs') || args[2] === 'runs'));
+    assert.deepEqual(observed, due);
+    assert.equal(calls.length, 2);
+    assert.ok(calls.every((args) => args[2] === 'cron.runs'));
   });
 
   it('should bound scheduled observation and report its missing occurrence without running it', async () => {
@@ -72,10 +63,12 @@ describe('scripts/wait-for-automation-run', () => {
   });
 
   it('should reject ambiguous or invalid scheduled history instead of choosing another run', async () => {
-    const due = { jobId: 'job-1', runId: 'due', runAtMs: 2000 };
+    const due = { jobId: 'job-1', runId: 'due', runAtMs: 2000, action: 'finished', status: 'ok' };
     for (const page of [
       {},
-      { entries: [{ ...due, runId: undefined }] },
+      { entries: [{ ...due, runId: '' }] },
+      { entries: [{ ...due, status: 'error' }] },
+      { entries: [{ ...due, completionStatus: 'failed' }] },
       { entries: [due, { ...due, runId: 'second' }] },
     ]) {
       let calls = 0;
