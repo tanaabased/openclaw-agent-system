@@ -17,6 +17,7 @@ import { Value } from 'typebox/value';
 
 import { AutomationError } from './automation-gateway.ts';
 import AutomationThreads, {
+  AutomationThreadSettingsHandoff,
   AutomationThreadSettingsError,
   type AutomationThreadModelObservation,
   automationThreadSelection,
@@ -370,12 +371,23 @@ async function resolveThreads(
         group: section && !pendingGroups.has(section.name) ? section.name : undefined,
       };
     };
-    const bindings = await new AutomationThreads(
+    const threads = new AutomationThreads(
       { root: selected.root, scope: selected.scope, runtime: 'codex' },
       {
         ...adapter,
         lookup,
         lookupFresh: (id) => lookup(id, true),
+        verifySettingsTurn: async (native) => {
+          const thread = await verifyThread(
+            inputs.threads ?? [],
+            native.id,
+            selected.workspace,
+          ).catch(() => {
+            throw new AutomationError('automation-thread-verification-required');
+          });
+          if (thread.status.type !== 'idle')
+            throw new AutomationError('automation-thread-settings-busy');
+        },
         setGroup: async (id, group) => {
           const journal = journals.get(group)!;
           const state = await journal.read();
@@ -388,7 +400,10 @@ async function resolveThreads(
           pendingGroups.delete(group);
         },
       },
-    ).resolve(jobs, apply);
+    );
+    const bindings = apply
+      ? await threads.resolve(jobs, true)
+      : await threads.inspectSchedules(jobs);
     if (apply) {
       // retain the verified destination even when the chat was already correctly placed.
       for (const job of jobs) {
@@ -448,7 +463,11 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
     ? await readCodexAutomationDefaults(codexHome).catch(() => undefined)
     : undefined;
   let bindings:
-    Map<string, { id: string; settings?: AutomationThreadModelObservation }> | undefined;
+    | Map<
+        string,
+        { id: string; settings?: AutomationThreadModelObservation; settingsCode?: string }
+      >
+    | undefined;
   let threadSettings: AutomationThreadModelObservation | undefined;
   let threadCode: string | undefined;
   let threadAutomationId: string | undefined;
@@ -503,6 +522,14 @@ async function plan(selected: Awaited<ReturnType<typeof snapshot>>, inputs: Code
   result.unmanagedCount = selected.cleanupOnly
     ? saved.length - ledger.records.filter((record) => record.id === intakeAutomationId).length
     : result.unmanagedCount - (ledger.retired?.length ?? 0);
+  const pendingSettings = [...(bindings ?? [])].flatMap(([id, binding]) =>
+    binding.settingsCode ? [{ id, code: binding.settingsCode, settings: binding.settings }] : [],
+  );
+  if (pendingSettings.length) {
+    result.findings.push(...pendingSettings);
+    if (result.status === 'aligned') result.status = 'requires-native-app-sync';
+    result.digest = automationHash({ plan: result.digest, pendingSettings });
+  }
   if (selected.policyBlocker) {
     result.findings.push({ id: intakeAutomationId, code: selected.policyBlocker });
     if (!result.actions.length) result.status = 'blocked';
@@ -754,6 +781,22 @@ export async function syncCodexAutomationThreads(
       throw new CodexAutomationError('automation-plan-stale-or-blocked');
     const bindings = await resolveThreads(selected, inputs, true).catch((error) => {
       if (error instanceof SidebarPending) return error.effect;
+      if (error instanceof AutomationThreadSettingsHandoff)
+        return {
+          status: 'native-action' as const,
+          digest: result.digest,
+          request: {
+            tool: 'send_message_to_thread' as const,
+            arguments: {
+              threadId: error.nativeId,
+              hostId: 'local' as const,
+              model: error.settings.model,
+              thinking: error.settings.effort,
+              prompt:
+                'Agent System Install configuration-only turn. The native send operation supplies this automation chat’s requested model and reasoning settings. This is not a scheduled occurrence. Do not invoke tools, scan or assign issues, resume prior work, change files, or send messages. Reply only: “configuration turn complete.” Install will independently verify the saved settings; do not claim they were verified.',
+            },
+          },
+        };
       throw new CodexAutomationError(
         error instanceof AutomationError ? error.code : 'automation-thread-sync-failed',
       );

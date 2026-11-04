@@ -19,6 +19,8 @@ those same conversations.
 
 ## Notes
 
+- Native desktop acceptance: with a verified automation chat held by the desktop, change its model and schedule. Sync must save the schedule while reporting the pending model and preserving the chat. For an idle chat, Install must prepare one native configuration-only turn carrying the requested model and effort. Verify that the turn invokes no tools, fresh saved-settings inspection converges, and repeated Install sends no additional turn. Active chats wait without interruption; denied or uncertain writes are not retried. Component tests cover denied, uncertain, conflicting and unreadable settings without permitting schedule writes.
+
 - The named-zone declaration maps to a native timezone-qualified recurrence. Codex direct creation does not accept `DTSTART`, so only a new timezone-qualified schedule prepares a native review card and waits for verified saved settings. Timezone edits to existing schedules use direct updates. Native timing limitations are documented in [Codex automations](../../MANIFEST.md#codex-execution-and-ownership).
 - Sidebar inventories and responses are explicit headless fixtures; native sidebar behavior requires desktop verification. Lookup inventories are explicit fixtures. `list` and `sync` inspect or plan native app actions; they do not write scheduler files. `threads-sync` creates/resumes real conversations through `codex app-server` under installation authorization and a fresh digest.
 - Native readback checks `auto_review`, `on-request`, and `workspace-write`. No model generation or provider credentials are used; run only in GitHub Actions.
