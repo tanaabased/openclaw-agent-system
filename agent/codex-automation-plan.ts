@@ -144,11 +144,7 @@ async function projectId(input: unknown, workspace: string): Promise<string> {
   return matches[0]!;
 }
 
-export async function verifyThread(
-  inputs: unknown[],
-  id: string,
-  workspace: string,
-): Promise<void> {
+export async function verifyThread(inputs: unknown[], id: string, workspace: string) {
   const schema = Type.Object({
     schemaVersion: Type.Literal(1),
     thread: Type.Object({
@@ -170,6 +166,7 @@ export async function verifyThread(
   ) {
     throw new CodexAutomationError('automation-thread-workspace-mismatch');
   }
+  return thread;
 }
 
 /** the model supplies native lookup results, never desired jobs, ownership, or the diff. */

@@ -905,6 +905,118 @@ describe('agent/codex-automations', () => {
     });
   }
 
+  it('should prepare one native settings turn for an idle owned chat and reconcile without replay', async () => {
+    const declaration = (model: string) =>
+      job(
+        `    thread: {name: Review}\n    overrides:\n      codex: {model: ${model}, effort: high}\n`,
+      );
+    await manifest(declaration('original'));
+    let current: AutomationThread | null = null;
+    let writes = 0,
+      creates = 0;
+    const adapter: AutomationThreadAdapter = {
+      async lookup() {
+        return current;
+      },
+      async create(_record, save, _fresh, settings) {
+        creates++;
+        await save('thread-1');
+        current = { id: 'thread-1', incarnation: 'original', ...settings };
+        return 'thread-1';
+      },
+      async rename(_id, name) {
+        current!.name = name;
+      },
+      async updateSettings() {
+        writes++;
+        throw new AutomationError('automation-thread-settings-busy');
+      },
+    };
+    const dependencies = { ...deps(), threadAdapter: adapter };
+    await syncThreads(dependencies);
+    await syncOne(dependencies);
+    await manifest(declaration('desired'));
+    const drift = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    await assert.rejects(
+      syncCodexAutomationThreads(pluginData, drift.digest, inputs(), dependencies),
+      rejectsCode('automation-thread-verification-required'),
+    );
+    assert.equal(writes, 1);
+    const nativeInput = (status: string) => ({
+      ...inputs(),
+      threads: [
+        {
+          schemaVersion: 1,
+          thread: {
+            id: 'thread-1',
+            kind: 'codex',
+            hostId: 'local',
+            cwd: workspace,
+            status: { type: status },
+          },
+        },
+      ],
+    });
+    const pending = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    await assert.rejects(
+      syncCodexAutomationThreads(pluginData, pending.digest, nativeInput('active'), dependencies),
+      rejectsCode('automation-thread-settings-busy'),
+    );
+    assert.equal(writes, 1);
+    const effect = await syncCodexAutomationThreads(
+      pluginData,
+      pending.digest,
+      nativeInput('idle'),
+      dependencies,
+    );
+    assert.equal(effect.status, 'native-action');
+    assert.ok('request' in effect && effect.request.tool === 'send_message_to_thread');
+    assert.equal(effect.request.arguments.threadId, 'thread-1');
+    assert.equal(effect.request.arguments.model, 'desired');
+    assert.equal(effect.request.arguments.thinking, 'high');
+    assert.equal(effect.request.arguments.hostId, 'local');
+    assert.match(effect.request.arguments.prompt, /configuration-only/u);
+    assert.match(effect.request.arguments.prompt, /Do not invoke tools/u);
+    const uncertain = await inspectCodexAutomations(pluginData, nativeInput('idle'), dependencies);
+    assert.ok(
+      uncertain.findings.some(({ code }) => code === 'automation-thread-settings-uncertain'),
+    );
+    await assert.rejects(
+      syncCodexAutomationThreads(pluginData, uncertain.digest, nativeInput('idle'), dependencies),
+    );
+    assert.equal(writes, 1);
+    current!.model = 'desired';
+    const converged = await inspectCodexAutomations(pluginData, nativeInput('idle'), dependencies);
+    assert.equal(converged.status, 'aligned');
+    assert.equal(
+      (
+        await syncCodexAutomationThreads(
+          pluginData,
+          converged.digest,
+          nativeInput('idle'),
+          dependencies,
+        )
+      ).status,
+      'verified',
+    );
+    const repeated = await inspectCodexAutomations(pluginData, nativeInput('idle'), dependencies);
+    assert.equal(repeated.status, 'aligned');
+    assert.deepEqual(repeated.actions, []);
+    assert.equal(
+      (
+        await syncCodexAutomationThreads(
+          pluginData,
+          repeated.digest,
+          nativeInput('idle'),
+          dependencies,
+        )
+      ).status,
+      'verified',
+    );
+    assert.equal(writes, 1);
+    assert.equal(creates, 1);
+  });
+
   it('should identify settings and thread failures while retaining full read-only codex evidence', async () => {
     await manifest(
       job(

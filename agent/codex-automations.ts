@@ -17,6 +17,7 @@ import { Value } from 'typebox/value';
 
 import { AutomationError } from './automation-gateway.ts';
 import AutomationThreads, {
+  AutomationThreadSettingsHandoff,
   AutomationThreadSettingsError,
   type AutomationThreadModelObservation,
   automationThreadSelection,
@@ -376,6 +377,17 @@ async function resolveThreads(
         ...adapter,
         lookup,
         lookupFresh: (id) => lookup(id, true),
+        verifySettingsTurn: async (native) => {
+          const thread = await verifyThread(
+            inputs.threads ?? [],
+            native.id,
+            selected.workspace,
+          ).catch(() => {
+            throw new AutomationError('automation-thread-verification-required');
+          });
+          if (thread.status.type !== 'idle')
+            throw new AutomationError('automation-thread-settings-busy');
+        },
         setGroup: async (id, group) => {
           const journal = journals.get(group)!;
           const state = await journal.read();
@@ -769,6 +781,22 @@ export async function syncCodexAutomationThreads(
       throw new CodexAutomationError('automation-plan-stale-or-blocked');
     const bindings = await resolveThreads(selected, inputs, true).catch((error) => {
       if (error instanceof SidebarPending) return error.effect;
+      if (error instanceof AutomationThreadSettingsHandoff)
+        return {
+          status: 'native-action' as const,
+          digest: result.digest,
+          request: {
+            tool: 'send_message_to_thread' as const,
+            arguments: {
+              threadId: error.nativeId,
+              hostId: 'local' as const,
+              model: error.settings.model,
+              thinking: error.settings.effort,
+              prompt:
+                'Agent System Install configuration-only turn. The native send operation supplies this automation chat’s requested model and reasoning settings. This is not a scheduled occurrence. Do not invoke tools, scan or assign issues, resume prior work, change files, or send messages. Reply only: “configuration turn complete.” Install will independently verify the saved settings; do not claim they were verified.',
+            },
+          },
+        };
       throw new CodexAutomationError(
         error instanceof AutomationError ? error.code : 'automation-thread-sync-failed',
       );

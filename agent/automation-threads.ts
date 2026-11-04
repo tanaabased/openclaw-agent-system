@@ -88,6 +88,15 @@ export class AutomationThreadSettingsError extends AutomationError {
   }
 }
 
+export class AutomationThreadSettingsHandoff extends AutomationError {
+  constructor(
+    readonly nativeId: string,
+    readonly settings: Required<AutomationThreadSettings>,
+  ) {
+    super('automation-thread-settings-turn-required');
+  }
+}
+
 export interface AutomationThreadAdapter {
   /** exact lookup only. Null means confirmed absence, never a failed lookup. */
   lookup(id: string): Promise<AutomationThread | null>;
@@ -101,6 +110,7 @@ export interface AutomationThreadAdapter {
     settings?: AutomationThreadSettings,
   ): Promise<string>;
   updateSettings?(current: AutomationThread, settings: AutomationThreadSettings): Promise<void>;
+  verifySettingsTurn?(current: AutomationThread): Promise<void>;
   rename(id: string, name: string): Promise<void>;
   setGroup?(id: string, group: string): Promise<void>;
 }
@@ -459,6 +469,28 @@ export default class AutomationThreads {
         });
         const settingsError = (code: string) =>
           new AutomationThreadSettingsError(code, observation());
+        const prepareSettingsTurn = async (native: AutomationThread) => {
+          const pending = record?.settingsUpdate;
+          if (
+            !apply ||
+            this.options.runtime !== 'codex' ||
+            !selection.managed ||
+            !this.adapter.verifySettingsTurn ||
+            pending?.phase !== 'busy'
+          )
+            return;
+          if (native.model !== pending.baseline.model || native.effort !== pending.baseline.effort)
+            throw settingsError('automation-thread-settings-conflict');
+          const model = settings?.model ?? native.model;
+          const effort = settings?.effort ?? native.effort;
+          if (!model || !effort) throw settingsError('automation-thread-settings-busy');
+          await this.adapter.verifySettingsTurn(native);
+          // retain the possible native send before handing it to the installer; never replay it.
+          pending.desired = { model, effort };
+          pending.phase = 'uncertain';
+          await save();
+          throw new AutomationThreadSettingsHandoff(native.id, { model, effort });
+        };
         let pendingSettings: AutomationThreadSettingsError | undefined;
         try {
           if (manageSettings && record?.settingsUpdate) {
@@ -473,6 +505,7 @@ export default class AutomationThreads {
               !pendingMatch && pending.phase === 'denied' && settingsMatch(native);
             if (withdrawnDenial && !apply) throw settingsError('automation-thread-sync-required');
             if (!pendingMatch && !withdrawnDenial) {
+              await prepareSettingsTurn(native);
               const retrySafe = pending.phase === 'busy' || pending.phase === 'unsupported';
               if (!apply || !retrySafe)
                 throw new AutomationThreadSettingsError(
@@ -547,6 +580,8 @@ export default class AutomationThreads {
                 else if (failure.code === 'automation-thread-settings-unsupported')
                   record.settingsUpdate.phase = 'unsupported';
                 await save();
+                if (observed && observed.incarnation === native.incarnation)
+                  await prepareSettingsTurn(observed);
                 throw settingsError(failure.code);
               }
               throw settingsError('automation-thread-settings-uncertain');
