@@ -22,7 +22,7 @@ native OpenClaw and OpenClaw-hosted Codex, then verify the window allows no seco
 
 - Strict AIMock supplies the selection and assessment. Scheduler authority, GitHub reads/writes, intake, chat creation, and checkout creation remain real. Hosted Codex keeps its native searchable-tool default. This does not prove model judgment, long-running unattended reliability, or desktop rendering.
 - Each execution path gets its own disposable milestone, two issues, agent workspace, and native job. Empty and exhausted-window checks run on demand. Selection waits for the installed daily schedule, moved through the manifest to a slot two to three minutes ahead; it never substitutes a forced run if that occurrence fails. This adds up to three minutes of scheduler waiting per runtime.
-- Debug logs correlate lifecycle initialization, storage acceptance, pickup lookup, and cleanup with hashed identities. These diagnostics investigate [missing scheduled context](https://github.com/tanaabased/openclaw-agent-system/issues/627); the scenario must run in hosted CI before it supplies acceptance evidence.
+- Debug logs correlate native cron initialization, pickup lookup, and cleanup with hashed identities.
 - Ordinary assignments permit EMORI, not Tanaabot, and default to Plan. The selected issue asks a clarification question: the assessment asserts Work mode, retains the question, and stops before implementation or publication.
 - Only Tanaabot receives fixture assignments. Refresh is scoped to the selected issue. Cleanup stops the Gateway before closing issues and deleting milestones; the shared workflow cleanup owns SSH registrations.
 
