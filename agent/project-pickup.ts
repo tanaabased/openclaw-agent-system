@@ -1,6 +1,6 @@
+import { omit } from 'lodash-es';
 import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import itemReadFailure from '../channels/github/provider/item-read-failure.ts';
-import reconcileProjectPickup from './project-pickup-reconcile.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -26,6 +26,7 @@ import projectPickupCapacity, {
 import projectPickupScope from './project-pickup-scope.ts';
 import { type PickupOperation, type ProjectPickupState } from './project-pickup-state.ts';
 import projectPickupWindow from './project-pickup-window.ts';
+import { maximumPickupWindowMs } from '../channels/github/project-pickup-timing.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
@@ -61,12 +62,20 @@ export const pickupInputSchema = Type.Object(
 );
 export interface PickupScanSummary {
   eligible: number;
-  shortlist: Array<{ nodeId: string; number: number }>;
+  shortlist: Array<{ repository: string; number: number }>;
   selected?: { nodeId: string; number: number };
   rationale?: string;
   skipped: number;
   remaining: number;
 }
+export interface PickupAllowance {
+  repository: string;
+  milestone: number;
+  used?: number;
+  limit: number;
+  code?: string;
+}
+
 type ManagedRecord = PickupManagedRecord;
 export function pickupAuthority(
   state: ProjectPickupState | undefined,
@@ -112,6 +121,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
   timezone: string;
   state: { projectPickup?: ProjectPickupState; records: R[] };
   save(): Promise<void>;
+  assertWriteCapacity?(): void;
   now(): number;
   readPolicy(): Promise<GitHubNotificationPolicy>;
   client: ProjectPickupClient;
@@ -161,45 +171,78 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       throw new Error('project-pickup-enrollment-changed');
     enrollment = retained;
   }
-  const recovering = state.projectPickup?.operations.some(
-    (operation) => operation.attemptedAt !== undefined && !operation.receipt,
-  );
-  if (
-    !recovering &&
-    (enrollment.policyDigest !== projectPickupPolicyDigest(policy) ||
-      (state.projectPickup && state.projectPickup.timezone !== tx.timezone))
-  ) {
-    const [owner, name] = pickup.projects[0]!.repository.split('/') as [string, string];
-    const repository = await client.getRepository(owner, name);
-    const milestone = await projectPickupScope(policy, client, repository);
-    if (!milestone) throw new Error('project-pickup-milestone-invalid');
-    enrollment = {
-      ...enrollment,
-      repositoryNodeId: repository.nodeId,
-      milestoneNodeId: milestone.nodeId,
-      policyDigest: projectPickupPolicyDigest(policy),
-    };
-    await reconcileProjectPickup(
-      state,
-      save,
-      {
-        enrollment,
-        timezone: tx.timezone,
-      },
-      async () => {},
-    );
-  }
   state.projectPickup ??= {
     enrollment: structuredClone(enrollment),
     timezone: tx.timezone,
     operations: [],
   };
   const journal = state.projectPickup;
+  const scanDigest = (live: GitHubNotificationPolicy) =>
+    automationHash({
+      policyDigest: projectPickupPolicyDigest(live),
+      selection: live.projectPickup?.selection,
+    });
+  const window = projectPickupWindow({
+    schedule: pickup.schedule,
+    windowMinutes: pickup.windowMinutes,
+    anchor: enrollment.startedAt,
+    timezone: tx.timezone,
+    now: tx.now(),
+  });
+  const applies = (charge: NonNullable<ProjectPickupState['windowAssignment']>) =>
+    window &&
+    ((tx.now() >= charge.window.opensAt && tx.now() < charge.window.closesAt) ||
+      (charge.assignedAt >= window.opensAt && charge.assignedAt < window.closesAt));
+  const expired = (charge: NonNullable<ProjectPickupState['windowAssignment']>) =>
+    tx.now() >= Math.max(charge.window.closesAt, charge.assignedAt + maximumPickupWindowMs);
+  const charges = (journal.charges ?? []).filter(
+    (charge) =>
+      !expired(charge) ||
+      (charge.reconciled && tx.now() < charge.reconciled.at + maximumPickupWindowMs),
+  );
+  journal.charges = charges;
+  // an old marker can outlive its receipt and may predate a target edit.
+  const legacy = journal.windowAssignment;
+  if (legacy) {
+    const original = journal.operations.find(
+      (entry) =>
+        entry.receipt?.window.id === legacy.window.id && entry.attemptedAt === legacy.assignedAt,
+    );
+    if (!expired(legacy) && original?.enrollment) {
+      charges.push({
+        ...legacy,
+        repository: original.repository,
+        repositoryNodeId: original.enrollment.repositoryNodeId,
+        runId: original.runId,
+      });
+      delete journal.windowAssignment;
+    } else if (expired(legacy)) {
+      delete journal.windowAssignment;
+    }
+  }
+  const used = (repositoryNodeId: string) =>
+    charges.filter((charge) => charge.repositoryNodeId === repositoryNodeId && applies(charge))
+      .length;
+  const allowances: PickupAllowance[] = pickup.projects.map((project) => ({
+    repository: project.repository,
+    milestone: project.milestone.number,
+    limit: project.limit,
+    ...(window
+      ? {
+          used: charges.filter(
+            (charge) =>
+              charge.repository.toLowerCase() === project.repository.toLowerCase() &&
+              applies(charge),
+          ).length,
+        }
+      : {}),
+  }));
   let scanSummary: PickupScanSummary | undefined;
   const discardSelection = (op: PickupOperation) => {
     op.candidates = [];
     if (op.selected) op.selected = { nodeId: op.selected.nodeId, number: op.selected.number };
     delete op.discovery;
+    delete op.scan;
     delete op.guidance;
     delete op.selectionDigest;
     delete op.rationale;
@@ -210,7 +253,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     eligible: op.candidates.length,
     shortlist: (op.shortlist ?? []).flatMap((nodeId) => {
       const item = op.candidates.find((candidate) => candidate.nodeId === nodeId);
-      return item ? [{ nodeId, number: item.number }] : [];
+      return item?.repository ? [{ repository: item.repository, number: item.number }] : [];
     }),
     ...(op.selected
       ? { selected: { nodeId: op.selected.nodeId, number: op.selected.number } }
@@ -255,6 +298,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       repository: op.repository,
       issue: op.selected?.number,
       summary,
+      allowances,
       ...(code ? { code } : {}),
       ...(diagnostic ? { providerDiagnostic: diagnostic } : {}),
       changed,
@@ -275,137 +319,19 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     journal.operations = operations;
     await save();
   }
-  const idle = async (status: 'idle' | 'allowance-reached' | 'paused' | 'at-capacity') => {
+  const idle = async (
+    status: 'idle' | 'allowance-reached' | 'paused' | 'at-capacity' | 'scan-complete',
+  ) => {
     journal.operations = journal.operations.filter(
       (entry) => entry.attemptedAt !== undefined || entry.receipt,
     );
     await save();
-    return { status, changed };
+    return { status, allowances, changed };
   };
-  const window = projectPickupWindow({
-    schedule: pickup.schedule,
-    windowMinutes: pickup.windowMinutes,
-    anchor: enrollment.startedAt,
-    timezone: tx.timezone,
-    now: tx.now(),
-  });
-  let op = journal.operations.find((entry) => entry.attemptedAt !== undefined && !entry.receipt);
-  if (op) op.phase = 'attempted';
-  if (!op) {
-    if (!window) return idle('idle');
-    const used = journal.windowAssignment;
-    if (
-      used &&
-      ((tx.now() >= used.window.opensAt && tx.now() < used.window.closesAt) ||
-        (used.assignedAt >= window.opensAt && used.assignedAt < window.closesAt))
-    )
-      return idle('allowance-reached');
-    if (pickup.paused) return idle('paused');
-    if (
-      state.records.filter(tx.occupied).length + projectPickupCapacity(journal) >=
-      policy.maxConcurrentItems
-    )
-      return idle('at-capacity');
-    op = journal.operations.find(
-      (entry) => entry.runId === tx.runId && ['discovering', 'selecting'].includes(entry.phase),
-    );
-    if (op && op.window.id !== window.id) {
-      journal.operations = journal.operations.filter((entry) => entry !== op);
-      op = undefined;
-    }
-    if (!op) {
-      const guidance = await assessmentGuidance(tx.workspaceDir, pickup.selection?.guidance);
-      op = {
-        id: automationHash({
-          enrollment: enrollment.id,
-          policy: enrollment.policyDigest,
-          window: window.id,
-          runId: tx.runId,
-        }),
-        runId: tx.runId,
-        repository: pickup.projects[0]!.repository,
-        window,
-        phase: 'discovering',
-        page: 1,
-        candidates: [],
-        ...(guidance ? { guidance: guidance.content } : {}),
-      };
-      journal.operations.push(op);
-      await save();
-    }
-  }
-  if (input.cancel) {
-    if (op.id !== input.cancel) throw new Error('project-pickup-operation-missing');
-    if (op.attemptedAt !== undefined)
-      return {
-        status: 'attempted',
-        id: op.id,
-        code: 'project-pickup-assignment-uncertain',
-        changed,
-      };
-    return finish(op, 'cancelled');
-  }
-  if (
-    input.material &&
-    (op.phase !== 'selecting' ||
-      tx.now() >= op.window.closesAt ||
-      input.context?.id !== op.id ||
-      input.context.digest !== op.selectionDigest)
-  )
-    throw new Error('project-pickup-selection-stale');
-  const operation = op;
-  enrollment = operation.enrollment ?? enrollment;
-  const [owner, name] = operation.repository.split('/') as [string, string];
-  const managed = (nodeId: string) =>
-    state.records.some(
-      (record) =>
-        record.issueKey === pickupIssueKey(journal, nodeId) &&
-        !record.reset &&
-        !record.supersededBy &&
-        !record.retired,
-    );
-  const freshScope = async (retainedAssignment = false) => {
-    const live = await tx.readPolicy();
-    if (!retainedAssignment && projectPickupPolicyDigest(live) !== enrollment.policyDigest)
-      throw new Error('project-pickup-policy-changed');
-    const repository = await client.getRepository(owner, name);
-    if (repository.nodeId !== enrollment.repositoryNodeId)
-      throw new Error('project-pickup-repository-changed');
-    if (retainedAssignment) return { live, repository };
-    const milestone = await projectPickupScope(live, client, repository);
-    if (milestone?.nodeId !== enrollment.milestoneNodeId)
-      throw new Error('project-pickup-milestone-changed');
-    return { live, repository };
-  };
-  const eligible = async (
-    number: number,
-    nodeId: string,
-    observedScope?: Awaited<ReturnType<typeof freshScope>>,
-    readContent = true,
+  const routingEligibility = async (
+    live: GitHubNotificationPolicy,
+    repository: Awaited<ReturnType<ProjectPickupClient['getRepository']>>,
   ) => {
-    const { live, repository } = observedScope ?? (await freshScope());
-    const observation = readContent
-      ? await client.projectCandidate(owner, name, number)
-      : undefined;
-    const item = observation ? observation.item : await client.getItem(owner, name, number);
-    if (
-      item.nodeId !== nodeId ||
-      item.itemType !== 'issue' ||
-      item.state !== 'open' ||
-      item.milestone?.nodeId !== enrollment.milestoneNodeId ||
-      item.milestone.state !== 'open' ||
-      item.assignees.length !== 0 ||
-      managed(nodeId)
-    )
-      return;
-    const evidence = observation?.candidate;
-    if (evidence && evidence.nodeId !== nodeId) return;
-    return { live, repository, item, evidence };
-  };
-  const routingEligibility = async ({
-    live,
-    repository,
-  }: Awaited<ReturnType<typeof freshScope>>) => {
     for (const workflow of ['project-pickup', 'issue-assignment'] as const) {
       const code = await claimRouteEligibility(
         tx.instance,
@@ -414,91 +340,294 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       if (code) return code;
     }
   };
-  try {
-    const scope =
-      operation.phase === 'discovering' || operation.attemptedAt !== undefined
-        ? await freshScope(operation.attemptedAt !== undefined)
-        : undefined;
-    if (operation.attemptedAt === undefined) {
-      const code = scope && (await routingEligibility(scope));
-      if (code) return finish(operation, 'pending', code);
+  let op = journal.operations.find((entry) => entry.attemptedAt !== undefined && !entry.receipt);
+  if (op) op.phase = 'attempted';
+  const repositories = new Map<string, Awaited<ReturnType<ProjectPickupClient['getRepository']>>>();
+  if (!op) {
+    if (!window) return idle('idle');
+    if (journal.windowAssignment && applies(journal.windowAssignment)) {
+      for (const allowance of allowances) {
+        delete allowance.used;
+        allowance.code = 'project-pickup-legacy-allowance-used';
+      }
+      return idle('allowance-reached');
     }
+    if (pickup.paused) return idle('paused');
+    const digest = scanDigest(policy);
+    op = journal.operations.find(
+      (entry) => entry.runId === tx.runId && ['discovering', 'selecting'].includes(entry.phase),
+    );
+    if (op && (op.window.id !== window.id || op.scan?.digest !== digest)) {
+      journal.operations = journal.operations.filter((entry) => entry !== op);
+      op = undefined;
+    }
+    if (!op) {
+      const guidance = await assessmentGuidance(tx.workspaceDir, pickup.selection?.guidance);
+      op = {
+        id: automationHash({
+          enrollment: enrollment.id,
+          digest,
+          window: window.id,
+          runId: tx.runId,
+        }),
+        runId: tx.runId,
+        repository: pickup.projects[0]!.repository,
+        scan: { digest, projectIndex: 0 },
+        window,
+        phase: 'discovering',
+        page: 1,
+        candidates: [],
+        ...(guidance ? { guidance: guidance.content } : {}),
+      };
+      journal.operations.push(op);
+    }
+  }
+  const operation = op;
+  const readRepository = async (name: string) => {
+    const [owner, repo] = name.split('/') as [string, string];
+    return client.getRepository(owner, repo);
+  };
+  const freshScope = async (retainedAssignment = false) => {
+    const target = operation.enrollment ?? journal.enrollment;
+    const live = await tx.readPolicy();
+    if (!retainedAssignment && scanDigest(live) !== operation.scan?.digest)
+      throw new Error('project-pickup-policy-changed');
+    const repository = await readRepository(operation.repository);
+    if (repository.nodeId !== target.repositoryNodeId)
+      throw new Error('project-pickup-repository-changed');
+    if (!retainedAssignment) {
+      const milestone = await projectPickupScope(live, client, repository);
+      if (milestone?.nodeId !== target.milestoneNodeId)
+        throw new Error('project-pickup-milestone-changed');
+    }
+    return { live, repository };
+  };
+  const eligible = async (
+    number: number,
+    nodeId: string,
+    repository: Awaited<ReturnType<ProjectPickupClient['getRepository']>>,
+    milestoneNodeId: string,
+    readContent = true,
+  ) => {
+    const { owner, name } = repository;
+    const observation = readContent
+      ? await client.projectCandidate(owner.login, name, number)
+      : undefined;
+    const item = observation ? observation.item : await client.getItem(owner.login, name, number);
+    if (
+      item.nodeId !== nodeId ||
+      item.itemType !== 'issue' ||
+      item.state !== 'open' ||
+      item.milestone?.nodeId !== milestoneNodeId ||
+      item.milestone.state !== 'open' ||
+      item.assignees.length !== 0 ||
+      state.records.some(
+        (record) =>
+          record.issueKey === pickupIssueKey(journal, nodeId, repository.nodeId) &&
+          !record.reset &&
+          !record.supersededBy &&
+          !record.retired,
+      )
+    )
+      return;
+    const evidence = observation?.candidate;
+    if (evidence && evidence.nodeId !== nodeId) return;
+    return { item, evidence };
+  };
+  try {
+    if (operation.attemptedAt === undefined) {
+      const nodeIds = new Set<string>();
+      for (const allowance of allowances) {
+        const skipped = operation.scan?.skipped?.[allowance.repository];
+        if (skipped) allowance.code = skipped;
+        try {
+          const repository = await readRepository(allowance.repository);
+          if (nodeIds.has(repository.nodeId))
+            throw new Error('project-pickup-repository-duplicate');
+          nodeIds.add(repository.nodeId);
+          if (
+            `${repository.owner.login}/${repository.name}`.toLowerCase() !==
+            allowance.repository.toLowerCase()
+          )
+            throw new Error('project-pickup-repository-changed');
+          repositories.set(allowance.repository, repository);
+          allowance.used = used(repository.nodeId);
+        } catch (error) {
+          if (allowances.length === 1 || !itemReadFailure(error)) throw error;
+          allowance.code = 'project-pickup-repository-unavailable';
+          delete allowance.used;
+        }
+      }
+      if (allowances.every((entry) => entry.used !== undefined && entry.used >= entry.limit))
+        return idle('allowance-reached');
+      if (
+        charges.some((charge) => charge.runId === tx.runId || charge.reconciled?.runId === tx.runId)
+      )
+        return idle('scan-complete');
+      if (
+        state.records.filter(tx.occupied).length + projectPickupCapacity(journal) >=
+        policy.maxConcurrentItems
+      )
+        return idle('at-capacity');
+    }
+    if (input.cancel) {
+      if (operation.id !== input.cancel) throw new Error('project-pickup-operation-missing');
+      if (operation.attemptedAt !== undefined)
+        return {
+          status: 'attempted',
+          id: operation.id,
+          code: 'project-pickup-assignment-uncertain',
+          repository: operation.repository,
+          allowances,
+          changed,
+        };
+      return finish(operation, 'cancelled');
+    }
+    if (
+      input.material &&
+      (operation.phase !== 'selecting' ||
+        tx.now() >= operation.window.closesAt ||
+        input.context?.id !== operation.id ||
+        input.context.digest !== operation.selectionDigest)
+    )
+      throw new Error('project-pickup-selection-stale');
     if (operation.phase === 'discovering') {
       const budget = tx.discoveryBudget ?? new DiscoveryBudget();
-      budget.check();
-      if (!operation.discovery) {
-        const page = await client.discoverProject(
-          owner,
-          name,
-          pickup.projects[0]!.milestone.number,
-          operation.page,
-        );
-        if (page.nextPage !== undefined && page.nextPage !== operation.page + 1)
-          throw new Error('project-pickup-page-invalid');
-        operation.discovery = {
-          pending: page.candidates.map(({ nodeId, number }) => ({ nodeId, number })),
-          ...(page.nextPage === undefined ? {} : { nextPage: page.nextPage }),
-        };
-        await save();
-      }
-      while (operation.discovery.pending.length) {
+      const scan = operation.scan!;
+      for (; scan.projectIndex < allowances.length; scan.projectIndex++) {
         budget.check();
-        const candidate = operation.discovery.pending[0]!;
-        if (!operation.candidates.some((entry) => entry.nodeId === candidate.nodeId)) {
-          try {
-            const current = await eligible(candidate.number, candidate.nodeId, scope);
-            if (current?.evidence) {
-              const evidence = current.evidence;
-              try {
-                evidence.blockedByOpenIssues = await client.projectBlocked(
-                  owner,
-                  name,
-                  candidate.number,
-                );
-              } catch (error) {
-                if (
-                  !itemReadFailure(error) &&
-                  !(
-                    error instanceof Error &&
-                    error.message === 'project-pickup-dependencies-invalid'
-                  )
-                )
-                  throw error;
-                evidence.dependencyError = {
-                  code:
-                    error instanceof GitHubWorkEventClientError
-                      ? error.code
-                      : 'project-pickup-dependencies-invalid',
-                  ...(error instanceof GitHubWorkEventClientError && error.providerDiagnostic
-                    ? { providerDiagnostic: error.providerDiagnostic }
-                    : {}),
-                };
-              }
-              operation.candidates.push(evidence);
-            }
-          } catch (error) {
-            const invalid =
-              error instanceof Error && error.message === 'project-pickup-candidate-invalid';
-            if (!itemReadFailure(error) && !invalid) throw error;
-            operation.deferred ??= [];
-            operation.deferred.push({
-              ...candidate,
-              code: invalid ? (error as Error).message : (error as GitHubWorkEventClientError).code,
-              ...(error instanceof GitHubWorkEventClientError && error.providerDiagnostic
-                ? { providerDiagnostic: error.providerDiagnostic }
-                : {}),
-            });
-          }
+        const allowance = allowances[scan.projectIndex]!;
+        const repository = repositories.get(allowance.repository);
+        const skip = (code: string) => {
+          allowance.code = code;
+          (scan.skipped ??= {})[allowance.repository] = code;
+          operation.candidates = operation.candidates.filter(
+            (candidate) => candidate.repository !== allowance.repository,
+          );
+          operation.page = 1;
+          delete operation.discovery;
+        };
+        if (!repository || used(repository.nodeId) >= allowance.limit) {
+          operation.page = 1;
+          delete operation.discovery;
+          continue;
         }
-        operation.discovery.pending.shift();
-        await save();
-      }
-      const nextPage = operation.discovery.nextPage;
-      delete operation.discovery;
-      if (nextPage) {
-        operation.page = nextPage;
-        await save();
-        return { status: 'discovering', id: operation.id, changed };
+        operation.repository = allowance.repository;
+        const [owner, name] = allowance.repository.split('/') as [string, string];
+        let milestone;
+        try {
+          const code = await routingEligibility(policy, repository);
+          if (code) {
+            if (allowances.length === 1) return finish(operation, 'pending', code);
+            skip(code);
+            continue;
+          }
+          milestone = await projectPickupScope(policy, client, repository);
+        } catch (error) {
+          if (
+            allowances.length === 1 ||
+            !(
+              itemReadFailure(error) ||
+              (error instanceof Error && error.message === 'project-pickup-milestone-closed')
+            )
+          )
+            throw error;
+        }
+        if (!milestone) {
+          if (allowances.length === 1)
+            return finish(operation, 'failed', 'project-pickup-milestone-invalid');
+          skip('project-pickup-milestone-unavailable');
+          continue;
+        }
+        if (!operation.discovery) {
+          let page;
+          try {
+            page = await client.discoverProject(owner, name, allowance.milestone, operation.page);
+          } catch (error) {
+            if (allowances.length === 1 || !itemReadFailure(error)) throw error;
+            skip('project-pickup-repository-unavailable');
+            continue;
+          }
+          if (page.nextPage !== undefined && page.nextPage !== operation.page + 1)
+            throw new Error('project-pickup-page-invalid');
+          operation.discovery = {
+            pending: page.candidates.map(({ nodeId, number }) => ({ nodeId, number })),
+            ...(page.nextPage === undefined ? {} : { nextPage: page.nextPage }),
+          };
+          await save();
+        }
+        while (operation.discovery.pending.length) {
+          budget.check();
+          const candidate = operation.discovery.pending[0]!;
+          if (!operation.candidates.some((entry) => entry.nodeId === candidate.nodeId)) {
+            try {
+              const current = await eligible(
+                candidate.number,
+                candidate.nodeId,
+                repository,
+                milestone.nodeId,
+              );
+              if (current?.evidence) {
+                const evidence = current.evidence;
+                try {
+                  evidence.blockedByOpenIssues = await client.projectBlocked(
+                    owner,
+                    name,
+                    candidate.number,
+                  );
+                } catch (error) {
+                  if (
+                    !itemReadFailure(error) &&
+                    !(
+                      error instanceof Error &&
+                      error.message === 'project-pickup-dependencies-invalid'
+                    )
+                  )
+                    throw error;
+                  evidence.dependencyError = {
+                    code:
+                      error instanceof GitHubWorkEventClientError
+                        ? error.code
+                        : 'project-pickup-dependencies-invalid',
+                    ...(error instanceof GitHubWorkEventClientError && error.providerDiagnostic
+                      ? { providerDiagnostic: error.providerDiagnostic }
+                      : {}),
+                  };
+                }
+                operation.candidates.push({
+                  ...evidence,
+                  repository: allowance.repository,
+                  repositoryNodeId: repository.nodeId,
+                  milestoneNodeId: milestone.nodeId,
+                });
+              }
+            } catch (error) {
+              const invalid =
+                error instanceof Error && error.message === 'project-pickup-candidate-invalid';
+              if (!itemReadFailure(error) && !invalid) throw error;
+              operation.deferred ??= [];
+              operation.deferred.push({
+                ...candidate,
+                code: invalid
+                  ? (error as Error).message
+                  : (error as GitHubWorkEventClientError).code,
+                ...(error instanceof GitHubWorkEventClientError && error.providerDiagnostic
+                  ? { providerDiagnostic: error.providerDiagnostic }
+                  : {}),
+              });
+            }
+          }
+          operation.discovery.pending.shift();
+          await save();
+        }
+        const nextPage = operation.discovery.nextPage;
+        delete operation.discovery;
+        if (nextPage) {
+          operation.page = nextPage;
+          await save();
+          return { status: 'discovering', id: operation.id, changed };
+        }
+        operation.page = 1;
       }
       if (!operation.candidates.length) return finish(operation, 'empty');
       operation.phase = 'selecting';
@@ -517,7 +646,11 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
             runtime: tx.runtime,
             id: operation.id,
             digest: operation.selectionDigest,
-            candidates: structuredClone(operation.candidates),
+            candidates: structuredClone(
+              operation.candidates.map((candidate) =>
+                omit(candidate, ['repositoryNodeId', 'milestoneNodeId']),
+              ),
+            ),
             guidance: operation.guidance,
             deferred: operation.deferred,
             changed,
@@ -550,25 +683,43 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       const candidate = operation.candidates.find(
         (entry) => entry.nodeId === selection.issueNodeId,
       );
-      if (!candidate) throw new Error('project-pickup-selection-invalid');
+      if (!candidate?.repository || !candidate.repositoryNodeId || !candidate.milestoneNodeId)
+        throw new Error('project-pickup-selection-invalid');
+      operation.repository = candidate.repository;
+      operation.enrollment = {
+        ...journal.enrollment,
+        repositoryNodeId: candidate.repositoryNodeId,
+        milestoneNodeId: candidate.milestoneNodeId,
+        policyDigest: projectPickupPolicyDigest(policy),
+      };
       operation.selected = { nodeId: candidate.nodeId, number: candidate.number };
       operation.phase = 'reserved';
     }
     const candidate = operation.selected;
     if (!candidate) throw new Error('project-pickup-selection-missing');
-    let wrote = false;
+    const [owner, name] = operation.repository.split('/') as [string, string];
+    const target = operation.enrollment ?? journal.enrollment;
     if (operation.phase === 'reserved') {
       const history = await client.listAssignmentEvents(owner, name, candidate.number);
       if (history.truncated)
         return finish(operation, 'failed', 'project-pickup-assignment-history-incomplete');
       // Provider reads can cross a window or policy boundary.
-      const authorized = await eligible(candidate.number, candidate.nodeId, undefined, false);
-      if (!authorized) return finish(operation, 'failed', 'project-pickup-candidate-ineligible');
+      const authorized = await freshScope();
+      if (
+        !(await eligible(
+          candidate.number,
+          candidate.nodeId,
+          authorized.repository,
+          target.milestoneNodeId,
+          false,
+        ))
+      )
+        return finish(operation, 'failed', 'project-pickup-candidate-ineligible');
       const live = await tx.readPolicy();
-      if (projectPickupPolicyDigest(live) !== enrollment.policyDigest)
+      if (scanDigest(live) !== operation.scan?.digest)
         throw new Error('project-pickup-policy-changed');
       if (live.projectPickup?.paused) return finish(operation, 'paused');
-      const code = await routingEligibility({ ...authorized, live });
+      const code = await routingEligibility(live, authorized.repository);
       if (code) return finish(operation, 'pending', code);
       if (
         state.records.filter(tx.occupied).length +
@@ -578,17 +729,24 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
         return finish(operation, 'at-capacity');
       if (tx.now() < operation.window.opensAt || tx.now() >= operation.window.closesAt)
         return finish(operation, 'expired', 'project-pickup-window-closed');
+      const limit = live.projectPickup!.projects.find(
+        (project) => project.repository === operation.repository,
+      )!.limit;
+      const allowance = allowances.find((entry) => entry.repository === operation.repository)!;
+      allowance.limit = limit;
+      if (used(target.repositoryNodeId) >= limit)
+        return finish(operation, 'pending', 'project-pickup-repository-limit-reached');
       operation.beforeEvents = history.events.map((event) => event.nodeId);
       operation.runId = tx.runId;
       operation.attemptedAt = tx.now();
       operation.phase = 'attempted';
       scanSummary = summarize(operation);
       discardSelection(operation);
+      tx.assertWriteCapacity?.();
       await save();
       // no retry of this write: even a thrown transport error can mean it reached github.
       try {
         await client.assignProjectIssue(owner, name, candidate.number);
-        wrote = true;
       } catch (error) {
         if (error instanceof GitHubWorkEventClientError) {
           const diagnostic = error.providerDiagnostic;
@@ -615,7 +773,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       }
     }
     if (operation.phase === 'attempted') {
-      const current = !wrote && scope ? scope : await freshScope(true);
+      const current = await freshScope(true);
       const item = await client.getItem(owner, name, candidate.number);
       if (item.nodeId !== candidate.nodeId)
         return finish(operation, operation.phase, 'project-pickup-assignment-unverified');
@@ -630,13 +788,13 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       const event = events.length === 1 ? events[0] : undefined;
       if (!event) return finish(operation, operation.phase, 'project-pickup-assignment-unverified');
       const receipt = {
-        enrollmentId: enrollment.id,
+        enrollmentId: target.id,
         issueNodeId: candidate.nodeId,
         assignmentNodeId: event.nodeId,
         window: operation.window,
       };
       const work = verifyProjectAssignment({
-        authority: { enrollment, receipts: [receipt] },
+        authority: { enrollment: target, receipts: [receipt] },
         runtime: tx.runtime,
         scope: tx.scope,
         workspaceDir: tx.workspaceDir,
@@ -652,8 +810,19 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       if (!work) return finish(operation, operation.phase, 'project-pickup-assignment-unverified');
       operation.receipt = receipt;
       delete operation.beforeEvents;
-      operation.enrollment = structuredClone(enrollment);
-      journal.windowAssignment = { window: operation.window, assignedAt: operation.attemptedAt! };
+      operation.enrollment = structuredClone(target);
+      charges.push({
+        window: operation.window,
+        assignedAt: operation.attemptedAt!,
+        repository: operation.repository,
+        repositoryNodeId: target.repositoryNodeId,
+        runId: operation.runId,
+        ...(tx.runId !== operation.runId ? { reconciled: { runId: tx.runId, at: tx.now() } } : {}),
+      });
+      const allowance = allowances.find(
+        (entry) => entry.repository.toLowerCase() === operation.repository.toLowerCase(),
+      );
+      if (window && allowance) allowance.used = used(target.repositoryNodeId);
       const result = await finish(operation, 'assigned');
       return { ...result, status: 'assigned' as const, authority: pickupAuthority(journal) };
     }
@@ -672,7 +841,13 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       );
       return { ...result, providerDiagnostic: error.providerDiagnostic };
     }
-    if (!(error instanceof Error) || !error.message.startsWith('project-pickup-')) throw error;
+    if (
+      !(error instanceof Error) ||
+      !error.message.startsWith('project-pickup-') ||
+      (input.material && error.message === 'project-pickup-selection-stale') ||
+      (input.cancel && error.message === 'project-pickup-operation-missing')
+    )
+      throw error;
     return finish(operation, operation.attemptedAt ? operation.phase : 'failed', error.message);
   }
 }

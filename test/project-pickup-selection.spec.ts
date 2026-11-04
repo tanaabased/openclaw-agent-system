@@ -191,7 +191,7 @@ describe('agent/project-pickup', () => {
       }
       assert.equal(f.effects.writes, 1);
       assert.deepEqual(f.state.projectPickup!.operations, []);
-      assert.ok(f.state.projectPickup!.windowAssignment);
+      assert.equal(f.state.projectPickup!.charges?.length, 1);
     });
 
     it(`should allow a fresh assignment in the next daily window in ${runtime}`, async () => {
@@ -208,6 +208,7 @@ describe('agent/project-pickup', () => {
       f.tx.runId = 'tomorrow';
       assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
       assert.equal(f.effects.writes, 2);
+      assert.equal(f.state.projectPickup!.charges?.length, 1);
     });
 
     it(`should preserve the used allowance across live target changes in ${runtime}`, async () => {
@@ -258,7 +259,7 @@ describe('agent/project-pickup', () => {
         assert.ok('providerDiagnostic' in result && result.providerDiagnostic === diagnostic);
         assert.equal(pickupCapacity(f.state.projectPickup), 0);
         assert.deepEqual(pickupAuthority(f.state.projectPickup)!.withheldAssignments, []);
-        assert.equal(f.state.projectPickup!.windowAssignment, undefined);
+        assert.equal(f.state.projectPickup!.charges?.length, 0);
         f.client.assignProjectIssue = assign;
         f.tx.runId = 'later-scan';
         assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
@@ -397,6 +398,143 @@ describe('agent/project-pickup', () => {
       assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
     });
   }
+
+  it('should enforce independent 3, 1, 1 limits and assign at most once per scan', async () => {
+    const f = fixture();
+    const alpha = f.addRepository('alpha', 4);
+    const beta = f.addRepository('beta', 2);
+    const gamma = f.addRepository('gamma', 2);
+    f.policy.projectPickup!.projects = [alpha, beta, gamma].map((project, index) => ({
+      repository: `owner/${project.repository.name}`,
+      milestone: { number: project.milestone.number, policy: 'only' },
+      limit: index === 0 ? 3 : 1,
+    }));
+
+    for (let scan = 0; scan < 5; scan++) {
+      f.tx.runId = `scan-${scan}`;
+      const options = await f.run();
+      assert.equal(options.status, 'selection-required');
+      if (!('candidates' in options) || !options.candidates) assert.fail('expected candidates');
+      if (scan === 0) {
+        const sameNumber = options.candidates.filter((item) => item.number === f.item.number);
+        assert.deepEqual(
+          sameNumber.map((item) => item.repository),
+          ['owner/alpha', 'owner/beta', 'owner/gamma'],
+        );
+      }
+      if (scan >= 3)
+        assert.ok(options.candidates.every((item) => item.repository !== 'owner/alpha'));
+      const result = await f.run({
+        selection: {
+          id: options.id,
+          digest: options.digest,
+          issueNodeId: options.candidates[0]!.nodeId,
+          rationale: 'ready to pick up',
+        },
+      });
+      assert.equal(result.status, 'assigned');
+      assert.equal(f.effects.writes, scan + 1);
+      if (scan < 4) assert.equal((await f.run()).status, 'scan-complete');
+    }
+    f.tx.runId = 'exhausted';
+    const result = await f.run();
+    assert.equal(result.status, 'allowance-reached');
+    assert.deepEqual(
+      result.allowances?.map(({ used, limit }) => [used, limit]),
+      [
+        [3, 3],
+        [1, 1],
+        [1, 1],
+      ],
+    );
+    assert.deepEqual(
+      [alpha, beta, gamma].map(
+        (project) => [...project.items.values()].filter((issue) => issue.assignees.length).length,
+      ),
+      [3, 1, 1],
+    );
+  });
+
+  it('should exclude a repository with an unreadable milestone page and keep other candidates', async () => {
+    const f = fixture();
+    f.addRepository('other');
+    f.policy.projectPickup!.projects.push({
+      repository: 'owner/other',
+      milestone: { number: 10, policy: 'only' },
+      limit: 1,
+    });
+    const discover = f.client.discoverProject;
+    f.client.discoverProject = async (owner, name, milestone, page) => {
+      if (name === 'repo')
+        throw new GitHubWorkEventClientError('github-notification-resource-missing', 'missing');
+      return discover(owner, name, milestone, page);
+    };
+    const options = await f.run();
+    assert.equal(options.status, 'selection-required');
+    if (!('candidates' in options) || !options.candidates) assert.fail('expected candidates');
+    assert.deepEqual(
+      options.candidates.map((item) => item.repository),
+      ['owner/other'],
+    );
+    const result = await f.run({
+      selection: {
+        id: options.id,
+        digest: options.digest,
+        issueNodeId: options.candidates[0]!.nodeId,
+        rationale: 'ready',
+      },
+    });
+    assert.equal(result.status, 'assigned');
+    assert.equal(result.allowances?.[0]?.code, 'project-pickup-repository-unavailable');
+  });
+
+  it('should recheck a lowered repository limit before writing a prepared selection', async () => {
+    const f = fixture();
+    const other = f.addRepository('other', 2);
+    const project = {
+      repository: 'owner/other',
+      milestone: { number: 10, policy: 'only' as const },
+      limit: 2,
+    };
+    f.policy.projectPickup!.projects.push(project);
+    const first = await f.select();
+    assert.equal(
+      (
+        await f.run({
+          selection: { ...first, issueNodeId: other.items.get(f.item.number)!.nodeId },
+        })
+      ).status,
+      'assigned',
+    );
+
+    f.tx.runId = 'second-scan';
+    const second = await f.select();
+    const read = f.client.getItem;
+    f.client.getItem = async (...args) => {
+      project.limit = 1;
+      return read(...args);
+    };
+    const result = await f.run({
+      selection: { ...second, issueNodeId: other.items.get(f.item.number + 1)!.nodeId },
+    });
+    assert.equal(result.status, 'pending');
+    assert.equal(result.code, 'project-pickup-repository-limit-reached');
+    assert.equal(f.effects.writes, 1);
+  });
+
+  it('should preserve an unattributable legacy assignment fence through the open window', async () => {
+    const f = fixture();
+    await f.run();
+    const state = f.state.projectPickup!;
+    state.windowAssignment = { window: state.operations[0]!.window, assignedAt: f.clock.now };
+    state.operations = [];
+    f.policy.projectPickup!.projects[0]!.limit = 3;
+    assert.equal((await f.run()).status, 'allowance-reached');
+    assert.equal(f.effects.writes, 0);
+    f.clock.now += 86_400_000;
+    f.tx.runId = 'tomorrow';
+    assert.equal((await f.run()).status, 'selection-required');
+  });
 
   it('should preserve provider eligibility when recovering an uncertain assignment', async () => {
     for (const reason of ['closed', 'archived', 'disabled'] as const) {

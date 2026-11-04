@@ -71,6 +71,27 @@ describe('github project pickup policy', () => {
     assert.equal(parse({ ...pickupDeclaration, start: '10 am', paused: true }).status, 'valid');
   });
 
+  it('should validate each repository and default its limit independently', () => {
+    const first = pickupDeclaration.projects[0]!;
+    const second = { ...structuredClone(first), repository: 'owner/second', limit: 3 };
+    const parsed = parse({ ...pickupDeclaration, projects: [first, second] });
+    assert.equal(parsed.status, 'valid');
+    if (parsed.status !== 'valid') return;
+    assert.deepEqual(
+      parsed.manifest.github!.notifications!.projectPickup!.projects.map(
+        (project) => project.limit,
+      ),
+      [1, 3],
+    );
+    for (const project of [
+      { ...second, repository: 'other/repo' },
+      { ...second, repository: 'OWNER/REPO' },
+      ...[0, -1, 1.5, '3'].map((limit) => ({ ...second, limit })),
+    ]) {
+      assert.equal(parse({ ...pickupDeclaration, projects: [first, project] }).status, 'invalid');
+    }
+  });
+
   it('should reject unsupported pilot declarations rather than widen scope', () => {
     for (const patch of [
       { projects: [] },

@@ -10,6 +10,7 @@ github:
       workflows: [review-request]
       target: deny
     - tanaabased/big-test-bucket: swarm
+    - tanaabased/actions: swarm
   issue-assignment: {}
   project-pickup:
     start: '10 pm'
@@ -18,6 +19,11 @@ github:
       guidance: choose useful, ready work within the milestone
     projects:
       - repository: tanaabased/big-test-bucket
+        limit: 3
         milestone:
           number: 10
+          policy: only
+      - repository: tanaabased/actions
+        milestone:
+          number: 1
           policy: only

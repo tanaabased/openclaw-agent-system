@@ -10,7 +10,7 @@ import ProjectPickupEnrollmentStore from './project-pickup-enrollment.ts';
 import { projectPickupConfigurationCode, projectPickupErrorCode } from './project-pickup-jobs.ts';
 import projectPickup, { pickupAuthority, type PickupInput } from './project-pickup.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
-import { dispatchStorageNotice } from './dispatch-storage.ts';
+import { assertDispatchStorage, dispatchStorageNotice } from './dispatch-storage.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { ProjectPickupAuthority } from './project-pickup-authority.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
@@ -461,6 +461,9 @@ export async function runCodexProjectPickup(
       timezone,
       state,
       save,
+      assertWriteCapacity: () => {
+        assertDispatchStorage(state, true);
+      },
       now: deps.now ?? Date.now,
       readPolicy,
       client,
@@ -482,7 +485,6 @@ export async function runCodexProjectPickup(
       };
     const reportPolicy = await readPolicy();
     const report = projectPickupReport({
-      policy: reportPolicy,
       outcome: result,
       debug: current.manifest.debug,
       capacity: {

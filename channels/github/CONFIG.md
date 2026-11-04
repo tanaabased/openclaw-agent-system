@@ -170,9 +170,9 @@ versions are rejected. GitHub CLI-only configuration does not require this field
 
 ## `github.project-pickup`
 
-Declares the policy for one repository and milestone. It requires `issue-assignment`
-and a repository included by `routing` (or legacy owners when routing is absent); it does not expand GitHub access
-or approved assignment and feedback authors.
+Declares pickup policy for one or more repositories, each with one milestone. It requires `issue-assignment`
+and each repository must be included by `routing` (or legacy owners when routing is absent).
+Pickup uses the existing GitHub access and approved assignment and feedback authors.
 
 > [!IMPORTANT]
 > Set placement through `github.routing`. Run Install on each intended participant
@@ -188,25 +188,26 @@ or approved assignment and feedback authors.
 | `scans`              | no       | Defaults to `8`, evenly distributed from the start up to—but excluding—the closing time, rounded down to minute slots. Multiple scans need at least one minute each.                                                                                                                   |
 | `selection.guidance` | no       | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                                                                                                           |
 | `thread`             | no       | Persistent coordination chat: a name string or `{name, id}`, using the existing [automation thread convention](../../MANIFEST.md#automations). Defaults to `PROJECT PICKUP`. Run Install to reconcile a changed choice; missing conversations use the native automation recovery flow. |
-| `projects`           | yes      | Exactly one entry with `repository: owner/name` and `milestone: {number: 10, policy: only}`. The milestone number must be positive. Other policies and multi-project selection are rejected.                                                                                           |
+| `projects`           | yes      | One or more distinct entries with `repository: owner/name`, `milestone: {number: 10, policy: only}`, and optional `limit`. The milestone number and limit must be positive integers. `limit` defaults to `1`.                                                                          |
 
 Install adds one `PROJECT PICKUP` job alongside assignment intake. The default native
 schedule has eight daily starts: 03:00, 03:15, 03:30, 03:45, 04:00, 04:15, 04:30 and
 04:45 local time. Each scan can select and self-assign at most one actionable,
-unassigned issue in the configured milestone, subject to ordinary work capacity.
-The pilot permits one confirmed assignment per window on each installation. Later scans
-report that the allowance is used; completing the issue does not reopen it. Each scan
-reports its selection and reason, no selection, or the condition that prevented selection.
+unassigned issue across the configured milestones, subject to ordinary work capacity.
+Each repository's `limit` is the maximum number of confirmed assignments per window
+on that installation. Once a repository reaches its limit, later scans skip it.
+Completing an issue leaves the used count in place. The scan card shows how many
+assignments each repository has used out of its allowance.
 
 Verified pickup enters the existing
 assessment and Work workflow; ordinary assignments keep their configured mode.
 Missed windows are not replayed. Accepted issue work may finish after a window or pause.
 Codex uses the low model profile; OpenClaw uses its default automation profile.
 
-Repository, milestone, guidance and route changes apply on the next run without Install.
-An unused open window can select from the new target; accepted assignments keep their
-original receipts. Run Install after changing timing, chat or model settings. Replace
-the former `schedule` and `window-minutes` fields with `start`, `window` and `scans`.
+Repository, milestone, limit, guidance and route changes apply on the next run
+without Install. Edits preserve assignments already counted in the window and
+the receipts for accepted assignments. Run Install after changing timing, chat or model settings.
+Replace the former `schedule` and `window-minutes` fields with `start`, `window` and `scans`.
 Ordinary assignment intake handles routing and execution ownership, including races
 between pickup scans. Existing issue work stays with its original runtime; do not
 copy or delete journals to transfer it.

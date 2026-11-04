@@ -832,6 +832,7 @@ describe('openclaw v2 intake slice', () => {
       calls++;
       return {
         status: 'idle',
+        allowances: [],
         changed: false,
         response: '',
         instructions: 'Reproduce response unchanged.',

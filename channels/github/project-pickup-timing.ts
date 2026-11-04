@@ -2,6 +2,8 @@ import duration from '../../manifest/duration.ts';
 import timeOfDay from '../../manifest/time-of-day.ts';
 import normalize, { type AutomationSchedule } from '../../manifest/automation-schedule.ts';
 
+export const maximumPickupWindowMs = 86_400_000;
+
 export interface PickupTimingInput {
   start?: string;
   window?: string;
@@ -26,7 +28,7 @@ export default function pickupTiming(value: PickupTimingInput): {
   const seconds = windows[0] ?? 7200;
   const scans = value.scans ?? 8;
   if (
-    seconds > 86400 ||
+    seconds > maximumPickupWindowMs / 1000 ||
     !Number.isInteger(scans) ||
     scans < 1 ||
     (scans > 1 && scans > seconds / 60)

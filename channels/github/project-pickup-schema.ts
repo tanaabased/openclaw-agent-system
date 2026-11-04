@@ -31,6 +31,7 @@ export const projectPickupSchema = Type.Object(
             maxLength: 256,
             pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9_.-]+$',
           }),
+          limit: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
           milestone: Type.Object(
             {
               number: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
@@ -41,7 +42,7 @@ export const projectPickupSchema = Type.Object(
         },
         { additionalProperties: false },
       ),
-      { minItems: 1, maxItems: 1 },
+      { minItems: 1 },
     ),
   },
   { additionalProperties: false },
@@ -60,7 +61,7 @@ export interface ProjectPickupPolicy {
     | 'project-pickup-schedule-precision'
     | 'project-pickup-schedule-unsupported';
   selection?: Declaration['selection'];
-  projects: Declaration['projects'];
+  projects: Array<Declaration['projects'][number] & { limit: number }>;
 }
 
 export default function decodeProjectPickup(value: Declaration): ProjectPickupPolicy {
@@ -84,7 +85,7 @@ export default function decodeProjectPickup(value: Declaration): ProjectPickupPo
     ...(timing?.scanSchedule ? { scanSchedule: timing.scanSchedule } : {}),
     ...(timingError ? { timingError } : {}),
     ...(value.selection ? { selection: value.selection } : {}),
-    projects: value.projects,
+    projects: value.projects.map((project) => ({ ...project, limit: project.limit ?? 1 })),
   };
 }
 

@@ -94,10 +94,18 @@ export default class ProjectPickupEnrollmentStore {
   }) {
     const identity = await this.owner();
     const pickup = input.policy.projectPickup!;
-    const [owner, name] = pickup.projects[0]!.repository.split('/') as [string, string];
-    const repository = await input.client.getRepository(owner, name);
-    const milestone = await projectPickupScope(input.policy, input.client, repository);
-    if (!milestone) throw new IntakeError('project-pickup-milestone-invalid');
+    const targets = new Map<string, string>();
+    for (const project of pickup.projects) {
+      const [owner, name] = project.repository.split('/') as [string, string];
+      const repository = await input.client.getRepository(owner, name);
+      const milestone = await projectPickupScope(input.policy, input.client, repository);
+      if (!milestone) throw new IntakeError('project-pickup-milestone-invalid');
+      if (targets.has(repository.nodeId))
+        throw new IntakeError('project-pickup-repository-duplicate');
+      targets.set(repository.nodeId, milestone.nodeId);
+    }
+    // keep the original enrollment shape readable by existing intake receipts.
+    const [repositoryNodeId, milestoneNodeId] = [...targets][0]!;
     await ensurePrivateStateDirectories({
       directories: [this.root],
       currentUid: process.getuid?.(),
@@ -130,8 +138,8 @@ export default class ProjectPickupEnrollmentStore {
         )
           throw new IntakeError('project-pickup-enrollment-changed');
         const changed =
-          existing.enrollment.repositoryNodeId !== repository.nodeId ||
-          existing.enrollment.milestoneNodeId !== milestone.nodeId ||
+          existing.enrollment.repositoryNodeId !== repositoryNodeId ||
+          existing.enrollment.milestoneNodeId !== milestoneNodeId ||
           existing.enrollment.policyDigest !== projectPickupPolicyDigest(input.policy) ||
           existing.timezone !== input.timezone;
         if (changed && !input.reconcile) throw new IntakeError('project-pickup-enrollment-changed');
@@ -141,8 +149,8 @@ export default class ProjectPickupEnrollmentStore {
               timezone: input.timezone,
               enrollment: {
                 ...existing.enrollment,
-                repositoryNodeId: repository.nodeId,
-                milestoneNodeId: milestone.nodeId,
+                repositoryNodeId,
+                milestoneNodeId,
                 policyDigest: projectPickupPolicyDigest(input.policy),
               },
             }
@@ -179,8 +187,8 @@ export default class ProjectPickupEnrollmentStore {
           workspaceDir: input.workspaceDir,
           agentId: input.agentId,
           account: { login: input.client.identity.login, nodeId: input.client.identity.nodeId },
-          repositoryNodeId: repository.nodeId,
-          milestoneNodeId: milestone.nodeId,
+          repositoryNodeId,
+          milestoneNodeId,
           policyDigest: projectPickupPolicyDigest(input.policy),
           startedAt: input.now,
         },

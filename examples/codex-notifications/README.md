@@ -238,7 +238,7 @@ node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-no
   | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "manifest-unknown-key")'
 test ! -d "$CODEX_HOME/automations"
 
-# should validate routed pickup and require explicit installation activation
+# should validate routed multi-repository pickup and require explicit installation activation
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
