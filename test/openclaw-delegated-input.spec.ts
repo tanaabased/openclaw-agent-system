@@ -136,6 +136,17 @@ describe('agent/openclaw-delegated-input', () => {
     }
     assert.equal((await operatorInputEvent(f.input)).inputEventId, 'child-run-input');
   });
+  it('should retain delivered input when waiting for its reply fails', async () => {
+    for (const status of ['timeout', 'error']) {
+      const f = fixture();
+      f.result.content[0]!.text = JSON.stringify({
+        status,
+        runId: 'child-run',
+        sentBeforeError: true,
+      });
+      assert.equal((await operatorInputEvent(f.input)).inputEventId, 'child-run-input');
+    }
+  });
   it('should keep scheduled input on its existing path', async () => {
     const f = fixture();
     f.histories.child = [{ ...f.child, role: 'user', provenance: undefined }];

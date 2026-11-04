@@ -250,7 +250,10 @@ async function delegatedOpenClawInput(
   if (
     result &&
     (result.message.isError === true ||
-      !['accepted', 'ok'].includes(String(result.details.status)) ||
+      !(
+        result.details.sentBeforeError === true ||
+        ['accepted', 'ok'].includes(String(result.details.status))
+      ) ||
       typeof result.message.toolCallId !== 'string')
   )
     return fail();
