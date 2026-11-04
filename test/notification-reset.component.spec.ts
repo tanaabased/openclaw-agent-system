@@ -1,3 +1,5 @@
+import notificationResetPickup from '../agent/notification-reset-pickup.ts';
+import selectionFixture from './project-pickup-selection-fixture.ts';
 import { notificationResetDiagnostic } from '../agent/notification-reset-diagnostic.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -73,6 +75,75 @@ describe('agent/notification reset recovery', () => {
       preview: await previewNotificationReset(store, adapter, purge),
       now: () => 100,
     });
+
+  it('should preserve independent pickup receipts across a lost pause and partial coordinator replacement', async () => {
+    let paused = false;
+    let pauses = 0;
+    let primaryReplacements = 0;
+    let pickupReplacements = 0;
+    let interruption = true;
+    const primary = {
+      ...adapter,
+      coordinator: async () => {
+        primaryReplacements++;
+        return { status: 'done' as const, automation: 'primary-replaced' };
+      },
+    };
+    const secondary: NotificationResetAdapter = {
+      ...adapter,
+      snapshot: async () => ({ ...snapshot, automation: 'pickup-before' }),
+      pause: async (record) => {
+        if (paused) return { status: 'done' };
+        assert.equal(record.pauseAttempted, undefined);
+        assert.equal((await store.read())?.pickup?.pauseAttempted, true);
+        pauses++;
+        paused = true;
+        throw new Error('pause response lost');
+      },
+      coordinator: async (record, save) => {
+        if (!record.coordinatorArchiveAttempted) {
+          pickupReplacements++;
+          record.coordinatorArchiveAttempted = true;
+          await save(record);
+        }
+        if (interruption) {
+          interruption = false;
+          throw new Error('replacement interrupted');
+        }
+        return { status: 'done', automation: 'pickup-replaced' };
+      },
+      restore: async (record) => {
+        assert.equal(record.automation, 'pickup-replaced');
+        return { status: 'done' };
+      },
+    };
+    adapter = notificationResetPickup(primary, secondary, secondary.snapshot);
+    await assert.rejects(run(), /pause response lost/);
+    await assert.rejects(run(), /replacement interrupted/);
+    assert.equal((await store.read())?.automation, 'primary-replaced');
+    assert.equal((await store.read())?.pickup?.coordinatorArchiveAttempted, true);
+    const preview = await previewNotificationReset(store, adapter, false, true);
+    assert.equal((await resetNotifications({ store, adapter, preview })).status, 'complete');
+    assert.equal(pauses, 1);
+    assert.equal(primaryReplacements, 1);
+    assert.equal(pickupReplacements, 1);
+  });
+
+  it('should atomically keep the latest pickup evidence and retain it when clear is replayed', async () => {
+    const f = selectionFixture();
+    await f.run({ selection: await f.select() });
+    const journal = new CodexDispatchStore(root, scope);
+    await journal.exclusive(async (state, save) => {
+      state.projectPickup = structuredClone(f.state.projectPickup);
+      await save();
+    });
+    await journal.reset('reset-generation');
+    assert.deepEqual((await journal.read()).projectPickup?.charges, f.state.projectPickup!.charges);
+    assert.equal((await journal.read()).projectPickup?.operations.length, 1);
+    await journal.reset('reset-generation');
+    assert.equal((await journal.read()).projectPickup?.operations.length, 1);
+    assert.deepEqual((await journal.read()).records, []);
+  });
 
   it('should retain intent before effects and delete it only after baseline and restoration', async () => {
     adapter.pause = async () => {

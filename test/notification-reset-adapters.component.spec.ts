@@ -84,6 +84,227 @@ describe('agent/notification reset runtime adapters', () => {
     };
   }
 
+  for (const pickupEnabled of [true, false])
+    it(`should wait for active pickup and restore both openclaw jobs with pickup enabled ${pickupEnabled}`, async () => {
+      const scope = '9'.repeat(64);
+      const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });
+      await seed(intake);
+      let active = true;
+      const jobs = new Map([
+        [
+          'github-issue-assignment',
+          { nativeId: 'intake-job', sessionKey: 'intake-chat', enabled: true },
+        ],
+        [
+          'github-project-pickup',
+          { nativeId: 'pickup-job', sessionKey: 'pickup-chat', enabled: pickupEnabled },
+        ],
+      ]);
+      const archived = new Set<string>();
+      const replaced: string[] = [];
+      const snapshot = async (_manifest: unknown, _workspace: string, id: string) => ({
+        id,
+        ...jobs.get(id)!,
+        hash: id,
+      });
+      const service = new OpenClawNotificationReset({
+        root,
+        intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
+        automations: {
+          notificationResetSnapshot: snapshot,
+          notificationResetPickupSnapshot: async () => snapshot({}, root, 'github-project-pickup'),
+          notificationResetToggle: async (_manifest, _workspace, expected, restore) => {
+            jobs.get(expected.id)!.enabled = restore ? expected.enabled : false;
+          },
+          notificationResetReplace: async (_manifest, _workspace, expected) => {
+            assert.ok(archived.has(expected.sessionKey!));
+            replaced.push(expected.id);
+            const sessionKey = expected.sessionKey + '-replacement';
+            jobs.get(expected.id)!.sessionKey = sessionKey;
+            return { ...expected, sessionKey };
+          },
+        },
+        credential: {
+          use: async (_authority, run) =>
+            run(async (method, params) => {
+              const key = String(params.key ?? params.sessionKey);
+              if (method === 'sessions.resolve') return { ok: true, key, agentId: 'receiver' };
+              if (method === 'sessions.list')
+                return {
+                  sessions: [...jobs.values()].map((job) => ({
+                    key: job.sessionKey,
+                    sessionId: job.sessionKey,
+                    agentId: 'receiver',
+                    workspaceDir: root,
+                    archived: archived.has(job.sessionKey),
+                  })),
+                };
+              if (method === 'sessions.describe')
+                return {
+                  session: {
+                    key,
+                    agentId: 'receiver',
+                    sessionId: key,
+                    workspaceDir: root,
+                    archived: archived.has(key),
+                  },
+                };
+              if (method === 'chat.history')
+                return {
+                  sessionInfo: { hasActiveRun: key === 'pickup-chat' && active },
+                  pendingInputs: { total: 0 },
+                };
+              if (method === 'cron.list') return { jobs: [], hasMore: false };
+              if (method === 'sessions.patch') {
+                archived.add(key);
+                return {};
+              }
+              throw new Error(method);
+            }),
+        },
+        worktrees: {
+          inspectGitHub: async () => undefined,
+          cleanupGitHub: async () => {
+            throw new Error('not purging');
+          },
+        },
+        connect: async () => {
+          throw new Error('no provider effects');
+        },
+      });
+      const manifest = { schemaVersion: 1 as const, agent: { id: 'receiver' } };
+      const preview = await service.preview(manifest, root, false);
+      assert.equal(preview.resources.filter((r) => r.kind === 'coordinator').length, 2);
+      assert.equal((await service.run(manifest, root, preview)).status, 'waiting');
+      assert.ok([...jobs.values()].every((job) => !job.enabled));
+      assert.equal((await intake.read())!.baselineAt, 1);
+      assert.equal(archived.size, 0);
+      active = false;
+      assert.equal(
+        (await service.run(manifest, root, await service.preview(manifest, root, false))).status,
+        'complete',
+      );
+      assert.deepEqual(replaced, ['github-issue-assignment', 'github-project-pickup']);
+      assert.equal(jobs.get('github-issue-assignment')!.enabled, true);
+      assert.equal(jobs.get('github-project-pickup')!.enabled, pickupEnabled);
+    });
+
+  it('should coordinate both codex heartbeats and keep originally paused pickup paused', async () => {
+    const workspace = join(root, 'workspace');
+    const codexHome = join(root, 'codex');
+    const pluginData = join(root, 'plugin');
+    await mkdir(workspace);
+    await mkdir(codexHome);
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({ 'schema-version': 1, agent: { id: 'receiver' } }),
+    );
+    await bindCodexWorkspace(pluginData, workspace);
+    const current = await selectCodexIntake(pluginData, { codexHome });
+    await seed(current.store, current.workspace);
+    const make = (id: string, status: 'ACTIVE' | 'PAUSED'): SavedAutomation => ({
+      id,
+      definition: {
+        kind: 'heartbeat',
+        destination: 'thread',
+        targetThreadId: id + '-chat',
+        name: id,
+        prompt: 'fixture',
+        rrule: 'FREQ=MINUTELY;INTERVAL=5',
+        status,
+        notificationPolicy: null,
+      },
+    });
+    const intake = make('intake', 'ACTIVE');
+    const pickup = make('pickup', 'PAUSED');
+    const archived = new Set<string>();
+    let active = true;
+    const replaced: string[] = [];
+    const deps = {
+      codexHome,
+      caller: 'operator',
+      automation: async () => structuredClone(intake),
+      pickupAutomation: async () => structuredClone(pickup),
+      replaceCoordinator: async (_data: string, before: SavedAutomation) => {
+        const actual = before.id === 'intake' ? intake : pickup;
+        assert.equal(actual.definition.status, 'PAUSED');
+        if (actual.definition.kind !== 'heartbeat') throw new Error('heartbeat required');
+        assert.ok(archived.has(before.id + '-chat'));
+        actual.definition.targetThreadId = before.id + '-replacement';
+        replaced.push(before.id);
+        return {
+          status: 'done' as const,
+          automation: JSON.stringify({
+            ...before,
+            definition: { ...before.definition, targetThreadId: actual.definition.targetThreadId },
+          }),
+        };
+      },
+      threads: async () => ({
+        close: async () => {},
+        request: async (method: string, params: Record<string, unknown>) => {
+          if (method === 'thread/read')
+            return {
+              thread: {
+                id: params.threadId,
+                cwd: current.workspace,
+                path: '/sessions/' + params.threadId,
+                archived: archived.has(String(params.threadId)),
+                status: {
+                  type: active && params.threadId === 'pickup-chat' ? 'active' : 'notLoaded',
+                },
+              },
+            };
+          if (method === 'thread/turns/list') return { data: [] };
+          throw new Error(method);
+        },
+      }),
+    };
+    const run = () =>
+      runCodexNotificationReset(
+        pluginData,
+        {
+          all: true,
+          yes: true,
+          nativeInventory: {
+            schemaVersion: 4,
+            sections: [
+              {
+                sectionId: 'group',
+                name: 'AGENT SYSTEM',
+                itemKeys: [
+                  'codex:thread:local:intake-replacement',
+                  'codex:thread:local:pickup-replacement',
+                ],
+              },
+            ],
+            pinnedThreads: [],
+            unavailableHosts: [],
+            unavailableSources: [],
+          },
+        },
+        deps,
+      );
+    const pause = await run();
+    assert.equal('request' in pause && pause.request?.arguments.status, 'PAUSED');
+    intake.definition.status = 'PAUSED';
+    assert.equal((await run()).status, 'waiting');
+    assert.equal((await current.store.read())!.baselineAt, 1);
+    active = false;
+    for (const id of ['intake', 'pickup']) {
+      const next = await run();
+      assert.equal('request' in next && next.request?.tool, 'set_thread_archived');
+      assert.equal('request' in next && next.request?.arguments.threadId, id + '-chat');
+      archived.add(id + '-chat');
+    }
+    const restore = await run();
+    assert.equal('request' in restore && restore.request?.arguments.status, 'ACTIVE');
+    intake.definition.status = 'ACTIVE';
+    assert.equal((await run()).status, 'complete');
+    assert.equal(pickup.definition.status, 'PAUSED');
+    assert.deepEqual(replaced, ['intake', 'pickup']);
+  });
+
   it('should pause openclaw once, wait for the coordinator, reset and restore', async () => {
     const scope = 'a'.repeat(64);
     const intake = new IntakeRecordStore({ root, path: join(root, 'intake.json'), scope });

@@ -849,10 +849,11 @@ export async function listCodexAutomations(
 export async function codexNotificationResetAutomation(
   pluginData: string,
   dependencies: CodexAutomationDependencies = {},
+  jobId = intakeAutomationId,
 ) {
   const selected = await snapshot(pluginData, dependencies);
   if (selected.ledger.pending) throw new Error('notification-reset-automation-operation-pending');
-  const record = selected.ledger.records.find(({ id }) => id === intakeAutomationId);
+  const record = selected.ledger.records.find(({ id }) => id === jobId);
   if (!record?.nativeId || record.removed) throw new Error('notification-reset-automation-missing');
   const saved = (await readCodexAutomations(selected.codexHome)).find(
     ({ id }) => id === record.nativeId,
@@ -868,12 +869,23 @@ export async function codexNotificationResetAutomation(
     throw new Error('notification-reset-automation-changed');
   return saved;
 }
+export async function codexNotificationResetPickupAutomation(
+  pluginData: string,
+  dependencies: CodexAutomationDependencies = {},
+) {
+  const selected = await snapshot(pluginData, dependencies);
+  const record = selected.ledger.records.find((entry) => entry.id === projectPickupAutomationId);
+  if (!record || record.removed) return;
+  return codexNotificationResetAutomation(pluginData, dependencies, projectPickupAutomationId);
+}
+
 /** reset owns paused schedule replacement after native archival; no unrelated jobs. */
 export async function replaceCodexNotificationCoordinator(
   pluginData: string,
   before: SavedAutomation,
   dependencies: CodexAutomationDependencies = {},
   inputs: CodexAutomationInputs = {},
+  jobId = intakeAutomationId,
 ) {
   const initial = await snapshot(pluginData, dependencies);
   return withJournal(initial, async () => {
@@ -882,9 +894,9 @@ export async function replaceCodexNotificationCoordinator(
       throw new Error('notification-reset-automation-operation-pending');
     if (before.definition.kind !== 'heartbeat')
       throw new Error('notification-reset-coordinator-missing');
-    const record = selected.ledger.records.find(({ id }) => id === intakeAutomationId);
+    const record = selected.ledger.records.find(({ id }) => id === jobId);
     const matches = pendingTargets(await readCodexAutomations(selected.codexHome), selected.scope, {
-      manifestId: intakeAutomationId,
+      manifestId: jobId,
       mode: 'update',
       id: before.id,
       expected: before.definition,
@@ -910,13 +922,13 @@ export async function replaceCodexNotificationCoordinator(
           )))
     )
       throw new Error('notification-reset-automation-changed');
-    const jobs = selected.jobs.filter(({ id }) => id === intakeAutomationId);
+    const jobs = selected.jobs.filter(({ id }) => id === jobId);
     const bindings = await resolveThreads({ ...selected, jobs }, inputs, true).catch((error) => {
       if (error instanceof SidebarPending) return error.effect;
       throw error;
     });
     if (!(bindings instanceof Map)) return bindings;
-    const target = bindings.get(intakeAutomationId)?.id;
+    const target = bindings.get(jobId)?.id;
     if (!target || target === before.definition.targetThreadId)
       throw new Error('notification-reset-coordinator-not-replaced');
     const definition = { ...before.definition, targetThreadId: target };
@@ -946,6 +958,20 @@ export async function replaceCodexNotificationCoordinator(
         },
         instruction: 'retarget this paused schedule once, then repeat the same reset to verify it',
       };
+    }
+    if (jobId === projectPickupAutomationId) {
+      const enrollments = new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root);
+      const matches = (await enrollments.read()).records.filter(
+        (entry) =>
+          entry.enrollment.workspaceDir === selected.workspace &&
+          entry.enrollment.agentId === selected.loaded.manifest.agent.id &&
+          entry.enrollment.runtime === 'codex' &&
+          [before.id, actual.id].includes(entry.nativeId ?? ''),
+      );
+      if (matches.length !== 1) throw new Error('project-pickup-enrollment-missing');
+      const enrollment = matches[0]!;
+      if (enrollment.nativeId !== actual.id)
+        await enrollments.activate(enrollment.enrollment.id, actual.id, before.id);
     }
     record.nativeId = actual.id;
     record.definition = definition;
