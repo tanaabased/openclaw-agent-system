@@ -201,7 +201,7 @@ reports its selection and reason, no selection, or the condition that prevented 
 Verified pickup enters the existing
 assessment and Work workflow; ordinary assignments keep their configured mode.
 Missed windows are not replayed. Accepted issue work may finish after a window or pause.
-Codex uses the low model profile; OpenClaw uses its default automation profile.
+Both runtimes use the `models.default` profile for project pickup.
 
 Repository, milestone, guidance and route changes apply on the next run without Install.
 An unused open window can select from the new target; accepted assignments keep their

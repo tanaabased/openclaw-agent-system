@@ -34,7 +34,7 @@ export default function projectPickupJobs(
     projectPickupConfigurationCode(policy)
   )
     return [];
-  const profile = runtime === 'codex' ? manifest.models?.low : manifest.models?.default;
+  const profile = manifest.models?.default;
   if (!profile) throw new Error('project-pickup-model-required');
   const model = projectRoutingProfile(profile, runtime);
   if (model.status !== 'mapped') throw new Error(model.code);
