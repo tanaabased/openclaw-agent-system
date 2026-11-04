@@ -25,6 +25,8 @@ import { intakeLocation } from '../channels/github/intake/record-store.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import createIntakeTool from '../tools/intake/tool.ts';
+import AutomationLifecycleAuthority from '../agent/automation-lifecycle-authority.ts';
+import registerAutomationLifecycleHooks from '../core/automation-lifecycle-hook.ts';
 import { baseline, intakeFixture, originalIntakeDigest } from './github-intake-fixture.ts';
 
 function manifest() {
@@ -794,6 +796,102 @@ describe('openclaw v2 intake slice', () => {
     await assert.rejects(wrong.execute('call', { action: 'inspect' }), /bind the active/);
     assert.equal(f.connects(), 0);
   });
+  it('should bind native scheduled pickup without host run-context storage and revoke it on run end', async () => {
+    const f = fixture();
+    const controller = new AbortController();
+    const context = {
+      agentId: 'receiver',
+      sessionKey: 'pickup',
+      sessionId: 'session',
+      runId: 'run',
+      jobId: 'native-job',
+      trigger: 'cron',
+      workspaceDir: root,
+      toolCallId: 'call',
+      abortSignal: controller.signal,
+    };
+    type Hook = (event: Record<string, unknown>, caller: typeof context) => unknown;
+    const hooks = new Map<string, Hook[]>();
+    const api = {
+      on: ((name: string, hook: Hook) => {
+        hooks.set(name, [...(hooks.get(name) ?? []), hook]);
+      }) as OpenClawPluginApi['on'],
+    };
+    const invoke = async (name: string, event: Record<string, unknown>, caller = context) => {
+      for (const hook of hooks.get(name) ?? []) {
+        const result = await hook(event, caller);
+        if (result) return result as { block?: boolean; blockReason?: string };
+      }
+    };
+    const authority = new AutomationLifecycleAuthority();
+    registerAutomationLifecycleHooks(api, authority);
+    let factory: Parameters<OpenClawPluginApi['registerTool']>[0] | undefined;
+    let calls = 0;
+    f.service.pickup = async (_manifest, _workspace, _input, _timezone, occurrence) => {
+      await occurrence!.assertCurrent();
+      assert.equal(occurrence!.nativeId, 'native-job');
+      calls++;
+      return { status: 'idle', allowances: [], changed: false, response: '', instructions: '' };
+    };
+    createIntakeTool(
+      f.service,
+      f.manifests,
+      async (caller) => {
+        const admitted = authority.resolve(caller);
+        if (!admitted) throw new AutomationError('automation-run-context-missing');
+        return {
+          nativeId: admitted.run.jobId,
+          async assertCurrent() {
+            admitted.assertCurrent();
+          },
+        };
+      },
+      api,
+    ).registerTools(
+      {
+        registerTool(value) {
+          factory = value;
+        },
+      },
+      {} as never,
+    );
+    if (!factory || typeof factory !== 'object' || !('create' in factory))
+      throw Error('missing factory');
+    const tool = factory.create({ ...context, assertInvocationCurrent() {} });
+    assert.ok(tool && !Array.isArray(tool));
+    const event = {
+      toolName: 'agent_system_intake',
+      toolCallId: 'call',
+      runId: 'run',
+      params: { action: 'pickup' },
+    };
+    assert.equal((await invoke('before_tool_call', event))?.block, true);
+    await invoke('before_agent_reply', {}, context);
+    assert.equal(await invoke('before_tool_call', event), undefined);
+    await tool.execute('call', event.params, controller.signal);
+    assert.equal(await invoke('before_tool_call', event, { ...context, runId: '' }), undefined);
+    await tool.execute('call', event.params, controller.signal);
+    assert.match(
+      (await invoke('before_tool_call', { ...event, runId: 'conflict' }))!.blockReason!,
+      /run-id-mismatch/,
+    );
+    assert.equal(
+      (
+        await invoke(
+          'before_tool_call',
+          { ...event, runId: 'interactive' },
+          { ...context, runId: 'interactive' },
+        )
+      )?.block,
+      true,
+    );
+    await invoke('before_tool_call', event);
+    await invoke('agent_end', {}, context);
+    await assert.rejects(tool.execute('call', event.params, controller.signal));
+    assert.equal((await invoke('before_tool_call', event))?.block, true);
+    assert.equal(calls, 2);
+  });
+
   it('should consume pickup authority once for the exact native call and reject expired or generic calls', async () => {
     const f = fixture();
     type Context = {

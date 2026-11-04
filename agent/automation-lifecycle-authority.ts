@@ -82,23 +82,11 @@ export async function verifyAutomationLifecycleRun(
     throw new AutomationError('automation-lifecycle-drift');
 }
 
-const namespace = 'automation-lifecycle';
-type RunContextApi = {
-  setRunContext(patch: {
-    runId: string;
-    namespace: string;
-    value: AutomationLifecycleRun;
-  }): boolean;
-  getRunContext(params: { runId: string; namespace: string }): unknown;
-  clearRunContext(params: { runId: string; namespace: string }): void;
-};
-
-/** Host-owned run context retains scheduler identity, not a hook-scoped authority handle. */
+/** retain native scheduler facts alongside this instance's native tool-call bindings. */
 export default class AutomationLifecycleAuthority {
-  constructor(
-    private readonly contexts: RunContextApi,
-    private readonly logger?: { debug?(message: string): void },
-  ) {}
+  readonly #runs = new Map<string, AutomationLifecycleRun>();
+
+  constructor(private readonly logger?: { debug?(message: string): void }) {}
 
   private trace(stage: string, context: RunHookContext, outcome: string): void {
     if (!this.logger?.debug) return;
@@ -130,19 +118,15 @@ export default class AutomationLifecycleAuthority {
       this.trace('begin', context, 'incomplete-or-not-cron');
       return;
     }
-    const stored = this.contexts.setRunContext({
+    this.#runs.set(context.runId, {
       runId: context.runId,
-      namespace,
-      value: {
-        runId: context.runId,
-        jobId: context.jobId,
-        agentId: context.agentId,
-        workspaceDir: context.workspaceDir,
-        sessionKey: context.sessionKey,
-        sessionId: context.sessionId,
-      },
+      jobId: context.jobId,
+      agentId: context.agentId,
+      workspaceDir: context.workspaceDir,
+      sessionKey: context.sessionKey,
+      sessionId: context.sessionId,
     });
-    this.trace('begin', context, stored ? 'stored' : 'storage-rejected');
+    this.trace('begin', context, 'stored');
   }
 
   resolve(
@@ -154,22 +138,19 @@ export default class AutomationLifecycleAuthority {
       this.trace('resolve', context, 'run-id-missing');
       return;
     }
-    const stored = this.contexts.getRunContext({ runId: context.runId, namespace });
+    const stored = this.#runs.get(context.runId);
     this.trace('resolve', context, stored && typeof stored === 'object' ? 'found' : 'missing');
     if (!stored || typeof stored !== 'object') return;
     const run = structuredClone(stored) as AutomationLifecycleRun;
     const assertCurrent = () => {
       if (!context.abortSignal) throw new AutomationError('automation-lifecycle-unverified');
       context.abortSignal.throwIfAborted();
-      const current = this.contexts.getRunContext({ runId: context.runId!, namespace });
+      const current = this.#runs.get(context.runId!);
       if (
         !current ||
         typeof current !== 'object' ||
         (['runId', 'jobId', 'agentId', 'workspaceDir', 'sessionKey', 'sessionId'] as const).some(
-          (key) =>
-            typeof run[key] !== 'string' ||
-            !run[key] ||
-            (current as Record<string, unknown>)[key] !== run[key],
+          (key) => typeof run[key] !== 'string' || !run[key] || current[key] !== run[key],
         ) ||
         run.runId !== context.runId ||
         context.agentId !== run.agentId ||
@@ -184,6 +165,6 @@ export default class AutomationLifecycleAuthority {
 
   end(runId: string | undefined): void {
     this.trace('end', { runId }, 'clear');
-    if (runId) this.contexts.clearRunContext({ runId, namespace });
+    if (runId) this.#runs.delete(runId);
   }
 }
