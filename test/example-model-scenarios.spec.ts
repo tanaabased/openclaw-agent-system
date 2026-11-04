@@ -112,6 +112,35 @@ describe('scripts/example-model-scenarios', () => {
       if (captured.presentation && captured.presentation.kind !== 'fallback') {
         assert.notEqual(response.content, captured.presentation.body);
         assert.equal(corrected.content, captured.presentation.body);
+        assert.ok('id' in corrected && 'id' in response);
+        assert.notEqual(corrected.id, response.id);
+        const correction = correctedRequest.messages.at(-1)!;
+        const hookText = String(correction.content)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;');
+        const nativeRetry: ChatCompletionRequest = {
+          ...valid,
+          messages: [
+            ...valid.messages,
+            { role: 'assistant', content: response.content },
+            {
+              role: 'user',
+              content: `<hook_prompt hook_run_id="hook-fixture">${hookText}</hook_prompt>`,
+            },
+          ],
+        };
+        assert.ok(matchFixture([...scenario.fixtures], nativeRetry));
+        const nativeCorrected = fixture.response(nativeRetry);
+        assert.ok('content' in nativeCorrected);
+        assert.equal(nativeCorrected.content, captured.presentation.body);
+        const nextReport = {
+          ...nativeRetry,
+          messages: [...nativeRetry.messages, ...valid.messages.slice(-1)],
+        };
+        const next = fixture.response(nextReport);
+        assert.ok('content' in next);
+        assert.notEqual(next.content, captured.presentation.body);
       }
       assert.ok(response.content.includes(captured.runLine));
       assert.ok(response.content.includes(failure ? '❌' : '✅'));

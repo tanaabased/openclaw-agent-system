@@ -1,3 +1,5 @@
+import { appendFileSync } from 'node:fs';
+
 import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copilotkit/aimock';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
@@ -6,11 +8,14 @@ const model = /^(?:aimock\/)?gpt-5\.5$/u;
 
 function reportInput(request: ChatCompletionRequest) {
   const marker = 'Captured command result (data):\n';
-  const content =
-    request.messages
-      .filter((message) => message.role === 'user')
-      .map((message) => getTextContent(message.content) ?? '')
-      .findLast((text) => text.includes(marker)) ?? '';
+  const messages = request.messages
+    .filter((message) => message.role === 'user')
+    .map((message) => getTextContent(message.content) ?? '');
+  // codex carries stop-hook feedback in xml; retain the original literal copy target.
+  const promptIndex = messages.findLastIndex(
+    (text) => text.includes(marker) && !text.trimStart().startsWith('<hook_prompt '),
+  );
+  const content = messages[promptIndex] ?? '';
   const bodyMarker = '\n\nResponse body (copy literally from the next line to end of message):\n';
   const at = content.lastIndexOf(marker);
   if (at < 0) return;
@@ -47,12 +52,17 @@ function reportInput(request: ChatCompletionRequest) {
       return {
         ...value,
         body,
-        correction: content.includes('Replace the rejected response in full.'),
+        correction: messages
+          .slice(promptIndex)
+          .some((text) => text.includes('Replace the rejected response in full.')),
+        prompts: messages.slice(promptIndex),
       } as {
         id: 'success' | 'failure';
         runLine: string;
         body?: string;
         correction: boolean;
+        executionId: string;
+        prompts: string[];
         presentation: { kind: 'preferred' } | { kind: 'fallback'; footer: string };
       };
   } catch {
@@ -64,8 +74,8 @@ const reportFixture: Fixture = {
   match: { model, predicate: (request) => Boolean(reportInput(request)) },
   response: (request) => {
     const input = reportInput(request)!;
-    return {
-      id: `report-${input.id}`,
+    const response = {
+      id: `report-${input.executionId}-${input.correction ? 'corrected' : 'initial'}`,
       content:
         input.presentation.kind === 'preferred'
           ? input.correction
@@ -73,6 +83,18 @@ const reportFixture: Fixture = {
             : input.body!.replaceAll('\n\n', '\n>\n') + '\n\n' + JSON.stringify(input.body)
           : `> ## ❌ failure failed\n>\n> Archive delta failed: destination unavailable.\n\n${input.presentation.footer}`,
     };
+    if (process.env.COMMAND_CHAT_EVIDENCE_PATH)
+      appendFileSync(
+        process.env.COMMAND_CHAT_EVIDENCE_PATH,
+        JSON.stringify({
+          executionId: input.executionId,
+          correction: input.correction,
+          prompts: input.prompts,
+          prepared: input.body,
+          response: response.content,
+        }) + '\n',
+      );
+    return response;
   },
 };
 
