@@ -112,7 +112,7 @@ describe('agent/workflow-status', () => {
     event.work.result.outcome = 'blocked';
     assert.equal(workflowStatus({ ...record, delivery }), 'blocked');
   });
-  it('should report current issue work instead of historical completed feedback in both runtimes', () => {
+  it('should keep feedback-delivered work complete despite stale initial execution receipts', () => {
     const delivery = {
       pullRequest: { pullRequestNumber: 7 },
       reconciled: true,
@@ -133,17 +133,16 @@ describe('agent/workflow-status', () => {
         ],
       },
     };
+    for (const work of [
+      { continuation: { phase: 'running' } },
+      { work: { implementation: {} } },
+      { continuation: { phase: 'cancelled' } },
+      { work: { code: 'dispatch-turn-cancelled' } },
+      { continuation: { phase: 'clarification-needed' } },
+    ])
+      assert.equal(workflowStatus({ ...record, ...work }), 'delivered');
+    delivery.reconciled = false;
     assert.equal(workflowStatus({ ...record, continuation: { phase: 'running' } }), 'running');
-    assert.equal(workflowStatus({ ...record, work: { implementation: {} } }), 'running');
-    assert.equal(workflowStatus({ ...record, continuation: { phase: 'cancelled' } }), 'cancelled');
-    assert.equal(
-      workflowStatus({ ...record, work: { code: 'dispatch-turn-cancelled' } }),
-      'blocked',
-    );
-    assert.equal(
-      workflowStatus({ ...record, continuation: { phase: 'clarification-needed' } }),
-      'clarification-needed',
-    );
   });
   it('should select the feedback that owns work rather than the last historical event', () => {
     const record = {

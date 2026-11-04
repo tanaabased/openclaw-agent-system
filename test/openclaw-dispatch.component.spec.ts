@@ -5670,7 +5670,7 @@ describe('agent/openclaw issue dispatch', () => {
 
   for (const outcome of ['plan-ready', 'clarification-needed'] as const)
     it(`should preserve feedback-created pr state after an original ${outcome} assessment across restart`, async () => {
-      const { journal } = await publishedFollowup();
+      const { journal, id, who } = await publishedFollowup();
       const before = await record();
       const original: AssessmentResult =
         outcome === 'plan-ready'
@@ -5689,6 +5689,7 @@ describe('agent/openclaw issue dispatch', () => {
         current.result = original;
         current.stageReceipt!.resultDigest = automationHash(original);
         delete current.handoff;
+        delete current.implementationDelivered;
         current.progression = { stage: 'implementation', via: 'work', enteredAt: 2 };
         current.work = {
           assessmentDigest: automationHash(original),
@@ -5739,6 +5740,17 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(restored.threadId, before.threadId);
       assert.equal(restored.worktree, before.worktree);
       assert.equal(creates().length, 1);
+      messages.length = 0;
+      const context = await service.run(
+        manifest,
+        root,
+        { ...who, runId: 'human-after-feedback-delivery' },
+        { action: 'implementation', operation: 'context', id },
+        true,
+      );
+      assert.equal(context.status, 'native');
+      assert.equal('resultContract' in context, false);
+      assert.deepEqual(await record(), restored);
       await assert.rejects(
         journal.exclusive(async (state, save) => {
           delete state.records[0]!.progression;

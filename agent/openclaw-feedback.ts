@@ -5,6 +5,7 @@ import {
 } from './feedback-result.ts';
 import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
 import implementationContext from './implementation-context.ts';
+import { retainImplementationDelivery } from './implementation-delivery.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import feedbackComposition from './feedback-composition.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
@@ -582,6 +583,7 @@ export default async function openClawFeedback(input: {
           record.work ??= { assessmentDigest: automationHash(record.result) };
           record.work.delivery = structuredClone(projected.work.delivery);
         }
+        retainImplementationDelivery(record);
         await save();
       },
       signal: input.signal ?? AbortSignal.timeout(60000),

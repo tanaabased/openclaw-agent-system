@@ -9,7 +9,7 @@ describe('agent/issue-workflow-progress', () => {
     const issue: IssueWorkflowState = {
       phase: 'complete',
       result: { outcome: 'plan-ready' },
-      delivery: { adopted: {}, pullRequest: { pullRequestNumber: 7 }, reconciled: false },
+      delivery: { pullRequest: { pullRequestNumber: 7 }, reconciled: false },
     };
     assert.equal(issueWorkflowProgress(issue).action, 'assessment');
     issue.progression = { stage: 'implementation' };

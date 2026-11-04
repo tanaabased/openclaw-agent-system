@@ -12,10 +12,37 @@ import issueWorkflowProgress, {
   type IssueWorkflowState,
 } from '../agent/issue-workflow-progress.ts';
 import managedImplementationRoute from '../agent/managed-implementation-route.ts';
+import workflowStatus from '../agent/workflow-status.ts';
 import type { AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
 
 describe('agent/implementation-delivery', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should recognize legacy ${runtime} feedback-first delivery without merging its work into the initial result`, () => {
+      const delivery = {
+        reconciled: true,
+        pushedHead: 'first',
+        pullRequest: { pullRequestNumber: 7 },
+      };
+      const event = { phase: 'running', work: { head: 'first', result: { outcome: 'done' } } };
+      const record = {
+        phase: 'complete',
+        result: { outcome: 'plan-ready' },
+        progression: { stage: 'implementation' },
+        feedback: { events: [event] },
+        ...(runtime === 'codex' ? { delivery } : { work: { delivery } }),
+      };
+      assert.equal(workflowStatus(record), 'delivered');
+      assert.deepEqual(issueWorkflowProgress(record), { action: 'complete', status: 'delivered' });
+      delivery.pushedHead = 'unpublished';
+      assert.equal(hasDeliveredImplementation(record), false);
+      delivery.pushedHead = 'first';
+      delivery.reconciled = false;
+      assert.equal(hasDeliveredImplementation(record), false);
+      delivery.reconciled = true;
+      event.work.result.outcome = 'clarification-needed';
+      assert.equal(hasDeliveredImplementation(record), false);
+    });
+
     it(`should permanently finish ${runtime} execution without discarding later publication receipts`, () => {
       const delivery = {
         reconciled: true,

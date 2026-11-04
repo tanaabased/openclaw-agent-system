@@ -6,12 +6,22 @@ export function hasDeliveredImplementation(record: IssueWorkflowState): boolean 
   const work = record.continuation?.phase ? record.continuation : record.work;
   const delivery = record.delivery ?? record.work?.delivery;
   return Boolean(
-    work?.scope !== 'local' &&
-    delivery?.pullRequest &&
-    delivery.reconciled &&
-    (work?.resultHistory?.some(({ result }) => result.outcome === 'done') ||
-      (work?.result?.outcome === 'done' &&
-        (!record.continuation?.head || delivery.pushedHead === record.continuation.head))),
+    (work?.scope !== 'local' &&
+      delivery?.pullRequest &&
+      delivery.reconciled &&
+      (work?.resultHistory?.some(({ result }) => result.outcome === 'done') ||
+        (work?.result?.outcome === 'done' &&
+          (!record.continuation?.head || delivery.pushedHead === record.continuation.head)))) ||
+    record.feedback?.events.some((event) => {
+      const linked = event.workDelivery ?? delivery;
+      return (
+        event.work?.result?.outcome === 'done' &&
+        event.work.head &&
+        linked?.pullRequest &&
+        linked.reconciled &&
+        linked.pushedHead === event.work.head
+      );
+    }),
   );
 }
 

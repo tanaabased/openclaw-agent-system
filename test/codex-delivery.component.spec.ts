@@ -1,4 +1,6 @@
 import manualPullRequest from '../agent/manual-pull-request.ts';
+import codexEntryContext from '../agent/codex-entry-context.ts';
+import { codexDispatchNative } from '../agent/codex-dispatch-native.ts';
 import {
   fixturePullRequest,
   account,
@@ -86,13 +88,13 @@ describe('agent/codex-delivery', () => {
       ...content,
     });
   }
-  async function feedbackWorkFixture() {
+  async function feedbackWorkFixture(firstDelivery = false) {
     const declaration = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
     declaration.github['issue-assignment'].reviewers = [
       { login: 'reviewer', 'node-id': 'U_reviewer' },
     ];
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(declaration));
-    await publish();
+    if (!firstDelivery) await publish();
     const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
     const policy = current.manifest.github!.notifications!;
     const source = {
@@ -128,6 +130,7 @@ describe('agent/codex-delivery', () => {
     head = 'b'.repeat(40);
     const eventId = await store.exclusive(async (state, save) => {
       const record = state.records[0]!;
+      if (firstDelivery) delete record.handoff;
       record.feedback = { baseline: { I_issue: {} }, events: [] };
       await discoverFeedback({
         state: record.feedback,
@@ -156,7 +159,7 @@ describe('agent/codex-delivery', () => {
         policy,
         workspace,
         now: baseline + 80000,
-        pullRequest: record.delivery!.pullRequest,
+        pullRequest: record.delivery?.pullRequest,
         resolveSkill: (id) => deps.native!.assessmentSkill!(record.worktree!, id),
       });
       event.work!.result = {
@@ -165,6 +168,7 @@ describe('agent/codex-delivery', () => {
         fullResult: 'Regression passed; committed.',
       };
       event.work!.head = head;
+      record.assessment = event.work!.selection;
       await save();
       return event.id;
     });
@@ -294,6 +298,49 @@ describe('agent/codex-delivery', () => {
     assert.equal(remote, head);
     assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
     assert.equal(gitCalls.filter((args) => args.includes('push')).length, 2);
+  });
+
+  it('should end initial execution after feedback delivers the first pr and retain native routing after restart', async () => {
+    const { eventId } = await feedbackWorkFixture(true);
+    assert.equal((await store.read()).records[0]!.implementationDelivered, undefined);
+    const preview = await request('prepare', { eventId });
+    assert.equal(
+      (await request('publish', { eventId, digest: requiredDigest(preview) })).status,
+      'published',
+    );
+    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const saved = (await store.read()).records[0]!;
+    assert.equal(saved.implementationDelivered, true);
+    assert.equal(saved.continuation, undefined);
+    assert.equal(saved.handoff, undefined);
+    assert.equal(creates, 1);
+    const find = deps.native!.find;
+    deps.native!.find = async (...args) => ({
+      ...(await find(...args))!,
+      turnId: 'later-human-turn',
+    });
+    const context = await codexEntryContext(
+      pluginData,
+      { action: 'implementation', operation: 'context' },
+      {
+        codexHome: deps.codexHome,
+        threadId: deps.threadId,
+        native: {
+          ...codexDispatchNative(async () => assert.fail('unexpected native request')),
+          ...deps.native,
+        },
+        replyConnection: async () => ({
+          request: async () => assert.fail('native follow-up needs no new execution receipt'),
+          close: async () => {},
+        }),
+      },
+      async () => assert.fail('must retain the existing issue context'),
+      async () => assert.fail('continuation must not own delivered work'),
+    );
+    assert.equal(context.status, 'native');
+    assert.deepEqual(context.pullRequest, saved.delivery!.pullRequest);
+    assert.deepEqual((await store.read()).records[0], saved);
   });
 
   it('should reconcile an uncertain feedback work push without repeating implementation or push', async () => {

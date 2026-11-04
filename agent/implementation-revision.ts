@@ -48,7 +48,7 @@ export function unprocessedImplementationInput(
   return true;
 }
 
-/** A new verified input may reopen a delivered implementation round, not retire its task. */
+/** Before PR delivery, verified input may revise completed local work. */
 export default function implementationRevision(
   work: Parameters<typeof unprocessedImplementationInput>[0],
   input: ImplementationSource,

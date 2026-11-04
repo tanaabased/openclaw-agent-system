@@ -3,14 +3,9 @@ import { hasDeliveredImplementation } from './implementation-delivery.ts';
 
 interface Delivery {
   binding?: { branch: string };
-  adopted?: unknown;
   pullRequest?: { pullRequestNumber: number };
   reconciled?: boolean;
-  attached?: boolean;
-  cardAttempts?: number;
   pushedHead?: string;
-  announcement?: { receipt?: unknown; code?: string };
-  announcementRecovery?: { status: string };
 }
 export interface IssueWorkflowState {
   phase: string;
@@ -28,6 +23,15 @@ export interface IssueWorkflowState {
   autoDecision?: { ended?: boolean; code?: string };
   decisionTurn?: { status: string; inactive?: boolean };
   delivery?: Delivery;
+  feedback?: {
+    events: Array<{
+      id?: string;
+      phase: string;
+      retry?: unknown;
+      work?: { head?: string; result?: { outcome: string } };
+      workDelivery?: Delivery;
+    }>;
+  };
   continuation?: {
     scope?: 'local' | 'pull-request';
     message?: string;

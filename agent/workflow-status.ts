@@ -1,19 +1,7 @@
 import issueWorkflowProgress, { type IssueWorkflowState } from './issue-workflow-progress.ts';
 
-interface State extends IssueWorkflowState {
-  feedback?: {
-    events: Array<{
-      id?: string;
-      phase: string;
-      retry?: unknown;
-      work?: { head?: string; result?: { outcome: string } };
-      workDelivery?: IssueWorkflowState['delivery'];
-    }>;
-  };
-}
-
 /** feedback overlays its own work; issue status uses the coordinator's shared progress facts. */
-export default function workflowStatus(record: State) {
+export default function workflowStatus(record: IssueWorkflowState) {
   const progress = issueWorkflowProgress(record);
   if (progress.action === 'stopped' || record.progression?.workOwner === 'issue')
     return progress.status;

@@ -16,6 +16,8 @@ import OpenClawDispatchStore, {
 } from '../agent/openclaw-dispatch-state.ts';
 import { discoverFeedback, feedbackRevision } from '../agent/feedback-source.ts';
 import openClawCapacity from '../agent/openclaw-capacity.ts';
+import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
+import workflowStatus from '../agent/workflow-status.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import {
@@ -415,7 +417,7 @@ describe('agent/openclaw-feedback', () => {
       /feedback-implementation-result-conflict/u,
     );
   });
-  async function enableFeedbackWork() {
+  async function enableFeedbackWork(firstDelivery = false) {
     record.manifestDigest = 'c'.repeat(64);
     record.progression = { stage: 'implementation', via: 'operator' };
     record.result = {
@@ -451,19 +453,30 @@ describe('agent/openclaw-feedback', () => {
         pullRequest: { pullRequestNodeId: 'PR', pullRequestNumber: 7 },
       },
     };
+    if (firstDelivery) {
+      delete record.work;
+      delete record.handoff;
+      input.policy.issueAssignment!.pullRequest = { recipients: [] };
+    }
     return start();
   }
-  for (const lostPush of [false, true])
-    it(`should deliver feedback on the same pr with lost push response ${lostPush}`, async () => {
-      await enableFeedbackWork();
-      let remote = 'c'.repeat(40),
+  for (const [firstDelivery, lostPush] of [
+    [false, false],
+    [false, true],
+    [true, false],
+  ])
+    it(`should deliver feedback with first pr ${firstDelivery} and lost push response ${lostPush}`, async () => {
+      await enableFeedbackWork(firstDelivery);
+      let remote = firstDelivery ? '' : 'c'.repeat(40),
         pushes = 0,
         creates = 0;
       let lost = lostPush;
       const head = 'd'.repeat(40);
-      const delivery = record.work!.delivery!;
-      delivery.binding.repositoryId = input.intake.repository.nodeId;
-      delivery.binding.authorId = account.nodeId;
+      const delivery = record.work?.delivery;
+      if (delivery) {
+        delivery.binding.repositoryId = input.intake.repository.nodeId;
+        delivery.binding.authorId = account.nodeId;
+      }
       const pr = {
         itemNodeId: 'PR',
         number: 7,
@@ -471,10 +484,10 @@ describe('agent/openclaw-feedback', () => {
         baseRef: 'main',
         headRef: 'fix',
         headRepository: 'owner/repo',
-        title: delivery.title,
+        title: 'fix',
         body: 'Closes #3',
       };
-      delivery.body = pr.body;
+      if (delivery) delivery.body = pr.body;
       input.connectDelivery = async () => ({
         git: async (argv) => {
           if (argv[0] === 'branch') return 'fix';
@@ -482,7 +495,7 @@ describe('agent/openclaw-feedback', () => {
           if (argv.includes('--show-toplevel')) return root;
           if (argv[0] === 'rev-parse') return head;
           if (argv[0] === 'rev-list') return '2';
-          if (argv[0] === 'ls-remote') return `${remote} refs/heads/fix`;
+          if (argv[0] === 'ls-remote') return remote ? `${remote} refs/heads/fix` : '';
           if (argv[0] === 'merge-base')
             assert.deepEqual(argv, ['merge-base', '--is-ancestor', remote, head]);
           if (argv[0] === 'push') {
@@ -502,13 +515,14 @@ describe('agent/openclaw-feedback', () => {
             let data: unknown;
             if (argv.includes('POST')) {
               creates++;
-              throw new Error('must not create');
-            }
-            if (argv.includes('graphql'))
+              assert.ok(firstDelivery);
+              data = pr;
+            } else if (argv.includes('graphql'))
               data = { id: 'PR', closingIssuesReferences: { nodes: [{ id: 'I_issue' }] } };
             else if (endpoint === 'repos/owner/repo/issues/3')
               data = { databaseId: 20, nodeId: 'I_issue', number: 3, title: 'issue' };
-            else if (endpoint === 'repos/owner/repo/pulls') data = [pr];
+            else if (endpoint === 'repos/owner/repo/pulls')
+              data = firstDelivery && !creates ? [] : [pr];
             else if (endpoint === 'repos/owner/repo/pulls/7')
               data = {
                 nodeId: 'PR',
@@ -540,7 +554,12 @@ describe('agent/openclaw-feedback', () => {
           fullResult: 'Regression passed.',
         },
       });
-      const preview = await action('delivery', { deliveryOperation: 'prepare' });
+      assert.equal(record.implementationDelivered, undefined);
+      const preview = await action('delivery', {
+        deliveryOperation: 'prepare',
+        title: 'fix',
+        body: 'Closes #3',
+      });
       assert.ok('digest' in preview);
       if (lostPush) {
         await assert.rejects(
@@ -564,15 +583,24 @@ describe('agent/openclaw-feedback', () => {
       const outcome = await action('delivery', {
         deliveryOperation: 'publish',
         digest: currentPreview.digest,
+        title: 'fix',
+        body: 'Closes #3',
       });
       assert.equal(outcome.status, 'published');
       assert.equal(record.work!.delivery!.pushedHead, head);
       assert.equal(record.work!.delivery!.pullRequest!.pullRequestNumber, 7);
+      assert.equal(record.implementationDelivered, true);
+      assert.equal(record.work!.result, undefined);
+      assert.equal(event.phase, 'running'); // source-bound feedback reply still has its own owner.
+      input.record = record = JSON.parse(JSON.stringify(record));
+      input.event = event = record.feedback!.events[0]!;
+      assert.equal(workflowStatus(record), 'delivered');
+      assert.deepEqual(issueWorkflowProgress(record), { action: 'complete', status: 'delivered' });
       const replay = await action('delivery', { deliveryOperation: 'prepare' });
       assert.ok('digest' in replay);
       await action('delivery', { deliveryOperation: 'publish', digest: replay.digest });
       assert.equal(pushes, 1);
-      assert.equal(creates, 0);
+      assert.equal(creates, firstDelivery ? 1 : 0);
       assert.equal((await action('implementation-context')).status, 'finished');
       if (!lostPush) {
         await compose('The repair is pushed; checks are still pending.');
@@ -600,7 +628,7 @@ describe('agent/openclaw-feedback', () => {
         assert.equal((await action('publish', { digest: reply.digest })).status, 'published');
         assert.deepEqual({ work: event.work, delivery: record.work!.delivery }, retained);
         assert.equal(pushes, 1);
-        assert.equal(creates, 0);
+        assert.equal(creates, firstDelivery ? 1 : 0);
         assert.equal(writes, 1);
       }
       source.body = 'Withdrawn';
