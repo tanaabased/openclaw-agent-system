@@ -1,5 +1,6 @@
 import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copilotkit/aimock';
 
+import currentMessages, { isOpenClawAIMockRuntimeContext } from '../../scripts/aimock-messages.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 
 const model = /^(?:aimock\/)?gpt-5\.5$/u;
@@ -7,7 +8,11 @@ const identity = 'Name: Automation Recovery Tanaabot';
 const prompt = 'Acknowledge the scheduled owning-agent context.';
 
 function reportInput(request: ChatCompletionRequest) {
-  const user = request.messages.findLast((message) => message.role === 'user');
+  const user = currentMessages(request).find(
+    (message) =>
+      message.role === 'user' &&
+      !isOpenClawAIMockRuntimeContext(getTextContent(message.content) ?? ''),
+  );
   const content = user ? (getTextContent(user.content) ?? '') : '';
   const marker = 'Captured command result (data):\n';
   const at = content.lastIndexOf(marker);
