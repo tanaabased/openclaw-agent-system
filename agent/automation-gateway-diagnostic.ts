@@ -209,10 +209,10 @@ export default function automationGatewayDiagnostic(
     error.message === 'model catalog is still loading; retry in a few seconds'
   )
     diagnostic.reason = 'model-catalog-loading';
-  // Opt-in disposable CI evidence excludes arbitrary details and request payloads.
+  // opt-in disposable ci evidence excludes arbitrary details and request payloads.
   if (
     evidence &&
-    method === 'sessions.create' &&
+    ['sessions.resolve', 'sessions.create', 'cron.add', 'cron.update'].includes(method) &&
     diagnostic.category === 'rejected' &&
     error instanceof Error
   ) {

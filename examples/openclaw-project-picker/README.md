@@ -50,6 +50,7 @@ OPENCLAW_LOG_LEVEL=info openclaw-gateway start
 ```bash
 # should hand one pickup assignment to ordinary work intake through each runtime
 set -euo pipefail
+trap 'result=$?; if test "$result" -ne 0; then curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/diagnostics >&2 || true; fi; exit "$result"' EXIT
 actor_node=$(GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id')
 for runtime in openclaw codex; do
   cd "$GITHUB_WORKSPACE/examples/openclaw-project-picker/$runtime"

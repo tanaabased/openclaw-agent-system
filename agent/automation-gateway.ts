@@ -169,10 +169,18 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
         await import('./automation-gateway-diagnostic.ts');
       const { default: automationGatewayUnavailable } =
         await import('./automation-gateway-unavailable.ts');
+      const captureRejection = process.env.CI === 'true' && process.env.OPENCLAW_DEBUG === '1';
+      const parameterValues: string[] = [];
+      const parameterJson = captureRejection
+        ? JSON.stringify(params, (_key, value: unknown) => {
+            if (typeof value === 'string' && value.length >= 4) parameterValues.push(value);
+            return value;
+          })
+        : undefined;
       const diagnostic = automationGatewayDiagnostic(
         method,
         error,
-        process.env.CI === 'true' && process.env.OPENCLAW_DEBUG === '1'
+        captureRejection
           ? {
               secrets: [
                 ...Object.entries(process.env)
@@ -181,10 +189,8 @@ export function createAutomationGateway(call: AutomationGatewayCaller): Automati
                   )
                   .map(([, value]) => value!)
                   .filter(Boolean),
-                JSON.stringify(params),
-                ...Object.values(params).filter(
-                  (value): value is string => typeof value === 'string' && value.length >= 4,
-                ),
+                parameterJson!,
+                ...parameterValues,
               ],
             }
           : undefined,

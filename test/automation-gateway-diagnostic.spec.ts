@@ -38,8 +38,33 @@ describe('agent/automation-gateway-diagnostic', () => {
       { secrets: [] },
     );
     assert.ok(long.nativeRejection!.message!.length <= 1025);
+  });
+
+  it('should capture opt-in enrollment rejections and preserve their redaction on retention', () => {
+    const error = Object.assign(
+      new Error('enrollment refused for opaque-input; token=hidden payload={private input}'),
+      {
+        name: 'GatewayClientRequestError',
+        gatewayCode: 'INVALID_REQUEST',
+        retryable: false,
+        details: { code: 'ENROLLMENT_INVALID', private: 'private-detail' },
+      },
+    );
+    for (const method of ['sessions.resolve', 'cron.add', 'cron.update'] as const) {
+      assert.equal(automationGatewayDiagnostic(method, error).nativeRejection, undefined);
+      const diagnostic = automationGatewayDiagnostic(method, error, {
+        secrets: ['opaque-input'],
+      });
+      assert.equal(diagnostic.nativeRejection?.detailCode, 'ENROLLMENT_INVALID');
+      assert.match(diagnostic.nativeRejection?.message ?? '', /enrollment refused/);
+      assert.doesNotMatch(
+        JSON.stringify(diagnostic),
+        /opaque-input|hidden|private input|private-detail/,
+      );
+      assert.deepEqual(retainAutomationGatewayDiagnostic(diagnostic), diagnostic);
+    }
     assert.equal(
-      automationGatewayDiagnostic('cron.add', error, { secrets: [] }).nativeRejection,
+      automationGatewayDiagnostic('cron.list', error, { secrets: [] }).nativeRejection,
       undefined,
     );
   });
