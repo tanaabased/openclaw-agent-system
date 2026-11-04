@@ -101,7 +101,7 @@ function fixture(
 }
 
 describe('agent/codex-plugin-lifecycle', () => {
-  for (const olderVersion of ['2026.10.6', '2026.10.8']) {
+  for (const olderVersion of ['2026.10.6', '2026.10.9']) {
     it(`should require explicit reconciliation of a ${olderVersion} plugin for the release-owned matched pair`, async () => {
       const selected = codexPluginRequirement(metadata)!;
       const f = fixture('enabled', selected);

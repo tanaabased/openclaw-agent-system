@@ -1,5 +1,7 @@
 import { projectCandidateSchema as pickupCandidateSchema } from '../channels/github/provider/project-pickup-client.ts';
 import { Type, type Static } from 'typebox';
+import { providerDiagnosticSchema } from '../utils/provider-diagnostic.ts';
+import { maximumAssessmentGuidanceBytes } from '../manifest/assessment-schema.ts';
 
 import {
   projectPickupEnrollmentSchema,
@@ -8,20 +10,28 @@ import {
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const time = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
-export const pickupReportSchema = Type.Object(
+const assignmentFields = {
+  window: projectPickupReceiptSchema.properties.window,
+  assignedAt: time,
+};
+const chargeSchema = Type.Object(
   {
-    fingerprint: text,
-    problems: Type.Array(text),
-    runId: Type.Optional(text),
-    response: Type.String({ maxLength: 128000 }),
-    notify: Type.Boolean(),
+    ...assignmentFields,
+    repository: text,
+    repositoryNodeId: text,
+    runId: text,
+    reconciled: Type.Optional(
+      Type.Object({ runId: text, at: time }, { additionalProperties: false }),
+    ),
   },
   { additionalProperties: false },
 );
-export type PickupReport = Static<typeof pickupReportSchema>;
 export const pickupOperationSchema = Type.Object(
   {
     id: text,
+    runId: text,
+    enrollment: Type.Optional(projectPickupEnrollmentSchema),
+    repository: text,
     window: projectPickupReceiptSchema.properties.window,
     phase: Type.Union([
       Type.Literal('discovering'),
@@ -29,32 +39,65 @@ export const pickupOperationSchema = Type.Object(
       Type.Literal('reserved'),
       Type.Literal('attempted'),
       Type.Literal('assigned'),
-      Type.Literal('admitted'),
-      Type.Literal('completed'),
-      Type.Literal('empty'),
-      Type.Literal('expired'),
-      Type.Literal('failed'),
-      Type.Literal('cancelled'),
     ]),
     page: Type.Integer({ minimum: 1 }),
-    candidates: Type.Array(pickupCandidateSchema, { maxItems: 1000 }),
-    guidance: Type.Optional(Type.String({ maxLength: 32000 })),
-    selectionDigest: Type.Optional(text),
-    selected: Type.Optional(pickupCandidateSchema),
-    rationale: Type.Optional(text),
-    beforeEvents: Type.Optional(Type.Array(text, { maxItems: 300 })),
-    claim: Type.Optional(
+    scan: Type.Optional(
+      Type.Object(
+        { digest: text, projectIndex: time, skipped: Type.Optional(Type.Record(text, text)) },
+        { additionalProperties: false },
+      ),
+    ),
+    candidates: Type.Array(
       Type.Object(
         {
-          previousEventId: Type.Union([text, Type.Null()]),
-          mode: Type.Union([Type.Literal('local'), Type.Literal('swarm')]),
+          ...pickupCandidateSchema.properties,
+          repository: Type.Optional(text),
+          repositoryNodeId: Type.Optional(text),
+          milestoneNodeId: Type.Optional(text),
         },
         { additionalProperties: false },
       ),
     ),
+    discovery: Type.Optional(
+      Type.Object(
+        {
+          pending: Type.Array(Type.Pick(pickupCandidateSchema, ['nodeId', 'number'])),
+          nextPage: Type.Optional(Type.Integer({ minimum: 1 })),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    deferred: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            nodeId: text,
+            number: Type.Integer({ minimum: 1 }),
+            code: text,
+            providerDiagnostic: Type.Optional(providerDiagnosticSchema),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
+    guidance: Type.Optional(Type.String({ maxLength: maximumAssessmentGuidanceBytes })),
+    selectionDigest: Type.Optional(text),
+    selected: Type.Optional(
+      Type.Object(
+        {
+          nodeId: text,
+          number: Type.Integer({ minimum: 1 }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    shortlist: Type.Optional(Type.Array(text, { maxItems: 5 })),
+    rationale: Type.Optional(text),
+    beforeEvents: Type.Optional(Type.Array(text, { maxItems: 300 })),
     attemptedAt: Type.Optional(time),
     receipt: Type.Optional(projectPickupReceiptSchema),
     code: Type.Optional(text),
+    providerDiagnostic: Type.Optional(providerDiagnosticSchema),
   },
   { additionalProperties: false },
 );
@@ -62,15 +105,18 @@ export const projectPickupStateSchema = Type.Object(
   {
     enrollment: projectPickupEnrollmentSchema,
     timezone: text,
-    highWater: Type.Optional(time),
+    windowAssignment: Type.Optional(
+      Type.Object(
+        {
+          ...assignmentFields,
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    charges: Type.Optional(Type.Array(chargeSchema)),
     operations: Type.Array(pickupOperationSchema),
   },
   { additionalProperties: false },
 );
-export type PickupCandidate = Static<typeof pickupCandidateSchema>;
 export type PickupOperation = Static<typeof pickupOperationSchema>;
 export type ProjectPickupState = Static<typeof projectPickupStateSchema>;
-
-export function pickupUnfinished(operation: PickupOperation) {
-  return !['completed', 'empty', 'expired', 'cancelled'].includes(operation.phase);
-}

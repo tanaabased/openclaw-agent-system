@@ -1,4 +1,4 @@
-import hydrateImplementation from './implementation-material-fixture.ts';
+import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 import commentProviderFixture from './github-comment-provider-fixture.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
@@ -917,108 +917,142 @@ describe('agent/codex-feedback', () => {
     assert.equal(saved.result!.privateText, 'Detailed private answer.');
     assert.equal(saved.receipt!.nodeId, 'reply');
   });
-  it('should preview and publish an inline reply only in its retained review thread', async () => {
-    const connect = deps.feedbackConnect!;
-    const provider = await connect(root, new AbortController().signal);
-    const review = reviewFixture({ author: commenter, body: '' });
-    const reply = reviewCommentFixture({
-      author: commenter,
-      replyToId: 70,
-      body: '@receiver explain in this thread',
-    });
-    const parent = reviewCommentFixture({ databaseId: 70, nodeId: 'parent', reviewId: 60 });
-    const reviews = reviewClientFixture(review, [reply, parent]);
-    reviews.getReviewComments = async () => [reply];
-    const getItem = provider.client.getItem;
-    provider.client.getItem = async (owner, name, number) =>
-      number === 45
-        ? {
-            ...intakeFixture().item,
-            number,
-            nodeId: 'PR_delivery',
-            itemType: 'pull-request',
-            pullRequest: {
-              baseRef: 'main',
-              baseRepositoryDatabaseId: 10,
-              baseRepositoryNodeId: 'R_repo',
-              draft: false,
-              headRef: 'branch',
-              headSha: 'a'.repeat(40),
-              merged: false,
-            },
-          }
-        : getItem(owner, name, number);
-    provider.comments.reviews = reviews as typeof provider.comments.reviews;
-    const roots: number[] = [];
-    provider.replies = {
-      create: async (_owner: string, _name: string, number: number, rootId: number) => {
-        assert.equal(number, 45);
-        roots.push(rootId);
-        return { nodeId: 'PRRC_published', databaseId: 99 };
-      },
-      find: async () => undefined,
-    } as unknown as typeof provider.replies;
-    deps.feedbackConnect = async () => provider;
-    await store.exclusive(async (state, save) => {
-      const record = state.records[0]!;
-      record.delivery = {
-        id,
-        binding: {
-          repositoryId: 'R_repo',
-          issueId: 'I_issue',
-          threadId: 'child',
-          worktree: record.worktree!,
-          branch: 'branch',
-          base: 'main',
-          head: 'a'.repeat(40),
-          authorId: account.nodeId,
-          policyDigest: 'a'.repeat(64),
+  for (const kind of ['inline', 'group'] as const)
+    it(`should preserve ${kind} review feedback through native context and publication`, async () => {
+      const connect = deps.feedbackConnect!;
+      const provider = await connect(root, new AbortController().signal);
+      const review = reviewFixture({
+        author: commenter,
+        body: kind === 'group' ? '@receiver address every finding' : '',
+      });
+      const reply = reviewCommentFixture({
+        author: commenter,
+        replyToId: 70,
+        body: '@receiver explain in this thread',
+      });
+      const parent = reviewCommentFixture({ databaseId: 70, nodeId: 'parent', reviewId: 60 });
+      const findings =
+        kind === 'group'
+          ? Array.from({ length: 12 }, (_, i) =>
+              reviewCommentFixture({
+                author: commenter,
+                nodeId: `finding-${i}`,
+                databaseId: 100 + i,
+                body: `finding ${i}: ` + 'complete evidence '.repeat(300),
+                diffHunk: '+ code\n'.repeat(1600),
+              }),
+            )
+          : [reply];
+      const reviews = reviewClientFixture(review, [...findings, parent]);
+      reviews.getReviewComments = async () => findings;
+      const getItem = provider.client.getItem;
+      provider.client.getItem = async (owner, name, number) =>
+        number === 45
+          ? {
+              ...intakeFixture().item,
+              number,
+              nodeId: 'PR_delivery',
+              itemType: 'pull-request',
+              pullRequest: {
+                baseRef: 'main',
+                baseRepositoryDatabaseId: 10,
+                baseRepositoryNodeId: 'R_repo',
+                draft: false,
+                headRef: 'branch',
+                headSha: 'a'.repeat(40),
+                merged: false,
+              },
+            }
+          : getItem(owner, name, number);
+      provider.comments.reviews = reviews as typeof provider.comments.reviews;
+      const roots: number[] = [];
+      provider.replies = {
+        create: async (_owner: string, _name: string, number: number, rootId: number) => {
+          assert.equal(number, 45);
+          roots.push(rootId);
+          return { nodeId: 'PRRC_published', databaseId: 99 };
         },
-        creationAttempted: true,
-        pullRequest: { pullRequestNodeId: 'PR_delivery', pullRequestNumber: 45 },
-        reconciled: true,
-        attached: true,
-        cardAttempts: 1,
-      };
-      record.feedback = { baseline: { PR_delivery: {} }, events: [] };
-      await save();
+        find: async () => undefined,
+      } as unknown as typeof provider.replies;
+      deps.feedbackConnect = async () => provider;
+      await store.exclusive(async (state, save) => {
+        const record = state.records[0]!;
+        record.delivery = {
+          id,
+          binding: {
+            repositoryId: 'R_repo',
+            issueId: 'I_issue',
+            threadId: 'child',
+            worktree: record.worktree!,
+            branch: 'branch',
+            base: 'main',
+            head: 'a'.repeat(40),
+            authorId: account.nodeId,
+            policyDigest: 'a'.repeat(64),
+          },
+          creationAttempted: true,
+          pullRequest: { pullRequestNodeId: 'PR_delivery', pullRequestNumber: 45 },
+          reconciled: true,
+          attached: true,
+          cardAttempts: 1,
+        };
+        record.feedback = { baseline: { PR_delivery: {} }, events: [] };
+        await save();
+      });
+      const prepared = await call('next');
+      assert.equal(prepared.status, 'feedback-prepared');
+      assert.ok('eventId' in prepared && prepared.eventId);
+      const ref = { id, eventId: prepared.eventId };
+      sent = true;
+      turn = 'feedback';
+      const context = await call('context', ref, true);
+      assert.equal(context.status, 'verified');
+      if (kind === 'group') {
+        assert.ok('contextMaterials' in context && context.contextMaterials);
+        const before = (await store.read()).records[0]!;
+        const restored = await hydrateImplementation(context, (request) =>
+          call('context', request, true),
+        );
+        for (const finding of findings) assert.ok(JSON.stringify(restored).includes(finding.body));
+        assert.deepEqual((await store.read()).records[0], before);
+        const request = (context.contextMaterials as { fields: Field[] }).fields[0]!.request;
+        const material = request.material as { path: string[]; digest: string; offset: number };
+        await assert.rejects(
+          call('context', { ...request, material: { ...material, digest: '0'.repeat(64) } }, true),
+          /material-stale/,
+        );
+        assert.notEqual((await call('context', request)).status, 'material');
+        return;
+      }
+      assert.equal(
+        (await call('result', { ...ref, result: { privateText: 'Full analysis.' } }, true)).status,
+        'recorded',
+      );
+      const composed = await call('compose', ref, true);
+      assert.ok('digest' in composed && composed.digest);
+      assert.equal(
+        (
+          await call(
+            'candidate',
+            { ...ref, digest: composed.digest, publicText: 'Brief answer.' },
+            true,
+          )
+        ).status,
+        'candidate-recorded',
+      );
+      const preview = await call('publish', ref, true);
+      assert.ok('digest' in preview && preview.digest);
+      assert.equal(
+        'destination' in preview && preview.destination,
+        'https://github.com/owner/repo/pull/45#discussion_r70',
+      );
+      const completed = await call('publish', { ...ref, digest: preview.digest }, true);
+      assert.equal(completed.status, 'published');
+      assert.ok('presentation' in completed && completed.presentation?.includes('#discussion_r99'));
+      await call('publish', { ...ref, digest: preview.digest }, true);
+      assert.deepEqual(roots, [70]);
+      assert.equal(creates, 0);
     });
-    const prepared = await call('next');
-    assert.equal(prepared.status, 'feedback-prepared');
-    assert.ok('eventId' in prepared && prepared.eventId);
-    const ref = { id, eventId: prepared.eventId };
-    sent = true;
-    turn = 'feedback';
-    assert.equal((await call('context', ref, true)).status, 'verified');
-    assert.equal(
-      (await call('result', { ...ref, result: { privateText: 'Full analysis.' } }, true)).status,
-      'recorded',
-    );
-    const composed = await call('compose', ref, true);
-    assert.ok('digest' in composed && composed.digest);
-    assert.equal(
-      (
-        await call(
-          'candidate',
-          { ...ref, digest: composed.digest, publicText: 'Brief answer.' },
-          true,
-        )
-      ).status,
-      'candidate-recorded',
-    );
-    const preview = await call('publish', ref, true);
-    assert.ok('digest' in preview && preview.digest);
-    assert.equal(
-      'destination' in preview && preview.destination,
-      'https://github.com/owner/repo/pull/45#discussion_r70',
-    );
-    const completed = await call('publish', { ...ref, digest: preview.digest }, true);
-    assert.equal(completed.status, 'published');
-    assert.ok('presentation' in completed && completed.presentation?.includes('#discussion_r99'));
-    await call('publish', { ...ref, digest: preview.digest }, true);
-    assert.deepEqual(roots, [70]);
-    assert.equal(creates, 0);
-  });
   for (const debug of [false, true])
     it(`should publish unchanged feedback with debug ${debug}`, async () => {
       const path = join(root, 'workspace', 'agent.yaml');

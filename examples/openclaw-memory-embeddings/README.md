@@ -16,6 +16,7 @@ Install an embedding credential reference, retrieve an indexed note through the 
 
 - Strict AIMock supplies fixed vectors and requires a synthetic credential. The Gateway and credential resolution are real; embedding quality and hosted transport are outside this contract.
 - The checked-in workspace runs in place without a hosted secret or model turn.
+- Retrieval exercises the fresh exec secret helper's async configuration preparation before manifest-bound credential resolution, including after restart.
 
 ## Setup
 

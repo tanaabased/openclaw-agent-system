@@ -7362,6 +7362,116 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(after.feedback?.events[0]?.sourceId, comments[0]!.nodeId);
     assert.equal(creates().length, 1);
   });
+  it('should page a complete grouped review through authorized openclaw context reads', async () => {
+    const { id, comments } = await feedbackOwner();
+    comments.length = 0;
+    const author = { login: 'operator', nodeId: 'U_operator', type: 'User' };
+    manifest.github!.notifications!.issueAssignment!.feedback = {
+      inherit: false,
+      allowed: [author],
+    };
+    const review = reviewFixture({ author, body: '@receiver address every finding' });
+    const findings = Array.from({ length: 12 }, (_, i) =>
+      reviewCommentFixture({
+        author,
+        nodeId: `finding-${i}`,
+        databaseId: 100 + i,
+        body: `finding ${i}: ` + 'complete evidence '.repeat(300),
+        diffHunk: '+ code\n'.repeat(1600),
+      }),
+    );
+    const current = await service.scope(manifest, root);
+    await current.journal.exclusive(async (state, save) => {
+      const owner = state.records[0]!;
+      owner.work!.delivery = {
+        id: 'd'.repeat(64),
+        title: 'Delivery',
+        body: 'Closes #3',
+        creationAttempted: true,
+        reconciled: true,
+        pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+        binding: {
+          repositoryId: fixture.repository.nodeId,
+          issueId: fixture.item.nodeId,
+          threadId: owner.threadId!,
+          sessionId: owner.sessionCreation!.sessionId!,
+          worktree: owner.worktree!,
+          branch: 'issue-3',
+          base: 'main',
+          head: 'a'.repeat(40),
+          authorId: fixture.client.identity.nodeId,
+          policyDigest: owner.manifestDigest,
+        },
+      };
+      owner.feedback = { baseline: { PR_7: {} }, events: [] };
+      await save();
+    });
+    const connect = service.dependencies.feedbackConnect!;
+    service.dependencies.feedbackConnect = async (...args) => ({
+      ...(await connect(...args)),
+      reviews: reviewClientFixture(review, findings),
+      getItem: async (_o, _n, number) =>
+        number === 7
+          ? {
+              ...fixture.item,
+              nodeId: 'PR_7',
+              number: 7,
+              itemType: 'pull-request',
+              pullRequest: {
+                baseRef: 'main',
+                baseRepositoryDatabaseId: fixture.repository.databaseId,
+                baseRepositoryNodeId: fixture.repository.nodeId,
+                draft: false,
+                headRef: 'issue-3',
+                headSha: 'a'.repeat(40),
+                merged: false,
+              },
+            }
+          : fixture.item,
+    });
+    consumeSend = true;
+    await service.check(manifest, root);
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const event = (await record()).feedback!.events.find(
+      (entry) => entry.sourceId === review.nodeId,
+    )!;
+    assert.ok(event?.turn);
+    const who = assessor(id, event.turn.runId);
+    const input = {
+      action: 'feedback' as const,
+      operation: 'context' as const,
+      id,
+      eventId: event.id,
+    };
+    const context = await service.run(manifest, root, who, input);
+    assert.ok('contextMaterials' in context && context.contextMaterials);
+    const before = await record();
+    const restored = await hydrateImplementation(context, async (request) =>
+      service.run(manifest, root, who, {
+        ...input,
+        material: request.material as { path: string[]; digest: string; offset: number },
+      }),
+    );
+    for (const finding of findings) assert.ok(JSON.stringify(restored).includes(finding.body));
+    assert.deepEqual(await record(), before);
+    const material = context.contextMaterials.fields[0]!.request.material as {
+      path: string[];
+      digest: string;
+      offset: number;
+    };
+    await assert.rejects(
+      service.run(manifest, root, who, {
+        ...input,
+        material: { ...material, digest: '0'.repeat(64) },
+      }),
+      /material-stale/,
+    );
+    await assert.rejects(
+      service.run(manifest, root, coordinator, { ...input, material }),
+      /feedback-owner-caller-required/,
+    );
+  });
+
   it('should reuse one issue observation per feedback authorization and refresh on the next call', async () => {
     const { id } = await feedbackOwner();
     consumeSend = true;
@@ -8643,3 +8753,8 @@ describe('agent/openclaw issue dispatch', () => {
       });
   }
 });
+import {
+  reviewFixture,
+  reviewCommentFixture,
+  reviewClientFixture,
+} from './github-review-fixtures.ts';

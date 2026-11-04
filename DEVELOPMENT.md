@@ -10,7 +10,7 @@ references for product behavior.
 - Bun from [.bun-version](./.bun-version) for installs, scripts, and builds
 - Node.js from [.node-version](./.node-version) for tests and OpenClaw
 - Homebrew dependencies from [Brewfile](./Brewfile)
-- OpenClaw 2026.10.9 for development and minimum package compatibility
+- OpenClaw 2026.10.10 for development and minimum package compatibility
 - A configured `tanaabot` agent with usable model authentication only for the recommended live DevGuard workflow
 
 OpenClaw does not support running the Gateway under Bun. Agent System builds ESM for Node.js and keeps package dependencies external.
@@ -213,7 +213,7 @@ bun run plugin:check
 Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
 
 The ClawHub package check rejects breakages, unavailable SDK targets, and unexpected
-warnings. Its explicit 10.9 exceptions retain cold configuration loading and final
+warnings. Its explicit 10.10 exceptions retain cold configuration loading and final
 synchronous session authority checks; a passing result is not deprecation-free.
 
 ### Leia Scenarios
@@ -222,7 +222,7 @@ synchronous session authority checks; a passing result is not deprecation-free.
 > Run [Leia](https://github.com/lando/leia) scenarios only in GitHub Actions. They
 > install plugins and change OpenClaw or provider state on disposable runners.
 
-- [`examples/`](./examples/) covers installed and runtime contracts. [OS tests](./.github/workflows/pr-examples-os.yml) select native installation, dispatch enrollment, execution, and credentials on macOS and Ubuntu. [Codex tests](./.github/workflows/pr-examples-codex.yml), [OpenClaw tests](./.github/workflows/pr-examples-openclaw.yml), and [Notification tests](./.github/workflows/pr-examples-notifications.yml) select their examples on Ubuntu.
+- [`examples/`](./examples/) covers installed and runtime contracts. [OS tests](./.github/workflows/pr-os.yml) cover native installation, dispatch enrollment, execution, and credentials on macOS and Ubuntu. Ubuntu workflows separate [Codex install](./.github/workflows/pr-codex.yml), [OpenClaw](./.github/workflows/pr-openclaw.yml), [notification core](./.github/workflows/pr-notifications.yml), [automations](./.github/workflows/pr-automations.yml), [issue assignment](./.github/workflows/pr-issue-assignments.yml), [PRs](./.github/workflows/pr-pull-requests.yml), and [Project Picker](./.github/workflows/pr-project-picker.yml). Standalone Codex notification and automation checks share their functional workflows; their headless evidence does not prove desktop scheduling or assignment-to-PR execution.
 - Only explicitly selected examples run in CI. Unselected folders remain migration inputs; their presence is not evidence of active coverage.
 - Follow the [example guidance](./examples/AGENTS.md) for drivers, fixtures, credentials, and assertions.
 

@@ -329,9 +329,14 @@ OpenClaw and leave `allowPromptInjection` enabled. For
 `automation-report-hooks-not-observed` in `automations runs`, restore these grants
 before the next run; failed reports are not automatically replayed.
 
-The selected model and effort format stdout and stderr into a report card, adding
-model cost and latency. Markdown, JSON, plain text, and empty output are supported;
-commands without `thread` remain model-free.
+Commands can opt into the [preferred report schema](./API.md#command-report-output):
+structured entries use the standard Markdown card; explicit Markdown entries bypass
+that template. Other JSON, raw Markdown, plain/mixed text, and empty output receive
+best-effort model interpretation into the same standard card. Ordered preferred
+cards appear in one response with one runner footer, not separate native sends.
+The configured model and effort still post every chat report, adding model cost
+and latency even when preferred text was prepared without interpretation. Commands
+without `thread` remain model-free.
 
 Report turns retain the agent's normal tool availability, with instructions to format
 only the captured result. Agent System blocks tool calls that reach its execution

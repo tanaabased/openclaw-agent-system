@@ -91,9 +91,8 @@ owner. If no eligible installation claims the assignment, it stays pending: an
 unknown, offline, paused, or full target does not trigger fallback. Silence alone
 does not identify which condition applies. Pool edits preserve existing ownership
 and uncertain native creation; an excluded claimant that has not started native
-creation is held for recovery. Project pickup establishes the same ownership before
-self-assignment. Assignment intake retains the verified pickup owner even when
-its own rule chooses a different target or denies new assignments.
+creation is held for recovery. Project pickup checks shared routing eligibility before self-assignment. Ordinary
+assignment intake then selects the work owner under its own routing rule.
 
 `local` creates no claim. A retained or visible Swarm claim still blocks new local
 work; switching routes does not transfer ownership. If a claim is missing, changed,
@@ -171,9 +170,9 @@ versions are rejected. GitHub CLI-only configuration does not require this field
 
 ## `github.project-pickup`
 
-Declares the policy for one repository and milestone. It requires `issue-assignment`
-and a repository included by `routing` (or legacy owners when routing is absent); it does not expand GitHub access
-or approved assignment and feedback authors.
+Declares pickup policy for one or more repositories, each with one milestone. It requires `issue-assignment`
+and each repository must be included by `routing` (or legacy owners when routing is absent).
+Pickup uses the existing GitHub access and approved assignment and feedback authors.
 
 > [!IMPORTANT]
 > Set placement through `github.routing`. Run Install on each intended participant
@@ -183,25 +182,35 @@ or approved assignment and feedback authors.
 | Field                | Required | Meaning                                                                                                                                                                                                                                                                                |
 | -------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `paused`             | no       | Defaults to `false`; pauses new pickup immediately. Run Install to synchronize the saved native job.                                                                                                                                                                                   |
-| `schedule`           | yes      | Existing [recurring schedule syntax](../../MANIFEST.md#automations): cron with an optional IANA timezone, or `every`. One-shot schedules are rejected. Native adapter limitations still apply.                                                                                         |
-| `window-minutes`     | yes      | Positive integer duration for each pickup window, at least `github.interval-minutes`.                                                                                                                                                                                                  |
+| `start`              | no       | Daily local start time; defaults to `"03:00"`. Accepts `"3 am"`, `"3 A.M."`, `"3:00am"` and 24-hour clocks.                                                                                                                                                                            |
+| `window`             | no       | Duration, default `"2 hours"`; accepts seconds, minutes, hours, days, short units (`"2h"`) and compounds (`"1 hour 30 minutes"`). Maximum 24 hours. `duration` is an alias.                                                                                                            |
+| `end`                | no       | Closing clock time instead of a duration. An earlier or equal time closes the following day. Supplied duration fields must agree.                                                                                                                                                      |
+| `scans`              | no       | Defaults to `8`, evenly distributed from the start up to—but excluding—the closing time, rounded down to minute slots. Multiple scans need at least one minute each.                                                                                                                   |
 | `selection.guidance` | no       | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                                                                                                           |
 | `thread`             | no       | Persistent coordination chat: a name string or `{name, id}`, using the existing [automation thread convention](../../MANIFEST.md#automations). Defaults to `PROJECT PICKUP`. Run Install to reconcile a changed choice; missing conversations use the native automation recovery flow. |
-| `projects`           | yes      | Exactly one entry with `repository: owner/name` and `milestone: {number: 10, policy: only}`. The milestone number must be positive. Other policies and multi-project selection are rejected.                                                                                           |
+| `projects`           | yes      | One or more distinct entries with `repository: owner/name`, `milestone: {number: 10, policy: only}`, and optional `limit`. The milestone number and limit must be positive integers. `limit` defaults to `1`.                                                                          |
 
-Install adds one `PROJECT PICKUP` job alongside assignment intake, using the intake
-cadence. Each installation’s eligible window can select and self-assign at most one actionable,
-unassigned issue in the configured milestone. Verified pickup enters the existing
+Install adds one `PROJECT PICKUP` job alongside assignment intake. The default native
+schedule has eight daily starts: 03:00, 03:15, 03:30, 03:45, 04:00, 04:15, 04:30 and
+04:45 local time. Each scan can select and self-assign at most one actionable,
+unassigned issue across the configured milestones, subject to ordinary work capacity.
+Each repository's `limit` is the maximum number of confirmed assignments per window
+on that installation. Once a repository reaches its limit, later scans skip it.
+Completing an issue leaves the used count in place. The scan card shows how many
+assignments each repository has used out of its allowance.
+
+Verified pickup enters the existing
 assessment and Work workflow; ordinary assignments keep their configured mode.
 Missed windows are not replayed. Accepted issue work may finish after a window or pause.
-Codex uses the low model profile; OpenClaw uses its default automation profile.
+Both runtimes use the `models.default` profile for project pickup.
 
-The pilot retains its original repository, milestone, schedule, timezone and window
-anchor. Install rejects changes to those enrolled values; restore them to resume.
-Pause, selection guidance and repository routes can change without reenrollment.
-Route edits do not transfer pending claims or attempted assignments: restore the
-original owner’s eligibility to resume pending pickup. Existing issue work stays
-with its original runtime; do not copy or delete journals to transfer it.
+Repository, milestone, limit, guidance and route changes apply on the next run
+without Install. Edits preserve assignments already counted in the window and
+the receipts for accepted assignments. Run Install after changing timing, chat or model settings.
+Replace the former `schedule` and `window-minutes` fields with `start`, `window` and `scans`.
+Ordinary assignment intake handles routing and execution ownership, including races
+between pickup scans. Existing issue work stays with its original runtime; do not
+copy or delete journals to transfer it.
 Conflicting workspaces on one installation are rejected. There is no automatic
 failover, account-wide concurrency cap, or protection against independently divergent
 configuration or copied private installation identities.

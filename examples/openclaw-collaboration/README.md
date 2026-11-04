@@ -13,7 +13,7 @@ repeat installation preserves the working configuration.
 ## What Does Not Belong Here
 
 - Exhaustive collaboration permission/visibility permutations or unrelated session management.
-- Notification dispatch ownership: [intake](../openclaw-notifications-intake/README.md). Native execution: [runtimes](../openclaw-runtimes/README.md). Interactive approvals belong to [lifecycle approvals](../openclaw-lifecycle-approvals/README.md).
+- Notification dispatch ownership: [intake](../openclaw-issue-intake/README.md). Native execution: [runtimes](../openclaw-runtimes/README.md). Interactive approvals belong to [lifecycle approvals](../openclaw-lifecycle-approvals/README.md).
 
 ## Notes
 

@@ -13,7 +13,7 @@ their separate credentials and Git authors.
 ## What Does Not Belong Here
 
 - A matrix of configuration-mutation or self-unassignment policy probes; installed command boundaries also have coverage in [tools](../openclaw-tools/README.md). Preserve model-facing refusal evidence when selecting its final owner.
-- SSH registration and remote checkout: [worktree sessions](../openclaw-worktree-session/README.md). Notification content creation: [intake](../openclaw-notifications-intake/README.md).
+- SSH registration and remote checkout: [worktree sessions](../openclaw-worktree-session/README.md). Notification content creation: [intake](../openclaw-issue-intake/README.md).
 
 ## Notes
 

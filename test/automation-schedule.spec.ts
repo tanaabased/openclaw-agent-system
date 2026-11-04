@@ -20,6 +20,10 @@ describe('manifest/automation-schedule', () => {
     }
     assert.deepEqual(normalize('in 1 day'), { kind: 'in', seconds: 86400, missedRun: 'native' });
     assert.deepEqual(normalize({ in: '24 hours' }), normalize('in 1 day'));
+    assert.equal(normalize('every 1 hour 5 minutes').kind, 'every');
+    assert.deepEqual(normalize('every 2h'), normalize('every 120 minutes'));
+    assert.deepEqual(normalize('every 1 hours'), normalize('every 1 hour'));
+    assert.deepEqual(normalize('every 2 hour'), normalize('every 2 hours'));
   });
 
   it('should strictly validate timestamps and normalize offsets to utc', () => {
@@ -82,10 +86,7 @@ describe('manifest/automation-schedule', () => {
       '',
       'hourly',
       'every 0 seconds',
-      'every 1 hours',
-      'every 2 hour',
       'every 1.5 hours',
-      'every 1 hour 5 minutes',
       'in -1 day',
       'every 9007199254740992 days',
       '0 0 * * * *',

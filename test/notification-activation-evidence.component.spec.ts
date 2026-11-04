@@ -33,20 +33,20 @@ jq() { cat; }
 `;
 
 for (const scenario of [
-  'openclaw-notifications-issue-journey',
-  'openclaw-notifications-conversation',
-  'openclaw-notifications-pr-journey',
-  'openclaw-notifications-pr-recipients',
-  'openclaw-notifications-pr-update',
-  'openclaw-notifications-pr-presentation',
-  'openclaw-notifications-pr-collaboration',
-  'openclaw-notifications-pr-discovery',
-  'openclaw-notifications-pr-reply-recovery',
-  'openclaw-notifications-intake',
-  'openclaw-notifications-assessment-recovery',
-  'openclaw-notifications-feedback-policy',
-  'openclaw-notifications-assignment-policy',
-  'openclaw-notifications-reactivation',
+  'openclaw-issue-journey',
+  'openclaw-issue-conversation',
+  'openclaw-pr-journey',
+  'openclaw-pr-recipients',
+  'openclaw-pr-update',
+  'openclaw-pr-presentation',
+  'openclaw-pr-collaboration',
+  'openclaw-pr-discovery',
+  'openclaw-pr-reply-recovery',
+  'openclaw-issue-intake',
+  'openclaw-issue-assessment-recovery',
+  'openclaw-issue-feedback-policy',
+  'openclaw-issue-assignment-policy',
+  'openclaw-issue-reactivation',
   'openclaw-notifications-retirement',
   'openclaw-notifications-reset',
 ]) {
@@ -59,8 +59,7 @@ for (const scenario of [
         [37, 0, 64, 37],
         [0, 23, 0, 23],
       ]) {
-        if (automation && (agent === 'emori' || scenario !== 'openclaw-notifications-intake'))
-          continue;
+        if (automation && (agent === 'emori' || scenario !== 'openclaw-issue-intake')) continue;
         it(`should preserve exit ${expected} for install ${install} automation ${automation} and diagnostic ${diagnostic}`, async () => {
           const source = await readFile(`examples/${scenario}/README.md`, 'utf8');
           const activation = source.match(

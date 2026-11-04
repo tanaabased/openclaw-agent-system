@@ -14,7 +14,7 @@ do not prevent checks of unrelated components.
 
 - Native dispatch consent, enrollment recovery, and connectivity after restart: [dispatch enrollment](../os-dispatch-enrollment/README.md).
 - Portable Doctor presentation: [Doctor](../openclaw-doctor/README.md). Native tool grants: [tool access](../openclaw-tool-access/README.md).
-- Hosted GitHub discovery or model behavior: [notification intake](../openclaw-notifications-intake/README.md).
+- Hosted GitHub discovery or model behavior: [notification intake](../openclaw-issue-intake/README.md).
 
 ## Notes
 

@@ -2,7 +2,6 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { automationHash } from './automation-hash.ts';
-import projectPickupScope from './project-pickup-scope.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import {
   githubIdentityMatches,
@@ -12,6 +11,7 @@ import {
 } from '../channels/github/provider/work-item.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
+import repositoryScope from '../channels/github/repository-scope.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const time = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
@@ -36,7 +36,6 @@ export const projectPickupReceiptSchema = Type.Object(
     enrollmentId: text,
     issueNodeId: text,
     assignmentNodeId: text,
-    claimCommentId: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
     window: Type.Object(
       { id: text, opensAt: time, closesAt: time },
       { additionalProperties: false },
@@ -49,7 +48,7 @@ export const projectWorkSchema = Type.Object(
     enrollment: projectPickupEnrollmentSchema,
     issueNodeId: text,
     assignmentNodeId: text,
-    pickup: Type.Optional(projectPickupReceiptSchema),
+    pickup: projectPickupReceiptSchema,
   },
   { additionalProperties: false },
 );
@@ -59,6 +58,7 @@ export type ProjectWork = Static<typeof projectWorkSchema>;
 export interface ProjectPickupAuthority {
   enrollment: Static<typeof projectPickupEnrollmentSchema>;
   receipts: readonly Static<typeof projectPickupReceiptSchema>[];
+  retained?: readonly ProjectWork[];
   withheldAssignments?: readonly { issueNodeId: string; assignmentNodeId?: string }[];
 }
 
@@ -68,7 +68,7 @@ export function projectPickupPolicyDigest(policy: GitHubNotificationPolicy) {
   return automationHash(
     pickup
       ? {
-          projects: pickup.projects,
+          projects: pickup.projects.map(({ repository, milestone }) => ({ repository, milestone })),
           schedule: pickup.schedule,
           windowMinutes: pickup.windowMinutes,
         }
@@ -76,8 +76,7 @@ export function projectPickupPolicyDigest(policy: GitHubNotificationPolicy) {
   );
 }
 
-/** admission-time grant: callers must retain it, never derive one for old managed work. */
-export default async function authorizeProjectAssignment(input: {
+interface AssignmentInput {
   authority: ProjectPickupAuthority;
   runtime: 'codex' | 'openclaw' | undefined;
   scope: string;
@@ -89,14 +88,74 @@ export default async function authorizeProjectAssignment(input: {
   item: GitHubCanonicalWorkItem;
   event: GitHubAssignmentEvent;
   now: number;
-}): Promise<ProjectWork | undefined> {
-  const { authority, policy, client, repository, item, event } = input;
-  const enrollment = authority.enrollment;
+}
+
+function assignmentReceipt({ authority, item, event }: AssignmentInput) {
+  const retained = authority.retained?.find(
+    (work) =>
+      Value.Check(projectWorkSchema, work) &&
+      work.issueNodeId === item.nodeId &&
+      work.assignmentNodeId === event.nodeId &&
+      work.pickup &&
+      work.pickup.enrollmentId === work.enrollment.id &&
+      work.pickup.issueNodeId === work.issueNodeId &&
+      work.pickup.assignmentNodeId === work.assignmentNodeId,
+  );
+  const enrollment = retained?.enrollment ?? authority.enrollment;
+  const receipt =
+    retained?.pickup ??
+    authority.receipts.find(
+      (entry) =>
+        Value.Check(projectPickupReceiptSchema, entry) &&
+        entry.enrollmentId === enrollment.id &&
+        entry.issueNodeId === item.nodeId &&
+        entry.assignmentNodeId === event.nodeId,
+    );
+  return receipt ? { enrollment, receipt } : undefined;
+}
+
+/** admission-time grant: callers must retain it, never derive one for old managed work. */
+export default async function authorizeProjectAssignment(
+  input: AssignmentInput,
+): Promise<ProjectWork | undefined> {
+  if (!assignmentReceipt(input)) return;
+  const { client, repository, item } = input;
+  const freshRepository = await client.getRepository(repository.owner.login, repository.name);
+  const freshItem = await client.getItem(repository.owner.login, repository.name, item.number);
+  if (
+    freshRepository.nodeId !== repository.nodeId ||
+    freshRepository.databaseId !== repository.databaseId ||
+    freshItem.nodeId !== item.nodeId ||
+    freshItem.databaseId !== item.databaseId
+  )
+    return;
+  const history = await client.listAssignmentEvents(
+    repository.owner.login,
+    repository.name,
+    item.number,
+  );
+  return verifyProjectAssignment({
+    ...input,
+    repository: freshRepository,
+    item: freshItem,
+    history,
+  });
+}
+
+/** verify fresh provider observations supplied by the native pickup or intake owner. */
+export function verifyProjectAssignment(
+  input: AssignmentInput & {
+    history: Awaited<ReturnType<GitHubNotificationIntakeClient['listAssignmentEvents']>>;
+  },
+): ProjectWork | undefined {
+  const { policy, client, repository, item, event } = input;
+  const matched = assignmentReceipt(input);
+  if (!matched) return;
+  const { enrollment, receipt } = matched;
   const assignedAt = Date.parse(event.createdAt);
   if (
     !Value.Check(projectPickupEnrollmentSchema, enrollment) ||
     enrollment.runtime !== input.runtime ||
-    !policy.projectPickup?.schedule ||
     !policy.issueAssignment ||
     !policy.runtimes.includes(enrollment.runtime) ||
     enrollment.scope !== input.scope ||
@@ -104,7 +163,6 @@ export default async function authorizeProjectAssignment(input: {
     enrollment.agentId !== input.agentId ||
     !githubIdentityMatches(enrollment.account, client.identity) ||
     enrollment.repositoryNodeId !== repository.nodeId ||
-    enrollment.policyDigest !== projectPickupPolicyDigest(policy) ||
     !Number.isSafeInteger(input.now) ||
     !Number.isFinite(assignedAt) ||
     assignedAt <= enrollment.startedAt ||
@@ -113,51 +171,23 @@ export default async function authorizeProjectAssignment(input: {
     !githubIdentityMatches(event.assignee, client.identity)
   )
     return;
-  const receipt = authority.receipts.find(
-    (entry) =>
-      Value.Check(projectPickupReceiptSchema, entry) &&
-      entry.enrollmentId === enrollment.id &&
-      entry.issueNodeId === item.nodeId &&
-      entry.assignmentNodeId === event.nodeId,
-  );
   if (
-    receipt &&
-    (!githubIdentityMatches(event.actor, client.identity) ||
-      receipt.window.opensAt < enrollment.startedAt ||
-      receipt.window.closesAt - receipt.window.opensAt !==
-        policy.projectPickup.windowMinutes * 60000 ||
-      assignedAt < receipt.window.opensAt ||
-      assignedAt >= receipt.window.closesAt)
+    !githubIdentityMatches(event.actor, client.identity) ||
+    receipt.window.closesAt <= receipt.window.opensAt ||
+    assignedAt < receipt.window.opensAt
   )
     return;
-  const approved = policy.issueAssignment.allowed.some((actor) =>
-    githubIdentityMatches(actor, event.actor),
-  );
-  if (!receipt && (!approved || policy.projectPickup.paused)) return;
-  const freshRepository = await client.getRepository(repository.owner.login, repository.name);
-  const freshItem = await client.getItem(repository.owner.login, repository.name, item.number);
   if (
-    freshRepository.nodeId !== repository.nodeId ||
-    freshRepository.databaseId !== repository.databaseId ||
-    freshItem.nodeId !== item.nodeId ||
-    freshItem.databaseId !== item.databaseId ||
-    (receipt && freshItem.assignees.length !== 1) ||
-    !freshItem.assignees.some((assignee) => githubIdentityMatches(assignee, client.identity))
+    repository.archived ||
+    repository.disabled ||
+    (policy.routing === undefined &&
+      repositoryScope(policy, repository, 'project-pickup').decision === 'deny') ||
+    item.itemType !== 'issue' ||
+    item.state !== 'open' ||
+    !item.assignees.some((assignee) => githubIdentityMatches(assignee, client.identity))
   )
     return;
-  const milestone = await projectPickupScope(
-    policy,
-    client,
-    freshRepository,
-    freshItem,
-    Boolean(receipt),
-  );
-  if (!milestone || milestone.nodeId !== enrollment.milestoneNodeId) return;
-  const history = await client.listAssignmentEvents(
-    repository.owner.login,
-    repository.name,
-    item.number,
-  );
+  const { history } = input;
   if (history.truncated) throw new Error('project-pickup-assignment-history-incomplete');
   const latest = history.events
     .filter((entry) => githubIdentityMatches(entry.assignee, client.identity))
@@ -176,7 +206,7 @@ export default async function authorizeProjectAssignment(input: {
     enrollment: structuredClone(enrollment),
     issueNodeId: item.nodeId,
     assignmentNodeId: event.nodeId,
-    ...(receipt ? { pickup: structuredClone(receipt) } : {}),
+    pickup: structuredClone(receipt),
   };
 }
 
@@ -203,10 +233,9 @@ export function projectWorkMatches(
     work.enrollment.repositoryNodeId === record.repository.nodeId &&
     work.issueNodeId === record.issue.nodeId &&
     work.assignmentNodeId === record.assignment?.nodeId &&
-    (!work.pickup ||
-      (work.pickup.enrollmentId === work.enrollment.id &&
-        work.pickup.issueNodeId === work.issueNodeId &&
-        work.pickup.assignmentNodeId === work.assignmentNodeId)),
+    work.pickup.enrollmentId === work.enrollment.id &&
+    work.pickup.issueNodeId === work.issueNodeId &&
+    work.pickup.assignmentNodeId === work.assignmentNodeId,
   );
 }
 

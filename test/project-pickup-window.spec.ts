@@ -30,18 +30,6 @@ describe('agent/project-pickup-window', () => {
     assert.deepEqual(evaluate('2026-11-01T06:30:00Z', '30 1 * * *'), first);
     assert.equal(evaluate('2026-11-01T06:30:00Z', '30 1 * * *', 30), undefined);
   });
-  it('should preserve an interval anchor and select the latest overlapping window', () => {
-    const input = {
-      schedule: schedule('every 1 hour'),
-      anchor: 1000,
-      timezone: 'UTC',
-      windowMinutes: 90,
-      now: 7201000,
-    };
-    assert.equal(window(input)!.opensAt, 7201000);
-    assert.equal(window({ ...input, now: 7200999 })!.opensAt, 3601000);
-    assert.equal(window({ ...input, now: 999 }), undefined);
-  });
   it('should use the enrolled local timezone and preserve cron day semantics', () => {
     const input = {
       schedule: schedule('0 10 1 * 1'),

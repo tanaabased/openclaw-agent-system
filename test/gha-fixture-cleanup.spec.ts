@@ -11,6 +11,19 @@ import cleanupGhaFixtures, {
 import fixture from './gha-fixture-cleanup-fixture.ts';
 
 describe('gha fixture cleanup', () => {
+  it('should clean completed attempts from each split notification workflow', async () => {
+    for (const workflow of ['issue-assignments', 'pull-requests', 'project-picker']) {
+      const state = fixture();
+      state.run.path = `.github/workflows/pr-${workflow}.yml`;
+      assert.equal((await cleanupGhaFixtures(state.input)).ok, true);
+      assert.equal(state.issues[0]!.state, 'closed');
+      assert.equal(
+        state.keys.some(({ id }) => id === 1),
+        false,
+      );
+    }
+  });
+
   it('resumes after a lost close response without repeating the close', async () => {
     const state = fixture();
     let lost = false;

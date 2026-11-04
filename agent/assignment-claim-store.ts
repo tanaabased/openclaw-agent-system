@@ -206,7 +206,7 @@ export default class AssignmentClaimStore {
     return state && { instanceId: state.instanceId, displayName: state.displayName };
   }
 
-  /** dormant dispatch may inspect pilot receipts but must never create or mutate them. */
+  /** local dispatch must inspect existing claims without creating or mutating them. */
   async assertUnclaimed(key: string) {
     if (await this.hasClaim(key)) throw new Error('claim-disabled-pending');
   }

@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/tanaabased/openclaw-agent-system/releases"><img src="https://img.shields.io/github/v/release/tanaabased/openclaw-agent-system" alt="Latest release" /></a>
-  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-examples-os.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-examples-os.yml?label=Examples" alt="Leia example tests" /></a>
+  <a href="https://github.com/tanaabased/openclaw-agent-system/actions/workflows/pr-os.yml"><img src="https://img.shields.io/github/actions/workflow/status/tanaabased/openclaw-agent-system/pr-os.yml?label=OS" alt="OS tests" /></a>
   <img src="https://img.shields.io/badge/macOS-26-111827" alt="macOS 26" />
   <img src="https://img.shields.io/badge/Ubuntu-24.04-00c88a" alt="Ubuntu 24.04" />
 </p>
@@ -29,7 +29,7 @@ See example agents:
 - [pirog/me](https://github.com/pirog/me) — Mike Pirog's bound Codex profile.
 
 > [!NOTE]
-> The OpenClaw integration requires 2026.10.9 or newer and is developed against 2026.10.9. See
+> The OpenClaw integration requires 2026.10.10 or newer and is developed against 2026.10.10. See
 > [version compatibility](#version-compatibility).
 
 > [!WARNING]
@@ -112,7 +112,7 @@ uses the [shared skills](#skills) through its native host interfaces.
 
 | Agent System release | Minimum OpenClaw | Development target |
 | -------------------- | ---------------- | ------------------ |
-| Next release         | 2026.10.9        | 2026.10.9          |
+| Next release         | 2026.10.10       | 2026.10.10         |
 | 0.9.0                | 2026.10.6        | 2026.10.6          |
 | 0.8.0                | 2026.9.5         | 2026.9.6           |
 | 0.7.0                | 2026.9.5         | 2026.9.6           |

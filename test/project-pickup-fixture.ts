@@ -3,28 +3,22 @@ import {
   projectPickupPolicyDigest,
   type ProjectPickupAuthority,
 } from '../agent/project-pickup-authority.ts';
-import normalizeAutomationSchedule from '../manifest/automation-schedule.ts';
+import decodeProjectPickup from '../channels/github/project-pickup-schema.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 
 export const pickupDeclaration = {
-  schedule: { cron: '0 22 * * *', timezone: 'America/New_York' },
-  'window-minutes': 60,
+  start: '10:00',
+  window: '1 hour',
   selection: { guidance: 'choose useful, ready work' },
-  projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
+  projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' as const } }],
 };
 
 export function pickupFixture(runtime: 'codex' | 'openclaw' = 'codex') {
   const f = intakeFixture();
   f.policy.runtimes = [runtime];
   f.policy.issueAssignment!.allowed = [{ login: 'operator', nodeId: 'U_operator' }];
-  f.policy.projectPickup = {
-    paused: false,
-    schedule: normalizeAutomationSchedule(pickupDeclaration.schedule),
-    windowMinutes: 60,
-    selection: pickupDeclaration.selection,
-    projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
-  };
+  f.policy.projectPickup = decodeProjectPickup(structuredClone(pickupDeclaration));
   const milestone = { nodeId: 'MI_pilot', number: 10, state: 'open' as 'open' | 'closed' };
   if (f.item.itemType === 'issue') f.item.milestone = milestone;
   f.client.getMilestone = async () => milestone;
@@ -70,7 +64,7 @@ export function pickupFixture(runtime: 'codex' | 'openclaw' = 'codex') {
   };
 }
 
-/** stand in for the future selector's already verified admission receipt. */
+/** construct a verified assignment identity for native dispatch fixtures. */
 export function retainedProjectWork(record: IntakeRecord, runtime: 'codex' | 'openclaw') {
   const f = pickupFixture(runtime);
   return {
@@ -104,10 +98,11 @@ export function reservedProjectPickup(
   return {
     enrollment: work.enrollment,
     timezone: 'UTC',
-    highWater: baseline,
     operations: [
       {
         id: 'operation',
+        runId: 'pickup-run',
+        repository: `${record.repository.owner.login}/${record.repository.name}`,
         phase: 'assigned',
         page: 1,
         candidates: [],
@@ -115,11 +110,9 @@ export function reservedProjectPickup(
         selected: {
           nodeId: record.issue.nodeId,
           number: record.issue.number,
-          title: 'ready work',
-          body: '',
-          labels: [],
         },
         receipt,
+        enrollment: work.enrollment,
       },
     ],
   };

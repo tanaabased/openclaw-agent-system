@@ -8,13 +8,13 @@ import type {
 } from './assignment-claim-store.ts';
 import type { RepositoryScopeDecision } from '../channels/github/repository-scope.ts';
 
-export type ClaimStore = Pick<
-  AssignmentClaimStore,
-  'exclusive' | 'inspect' | 'assertUnclaimed' | 'hasClaim'
->;
+export type ClaimStore = Pick<AssignmentClaimStore, 'exclusive' | 'inspect' | 'assertUnclaimed'>;
 
 /** reject new participation before a workflow reserves capacity or selects work. */
-export async function claimRouteEligibility(store: ClaimStore, route: RepositoryScopeDecision) {
+export async function claimRouteEligibility(
+  store: Pick<ClaimStore, 'inspect'>,
+  route: RepositoryScopeDecision,
+) {
   if (route.decision === 'deny') return 'claim-route-denied';
   if (!route.eligibleInstanceIds) return;
   const identity = await store.inspect();
@@ -32,12 +32,9 @@ export interface ClaimSource {
   receivingNodeId: string;
   assignmentEventId: string;
   assignerNodeId: string;
-  /** pickup uses a stable history boundary before its assignment event exists. */
-  pickup?: { previousEventId: string | null; assignmentEventId?: string };
 }
 
 export interface ClaimClient {
-  resolve?(source: ClaimSource, retained: (key: string) => Promise<boolean>): Promise<ClaimSource>;
   verify(source: ClaimSource): Promise<void>;
   list(source: ClaimSource): Promise<GitHubCanonicalIssueComment[]>;
   create(source: ClaimSource, body: string): Promise<number>;
@@ -56,14 +53,6 @@ export function assignmentClaimKey(source: ClaimSource) {
       ]),
     )
     .digest('hex');
-}
-
-export async function resolveClaimSource(
-  store: ClaimStore,
-  client: ClaimClient,
-  source: ClaimSource,
-) {
-  return (await client.resolve?.(source, (key) => store.hasClaim(key))) ?? source;
 }
 
 export interface ClaimDecision {
@@ -86,15 +75,6 @@ export async function selectAssignmentClaim(
   },
 ): Promise<ClaimDecision> {
   if (input.mode === 'deny') throw new Error('claim-route-denied');
-  const source = await resolveClaimSource(input.store, input.client, input.source);
-  if (input.pickupWinnerId !== undefined && !source.pickup?.assignmentEventId)
-    return { status: 'recovery-required', code: 'claim-winner-missing' };
-  if (
-    input.pickupWinnerId !== undefined ||
-    (!input.source.pickup && source.pickup?.assignmentEventId)
-  )
-    return claimAssignment({ ...input, source, eligibleInstanceIds: undefined });
-  input = { ...input, source };
   if (input.mode === 'swarm') return claimAssignment(input);
   await input.store.assertUnclaimed(assignmentClaimKey(input.source));
   await input.client.verify(input.source);
@@ -137,7 +117,6 @@ export async function claimAssignment(input: {
   hasCapacity: boolean;
   eligibleInstanceIds?: string[];
   nativeAttempted?: boolean;
-  pickupWinnerId?: number;
 }): Promise<ClaimDecision> {
   const { store, client, source, passId } = input;
   if (!passId) throw new Error('claim-pass-required');
@@ -150,16 +129,6 @@ export async function claimAssignment(input: {
     signal.throwIfAborted();
     await client.verify(source);
     const claims = await readAssignmentClaims(client, source);
-    if (
-      input.pickupWinnerId !== undefined &&
-      claims[0]?.comment.databaseId !== input.pickupWinnerId
-    )
-      return {
-        status: 'recovery-required',
-        code: claims.some(({ comment }) => comment.databaseId === input.pickupWinnerId)
-          ? 'claim-winner-changed'
-          : 'claim-winner-missing',
-      };
     const eligible =
       !input.eligibleInstanceIds || input.eligibleInstanceIds.includes(state.instanceId);
     if (input.eligibleInstanceIds)
@@ -189,8 +158,6 @@ export async function claimAssignment(input: {
         await save();
         return { status: 'other-owner', winnerId: claims[0]!.comment.databaseId };
       }
-      if (source.pickup?.assignmentEventId)
-        return { status: 'recovery-required', code: 'claim-winner-missing' };
       if (!eligible) return { status: 'pending', code: 'claim-route-instance-ineligible' };
       if (!input.hasCapacity) return { status: 'at-capacity' };
       record = {
@@ -276,7 +243,7 @@ export async function claimAssignment(input: {
     signal.throwIfAborted();
     return { status: 'owned', winnerId: record.winnerId };
   };
-  const decision = await store.exclusive(select, !source.pickup?.assignmentEventId);
+  const decision = await store.exclusive(select);
   if (!routing) return decision;
   const instructions =
     decision.code === 'claim-route-owner-ineligible'
@@ -299,7 +266,6 @@ export async function acceptAssignmentClaim(input: {
   nativeReceipt: string;
 }) {
   if (!input.nativeReceipt) throw new Error('claim-native-receipt-required');
-  input = { ...input, source: await resolveClaimSource(input.store, input.client, input.source) };
   return input.store.exclusive(async (state, save, signal) => {
     const record = state.claims[assignmentClaimKey(input.source)];
     if (

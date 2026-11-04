@@ -38,20 +38,35 @@ export function validateGitHubNotificationPolicy(
     if (!policy.projectPickup.schedule)
       diagnostics.push({
         code: 'github-project-pickup-schedule-invalid',
-        fieldPath: '/github/project-pickup/schedule',
+        fieldPath: '/github/project-pickup',
         message:
-          'Use a recurring automation schedule (cron with an optional IANA timezone, or every). One-shot schedules are not supported.',
+          policy.projectPickup.timingError === 'project-pickup-timing-conflict'
+            ? 'window, duration and end must describe the same pickup period.'
+            : 'Use a local start time, a positive window of at most 24 hours, and scans spaced at least one minute apart.',
         severity: 'error',
       });
-    const [owner, name] = policy.projectPickup.projects[0]!.repository.split('/');
-    if (!repositoryScopeCandidate(policy, owner!, name!, 'project-pickup'))
-      diagnostics.push({
-        code: 'github-project-pickup-repository-outside-workflow',
-        fieldPath: '/github/project-pickup/projects/0/repository',
-        message:
-          'Choose a repository included by github.routing, or by legacy owners when routing is absent. Pickup does not expand repository access.',
-        severity: 'error',
-      });
+    const repositories = new Set<string>();
+    for (const [index, project] of policy.projectPickup.projects.entries()) {
+      const repository = project.repository.toLowerCase();
+      const [owner, name] = repository.split('/') as [string, string];
+      const fieldPath = `/github/project-pickup/projects/${index}/repository`;
+      if (repositories.has(repository))
+        diagnostics.push({
+          code: 'github-project-pickup-repository-duplicate',
+          fieldPath,
+          message: 'Configure each pickup repository only once.',
+          severity: 'error',
+        });
+      repositories.add(repository);
+      if (!repositoryScopeCandidate(policy, owner, name, 'project-pickup'))
+        diagnostics.push({
+          code: 'github-project-pickup-repository-outside-workflow',
+          fieldPath,
+          message:
+            'Choose a repository included by github.routing, or by legacy owners when routing is absent. Pickup does not expand repository access.',
+          severity: 'error',
+        });
+    }
   }
   if (typeof github?.username !== 'string' || !github.username.trim()) {
     diagnostics.push({
@@ -93,7 +108,11 @@ export function validateGitHubNotificationPolicy(
 }
 
 export interface GitHubNotificationRuntimeDiagnostic {
-  code: 'github-notification-runtime-unsupported' | 'project-pickup-schedule-unsupported';
+  code:
+    | 'github-notification-runtime-unsupported'
+    | 'project-pickup-schedule-unsupported'
+    | 'project-pickup-timing-conflict'
+    | 'project-pickup-schedule-precision';
   fieldPath: string;
   message: string;
   remediation: string;
@@ -113,10 +132,9 @@ export function githubNotificationRuntimeDiagnostics(
     diagnostics.push({
       code: pickupCode,
       fieldPath: '/github/project-pickup',
-      message:
-        'Project pickup requires a recurring schedule with intake cadence no longer than the pickup window.',
+      message: 'Project pickup timing is invalid or conflicting.',
       remediation:
-        'Choose a supported recurring schedule and an intake cadence within window-minutes. Placement follows github.routing; ordinary assignments remain independent.',
+        'Set start, window (or duration/end), and scans. Use matching duration fields and at least one minute between scans; the daily window cannot exceed 24 hours.',
       status: 'warning',
       workflow: 'project-pickup',
     });

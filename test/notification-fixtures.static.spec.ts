@@ -4,28 +4,28 @@ import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import parseAgentManifest from '../manifest/parse.ts';
 
 for (const id of [
-  'openclaw-notifications-issue-journey',
-  'openclaw-notifications-conversation',
-  'openclaw-notifications-pr-journey',
-  'openclaw-notifications-work',
-  'openclaw-notifications-work-custom',
-  'openclaw-notifications-auto-work',
-  'openclaw-notifications-auto-plan',
-  'openclaw-notifications-pr-recipients',
-  'openclaw-notifications-pr-update',
-  'openclaw-notifications-pr-presentation',
-  'openclaw-notifications-pr-collaboration',
-  'openclaw-notifications-pr-discovery',
-  'openclaw-notifications-pr-reply-recovery',
-  'openclaw-notifications-intake',
-  'openclaw-notifications-assessment-recovery',
-  'openclaw-notifications-feedback-policy',
-  'openclaw-notifications-assignment-policy',
-  'openclaw-notifications-reactivation',
+  'openclaw-issue-journey',
+  'openclaw-issue-conversation',
+  'openclaw-pr-journey',
+  'openclaw-issue-work',
+  'openclaw-issue-work-custom',
+  'openclaw-issue-auto-work',
+  'openclaw-issue-auto-plan',
+  'openclaw-pr-recipients',
+  'openclaw-pr-update',
+  'openclaw-pr-presentation',
+  'openclaw-pr-collaboration',
+  'openclaw-pr-discovery',
+  'openclaw-pr-reply-recovery',
+  'openclaw-issue-intake',
+  'openclaw-issue-assessment-recovery',
+  'openclaw-issue-feedback-policy',
+  'openclaw-issue-assignment-policy',
+  'openclaw-issue-reactivation',
   'openclaw-notifications-retirement',
   'openclaw-notifications-reset',
-  'openclaw-notifications-progression',
-  'openclaw-notifications-decision-recovery',
+  'openclaw-issue-progression',
+  'openclaw-issue-decision-recovery',
   'openclaw-notifications-scheduling',
 ]) {
   describe(`examples/${id} fixture configuration`, () => {
@@ -45,21 +45,45 @@ for (const id of [
       assert.deepEqual(policy?.runtimes, ['openclaw']);
       assert.equal(
         policy?.issueAssignment?.mode,
-        id === 'openclaw-notifications-auto-work'
+        id === 'openclaw-issue-auto-work'
           ? 'auto'
-          : ['openclaw-notifications-work', 'openclaw-notifications-work-custom'].includes(id)
+          : ['openclaw-issue-work', 'openclaw-issue-work-custom'].includes(id)
             ? 'work'
             : 'plan',
       );
       assert.deepEqual(policy?.issueAssignment?.pullRequest?.recipients, [
         { source: 'assignment-actor', roles: ['assignee'] },
-        ...([
-          'openclaw-notifications-issue-journey',
-          'openclaw-notifications-conversation',
-        ].includes(id)
+        ...(['openclaw-issue-journey', 'openclaw-issue-conversation'].includes(id)
           ? [{ login: 'tanaabot', nodeId: '', reference: '@tanaabot', roles: ['reviewer'] }]
           : []),
       ]);
+    });
+  });
+}
+
+for (const runtime of ['openclaw', 'codex']) {
+  describe(`examples/openclaw-project-picker ${runtime} fixture configuration`, () => {
+    it('should enable pickup while ordinary assignments remain in plan and exclude the receiving actor', async () => {
+      const source = (
+        await readFile(`examples/openclaw-project-picker/${runtime}/agent.yaml`, 'utf8')
+      )
+        .replaceAll('__ACTOR_NODE_ID__', 'U_emori')
+        .replaceAll('__MILESTONE_NUMBER__', '123');
+      const parsed = parseAgentManifest(source);
+      assert.equal(parsed.status, 'valid', JSON.stringify(parsed.diagnostics));
+      assert.ok(parsed.manifest);
+      const jobs = openclawIntakeJobs(parsed.manifest);
+      assert.ok(jobs.some((job) => job.id === 'github-project-pickup' && job.enabled));
+      assert.ok(jobs.some((job) => job.id === 'github-issue-assignment' && job.enabled));
+      const policy = parsed.manifest.github!.notifications!;
+      assert.deepEqual(policy.runtimes, ['openclaw']);
+      assert.equal(policy.issueAssignment!.mode, 'plan');
+      assert.deepEqual(
+        policy.issueAssignment!.allowed.map((identity) => identity.nodeId),
+        ['U_emori'],
+      );
+      assert.equal(policy.projectPickup!.windowMinutes, 1440);
+      assert.equal(policy.projectPickup!.timingError, undefined);
     });
   });
 }

@@ -39,7 +39,6 @@ export default function openClawCapacity(
 ) {
   if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('dispatch-capacity-invalid');
   const occupied =
-    records.filter(openClawItemOccupied).length +
-    projectPickupCapacity(records, pickup, openClawItemOccupied, excludeIssue);
+    records.filter(openClawItemOccupied).length + projectPickupCapacity(pickup, excludeIssue);
   return { occupied, available: Math.max(0, limit - occupied) };
 }

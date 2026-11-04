@@ -12,7 +12,7 @@ works after a restart.
 ## What Does Not Belong Here
 
 - Foundational installation and unsupported-review compatibility: [OS install](../os-install/README.md).
-- Hosted issue discovery, model behavior, and scheduler controls: [intake](../openclaw-notifications-intake/README.md) and [scheduling](../openclaw-notifications-scheduling/README.md).
+- Hosted issue discovery, model behavior, and scheduler controls: [intake](../openclaw-issue-intake/README.md) and [scheduling](../openclaw-notifications-scheduling/README.md).
 
 ## Notes
 
