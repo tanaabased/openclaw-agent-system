@@ -314,6 +314,47 @@ describe('scripts/aimock-tool-search', () => {
     }
   });
 
+  for (const context of [
+    '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\nAgent System model-only current-turn facts notification-hidden-initial-fact\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>',
+    'OpenClaw runtime context:\nAgent System model-only current-turn facts notification-hidden-initial-fact\nEnd OpenClaw runtime context.',
+  ]) {
+    it('should keep the admitted request and discovered tools across a runtime context message', async () => {
+      const scenario = withToolSearch(resolveScenario('openclaw-pr-journey'));
+      const id = 'a'.repeat(64);
+      const input = request(
+        `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
+      );
+      input.messages.unshift({ role: 'system', content: 'Name: Notification Tanaabot' });
+      input.messages.push({ role: 'user', content: [{ type: 'text', text: context }] });
+      append(
+        input,
+        (await reply(scenario, input)).response,
+        searchResult(['agent_system_dispatch']),
+      );
+      const response = (await reply(scenario, input)).response;
+      assert.ok('toolCalls' in response);
+      const call = response.toolCalls![0]!;
+      assert.equal(call.name, 'dispatch_action');
+      assert.deepEqual(JSON.parse(call.arguments), {
+        id: 'openclaw:agent_system_dispatch',
+        args: { action: 'context', id },
+      });
+      append(input, response, {
+        tool: { id: 'openclaw:agent_system_dispatch', name: 'agent_system_dispatch' },
+        result: { content: [{ type: 'text', text: 'current result' }] },
+      });
+      // context can also follow a tool result without severing its exact call binding.
+      input.messages.push({ role: 'user', content: context });
+      const normalized = normalizeToolSearchRequest(input);
+      assert.ok(normalized.tools?.some((tool) => tool.function.name === 'agent_system_dispatch'));
+      assert.equal(normalized.messages.at(-2)!.content, 'current result');
+      assert.equal(
+        normalized.messages.at(-3)!.tool_calls![0]!.function.name,
+        'agent_system_dispatch',
+      );
+    });
+  }
+
   it('should carry notification assessment and operator delivery through wrapped tools and retained history', async () => {
     // test the pinned host's actual projection without importing it into plugin runtime code.
     const hostRequire = createRequire(
@@ -336,7 +377,7 @@ describe('scripts/aimock-tool-search', () => {
     input.messages.push({
       role: 'user',
       content:
-        '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts notification-hidden-initial-fact',
+        'OpenClaw runtime context:\nAgent System model-only current-turn facts notification-hidden-initial-fact',
     });
     const discover = async () => {
       append(
@@ -502,7 +543,7 @@ describe('scripts/aimock-tool-search', () => {
     input.messages.push({
       role: 'user',
       content:
-        '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts notification-hidden-initial-fact',
+        'OpenClaw runtime context:\nAgent System model-only current-turn facts notification-hidden-initial-fact',
     });
     append(
       input,
@@ -540,6 +581,7 @@ describe('scripts/aimock-tool-search', () => {
     for (const phase of ['first', 'continued']) {
       if (phase === 'continued')
         input.messages.push({ role: 'user', content: 'Execute the worktree continued probe.' });
+      input.messages.push({ role: 'user', content: 'OpenClaw runtime context:\nworktree context' });
       append(input, (await reply(scenario, input)).response, searchResult(['exec']));
       const call = (await reply(scenario, input)).response;
       assert.ok('toolCalls' in call);

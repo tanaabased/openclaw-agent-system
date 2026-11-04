@@ -122,4 +122,49 @@ describe('scripts/aimock-diagnostics', () => {
     assert.equal(checks?.tools.agent_system_dispatch, false);
     assert.doesNotMatch(JSON.stringify(result), /private-|Name:/u);
   });
+
+  it('should distinguish fixture predicate rejection from passing coarse prerequisites', () => {
+    const scenario = { ...resolveScenario('os-execution') };
+    const entry: Entry = {
+      method: 'POST',
+      path: '/responses',
+      response: { fixture: null, status: 503 },
+      body: {
+        model: 'gpt-5.5',
+        messages: [
+          { role: 'system', content: 'private-system' },
+          { role: 'user', content: 'private-request' },
+          { role: 'user', content: 'OpenClaw runtime context:\nprivate-context' },
+          { role: 'tool', tool_call_id: 'unrelated', content: 'private-result' },
+        ],
+        tools: ['exec', 'process'].map((name) => ({ type: 'function', function: { name } })),
+      },
+    };
+    scenario.fixtures = [
+      { match: { predicate: () => false }, response: { content: 'unused' } },
+      {
+        match: {
+          predicate: () => {
+            throw new Error('private-predicate-error');
+          },
+        },
+        response: { content: 'unused' },
+      },
+    ];
+    const result = diagnostics(scenario, [entry]);
+    assert.deepEqual(result.requests?.[0]?.checks, {
+      model: true,
+      systemPrompt: true,
+      userPrompt: true,
+      toolSearch: true,
+      tools: { exec: true, process: true },
+      fixtures: [false, 'error'],
+    });
+    assert.deepEqual(result.requests?.[0]?.turn, {
+      messages: 3,
+      runtimeContextMessages: 1,
+      toolResults: 1,
+    });
+    assert.doesNotMatch(JSON.stringify(result), /private-/u);
+  });
 });

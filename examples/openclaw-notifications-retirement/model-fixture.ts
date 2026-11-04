@@ -11,20 +11,14 @@ import {
 } from '@copilotkit/aimock';
 
 import { issueExampleScenario } from '../openclaw-issue-journey/model-fixture.ts';
+import currentMessages from '../../scripts/aimock-messages.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
 const prefix = 'call_retirement_';
 const stages = ['preview', 'apply'];
 function retirement(request: ChatCompletionRequest): FixtureResponse | undefined {
-  const start = request.messages.findLastIndex(
-    (message) =>
-      message.role === 'user' &&
-      !getTextContent(message.content)
-        ?.trimStart()
-        .startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>'),
-  );
-  const messages = request.messages.slice(start);
+  const messages = currentMessages(request);
   const prompt = messages
     .filter((message) => message.role === 'user')
     .map((message) => getTextContent(message.content) ?? '')

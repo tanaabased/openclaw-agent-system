@@ -10,6 +10,7 @@ import {
 import { type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
+import currentTurn from '../../scripts/aimock-messages.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
@@ -68,19 +69,6 @@ function assessmentRequest(context: Record<string, unknown>, payload: object) {
     ...(context.previousResultDigest ? { previousResultDigest: context.previousResultDigest } : {}),
   });
   return { ...submission.request, [submission.resultField]: payload };
-}
-
-function currentTurn(request: ChatCompletionRequest) {
-  return request.messages.slice(
-    Math.max(
-      0,
-      request.messages.findLastIndex(
-        ({ role, content }) =>
-          role === 'user' &&
-          !getTextContent(content)?.trimStart().startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>'),
-      ),
-    ),
-  );
 }
 
 function isContention(result: Record<string, unknown> | undefined) {

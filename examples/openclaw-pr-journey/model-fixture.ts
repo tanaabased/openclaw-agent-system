@@ -7,6 +7,7 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
+import currentTurn from '../../scripts/aimock-messages.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
@@ -60,19 +61,6 @@ const dispatchStages = [
   'feedback-preview',
   'feedback-publish',
 ];
-
-function currentTurn(request: ChatCompletionRequest) {
-  return request.messages.slice(
-    Math.max(
-      0,
-      request.messages.findLastIndex(
-        ({ role, content }) =>
-          role === 'user' &&
-          !getTextContent(content)?.trimStart().startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>'),
-      ),
-    ),
-  );
-}
 
 function isContention(result: Record<string, unknown> | undefined) {
   return (

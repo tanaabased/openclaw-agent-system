@@ -8,6 +8,7 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
+import currentMessages from './aimock-messages.ts';
 import type { OpenClawAIMockScenario, OpenClawAIMockToolCall } from './aimock-scenario.ts';
 import { matchesOpenClawAIMockToolCallId } from './aimock-tool-result.ts';
 
@@ -23,15 +24,6 @@ function parse(text: string): Record<string, unknown> {
 function controls(request: ChatCompletionRequest): boolean {
   return ['tool_search', 'dispatch_action'].every((name) =>
     request.tools?.some((tool) => tool.function.name === name),
-  );
-}
-
-function currentMessages(request: ChatCompletionRequest) {
-  return request.messages.slice(
-    Math.max(
-      0,
-      request.messages.findLastIndex((message) => message.role === 'user'),
-    ),
   );
 }
 
