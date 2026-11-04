@@ -62,8 +62,6 @@ export async function scanCodexFeedback(input: {
   const scans: FeedbackScan[] = [];
   for (const record of records) {
     if (budget.exhausted) break;
-    const admitted = dispatchAdmission(record, intake.records ?? []);
-    if (!admitted) throw new Error('feedback-admission-missing');
     const feedback = structuredClone(
       record.feedback ?? { startedAt: now, baseline: {}, events: [] },
     );
@@ -77,6 +75,8 @@ export async function scanCodexFeedback(input: {
     feedback.scannedTime = now;
     feedback.discoveryPending = true;
     try {
+      const admitted = dispatchAdmission(record, intake.records ?? []);
+      if (!admitted) throw new Error('feedback-admission-missing');
       await save();
       await revalidateFeedbackAssignment(current.policy, admitted, provider.client, record);
       let publications: Promise<string[]> | undefined;

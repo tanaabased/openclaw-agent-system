@@ -4184,6 +4184,28 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).progression, undefined);
   });
 
+  it('should retain an uncertain implementation send while preparing another assignment', async () => {
+    await assignments(1, 2);
+    const first = await next();
+    const id = first.id;
+    await prepare(first);
+    await assess(id);
+    await completeAssessment(id);
+    manifest.github!.notifications!.issueAssignment!.mode = 'work';
+    loseSend = true;
+    assert.equal((await workPass('isolated-work')).status, 'implementation-pending');
+    const before = (await record(assessor(id).sessionKey)).work!.turn!;
+    await assignments(2, 2);
+    await workPass('after-uncertain');
+    const pending = await workPass('after-uncertain');
+    assert.equal(pending.status, 'routing-required', JSON.stringify(pending));
+    assert.ok('id' in pending && pending.id !== id);
+    const after = (await record(assessor(id).sessionKey)).work!.turn!;
+    assert.equal(after.runId, before.runId);
+    assert.equal(after.message, before.message);
+    assert.equal(sends().length, 2);
+  });
+
   for (const mode of ['work', 'auto'] as const) {
     it(`should automatically continue ${mode} once in the same issue chat and reconcile a lost response`, async () => {
       const id = await readyWork(mode, mode === 'auto' ? 'work' : undefined);

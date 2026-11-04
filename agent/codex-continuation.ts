@@ -231,11 +231,22 @@ export default async function runCodexContinuation(
           : state.records.filter((record) => record.id === input.id);
       if (!candidates.length && input.action !== 'next')
         throw new Error('continuation-record-missing');
+      let pending: Awaited<ReturnType<typeof advanceCodexWork>>;
       for (const record of candidates) {
         const result = await advanceCodexWork(record, context);
-        if (result !== undefined) return result;
+        if (result === undefined) continue;
+        if (input.action !== 'next' || result.status === 'prepared') return result;
+        if (
+          'providerDiagnostic' in result &&
+          ['authentication', 'missing-credential'].includes(
+            result.providerDiagnostic?.classification ?? '',
+          )
+        )
+          return { ...result, nextAction: 'report' };
+        pending ??= result;
       }
-      return decisionPending ?? { status: 'idle' as const };
+      const held = pending ?? decisionPending;
+      return held ? { ...held, nextAction: 'dispatch' } : { status: 'idle' as const };
     }, commitOptions);
     if (
       input.action === 'context' &&

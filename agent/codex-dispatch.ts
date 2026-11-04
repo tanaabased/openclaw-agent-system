@@ -278,6 +278,12 @@ async function executeCodexDispatch(
             await reconcileIntakeDenial(record, tx);
           } catch (error) {
             const result = await fail(record, error);
+            // Missing evidence holds this retained operation; it does not establish a shared refusal.
+            if (
+              workflowFailure(error, 'dispatch-operation-failed').code ===
+              'dispatch-denial-history-unavailable'
+            )
+              continue;
             if (state.run) state.run.stopped = 'blocked';
             await save();
             return {
