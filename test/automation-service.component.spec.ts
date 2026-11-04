@@ -990,6 +990,20 @@ describe('agent/automation-service', () => {
       ),
       'intake-automation-paused',
     );
+    const pickupBefore = await service.notificationResetPickupSnapshot(manifest, root);
+    assert.ok(pickupBefore?.sessionKey);
+    sessions.get(pickupBefore.sessionKey)!.archived = true;
+    const pickupAfter = await service.notificationResetReplace(
+      manifest,
+      root,
+      pickupBefore,
+      false,
+      async () => {},
+    );
+    assert.notEqual(pickupAfter.sessionKey, pickupBefore.sessionKey);
+    await service.notificationResetToggle(manifest, root, pickupAfter, true);
+    assert.equal(native.find((job) => job.id === pickup.id)!.enabled, false);
+    assert.deepEqual((await enrollments.read()).records, [enrollment]);
     policy.projectPickup.paused = false;
     await service.reconcile(manifest, root);
     assert.equal(native.find((job) => job.id === pickup.id)!.enabled, true);

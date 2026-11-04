@@ -51,6 +51,19 @@ const schema = Type.Object(
       Type.Literal('coordinator'),
     ]),
     automation: Type.String({ minLength: 1, maxLength: 128000 }),
+    coordinatorReplaced: Type.Optional(Type.Boolean()),
+    pickup: Type.Optional(
+      Type.Object(
+        {
+          automation: Type.String({ minLength: 1, maxLength: 128000 }),
+          pauseAttempted: Type.Optional(Type.Boolean()),
+          coordinatorArchiveAttempted: Type.Optional(Type.Boolean()),
+          coordinatorUpdateAttempted: Type.Optional(Type.Boolean()),
+          coordinatorReplaced: Type.Optional(Type.Boolean()),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     inventory: Type.String({ minLength: 1, maxLength: 12 * 1024 * 1024 }),
     resources: Type.Array(resource, { maxItems: 3000 }),
     coordinatorArchiveAttempted: Type.Optional(Type.Boolean()),

@@ -1,4 +1,5 @@
 import { projectPickupStateSchema } from './project-pickup-state.ts';
+import resetProjectPickup from './project-pickup-reset.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { projectWorkSchema } from './project-pickup-authority.ts';
 import { issueKey } from './dispatch-pending.ts';
@@ -634,12 +635,15 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
 
   async reset(generation: string): Promise<void> {
     await this.exclusive(async (state, save) => {
+      if (state.resetGeneration === generation) return;
+      const projectPickup = resetProjectPickup(state.projectPickup, state.records);
       for (const key of Object.keys(state)) delete (state as Record<string, unknown>)[key];
       Object.assign(state, {
         version: 1,
         scope: this.scope,
         resetGeneration: generation,
         records: [],
+        ...(projectPickup ? { projectPickup } : {}),
       });
       await save();
     }, true);

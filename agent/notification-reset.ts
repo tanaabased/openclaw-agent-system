@@ -14,6 +14,7 @@ export interface NotificationResetSnapshot {
   workspace: string;
   scope: string;
   automation: string;
+  pickup?: NotificationResetRecord['pickup'];
   inventory: string;
   resources: NotificationResetResource[];
 }
@@ -29,7 +30,10 @@ export interface NotificationResetEffect {
 export interface NotificationResetAdapter {
   fence<T>(run: () => Promise<T>): Promise<T>;
   snapshot(): Promise<NotificationResetSnapshot>;
-  pause(record: NotificationResetRecord): Promise<NotificationResetEffect>;
+  pause(
+    record: NotificationResetRecord,
+    save: (record: NotificationResetRecord) => Promise<void>,
+  ): Promise<NotificationResetEffect>;
   idle(record: NotificationResetRecord): Promise<NotificationResetEffect>;
   clear(record: NotificationResetRecord): Promise<void>;
   purge(
@@ -159,7 +163,7 @@ export default async function resetNotifications(input: {
     };
     if (record.phase !== 'pause' && record.phase !== 'restore' && record.phase !== 'coordinator') {
       const effect = await step('pause-intake', () =>
-        adapter.pause({ ...record, pauseAttempted: true }),
+        adapter.pause({ ...record, pauseAttempted: true }, save),
       );
       if (effect.status !== 'done') return pending(effect);
     }
@@ -168,7 +172,7 @@ export default async function resetNotifications(input: {
       record.pauseAttempted = true;
       await save(record);
       const effect = await step('pause-intake', () =>
-        adapter.pause({ ...record, pauseAttempted: previous }),
+        adapter.pause({ ...record, pauseAttempted: previous }, save),
       );
       if (effect.status !== 'done') return pending(effect);
       record.phase = 'drain';

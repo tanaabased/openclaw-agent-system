@@ -33,7 +33,8 @@ for (const id of [
       const source = (await readFile(`examples/${id}/tanaabot/agent.yaml`, 'utf8'))
         .replaceAll('__OWNER_NODE_ID__', 'O_owner')
         .replaceAll('__ACTOR_NODE_ID__', 'U_actor')
-        .replaceAll('__RECEIVER_NODE_ID__', 'U_receiver');
+        .replaceAll('__RECEIVER_NODE_ID__', 'U_receiver')
+        .replaceAll('__MILESTONE_NUMBER__', '123');
       const parsed = parseAgentManifest(source);
       assert.equal(parsed.status, 'valid', JSON.stringify(parsed.diagnostics));
       assert.ok(parsed.manifest);

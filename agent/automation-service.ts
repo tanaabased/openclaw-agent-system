@@ -252,6 +252,15 @@ export default class AutomationService {
     };
   }
 
+  async notificationResetPickupSnapshot(manifest: AgentManifest, workspace: string) {
+    const { store } = await this.scope(manifest, workspace);
+    const record = (await store.read()).records.find(
+      (entry) => entry.id === projectPickupAutomationId,
+    );
+    if (!record || record.removed || record.retired) return;
+    return this.notificationResetSnapshot(manifest, workspace, projectPickupAutomationId);
+  }
+
   /** temporarily pause an owned job without changing its installed desired-state receipt. */
   async notificationResetToggle(
     manifest: AgentManifest,

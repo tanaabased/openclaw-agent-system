@@ -1,3 +1,4 @@
+import discardSelection from './project-pickup-discard-selection.ts';
 import { omit } from 'lodash-es';
 import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import itemReadFailure from '../channels/github/provider/item-read-failure.ts';
@@ -238,17 +239,6 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       : {}),
   }));
   let scanSummary: PickupScanSummary | undefined;
-  const discardSelection = (op: PickupOperation) => {
-    op.candidates = [];
-    if (op.selected) op.selected = { nodeId: op.selected.nodeId, number: op.selected.number };
-    delete op.discovery;
-    delete op.scan;
-    delete op.guidance;
-    delete op.selectionDigest;
-    delete op.rationale;
-    delete op.shortlist;
-    delete op.deferred;
-  };
   const summarize = (op: PickupOperation): PickupScanSummary => ({
     eligible: op.candidates.length,
     shortlist: (op.shortlist ?? []).flatMap((nodeId) => {
