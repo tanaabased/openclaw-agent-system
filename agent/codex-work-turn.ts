@@ -1,8 +1,6 @@
 import codexCapacity from './codex-capacity.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
-import implementationRevision, {
-  unprocessedImplementationInput,
-} from './implementation-revision.ts';
+import { unprocessedImplementationInput } from './implementation-revision.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 import { automationHash } from './automation-hash.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
@@ -73,29 +71,21 @@ export default async function advanceCodexWorkTurn(
   const revisionInput = currentInput
     ? { turnId: currentInput.turnId, inputId: currentInput.inputId }
     : undefined;
-  const revision = Boolean(
+  // Only unfinished initial execution reaches this owner. A fresh human input
+  // replaces its stale automatic intent; delivered conversations never enter here.
+  const unfinishedResult =
+    work.result &&
     revisionInput &&
-    revisionInput.turnId === found.turnId &&
-    implementationRevision(work, revisionInput, input.action === 'context', completedTurnId),
-  );
-  const answer = Boolean(
-    context.operatorInput &&
-    revisionInput &&
-    revisionInput.turnId === found.turnId &&
+    unprocessedImplementationInput(work, revisionInput, completedTurnId);
+  if (
     input.action === 'context' &&
-    ['blocked', 'clarification-needed'].includes(work.result?.outcome ?? '') &&
-    unprocessedImplementationInput(work, revisionInput, completedTurnId),
-  );
-  const newInput = Boolean(
-    input.action === 'context' &&
-    context.operatorInput &&
     revisionInput?.turnId === found.turnId &&
-    (work.attempt?.origin !== 'input' ||
-      work.attempt.inputId !== revisionInput?.inputId ||
-      work.attempt.turnId !== revisionInput?.turnId ||
-      work.publicationAttempt),
-  );
-  if ((revision || answer || newInput) && revisionInput) {
+    (unfinishedResult ||
+      work.attempt?.origin !== 'input' ||
+      work.attempt.inputId !== revisionInput.inputId ||
+      work.attempt.turnId !== revisionInput.turnId ||
+      work.publicationAttempt)
+  ) {
     const revisionAttempt = {
       ...work.attempt,
       id: automationHash({ attempt: work.attempt?.id ?? record.id, source: revisionInput }),
@@ -124,53 +114,51 @@ export default async function advanceCodexWorkTurn(
       }
       throw new Error('continuation-input-unverified');
     }
-    if (input.action === 'context') {
-      if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
-      record.progression = { ...transition.progression, workOwner: 'issue' };
-      if (revision || answer) {
-        (work.resultHistory ??= []).push({ source: work.resultSource, result: work.result! });
-        delete work.result;
-        delete work.resultSource;
-        work.revisionSource = revisionInput;
-      }
-      delete work.blockedTurnId;
-      delete work.clarificationTurnId;
-      for (const previous of [work.attempt, work.publicationAttempt]) {
-        if (previous)
-          (work.retries ??= []).push({
-            attempt: previous,
-            ...(work.binding ? { binding: work.binding } : {}),
-            at: (deps.now ?? Date.now)(),
-            by: caller,
-          });
-      }
-      work.attempt = revisionAttempt;
-      currentInputReceipt = currentReceipt;
-      delete work.binding;
-      delete work.publicationAttempt;
-      work.assessmentDigest = automationHash(record.result);
-      work.activeTurnId = found.turnId;
-      work.phase =
-        work.result?.outcome === 'done'
-          ? work.scope === 'local'
-            ? 'complete'
-            : 'delivery'
-          : 'running';
-      delete work.code;
-      if (!work.result)
-        selection = (
-          await selectWorkflowStage({
-            stage: 'implementation',
-            configuration: {
-              ...current.manifest.github?.notifications?.issueAssignment?.implementation,
-              ...record.manualIssue?.selections?.implementation,
-            },
-            workspace: current.workspace,
-            observedAt: (deps.now ?? Date.now)(),
-            resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
-          })
-        ).selection;
+    if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
+    record.progression = { ...transition.progression, workOwner: 'issue' };
+    if (unfinishedResult) {
+      (work.resultHistory ??= []).push({ source: work.resultSource, result: work.result! });
+      delete work.result;
+      delete work.resultSource;
+      work.revisionSource = revisionInput;
     }
+    delete work.blockedTurnId;
+    delete work.clarificationTurnId;
+    for (const previous of [work.attempt, work.publicationAttempt]) {
+      if (previous)
+        (work.retries ??= []).push({
+          attempt: previous,
+          ...(work.binding ? { binding: work.binding } : {}),
+          at: (deps.now ?? Date.now)(),
+          by: caller,
+        });
+    }
+    work.attempt = revisionAttempt;
+    currentInputReceipt = currentReceipt;
+    delete work.binding;
+    delete work.publicationAttempt;
+    work.assessmentDigest = automationHash(record.result);
+    work.activeTurnId = found.turnId;
+    work.phase =
+      work.result?.outcome === 'done'
+        ? work.scope === 'local'
+          ? 'complete'
+          : 'delivery'
+        : 'running';
+    delete work.code;
+    if (!work.result)
+      selection = (
+        await selectWorkflowStage({
+          stage: 'implementation',
+          configuration: {
+            ...current.manifest.github?.notifications?.issueAssignment?.implementation,
+            ...record.manualIssue?.selections?.implementation,
+          },
+          workspace: current.workspace,
+          observedAt: (deps.now ?? Date.now)(),
+          resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
+        })
+      ).selection;
   }
   // A handoff is already owned work. Reconcile its exact native input before preparing
   // another send, including when the original turn ended before context was requested.
@@ -458,7 +446,7 @@ export default async function advanceCodexWorkTurn(
         },
       };
   }
-  if (resumeBlocked && !answer) {
+  if (resumeBlocked && !currentInputReceipt) {
     if (!found.followUpUserTurn || !blockedTurnId || found.turnId === blockedTurnId)
       return {
         ready: false as const,

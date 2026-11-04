@@ -1,3 +1,4 @@
+import { hasDeliveredImplementation } from './implementation-delivery.ts';
 import projectPickupCapacity from './project-pickup-capacity.ts';
 import type { ProjectPickupState } from './project-pickup-state.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
@@ -8,19 +9,20 @@ export function openClawItemOccupied(record: OpenClawDispatchRecord) {
   if (record.retirement && record.nativeInactive !== undefined) return !record.nativeInactive;
   if (record.supersededBy || record.reset || !record.request) return false;
   return Boolean(
-    (!record.handoff &&
-      record.phase !== 'complete' &&
-      (!['blocked', 'waiting', 'retrying'].includes(record.phase) ||
-        !record.sessionCreation?.verified ||
-        ((record.assessmentTurn ?? record.firstTurn)?.status !== 'completed' &&
-          Boolean(record.assessmentTurn ?? record.firstTurn) &&
-          !(record.assessmentTurn ?? record.firstTurn)?.inactive))) ||
-    [
-      record.summaryRecovery?.turn,
-      record.decisionTurn,
-      record.work?.turn,
-      record.work?.deliveryTurn,
-    ].some((turn) => turn && turn.status !== 'completed' && !turn.inactive) ||
+    (!hasDeliveredImplementation(record) &&
+      ((!record.handoff &&
+        record.phase !== 'complete' &&
+        (!['blocked', 'waiting', 'retrying'].includes(record.phase) ||
+          !record.sessionCreation?.verified ||
+          ((record.assessmentTurn ?? record.firstTurn)?.status !== 'completed' &&
+            Boolean(record.assessmentTurn ?? record.firstTurn) &&
+            !(record.assessmentTurn ?? record.firstTurn)?.inactive))) ||
+        [
+          record.summaryRecovery?.turn,
+          record.decisionTurn,
+          record.work?.turn,
+          record.work?.deliveryTurn,
+        ].some((turn) => turn && turn.status !== 'completed' && !turn.inactive))) ||
     record.feedback?.activity?.busy ||
     record.feedback?.events.some(
       (event) =>

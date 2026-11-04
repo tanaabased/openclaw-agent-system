@@ -1,6 +1,8 @@
 import { awaitingReassignment } from './assignment-retirement.ts';
+import { hasDeliveredImplementation } from './implementation-delivery.ts';
 
 interface Delivery {
+  binding?: { branch: string };
   adopted?: unknown;
   pullRequest?: { pullRequestNumber: number };
   reconciled?: boolean;
@@ -22,6 +24,7 @@ export interface IssueWorkflowState {
   retry?: unknown;
   result?: { code?: string; outcome?: string };
   progression?: { stage: string; workOwner?: string };
+  implementationDelivered?: true;
   autoDecision?: { ended?: boolean; code?: string };
   decisionTurn?: { status: string; inactive?: boolean };
   delivery?: Delivery;
@@ -33,12 +36,14 @@ export interface IssueWorkflowState {
     retry?: unknown;
     policyHeld?: string;
     result?: { outcome: string };
+    resultHistory?: Array<{ result: { outcome: string } }>;
     head?: string;
   };
   work?: {
     scope?: 'local' | 'pull-request';
     delivery?: Delivery;
     result?: { outcome: string };
+    resultHistory?: Array<{ result: { outcome: string } }>;
     code?: string;
     turn?: { status: string };
     implementation?: unknown;
@@ -66,6 +71,7 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
     record.result?.code === 'dispatch-assignment-superseded'
   )
     return { action: 'stopped', status: 'obsolete' };
+  if (hasDeliveredImplementation(record)) return { action: 'complete', status: 'delivered' };
   if (record.implementationPreparationError)
     return { action: 'implementation', status: record.retry ? 'retrying' : 'needs-attention' };
   // openclaw also retains a continuation message; it is transport, not codex work state.
@@ -99,16 +105,8 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
   if (result?.outcome === 'blocked' && !resumed) return { action: 'wait-input', status: 'blocked' };
   if (result?.outcome === 'done' && (continuation?.scope ?? work?.scope) === 'local')
     return { action: 'complete', status: 'publication-held' };
-  const delivery = record.delivery ?? work?.delivery;
-  if (result?.outcome === 'done') {
-    const published =
-      delivery?.pullRequest &&
-      delivery.reconciled &&
-      (!continuation?.head || delivery.pushedHead === continuation.head);
-    return published
-      ? { action: 'complete', status: 'delivered' }
-      : { action: 'delivery', status: 'delivery', publicationPending: true };
-  }
+  if (result?.outcome === 'done')
+    return { action: 'delivery', status: 'delivery', publicationPending: true };
   if (record.progression?.stage !== 'implementation') {
     if (record.autoDecision && !record.autoDecision.ended)
       return { action: 'assessment', status: record.autoDecision.code ? 'blocked' : 'assessing' };

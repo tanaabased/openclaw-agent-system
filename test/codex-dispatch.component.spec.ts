@@ -6662,13 +6662,12 @@ describe('agent/codex-dispatch', () => {
     assert.equal(codexItemOccupied((await store.read()).records[0]!), true);
   });
 
-  it('should let a human supersede an unverified automatic attempt without schedule activation or a later generic resume', async () => {
+  it('should let a human supersede an unfinished automatic attempt without schedule activation', async () => {
     const work = await workIssue();
     await work.run('next');
     const current = await selectCodexIntake(pluginData, deps);
     const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     const before = (await store.read()).records[0]!;
-    const activation = work.continuation.activation;
     work.continuation.activation = async () => {
       throw new Error('workflow-schedule-reconciliation-required');
     };
@@ -6693,21 +6692,6 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(after.result, before.result);
     assert.deepEqual(after.continuation!.retries?.[0]?.attempt, before.continuation!.attempt);
     assert.equal(after.continuation!.attempt?.inputId, 'human-input');
-    work.continuation.activation = activation;
-    work.continuation.directOperator = false;
-    await store.exclusive(async (state, save) => {
-      state.records[0]!.continuation!.resultHistory = [
-        {
-          result: { outcome: 'done', summary: 'Prior round.', fullResult: 'Verified prior work.' },
-        },
-      ];
-      await save();
-    });
-    native!.status = 'idle';
-    native!.turnStatus = 'completed';
-    native!.turnEnded = true;
-    assert.equal((await work.run('next')).status, 'idle');
-    assert.equal((await store.read()).records[0]!.continuation!.attempt?.inputId, 'human-input');
   });
 
   it('should finish scheduled announcement recovery without resuming delivered codex work', async () => {
@@ -6748,6 +6732,9 @@ describe('agent/codex-dispatch', () => {
         attached: true,
         cardAttempts: 1,
       };
+      record.autoDecision = { attempt: structuredClone(record.continuation!.attempt!) };
+      record.continuation!.phase = 'blocked';
+      record.continuation!.code = 'continuation-send-unverified';
       retainAnnouncementFailure(
         record.delivery!,
         retainedAnnouncementPublication(intake, record.delivery!),
@@ -7337,11 +7324,21 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await work.run('next')).status, 'idle');
     assert.deepEqual((await store.read()).records[0]!.continuation!.attempt, attempt);
     const context = await work.run('context', {}, true);
-    assert.equal('deliveryOnly' in context && context.deliveryOnly, true);
+    assert.equal(context.status, 'native');
+    const retainedWork = structuredClone((await store.read()).records[0]!.continuation);
+    work.continuation.activation = async () => {
+      throw new Error('scheduler-must-not-own-native-work');
+    };
+    work.continuation.continuationNative = async () => {
+      throw new Error('old-send-must-not-own-native-work');
+    };
+    assert.equal((await work.run('context', {}, true)).status, 'native');
+    assert.deepEqual((await store.read()).records[0]!.continuation, retainedWork);
+
     confirmed = true;
     await work.run('delivery', { delivery: { action: 'present' } }, true);
     assert.equal(issueWorkflowProgress((await store.read()).records[0]!).action, 'complete');
-    assert.equal((await work.run('next')).status, 'idle');
+    delete work.continuation.activation;
     assert.equal(codexItemOccupied((await store.read()).records[0]!), false);
   });
 

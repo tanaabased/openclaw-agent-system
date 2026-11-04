@@ -1,4 +1,4 @@
-import { isImplementationRevision } from './implementation-revision.ts';
+import { hasDeliveredImplementation } from './implementation-delivery.ts';
 import issueWorkflowProgress from './issue-workflow-progress.ts';
 import { dispatchAdmission } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
@@ -17,6 +17,7 @@ export default async function continueCodexResponse(
   record: DispatchRecord,
   context: CodexWorkContext,
 ) {
+  if (hasDeliveredImplementation(record)) return;
   const pending = pendingPublicResponse(record);
   const { occurrence, native, continuationNative, current, deps, signal, save } = context;
   if (
@@ -31,9 +32,7 @@ export default async function continueCodexResponse(
     !record.resultTurnId
   )
     return;
-  const complete =
-    issueWorkflowProgress(record).action === 'complete' ||
-    isImplementationRevision(record.continuation);
+  const complete = issueWorkflowProgress(record).action === 'complete';
   if (complete && (!record.summaryRecovery || record.summaryRecovery.ended)) return;
   // normal implementation/delivery turns can finish their own pending response without another send.
   if (!complete && record.continuation && record.continuation.phase !== 'complete') return;

@@ -2,7 +2,6 @@ import { recoverRetainedAnnouncement } from '../agent/delivery-announcement.ts';
 import { openClawWorkSlot } from '../agent/openclaw-continuation.ts';
 import manualPullRequest from '../agent/manual-pull-request.ts';
 import { fixturePullRequest, intakeFixture } from './github-intake-fixture.ts';
-import openClawWorkAction from '../agent/openclaw-work.ts';
 import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
@@ -514,54 +513,17 @@ describe('agent/openclaw-delivery', () => {
     await request('announce', { digest: candidate.digest });
     assert.equal(issueWorkflowProgress(record).action, 'complete');
     const receipt = structuredClone(record.work!.delivery!.pullRequest);
-    record.work!.caller = input.source;
-    head = 'b'.repeat(40);
-    await openClawWorkAction({
-      record,
-      source: input.source,
-      caller: {
-        sessionKey: record.threadId!,
-        sessionId: 'issue-session',
-        runId: input.source.runId,
-        toolCallId: 'context',
-      },
-      revisionAuthorized: true,
-      progression: { stage: 'implementation', via: 'operator' },
-      action: { action: 'implementation-context', id: record.id },
-      now: 3,
-      assertCurrent: input.assertCurrent,
-      save: input.save,
-    });
-    await openClawWorkAction({
-      record,
-      source: input.source,
-      caller: {
-        sessionKey: record.threadId!,
-        sessionId: 'issue-session',
-        runId: input.source.runId,
-        toolCallId: 'result',
-      },
-      progression: { stage: 'implementation', via: 'operator' },
-      action: {
-        action: 'implementation-result',
-        id: record.id,
-        implementationResult: {
-          outcome: 'done',
-          summary: 'Follow-up complete.',
-          fullResult: 'Committed and checked.',
-        },
-      },
-      now: 3,
-      assertCurrent: input.assertCurrent,
-      save: input.save,
-    });
-    assert.equal(issueWorkflowProgress(record).action, 'delivery');
+    const initialResult = structuredClone(record.work!.result);
+    assert.equal(record.implementationDelivered, true);
+    head = 'b'.repeat(40); // ordinary native edits; no managed context/result round.
+    assert.equal(issueWorkflowProgress(record).action, 'complete');
     assert.deepEqual(record.work!.delivery!.pullRequest, receipt);
     await publish();
     assert.equal(issueWorkflowProgress(record).action, 'complete');
     assert.equal(creates, 1);
     assert.equal(announcement.posts, 1);
     assert.equal(record.work!.delivery!.pushedHead, head);
+    assert.deepEqual(record.work!.result, initialResult);
   });
 
   it('should retry pr creation after a definite provider rejection', async () => {

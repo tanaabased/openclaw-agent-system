@@ -26,6 +26,8 @@ function delivered() {
 describe('agent/openclaw-continuation', () => {
   it('should leave delivered work idle regardless of missing card or announcement outcomes', async () => {
     const record = delivered();
+    record.handoff = { at: 1, by: 'chat', turnId: 'old' };
+    record.decisionTurn = { status: 'attempted', runId: 'old-decision', message: 'Decide.' };
     const before = structuredClone(record);
     const result = await advanceOpenClawWork({
       record,
@@ -44,10 +46,10 @@ describe('agent/openclaw-continuation', () => {
     assert.deepEqual(record, before);
   });
 
-  it('should still reconcile an already submitted native turn without preparing another', () => {
+  it('should retain already submitted delivery turns as history after verified delivery', () => {
     const record = delivered();
     record.work!.deliveryTurn = { status: 'accepted', runId: 'delivery', message: 'Deliver.' };
-    assert.equal(openClawWorkSlot(record, 'work'), 'deliveryTurn');
+    assert.equal(openClawWorkSlot(record, 'work'), undefined);
     record.work!.deliveryTurn.status = 'completed';
     assert.equal(openClawWorkSlot(record, 'work'), undefined);
   });
@@ -60,7 +62,7 @@ describe('agent/openclaw-continuation', () => {
     assert.equal(openClawWorkSlot(record, 'work'), 'turn');
   });
 
-  it('should not let an earlier announcement failure hold a new publication', () => {
+  it('should not let an announcement failure hold unfinished initial publication', () => {
     const record = delivered();
     record.work!.delivery!.reconciled = false;
     record.work!.delivery!.announcement = { code: 'delivery-announcement-denied' } as NonNullable<

@@ -1,4 +1,4 @@
-import { isImplementationRevision } from './implementation-revision.ts';
+import { hasDeliveredImplementation } from './implementation-delivery.ts';
 import { nativeInputEvent } from './openclaw-session-input.ts';
 import issueWorkflowProgress from './issue-workflow-progress.ts';
 import { feedbackWorkStarted } from './feedback-work.ts';
@@ -24,11 +24,10 @@ export function openClawWorkSlot(record: OpenClawDispatchRecord, mode: Mode) {
     return;
   const work = record.work;
   const progress = issueWorkflowProgress(record);
-  if (progress.action === 'stopped') return;
+  if (progress.action === 'stopped' || progress.action === 'complete') return;
   if (work?.turn && work.turn.status !== 'completed') return 'turn' as const;
   if (work?.deliveryTurn && work.deliveryTurn.status !== 'completed')
     return 'deliveryTurn' as const;
-  if (progress.action === 'complete' || isImplementationRevision(work)) return;
   if (feedbackWorkStarted(record)) return;
   if (progress.action === 'delivery') return 'deliveryTurn' as const;
   if (
@@ -58,6 +57,7 @@ export default async function advanceOpenClawWork(input: {
   assertCurrent(): Promise<void>;
 }) {
   const { record, request, save } = input;
+  if (hasDeliveredImplementation(record)) return { status: 'implementation-idle', id: record.id };
   const expected = record.request;
   if (!expected || !('key' in expected)) return { status: 'implementation-idle', id: record.id };
   // A same-turn handoff ends decision scheduling, not custody of its native turn.

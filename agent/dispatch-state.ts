@@ -87,6 +87,7 @@ export const dispatchRecordProperties = {
   ]),
   createdAt: Type.Integer({ minimum: 0 }),
   progression: Type.Optional(issueProgressionSchema),
+  implementationDelivered: Type.Optional(Type.Literal(true)),
   manifestDigest: text,
   assessment: Type.Optional(assessmentSelectionSchema),
   context: Type.Optional(Type.String({ maxLength: 96000 })),

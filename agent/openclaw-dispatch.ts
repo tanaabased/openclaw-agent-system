@@ -286,8 +286,14 @@ export default class OpenClawDispatch {
         authority,
         dependencies: this.dependencies,
       });
-      if (context.status !== 'managed' || !('owner' in context) || !context.owner) return context;
-      const id = context.owner.id;
+      let id: string;
+      if (context.status === 'native' && 'id' in context) {
+        if (input.operation !== 'delivery') return context;
+        id = context.id;
+      } else {
+        if (context.status !== 'managed' || !('owner' in context) || !context.owner) return context;
+        id = context.owner.id;
+      }
       input =
         input.operation === 'delivery'
           ? {

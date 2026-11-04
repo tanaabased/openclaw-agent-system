@@ -1,4 +1,8 @@
 import {
+  hasDeliveredImplementation,
+  retainImplementationDelivery,
+} from './implementation-delivery.ts';
+import {
   managedPullRequest,
   managedTargetUrl,
   type ManagedIssue as IntakeRecord,
@@ -61,7 +65,13 @@ export default async function openClawDelivery(input: {
   signal: AbortSignal;
   now?: number;
 }) {
-  const { record, intake, action, assertCurrent, save } = input;
+  const { record, intake, action, assertCurrent } = input;
+  retainImplementationDelivery(record);
+  const delivered = hasDeliveredImplementation(record);
+  const save = async () => {
+    retainImplementationDelivery(record);
+    await input.save();
+  };
   if (action.pullRequest !== undefined && action.operation !== 'bind')
     throw new Error('delivery-request-invalid');
   if (action.operation === 'present')
@@ -156,11 +166,12 @@ export default async function openClawDelivery(input: {
   if (!work || (!retainedIssueProgression(record) && !work.publication))
     throw new Error('delivery-implementation-incomplete');
   if (
-    (work.result && work.result.outcome !== 'done') ||
-    (work.implementation && work.result?.outcome !== 'done')
+    !delivered &&
+    ((work.result && work.result.outcome !== 'done') ||
+      (work.implementation && work.result?.outcome !== 'done'))
   )
     throw new Error('delivery-implementation-incomplete');
-  if (work.assessmentDigest !== automationHash(record.result))
+  if (!delivered && work.assessmentDigest !== automationHash(record.result))
     throw new Error('dispatch-work-assessment-changed');
   await assertCurrent();
   const connection = await input.connect();

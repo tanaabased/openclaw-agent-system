@@ -117,6 +117,8 @@ openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$n
 jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot")] | length == 2 and any(.[]; .node_id == $saved[0].assessmentSummaries[0].receipt.nodeId) and any(.[]; .node_id == $saved[0].work.delivery.announcement.receipt.nodeId)' "$TMPDIR/notification-comments.json"
 
 # should answer an ordinary post-delivery question from retained facts without reopening work
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue-work/tanaabot"
+conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
 params=$(jq -nc --arg key "$conversation" '{sessionKey:$key,agentId:"notifications-tanaabot",message:"Explain the completed PR in this ordinary conversation.",deliver:false,idempotencyKey:"notification-post-delivery-question"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-post-delivery-question"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-post-delivery-question 600000

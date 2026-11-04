@@ -50,6 +50,12 @@ this skill owns implementation judgment and the substantive completion report.
 
 ### Direct Entry
 
+After completed implementation and verified linked PR delivery, use the implementation body
+with the current native conversation directly. Do not bootstrap another managed execution,
+submit implementation results, or revive continuation receipts. A `native` context response
+contains retained facts only. Reuse the issue, checkout and PR; use the original delivery
+operation for requested publication and card presentation, and Task Update for material news.
+
 When trusted runtime context already supplies `issueStage: implementation`, use the
 implementation body below with its plan, assessment (when present), selected skill,
 guidance and previous result. **Do not bootstrap again**, including when this wrapper
@@ -105,8 +111,8 @@ retirement, reset, supersession, cancellation, and actual native denial.
 An idle chat still owns its task. Completed implementation with verified linked PR publication, or a local-only result, settles the
 current implementation round. Attempt native attachment and the announcement/card response separately;
 a failure there never reopens implementation or authorizes a generic resume. Continue ordinary
-questions and planning in that chat. A new authorized implementation request uses current
-native input in the same checkout and PR, without a scheduler or obsolete send receipt.
+questions and planning in that chat. A new authorized implementation request uses the native conversation in the same checkout
+and PR, without another managed round, scheduler or continuation receipt.
 Preserve historical assessments and results; a new ready plan supplies the current work.
 Preserve local-only publication scope until the operator changes it.
 
@@ -147,31 +153,28 @@ For an explicit request to select or change this managed task's existing PR, use
 5. Review the final diff for correctness, accidental scope, and unsupported claims.
    Commit finished, validated work on the task branch within that implementation scope,
    following the applicable commit convention. Preserve useful work when blocked.
-6. Return the complete substantive result: implemented behavior, validation evidence,
-   commit identity when available, remaining limitations, and any blocker with its
-   concrete next action. For unanswered consequential requirements, retain
-   `clarification-needed`, the questions, and partial work through the host's result
-   route. Resume on a new answer through the owning context without another approval.
-   Follow the host's result handoff and managed delivery instructions. Do not invent a separate
-   publication route, replay completed work, or create a replacement PR after an uncertain
-   publication. A newly authorized revision may continue through fresh host context;
-   a `deliveryOnly` context still forbids edits.
+6. Report implemented behavior, validation, commit identity, and remaining blockers or
+   limitations. After initial PR delivery, report directly in the native conversation;
+   use the existing delivery owner only for requested external effects. For unfinished
+   managed implementation, retain the complete result (or `clarification-needed` with
+   questions and partial work) through its supplied result route and follow its handoff.
+   Never replay completed work or create a replacement PR after uncertain publication.
 
 ## Checkpoints
 
 - Implementation authority and the target worktree come from the host.
 - The consumed plan, retained assessment and existing work remain the source for continuation.
 - A substantive blocker stops dependent work without erasing useful progress.
-- Once acceptance criteria and required checks are satisfied, proceed to handoff;
-  do not start an unrelated cleanup or optimization cycle.
+- Once acceptance criteria and required checks are satisfied, report completion and
+  follow any supplied delivery handoff; do not start an unrelated cleanup cycle.
 - Implementation completion, PR publication, attachment, and visible delivery are
   distinct outcomes; report only the evidence established for each.
 
 ## Completion Criteria
 
 The requested change is implemented and checked, or a concrete blocker is reported
-with retained progress. The host receives the complete result and owns its lifecycle
-transition and any remaining PR delivery.
+with retained progress. Unfinished managed execution uses its supplied result contract;
+post-PR native work needs no new lifecycle transition.
 
 ## Bundled Resources
 

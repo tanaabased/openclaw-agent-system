@@ -1,4 +1,5 @@
-import { announcementRecoveryAction } from './delivery-announcement-recovery.ts';
+import recoverCodexAnnouncement from './codex-announcement-recovery.ts';
+import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 import workflowFailure from './workflow-failure.ts';
 import codexCommit from './codex-commit.ts';
 import implementationMaterial from './implementation-material.ts';
@@ -55,6 +56,20 @@ export default async function runCodexContinuation(
       record.threadId === caller &&
       !['next', 'reconcile'].includes(input.action),
   );
+  if (localOwner && hasDeliveredImplementation(localOwner)) {
+    if (input.action === 'delivery' && input.delivery && typeof input.delivery === 'object')
+      return (deps.deliver ?? runCodexDelivery)(
+        pluginData,
+        { ...input.delivery, id: localOwner.id },
+        {
+          ...deps.deliveryDependencies,
+          threadId: caller,
+          codexHome: current.codexHome,
+          inspectBinding: deps.inspectBinding,
+        },
+      );
+    return nativeIssueContext(localOwner);
+  }
   const activation = localOwner
     ? { sourceThreadId: localOwner.sourceThreadId }
     : await (deps.activation ?? inspectCodexDispatchActivation)(
@@ -157,6 +172,11 @@ export default async function runCodexContinuation(
       if (!input.material) await prepareCodexWork(state, context);
       if (input.action === 'next') {
         for (const record of state.records) {
+          if (hasDeliveredImplementation(record)) {
+            if (!record.retired && !record.retirement && !record.reset && !record.supersededBy)
+              await recoverCodexAnnouncement(record, context);
+            continue;
+          }
           if (state.continuationRun?.responses?.includes(record.id)) continue;
           if (
             !record.summaryRecovery &&
@@ -190,6 +210,7 @@ export default async function runCodexContinuation(
         input.action === 'next'
           ? state.records.filter(
               (record) =>
+                !hasDeliveredImplementation(record) &&
                 record.continuation &&
                 !feedbackWorkStarted(record) &&
                 record.result &&
@@ -201,9 +222,6 @@ export default async function runCodexContinuation(
                 !record.feedbackReactivation &&
                 !record.reset &&
                 (['implementation', 'delivery'].includes(issueWorkflowProgress(record).action) ||
-                  (issueWorkflowProgress(record).action === 'complete' &&
-                    announcementRecoveryAction(record.delivery, (deps.now ?? Date.now)()) ===
-                      'check') ||
                   [
                     'continuation-auto-wait',
                     'continuation-assessment-not-actionable',

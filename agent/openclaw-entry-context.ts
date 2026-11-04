@@ -1,4 +1,5 @@
 import { managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
+import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 
 import type { ImplementationResult } from './implementation-result.ts';
 import managedImplementationRoute from './managed-implementation-route.ts';
@@ -66,6 +67,8 @@ export default async function openClawEntryContext<T>(
       await describeIssueSession(request, record, deps.config());
       const feedback = record.feedback?.events.find((event) => event.turn?.runId === caller.runId);
       return {
+        nativeContext:
+          !feedback && hasDeliveredImplementation(record) ? nativeIssueContext(record) : undefined,
         implementationResult: feedback ? feedback.work?.result : record.work?.result,
         digest,
         owner: { id: record.id, ...(feedback ? { eventId: feedback.id } : {}) },

@@ -29,5 +29,7 @@ export default async function managedImplementationRoute<T>(input: {
     (action.path && (await realpath(action.path)) !== owner.path)
   )
     throw new Error('implementation-managed-context-mismatch');
-  return { result: await input.route(owner.owner, owner.implementationResult) };
+  return {
+    result: owner.nativeContext ?? (await input.route(owner.owner, owner.implementationResult)),
+  };
 }

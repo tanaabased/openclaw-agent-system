@@ -61,10 +61,3 @@ export default function implementationRevision(
     unprocessedImplementationInput(work, input, completedTurnId)
   );
 }
-
-/** a later human revision retains the finished round; idleness never resumes it automatically. */
-export function isImplementationRevision(
-  work: { resultHistory?: Array<{ result?: { outcome: string } }> } | undefined,
-) {
-  return Boolean(work?.resultHistory?.some(({ result }) => result?.outcome === 'done'));
-}

@@ -129,7 +129,6 @@ function respond(
     assert.ok(retained.pullRequest?.pullRequestNumber);
     assert.ok(retained.worktree);
     assert.ok(retained.branch);
-    assert.ok(privateContext.includes('Continue the ordinary native conversation'));
     return {
       content: 'The linked PR contains the completed cleanup note. No further work was requested.',
     };
@@ -716,30 +715,36 @@ function respond(
             : { action: 'implementation', operation: 'context', id: operatorId }),
         });
       const path = (context.project as { path?: string } | undefined)?.path;
-      if (
-        context.status !== 'verified' ||
-        context.runtime !== 'openclaw' ||
-        !path ||
-        context.publicationAuthorized !== true
-      )
-        return;
-      assert.equal(context.deliveryOnly, false);
-      if (secondUpdate)
-        assert.equal((context.previousResult as { outcome?: string })?.outcome, 'done');
-      const selected = context.implementation as {
-        defaultSkill: boolean;
-        skill: { path: string };
-        guidance?: { content: string };
-      };
-      if (openClawAIMockToolResultText(messages, prefix + 'implementation-skill') === undefined)
-        return call('implementation-skill', 'read', { path: selected.skill.path });
-      const customized = !selected.defaultSkill;
-      if (customized) {
-        assert.match(selected.guidance!.content, /Retain sanitized evidence/u);
-        assert.match(
-          openClawAIMockToolResultText(messages, prefix + 'implementation-skill')!,
-          /cleanup sequence/u,
-        );
+      const nativeWork = context.status === 'native';
+      if (!path) return;
+      let customized = false;
+      if (nativeWork) {
+        assert.ok(update, 'native edits must follow the explicit update request');
+        assert.ok((context.pullRequest as { pullRequestNumber?: number })?.pullRequestNumber);
+        assert.equal('resultContract' in context, false);
+      } else {
+        if (
+          context.status !== 'verified' ||
+          context.runtime !== 'openclaw' ||
+          context.publicationAuthorized !== true
+        )
+          return;
+        assert.equal(context.deliveryOnly, false);
+        const selected = context.implementation as {
+          defaultSkill: boolean;
+          skill: { path: string };
+          guidance?: { content: string };
+        };
+        if (openClawAIMockToolResultText(messages, prefix + 'implementation-skill') === undefined)
+          return call('implementation-skill', 'read', { path: selected.skill.path });
+        customized = !selected.defaultSkill;
+        if (customized) {
+          assert.match(selected.guidance!.content, /Retain sanitized evidence/u);
+          assert.match(
+            openClawAIMockToolResultText(messages, prefix + 'implementation-skill')!,
+            /cleanup sequence/u,
+          );
+        }
       }
       const file = `notification-fixture-${operatorId}.md`;
       const patch = secondUpdate
@@ -766,23 +771,25 @@ function respond(
           });
         if (executed.exitCode !== 0 || executed.truncated !== false) return;
       }
-      const saved = result('work-result');
-      if (!saved)
-        return dispatch('work-result', {
-          action: 'implementation-result',
-          id: operatorId,
-          implementationResult: {
-            outcome: 'done',
-            summary: 'Committed the disposable cleanup note.',
-            fullResult:
-              'Committed and diff-checked the cleanup note in the verified worktree.' +
-              (customized ? ' Retained sanitized evidence before cleanup.' : ''),
-          },
-        });
-      const handoff = saved.handoff as { next?: string; request?: Record<string, unknown> };
-      if (saved.status !== 'recorded' || handoff?.next !== 'delivery') return;
-      if (!result('delivery-prepare'))
-        return dispatch('delivery-prepare', { ...handoff.request, title, body });
+      if (!nativeWork) {
+        const saved = result('work-result');
+        if (!saved)
+          return dispatch('work-result', {
+            action: 'implementation-result',
+            id: operatorId,
+            implementationResult: {
+              outcome: 'done',
+              summary: 'Committed the disposable cleanup note.',
+              fullResult:
+                'Committed and diff-checked the cleanup note in the verified worktree.' +
+                (customized ? ' Retained sanitized evidence before cleanup.' : ''),
+            },
+          });
+        const handoff = saved.handoff as { next?: string; request?: Record<string, unknown> };
+        if (saved.status !== 'recorded' || handoff?.next !== 'delivery') return;
+        if (!result('delivery-prepare'))
+          return dispatch('delivery-prepare', { ...handoff.request, title, body });
+      }
     }
     if (!retry) {
       const prepared = result('delivery-prepare');

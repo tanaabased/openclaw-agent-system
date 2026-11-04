@@ -1,3 +1,7 @@
+import {
+  hasDeliveredImplementation,
+  retainImplementationDelivery,
+} from './implementation-delivery.ts';
 import codexCommit from './codex-commit.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import { managedPullRequest, managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
@@ -178,7 +182,7 @@ export default async function runCodexDelivery(
     operation: 'delivery-checkpoint' as const,
   };
   try {
-    return await store.transaction(async (state, save, signal) => {
+    return await store.transaction(async (state, checkpoint, signal) => {
       const record = state.records.find((entry) => entry.id === input.id);
       if (
         !record?.request ||
@@ -191,6 +195,12 @@ export default async function runCodexDelivery(
           (record.reset || record.retired || record.retirement))
       )
         throw new Error('delivery-managed-issue-required');
+      retainImplementationDelivery(record);
+      const delivered = hasDeliveredImplementation(record);
+      const save = async () => {
+        retainImplementationDelivery(record);
+        await checkpoint();
+      };
       const found = await native.find({
         sourceThreadId: record.sourceThreadId,
         prompt: record.request.prompt,
@@ -424,6 +434,7 @@ export default async function runCodexDelivery(
         throw new Error('feedback-event-required');
       if (input.eventId && feedbackEvent?.id !== input.eventId)
         throw new Error('feedback-owner-caller-required');
+      const announcementOnly = ['compose', 'candidate', 'announce'].includes(input.action);
       const authorizePublication = async () => {
         await deps.authorizeSchedule?.();
         if (!input.eventId) return;
@@ -476,6 +487,8 @@ export default async function runCodexDelivery(
         if (deps.schedule.current.workflow !== 'issue-assignment')
           throw new Error('delivery-schedule-binding-mismatch');
         requireWorkflowSchedule(deps.schedule.saved, deps.schedule.current, 'publication');
+      } else if (delivered) {
+        await authorizePublication();
       } else {
         if (
           !record.handoff &&
@@ -516,7 +529,6 @@ export default async function runCodexDelivery(
       const policyDigest =
         previous?.binding.policyDigest ??
         notificationAuthorityDigest(current.manifest.github?.notifications);
-      const announcementOnly = ['compose', 'candidate', 'announce'].includes(input.action);
       if (announcementOnly && (!previous?.pullRequest || !previous.reconciled))
         throw new Error('delivery-reconciliation-required');
       const adopted = previous?.adopted ?? record.adoptedPullRequest;

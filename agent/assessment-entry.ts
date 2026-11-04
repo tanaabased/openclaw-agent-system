@@ -22,6 +22,7 @@ import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import type { DispatchGit } from './codex-dispatch-project.ts';
 import dispatchContext from './dispatch-context.ts';
 import type { ImplementationResult } from './implementation-result.ts';
+import type { nativeIssueContext } from './implementation-delivery.ts';
 import type { OpenClawDeliveryConnection } from './openclaw-delivery.ts';
 import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
 import { replyLocator } from './reply-target.ts';
@@ -49,6 +50,7 @@ export interface AssessmentEntryDependencies {
         digest: string;
         owner?: { id: string; eventId?: string };
         implementationResult?: ImplementationResult;
+        nativeContext?: ReturnType<typeof nativeIssueContext>;
         path: string;
         selection: AssessmentSelection;
         evidence: string;

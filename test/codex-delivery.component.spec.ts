@@ -1014,6 +1014,13 @@ describe('agent/codex-delivery', () => {
   for (const draft of [false, true])
     it(`should reconcile announce and present a delivered ${draft ? 'draft' : 'ready'} pr with uncommitted edits`, async () => {
       await publish();
+      await store.exclusive(async (state, save) => {
+        state.records[0]!.implementationDelivered = true;
+        await save();
+      });
+      deps.native!.operatorInput = async () => {
+        throw new Error('a retained announcement does not need a new human message');
+      };
       dirty = true;
       await request('reconcile');
       announcement.draft = draft;
@@ -1475,13 +1482,12 @@ describe('agent/codex-delivery', () => {
     assert.equal((await request('prepare')).status, 'prepared');
     assert.equal(creates, 1);
   });
-  it('should publish with standing work authority and keep subsequent actions in its continuation', async () => {
+  it('should publish with standing work authority', async () => {
     await workSchedule();
     deps.authorizeSchedule = async () => {};
     const published = await publish();
     assert.equal(published.status, 'published');
     assert.equal(creates, 1);
-    assert.match(String(published.instruction), /continuationRuntime action:delivery/);
   });
   for (const boundary of ['push', 'create'])
     it(`should stop before ${boundary} when standing work authority is revoked during publication`, async () => {
@@ -1626,7 +1632,35 @@ describe('agent/codex-delivery', () => {
     assert.ok(!gitCalls.some((argv) => argv.includes('push')));
   });
   it('should update the same pr when collaborator work is incorporated', async () => {
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.progression = { stage: 'implementation', via: 'work' };
+      record.continuation = {
+        phase: 'delivery',
+        selection: {
+          version: 1,
+          requestedSkill: 'implementation',
+          defaultSkill: true,
+          skill: { name: 'implementation', path: '/skill', scope: 'user', digest: 'a'.repeat(64) },
+          observedAt: 1,
+        },
+        policyDigest: 'a'.repeat(64),
+        result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' },
+      };
+      await save();
+    });
     await publish();
+    assert.equal((await store.read()).records[0]!.implementationDelivered, true);
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.handoff;
+      state.records[0]!.continuation!.phase = 'blocked';
+      state.records[0]!.continuation!.code = 'continuation-send-unverified';
+      await save();
+    });
+    const initialWork = structuredClone((await store.read()).records[0]!.continuation);
+    deps.native!.operatorInput = async () => {
+      throw new Error('native publication must not require another human-input receipt');
+    };
     const operationId = (await store.read()).records[0]!.delivery!.id;
     head = 'b'.repeat(40);
     await publish();
@@ -1642,6 +1676,8 @@ describe('agent/codex-delivery', () => {
     await publish();
     assert.equal(remote, head);
     assert.equal(creates, 1);
+    assert.deepEqual((await store.read()).records[0]!.continuation, initialWork);
+    assert.equal((await store.read()).records[0]!.implementationDelivered, true);
   });
   for (const interruption of ['before', 'after'] as const)
     it(`should recover metadata updates interrupted ${interruption} the provider write`, async () => {
