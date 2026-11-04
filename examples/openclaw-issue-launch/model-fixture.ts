@@ -16,6 +16,44 @@ const issueExampleScenario = createPRExampleScenario('openclaw-issue-launch');
 
 /** only the trigger is new; the child uses the existing managed assessment protocol. */
 function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
+  const delegation = request.messages.findLastIndex(
+    (message) =>
+      message.role === 'user' &&
+      /Delegate manual issue launch target:/u.test(getTextContent(message.content) ?? ''),
+  );
+  const latestLaunch = request.messages.findLastIndex(
+    (message) =>
+      message.role === 'user' &&
+      /(?:Delegate manual|Manual) issue launch target:/u.test(
+        getTextContent(message.content) ?? '',
+      ),
+  );
+  if (delegation >= 0 && delegation === latestLaunch) {
+    const messages = request.messages.slice(delegation);
+    const target =
+      /Delegate manual issue launch target: (https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/[1-9][0-9]*)/u.exec(
+        getTextContent(messages[0]!.content) ?? '',
+      )?.[1];
+    if (!target) return;
+    const sent = openClawAIMockToolResultText(messages, prefix + 'delegate');
+    if (sent === undefined)
+      return {
+        toolCalls: [
+          {
+            id: prefix + 'delegate',
+            name: 'sessions_send',
+            arguments: JSON.stringify({
+              sessionKey: 'agent:issue-launch-tanaabot:manual-delegate',
+              message: `Manual issue launch target: ${target}`,
+              timeoutSeconds: 0,
+            }),
+          },
+        ],
+      };
+    const result = JSON.parse(sent);
+    assert.equal(result.status, 'accepted');
+    return { content: 'manual-launch-delegated' };
+  }
   const boundary = request.messages.findLastIndex(
     (message) =>
       message.role === 'user' &&
@@ -104,12 +142,13 @@ export const issueLaunchExampleScenario: OpenClawAIMockScenario = {
   ...issueExampleScenario,
   id: 'openclaw-issue-launch',
   expectedInvalidToolCalls: [],
-  finalResponses: ['manual-launch-started', 'manual-launch-existing'],
+  finalResponses: ['manual-launch-started', 'manual-launch-existing', 'manual-launch-delegated'],
   dynamicFinalResponseFixtures: [
     final,
     ...(issueExampleScenario.dynamicFinalResponseFixtures ?? []),
   ],
   toolCalls: [
+    { id: prefix + 'delegate', name: 'sessions_send' },
     ...issueExampleScenario.toolCalls,
     ...stages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({

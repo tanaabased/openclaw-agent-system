@@ -525,8 +525,6 @@ export default class OpenClawDispatchIssue {
     ) {
       const delivered = hasDeliveredImplementation(record);
       if (delivered && input.action !== 'delivery') return nativeIssueContext(record);
-      if (input.action === 'implementation-context' && input.scope && !operator)
-        throw new Error('implementation-operator-scope-required');
       const signal = authority.signal
         ? AbortSignal.any([authority.signal, transactionSignal])
         : transactionSignal;
@@ -540,7 +538,20 @@ export default class OpenClawDispatchIssue {
         { signal, assertCurrent },
         async (request) => {
           const bindingOnly = input.action === 'delivery' && input.operation === 'bind';
-          if (bindingOnly && !operator) throw new Error('delivery-binding-operator-required');
+          if (
+            !operator &&
+            (bindingOnly || (input.action === 'implementation-context' && input.scope))
+          ) {
+            await operatorInputEvent({
+              request,
+              senderIsOwner: false,
+              sessionKey: caller.sessionKey,
+              sessionId: caller.sessionId,
+              runId: caller.runId,
+              retained: [],
+            });
+            operator = true;
+          }
           const { source, message, progression, revisionAuthorized } =
             bindingOnly || delivered
               ? {

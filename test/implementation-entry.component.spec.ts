@@ -717,7 +717,7 @@ describe('agent/native-implementation-entry', () => {
         path: workspace,
         plan,
       }),
-      /implementation-operator-required/,
+      /dispatch-operator-input-unverified/,
     );
     const context = await service.run(
       manifest,

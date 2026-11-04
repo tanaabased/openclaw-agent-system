@@ -1,6 +1,7 @@
 # OpenClaw Manual Task Launch Example
 
-Launch an unassigned issue from an ordinary chat without enabling notification intake.
+Delegate an unassigned issue from an owner chat to an ordinary native chat, then
+launch it without another human message or enabling notification intake.
 Create its checkout and issue chat through the enrolled session service, save a Plan
 assessment, and reuse the same chat after a Gateway restart. Continue one existing
 same-repository draft PR through an authorized update to that original PR.
@@ -8,6 +9,7 @@ same-repository draft PR through an authorized update to that original PR.
 ## What Belongs Here
 
 - Manual-only enrollment and launch without assignment or schedules.
+- Native delegated owner input through `sessions_send`, preserving its originating request.
 - Native checkout/settings, retained assessment and duplicate-safe destination reuse.
 - PR-head startup, original-PR updates and preserved metadata for a PR by another author.
 
@@ -24,6 +26,7 @@ same-repository draft PR through an authorized update to that original PR.
   standalone Codex desktop creation. The children reuse the existing PR-journey fixture.
 - The extra PR adds provider fixture setup and one implementation/delivery turn.
   Native approval denial still needs installed acceptance; component refusals are not that proof.
+- One native sender turn proves delegated input custody; it reuses the existing issue fixture.
 - One unassigned issue, one PR/source branch and this job's SSH registration need
   external cleanup. Cleanup quiesces the Gateway once before changing them.
 
@@ -65,10 +68,10 @@ openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-buc
 ## Testing
 
 ```bash
-# should create normal managed issue work without assignment or intake
+# should delegate normal managed issue work without repeating human authorization
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/tanaabot"
 target=$(jq -er .html_url "$TMPDIR/manual-issue.json")
-params=$(jq -nc --arg target "$target" '{sessionKey:"agent:issue-launch-tanaabot:manual-launch",agentId:"issue-launch-tanaabot",message:("Manual issue launch target: " + $target),deliver:false,idempotencyKey:"manual-launch-first"}')
+params=$(jq -nc --arg target "$target" '{sessionKey:"agent:issue-launch-tanaabot:manual-launch",agentId:"issue-launch-tanaabot",message:("Delegate manual issue launch target: " + $target),deliver:false,idempotencyKey:"manual-launch-first"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "manual-launch-first"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" manual-launch-first 600000
 node --input-type=module <<'NODE'

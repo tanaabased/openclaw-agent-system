@@ -605,7 +605,7 @@ describe('agent/native-assessment-entry', () => {
         target,
         path: workspace,
       }),
-      /assessment-operator-required/,
+      /dispatch-operator-input-unverified/,
     );
     const context = await service.run(
       manifest,

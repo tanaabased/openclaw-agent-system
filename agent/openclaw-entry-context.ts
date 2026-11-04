@@ -10,7 +10,7 @@ import assessmentOwner from './assessment-owner.ts';
 import { automationHash } from './automation-hash.ts';
 import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
-import { operatorInputEvent, nativeInputEvent } from './openclaw-session-input.ts';
+import { operatorInputEvent } from './openclaw-session-input.ts';
 import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
 import openClawSkill from './openclaw-skill.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
@@ -33,12 +33,6 @@ export default async function openClawEntryContext<T>(
     result?: ImplementationResult,
   ) => Promise<T>,
 ) {
-  const implementation =
-    !!input.action &&
-    typeof input.action === 'object' &&
-    'action' in input.action &&
-    input.action.action === 'implementation';
-  if (!input.operator && !implementation) throw new Error('assessment-operator-required');
   const { manifest, caller, authority, dependencies: deps } = input;
   await authority.assertCurrent?.();
   const current = await deps.intake.select(manifest, input.workspace, { resolvePolicy: false });
@@ -111,9 +105,9 @@ export default async function openClawEntryContext<T>(
       if (routed) return routed.result;
     }
     const nativeInput = () =>
-      (input.operator ? operatorInputEvent : nativeInputEvent)({
+      operatorInputEvent({
         request,
-        senderIsOwner: true,
+        senderIsOwner: input.operator,
         sessionKey: caller.sessionKey,
         sessionId: caller.sessionId,
         runId: caller.runId,
@@ -137,7 +131,7 @@ export default async function openClawEntryContext<T>(
         throw new Error('assessment-native-input-changed');
     };
     return collect({
-      operator: input.operator,
+      operator: true,
       root: deps.root,
       currentTarget,
       binding: {

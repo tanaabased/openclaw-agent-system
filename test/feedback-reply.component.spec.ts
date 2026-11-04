@@ -945,7 +945,7 @@ describe('agent/feedback-reply', () => {
         target: url,
         privateText: 'Answer.',
       }),
-      /reply-operator-required/,
+      /dispatch-operator-input-unverified/,
     );
     const composed = await direct('compose', { target: url, privateText: 'Answer.' });
     assert.ok('id' in composed && 'digest' in composed);
