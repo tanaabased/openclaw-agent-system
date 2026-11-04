@@ -52,9 +52,13 @@ unsupported. Use [`status`](#openclaw-agent-system-notifications-status) to insp
 
 ## `openclaw agent-system notifications reset`
 
-Reset tracking and replace the intake chat for selected agents. The command pauses
-intake, waits for managed turns, establishes a new assignment baseline, and restores
-the prior intake setting. Existing assignments and comments do not replay.
+Reset tracking and replace the issue-assignment and installed project-pickup chats
+for selected agents. The command pauses both jobs, waits for managed turns without
+aborting them, establishes a new assignment baseline, and restores each job’s prior
+enabled or paused state. Cached pickup scans and selections are cleared; consumed
+allowance, unresolved assignment attempts, and verified assignments not yet handed
+to issue assignment are retained to prevent repeated work. Existing assignments
+and comments do not replay.
 Without explicit targets, select agents interactively; confirmation follows selection.
 
 ### Options

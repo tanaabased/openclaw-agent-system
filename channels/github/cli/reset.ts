@@ -131,7 +131,7 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
             label: 'action',
             style: 'action',
             value:
-              'pause intake, wait for managed turns, clear routing and feedback state, establish a fresh assignment baseline, replace the intake chat, then restore its prior schedule state',
+              'pause issue assignment and any installed project pickup, wait for managed turns, clear cached tracking while retaining pickup safety evidence, establish a fresh assignment baseline, replace notification chats, then restore each prior schedule state',
           },
         ],
         styles,
@@ -143,6 +143,13 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
           [
             { label: 'agent', style: 'target', value: preview.agentId },
             { label: 'workspace', style: 'field', value: preview.workspace },
+            {
+              label: 'jobs',
+              style: 'field',
+              value: preview.pickup
+                ? 'github-issue-assignment, github-project-pickup'
+                : 'github-issue-assignment',
+            },
             ...(preview.fresh || preview.continuing
               ? [
                   {
@@ -193,6 +200,7 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
           purge: preview.purge,
           continuing: preview.continuing,
           fresh: preview.fresh,
+          jobs: ['github-issue-assignment', ...(preview.pickup ? ['github-project-pickup'] : [])],
           resources: preview.resources,
         })),
       });

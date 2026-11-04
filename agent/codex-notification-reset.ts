@@ -1,3 +1,5 @@
+import notificationResetPickup from './notification-reset-pickup.ts';
+import { projectPickupAutomationId } from './project-pickup-jobs.ts';
 import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -10,6 +12,7 @@ import { automationHash } from './automation-hash.ts';
 import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.ts';
 import {
   codexNotificationResetAutomation,
+  codexNotificationResetPickupAutomation,
   replaceCodexNotificationCoordinator,
 } from './codex-automations.ts';
 import { readCodexAutomations, type SavedAutomation } from './codex-automation-state.ts';
@@ -48,6 +51,7 @@ interface Dependencies extends CodexIntakeDependencies {
   caller?: string;
   threads?: typeof connectCodexThreads;
   automation?: typeof codexNotificationResetAutomation;
+  pickupAutomation?: typeof codexNotificationResetPickupAutomation;
   replaceCoordinator?: typeof replaceCodexNotificationCoordinator;
 }
 
@@ -145,8 +149,11 @@ export default async function runCodexNotificationReset(
       }
       return true;
     });
-  const automation = async () => {
-    const saved = await (deps.automation ?? codexNotificationResetAutomation)(pluginData, deps);
+  const automation = async (pickup = false) => {
+    const saved = pickup
+      ? await (deps.pickupAutomation ?? codexNotificationResetPickupAutomation)(pluginData, deps)
+      : await (deps.automation ?? codexNotificationResetAutomation)(pluginData, deps);
+    if (!saved) return;
     if (
       caller &&
       'targetThreadId' in saved.definition &&
@@ -155,9 +162,10 @@ export default async function runCodexNotificationReset(
       throw new Error('notification-reset-operator-required');
     return saved;
   };
-  const toggle = async (record: NotificationResetRecord, restore: boolean) => {
+  const toggle = async (record: NotificationResetRecord, restore: boolean, pickup: boolean) => {
     const before = JSON.parse(record.automation) as SavedAutomation;
-    const actual = await automation();
+    const actual = await automation(pickup);
+    if (!actual) throw new Error('notification-reset-automation-missing');
     const withoutStatus = (job: SavedAutomation) => ({
       ...job,
       definition: { ...job.definition, status: 'PAUSED' },
@@ -177,7 +185,7 @@ export default async function runCodexNotificationReset(
         'execute this native update once, then rerun notifications reset with the same selection to verify saved state',
     };
   };
-  const adapter: NotificationResetAdapter = {
+  const participant = (pickup: boolean): NotificationResetAdapter => ({
     fence: (run) => current.store.exclusive(() => journal.exclusive(() => run(), true)),
     snapshot: async () => {
       const records = (await journal.read()).records;
@@ -186,7 +194,8 @@ export default async function runCodexNotificationReset(
       if (state.agentId !== current.agentId || state.workspaceDir !== current.workspace)
         throw new Error('notification-reset-scope-changed');
       const contents = { intake: state, records };
-      const saved = await automation();
+      const saved = await automation(pickup);
+      if (!saved) throw new Error('notification-reset-automation-missing');
       if (saved.definition.kind !== 'heartbeat')
         throw new Error('notification-reset-coordinator-missing');
       return {
@@ -203,15 +212,15 @@ export default async function runCodexNotificationReset(
             description: saved.definition.targetThreadId,
             identity: saved.id,
             details: [
-              'archive the intake conversation and create a fresh coordinator; reconnect the paused schedule',
+              'archive the notification conversation and create a fresh coordinator; reconnect the paused schedule',
             ],
             state: 'pending',
           },
-          ...(input.purge ? notificationResetResources(contents) : []),
+          ...(input.purge && !pickup ? notificationResetResources(contents) : []),
         ],
       };
     },
-    pause: (record) => toggle(record, false),
+    pause: (record) => toggle(record, false, pickup),
     idle: async (record) =>
       (await observe(record))
         ? { status: 'done' }
@@ -235,7 +244,7 @@ export default async function runCodexNotificationReset(
       const archive = await withNative(async ({ request }) => {
         const thread = await codexThreadAdapter(request, current.workspace).lookup(id);
         if (!thread || thread.archived) return;
-        if ((await automation()).definition.status !== 'PAUSED')
+        if ((await automation(pickup))?.definition.status !== 'PAUSED')
           throw new Error('notification-reset-pause-required');
         const ui = input.nativeInventory;
         if (
@@ -282,7 +291,7 @@ export default async function runCodexNotificationReset(
             arguments: { threadId: id, archived: true, hostId: 'local' },
           },
           instruction:
-            'archive this intake chat once, then repeat the same reset to verify and replace it',
+            'archive this notification chat once, then repeat the same reset to verify and replace it',
         };
       });
       if (archive) return archive;
@@ -291,6 +300,7 @@ export default async function runCodexNotificationReset(
         before,
         deps,
         { nativeInventory: input.nativeInventory, placementReceipt: input.placementReceipt },
+        pickup ? projectPickupAutomationId : undefined,
       );
       if (replacement.status !== 'done') return replacement;
       const saved = JSON.parse(replacement.automation) as SavedAutomation;
@@ -308,7 +318,7 @@ export default async function runCodexNotificationReset(
       );
       return placement.status === 'done' ? replacement : placement;
     },
-    restore: (record) => toggle(record, true),
+    restore: (record) => toggle(record, true, pickup),
     purge: async (record, resource) => {
       const inventory = parse(record);
       const entry = inventory.records.find(({ id }) => id === resource.identity);
@@ -388,7 +398,10 @@ export default async function runCodexNotificationReset(
         };
       });
     },
-  };
+  });
+  const adapter = notificationResetPickup(participant(false), participant(true), async () =>
+    (await automation(true)) ? participant(true).snapshot() : undefined,
+  );
   const preview = await previewNotificationReset(
     store,
     adapter,
@@ -411,9 +424,10 @@ export default async function runCodexNotificationReset(
       purge: preview.purge,
       continuing: preview.continuing,
       fresh: preview.fresh,
+      jobs: ['github-issue-assignment', ...(preview.pickup ? ['github-project-pickup'] : [])],
       resources: preview.resources,
       instruction:
-        'confirm the selection, then repeat notifications reset with yes:true; intake pauses and managed turns must finish before reset',
+        'confirm the selection, then repeat notifications reset with yes:true; both installed notification jobs pause and managed turns must finish before reset',
     };
   return resetNotifications({ store, adapter, preview });
 }

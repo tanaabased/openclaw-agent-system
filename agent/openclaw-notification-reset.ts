@@ -1,3 +1,5 @@
+import notificationResetPickup from './notification-reset-pickup.ts';
+import { projectPickupAutomationId } from './project-pickup-jobs.ts';
 import { managedPullRequest, managedIssueState, dispatchAdmission } from './managed-issue.ts';
 
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
@@ -32,7 +34,8 @@ interface Dependencies {
   automations: Pick<
     AutomationService,
     'notificationResetSnapshot' | 'notificationResetToggle' | 'notificationResetReplace'
-  >;
+  > &
+    Partial<Pick<AutomationService, 'notificationResetPickupSnapshot'>>;
   credential: Pick<SessionDispatchCredential, 'use'>;
   worktrees: Pick<TrustedGitWorktreeService, 'inspectGitHub' | 'cleanupGitHub'>;
   connect(
@@ -177,7 +180,7 @@ export default class OpenClawNotificationReset {
         return true;
       });
     };
-    const adapter: NotificationResetAdapter = {
+    const participant = (jobId: string): NotificationResetAdapter => ({
       fence: (run) => intake.exclusive(() => journal.exclusive(() => run(), true)),
       snapshot: async () => {
         const records = (await journal.read()).records;
@@ -186,7 +189,8 @@ export default class OpenClawNotificationReset {
         if (state.agentId !== manifest.agent.id || state.workspaceDir !== workspace)
           throw new Error('notification-reset-scope-changed');
         const contents = { intake: state, records };
-        const resources = purge ? notificationResetResources(contents) : [];
+        const resources =
+          purge && jobId === openclawIntakeAutomationId ? notificationResetResources(contents) : [];
         for (const resource of resources.filter(({ kind }) => kind === 'worktree')) {
           const entry = records.find(({ id }) => id === resource.identity)!;
           const item = dispatchAdmission(entry, state.records);
@@ -220,7 +224,7 @@ export default class OpenClawNotificationReset {
         const automation = await deps.automations.notificationResetSnapshot(
           manifest,
           workspace,
-          openclawIntakeAutomationId,
+          jobId,
         );
         if (automation.sessionKey)
           resources.unshift({
@@ -229,7 +233,7 @@ export default class OpenClawNotificationReset {
             description: automation.sessionKey,
             identity: automation.nativeId,
             details: [
-              'archive the intake conversation and create a fresh coordinator; reconnect the paused schedule',
+              'archive the notification conversation and create a fresh coordinator; reconnect the paused schedule',
             ],
             state: 'pending',
           });
@@ -483,7 +487,15 @@ export default class OpenClawNotificationReset {
         if (!(await absent())) throw new Error('notification-reset-worktree-removal-unverified');
         return { status: 'done' };
       },
-    };
+    });
+    const adapter = notificationResetPickup(
+      participant(openclawIntakeAutomationId),
+      participant(projectPickupAutomationId),
+      async () =>
+        (await deps.automations.notificationResetPickupSnapshot?.(manifest, workspace))
+          ? participant(projectPickupAutomationId).snapshot()
+          : undefined,
+    );
     return { store, adapter };
   }
   async preview(manifest: AgentManifest, workspace: string, purge: boolean, fresh = false) {

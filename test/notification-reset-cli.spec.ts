@@ -101,6 +101,7 @@ describe('channels/github/cli/reset', () => {
         ...(await preview(...args)),
         fresh: true,
         continuing: false,
+        pickup: { automation: '{}' },
         resources: [
           {
             id: 'chat-fixture',
@@ -128,7 +129,8 @@ describe('channels/github/cli/reset', () => {
             const text = ansis.strip(f.stdout.join('')).replace(/\s/gu, '');
             for (const signal of [
               'purge',
-              'pauseintake',
+              'pauseissueassignment',
+              'github-project-pickup',
               'baseline',
               'restore',
               'one',
@@ -137,7 +139,7 @@ describe('channels/github/cli/reset', () => {
               'MixedCaseretaineddetail',
               'freshreset',
             ])
-              assert.ok(text.includes(signal));
+              assert.ok(text.includes(signal), signal);
             assert.ok(!text.includes('Chat-Private-9c31'));
           }
           assert.ok(!f.calls.some((call) => call.startsWith('run:')));

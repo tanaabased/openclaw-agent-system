@@ -25,6 +25,7 @@ import {
   acknowledgeCodexAutomation,
   replaceCodexNotificationCoordinator,
   codexNotificationResetAutomation,
+  codexNotificationResetPickupAutomation,
   cancelCodexAutomation,
   inspectCodexAutomations,
   listCodexAutomations,
@@ -231,6 +232,7 @@ describe('agent/codex-automations', () => {
   async function replaceCoordinator(
     before: SavedAutomation,
     dependencies: CodexAutomationDependencies,
+    jobId?: string,
   ) {
     for (let i = 0; i < 6; i++) {
       const effect = await replaceCodexNotificationCoordinator(
@@ -238,6 +240,7 @@ describe('agent/codex-automations', () => {
         before,
         dependencies,
         inputs(),
+        jobId,
       );
       if (!applySidebar(effect)) return effect;
     }
@@ -486,7 +489,7 @@ describe('agent/codex-automations', () => {
     await saveManifest();
     const conversations = new Map<
       string,
-      { id: string; name?: string; model?: string; effort?: string }
+      { id: string; name?: string; model?: string; effort?: string; archived?: boolean }
     >();
     const dependencies = {
       ...deps(),
@@ -571,6 +574,39 @@ describe('agent/codex-automations', () => {
     await assert.rejects(
       inspectCodexPickupActivation(pluginData, dependencies),
       rejectsCode('project-pickup-automation-drift'),
+    );
+    await rm(join(codexHome, 'automations', 'copied-marker'), { recursive: true });
+    await nativeWrite({ ...saved.definition, status: 'PAUSED' }, saved.id);
+    const resetBefore = await codexNotificationResetPickupAutomation(pluginData, dependencies);
+    assert.ok(resetBefore && resetBefore.definition.kind === 'heartbeat');
+    conversations.get(resetBefore.definition.targetThreadId)!.archived = true;
+    await rm(join(codexHome, 'automations', saved.id), { recursive: true });
+    const resetCreate = await replaceCoordinator(
+      resetBefore,
+      dependencies,
+      'github-project-pickup',
+    );
+    assert.ok(
+      resetCreate.status === 'native-action' && resetCreate.request.tool === 'automation_update',
+    );
+    assert.equal(resetCreate.request.arguments.mode, 'create');
+    const resetTarget = String(resetCreate.request.arguments.targetThreadId);
+    await nativeWrite(
+      { ...resetBefore.definition, targetThreadId: resetTarget },
+      'pickup-replaced-native',
+    );
+    const resetDone = await replaceCoordinator(resetBefore, dependencies, 'github-project-pickup');
+    assert.equal(resetDone.status, 'done');
+    const enrollmentAfterReset = (await enrollments.read()).records[0]!;
+    assert.deepEqual(enrollmentAfterReset.enrollment, first.enrollment);
+    assert.equal(enrollmentAfterReset.nativeId, 'pickup-replaced-native');
+    assert.deepEqual(
+      await replaceCoordinator(resetBefore, dependencies, 'github-project-pickup'),
+      resetDone,
+    );
+    assert.equal(
+      (await codexNotificationResetPickupAutomation(pluginData, dependencies))?.definition.status,
+      'PAUSED',
     );
   });
 

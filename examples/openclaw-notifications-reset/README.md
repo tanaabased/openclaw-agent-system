@@ -1,14 +1,13 @@
 # OpenClaw Notification Reset Example
 
-Preview and confirm a notification reset. Verify that it replaces the intake chat,
-clears saved tracking, establishes a fresh assignment baseline, and restores the
-previous intake schedule.
+Preview and confirm a notification reset. Verify that it replaces both notification chats, clears disposable tracking, establishes a fresh
+assignment baseline, and restores enabled intake alongside paused pickup.
 
 ## What Belongs Here
 
 - An operator preview with readable targets and masked chat identifiers, and its exact confirmation token for the bound agent.
 - Native coordinator archival, cleared tracking, a new reset generation, and a ready empty baseline.
-- Restoration of the installed intake automation's enabled state after reset.
+- Restoration of enabled issue assignment and installed-but-paused project pickup after both chats are replaced.
 
 ## What Does Not Belong Here
 
@@ -19,6 +18,7 @@ previous intake schedule.
 
 - Setup creates one real assessment, closes its issue, removes its worktree publicly, and observes retirement before reset. This completed record makes tracking-clear verification meaningful without depending on the full retirement/fresh-assignment journey.
 - Strict AIMock reuses the existing assessment protocol. The Gateway, native coordinator, reset command, automation, and receipts remain real.
+- A disposable milestone enrolls paused pickup without running another model turn. Assignment/allowance retention and partial recovery stay in controlled source coverage.
 - One 61-second setup wait observes retirement; zero cleanup grace does not bypass the lifecycle observation interval. Reset diagnostics preserve safe phase/operation details and keep raw provider errors private.
 - CI owns its disposable issue, workspaces/state, and SSH registration. Only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule isolate discovery; cleanup stops the Gateway before external changes.
 
@@ -40,7 +40,9 @@ mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/tanaabot/keys"
 owner_node=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id)
 actor_node=$(GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id')
 receiver_node=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api user --jq 'select(.login == "tanaabot") | .node_id')
-sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__RECEIVER_NODE_ID__|$receiver_node|g" -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
+milestone=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method POST repos/tanaabased/big-test-bucket/milestones -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-reset" --jq .number)
+printf '%s\n' "$milestone" > "$TMPDIR/reset-milestone"
+sed -e "s|__MILESTONE_NUMBER__|$milestone|g" -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__RECEIVER_NODE_ID__|$receiver_node|g" -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
 mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/tanaabot/agent.yaml"
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/tanaabot/keys/id_ed25519"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/tanaabot/keys/id_ed25519.pub"
@@ -139,23 +141,28 @@ jq -es '[.[].records[]] | length == 1 and .[0].retired.at != null' "$XDG_CONFIG_
 # should preview the selected agent with a masked coordinator before confirmation
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/tanaabot"
 openclaw agent-system notifications reset --agent reset-tanaabot --fresh --preview --json > "$TMPDIR/reset-preview.json"
-jq -e '.status == "confirmation-required" and .targets[0].fresh == true and any(.targets[0].resources[]; .kind == "coordinator")' "$TMPDIR/reset-preview.json"
-old_coordinator=$(jq -er '.targets[0].resources[] | select(.kind == "coordinator") | .description' "$TMPDIR/reset-preview.json")
+jq -e '.status == "confirmation-required" and .targets[0].fresh == true and (.targets[0].jobs | index("github-project-pickup")) != null and ([.targets[0].resources[] | select(.kind == "coordinator")] | length) == 2' "$TMPDIR/reset-preview.json"
+old_coordinator=$(jq -er '.targets[0].resources | map(select(.kind == "coordinator")) | .[0].description' "$TMPDIR/reset-preview.json")
 human_preview=$(NO_COLOR=1 openclaw agent-system notifications reset --agent reset-tanaabot --fresh --preview)
 printf '%s\n' "$human_preview" | grep -F 'agent' | grep -F 'reset-tanaabot'
-masked_coordinator=$(jq -er '.targets[0].resources[] | select(.kind == "coordinator") | "***" + .description[-4:]' "$TMPDIR/reset-preview.json")
+masked_coordinator=$(jq -er '.targets[0].resources | map(select(.kind == "coordinator")) | "***" + .[0].description[-4:]' "$TMPDIR/reset-preview.json")
 printf '%s\n' "$human_preview" | grep -F 'coordinator' | grep -F "$masked_coordinator"
 if printf '%s\n' "$human_preview" | grep -F "$old_coordinator"; then
   exit 1
 fi
 
-# should reset local management with a fresh coordinator and restore the installed intake setting
+# should replace both notification chats and restore their independent prior settings
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/tanaabot"
-old_coordinator=$(jq -er '.targets[0].resources[] | select(.kind == "coordinator") | .description' "$TMPDIR/reset-preview.json")
+old_coordinator=$(jq -er '.targets[0].resources | map(select(.kind == "coordinator")) | .[0].description' "$TMPDIR/reset-preview.json")
 confirmation=$(jq -er .confirmation "$TMPDIR/reset-preview.json")
 openclaw agent-system notifications reset --agent reset-tanaabot --fresh --confirmation "$confirmation" --yes --json | jq -e '.results | length == 1 and .[0].status == "complete" and .[0].automationRestored == true'
-openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$old_coordinator" '{key:$key}')" --json | jq -e '.session.archived == true'
-openclaw agent-system automations list --agent reset-tanaabot --json | tee "$TMPDIR/reset-automations-after.json" | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == true)'
+old_pickup=$(jq -er '.targets[0].resources | map(select(.kind == "coordinator")) | .[1].description' "$TMPDIR/reset-preview.json")
+for old_chat in "$old_coordinator" "$old_pickup"; do
+  openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$old_chat" '{key:$key}')" --json | jq -e '.session.archived == true'
+done
+openclaw agent-system automations list --agent reset-tanaabot --json | tee "$TMPDIR/reset-automations-after.json" | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == true) and any(.jobs[]; .id == "github-project-pickup" and .nativeEnabled == false)'
+pickup=$(jq -er '.jobs[] | select(.id == "github-project-pickup") | .routing | sub("^session:"; "")' "$TMPDIR/reset-automations-after.json")
+test "$pickup" != "$old_pickup"
 coordinator=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .routing | sub("^session:"; "")' "$TMPDIR/reset-automations-after.json")
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$coordinator" '{key:$key}')" --json | jq -e '.session.category == "AGENT SYSTEM"'
 jq -es 'all(.[]; (.records | length) == 0 and .resetGeneration != null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
@@ -169,6 +176,10 @@ GitHub issues, PRs, branches, and SSH registrations persist beyond the runner. Q
 ```bash
 # should stop the isolated gateway
 openclaw-gateway stop --timeout 340
+
+# should delete the disposable pickup milestone after native work stops
+milestone=$(cat "$TMPDIR/reset-milestone")
+GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method DELETE "repos/tanaabased/big-test-bucket/milestones/$milestone"
 
 # should report strict model failures after the final native turn
 curl --fail-with-body --silent --show-error http://127.0.0.1:4010/proof/diagnostics
