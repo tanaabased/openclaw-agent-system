@@ -1,3 +1,5 @@
+import { appendFileSync } from 'node:fs';
+
 import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copilotkit/aimock';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
@@ -5,13 +7,23 @@ import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 const model = /^(?:aimock\/)?gpt-5\.5$/u;
 
 function reportInput(request: ChatCompletionRequest) {
-  const user = request.messages.findLast((message) => message.role === 'user');
-  const content = user ? (getTextContent(user.content) ?? '') : '';
   const marker = 'Captured command result (data):\n';
+  const messages = request.messages
+    .filter((message) => message.role === 'user')
+    .map((message) => getTextContent(message.content) ?? '');
+  // codex carries stop-hook feedback in xml; retain the original literal copy target.
+  const promptIndex = messages.findLastIndex(
+    (text) => text.includes(marker) && !text.trimStart().startsWith('<hook_prompt '),
+  );
+  const content = messages[promptIndex] ?? '';
+  const bodyMarker = '\n\nResponse body (copy literally from the next line to end of message):\n';
   const at = content.lastIndexOf(marker);
   if (at < 0) return;
   try {
-    const value = JSON.parse(content.slice(at + marker.length).trim());
+    const captured = content.slice(at + marker.length);
+    const bodyAt = captured.indexOf(bodyMarker);
+    const value = JSON.parse((bodyAt < 0 ? captured : captured.slice(0, bodyAt)).trim());
+    const body = bodyAt < 0 ? undefined : captured.slice(bodyAt + bodyMarker.length);
     if (typeof value.runLine !== 'string' || typeof value.executionId !== 'string') return;
     if (
       (value.id === 'success' &&
@@ -19,8 +31,14 @@ function reportInput(request: ChatCompletionRequest) {
         value.reason === 'Exit 0' &&
         value.stdout?.body === '' &&
         value.presentation?.kind === 'preferred' &&
-        value.presentation.body ===
-          `> ## ⚠️ Source alpha\n>\n> Archive alpha saved; activation unverified.\n\n## Source beta\n\nArchive beta already current.\n\n**Runner result:** ✅ success · Exit 0\n\n${value.runLine}` &&
+        body ===
+          ['alpha', 'beta', 'gamma', 'delta']
+            .map(
+              (source) =>
+                `> ## ${source === 'alpha' ? '⚠️' : '✅'} Source ${source}\n>\n> Archive ${source} saved${source === 'alpha' ? '; activation unverified' : ''}.`,
+            )
+            .join('\n\n') +
+            `\n\n**Runner result:** ✅ success · Exit 0\n\n${value.runLine}` &&
         value.stderr?.body === '') ||
       (value.id === 'failure' &&
         value.outcome === 'error' &&
@@ -31,10 +49,21 @@ function reportInput(request: ChatCompletionRequest) {
         typeof value.presentation.footer === 'string' &&
         value.presentation.footer.includes(value.runLine))
     )
-      return value as {
+      return {
+        ...value,
+        body,
+        correction: messages
+          .slice(promptIndex)
+          .some((text) => text.includes('Replace the rejected response in full.')),
+        prompts: messages.slice(promptIndex),
+      } as {
         id: 'success' | 'failure';
         runLine: string;
-        presentation: { kind: 'preferred'; body: string } | { kind: 'fallback'; footer: string };
+        body?: string;
+        correction: boolean;
+        executionId: string;
+        prompts: string[];
+        presentation: { kind: 'preferred' } | { kind: 'fallback'; footer: string };
       };
   } catch {
     return;
@@ -45,13 +74,27 @@ const reportFixture: Fixture = {
   match: { model, predicate: (request) => Boolean(reportInput(request)) },
   response: (request) => {
     const input = reportInput(request)!;
-    return {
-      id: `report-${input.id}`,
+    const response = {
+      id: `report-${input.executionId}-${input.correction ? 'corrected' : 'initial'}`,
       content:
         input.presentation.kind === 'preferred'
-          ? input.presentation.body
+          ? input.correction
+            ? input.body!
+            : input.body!.replaceAll('\n\n', '\n>\n') + '\n\n' + JSON.stringify(input.body)
           : `> ## ❌ failure failed\n>\n> Archive delta failed: destination unavailable.\n\n${input.presentation.footer}`,
     };
+    if (process.env.COMMAND_CHAT_EVIDENCE_PATH)
+      appendFileSync(
+        process.env.COMMAND_CHAT_EVIDENCE_PATH,
+        JSON.stringify({
+          executionId: input.executionId,
+          correction: input.correction,
+          prompts: input.prompts,
+          prepared: input.body,
+          response: response.content,
+        }) + '\n',
+      );
+    return response;
   },
 };
 

@@ -7,7 +7,8 @@ reports through the real Gateway response path.
 ## What belongs here
 
 - Shared persistent destination creation and reuse by command automations.
-- Preferred mixed structured/Markdown cards and fallback diagnostics reaching the existing posting model.
+- Four separately quoted source cards and fallback diagnostics reaching the existing posting model.
+- One bounded correction replacing merged cards and an escaped duplicate before terminal delivery.
 - Corresponding durable reports after reconnect, without repeating commands.
 - Report-time model selection with an effort different from the agent default.
 - Hosted Codex report formatting without an unsupported prompt-hook tool allowlist.
@@ -23,7 +24,7 @@ reports through the real Gateway response path.
 - Strict AIMock supplies both runtimes' provider responses with synthetic credentials and no live fallback. Commands, chat creation, report delivery, and history remain real; no live-model credential is required.
 - Hosted Codex uses `gpt-5.5` from its native catalog. After install, capture the agent's catalog before and after provider refresh and require that model to be available through Codex; inference routing to AIMock alone does not establish runtime support.
 - The fixture accepts only the expected captured streams and process outcome. Assertions verify the returned message in native history, not prose quality or browser rendering.
-- The success mode emits one mixed report document, including an application warning on exit zero; failure mode keeps arbitrary output. Both runtimes call one script with a mode flag. Each command runs once per runtime. Output-format, empty-output, and timeout permutations remain in source tests.
+- The success mode emits four structured source cards, including an application warning on exit zero; failure mode keeps arbitrary output. Both runtimes call one script with a mode flag. Each command runs once per runtime. The mock first merges the cards and appends an escaped copy, then returns the literal body only after the replacement instruction. This adds one synthetic correction response per runtime, without another command run or restart. Mixed authored Markdown, empty-output, and timeout permutations remain in source tests.
 - This proves report delivery, not model judgment or exhaustive native-tool interception. Source components exercise the blanket blocker and preserve the automation result after blocked attempts.
 - Observation deadlines include CLI startup and RPC time.
 - Native OpenClaw output hooks omit executed effort. Verify the model in the retained report and high effort in the formatter's exact native run trace; do not substitute requested settings for missing execution telemetry.
@@ -33,6 +34,7 @@ reports through the real Gateway response path.
 ```bash
 # should create one reporting chat per runtime for both command declarations
 export OPENAI_API_KEY=agent-system-aimock-test
+export COMMAND_CHAT_EVIDENCE_PATH="$TMPDIR/command-chat-model.jsonl"
 # mock catalog discovery without changing the provider route's supported runtimes.
 export NODE_OPTIONS="--import=$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat/catalog-fixture.mjs"
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service --model openai/gpt-5.5
@@ -62,7 +64,7 @@ jq -e 'any(.models[]; .provider == "openai" and .id == "gpt-5.5" and .available 
 
 ```bash
 # should retain both mock-formatted reports without rerunning their commands
-trap 'result=$?; if test "$result" -ne 0; then curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/diagnostics >&2 || true; fi; exit "$result"' EXIT
+trap 'result=$?; if test "$result" -ne 0; then cat "$TMPDIR/command-chat-model.jsonl" >&2 || true; curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/diagnostics >&2 || true; curl --silent --show-error --max-time 5 http://127.0.0.1:4010/proof/evidence >&2 || true; fi; exit "$result"' EXIT
 for runtime in openclaw codex; do
   workspace="$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat"
   model=aimock/gpt-5.5
@@ -83,26 +85,30 @@ for runtime in openclaw codex; do
       if jq -e 'any(.reports[]; .status == "delivered" or .status == "failed" or .status == "uncertain")' "$TMPDIR/report-$runtime-$mode.json" >/dev/null; then break; fi
       sleep 2
     done
+    report_id=$(jq -er '.reports[0].executionId' "$TMPDIR/report-$runtime-$mode.json")
+    openclaw gateway call chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json > "$TMPDIR/history-$runtime-$mode.json"
     if ! jq -e --arg reason "$reason" --arg model "$model" --arg runtime "$runtime" '.reports | length == 1 and all(.[]; .status == "delivered" and .reason == $reason and (.messageId | type == "string") and .requested == {model:$model,effort:"high"} and .effective.model == .requested.model and .effective.harness == $runtime and (.effective.effort == null or .effective.effort == "high"))' "$TMPDIR/report-$runtime-$mode.json"; then
       jq '{id,reports}' "$TMPDIR/report-$runtime-$mode.json"
+      jq --arg run "$report_id" '.messages[] | select(.__openclaw.runId == $run)' "$TMPDIR/history-$runtime-$mode.json"
       exit 1
     fi
-    report_id=$(jq -er '.reports[0].executionId' "$TMPDIR/report-$runtime-$mode.json")
     if test "$runtime" = openclaw; then
       grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_id " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
     fi
     message_id=$(jq -er '.reports[0].messageId' "$TMPDIR/report-$runtime-$mode.json")
-    openclaw gateway call chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json > "$TMPDIR/chat-history.json"
-    jq -er --arg id "$message_id" '.messages[] | select(.__openclaw.id == $id and .role == "assistant") | [.content[]? | select(.type == "text") | .text] | join("\n")' "$TMPDIR/chat-history.json" > "$TMPDIR/card-$runtime-$mode.md"
+    jq -er --arg id "$message_id" '.messages[] | select(.__openclaw.id == $id and .role == "assistant") | [.content[]? | select(.type == "text") | .text] | join("\n")' "$TMPDIR/history-$runtime-$mode.json" > "$TMPDIR/card-$runtime-$mode.md"
     cat "$TMPDIR/card-$runtime-$mode.md"
     grep -F '> ##' "$TMPDIR/card-$runtime-$mode.md"
     grep -F "$reason" "$TMPDIR/card-$runtime-$mode.md"
   done
   grep -F '> ## ⚠️ Source alpha' "$TMPDIR/card-$runtime-success.md"
-  grep -F '## Source beta' "$TMPDIR/card-$runtime-success.md"
+  for source in beta gamma delta; do
+    grep -F "> ## ✅ Source $source" "$TMPDIR/card-$runtime-success.md"
+  done
   grep -F '**Runner result:** ✅ success' "$TMPDIR/card-$runtime-success.md"
-  test "$(grep -c '^> ##' "$TMPDIR/card-$runtime-success.md")" = 1
-  test "$(grep -c '^## Source beta' "$TMPDIR/card-$runtime-success.md")" = 1
+  node "$GITHUB_WORKSPACE/examples/openclaw-automation-command-chat/assert-report.mjs" "$TMPDIR/card-$runtime-success.md"
+  if grep -F '&gt; ##' "$TMPDIR/card-$runtime-success.md"; then exit 1; fi
+  if grep -F '\n' "$TMPDIR/card-$runtime-success.md"; then exit 1; fi
   grep -Fi delta "$TMPDIR/card-$runtime-failure.md"
   grep -F '❌' "$TMPDIR/card-$runtime-failure.md"
   test "$(wc -l < command.runs | tr -d ' ')" = 2

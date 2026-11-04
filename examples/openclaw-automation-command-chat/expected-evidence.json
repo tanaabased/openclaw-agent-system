@@ -1,13 +1,13 @@
 {
-  "finalResponseCount": 4,
+  "finalResponseCount": 6,
   "model": "aimock/gpt-5.5",
-  "promptRequestCount": 4,
+  "promptRequestCount": 6,
   "provider": "aimock",
-  "requestCount": 4,
-  "responsesApiRequestCount": 4,
+  "requestCount": 6,
+  "responsesApiRequestCount": 6,
   "scenario": "openclaw-automation-command-chat",
   "schemaVersion": 2,
   "strictMissCount": 0,
-  "successfulFixtureResponseCount": 4,
+  "successfulFixtureResponseCount": 6,
   "tools": []
 }
