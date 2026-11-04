@@ -227,8 +227,9 @@ describe('project pickup installation enrollment', () => {
         assert.deepEqual(jobs[0]!.schedule.times, [600, 601, 602, 603, 605, 606, 607, 608]);
       assert.equal(
         jobs[0]!.overrides?.[runtime]?.model,
-        runtime === 'codex' ? 'gpt-6-luna' : 'openai/gpt-6-astra',
+        runtime === 'codex' ? 'gpt-6-astra' : 'openai/gpt-6-astra',
       );
+      assert.equal(jobs[0]!.overrides?.[runtime]?.effort, 'high');
       policy.projectPickup!.paused = true;
       assert.equal(projectPickupJobs(manifest, runtime)[0]!.enabled, false);
       policy.projectPickup!.paused = false;
