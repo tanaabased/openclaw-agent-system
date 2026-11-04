@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const hostRequire = createRequire(require.resolve('openclaw/plugin-sdk/plugin-entry'));
-const { marked } = await import(hostRequire.resolve('marked'));
+const { marked } = hostRequire('marked');
 const body = await readFile(process.argv[2], 'utf8');
 const blocks = marked.lexer(body).filter((token) => token.type !== 'space');
 assert.deepEqual(
