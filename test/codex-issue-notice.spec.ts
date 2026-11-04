@@ -117,6 +117,22 @@ describe('agent/codex-issue-notice', () => {
     );
   });
 
+  it('should describe a private-state snapshot conflict as contention, not identity mismatch', () => {
+    const notice = codexIssueNotice({
+      event: 'failure',
+      code: 'private-state-snapshot-conflict',
+      changed: true,
+    });
+    assert.equal(notice.severity, 'warning');
+    assert.match(notice.summary, /another update changed the saved private-state snapshot/i);
+    assert.match(notice.next, /preserve the existing records/i);
+    assert.match(notice.next, /read the latest snapshot.*reconcile/i);
+    assert.doesNotMatch(
+      `${notice.summary} ${notice.next}`,
+      /identity|account.*did not match|corrupt/i,
+    );
+  });
+
   it('should recover stale previews through the same action without returning implementation to assessment', () => {
     const notice = codexIssueNotice({
       event: 'failure',

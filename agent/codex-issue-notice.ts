@@ -211,6 +211,15 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       next: 'Check whether the issue is still open, assigned to this agent, and authorized by the configured assigner. Keep any existing work.',
     };
 
+  if (code === 'private-state-snapshot-conflict')
+    return {
+      severity: 'warning',
+      title: 'Tracking state changed during the update',
+      summary:
+        'Another update changed the saved private-state snapshot before this change could be retained.',
+      next: 'Preserve the existing records and work. Read the latest snapshot, reconcile the intended update against it, and retry only after checking for concurrent changes.',
+    };
+
   if (
     /state-|readback-diverged|identity-mismatch|identity-invalid|account-changed|resource-changed/u.test(
       code,
