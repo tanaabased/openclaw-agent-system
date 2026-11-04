@@ -1,8 +1,24 @@
 import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copilotkit/aimock';
 
-import currentTurn, { isOpenClawAIMockRuntimeContext } from '../../scripts/aimock-messages.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
+
+function isRuntimeContext(text: string): boolean {
+  return ['<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>', 'OpenClaw runtime context:'].some((prefix) =>
+    text.trimStart().startsWith(prefix),
+  );
+}
+
+function currentTurn(request: ChatCompletionRequest) {
+  return request.messages.slice(
+    Math.max(
+      0,
+      request.messages.findLastIndex(
+        ({ role, content }) => role === 'user' && !isRuntimeContext(getTextContent(content) ?? ''),
+      ),
+    ),
+  );
+}
 
 function hasCurrentResult(request: ChatCompletionRequest): boolean {
   return currentTurn(request).some(({ role }) => role === 'tool');
@@ -12,7 +28,7 @@ function userContains(request: ChatCompletionRequest, marker: string): boolean {
   const prompt = request.messages
     .filter(({ role }) => role === 'user')
     .map(({ content }) => getTextContent(content) ?? '')
-    .findLast((text) => !isOpenClawAIMockRuntimeContext(text));
+    .findLast((text) => !isRuntimeContext(text));
   return prompt?.includes(marker) ?? false;
 }
 

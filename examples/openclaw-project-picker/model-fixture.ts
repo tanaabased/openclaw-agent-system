@@ -9,7 +9,6 @@ import {
 import { Value } from 'typebox/value';
 import type { TSchema } from 'typebox';
 
-import currentMessages from '../../scripts/aimock-messages.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
 
@@ -28,7 +27,16 @@ const attemptStage = (stage: string, attempt: number) => `${stage}-${attempt}`;
 
 /** model choices are fixed; identities, eligibility, assignment and work mode must come from tools. */
 export function pickupResponse(request: ChatCompletionRequest): FixtureResponse | undefined {
-  const messages = currentMessages(request);
+  const messages = request.messages.slice(
+    Math.max(
+      0,
+      request.messages.findLastIndex(
+        ({ role, content }) =>
+          role === 'user' &&
+          !getTextContent(content)?.trimStart().startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>'),
+      ),
+    ),
+  );
   const prompt = messages
     .filter(({ role }) => role === 'user')
     .map(({ content }) => getTextContent(content) ?? '')

@@ -1,7 +1,6 @@
-import { getTextContent, matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
+import { getTextContent, type ChatCompletionRequest } from '@copilotkit/aimock';
 
 import openClawAIMockEvidence from './aimock-evidence.ts';
-import currentMessages, { isOpenClawAIMockRuntimeContext } from './aimock-messages.ts';
 import type { OpenClawAIMockScenario } from './aimock-scenario.ts';
 import { matchesOpenClawAIMockToolCallId } from './aimock-tool-result.ts';
 import { normalizeToolSearchRequest } from './aimock-tool-search.ts';
@@ -22,9 +21,7 @@ interface OpenClawAIMockDiagnostics {
       userPrompt: boolean;
       toolSearch: boolean;
       tools: Record<string, boolean>;
-      fixtures: Array<boolean | 'error'>;
     };
-    turn: { messages: number; runtimeContextMessages: number; toolResults: number };
     results: Array<{ callId: string | undefined; content: string }>;
   }>;
 }
@@ -58,25 +55,6 @@ function requestChecks(scenario: OpenClawAIMockScenario, entry: JournalEntry) {
         normalized?.tools?.some((tool) => tool.function.name === name) === true,
       ]),
     ),
-    fixtures: scenario.fixtures.map((fixture) => {
-      try {
-        return matchFixture([fixture], request) !== null;
-      } catch {
-        return 'error' as const;
-      }
-    }),
-  };
-}
-
-function turnCounts(entry: JournalEntry) {
-  const messages = currentMessages(entry.body as ChatCompletionRequest);
-  return {
-    messages: messages.length,
-    runtimeContextMessages: messages.filter(
-      ({ role, content }) =>
-        role === 'user' && isOpenClawAIMockRuntimeContext(getTextContent(content) ?? ''),
-    ).length,
-    toolResults: messages.filter(({ role }) => role === 'tool').length,
   };
 }
 
@@ -128,7 +106,6 @@ export default function openClawAIMockDiagnostics(
       status: entry.response.status,
       matched: entry.response.fixture !== null,
       checks: requestChecks(scenario, entry),
-      turn: turnCounts(entry),
       results: (entry.body?.messages ?? [])
         .filter(
           (message) =>

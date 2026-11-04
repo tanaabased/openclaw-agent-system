@@ -38,42 +38,33 @@ describe('agent/automation-gateway', () => {
         ['true', '0', false],
         ['true', '1', true],
       ] as const) {
-        for (const method of [
-          'sessions.create',
-          'sessions.resolve',
-          'cron.add',
-          'cron.update',
-        ] as const) {
-          process.env.CI = ci;
-          process.env.OPENCLAW_DEBUG = debug;
-          let calls = 0;
-          const request = createAutomationGateway(async () => {
-            calls++;
-            throw Object.assign(
-              new Error(
-                'snapshot rejected for private-session with opaque-test-secret and nested-command',
-              ),
-              {
-                name: 'GatewayClientRequestError',
-                gatewayCode: 'INVALID_REQUEST',
-                retryable: false,
-              },
-            );
-          });
-          await assert.rejects(
-            request(method, { key: 'private-session', payload: { command: ['nested-command'] } }),
-            (error: unknown) => {
-              assert.ok(error instanceof AutomationError);
-              assert.equal(Boolean(error.diagnostic?.nativeRejection), capture);
-              assert.doesNotMatch(
-                JSON.stringify(error.diagnostic),
-                /opaque-test-secret|private-session|nested-command/,
-              );
-              return true;
+        process.env.CI = ci;
+        process.env.OPENCLAW_DEBUG = debug;
+        let calls = 0;
+        const request = createAutomationGateway(async () => {
+          calls++;
+          throw Object.assign(
+            new Error('snapshot rejected for private-session with opaque-test-secret'),
+            {
+              name: 'GatewayClientRequestError',
+              gatewayCode: 'INVALID_REQUEST',
+              retryable: false,
             },
           );
-          assert.equal(calls, 1);
-        }
+        });
+        await assert.rejects(
+          request('sessions.create', { key: 'private-session' }),
+          (error: unknown) => {
+            assert.ok(error instanceof AutomationError);
+            assert.equal(Boolean(error.diagnostic?.nativeRejection), capture);
+            assert.doesNotMatch(
+              JSON.stringify(error.diagnostic),
+              /opaque-test-secret|private-session/,
+            );
+            return true;
+          },
+        );
+        assert.equal(calls, 1);
       }
     } finally {
       for (const [key, value] of Object.entries(previous)) {

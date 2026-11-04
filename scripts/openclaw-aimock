@@ -142,8 +142,6 @@ configure_model() {
   openclaw config set models.providers.aimock "$model_config" --strict-json
   openclaw models set "$model"
   openclaw config set agents.defaults.models "$model_defaults" --strict-json --merge
-  # synthetic credentials must not select a provider's automatic utility route.
-  openclaw config set agents.defaults.utilityModel '""' --strict-json
   openclaw config validate --json | jq -e '.valid == true'
 }
 

@@ -10,7 +10,7 @@ references for product behavior.
 - Bun from [.bun-version](./.bun-version) for installs, scripts, and builds
 - Node.js from [.node-version](./.node-version) for tests and OpenClaw
 - Homebrew dependencies from [Brewfile](./Brewfile)
-- OpenClaw 2026.10.10 for development and minimum package compatibility
+- OpenClaw 2026.10.9 for development and minimum package compatibility
 - A configured `tanaabot` agent with usable model authentication only for the recommended live DevGuard workflow
 
 OpenClaw does not support running the Gateway under Bun. Agent System builds ESM for Node.js and keeps package dependencies external.
@@ -213,7 +213,7 @@ bun run plugin:check
 Run `bun run test:release` when package contents, compatibility metadata, or release wiring change.
 
 The ClawHub package check rejects breakages, unavailable SDK targets, and unexpected
-warnings. Its explicit 10.10 exceptions retain cold configuration loading and final
+warnings. Its explicit 10.9 exceptions retain cold configuration loading and final
 synchronous session authority checks; a passing result is not deprecation-free.
 
 ### Leia Scenarios

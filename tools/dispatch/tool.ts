@@ -67,7 +67,7 @@ export default function createDispatchTool(input: {
   assessmentGit?: OpenClawDispatchDependencies['assessmentGit'];
 }) {
   const { api } = input;
-  // 10.10 async reads are descriptive; final admission still needs this synchronous guard.
+  // 10.9 async reads are descriptive; final admission still needs this synchronous guard.
   const assertSessionCurrent = (sessionKey: string, sessionId: string) => {
     const entry = api.runtime.agent.session.getSessionEntry({
       sessionKey,

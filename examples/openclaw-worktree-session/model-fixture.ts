@@ -1,15 +1,23 @@
 import { getTextContent, type ChatCompletionRequest, type Fixture } from '@copilotkit/aimock';
 
-import currentTurn, { isOpenClawAIMockRuntimeContext } from '../../scripts/aimock-messages.ts';
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
+
+function currentTurn(request: ChatCompletionRequest) {
+  const index = request.messages.findLastIndex(
+    ({ role, content }) =>
+      role === 'user' &&
+      !getTextContent(content)?.trimStart().startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>'),
+  );
+  return request.messages.slice(Math.max(0, index));
+}
 
 function currentPrompt(request: ChatCompletionRequest, phase: string): boolean {
   return (
     request.messages
       .filter(({ role }) => role === 'user')
       .map(({ content }) => getTextContent(content) ?? '')
-      .findLast((text) => !isOpenClawAIMockRuntimeContext(text))
+      .findLast((text) => !text.trimStart().startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>'))
       ?.includes(`Execute the worktree ${phase} probe.`) ?? false
   );
 }

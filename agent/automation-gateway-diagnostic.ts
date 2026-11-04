@@ -113,22 +113,13 @@ export function retainAutomationGatewayDiagnostic(value: unknown): GatewayErrorD
 
 function rejectionEvidence(value: unknown, secrets: readonly string[] = []) {
   if (!value || typeof value !== 'object') return undefined;
-  const rawMessage =
-    'message' in value && typeof value.message === 'string' ? value.message : undefined;
-  // the native validation header labels an error, not an echoed request body.
-  const header =
-    rawMessage?.match(
-      /^invalid (?:sessions\.(?:resolve|create)|cron\.(?:add|update)) params:\s*/u,
-    )?.[0] ?? '';
-  const message = rawMessage
-    ? providerErrorMessage(
-        header +
-          rawMessage
-            .slice(header.length)
-            .replace(/(?<![\w/])(?:params|request|payload)["']?\s*[:=][\s\S]*/giu, '[redacted]'),
-        secrets,
-      )
-    : undefined;
+  const message =
+    'message' in value && typeof value.message === 'string'
+      ? providerErrorMessage(
+          value.message.replace(/\b(?:params|request|payload)\s*[:=][\s\S]*/giu, '[redacted]'),
+          secrets,
+        )
+      : undefined;
   const detailCode =
     'detailCode' in value &&
     typeof value.detailCode === 'string' &&
@@ -218,10 +209,10 @@ export default function automationGatewayDiagnostic(
     error.message === 'model catalog is still loading; retry in a few seconds'
   )
     diagnostic.reason = 'model-catalog-loading';
-  // opt-in disposable ci evidence excludes arbitrary details and request payloads.
+  // Opt-in disposable CI evidence excludes arbitrary details and request payloads.
   if (
     evidence &&
-    ['sessions.resolve', 'sessions.create', 'cron.add', 'cron.update'].includes(method) &&
+    method === 'sessions.create' &&
     diagnostic.category === 'rejected' &&
     error instanceof Error
   ) {

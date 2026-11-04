@@ -21,18 +21,15 @@ for await (const entry of parser) {
 const source = JSON.parse(entries[0].bytes.toString('utf8'));
 assert.equal(source.agentId, 'backup-tanaabot');
 assert.equal(source.coverage.openclawState, 'captured');
-// verification accepts supported historical schemas; exercise a genuinely newer one.
-const userVersion = source.snapshot.manifest.database.userVersion + 1;
-assert.ok(Number.isSafeInteger(userVersion) && userVersion > 1 && userVersion <= 2147483647);
 const databasePath = join(process.env.TMPDIR, 'prune-historical.sqlite');
 const database = new DatabaseSync(databasePath);
 database.exec(`
-  PRAGMA user_version = ${userVersion};
+  PRAGMA user_version = 24;
   CREATE TABLE schema_meta (meta_key TEXT PRIMARY KEY, role TEXT, schema_version INTEGER, agent_id TEXT);
 `);
 database
   .prepare('INSERT INTO schema_meta VALUES (?, ?, ?, ?)')
-  .run('primary', 'agent', userVersion, source.agentId);
+  .run('primary', 'agent', 24, source.agentId);
 database.close();
 const bytes = await readFile(databasePath);
 for (const year of [2000, 2001]) {
@@ -45,7 +42,7 @@ for (const year of [2000, 2001]) {
       role: 'agent',
       agentId: source.agentId,
       basename: 'openclaw-agent.sqlite',
-      userVersion,
+      userVersion: 24,
     },
     artifact: {
       path: 'database.sqlite',

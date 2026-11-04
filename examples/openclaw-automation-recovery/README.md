@@ -97,7 +97,7 @@ else error({reportCount: (.reports | length),
   expectedModelCount: ([.reports[] | select(.effective.model == "aimock/gpt-5.5")] | length)} | tojson)
 end' "$TMPDIR/recovered-report.json"
 report_execution=$(jq -er '.reports[] | select(.status == "delivered") | .executionId' "$TMPDIR/recovered-report.json")
-grep -aF 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_execution " | grep -F 'provider=aimock model=gpt-5.5 thinking=medium '
+grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_execution " | grep -F 'provider=aimock model=gpt-5.5 thinking=medium '
 test "$(wc -l < identity.runs | tr -d ' ')" = 1
 
 # should preserve the report across restart and complete a prompt in the owning agent context

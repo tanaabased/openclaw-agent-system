@@ -150,6 +150,23 @@ describe('agent/delivery-announcement', () => {
     );
     assert.match(result.presentation!, /github-delivery-linkage-unverified/);
   });
+  it('should direct held missing-candidate recovery to compose and retain without access or linkage claims', async () => {
+    input.provider.announcement = async () => {
+      throw new Error('delivery-announcement-candidate-required');
+    };
+    await run('compose', { now: 100 });
+    const presentation = announcementPresentation(
+      delivery.announcement,
+      'https://github.com/owner/repo/issues/3',
+      undefined,
+      delivery.announcementRecovery,
+    );
+    assert.equal(delivery.announcementRecovery?.code, 'delivery-announcement-candidate-required');
+    assert.match(presentation, /no announcement write was attempted/i);
+    assert.match(presentation, /compose and retain the announcement candidate/i);
+    assert.doesNotMatch(presentation, /closing association|github access/i);
+    assert.equal(posts, 0);
+  });
   it('should not retain arbitrary provider text as a diagnostic code', async () => {
     input.provider.announcement = async () => {
       throw new Error('sensitive-material');

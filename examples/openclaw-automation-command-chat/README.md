@@ -89,7 +89,7 @@ for runtime in openclaw codex; do
     fi
     report_id=$(jq -er '.reports[0].executionId' "$TMPDIR/report-$runtime-$mode.json")
     if test "$runtime" = openclaw; then
-      grep -aF 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_id " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
+      grep -F 'embedded run start:' "$(openclaw-gateway log-path)" | grep -F "runId=$report_id " | grep -F 'provider=aimock model=gpt-5.5 thinking=high '
     fi
     message_id=$(jq -er '.reports[0].messageId' "$TMPDIR/report-$runtime-$mode.json")
     openclaw gateway call chat.history --params "$(jq -nc --arg key "$chat" '{sessionKey:$key,limit:100,maxChars:100000}')" --json > "$TMPDIR/chat-history.json"

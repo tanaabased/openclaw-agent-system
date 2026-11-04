@@ -6,48 +6,6 @@ import automationGatewayDiagnostic, {
 import { AutomationError } from '../agent/automation-gateway.ts';
 
 describe('agent/automation-gateway-diagnostic', () => {
-  it('should preserve native validation reasons while redacting echoed request bodies', () => {
-    for (const method of [
-      'sessions.resolve',
-      'sessions.create',
-      'cron.add',
-      'cron.update',
-    ] as const) {
-      for (const reason of [
-        "at /payload: unexpected property 'unsupported'",
-        'agent-runtime tool jobs require an explicit payload.toolsAllow cap',
-      ]) {
-        const error = Object.assign(
-          new Error(`invalid ${method} params: ${reason}; opaque-secret request={private input}`),
-          { name: 'GatewayClientRequestError', gatewayCode: 'INVALID_REQUEST', retryable: false },
-        );
-        const diagnostic = automationGatewayDiagnostic(method, error, {
-          secrets: ['opaque-secret'],
-        });
-        assert.ok(diagnostic.nativeRejection?.message?.includes(reason));
-        assert.doesNotMatch(JSON.stringify(diagnostic), /opaque-secret|private input/);
-        assert.deepEqual(retainAutomationGatewayDiagnostic(diagnostic), diagnostic);
-      }
-    }
-    for (const body of [
-      'params={private input}',
-      'request={private input}',
-      'payload={private input}',
-      '"payload":{"message":"private input"}',
-      'nested.payload={private input}',
-    ]) {
-      const error = Object.assign(new Error(`invalid cron.add params: rejected; ${body}`), {
-        name: 'GatewayClientRequestError',
-        gatewayCode: 'INVALID_REQUEST',
-        retryable: false,
-      });
-      const diagnostic = automationGatewayDiagnostic('cron.add', error, { secrets: [] });
-      assert.match(diagnostic.nativeRejection!.message!, /rejected/);
-      assert.doesNotMatch(JSON.stringify(diagnostic), /private input/);
-      assert.deepEqual(retainAutomationGatewayDiagnostic(diagnostic), diagnostic);
-    }
-  });
-
   it('should retain bounded opt-in rejection evidence without credentials payloads or arbitrary details', () => {
     const error = Object.assign(
       new Error('Native snapshot rejected; opaque-secret token=hidden payload={private input}'),
@@ -80,33 +38,8 @@ describe('agent/automation-gateway-diagnostic', () => {
       { secrets: [] },
     );
     assert.ok(long.nativeRejection!.message!.length <= 1025);
-  });
-
-  it('should capture opt-in enrollment rejections and preserve their redaction on retention', () => {
-    const error = Object.assign(
-      new Error('enrollment refused for opaque-input; token=hidden payload={private input}'),
-      {
-        name: 'GatewayClientRequestError',
-        gatewayCode: 'INVALID_REQUEST',
-        retryable: false,
-        details: { code: 'ENROLLMENT_INVALID', private: 'private-detail' },
-      },
-    );
-    for (const method of ['sessions.resolve', 'cron.add', 'cron.update'] as const) {
-      assert.equal(automationGatewayDiagnostic(method, error).nativeRejection, undefined);
-      const diagnostic = automationGatewayDiagnostic(method, error, {
-        secrets: ['opaque-input'],
-      });
-      assert.equal(diagnostic.nativeRejection?.detailCode, 'ENROLLMENT_INVALID');
-      assert.match(diagnostic.nativeRejection?.message ?? '', /enrollment refused/);
-      assert.doesNotMatch(
-        JSON.stringify(diagnostic),
-        /opaque-input|hidden|private input|private-detail/,
-      );
-      assert.deepEqual(retainAutomationGatewayDiagnostic(diagnostic), diagnostic);
-    }
     assert.equal(
-      automationGatewayDiagnostic('cron.list', error, { secrets: [] }).nativeRejection,
+      automationGatewayDiagnostic('cron.add', error, { secrets: [] }).nativeRejection,
       undefined,
     );
   });
