@@ -15,7 +15,7 @@ Request lifecycle tools through native OpenClaw and hosted Codex, deny installat
 
 ## Notes
 
-- Strict AIMock supplies four interactive turns and one scheduled hosted-Codex maintenance turn with synthetic credentials. The Gateway, hosted Codex app server, approval protocol, and lifecycle effects remain real. The scheduled turn adds the runtime-specific proof that host occurrence identity reaches these tools; no global plugin-approval bypass is enabled.
+- Strict AIMock supplies four interactive turns and one scheduled hosted-Codex maintenance turn with synthetic credentials. Shared mock setup disables automatic utility-model routing so these turns cannot select a live provider. The Gateway, hosted Codex app server, approval protocol, and lifecycle effects remain real. The scheduled turn adds the runtime-specific proof that host occurrence identity reaches these tools; no global plugin-approval bypass is enabled.
 - The driver connects as the native Control UI approval client. It verifies protocol decisions and filesystem effects, not rendered UI. Denial may end the chat before another model request.
 - The existing interactive Doctor turns use disposable local worktrees and native `sessions.create` working directories. This adds no model turns, installs, restarts, or provider requests; canonical-workspace approval safety remains covered by Install and source components.
 

@@ -21,7 +21,7 @@ are refused, and that pruning older archives remains separate from integrity che
 - Direct Ubuntu commands need no Gateway, model, or provider credential. The checked-in workspace runs in place with an independent checksum baseline and separate restore target.
 - The database fixture keeps real committed WAL content present during capture; restoration verifies the recovered database, not just archive membership.
 - The fixture retains the synchronous database opener to keep its native connection and committed WAL content open during capture. Its deprecation warning is separate from packaged plugin validation; do not replace the real agent database with a synthetic schema to silence it.
-- After the restore checks, the historical fixture replaces snapshot entries in disposable copies of the created archive with a schema-24 marker and matching artifact metadata. It is not a complete historical OpenClaw schema. The current archive remains unchanged.
+- After the restore checks, the historical fixture gives older-dated disposable archive copies a schema marker one version beyond the captured database, with matching artifact metadata. OpenClaw accepts supported historical schemas, so this deliberately newer marker exercises compatibility refusal separately from retention. It is not a complete database schema; the current archive remains unchanged.
 
 ## Setup
 

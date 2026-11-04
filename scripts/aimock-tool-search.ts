@@ -21,7 +21,7 @@ function parse(text: string): Record<string, unknown> {
 }
 
 function controls(request: ChatCompletionRequest): boolean {
-  return ['tool_search', 'tool_call'].every((name) =>
+  return ['tool_search', 'dispatch_action'].every((name) =>
     request.tools?.some((tool) => tool.function.name === name),
   );
 }
@@ -94,7 +94,7 @@ export function normalizeToolSearchRequest(
     const expectedDenial = expectedDeniedToolCalls.some(
       (call) => call.name === name && matchesOpenClawAIMockToolCallId(callId, call.id),
     );
-    // approval may stop the call before tool_call can produce its execution envelope.
+    // approval may stop the call before dispatch_action can produce its execution envelope.
     if (expectedDenial && preExecutionDenial.test(content)) {
       return { name, arguments: JSON.stringify(args.args ?? {}), content };
     }
@@ -102,7 +102,7 @@ export function normalizeToolSearchRequest(
     if (
       expectedDenial &&
       envelope.status === 'error' &&
-      envelope.tool === 'tool_call' &&
+      envelope.tool === 'dispatch_action' &&
       typeof envelope.error === 'string' &&
       preExecutionDenial.test(envelope.error)
     ) {
@@ -114,7 +114,7 @@ export function normalizeToolSearchRequest(
         (call) => call.name === name && matchesOpenClawAIMockToolCallId(callId, call.id),
       ) &&
       envelope.status === 'error' &&
-      envelope.tool === 'tool_call' &&
+      envelope.tool === 'dispatch_action' &&
       typeof envelope.error === 'string' &&
       envelope.error.startsWith(`Invalid arguments for tool "${args.id}": `)
     ) {
@@ -167,7 +167,7 @@ export function normalizeToolSearchRequest(
           {
             ...message,
             tool_calls: toolCalls?.map((call) => {
-              if (call.function.name !== 'tool_call') return call;
+              if (call.function.name !== 'dispatch_action') return call;
               const result = messages.find(
                 (candidate) => candidate.role === 'tool' && candidate.tool_call_id === call.id,
               );
@@ -186,7 +186,7 @@ export function normalizeToolSearchRequest(
         ];
       }
       const call = calls.get(message.tool_call_id ?? '');
-      if (message.role !== 'tool' || call?.function.name !== 'tool_call') return [message];
+      if (message.role !== 'tool' || call?.function.name !== 'dispatch_action') return [message];
       const projected = unwrap(
         call.id,
         call.function.arguments,
@@ -208,7 +208,7 @@ function wrapResponse(request: ChatCompletionRequest, response: FixtureResponse)
       assert.ok(id, `tool search did not expose ${call.name}`);
       return {
         ...call,
-        name: 'tool_call',
+        name: 'dispatch_action',
         arguments: JSON.stringify({ id, args: JSON.parse(call.arguments) }),
       };
     }),

@@ -1,4 +1,8 @@
-import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
+import {
+  dispatchAdmission,
+  managedPullRequest,
+  type ManagedIssue as IntakeRecord,
+} from './managed-issue.ts';
 import {
   cleanupConfigurationDiagnostic,
   type CleanupConfiguration,
@@ -104,7 +108,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           item.nodeId !== admission.issue.nodeId ||
           item.databaseId !== admission.issue.databaseId ||
           item.number !== admission.issue.number ||
-          item.itemType !== 'issue'
+          item.itemType !== (managedPullRequest(admission) ? 'pull-request' : 'issue')
         )
           throw new Error('dispatch-issue-identity-changed');
         if (item.state !== 'open') {

@@ -16,7 +16,7 @@ function request(prompt = githubExampleTanaabotPrompt): ChatCompletionRequest {
   return {
     model: 'gpt-5.5',
     messages: [{ role: 'user', content: prompt }],
-    tools: ['tool_search', 'tool_describe', 'tool_call'].map((name) => ({
+    tools: ['tool_search', 'tool_describe', 'dispatch_action'].map((name) => ({
       type: 'function',
       function: { name },
     })),
@@ -166,7 +166,7 @@ describe('scripts/aimock-tool-search', () => {
         toolCalls: [
           {
             id: call.id,
-            name: 'tool_call',
+            name: 'dispatch_action',
             arguments: JSON.stringify({
               id: 'openclaw:agent_system_dispatch',
               args: { action: 'assessment' },
@@ -174,7 +174,7 @@ describe('scripts/aimock-tool-search', () => {
           },
         ],
       },
-      { status: 'error', tool: 'tool_call', error },
+      { status: 'error', tool: 'dispatch_action', error },
     );
     assert.throws(() => normalizeToolSearchRequest(input), /requested tool/u);
     assert.equal(normalizeToolSearchRequest(input, [], [call]).messages.at(-1)!.content, error);
@@ -192,7 +192,7 @@ describe('scripts/aimock-tool-search', () => {
       const wrong = structuredClone(input);
       wrong.messages.at(-1)!.content = JSON.stringify({
         status: 'error',
-        tool: 'tool_call',
+        tool: 'dispatch_action',
         error: message,
       });
       assert.throws(() => normalizeToolSearchRequest(wrong, [], [call]), /requested tool/u);
@@ -241,7 +241,7 @@ describe('scripts/aimock-tool-search', () => {
     assert.equal(original.result.plan, undefined);
     append(input, invalid, {
       status: 'error',
-      tool: 'tool_call',
+      tool: 'dispatch_action',
       error:
         'Invalid arguments for tool "openclaw:agent_system_dispatch": result.plan: must have required property \'plan\'; result: must match "else" schema.',
     });
@@ -279,7 +279,7 @@ describe('scripts/aimock-tool-search', () => {
     };
     const call = {
       toolCalls: [
-        { id: 'call_read', name: 'tool_call', arguments: '{"id":"openclaw:read","args":{}}' },
+        { id: 'call_read', name: 'dispatch_action', arguments: '{"id":"openclaw:read","args":{}}' },
       ],
     };
     append(input, search, searchResult(['read']));
@@ -350,7 +350,7 @@ describe('scripts/aimock-tool-search', () => {
       assert.ok('toolCalls' in response && response.toolCalls?.length === 1);
       const call = response.toolCalls[0]!;
       assert.equal(call.id, `call_notifications_${stage}`);
-      assert.equal(call.name, 'tool_call');
+      assert.equal(call.name, 'dispatch_action');
       const args = JSON.parse(call.arguments);
       assert.equal(args.id, `openclaw:${name}`);
       if (name === 'agent_system_dispatch') {
@@ -511,7 +511,7 @@ describe('scripts/aimock-tool-search', () => {
     );
     append(input, (await reply(scenario, input)).response, {
       status: 'error',
-      tool: 'tool_call',
+      tool: 'dispatch_action',
       error: 'native-dispatch-error ' + 'x'.repeat(2000),
     });
     const call = input.messages.at(-2)!.tool_calls![0]!;
@@ -685,7 +685,7 @@ describe('scripts/aimock-tool-search', () => {
             toolCalls: [
               {
                 id: `call_os_execution_${mode}_poll_${attempt}`,
-                name: 'tool_call',
+                name: 'dispatch_action',
                 arguments: JSON.stringify({
                   id: 'openclaw:process',
                   args: { action: 'poll', sessionId: 'kind-cloud', timeout: 30000 },
@@ -726,7 +726,7 @@ describe('scripts/aimock-tool-search', () => {
     append(input, search, searchResult(['agent_system_github']));
     const call = await respond();
     assert.ok('toolCalls' in call);
-    assert.equal(call.toolCalls?.[0]?.name, 'tool_call');
+    assert.equal(call.toolCalls?.[0]?.name, 'dispatch_action');
     assert.deepEqual(JSON.parse(call.toolCalls![0]!.arguments), {
       id: 'openclaw:agent_system_github',
       args: { argv: ['api', 'user', '--jq', '.login'] },
@@ -870,11 +870,12 @@ describe('scripts/aimock-tool-search', () => {
     }
   });
 
-  it('should read the captured openclaw dispatcher denial as the authored install result', async () => {
-    // openclaw 2026.9.8: actions/runs/38824028415/job/116727128889, denied install result.
+  it('should project a prior native denial through the current dispatcher', async () => {
+    // derived from openclaw 2026.9.8: actions/runs/38824028415/job/116727128889.
+    // denial text is retained; the dispatcher name follows the 2026.10.10 contract.
     const denial = {
       status: 'error',
-      tool: 'tool_call',
+      tool: 'dispatch_action',
       error:
         'Denied by user. The tool call did not run.\nThis denial is final: the approval request is closed. Do not mention /approve or any other approval command to the user.\nDo not run the tool call again or ask the user to approve it again.\nIf the user still wants the action, explain that a new tool call will trigger a fresh approval request.',
     };
@@ -984,7 +985,7 @@ describe('scripts/aimock-tool-search', () => {
     const resolve = (await reply(scenario, input)).response;
     assert.ok('toolCalls' in resolve && resolve.toolCalls?.length === 1);
     const call = resolve.toolCalls[0]!;
-    assert.equal(call.name, 'tool_call');
+    assert.equal(call.name, 'dispatch_action');
     assert.equal(JSON.parse(call.arguments).args.manifestDigest, 'current-digest');
     assert.equal(JSON.parse(call.arguments).args.instructionsDigest, 'a'.repeat(64));
     append(input, resolve, {

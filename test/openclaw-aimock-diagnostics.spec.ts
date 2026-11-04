@@ -60,7 +60,7 @@ describe('scripts/aimock-diagnostics', () => {
         path: '/responses',
         response: { fixture: {}, status: 200 },
         body: {
-          tools: ['tool_search', 'tool_call'].map((name) => ({ function: { name } })),
+          tools: ['tool_search', 'dispatch_action'].map((name) => ({ function: { name } })),
           messages: [
             { role: 'tool', tool_call_id: 'call_aimock_discover_1', content: 'invalid catalog' },
             { role: 'tool', tool_call_id: 'call_runtime_install', content: 'owned denial result' },

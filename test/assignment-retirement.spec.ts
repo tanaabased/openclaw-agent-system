@@ -11,6 +11,7 @@ import workflowStatus from '../agent/workflow-status.ts';
 import reconcile from '../agent/reconcile-assignment-lifecycle.ts';
 import pendingAssignments, { issueKey } from '../agent/dispatch-pending.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+import type { OperatorIssue } from '../agent/managed-issue.ts';
 import type { IntakeRecord, IntakeState } from '../channels/github/intake/record-store.ts';
 import {
   intakeFixture,
@@ -117,6 +118,89 @@ function setup() {
 }
 
 describe('assignment retirement', () => {
+  for (const scenario of ['cancelled', 'active', 'wrong-type', 'wrong-identity'] as const) {
+    it(`should validate the recorded pull request during ${scenario} retirement`, async () => {
+      const h = setup();
+      const manual: OperatorIssue = {
+        version: 1,
+        host: 'github.com',
+        id: h.admitted.id,
+        scope: h.admitted.scope,
+        receiving: h.admitted.receiving,
+        repository: h.admitted.repository,
+        issue: h.admitted.issue,
+        workspaceDir: '/workspace',
+        agentId: 'receiver',
+        observedAt: baseline,
+        admittedAt: baseline,
+        status: 'admitted',
+        requiresRevalidation: true,
+        initiation: {
+          kind: 'operator',
+          session: 'operator',
+          incarnation: 'session',
+          turn: 'turn',
+          input: 'input',
+        },
+        evidence: { policyDigest: 'digest', mode: 'work', open: true, repositoryReadable: true },
+        pullRequest: {
+          headRef: 'feature',
+          baseRef: 'main',
+          headSha: 'a'.repeat(40),
+          repositoryNodeId: h.fixture.repository.nodeId,
+          repositoryDatabaseId: h.fixture.repository.databaseId,
+          authorId: account.nodeId,
+        },
+      };
+      h.record.manualIssue = manual;
+      delete h.record.intakeId;
+      h.admissions.length = 0;
+      if (scenario === 'cancelled') delete h.record.request;
+      h.fixture.client.getItem = async () => ({
+        ...h.fixture.item,
+        nodeId: scenario === 'wrong-identity' ? 'PR_other' : manual.issue.nodeId,
+        ...(scenario === 'wrong-type'
+          ? { itemType: 'issue' as const }
+          : {
+              itemType: 'pull-request' as const,
+              pullRequest: {
+                merged: false,
+                draft: true,
+                headRef: 'feature',
+                baseRef: 'main',
+                headSha: 'a'.repeat(40),
+                baseRepositoryNodeId: h.fixture.repository.nodeId,
+                baseRepositoryDatabaseId: h.fixture.repository.databaseId,
+              },
+            }),
+      });
+      h.record.retirement = assignmentRetirement({
+        reason: 'operator-requested',
+        intakeId: manual.id,
+        now: baseline,
+        operatorRequest: {
+          caller: 'operator',
+          turnId: 'turn',
+          targetId: h.record.id,
+          at: baseline,
+        },
+      });
+      await h.run(h.record.id);
+      if (scenario.startsWith('wrong-')) {
+        assert.equal(h.cleanups(), 0);
+        assert.equal(h.record.retirement?.code, 'dispatch-issue-identity-changed');
+        assert.equal(h.record.retired, undefined);
+      } else {
+        assert.equal(h.cleanups(), 1);
+        assert.ok(h.record.retired);
+        assert.equal(h.record.retirement?.code, undefined);
+        assert.equal(h.fixture.item.state, 'open');
+        await h.run(h.record.id);
+        assert.equal(h.cleanups(), 1);
+      }
+    });
+  }
+
   it('should retain open unassigned work past grace without attempting cleanup', async () => {
     const h = setup();
     removeFixtureAssignment(h.fixture);
