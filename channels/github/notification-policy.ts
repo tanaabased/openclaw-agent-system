@@ -45,15 +45,28 @@ export function validateGitHubNotificationPolicy(
             : 'Use a local start time, a positive window of at most 24 hours, and scans spaced at least one minute apart.',
         severity: 'error',
       });
-    const [owner, name] = policy.projectPickup.projects[0]!.repository.split('/');
-    if (!repositoryScopeCandidate(policy, owner!, name!, 'project-pickup'))
-      diagnostics.push({
-        code: 'github-project-pickup-repository-outside-workflow',
-        fieldPath: '/github/project-pickup/projects/0/repository',
-        message:
-          'Choose a repository included by github.routing, or by legacy owners when routing is absent. Pickup does not expand repository access.',
-        severity: 'error',
-      });
+    const repositories = new Set<string>();
+    for (const [index, project] of policy.projectPickup.projects.entries()) {
+      const repository = project.repository.toLowerCase();
+      const [owner, name] = repository.split('/') as [string, string];
+      const fieldPath = `/github/project-pickup/projects/${index}/repository`;
+      if (repositories.has(repository))
+        diagnostics.push({
+          code: 'github-project-pickup-repository-duplicate',
+          fieldPath,
+          message: 'Configure each pickup repository only once.',
+          severity: 'error',
+        });
+      repositories.add(repository);
+      if (!repositoryScopeCandidate(policy, owner, name, 'project-pickup'))
+        diagnostics.push({
+          code: 'github-project-pickup-repository-outside-workflow',
+          fieldPath,
+          message:
+            'Choose a repository included by github.routing, or by legacy owners when routing is absent. Pickup does not expand repository access.',
+          severity: 'error',
+        });
+    }
   }
   if (typeof github?.username !== 'string' || !github.username.trim()) {
     diagnostics.push({

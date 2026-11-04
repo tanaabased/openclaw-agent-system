@@ -1,21 +1,20 @@
-import type { PickupScanSummary } from './project-pickup.ts';
+import type { PickupAllowance, PickupScanSummary } from './project-pickup.ts';
 import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import card, {
   githubNotificationMarkdownCode as code,
   githubNotificationMarkdownText as text,
 } from '../channels/github/presentation/card.ts';
 import debugCard from '../channels/github/presentation/debug.ts';
-import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 
 /** One outcome per native scan. The chat owns history; reports never govern admission. */
 export default function projectPickupReport(input: {
-  policy: GitHubNotificationPolicy;
   outcome: {
     status: string;
     repository?: string;
     issue?: number;
     code?: string;
     summary?: PickupScanSummary;
+    allowances?: PickupAllowance[];
     providerDiagnostic?: ProviderDiagnostic;
   };
   debug?: boolean;
@@ -24,18 +23,18 @@ export default function projectPickupReport(input: {
   const { outcome } = input;
   if (['material', 'discovering', 'selection-required'].includes(outcome.status))
     return { response: '', notify: false };
-  const project = input.policy.projectPickup!.projects[0]!;
-  const repository = outcome.repository ?? project.repository;
-  const url = `https://github.com/${repository}`;
+  const repository = outcome.repository;
+  const allowances = outcome.allowances ?? [];
   const summary = outcome.summary;
   const uncertain = outcome.status === 'attempted';
   const failed = outcome.status === 'failed';
-  const warning = uncertain || Boolean(outcome.code);
+  const warning = uncertain || Boolean(outcome.code) || allowances.some((entry) => entry.code);
   const selected = outcome.status === 'assigned';
   const exhausted = outcome.status === 'allowance-reached';
   const titles: Record<string, string> = {
     assigned: 'Project pickup assigned an issue',
     'allowance-reached': 'Project pickup finished for this window',
+    'scan-complete': 'Project pickup already assigned an issue in this scan',
     empty: summary?.eligible
       ? 'Project pickup selected no issue'
       : 'Project pickup found no eligible issues',
@@ -48,25 +47,24 @@ export default function projectPickupReport(input: {
     failed: 'Project pickup could not finish',
     pending: 'Project pickup could not assign an issue',
   };
-  const issueLink = (number: number) => `[#${number}](${url}/issues/${number})`;
+  const issueLink = (repo: string, number: number) =>
+    `[${text(repo)}#${number}](https://github.com/${repo}/issues/${number})`;
   const message = card({
     emoji: failed ? '❌' : warning ? '⚠️' : '📥',
     title: titles[outcome.status] ?? 'Project pickup checked',
     facts: [
-      { label: 'Repository', value: `[${text(repository)}](${url})` },
-      {
-        label: 'Configured milestone',
-        value: `[#${project.milestone.number}](https://github.com/${project.repository}/milestone/${project.milestone.number})`,
-      },
-      {
+      ...allowances.map((entry) => ({
         label: 'Window allowance',
-        value:
-          selected || exhausted
-            ? '1 of 1 assigned'
-            : uncertain
-              ? 'Assignment pending confirmation'
-              : '0 of 1 assigned',
-      },
+        value: [
+          `[${text(entry.repository)}](https://github.com/${entry.repository}/milestone/${entry.milestone})`,
+          entry.used === undefined
+            ? `limit ${entry.limit}`
+            : `${entry.used} of ${entry.limit} assigned`,
+          entry.code ? code(entry.code) : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      })),
       ...(summary
         ? [
             {
@@ -77,7 +75,9 @@ export default function projectPickupReport(input: {
               ? [
                   {
                     label: 'Shortlist',
-                    value: summary.shortlist.map((issue) => issueLink(issue.number)).join(', '),
+                    value: summary.shortlist
+                      .map((issue) => issueLink(issue.repository, issue.number))
+                      .join(', '),
                   },
                 ]
               : []),
@@ -88,11 +88,11 @@ export default function projectPickupReport(input: {
               : []),
           ]
         : []),
-      ...((outcome.issue ?? summary?.selected?.number)
+      ...(repository && (outcome.issue ?? summary?.selected?.number)
         ? [
             {
               label: selected ? 'Assigned' : 'Selected',
-              value: issueLink(outcome.issue ?? summary!.selected!.number),
+              value: issueLink(repository, outcome.issue ?? summary!.selected!.number),
             },
           ]
         : []),

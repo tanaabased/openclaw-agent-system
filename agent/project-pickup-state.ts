@@ -10,6 +10,22 @@ import {
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const time = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
+const assignmentFields = {
+  window: projectPickupReceiptSchema.properties.window,
+  assignedAt: time,
+};
+const chargeSchema = Type.Object(
+  {
+    ...assignmentFields,
+    repository: text,
+    repositoryNodeId: text,
+    runId: text,
+    reconciled: Type.Optional(
+      Type.Object({ runId: text, at: time }, { additionalProperties: false }),
+    ),
+  },
+  { additionalProperties: false },
+);
 export const pickupOperationSchema = Type.Object(
   {
     id: text,
@@ -25,7 +41,23 @@ export const pickupOperationSchema = Type.Object(
       Type.Literal('assigned'),
     ]),
     page: Type.Integer({ minimum: 1 }),
-    candidates: Type.Array(pickupCandidateSchema),
+    scan: Type.Optional(
+      Type.Object(
+        { digest: text, projectIndex: time, skipped: Type.Optional(Type.Record(text, text)) },
+        { additionalProperties: false },
+      ),
+    ),
+    candidates: Type.Array(
+      Type.Object(
+        {
+          ...pickupCandidateSchema.properties,
+          repository: Type.Optional(text),
+          repositoryNodeId: Type.Optional(text),
+          milestoneNodeId: Type.Optional(text),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     discovery: Type.Optional(
       Type.Object(
         {
@@ -76,12 +108,12 @@ export const projectPickupStateSchema = Type.Object(
     windowAssignment: Type.Optional(
       Type.Object(
         {
-          window: projectPickupReceiptSchema.properties.window,
-          assignedAt: time,
+          ...assignmentFields,
         },
         { additionalProperties: false },
       ),
     ),
+    charges: Type.Optional(Type.Array(chargeSchema)),
     operations: Type.Array(pickupOperationSchema),
   },
   { additionalProperties: false },

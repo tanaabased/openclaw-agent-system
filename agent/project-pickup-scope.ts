@@ -9,13 +9,14 @@ export default async function projectPickupScope(
   client: GitHubNotificationIntakeClient,
   repository: GitHubRepositoryIdentity,
 ) {
-  const project = policy.projectPickup?.projects[0];
+  const name = `${repository.owner.login}/${repository.name}`.toLowerCase();
+  const project = policy.projectPickup?.projects.find(
+    (entry) => entry.repository.toLowerCase() === name,
+  );
   if (
     !project ||
     repository.archived ||
     repository.disabled ||
-    project.repository.toLowerCase() !==
-      `${repository.owner.login}/${repository.name}`.toLowerCase() ||
     repositoryScope(policy, repository, 'project-pickup').decision === 'deny'
   )
     return;

@@ -85,7 +85,9 @@ describe('project pickup selection through native journals', () => {
           start: '10:00',
           window: '1 hour',
           selection: { guidance: { file: 'selection.md' } },
-          projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
+          projects: [
+            { repository: 'owner/repo', milestone: { number: 10, policy: 'only' }, limit: 1 },
+          ],
         },
       },
     };
@@ -206,6 +208,92 @@ describe('project pickup selection through native journals', () => {
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should reconcile a removed repository and retain its allowance across live limits in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const other = f.addRepository('other', 2);
+      const project = {
+        repository: 'owner/other',
+        milestone: { number: 10, policy: 'only' },
+        limit: 2,
+      };
+      const before = await f.enrollmentStore.read();
+      await f.configure((source) => source.github['project-pickup'].projects.push(project));
+      const selection = await f.select();
+      const target = other.items.get(f.item.number)!;
+      const assign = f.client.assignProjectIssue;
+      f.client.assignProjectIssue = async (...args) => {
+        await assign(...args);
+        throw new Error('response lost');
+      };
+      assert.equal(
+        (await f.pickup({ selection: { ...selection, issueNodeId: target.nodeId } })).status,
+        'attempted',
+      );
+      await f.configure((source) => source.github['project-pickup'].projects.pop());
+      f.tick.id = 'recover-write';
+      const recovered = await f.pickup();
+      assert.equal(recovered.status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+      assert.match(recovered.response, /owner\/other\/issues\/3/);
+      assert.equal((await f.pickup()).status, 'scan-complete');
+
+      f.client.discoverAssigned = async () => ({
+        candidates: [
+          {
+            nodeId: target.nodeId,
+            databaseId: target.databaseId,
+            number: target.number,
+            itemType: 'issue',
+            updatedAt: target.updatedAt,
+            repositoryPath: '/repos/owner/other',
+          },
+        ],
+        incomplete: false,
+        totalCount: 1,
+        truncated: false,
+      });
+      await f.scan();
+      const record = (await f.read())[0]!;
+      assert.equal(record.repository.nodeId, other.repository.nodeId);
+      assert.equal(record.evidence.mode, 'work');
+
+      f.client.assignProjectIssue = assign;
+      await f.configure((source) =>
+        source.github['project-pickup'].projects.push({ ...project, limit: 1 }),
+      );
+      f.tick.id = 'lowered-limit';
+      const lower = await f.pickup();
+      assert.equal(lower.status, 'selection-required');
+      assert.ok(
+        'candidates' in lower &&
+          lower.candidates?.every((entry) => entry.repository !== 'owner/other'),
+      );
+      await f.configure((source) => {
+        source.github['project-pickup'].projects[1]!.limit = 2;
+      });
+      f.tick.id = 'raised-limit';
+      const raised = await f.pickup();
+      assert.equal(raised.status, 'selection-required');
+      assert.ok(
+        'candidates' in raised &&
+          raised.candidates?.some((entry) => entry.repository === 'owner/other'),
+      );
+      const second = other.items.get(f.item.number + 1)!;
+      const assigned = await f.pickup({
+        selection: {
+          id: raised.id,
+          digest: raised.digest,
+          issueNodeId: second.nodeId,
+          rationale: 'ready',
+        },
+      });
+      assert.equal(assigned.status, 'assigned');
+      assert.match(assigned.response, /owner\/repo.*0 of 1 assigned/);
+      assert.match(assigned.response, /owner\/other.*2 of 2 assigned/);
+      assert.equal(f.effects.writes, 2);
+      assert.deepEqual(await f.enrollmentStore.read(), before);
+    });
+
     it(`should refresh file guidance across runs and preserve uncertain-write recovery in ${runtime}`, async () => {
       const f = await fixture(runtime);
       const selection = await f.select();
@@ -283,8 +371,8 @@ describe('project pickup selection through native journals', () => {
       const refreshed = await f.select();
       assert.equal((await f.pickup({ selection: refreshed })).status, 'assigned');
       const current = (await f.journal.read()).projectPickup!;
-      assert.equal(current.enrollment.milestoneNodeId, 'MI_next');
       const operation = current.operations.find((op) => op.id === after.id)!;
+      assert.equal(operation.enrollment?.milestoneNodeId, 'MI_next');
       assert.equal(operation.window.closesAt - operation.window.opensAt, 90 * 60000);
       assert.deepEqual(await f.enrollmentStore.read(), enrollment);
       assert.equal(f.effects.writes, 1);
@@ -322,6 +410,7 @@ describe('project pickup selection through native journals', () => {
         restored.candidates,
         [...f.candidates.values()].map((candidate) => ({
           ...candidate,
+          repository: 'owner/repo',
           blockedByOpenIssues: false,
         })),
       );

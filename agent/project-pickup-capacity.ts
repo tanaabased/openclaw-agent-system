@@ -8,11 +8,15 @@ export type PickupManagedRecord = IssueWorkflowState & {
   projectWork?: ProjectWork;
 };
 
-export function pickupIssueKey(pickup: ProjectPickupState, nodeId: string | undefined) {
+export function pickupIssueKey(
+  pickup: ProjectPickupState,
+  nodeId: string | undefined,
+  repositoryNodeId = pickup.enrollment.repositoryNodeId,
+) {
   return automationHash([
     pickup.enrollment.scope,
     pickup.enrollment.account.nodeId,
-    pickup.enrollment.repositoryNodeId,
+    repositoryNodeId,
     nodeId,
   ]);
 }
@@ -42,8 +46,9 @@ export function pickupRecord<R extends PickupManagedRecord>(
       (record) =>
         record.issueKey ===
           pickupIssueKey(
-            { ...pickup, enrollment: operation.enrollment ?? pickup.enrollment },
+            pickup,
             operation.selected?.nodeId,
+            operation.enrollment?.repositoryNodeId,
           ) &&
         !record.reset &&
         !record.supersededBy &&

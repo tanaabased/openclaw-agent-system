@@ -68,7 +68,7 @@ export function projectPickupPolicyDigest(policy: GitHubNotificationPolicy) {
   return automationHash(
     pickup
       ? {
-          projects: pickup.projects,
+          projects: pickup.projects.map(({ repository, milestone }) => ({ repository, milestone })),
           schedule: pickup.schedule,
           windowMinutes: pickup.windowMinutes,
         }

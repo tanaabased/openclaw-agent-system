@@ -11,7 +11,7 @@ import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
 import AssignmentClaimStore from './assignment-claim-store.ts';
 import projectPickup, { pickupAuthority, type PickupInput } from './project-pickup.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
-import { dispatchStorageNotice } from './dispatch-storage.ts';
+import { assertDispatchStorage, dispatchStorageNotice } from './dispatch-storage.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type { ProjectPickupAuthority } from './project-pickup-authority.ts';
 import DiscoveryBudget from './discovery-budget.ts';
@@ -168,6 +168,9 @@ export default class OpenClawIntake {
         timezone,
         state,
         save,
+        assertWriteCapacity: () => {
+          assertDispatchStorage(state, true);
+        },
         now: this.dependencies.now ?? Date.now,
         readPolicy,
         client,
@@ -194,7 +197,6 @@ export default class OpenClawIntake {
         };
       const reportPolicy = await readPolicy();
       const report = projectPickupReport({
-        policy: reportPolicy,
         outcome: result,
         debug: manifest.debug,
         capacity: {

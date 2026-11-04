@@ -476,7 +476,9 @@ describe('agent/codex-automations', () => {
           paused: false,
           start: '10:00',
           window: '1 hour',
-          projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'only' } }],
+          projects: [
+            { repository: 'owner/repo', milestone: { number: 10, policy: 'only' }, limit: 1 },
+          ],
         },
       },
     };
@@ -540,6 +542,7 @@ describe('agent/codex-automations', () => {
     await reconcile();
     assert.deepEqual(await inspectCodexPickupActivation(pluginData, dependencies), active);
     assert.deepEqual((await enrollments.read()).records, [first]);
+    source.github['project-pickup'].projects[0]!.limit = 3;
     source.github['project-pickup'].projects[0]!.milestone.number = 11;
     provider.milestone.number = 11;
     provider.milestone.nodeId = 'MI_next';

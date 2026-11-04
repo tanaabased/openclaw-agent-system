@@ -33,22 +33,66 @@ export default function selectionFixture(runtime: 'codex' | 'openclaw' = 'codex'
   ]);
   const events: GitHubAssignmentEvent[] = [];
   const clock = { now: baseline + 60000 };
+  const repositories = new Map([
+    [
+      f.repository.name,
+      { repository: f.repository, milestone: f.milestone, items, candidates, events },
+    ],
+  ]);
+  const addRepository = (name: string, size = 1) => {
+    const repository = {
+      ...f.repository,
+      name,
+      nodeId: `R_${name}`,
+      cloneUrl: `https://github.com/owner/${name}.git`,
+    };
+    const milestone = { ...f.milestone, nodeId: `M_${name}` };
+    const projectItems = new Map<number, GitHubCanonicalWorkItem>();
+    const projectCandidates = new Map<number, ProjectCandidate>();
+    for (let offset = 0; offset < size; offset++) {
+      const number = f.item.number + offset;
+      const nodeId = `I_${name}_${number}`;
+      projectItems.set(number, { ...f.item, number, nodeId, assignees: [], milestone });
+      projectCandidates.set(number, { ...candidates.get(f.item.number)!, number, nodeId });
+    }
+    const project = {
+      repository,
+      milestone,
+      items: projectItems,
+      candidates: projectCandidates,
+      events: [],
+    };
+    repositories.set(name, project);
+    return project;
+  };
   const effects = { writes: 0, saves: 0 };
   const client: ProjectPickupClient = {
     ...f.client,
-    getItem: async (_owner, _name, number) => structuredClone(items.get(number)!),
-    discoverProject: async () => ({ candidates: [...candidates.values()] }),
-    projectCandidate: async (_owner, _name, number) =>
-      structuredClone({
-        item: { ...items.get(number)!, title: candidates.get(number)!.title },
-        candidate: candidates.get(number)!,
-      }),
+    getRepository: async (_owner, name) => repositories.get(name)!.repository,
+    getMilestone: async (_owner, name) => repositories.get(name)!.milestone,
+    getItem: async (_owner, name, number) =>
+      structuredClone(repositories.get(name)!.items.get(number)!),
+    discoverProject: async (_owner, name) => ({
+      candidates: [...repositories.get(name)!.candidates.values()],
+    }),
+    projectCandidate: async (_owner, name, number) => {
+      const project = repositories.get(name)!;
+      const candidate = project.candidates.get(number)!;
+      return structuredClone({
+        item: { ...project.items.get(number)!, title: candidate.title },
+        candidate,
+      });
+    },
     projectBlocked: async () => false,
-    listAssignmentEvents: async () => ({ events: structuredClone(events), truncated: false }),
-    assignProjectIssue: async (_owner, _name, number) => {
+    listAssignmentEvents: async (_owner, name) => ({
+      events: structuredClone(repositories.get(name)!.events),
+      truncated: false,
+    }),
+    assignProjectIssue: async (_owner, name, number) => {
+      const project = repositories.get(name)!;
       effects.writes++;
-      items.get(number)!.assignees = [client.identity];
-      events.push({
+      project.items.get(number)!.assignees = [client.identity];
+      project.events.push({
         actor: client.identity,
         assignee: client.identity,
         event: 'assigned',
@@ -114,6 +158,7 @@ export default function selectionFixture(runtime: 'codex' | 'openclaw' = 'codex'
   };
   return {
     work,
+    addRepository,
     identity,
     ...f,
     client,
