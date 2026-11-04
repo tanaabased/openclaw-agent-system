@@ -115,6 +115,14 @@ branch=$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-delivery.jso
 openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state all --json number | jq -e --argjson pr "$pr" 'length == 1 and .[0].number == $pr'
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-comments.json"
 jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot")] | length == 2 and any(.[]; .node_id == $saved[0].assessmentSummaries[0].receipt.nodeId) and any(.[]; .node_id == $saved[0].work.delivery.announcement.receipt.nodeId)' "$TMPDIR/notification-comments.json"
+
+# should answer an ordinary post-delivery question from retained facts without reopening work
+params=$(jq -nc --arg key "$conversation" '{sessionKey:$key,agentId:"notifications-tanaabot",message:"Explain the completed PR in this ordinary conversation.",deliver:false,idempotencyKey:"notification-post-delivery-question"}')
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-post-delivery-question"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-post-delivery-question 600000
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,inputRunIds:["notification-post-delivery-question"],limit:50,maxChars:100000}')" --json > "$TMPDIR/notification-post-delivery-history.json"
+jq -e 'any(.messages[]; .role == "assistant" and .__openclaw.runId == "notification-post-delivery-question" and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains("The linked PR contains the completed cleanup note.")))' "$TMPDIR/notification-post-delivery-history.json"
+jq -es --arg key "$conversation" --slurpfile before "$TMPDIR/notification-delivery.json" '[.[].records[] | select(.threadId == $key)] | length == 1 and .[0].work == $before[0].work and .[0].result == $before[0].result and .[0].worktree == $before[0].worktree' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 ```
 
 ## Cleanup

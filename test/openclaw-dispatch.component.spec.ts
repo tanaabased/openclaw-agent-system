@@ -3909,8 +3909,9 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal((await record()).work?.result, undefined);
       assert.equal((await record()).work?.resultHistory?.at(-1)?.result.outcome, 'done');
       assert.equal((await record()).work?.deliveryTurn, undefined);
-      assert.equal((await record()).work?.turn?.runId, `${input.id}:implementation:resume:1`);
-      assert.equal(sends().length, 2);
+      assert.equal((await record()).work?.turn?.runId, who.runId);
+      assert.equal((await record()).work?.caller?.runId, followup.runId);
+      assert.equal(sends().length, 1);
       assert.equal(creates().length, 1);
     });
 

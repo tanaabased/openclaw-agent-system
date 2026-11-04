@@ -48,6 +48,130 @@ export default async function advanceCodexWorkTurn(
   const work = record.continuation!;
   const retryDenied = input.action === 'retry-denied';
   const retry = input.action === 'retry' || retryDenied;
+  let currentInputReceipt: Awaited<ReturnType<typeof continuationNative>> | undefined;
+  const completedTurnId =
+    work.resultSource?.turnId ?? work.activeTurnId ?? work.binding?.turnId ?? work.attempt?.turnId;
+  const workflowTurn = [
+    record.resultTurnId,
+    work.attempt?.turnId,
+    work.publicationAttempt?.turnId,
+    ...(work.retries?.map(({ attempt }) => attempt.turnId) ?? []),
+    ...(record.feedback?.events.map(({ attempt }) => attempt?.turnId) ?? []),
+  ].includes(found.turnId);
+  const currentInput =
+    context.operatorInput ??
+    (work.revisionSource?.turnId === found.turnId ? work.revisionSource : undefined) ??
+    (input.action === 'context' &&
+    work.result?.outcome === 'done' &&
+    !work.publicationAttempt &&
+    (!workflowTurn ||
+      (work.resultSource?.turnId === found.turnId && work.resultSource.inputId !== found.turnId)) &&
+    found.followUpUserTurn &&
+    (found.turnId !== completedTurnId || Boolean(work.resultSource))
+      ? await native.operatorInput(record.threadId!)
+      : undefined);
+  const revisionInput = currentInput
+    ? { turnId: currentInput.turnId, inputId: currentInput.inputId }
+    : undefined;
+  const revision = Boolean(
+    revisionInput &&
+    revisionInput.turnId === found.turnId &&
+    implementationRevision(work, revisionInput, input.action === 'context', completedTurnId),
+  );
+  const answer = Boolean(
+    context.operatorInput &&
+    revisionInput &&
+    revisionInput.turnId === found.turnId &&
+    input.action === 'context' &&
+    ['blocked', 'clarification-needed'].includes(work.result?.outcome ?? '') &&
+    unprocessedImplementationInput(work, revisionInput, completedTurnId),
+  );
+  const newInput = Boolean(
+    input.action === 'context' &&
+    context.operatorInput &&
+    revisionInput?.turnId === found.turnId &&
+    (work.attempt?.origin !== 'input' ||
+      work.attempt.inputId !== revisionInput?.inputId ||
+      work.attempt.turnId !== revisionInput?.turnId ||
+      work.publicationAttempt),
+  );
+  if ((revision || answer || newInput) && revisionInput) {
+    const revisionAttempt = {
+      ...work.attempt,
+      id: automationHash({ attempt: work.attempt?.id ?? record.id, source: revisionInput }),
+      origin: 'input' as const,
+      inputId: revisionInput.inputId,
+      sourceThreadId: record.threadId!,
+      sourceTurnId: revisionInput.turnId,
+      beforeTurnId: revisionInput.turnId,
+      turnId: revisionInput.turnId,
+      request: { threadId: record.threadId!, prompt: 'Continue the authorized revision.' },
+    };
+    const currentReceipt = await continuationNative(
+      record.sourceThreadId,
+      revisionAttempt,
+      record.assessmentSummaries,
+    );
+    if (currentReceipt.status !== 'verified' || currentReceipt.turnId !== found.turnId) {
+      if (currentReceipt.status === 'blocked') {
+        work.phase = 'blocked';
+        work.code = currentReceipt.code;
+        await save();
+        return {
+          ready: false as const,
+          response: { status: 'blocked' as const, id: record.id, code: work.code },
+        };
+      }
+      throw new Error('continuation-input-unverified');
+    }
+    if (input.action === 'context') {
+      if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
+      record.progression = { ...transition.progression, workOwner: 'issue' };
+      if (revision || answer) {
+        (work.resultHistory ??= []).push({ source: work.resultSource, result: work.result! });
+        delete work.result;
+        delete work.resultSource;
+        work.revisionSource = revisionInput;
+      }
+      delete work.blockedTurnId;
+      delete work.clarificationTurnId;
+      for (const previous of [work.attempt, work.publicationAttempt]) {
+        if (previous)
+          (work.retries ??= []).push({
+            attempt: previous,
+            ...(work.binding ? { binding: work.binding } : {}),
+            at: (deps.now ?? Date.now)(),
+            by: caller,
+          });
+      }
+      work.attempt = revisionAttempt;
+      currentInputReceipt = currentReceipt;
+      delete work.binding;
+      delete work.publicationAttempt;
+      work.assessmentDigest = automationHash(record.result);
+      work.activeTurnId = found.turnId;
+      work.phase =
+        work.result?.outcome === 'done'
+          ? work.scope === 'local'
+            ? 'complete'
+            : 'delivery'
+          : 'running';
+      delete work.code;
+      if (!work.result)
+        selection = (
+          await selectWorkflowStage({
+            stage: 'implementation',
+            configuration: {
+              ...current.manifest.github?.notifications?.issueAssignment?.implementation,
+              ...record.manualIssue?.selections?.implementation,
+            },
+            workspace: current.workspace,
+            observedAt: (deps.now ?? Date.now)(),
+            resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
+          })
+        ).selection;
+    }
+  }
   // A handoff is already owned work. Reconcile its exact native input before preparing
   // another send, including when the original turn ended before context was requested.
   if (record.handoff && !work.attempt && !work.binding && input.action === 'next') {
@@ -216,12 +340,10 @@ export default async function advanceCodexWorkTurn(
       response: { status: 'prepared' as const, id: record.id, request: work.attempt.request },
     };
   }
-  let activeAttempt = work.publicationAttempt ?? work.attempt;
-  let receipt = await continuationNative(
-    record.sourceThreadId,
-    activeAttempt,
-    record.assessmentSummaries,
-  );
+  const activeAttempt = work.publicationAttempt ?? work.attempt;
+  const receipt =
+    currentInputReceipt ??
+    (await continuationNative(record.sourceThreadId, activeAttempt, record.assessmentSummaries));
   delete work.retry;
   delete work.retryAfter;
   if (retryDenied) {
@@ -314,112 +436,6 @@ export default async function advanceCodexWorkTurn(
     (work.handoffs ??= []).push(record.handoff);
     delete record.handoff;
     await save();
-  }
-  const completedTurnId =
-    work.resultSource?.turnId ?? work.activeTurnId ?? work.binding?.turnId ?? work.attempt?.turnId;
-  const workflowTurn = [
-    record.resultTurnId,
-    receipt.turnId,
-    work.attempt?.turnId,
-    work.publicationAttempt?.turnId,
-    ...(work.retries?.map(({ attempt }) => attempt.turnId) ?? []),
-    ...(record.feedback?.events.map(({ attempt }) => attempt?.turnId) ?? []),
-  ].includes(found.turnId);
-  const currentInput =
-    context.operatorInput ??
-    (work.revisionSource?.turnId === found.turnId ? work.revisionSource : undefined) ??
-    (input.action === 'context' &&
-    work.result?.outcome === 'done' &&
-    (!workflowTurn ||
-      (work.resultSource?.turnId === found.turnId && work.resultSource.inputId !== found.turnId)) &&
-    found.followUpUserTurn &&
-    (found.turnId !== completedTurnId || Boolean(work.resultSource))
-      ? await native.operatorInput(record.threadId!)
-      : undefined);
-  const revisionInput = currentInput
-    ? { turnId: currentInput.turnId, inputId: currentInput.inputId }
-    : undefined;
-  const revision = Boolean(
-    (!workflowTurn ||
-      Boolean(context.operatorInput) ||
-      (work.resultSource?.turnId === found.turnId && work.resultSource.inputId !== found.turnId)) &&
-    revisionInput &&
-    revisionInput.turnId === found.turnId &&
-    implementationRevision(work, revisionInput, input.action === 'context', completedTurnId),
-  );
-  const answer = Boolean(
-    context.operatorInput &&
-    revisionInput &&
-    revisionInput.turnId === found.turnId &&
-    input.action === 'context' &&
-    ['blocked', 'clarification-needed'].includes(work.result?.outcome ?? '') &&
-    unprocessedImplementationInput(work, revisionInput, completedTurnId),
-  );
-  if ((revision || answer) && revisionInput) {
-    const revisionAttempt = {
-      ...work.attempt,
-      id: automationHash({ attempt: work.attempt.id, source: revisionInput }),
-      origin: 'input' as const,
-      inputId: revisionInput.inputId,
-      sourceThreadId: record.threadId!,
-      sourceTurnId: revisionInput.turnId,
-      beforeTurnId: revisionInput.turnId,
-      turnId: revisionInput.turnId,
-      request: { threadId: record.threadId!, prompt: 'Continue the authorized revision.' },
-    };
-    const currentReceipt = await continuationNative(
-      record.sourceThreadId,
-      revisionAttempt,
-      record.assessmentSummaries,
-    );
-    if (currentReceipt.status !== 'verified' || currentReceipt.turnId !== found.turnId) {
-      if (currentReceipt.status === 'blocked') {
-        work.phase = 'blocked';
-        work.code = currentReceipt.code;
-        await save();
-        return {
-          ready: false as const,
-          response: { status: 'blocked' as const, id: record.id, code: work.code },
-        };
-      }
-      throw new Error('continuation-input-unverified');
-    }
-    if (input.action === 'context') {
-      (work.resultHistory ??= []).push({ source: work.resultSource, result: work.result! });
-      delete work.result;
-      delete work.resultSource;
-      delete work.blockedTurnId;
-      delete work.clarificationTurnId;
-      for (const previous of [work.attempt, work.publicationAttempt]) {
-        if (previous)
-          (work.retries ??= []).push({
-            attempt: previous,
-            ...(work.binding ? { binding: work.binding } : {}),
-            at: (deps.now ?? Date.now)(),
-            by: caller,
-          });
-      }
-      work.attempt = revisionAttempt;
-      activeAttempt = revisionAttempt;
-      receipt = currentReceipt;
-      delete work.binding;
-      delete work.publicationAttempt;
-      work.revisionSource = revisionInput;
-      work.activeTurnId = found.turnId;
-      work.phase = 'running';
-      selection = (
-        await selectWorkflowStage({
-          stage: 'implementation',
-          configuration: {
-            ...current.manifest.github?.notifications?.issueAssignment?.implementation,
-            ...record.manualIssue?.selections?.implementation,
-          },
-          workspace: current.workspace,
-          observedAt: (deps.now ?? Date.now)(),
-          resolveSkill: (id) => native.assessmentSkill(found.cwd, id),
-        })
-      ).selection;
-    }
   }
   if (activeAttempt.turnId && activeAttempt.turnId !== receipt.turnId)
     throw new Error('continuation-turn-changed');

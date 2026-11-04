@@ -28,6 +28,8 @@ import { prExampleScenario } from '../examples/openclaw-pr-journey/model-fixture
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
 import resolveExampleModelScenario from '../scripts/example-model-scenarios.ts';
+import openclawTurnContext from '../agent/openclaw-turn-context.ts';
+import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 
 for (const scenario of [
   issueExampleScenario,
@@ -994,6 +996,42 @@ for (const scenario of [
         });
     }
     if (scenario.id === 'openclaw-pr-journey') {
+      it('should answer a post-delivery question through the native retained context without tools', async () => {
+        const input = request('Explain the completed PR in this ordinary conversation.');
+        const context = openclawTurnContext(
+          {
+            id,
+            threadId: 'issue',
+            worktree: '/checkout',
+            request: { key: 'issue', agentId: 'receiver' },
+            sessionCreation: { verified: true, sessionId: 'incarnation' },
+            assessmentTurn: { runId: 'assessment' },
+            result: { outcome: 'plan-ready', plan: 'Original plan.' },
+            work: {
+              result: { outcome: 'done', summary: 'Done.', fullResult: 'Verified.' },
+              delivery: {
+                reconciled: true,
+                pullRequest: { pullRequestNumber: 7 },
+                binding: { branch: 'retained-branch' },
+              },
+            },
+          } as OpenClawDispatchRecord,
+          {
+            runId: 'question',
+            agentId: 'receiver',
+            sessionKey: 'issue',
+            sessionId: 'incarnation',
+          },
+        )!;
+        input.messages.push({
+          role: 'system',
+          content: context.appendSystemContext + '\n' + context.appendContext,
+        });
+        assert.deepEqual(await response(input), {
+          content:
+            'The linked PR contains the completed cleanup note. No further work was requested.',
+        });
+      });
       for (const mode of ['operator', 'work', 'auto', 'custom'])
         it(`should carry ${mode} through implementation and the same delivery on retry`, async () => {
           const input = request(

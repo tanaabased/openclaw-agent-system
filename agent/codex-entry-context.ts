@@ -60,10 +60,9 @@ export default async function codexEntryContext<T>(
         (await realpath(native.cwd)) !== (await realpath(record.worktree!))
       )
         throw new Error('assessment-managed-context-invalid');
-      const eventId =
-        record.progression?.workOwner && record.progression.workOwner !== 'issue'
-          ? record.progression.workOwner
-          : record.feedback?.events.find((event) => event.attempt?.turnId === native.turnId)?.id;
+      const eventId = record.feedback?.events.find(
+        (event) => event.attempt?.turnId === native.turnId,
+      )?.id;
       const feedback = eventId && record.feedback?.events.find((event) => event.id === eventId);
       return {
         implementationResult: feedback ? feedback.work?.result : record.continuation?.result,

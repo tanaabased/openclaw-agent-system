@@ -69,6 +69,15 @@ describe('agent/openclaw-continuation', () => {
     assert.equal(openClawWorkSlot(record, 'work'), 'deliveryTurn');
   });
 
+  it('should leave a later human revision outside automatic continuation while retaining its history', () => {
+    const record = delivered();
+    const previous = record.work!.result!;
+    delete record.work!.result;
+    record.work!.resultHistory = [{ result: previous }];
+    assert.equal(openClawWorkSlot(record, 'work'), undefined);
+    assert.equal(record.work!.resultHistory[0]!.result, previous);
+  });
+
   it('should preserve native cancellation as a stop', () => {
     const record = delivered();
     record.work!.code = 'dispatch-turn-cancelled';

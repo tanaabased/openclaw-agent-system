@@ -4454,7 +4454,7 @@ describe('agent/codex-dispatch', () => {
       });
 
   for (const scope of ['local', 'pull-request'] as const)
-    it(`should route ${scope} entry to the existing codex feedback owner`, async () => {
+    it(`should route ${scope} input to its issue instead of a historical feedback owner`, async () => {
       await workIssue();
       const current = await selectCodexIntake(pluginData, deps);
       const store = new CodexDispatchStore(
@@ -4485,7 +4485,6 @@ describe('agent/codex-dispatch', () => {
       assert.ok('owner' in routed);
       assert.deepEqual(routed.owner, {
         id: (await store.read()).records[0]!.id,
-        eventId: 'e'.repeat(64),
       });
     });
 
@@ -6624,7 +6623,7 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(records[0]!.result, result);
   });
 
-  it('should reject revoked schedule authority and publication before implementation finishes', async () => {
+  it('should retain child work without a schedule while rejecting new occurrences and premature publication', async () => {
     const work = await workIssue();
     await work.run('next');
     work.receive();
@@ -6635,7 +6634,8 @@ describe('agent/codex-dispatch', () => {
     work.continuation.activation = async () => {
       throw new Error('workflow-schedule-reconciliation-required');
     };
-    await assert.rejects(work.run('context', {}, true), /schedule-reconciliation-required/);
+    assert.equal((await work.run('context', {}, true)).status, 'verified');
+    await assert.rejects(work.run('next'), /schedule-reconciliation-required/);
   });
 
   it('should recover unfinished delivery despite an obsolete complete phase', async () => {
@@ -6660,6 +6660,54 @@ describe('agent/codex-dispatch', () => {
     assert.equal(next.status, 'prepared');
     assert.match(String('request' in next && next.request?.prompt), /only the managed PR delivery/);
     assert.equal(codexItemOccupied((await store.read()).records[0]!), true);
+  });
+
+  it('should let a human supersede an unverified automatic attempt without schedule activation or a later generic resume', async () => {
+    const work = await workIssue();
+    await work.run('next');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const before = (await store.read()).records[0]!;
+    const activation = work.continuation.activation;
+    work.continuation.activation = async () => {
+      throw new Error('workflow-schedule-reconciliation-required');
+    };
+    native!.turnId = 'human-turn';
+    native!.followUpUserTurn = true;
+    native!.status = 'active';
+    native!.turnStatus = 'inProgress';
+    work.continuation.directOperator = true;
+    work.continuation.native!.operatorInput = async () => ({
+      turnId: 'human-turn',
+      inputId: 'human-input',
+    });
+    work.continuation.continuationNative = async (_source, attempt) => {
+      assert.equal(attempt.origin, 'input', 'an older automatic send must not gate human work');
+      return { status: 'verified', turnId: attempt.turnId!, ended: false };
+    };
+    const response = await work.run('context', {}, true);
+    assert.equal(response.status, 'verified', JSON.stringify(response));
+    const after = (await store.read()).records[0]!;
+    assert.equal(after.threadId, before.threadId);
+    assert.equal(after.worktree, before.worktree);
+    assert.deepEqual(after.result, before.result);
+    assert.deepEqual(after.continuation!.retries?.[0]?.attempt, before.continuation!.attempt);
+    assert.equal(after.continuation!.attempt?.inputId, 'human-input');
+    work.continuation.activation = activation;
+    work.continuation.directOperator = false;
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.continuation!.resultHistory = [
+        {
+          result: { outcome: 'done', summary: 'Prior round.', fullResult: 'Verified prior work.' },
+        },
+      ];
+      await save();
+    });
+    native!.status = 'idle';
+    native!.turnStatus = 'completed';
+    native!.turnEnded = true;
+    assert.equal((await work.run('next')).status, 'idle');
+    assert.equal((await store.read()).records[0]!.continuation!.attempt?.inputId, 'human-input');
   });
 
   it('should finish scheduled announcement recovery without resuming delivered codex work', async () => {
@@ -7311,11 +7359,7 @@ describe('agent/codex-dispatch', () => {
       calls++;
       assert.deepEqual(value, { id: work.id, action: 'prepare' });
       assert.equal(deliveryDeps?.threadId, native!.id);
-      assert.deepEqual(deliveryDeps?.schedule?.saved.capabilities, [
-        'assessment',
-        'implementation',
-        'publication',
-      ]);
+      assert.equal(deliveryDeps?.schedule, undefined);
       await deliveryDeps?.authorizeSchedule?.();
       throw new Error('fixture-delivery-boundary');
     };

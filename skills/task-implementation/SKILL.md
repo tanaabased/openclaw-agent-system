@@ -104,8 +104,11 @@ do not revoke an entered implementation stage. Respect explicit user restriction
 retirement, reset, supersession, cancellation, and actual native denial.
 An idle chat still owns its task. Completed implementation with verified linked PR publication, or a local-only result, settles the
 current implementation round. Attempt native attachment and the announcement/card response separately;
-a failure there never reopens implementation or authorizes a generic resume. A new verified user input can continue in the same
-chat and PR. Preserve local-only publication scope until the operator changes it.
+a failure there never reopens implementation or authorizes a generic resume. Continue ordinary
+questions and planning in that chat. A new authorized implementation request uses current
+native input in the same checkout and PR, without a scheduler or obsolete send receipt.
+Preserve historical assessments and results; a new ready plan supplies the current work.
+Preserve local-only publication scope until the operator changes it.
 
 ## Workflow
 

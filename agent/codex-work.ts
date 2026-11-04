@@ -1,3 +1,4 @@
+import { isImplementationRevision } from './implementation-revision.ts';
 import { observeCodexActivity } from './codex-capacity-reconcile.ts';
 import codexCapacity from './codex-capacity.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
@@ -166,10 +167,21 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       record.reset
     )
       throw new Error('continuation-managed-issue-required');
-    if (record.handoff && work.phase === 'cancelled') throw new Error('implementation-cancelled');
+    if (work.phase === 'cancelled') {
+      if (record.handoff) throw new Error('implementation-cancelled');
+      return { status: 'cancelled' as const, id: record.id };
+    }
+    if (
+      work.phase === 'blocked' &&
+      work.code === 'continuation-native-approval-denied' &&
+      !work.attempt &&
+      !work.binding
+    )
+      return { status: 'blocked' as const, id: record.id, code: work.code };
     if (
       input.action === 'next' &&
-      ((work.retry && !dispatchRetryDue(work, (deps.now ?? Date.now)())) ||
+      ((isImplementationRevision(work) && issueWorkflowProgress(record).action !== 'complete') ||
+        (work.retry && !dispatchRetryDue(work, (deps.now ?? Date.now)())) ||
         (work.code && !work.retry))
     )
       return undefined;
@@ -206,7 +218,10 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
           announcementRecoveryAction(record.delivery, (deps.now ?? Date.now)()) !== 'check')
       )
         return undefined;
-      if (progress.action === 'stopped' || !work.result)
+      if (
+        (progress.action === 'stopped' && !context.operatorInput) ||
+        (!work.result && !context.operatorInput)
+      )
         return { status: progress.status, id: record.id, code: work.code };
     }
     if (!record.result) return undefined;
@@ -322,15 +337,16 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       const authorize = async () => {
         await authorizeLive();
         signal.throwIfAborted();
-        const fresh = record.manualIssue
-          ? { sourceThreadId: record.sourceThreadId }
-          : await (deps.activation ?? inspectCodexDispatchActivation)(
-              pluginData,
-              { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-              false,
-              true,
-              'publication',
-            );
+        const fresh =
+          caller === record.threadId || record.manualIssue
+            ? { sourceThreadId: record.sourceThreadId }
+            : await (deps.activation ?? inspectCodexDispatchActivation)(
+                pluginData,
+                { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+                false,
+                true,
+                'publication',
+              );
         if (fresh.sourceThreadId !== activation.sourceThreadId)
           throw new Error('continuation-schedule-binding-mismatch');
       };
@@ -392,16 +408,17 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       });
       selection = currentSelection.selection;
     }
-    // recheck the saved native activation after provider and skill reads, before side effects.
-    const fresh = record.manualIssue
-      ? { sourceThreadId: record.sourceThreadId }
-      : await (deps.activation ?? inspectCodexDispatchActivation)(
-          pluginData,
-          { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-          false,
-          true,
-          input.action === 'delivery' ? 'publication' : 'implementation',
-        );
+    // scheduled recovery rechecks activation; an owning chat keeps its native authority.
+    const fresh =
+      caller === record.threadId || record.manualIssue
+        ? { sourceThreadId: record.sourceThreadId }
+        : await (deps.activation ?? inspectCodexDispatchActivation)(
+            pluginData,
+            { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+            false,
+            true,
+            input.action === 'delivery' ? 'publication' : 'implementation',
+          );
     if (fresh.sourceThreadId !== activation.sourceThreadId)
       throw new Error('continuation-schedule-binding-mismatch');
     if (input.action !== 'reconcile' && input.action !== 'result') await authorizeLive();

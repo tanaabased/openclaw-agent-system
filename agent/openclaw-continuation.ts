@@ -1,3 +1,4 @@
+import { isImplementationRevision } from './implementation-revision.ts';
 import { nativeInputEvent } from './openclaw-session-input.ts';
 import issueWorkflowProgress from './issue-workflow-progress.ts';
 import { feedbackWorkStarted } from './feedback-work.ts';
@@ -27,7 +28,7 @@ export function openClawWorkSlot(record: OpenClawDispatchRecord, mode: Mode) {
   if (work?.turn && work.turn.status !== 'completed') return 'turn' as const;
   if (work?.deliveryTurn && work.deliveryTurn.status !== 'completed')
     return 'deliveryTurn' as const;
-  if (progress.action === 'complete') return;
+  if (progress.action === 'complete' || isImplementationRevision(work)) return;
   if (feedbackWorkStarted(record)) return;
   if (progress.action === 'delivery') return 'deliveryTurn' as const;
   if (

@@ -12,6 +12,7 @@ export default function implementationContext(input: {
   path: string;
   assessment?: AssessmentResult;
   plan?: string;
+  reassessments?: Array<{ result?: AssessmentResult }>;
   implementation?: AssessmentSelection;
   previousResult?: Static<typeof implementationResultSchema>;
   scope?: 'local' | 'pull-request';
@@ -19,6 +20,9 @@ export default function implementationContext(input: {
   revision?: boolean;
   existingPullRequest?: boolean;
 }) {
+  const reassessment = input.reassessments?.findLast(
+    ({ result }) => result?.outcome === 'plan-ready',
+  )?.result;
   return {
     status: 'verified' as const,
     runtime: input.runtime,
@@ -28,6 +32,7 @@ export default function implementationContext(input: {
     assessment: input.assessment,
     plan:
       input.plan ??
+      (reassessment?.outcome === 'plan-ready' ? reassessment.plan : undefined) ??
       (input.assessment?.outcome === 'plan-ready' ? input.assessment.plan : undefined),
     implementation: input.implementation,
     resultContract: 'implementation-result/v1' as const,

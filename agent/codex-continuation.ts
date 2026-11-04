@@ -49,11 +49,14 @@ export default async function runCodexContinuation(
   const retry = input.action === 'retry' || retryDenied;
   if (!caller) throw new Error('continuation-caller-required');
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
-  const manualOwner = (await store.read()).records.find(
-    (record) => record.id === input.id && record.manualIssue && record.threadId === caller,
+  const localOwner = (await store.read()).records.find(
+    (record) =>
+      record.id === input.id &&
+      record.threadId === caller &&
+      !['next', 'reconcile'].includes(input.action),
   );
-  const activation = manualOwner
-    ? { sourceThreadId: manualOwner.sourceThreadId }
+  const activation = localOwner
+    ? { sourceThreadId: localOwner.sourceThreadId }
     : await (deps.activation ?? inspectCodexDispatchActivation)(
         pluginData,
         { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
@@ -62,7 +65,7 @@ export default async function runCodexContinuation(
         input.action === 'delivery' ? 'publication' : 'implementation',
       );
   const schedule = activation.schedule;
-  if (!schedule && !manualOwner) throw new Error('workflow-schedule-reconciliation-required');
+  if (!schedule && !localOwner) throw new Error('workflow-schedule-reconciliation-required');
   if (schedule)
     requireWorkflowSchedule(
       schedule.saved,
@@ -252,15 +255,16 @@ export default async function runCodexContinuation(
             record && retainedIssueProgression(record) ? 'continued-work' : 'implementation',
           );
           if (held) throw new WorkflowPolicyHeld(held);
-          const fresh = record?.manualIssue
-            ? { sourceThreadId: record.sourceThreadId }
-            : await (deps.activation ?? inspectCodexDispatchActivation)(
-                pluginData,
-                { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-                false,
-                true,
-                'publication',
-              );
+          const fresh =
+            record?.threadId === caller || record?.manualIssue
+              ? { sourceThreadId: record.sourceThreadId }
+              : await (deps.activation ?? inspectCodexDispatchActivation)(
+                  pluginData,
+                  { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+                  false,
+                  true,
+                  'publication',
+                );
           if (fresh.sourceThreadId !== activation.sourceThreadId)
             throw new Error('continuation-schedule-binding-mismatch');
         },

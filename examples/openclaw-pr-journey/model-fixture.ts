@@ -116,6 +116,24 @@ function respond(
     .filter(({ role }) => role === 'user')
     .map(({ content }) => getTextContent(content) ?? '')
     .join('\n');
+  if (prompt.includes('Explain the completed PR in this ordinary conversation.')) {
+    const privateContext = request.messages
+      .map(({ content }) => getTextContent(content) ?? '')
+      .join('\n');
+    const facts = /Agent System model-only current-turn facts \(keep private\):\n([^\n]+)/u.exec(
+      privateContext,
+    )?.[1];
+    assert.ok(facts, 'the native hook must retain task facts after delivery');
+    const retained = JSON.parse(facts);
+    assert.equal(retained.previousImplementationResult?.outcome, 'done');
+    assert.ok(retained.pullRequest?.pullRequestNumber);
+    assert.ok(retained.worktree);
+    assert.ok(retained.branch);
+    assert.ok(privateContext.includes('Continue the ordinary native conversation'));
+    return {
+      content: 'The linked PR contains the completed cleanup note. No further work was requested.',
+    };
+  }
   // repeat only known contention, preserving the operation and its retained arguments.
   const attempts = new Map<string, number>();
   const result = (stage: string): Record<string, unknown> | undefined => {
