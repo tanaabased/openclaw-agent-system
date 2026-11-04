@@ -49,7 +49,7 @@ and presenting its result.
 - Launching chats, choosing assignments, preparing repositories, or changing models.
 - "Work on task" requests that start or reopen managed work belong to [Task Launch](../task-launch/SKILL.md); an explicit request to implement an existing actionable plan belongs to [Task Implementation](../task-implementation/SKILL.md).
 - Implementing the task, publishing to GitHub, or handling PR reviews and feedback.
-- Replacing an ordinary user request with an unsolicited assessment workflow.
+- Replacing ordinary research, native context handoffs or a supplied plan with an unsolicited assessment workflow. A mentioned issue or destination repository does not request Agent System tracking.
 
 ## Preconditions
 
