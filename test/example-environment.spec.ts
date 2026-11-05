@@ -79,7 +79,6 @@ describe('example environment resolution', () => {
     ] as const) {
       const parsed = parseAgentManifest(
         (await readFile(path, 'utf8'))
-          .replaceAll('__OWNER_NODE_ID__', 'O_owner')
           .replaceAll('__ACTOR_NODE_ID__', 'U_actor')
           .replaceAll('__MILESTONE_NUMBER__', '123'),
       );

@@ -1,5 +1,4 @@
-import { hasDeliveredImplementation } from './implementation-delivery.ts';
-import recoverIssueTask from './issue-task-recovery.ts';
+import recoverIssueTask, { pendingRecoveryFeedback } from './issue-task-recovery.ts';
 import openClawEntryContext from './openclaw-entry-context.ts';
 import { observeRetiringSession } from './openclaw-retirement-observation.ts';
 import IssueDeliveryProvider from '../channels/github/publication/issue-delivery.ts';
@@ -48,7 +47,7 @@ export default async function recoverOpenClawTask(options: {
         const verified = await service.validate(manifest, workspace, selected, true);
         const { intake } = verified;
         const delivery = record.work?.delivery;
-        const execution = hasDeliveredImplementation(record) ? undefined : record;
+        const execution = record;
         const turns = [
           execution?.firstTurn,
           execution?.assessmentTurn,
@@ -95,17 +94,14 @@ export default async function recoverOpenClawTask(options: {
           revalidate: () => service.validate(manifest, workspace, record, true),
           effects: {
             pendingNativeTurn: turns.some(
-              (turn) =>
-                turn && (turn.status !== 'completed' || Boolean(turn.failed || turn.cancelled)),
+              (turn) => turn && turn.status !== 'completed' && !turn.inactive,
             ),
             pendingPush: Boolean(delivery?.pendingPush),
             uncertainPrCreation: Boolean(delivery?.creationAttempted && !delivery.pullRequest),
             uncertainAnnouncement: Boolean(
               delivery?.announcement?.attempted && !delivery.announcement.receipt,
             ),
-            pendingFeedback: record.feedback?.events.some(
-              (event) => !['complete', 'cancelled', 'held'].includes(event.phase),
-            ),
+            pendingFeedback: record.feedback?.events.some(pendingRecoveryFeedback),
             assignmentClaim: Boolean(
               (record.claimId || record.claimAccepted) &&
               (!service.dependencies.claims || 'initiation' in intake),

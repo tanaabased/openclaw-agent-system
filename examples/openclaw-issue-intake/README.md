@@ -5,7 +5,7 @@ Activate notification intake, exclude fixture assignments through repository rou
 ## What Belongs Here
 
 - Native channel readiness and a safe intake baseline before fixture assignment.
-- First-match repository routing overriding legacy owners, with singleton-to-pool two-pass admission and live rule changes preserving admitted work.
+- First-match repository routing, with singleton-to-pool two-pass admission and live rule changes preserving admitted work.
 - Custom routing skill/guidance selection during concurrent admission with distinct verified native owners, complete retained assessments, and private routing-method readback.
 - One repeat scan proving that admission does not duplicate chats, checkouts, or turns.
 
@@ -21,7 +21,7 @@ Activate notification intake, exclude fixture assignments through repository rou
 - One completed assessment checks that the retained custom method reaches the private routing card. Formatting and debug variants stay in owning renderer tests.
 - Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases one after verifying three native starts, requires its result while two responses remain held, then releases the others; model judgment is not under test.
 - Swarm adds one coordinator turn to verify that claims precede native creation. This single-installation journey does not prove cross-installation exclusion; the comment-only POC can overlap under incomplete provider views.
-- V3 object identities pin assignment actors; repository routing overrides the retained legacy owner list. Only Tanaabot receives the three disposable assignments.
+- V3 object identities pin assignment actors; repository routing selects repository scope and placement. Only Tanaabot receives the three disposable assignments.
 - Scoped refreshes and a 24-hour schedule bound discovery. The job owns its workspaces, issues, native state, and SSH registration; cleanup stops the Gateway before changing external fixtures.
 
 ## Setup
@@ -40,10 +40,9 @@ openclaw config set plugins.entries.agent-system.config.cleanup.graceMinutes 0 -
 
 # should prepare the declared identity pins and isolated ssh fixture
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot/keys" "$HOME/.ssh"
-owner_node=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id)
 actor_node=$(GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id')
 receiver_node=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api user --jq 'select(.login == "tanaabot") | .node_id')
-sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__RECEIVER_NODE_ID__|$receiver_node|g" -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
+sed -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__RECEIVER_NODE_ID__|$receiver_node|g" -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
 mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot/agent.yaml"
 cp "$HOME/.ssh/big-test-bucket-ssh" "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot/keys/id_ed25519"
 cp "$HOME/.ssh/big-test-bucket-ssh.pub" "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot/keys/id_ed25519.pub"
@@ -110,13 +109,13 @@ openclaw config get channels.agent-system-github --json | jq -e '.accounts["reti
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/emori"
 openclaw agent-system tool gh -- api repos/tanaabased/big-test-bucket | jq '{id,node_id}' > "$TMPDIR/notification-repository.json"
 for slot in 1 2 3; do
-  openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System intake flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$slot" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-issue-intake/issue.md" | tee "$TMPDIR/notification-issue-$slot.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
+  node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" create --title "agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System intake flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$slot" --body-file "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/issue.md" | tee "$TMPDIR/notification-issue-$slot.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
   number=$(jq -er .number "$TMPDIR/notification-issue-$slot.json")
-  openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
+  node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" assign --number "$number" | jq -e 'any(.assignees[]; .login == "tanaabot")'
 done
 cp "$TMPDIR/notification-issue-1.json" "$TMPDIR/notification-issue.json"
 
-# should exclude assignments with the first route despite the legacy owner grant
+# should exclude assignments with the first route
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number "$number" --json | jq -e '.status == "completed" and .admitted == 0 and any(.repositoryScope[]; .source == "routing" and .reason == "excluded" and .index == 0)'

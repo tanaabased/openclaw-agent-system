@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 
 import { type ChatCompletionRequest, type FixtureResponse } from '@copilotkit/aimock';
 
-import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
 import { pickupResponse } from '../examples/openclaw-project-picker/model-fixture.ts';
 
 function request(prompt: string, results: Array<[string, unknown]> = []): ChatCompletionRequest {
@@ -27,7 +26,7 @@ function argumentsOf(response: FixtureResponse | undefined) {
   return JSON.parse(response.toolCalls[0]!.arguments);
 }
 
-const prompt = 'Run the activated project pickup once.';
+const prompt = 'Run the activated issue pickup once.';
 
 describe('examples/openclaw-project-picker model fixture', () => {
   it('should select the supplied candidate through intake using the native snapshot identifiers', () => {
@@ -99,23 +98,19 @@ describe('examples/openclaw-project-picker model fixture', () => {
     assert.throws(() => pickupResponse(input), /contention exhausted/u);
   });
 
-  it('should require ordinary intake to supply work mode before retaining clarification', () => {
+  it('should require ordinary intake to supply work mode before asking a native question', () => {
     const id = 'a'.repeat(64);
     const context = {
       status: 'verified',
       mode: 'work',
       project: { path: '/fixture/issue' },
-      resultSchema: assessmentResultContextSchema,
-      resultSubmission: { request: { action: 'result', id }, resultField: 'result' },
     };
     const input = request(`Call agent_system_dispatch with action context and id ${id}`, [
       ['context', context],
     ]);
-    const saved = argumentsOf(pickupResponse(input));
-    assert.equal(saved.id, id);
-    assert.equal(saved.action, 'result');
-    assert.equal(saved.result.outcome, 'clarification-needed');
-    assert.ok(saved.result.questions.length > 0);
+    assert.deepEqual(pickupResponse(input), {
+      content: 'Should disposable issues close after evidence capture?',
+    });
     assert.throws(
       () =>
         pickupResponse(

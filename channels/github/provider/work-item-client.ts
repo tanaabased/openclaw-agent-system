@@ -169,13 +169,13 @@ export default class GitHubWorkItemClient implements GitHubNotificationIntakeCli
 
   async getMilestone(owner: string, name: string, number: number): Promise<GitHubMilestone> {
     if (!Number.isSafeInteger(number) || number < 1)
-      throw new Error('project-pickup-milestone-invalid');
+      throw new Error('issue-pickup-milestone-invalid');
     const response = await this.#api.request(
       [`${githubRepositoryEndpoint(owner, name)}/milestones/${number}`],
       'milestone',
     );
     const result = githubResponseMilestone(response.value);
-    if (result.number !== number) throw new Error('project-pickup-milestone-changed');
+    if (result.number !== number) throw new Error('issue-pickup-milestone-changed');
     return result;
   }
 

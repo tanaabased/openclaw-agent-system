@@ -6,8 +6,6 @@ import {
   type Fixture,
   type FixtureResponse,
 } from '@copilotkit/aimock';
-import { Value } from 'typebox/value';
-import type { TSchema } from 'typebox';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
@@ -20,7 +18,6 @@ const dispatchStages = [
     ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
   ).flat(),
   'context',
-  'result',
   'report',
 ];
 const attemptStage = (stage: string, attempt: number) => `${stage}-${attempt}`;
@@ -76,7 +73,7 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
   });
   const dispatch = (stage: string, args: unknown) => call(stage, 'agent_system_dispatch', args);
 
-  if (prompt.includes('Run the activated project pickup once.')) {
+  if (prompt.includes('Run the activated issue pickup once.')) {
     let args: Record<string, unknown> = { action: 'pickup' };
     for (const stage of pickupStages) {
       const observed = result(stage);
@@ -187,38 +184,7 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
   assert.equal(context.mode, 'work', 'pickup must override ordinary plan mode');
   const project = context.project as { path: string };
   assert.equal(typeof project.path, 'string');
-  const saved = result('result');
-  if (!saved) {
-    const payload = {
-      version: 1,
-      outcome: 'clarification-needed',
-      summary: 'Confirm the cleanup timing before changing documentation.',
-      assessment: 'The selected cleanup issue needs its timing clarified.',
-      fullAssessment:
-        'Verified the ordinary issue chat and Work-mode context. Cleanup timing needs confirmation before implementation.',
-      questions: ['Should disposable issues close after evidence capture?'],
-      evidence: [
-        {
-          source: project.path,
-          status: 'observed',
-          detail: 'Ordinary intake supplied the managed checkout and Work mode.',
-        },
-      ],
-      progress: {
-        completed: ['Assessed the selected cleanup issue.'],
-        remaining: ['Confirm cleanup timing.'],
-      },
-    };
-    assert.ok(Value.Check(context.resultSchema as TSchema, payload));
-    const submission = context.resultSubmission as {
-      request: Record<string, unknown>;
-      resultField: string;
-    };
-    return dispatch('result', { ...submission.request, [submission.resultField]: payload });
-  }
-  assert.equal(saved.status, 'recorded');
-  assert.equal(typeof saved.presentation, 'string');
-  return { content: String(saved.presentation) };
+  return { content: 'Should disposable issues close after evidence capture?' };
 }
 
 const final: Fixture = {
@@ -230,7 +196,7 @@ const final: Fixture = {
   },
 };
 
-export const projectPickupScenario: OpenClawAIMockScenario = {
+export const issuePickupScenario: OpenClawAIMockScenario = {
   id: 'openclaw-project-picker',
   model: { match: model, reference: 'aimock/gpt-5.5' },
   systemPromptSignals: [],

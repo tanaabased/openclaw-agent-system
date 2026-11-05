@@ -1,3 +1,4 @@
+import taskPullRequest from './task-pull-request.ts';
 import replyOwnPublications from './reply-own-publications.ts';
 import { managedPullRequest } from './managed-issue.ts';
 import { lstat } from 'node:fs/promises';
@@ -110,7 +111,7 @@ export default async function reconcileOpenClawLifecycle(input: {
       observe: (record) =>
         service.dependencies.credential.use(authority, (request) => observe(request, record)),
       reactivate: async (record, intake) => {
-        const pr = record.work?.delivery?.reconciled ? record.work.delivery.pullRequest : undefined;
+        const pr = taskPullRequest(record);
         return reactivateAssignmentFeedback({
           record,
           intake,

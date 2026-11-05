@@ -1,13 +1,15 @@
+import { Value } from 'typebox/value';
+import { replyRequestSchema } from '../tools/dispatch/reply-schema.ts';
+import ReplyStore, { type ReplyDraft } from './reply-store.ts';
 import openClawFeedbackInput from './openclaw-feedback-input.ts';
 import { authorizeFeedback } from './openclaw-feedback.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
-import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
-import type { ReplyDraft } from './reply-store.ts';
+import { inspectIssueIdentity } from './dispatch-assignment.ts';
 import { dispatchAdmission } from './managed-issue.ts';
 import feedbackReply from './feedback-reply.ts';
 import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
-import { operatorInputEvent } from './openclaw-session-input.ts';
+import { nativeInputEvent, operatorInputEvent } from './openclaw-session-input.ts';
 import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
 import replyOwner from './reply-owner.ts';
 import replyOwnerContext from './reply-owner-context.ts';
@@ -27,9 +29,20 @@ export default async function openClawReply(input: {
   dependencies: OpenClawDispatchDependencies;
 }) {
   const { manifest, caller, dependencies: deps, authority } = input;
+  if (!Value.Check(replyRequestSchema, input.action)) throw new Error('reply-request-invalid');
+  const action = input.action;
   await authority.assertCurrent?.();
   const current = await deps.intake.select(manifest, input.workspace, { resolvePolicy: false });
   const journal = new OpenClawDispatchStore(deps.root, current.store.location.scope);
+  const binding = {
+    runtime: 'openclaw' as const,
+    agentId: manifest.agent.id,
+    workspace: current.workspace,
+    namespace: deps.intake.dependencies.namespace,
+    session: caller.sessionKey,
+    incarnation: caller.sessionId,
+  };
+  const replyStore = new ReplyStore(deps.root, binding);
   return deps.credential.use(authority, async (request) => {
     let feedback: ReplyDraft['feedback'];
     const nativeInput = async () => {
@@ -52,7 +65,27 @@ export default async function openClawReply(input: {
         };
         return { inputEventId: matched.inputId, message: matched.event.source };
       }
-      if (!input.operator) throw new Error('reply-operator-required');
+      if (!input.operator) {
+        const draft =
+          action.id && (await replyStore.read()).find((entry) => entry.id === action.id);
+        const update = action.purpose === 'status-update' || Boolean(draft && draft.update);
+        const turn = [
+          record?.assessmentTurn,
+          record?.decisionTurn,
+          record?.work?.turn,
+          record?.work?.deliveryTurn,
+        ].find((entry) => entry?.runId === caller.runId);
+        if (!update || !record || !turn || turn.cancelled || turn.status === 'completed')
+          throw new Error('reply-operator-required');
+        await describeIssueSession(request, record, deps.config(), 'feedback');
+        return nativeInputEvent({
+          request,
+          sessionKey: caller.sessionKey,
+          sessionId: caller.sessionId,
+          runId: caller.runId,
+          retained: [record.assessmentCaller, record.work?.caller],
+        });
+      }
       return operatorInputEvent({
         request,
         senderIsOwner: input.operator,
@@ -89,14 +122,7 @@ export default async function openClawReply(input: {
     };
     return feedbackReply(input.action, {
       root: deps.root,
-      binding: {
-        runtime: 'openclaw',
-        agentId: manifest.agent.id,
-        workspace: current.workspace,
-        namespace: deps.intake.dependencies.namespace,
-        session: caller.sessionKey,
-        incarnation: caller.sessionId,
-      },
+      binding,
       turnId: caller.runId,
       inputId: turn.inputEventId,
       message: turn.message,
@@ -126,14 +152,14 @@ export default async function openClawReply(input: {
         )
           throw new Error('reply-feedback-source-changed');
         await authorizeFeedback({
+          conversation: true,
           record,
           event,
           intake: admitted,
           policy: policy.policy,
           provider,
           assertCurrent,
-          reauthorize: async () =>
-            (await inspectFeedbackAssignment(policy, admitted, provider, record)).item,
+          reauthorize: async () => (await inspectIssueIdentity(admitted, provider)).item,
         });
       },
       manifest,
@@ -155,6 +181,7 @@ export default async function openClawReply(input: {
           state.records.map((record) =>
             replyOwnerContext({
               record,
+              conversation: Boolean(feedback),
               intake: dispatchAdmission(record, admitted?.records ?? []),
               caller: caller.sessionKey,
               incarnation: record.sessionCreation?.sessionId,

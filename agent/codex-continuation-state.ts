@@ -27,6 +27,7 @@ export const attemptSchema = Type.Object(
       { additionalProperties: false },
     ),
     turnId: Type.Optional(text),
+    ended: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -62,6 +63,7 @@ export const codexContinuationStateSchema = Type.Object(
       ),
     ),
     selection: assessmentSelectionSchema,
+    contextSelection: Type.Optional(assessmentSelectionSchema),
     assessmentDigest: Type.Optional(hash),
     assessmentSelectionDigest: Type.Optional(hash),
     observation: Type.Optional(

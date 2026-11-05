@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { historyEvictions } from '../agent/cold-history.ts';
 import { historyLifetimeMs } from '../agent/history-state.ts';
+import { pendingRecoveryFeedback } from '../agent/issue-task-recovery.ts';
+import type { OpenClawFeedbackEvent } from '../agent/openclaw-feedback-state.ts';
 
 import retainDispatchHistory, {
   settledFeedback,
@@ -60,6 +62,27 @@ function event(index: number): FeedbackSourceEvent {
 }
 
 describe('agent/retain-dispatch-history', () => {
+  it('should distinguish replacement safety from legacy history compaction checkpoints', () => {
+    const source: OpenClawFeedbackEvent = event(1);
+    source.reported = false;
+    source.work = { selection };
+    assert.equal(settledFeedback(source), false);
+    assert.equal(pendingRecoveryFeedback(source), false);
+    source.publicationAttempted = true;
+    delete source.receipt;
+    assert.equal(pendingRecoveryFeedback(source), true);
+    source.receipt = { nodeId: 'reply', databaseId: 1 };
+    source.turn = { runId: 'original', message: 'input', status: 'accepted' };
+    assert.equal(pendingRecoveryFeedback(source), true);
+    source.turn.inactive = true;
+    assert.equal(pendingRecoveryFeedback(source), false);
+    source.native = true;
+    source.phase = 'queued';
+    assert.equal(pendingRecoveryFeedback(source), true);
+    source.phase = 'delivered';
+    assert.equal(pendingRecoveryFeedback(source), false);
+  });
+
   it('should evict oldest cold detail before exceeding the budget, including temporary write space', () => {
     const mib = 1024 * 1024;
     const entries = [

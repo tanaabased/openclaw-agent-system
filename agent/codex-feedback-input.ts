@@ -21,15 +21,20 @@ export default async function codexFeedbackInput(
   );
   const verified = [];
   for (const candidate of candidates) {
-    const receipt = await receiptFor(candidate.record.sourceThreadId, candidate.attempt);
-    if (receipt.status === 'blocked') throw new Error(receipt.code);
+    let receipt: Awaited<ReturnType<typeof receiptFor>>;
+    try {
+      receipt = await receiptFor(candidate.record.sourceThreadId, candidate.attempt);
+    } catch (error) {
+      if (candidate.attempt.turnId === turnId) throw error;
+      continue;
+    }
+    if (receipt.status === 'blocked') {
+      if (candidate.attempt.turnId === turnId || ('turnId' in receipt && receipt.turnId === turnId))
+        throw new Error(receipt.code);
+      continue;
+    }
     if (receipt.status !== 'verified' || receipt.turnId !== turnId || receipt.ended) continue;
-    if (
-      candidate.record.retired ||
-      candidate.record.retirement ||
-      candidate.record.reset ||
-      candidate.record.supersededBy
-    )
+    if (candidate.record.reset || candidate.record.supersededBy)
       throw new Error('reply-managed-context-invalid');
     verified.push(candidate);
   }

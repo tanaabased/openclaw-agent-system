@@ -1,8 +1,8 @@
 import { Type, type Static } from 'typebox';
 
-import decodeProjectPickup, { projectPickupSchema } from './project-pickup-schema.ts';
+import decodeIssuePickup, { issuePickupSchema } from './issue-pickup-schema.ts';
+import { decodeRepositoryRouting, repositoryRouteSchema } from './repository-scope.ts';
 import { automationModelProperties } from '../../manifest/automation-schema.ts';
-import { repositoryRouteSchema } from './repository-scope.ts';
 
 import {
   assessmentConfigurationSchema,
@@ -39,7 +39,8 @@ const trigger = {
 };
 
 export const githubV3Properties = {
-  'project-pickup': Type.Optional(projectPickupSchema),
+  'issue-pickup': Type.Optional(issuePickupSchema),
+  'project-pickup': Type.Optional(issuePickupSchema),
   'schema-version': Type.Optional(Type.Literal(3)),
   runtimes: Type.Optional(
     Type.Array(Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]), {
@@ -73,23 +74,13 @@ export const githubV3Properties = {
   ),
 };
 
-export const githubLegacyScopeProperties = {
-  'allowed-repository-owners': Type.Array(githubIdentityReferenceSchema, { minItems: 1 }),
-};
 export const githubRoutingScopeProperties = {
   routing: Type.Array(repositoryRouteSchema),
-  'allowed-repository-owners': Type.Optional(Type.Unknown()),
 };
-export const externalGitHubV3Schema = Type.Union([
-  Type.Object(
-    { ...githubV3Properties, ...githubLegacyScopeProperties },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { ...githubV3Properties, ...githubRoutingScopeProperties },
-    { additionalProperties: false },
-  ),
-]);
+export const externalGitHubV3Schema = Type.Object(
+  { ...githubV3Properties, ...githubRoutingScopeProperties },
+  { additionalProperties: false },
+);
 export type ExternalGitHubV3 = Static<typeof externalGitHubV3Schema>;
 
 function identity(value: Static<typeof githubIdentityReferenceSchema>): GitHubIdentityPin {
@@ -113,17 +104,14 @@ export default function decodeGitHubV3(value: ExternalGitHubV3): GitHubNotificat
   const issue = value['issue-assignment'];
   const review = value['review-request'];
   const reviewers = (issue?.reviewers ?? []).map(identity);
+  const pickup = value['issue-pickup'] ?? value['project-pickup'];
   return {
     schemaVersion: 3,
     runtimes: value.runtimes ?? ['openclaw', 'codex'],
     intervalMinutes: value['interval-minutes'] ?? 5,
     maxConcurrentItems: value['max-concurrent-items'] ?? 3,
-    ...(value['project-pickup']
-      ? { projectPickup: decodeProjectPickup(value['project-pickup']) }
-      : {}),
-    ...('routing' in value
-      ? { routing: [...value.routing], allowedRepositoryOwners: [] }
-      : { allowedRepositoryOwners: value['allowed-repository-owners'].map(identity) }),
+    ...(pickup ? { issuePickup: decodeIssuePickup(pickup) } : {}),
+    routing: decodeRepositoryRouting(value.routing),
     ...(issue === undefined
       ? {}
       : {

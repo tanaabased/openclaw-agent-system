@@ -1,15 +1,12 @@
-import { assessmentSummaryInstructions } from './assessment-summary-state.ts';
-import { assessmentInstructions } from './assessment-instructions.ts';
+import { nativeAssessmentInstructions } from './assessment-instructions.ts';
 
 /** Codex-owned submission transport around the shared assessment contract. */
 const codexAssessmentInstructions =
-  assessmentInstructions +
+  nativeAssessmentInstructions('codex') +
   '\n\n' +
-  'Submit through dispatchRuntime from the newest trusted context using its exact argvPrefix, --plugin-data, and pluginData, with resultSubmission.request plus result matching resultSchema. This is managed execution: never use assessment context/result or the direct entry bootstrap. Send JSON on stdin through native stdin support or a quoted heredoc, never command arguments or a pipeline. Follow the bounded host-access and busy retry rules supplied by the launch/context instructions. Include previousResultDigest when replacing a retained result; on conflict reload context and reconcile before retrying. On later answers, refresh context and revise in this same chat using the retained selection and complete assessment. After acknowledgment, reproduce the entire returned presentation. Native runtime state, not prose, controls lifecycle transitions.' +
-  '\n\n' +
-  assessmentSummaryInstructions('codex');
+  'For optional assessment recording, submit through dispatchRuntime using resultSubmission.request plus result matching resultSchema. Send JSON on stdin. Include previousResultDigest when revising saved history; reconcile uncertain submissions. Show the acknowledged presentation when used. Do not require recording before implementation, clarification answers, or PR delivery.';
 
 export const autoAssessmentInstructions =
-  'Trusted issue mode: auto. Include decision {mode:plan|work,reasons:[...]} in this assessment result, with one to five nonempty reasons of at most 1000 characters each. Apply the shared assessment suitability guidance, including for ordinary replacement skills. Work requires plan-ready; a ready plan may still select Plan. Missing or unusable judgment must select Plan or report a blocker, never default to Work. Record and present the complete assessment, handle its summary, and follow the returned handoff. A Work handoff continues through continuation context in this same turn; Plan waits for direction.';
+  'Trusted issue mode: auto. Make a bounded proceed/wait decision from the actual task and current direction. Use continuationRuntime context with decision {mode:plan|work,reasons:[...]} when requesting implementation permission; no saved assessment is required. Missing judgment never defaults to Work. A Plan decision waits in native conversation without coordinator nudges.';
 
 export default codexAssessmentInstructions;

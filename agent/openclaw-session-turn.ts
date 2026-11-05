@@ -118,8 +118,6 @@ export default async function advanceIssueTurn(input: {
     });
     await guard();
     record.phase = record.result ? 'complete' : input.assessment ? 'assessing' : 'created';
-    if (input.assessment && turn.status === 'completed' && !record.result)
-      throw new Error('dispatch-assessment-result-missing');
     delete record.blocker;
     delete record.failureStage;
     await save();

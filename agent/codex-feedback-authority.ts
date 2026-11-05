@@ -1,5 +1,6 @@
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
 import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
+import { inspectIssueIdentity } from './dispatch-assignment.ts';
 import { admitFeedback, feedbackRevision } from './feedback-source.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
@@ -18,6 +19,7 @@ import {
 
 /** verify the exact admitted source before work and every dependent provider write. */
 export default async function authorizeCodexFeedback(input: {
+  conversation?: boolean;
   current: Awaited<ReturnType<typeof selectCodexIntake>>;
   record: DispatchRecord;
   event: Pick<FeedbackSourceEvent, 'number' | 'nodeId' | 'itemType' | 'source' | 'revision'>;
@@ -33,7 +35,9 @@ export default async function authorizeCodexFeedback(input: {
   if (!policy) throw new WorkflowPolicyHeld('feedback-disabled');
   const owner = intake.repository.owner.login,
     name = intake.repository.name;
-  const assignment = await inspectFeedbackAssignment(policy, intake, provider.client, record);
+  const assignment = input.conversation
+    ? await inspectIssueIdentity(intake, provider.client)
+    : await inspectFeedbackAssignment(policy, intake, provider.client, record);
   const item =
     event.number === intake.issue.number
       ? assignment.item
@@ -41,8 +45,9 @@ export default async function authorizeCodexFeedback(input: {
   if (
     item.nodeId !== event.nodeId ||
     item.itemType !== event.itemType ||
-    item.state !== 'open' ||
-    (event.itemType === 'pull-request' &&
+    (!input.conversation && item.state !== 'open') ||
+    (!input.conversation &&
+      event.itemType === 'pull-request' &&
       (record.delivery?.pullRequest?.pullRequestNodeId !== event.nodeId ||
         record.delivery.pullRequest.pullRequestNumber !== event.number))
   )

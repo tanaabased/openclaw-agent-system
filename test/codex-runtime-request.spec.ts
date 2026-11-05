@@ -11,6 +11,7 @@ describe('agent/codex-runtime-request', () => {
       ['feedback', 'publish'],
       ['feedback', 'implementation-context'],
       ['feedback', 'implementation-result'],
+      ['delivery', 'link'],
       ['delivery', 'prepare'],
       ['delivery', 'publish'],
       ['delivery', 'announce'],

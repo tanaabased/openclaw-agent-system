@@ -1,5 +1,5 @@
 import automationModels from './automation-models.ts';
-import projectPickupJobs, { projectPickupAutomationId } from './project-pickup-jobs.ts';
+import issuePickupJobs, { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import { assessmentSummaryConsent } from './assessment-summary-state.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
@@ -22,7 +22,7 @@ export function codexIntakeJobs(
   runtime?: { entrypoint: string; pluginData: string },
 ): ResolvedAutomation[] {
   const declarations = manifest.automations ?? [];
-  if (declarations.some((job) => [intakeAutomationId, projectPickupAutomationId].includes(job.id)))
+  if (declarations.some((job) => [intakeAutomationId, issuePickupAutomationId].includes(job.id)))
     throw new IntakeError('intake-automation-id-reserved');
   const jobs = automationModels(declarations, manifest.models, 'codex');
   const selected = codexIntakePolicy(manifest);
@@ -57,11 +57,10 @@ export function codexIntakeJobs(
               ...(runtime ? [codexNativeHandoff(runtime.pluginData, 'retirement')] : []),
               'Read the current bound agent.yaml before each workflow decision. Live policy controls mode, approved authors, and recipients for every active issue. Scheduler pause stops future occurrences, not an accepted run or issue turn. Saved policy hashes are provenance, never authorization. Policy-held work stays pending and is reconsidered automatically; Install is needed only to reconcile installed automation machinery.',
               'Observe bounded incoming issue and feedback activity independently of dispatch eligibility. Dispatch only what the live manifest currently permits. Verified approved feedback is source-bound task direction, including explicit requests to enter implementation through the shared issue transition. Native denials, explicit cancellation, identity mismatches, and uncertain submissions retain their own stops.',
-              'After the deterministic scan, even when unchanged, first use the shared scheduled command block with runtimeRoute:"dispatch" and runtimeInput:{action:"observe-denials"}. This evidence-only operation must return ready before continuation, feedback, retirement, or assignment effects. On any other result, obey its stop/report instruction without retrying a denied action. Once ready, call continuationRuntime action next. While an issue is planning, live Plan holds implementation; live Work permits an actionable plan to continue; live Auto additionally requires a Work decision. Once its implementation transition is recorded, preserve that stage across later mode edits. No routine stage approval is needed. Existing Plan issues may become eligible after a live Work change. Do not terminate an already-running native turn merely because defaults changed.',
+              'After the deterministic scan, even when unchanged, first use the shared scheduled command block with runtimeRoute:"dispatch" and runtimeInput:{action:"observe-denials"}. This evidence-only operation must return ready before continuation, feedback, retirement, or assignment effects. On any other result, obey its stop/report instruction without retrying a denied action. Once ready, call continuationRuntime action next only to observe already-attempted requests. Implementation and planning remain in native chat. Never send an Auto handoff, periodic keep-going message, or reporting nudge. A mode edit does not create a conversation turn.',
               ...(runtime
                 ? [
-                    'Use the shared scheduled command block with runtimeRoute:"continuation" and runtimeInput:{action:"next"}. Only a prepared response authorizes one native send in this occurrence. Reconcile unknown submissions without another send. On idle, policy-held, or nextAction dispatch, continue ordinary dispatch; retain task-local obstacles without resending their requests. On nextAction report, stop and report the shared failure. Count up to twelve continuation actions and keep issue progress in its own chat.',
-                    codexNativeHandoff(runtime.pluginData, 'continuation'),
+                    'Use the shared scheduled command block with runtimeRoute:"continuation" and runtimeInput:{action:"next"}. This observes retained request receipts and never prepares another send. After reconciled or idle, continue ordinary dispatch. Keep each unresolved receipt local to its operation; missing plans, results, questions or presentations never create work. Issue conversation progress belongs in its own chat.',
                   ]
                 : []),
               'Check GitHub for assigned issues and observe managed issue and PR comments. The live runtime selects eligible work and prepares its exact native chat/worktree or feedback request. On feedback-prepared, send that request once, reconcile its id and eventId, and continue next for unrelated work. Repository preparation uses native host authorization and approved checkout locations; missing saved projects retain their exact manual registration handoff.',
@@ -91,6 +90,6 @@ export function codexIntakeJobs(
       manifest.models,
       'codex',
     ),
-    ...projectPickupJobs(manifest, 'codex', runtime ? codexDispatchHandoff(runtime) : ''),
+    ...issuePickupJobs(manifest, 'codex', runtime ? codexDispatchHandoff(runtime) : ''),
   ];
 }

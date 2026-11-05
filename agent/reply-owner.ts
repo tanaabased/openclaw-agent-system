@@ -26,6 +26,7 @@ export interface ReplyOwner {
   number?: number;
   pullRequestNumber?: number;
   events?: FeedbackSourceEvent[];
+  sourceReceipts?: Array<Pick<FeedbackSourceEvent, 'sourceId' | 'nodeId' | 'native'>>;
   deliveredPullRequest?: unknown;
   implementation?: Static<typeof implementationResultSchema>;
   result?: AssessmentResult;
@@ -46,7 +47,17 @@ export default function replyOwner(
     session,
     (owner) =>
       owner.repository?.toLowerCase() === repository &&
-      (target.number === owner.number || target.number === owner.pullRequestNumber),
+      (target.number === owner.number ||
+        target.number === owner.pullRequestNumber ||
+        Boolean(
+          target.source &&
+          (owner.sourceReceipts ?? owner.events)?.some(
+            (event) =>
+              event.native &&
+              event.nodeId === target.nodeId &&
+              event.sourceId === target.source!.nodeId,
+          ),
+        )),
   );
   if (ownership.status === 'ambiguous') throw new Error('reply-managed-owner-ambiguous');
   const { owner, caller } = ownership;
@@ -99,7 +110,8 @@ export default function replyOwner(
     );
     const event = matching?.at(-1);
     if (!event) return manualContext(owner);
-    if (event.native) return manualContext(owner);
+    if (event.native || (!event.publicationAttempted && !event.receipt))
+      return manualContext(owner);
     if (!event.result || event.phase === 'blocked')
       throw new Error('reply-managed-response-required');
     if (event.receipt) {

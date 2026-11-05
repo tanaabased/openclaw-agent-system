@@ -140,6 +140,7 @@ export default async function codexReply(
         )
           throw new Error('reply-feedback-source-changed');
         await authorizeCodexFeedback({
+          conversation: true,
           current: fresh,
           record,
           event,
@@ -184,6 +185,7 @@ export default async function codexReply(
           state.records.map((record) =>
             replyOwnerContext({
               record,
+              conversation: Boolean(feedback),
               intake: dispatchAdmission(record, admitted?.records ?? []),
               caller,
               custodyInvalid: !record.request,

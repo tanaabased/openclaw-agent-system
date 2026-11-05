@@ -9,7 +9,7 @@ import {
   removeFixtureAssignment,
 } from './github-intake-fixture.ts';
 import { issueKey } from '../agent/dispatch-pending.ts';
-import { beginFeedbackWork } from '../agent/feedback-work.ts';
+import { selectWorkflowStage } from '../agent/workflow-stage.ts';
 import { discoverFeedback } from '../agent/feedback-source.ts';
 import { notificationAuthorityDigest } from '../agent/notification-authority.ts';
 import assert from 'node:assert/strict';
@@ -39,7 +39,7 @@ const manifest = {
     username: 'receiver',
     'schema-version': 3,
     runtimes: ['codex'],
-    'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+    routing: ['owner/*'],
     'issue-assignment': {
       mode: 'plan',
       allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
@@ -154,15 +154,19 @@ describe('agent/codex-delivery', () => {
         request: { threadId: 'child', prompt: 'feedback', model: 'model', thinking: 'high' },
       };
       record.progression = { stage: 'implementation', via: 'operator' };
-      await beginFeedbackWork({
-        record,
-        event,
-        policy,
+      // Retained legacy publication state, never a new per-comment workflow.
+      const selected = await selectWorkflowStage({
+        stage: 'implementation',
+        configuration: policy.issueAssignment?.implementation,
         workspace,
-        now: baseline + 80000,
-        pullRequest: record.delivery?.pullRequest,
+        observedAt: baseline + 80000,
         resolveSkill: (id) => deps.native!.assessmentSkill!(record.worktree!, id),
       });
+      event.work = {
+        selection: selected.selection,
+        ...(record.delivery?.pullRequest ? { pullRequest: record.delivery.pullRequest } : {}),
+      };
+      record.progression.workOwner = event.id;
       event.work!.result = {
         outcome: 'done',
         summary: 'Fixed.',
@@ -301,6 +305,28 @@ describe('agent/codex-delivery', () => {
     assert.equal(gitCalls.filter((args) => args.includes('push')).length, 2);
   });
 
+  it('should require shared implementation permission even with a legacy feedback event id', async () => {
+    const { eventId } = await feedbackWorkFixture(true);
+    const declaration = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
+    declaration.github['issue-assignment'].mode = 'plan';
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(declaration));
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      delete record.progression;
+      delete record.handoff;
+      await save();
+    });
+    deps.native!.find = async () => ({
+      id: 'child',
+      cwd: (await store.read()).records[0]!.worktree!,
+      status: 'active',
+      turnId: 'turn',
+      followUpUserTurn: false,
+    });
+    await assert.rejects(request('prepare', { eventId }), /workflow-policy-held/);
+    assert.equal(creates, 0);
+  });
+
   it('should end initial execution after feedback delivers the first pr and retain native routing after restart', async () => {
     const { eventId } = await feedbackWorkFixture(true);
     assert.equal((await store.read()).records[0]!.implementationDelivered, undefined);
@@ -372,32 +398,30 @@ describe('agent/codex-delivery', () => {
     assert.equal(gitCalls.filter((args) => args.includes('push')).length, 2);
     assert.equal(creates, 1);
   });
-  it('should stop a feedback work push when its native activated authority is revoked after preparation', async () => {
-    const { eventId } = await feedbackWorkFixture();
+  it('should stop a feedback push when source authority changes after preparation', async () => {
+    const { eventId, source } = await feedbackWorkFixture();
     const preview = await request('prepare', { eventId });
-    const active = deps.activation!;
     const git = deps.git!;
-    let revoked = false;
-    deps.activation = async (...args) => {
-      if (revoked) throw new Error('feedback-authority-revoked');
-      return active(...args);
-    };
     deps.git = async (cwd, args, signal) => {
       const value = await git(cwd, args, signal);
-      if (args[0] === 'ls-remote') revoked = true;
+      if (args[0] === 'ls-remote') source.author.nodeId = 'different-author';
       return value;
     };
     await assert.rejects(
       request('publish', { eventId, digest: requiredDigest(preview) }),
-      /authority-revoked/,
+      /feedback-source-author-changed/,
     );
     assert.equal(remote, firstHead);
     assert.equal(gitCalls.filter((args) => args.includes('push')).length, 1);
   });
-  it('should reject a different commit or native turn after feedback work is recorded', async () => {
+  it('should accept revised commits without a saved feedback result and reject a foreign native turn', async () => {
     const { eventId } = await feedbackWorkFixture();
     head = 'c'.repeat(40);
-    await assert.rejects(request('prepare', { eventId }), /feedback-implementation-head-changed/u);
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.feedback!.events[0]!.work;
+      await save();
+    });
+    assert.equal((await request('prepare', { eventId })).status, 'prepared');
     head = 'b'.repeat(40);
     const find = deps.native!.find;
     deps.native!.find = async (...args) => ({ ...(await find(...args))!, turnId: 'another-turn' });
@@ -1217,7 +1241,7 @@ describe('agent/codex-delivery', () => {
     assert.ok(!gitCalls.some((argv) => argv.includes('push')));
     const published = await publish();
     assert.equal(published.status, 'published');
-    assert.equal(published.workflowStatus, 'running');
+    assert.equal(published.workflowStatus, 'native-unobserved');
     assert.equal(pr!.title, 'Authored title');
     assert.equal(pr!.body, 'Authored body.\n\nCloses https://github.com/owner/repo/issues/3');
     assert.deepEqual(
@@ -1305,6 +1329,23 @@ describe('agent/codex-delivery', () => {
     assert.equal((await publish()).status, 'published');
     assert.equal(creates, 1);
   });
+  it('should keep initial association and operator unlinking independent of the delivery receipt', async () => {
+    await publish();
+    const receipt = structuredClone((await store.read()).records[0]!.delivery);
+    const linked = await request('link');
+    assert.equal(linked.status, 'linked');
+    assert.deepEqual((await store.read()).records[0]!.pullRequestLink, receipt!.pullRequest);
+    assert.deepEqual((await store.read()).records[0]!.delivery, receipt);
+    deps.connect = async () => {
+      throw new Error('unlink does not require a provider write');
+    };
+    assert.equal((await request('link', { pullRequest: null })).status, 'unlinked');
+    assert.equal((await store.read()).records[0]!.pullRequestLink, null);
+    assert.equal((await request('link')).status, 'unlinked');
+    assert.deepEqual((await store.read()).records[0]!.delivery, receipt);
+    assert.equal(creates, 1);
+  });
+
   it('should recover a lost creation response by adopting the same verified pr', async () => {
     failCreate = true;
     await assert.rejects(publish(), /transport lost/);
@@ -1352,7 +1393,7 @@ describe('agent/codex-delivery', () => {
     assert.equal((await store.read()).records[0]!.delivery!.pullRequest!.pullRequestNumber, 7);
     assert.equal(linkReads, 5);
     const retained = await request('present');
-    assert.equal(retained.workflowStatus, 'running');
+    assert.equal(retained.workflowStatus, 'native-unobserved');
     assert.match(String(retained.presentation), /pull\/7/);
     wrongIssueLink = false;
     await publish();
@@ -1465,7 +1506,7 @@ describe('agent/codex-delivery', () => {
         {},
         { schedule: { current, saved: { ...current, version: 1, capabilities: ['publication'] } } },
       ),
-      /delivery-body-required/,
+      /workflow-policy-held/,
     );
     await assert.rejects(request('prepare', { schedule: current }), /request-invalid/);
     assert.equal(creates, 0);

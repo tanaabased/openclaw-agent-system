@@ -24,8 +24,6 @@ export default async function openClawFeedbackInput(
   if (
     record.threadId !== caller.sessionKey ||
     record.sessionCreation?.sessionId !== caller.sessionId ||
-    record.retired ||
-    record.retirement ||
     record.reset ||
     record.supersededBy ||
     event.turn!.cancelled

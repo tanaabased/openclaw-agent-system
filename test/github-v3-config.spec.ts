@@ -16,7 +16,7 @@ const base = {
   github: {
     'schema-version': 3,
     username: 'agent',
-    'allowed-repository-owners': [{ org: 'owner', 'node-id': 'O_owner' }],
+    routing: ['owner/*'],
     'issue-assignment': {},
   },
 };

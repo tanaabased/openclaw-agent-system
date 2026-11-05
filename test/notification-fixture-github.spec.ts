@@ -21,6 +21,76 @@ const comment = (body: string) => ({
 });
 
 describe('notification github fixtures', () => {
+  it('should reconcile uncertain issue creation by exact title body and author without a second post', async () => {
+    const calls: string[][] = [];
+    let created: Record<string, unknown>;
+    const request = {
+      action: 'create' as const,
+      title: 'agent-system-test-123-456-1- journey',
+      body: 'Disposable issue.',
+      run: '456-1',
+    };
+    const result = await notificationFixtureGitHub(
+      request,
+      async (argv) => {
+        calls.push(argv);
+        if (argv.includes('POST')) {
+          created = {
+            ...comment(argv.at(-1)!.slice(5)),
+            number: 42,
+            title: request.title,
+            state: 'open',
+            assignees: [],
+          };
+          return lost;
+        }
+        return reply([created, { ...created, body: 'Unrelated issue.' }]);
+      },
+      noWait,
+    );
+    assert.deepEqual(result, created!);
+    assert.equal(calls.filter((argv) => argv.includes('POST')).length, 1);
+    assert.match(calls[1]![1]!, /creator=emoriwan/u);
+  });
+
+  it('should stop on missing ambiguous altered or foreign issue creation evidence without replay', async () => {
+    for (const mode of ['missing', 'duplicate', 'edited', 'foreign']) {
+      let writes = 0;
+      let created: Record<string, unknown>;
+      await assert.rejects(
+        notificationFixtureGitHub(
+          {
+            action: 'create',
+            title: 'agent-system-test-123-456-1- journey',
+            body: 'Disposable issue.',
+            run: '456-1',
+          },
+          async (argv) => {
+            if (argv.includes('POST')) {
+              writes++;
+              created = {
+                ...comment(argv.at(-1)!.slice(5)),
+                number: 42,
+                title: 'agent-system-test-123-456-1- journey',
+                state: 'open',
+                assignees: [],
+              };
+              return lost;
+            }
+            if (mode === 'edited') created.title = 'Changed title';
+            if (mode === 'foreign') created.user = { login: 'someone-else' };
+            return reply(
+              mode === 'missing' ? [] : mode === 'duplicate' ? [created, created] : [created],
+            );
+          },
+          noWait,
+        ),
+        mode === 'missing' ? /outcome unresolved; POST not repeated/u : /ambiguous or altered/u,
+      );
+      assert.equal(writes, 1);
+    }
+  });
+
   it('should retain native assignment success without additional reads', async () => {
     const calls: string[][] = [];
     assert.deepEqual(

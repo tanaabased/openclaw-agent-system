@@ -98,3 +98,14 @@ export default async function readReplyTarget(provider: OpenClawFeedbackProvider
   };
 }
 export type ReplyTarget = Awaited<ReturnType<typeof readReplyTarget>>;
+
+/** Reconciliation reads the destination identity, not a possibly deleted source comment. */
+export async function verifyReplyDestination(
+  provider: OpenClawFeedbackProvider,
+  target: ReplyTarget,
+) {
+  const current = await readReplyTarget(provider, target.url.split('#')[0]!);
+  if (current.repositoryNodeId !== target.repositoryNodeId || current.nodeId !== target.nodeId)
+    throw new Error('reply-target-diverged');
+  return target;
+}

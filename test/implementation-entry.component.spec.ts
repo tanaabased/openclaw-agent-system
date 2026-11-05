@@ -258,7 +258,7 @@ describe('agent/implementation-entry', () => {
     assert.equal(direct.plan, plan);
     assert.equal(selections.length, 1);
   });
-  it('should pause questions inside the stage and resume partial work only on a new native input', async () => {
+  it('should keep questions in native chat without a clarification checkpoint', async () => {
     const first = await call();
     assert.ok('id' in first);
     const question = {
@@ -267,12 +267,8 @@ describe('agent/implementation-entry', () => {
       fullResult: 'Partial handler retained.',
       questions: ['Which result?'],
     };
-    await call('result', { id: first.id, result: question });
-    assert.equal((await call('context', { id: first.id })).status, 'clarification-needed');
-    await assert.rejects(
-      call('result', { id: first.id, result: ready }),
-      /implementation-answer-required/,
-    );
+    assert.equal((await call('result', { id: first.id, result: question })).status, 'native');
+    assert.equal((await call('context', { id: first.id })).status, 'verified');
     deps.turnId = 'answer';
     deps.inputId = 'answer-input';
     await assert.rejects(
@@ -281,7 +277,7 @@ describe('agent/implementation-entry', () => {
     );
     const resumed = await call('context', { id: first.id });
     assert.ok('previousResult' in resumed);
-    assert.deepEqual(resumed.previousResult, question);
+    assert.equal(resumed.previousResult, undefined);
     assert.equal(selections.length, 1);
     assert.equal((await call('result', { id: first.id, result: ready })).status, 'recorded');
   });

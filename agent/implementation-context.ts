@@ -39,11 +39,14 @@ export default function implementationContext(input: {
     resultSchema: implementationResultSchema,
     previousResult: input.previousResult,
     previousImplementationResult: input.previousResult,
-    deliveryOnly: input.previousResult?.outcome === 'done' && !input.revision,
+    deliveryOnly: Boolean(
+      input.direct && input.previousResult?.outcome === 'done' && !input.revision,
+    ),
+    recording: input.direct ? ('required' as const) : ('optional-history' as const),
     publicationAuthorized: input.scope !== 'local',
     handoff: implementationHandoff(
       input.id,
-      input.revision ? undefined : input.previousResult?.outcome,
+      input.direct && !input.revision ? input.previousResult?.outcome : undefined,
       input.runtime,
       input.direct || input.scope === 'local'
         ? { publication: input.scope === 'pull-request' }

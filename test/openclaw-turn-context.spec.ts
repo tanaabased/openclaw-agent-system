@@ -26,7 +26,6 @@ describe('agent/openclaw-turn-context', () => {
     assert.match(output.appendContext, /current-input/);
     assert.match(output.appendContext, /BEGIN UNTRUSTED GITHUB PROVIDER DATA/);
     assert.doesNotMatch(output.appendSystemContext, /PRIVATE-GITHUB-FACT/);
-    assert.match(output.appendSystemContext, /explicit tool verifies current authority/);
   });
   it('should bind native runs without inventing an optional input id', () => {
     const output = openclawTurnContext(record, { ...binding, inputId: undefined })!;
@@ -83,18 +82,15 @@ describe('agent/openclaw-turn-context', () => {
     } as OpenClawDispatchRecord;
     const output = openclawTurnContext(delivered, { ...binding, runId: 'human-question' })!;
     assert.match(output.appendContext, /ORIGINAL-PLAN/);
-    assert.match(output.appendSystemContext, /ordinary native conversation/);
-    assert.doesNotMatch(output.appendSystemContext, /before dependent work/);
     assert.equal(delivered.work?.result?.outcome, 'done');
   });
 
-  it('should refuse wrong agent, session, incarnation, missing run and premature later turns', () => {
+  it('should refuse wrong agent, session, incarnation, and missing run', () => {
     for (const change of [
       { agentId: 'other' },
       { sessionKey: 'other' },
       { sessionId: 'replaced' },
       { runId: undefined },
-      { runId: 'later' },
     ])
       assert.equal(openclawTurnContext(record, { ...binding, ...change }), undefined);
   });
@@ -111,7 +107,7 @@ describe('agent/openclaw-turn-context', () => {
     assert.match(output.appendContext, /FULL-RETAINED-PLAN/);
     assert.match(output.appendContext, /later-input/);
     assert.match(output.appendContext, /previousResultDigest/);
-    assert.match(output.appendSystemContext, /context/);
-    assert.doesNotMatch(output.appendSystemContext, /implementation-context/);
+    assert.equal(later.progression, undefined);
+    assert.match(output.appendContext, /"runId":"later"/);
   });
 });

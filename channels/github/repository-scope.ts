@@ -1,6 +1,5 @@
 import { Type, type Static } from 'typebox';
 
-import { githubIdentityMatches } from './provider/work-item.ts';
 import type { GitHubNotificationPolicy } from './workflow-policy.ts';
 import type { ManifestDiagnostic } from '../../manifest/types.ts';
 
@@ -12,12 +11,13 @@ const instanceIdSchema = Type.String({
   pattern: '^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}(?![\\s\\S])',
 });
 const instancePoolSchema = Type.Array(instanceIdSchema, { minItems: 1, uniqueItems: true });
-const workflows = ['issue-assignment', 'project-pickup', 'review-request'] as const;
+const workflows = ['issue-assignment', 'issue-pickup', 'review-request'] as const;
 export type RoutingWorkflow = (typeof workflows)[number];
 const workflowSchema = Type.Union([
   Type.Literal(workflows[0]),
   Type.Literal(workflows[1]),
   Type.Literal(workflows[2]),
+  Type.Literal('project-pickup'),
 ]);
 const ruleIdSchema = Type.String({ pattern: '^[^\\s\\x00-\\x1f\\x7f]+(?![\\s\\S])' });
 const local = Type.Literal('local');
@@ -48,6 +48,26 @@ export const repositoryRouteSchema = Type.Union([
 ]);
 export type RepositoryRoute = Static<typeof repositoryRouteSchema>;
 
+function canonicalWorkflows(values: readonly (RoutingWorkflow | 'project-pickup')[]) {
+  return [
+    ...new Set(
+      values.map((value) => (value === 'project-pickup' ? ('issue-pickup' as const) : value)),
+    ),
+  ];
+}
+
+/** accept the legacy input spelling without introducing a fourth workflow. */
+export function decodeRepositoryRouting(routes: RepositoryRoute[]): RepositoryRoute[] {
+  return routes.map((route) => {
+    if (typeof route === 'string' || !Object.hasOwn(route, 'match')) return route;
+    const full = route as Static<typeof fullRouteSchema>;
+    return {
+      ...full,
+      ...(full.workflows ? { workflows: canonicalWorkflows(full.workflows) } : {}),
+    };
+  });
+}
+
 type Rule = {
   id?: string;
   match: string;
@@ -70,7 +90,7 @@ function normalizeRule(route: RepositoryRoute): Rule {
     return {
       id: full.id,
       match: full.match,
-      workflows: full.workflows ? [...full.workflows].sort() : workflows,
+      workflows: full.workflows ? canonicalWorkflows(full.workflows).sort() : workflows,
       target:
         typeof target === 'string'
           ? target
@@ -97,7 +117,15 @@ export function normalizeRepositoryRouting(routes: RepositoryRoute[]) {
   return routes.map((entry) => {
     const { match: pattern, workflows: eligible, target } = normalizeRule(entry);
     const match = pattern.toLowerCase();
-    if (eligible.length !== workflows.length) return { match, workflows: eligible, target };
+    // retain the persisted authority fingerprint while accepting either input spelling.
+    if (eligible.length !== workflows.length)
+      return {
+        match,
+        workflows: eligible
+          .map((value) => (value === 'issue-pickup' ? 'project-pickup' : value))
+          .sort(),
+        target,
+      };
     if (target === 'local') return match;
     if (target === 'deny') return '!' + match;
     return { [match]: target };
@@ -106,14 +134,9 @@ export function normalizeRepositoryRouting(routes: RepositoryRoute[]) {
 
 export const repositoryScopeDecisionSchema = Type.Object(
   {
-    source: Type.Union([Type.Literal('routing'), Type.Literal('allowed-repository-owners')]),
+    source: Type.Literal('routing'),
     decision: Type.Union([Type.Literal('local'), Type.Literal('swarm'), Type.Literal('deny')]),
-    reason: Type.Union([
-      Type.Literal('match'),
-      Type.Literal('excluded'),
-      Type.Literal('no-match'),
-      Type.Literal('identity-mismatch'),
-    ]),
+    reason: Type.Union([Type.Literal('match'), Type.Literal('excluded'), Type.Literal('no-match')]),
     index: Type.Optional(Type.Integer({ minimum: 0 })),
     ruleId: Type.Optional(ruleIdSchema),
     pattern: Type.Optional(repositoryPatternSchema),
@@ -122,7 +145,7 @@ export const repositoryScopeDecisionSchema = Type.Object(
   { additionalProperties: false },
 );
 export type RepositoryScopeDecision = Static<typeof repositoryScopeDecisionSchema>;
-type ScopePolicy = Pick<GitHubNotificationPolicy, 'routing' | 'allowedRepositoryOwners'>;
+type ScopePolicy = Pick<GitHubNotificationPolicy, 'routing'>;
 type Repository = { name: string; owner: { login: string; nodeId: string } };
 
 function matches(pattern: string, path: string) {
@@ -171,56 +194,38 @@ export function repositoryRoutingDiagnostics(routes: RepositoryRoute[]): Manifes
   });
 }
 
-/** evaluate canonical provider names, or legacy immutable pins, without provider access. */
+/** evaluate canonical provider names without provider access. */
 export default function repositoryScope(
   policy: ScopePolicy,
   repository: Repository,
   workflow: RoutingWorkflow,
 ): RepositoryScopeDecision {
-  if (policy.routing !== undefined) {
-    const path = `${repository.owner.login}/${repository.name}`;
-    for (const [index, route] of policy.routing.entries()) {
-      const rule = normalizeRule(route);
-      if (rule.workflows.includes(workflow) && matches(rule.match, path))
-        return {
-          source: 'routing',
-          decision: Array.isArray(rule.target) ? 'swarm' : rule.target,
-          reason: rule.target === 'deny' ? 'excluded' : 'match',
-          index,
-          pattern: rule.target === 'deny' ? '!' + rule.match : rule.match,
-          ...(rule.id === undefined ? {} : { ruleId: rule.id }),
-          ...(Array.isArray(rule.target) ? { eligibleInstanceIds: rule.target } : {}),
-        };
-    }
-    return { source: 'routing', decision: 'deny', reason: 'no-match' };
+  const path = `${repository.owner.login}/${repository.name}`;
+  for (const [index, route] of policy.routing.entries()) {
+    const rule = normalizeRule(route);
+    if (rule.workflows.includes(workflow) && matches(rule.match, path))
+      return {
+        source: 'routing',
+        decision: Array.isArray(rule.target) ? 'swarm' : rule.target,
+        reason: rule.target === 'deny' ? 'excluded' : 'match',
+        index,
+        pattern: rule.target === 'deny' ? '!' + rule.match : rule.match,
+        ...(rule.id === undefined ? {} : { ruleId: rule.id }),
+        ...(Array.isArray(rule.target) ? { eligibleInstanceIds: rule.target } : {}),
+      };
   }
-  const index = policy.allowedRepositoryOwners.findIndex((pin) =>
-    githubIdentityMatches(pin, repository.owner),
-  );
-  return index < 0
-    ? {
-        source: 'allowed-repository-owners',
-        decision: 'deny',
-        reason: policy.allowedRepositoryOwners.some(
-          (pin) => pin.login.toLowerCase() === repository.owner.login.toLowerCase(),
-        )
-          ? 'identity-mismatch'
-          : 'no-match',
-      }
-    : { source: 'allowed-repository-owners', decision: 'local', reason: 'match', index };
+  return { source: 'routing', decision: 'deny', reason: 'no-match' };
 }
 
-/** offline checks cannot reject an unresolved id-only legacy owner. */
+/** use the same route decisions for offline configuration checks. */
 export function repositoryScopeCandidate(
   policy: ScopePolicy,
   owner: string,
   name: string,
   workflow: RoutingWorkflow,
 ) {
-  return policy.routing !== undefined
-    ? repositoryScope(policy, { name, owner: { login: owner, nodeId: '' } }, workflow).decision !==
-        'deny'
-    : policy.allowedRepositoryOwners.some(
-        (pin) => !pin.login || pin.login.toLowerCase() === owner.toLowerCase(),
-      );
+  return (
+    repositoryScope(policy, { name, owner: { login: owner, nodeId: '' } }, workflow).decision !==
+    'deny'
+  );
 }

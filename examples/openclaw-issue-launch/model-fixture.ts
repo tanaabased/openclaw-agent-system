@@ -60,7 +60,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   if (!context)
     return dispatch('context', { action: 'launch', operation: 'context', target, mode: 'plan' });
   if (context.status === 'existing') return { content: 'manual-launch-existing' };
-  assert.equal(context.status, 'routing-required');
+  if (context.status !== 'routing-required') return stopped(context);
   const prepared = result('prepare');
   if (!prepared)
     return dispatch('prepare', {
@@ -73,11 +73,15 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       fallback: 'default',
       title: 'Document disposable test issue cleanup',
     });
-  assert.ok(
-    ['assessment-pending', 'assessment-completed'].includes(String(prepared.status)),
-    JSON.stringify(prepared),
-  );
+  if (!['assessment-pending', 'assessment-completed'].includes(String(prepared.status)))
+    return stopped(prepared);
   return { content: 'manual-launch-started' };
+}
+
+function stopped(result: Record<string, unknown>): FixtureResponse {
+  return {
+    content: `manual-launch-stopped: ${JSON.stringify({ status: result.status, code: result.code, stage: result.stage, providerDiagnostic: result.providerDiagnostic })}`,
+  };
 }
 
 const fixture: Fixture = {

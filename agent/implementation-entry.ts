@@ -1,3 +1,4 @@
+import nativeClarification from './native-clarification.ts';
 import implementationMaterial from './implementation-material.ts';
 import { realpath } from 'node:fs/promises';
 
@@ -200,16 +201,6 @@ export default async function implementationEntry(
           ],
         };
       }
-      if (
-        !input.material &&
-        entry.result?.outcome === 'clarification-needed' &&
-        automationHash(entry.resultSource) === automationHash(source)
-      )
-        return {
-          status: 'clarification-needed',
-          id: entry.id,
-          presentation: implementationPresentation(entry.result),
-        };
       if (!input.material) {
         const transition = issueProgression(entry, {
           mode: 'plan',
@@ -249,7 +240,7 @@ export default async function implementationEntry(
         evidence: JSON.parse(entry.evidence),
         currentInput: deps.message,
         instructions:
-          'Execute the selected implementation body once using this verified context; never invoke its bootstrap again. Preserve partial files, consumed plan and selection. Reconcile current operator input with this plan. Do not assess, create another chat/worktree, activate notifications or change session settings. Respect the retained publicationAuthorized scope. Local scope forbids push and PR publication. A plan and skill composition grant no publication authority; pull-request scope is collected only from an explicit operator publication request, not inferred from the plan. For requested publication use the host-owned delivery handoff, never publish independently. Built-in and custom skills return their ordinary complete substantive output without Agent System fields or commands. You, the calling agent, preserve that output unchanged inside fullResult and construct result matching resultSchema: outcome done|blocked|clarification-needed, summary, fullResult, and questions only when clarification-needed. Submit dispatch implementation operation result with the returned id and that result object; do not submit the prose itself as result. Only the runtime acknowledgment proves recording. After an uncertain submission, refresh this same context and reconcile its retained previousResult before retrying; never repeat completed implementation. On clarification, retain questions and partial work, then wait for a new native input. Refresh this same context on the answer; do not request stage approval again. Existing publication effects must resume through their original owner and receipts, never a substitute publication.',
+          'Execute the selected implementation body once using this verified context; never invoke its bootstrap again. Preserve partial files, consumed plan and selection. Reconcile current operator input with this plan. Do not assess, create another chat/worktree, activate notifications or change session settings. Respect the retained publicationAuthorized scope. Local scope forbids push and PR publication. A plan and skill composition grant no publication authority; pull-request scope is collected only from an explicit operator publication request, not inferred from the plan. For requested publication use the host-owned delivery handoff, never publish independently. Built-in and custom skills return their ordinary complete substantive output without Agent System fields or commands. You, the calling agent, preserve that output unchanged inside fullResult and construct result matching resultSchema: outcome done|blocked, summary and fullResult. Ask questions directly in native chat without submitting a clarification result. Submit dispatch implementation operation result with the returned id and that result object; do not submit the prose itself as result. Only the runtime acknowledgment proves recording. After an uncertain submission, refresh this same context and reconcile its retained previousResult before retrying; never repeat completed implementation. Keep partial files and questions in the native conversation; an answer is ordinary input and needs no clarification checkpoint. Existing publication effects must resume through their original owner and receipts, never a substitute publication.',
       };
       return implementationMaterial(
         response,
@@ -272,9 +263,12 @@ export default async function implementationEntry(
       };
     }
     if (!input.result) throw new Error('implementation-result-required');
+    if (input.result.outcome === 'clarification-needed')
+      return nativeClarification(entry.id, implementationPresentation(input.result));
     if (
       entry.result &&
       automationHash(entry.result) !== automationHash(input.result) &&
+      entry.result.outcome !== 'clarification-needed' &&
       (entry.result.outcome === 'done' ||
         automationHash(entry.resultSource) === automationHash(source))
     )

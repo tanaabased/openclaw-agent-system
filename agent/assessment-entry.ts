@@ -1,3 +1,4 @@
+import nativeClarification from './native-clarification.ts';
 import { realpath } from 'node:fs/promises';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -348,6 +349,8 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     )
       throw new Error('assessment-selection-changed');
     const result = parseAssessmentSubmission(input.result);
+    if (result.outcome === 'clarification-needed')
+      return nativeClarification(entry.id, presentation(result, entry.selection));
     const previous = entry.result ?? managed?.result;
     if (
       previous &&
@@ -356,7 +359,11 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     )
       throw new Error('assessment-result-conflict');
     // this record has no workflow permissions; a model-authored auto decision cannot grant them.
-    if (entry.result && automationHash(entry.result) !== automationHash(result)) {
+    if (
+      entry.result &&
+      entry.result.outcome !== 'clarification-needed' &&
+      automationHash(entry.result) !== automationHash(result)
+    ) {
       entry.history ??= [];
       entry.history.push(entry.result);
     }

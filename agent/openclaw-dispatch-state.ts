@@ -205,7 +205,6 @@ export default class OpenClawDispatchStore extends DispatchStore<OpenClawDispatc
               ((record.progression?.stage === 'implementation' ||
                 ((record.work.publication || record.work.delivery) &&
                   !record.work.implementation)) &&
-                record.work.assessmentDigest === record.stageReceipt?.resultDigest &&
                 validWorkTurns(record))) &&
             record.sessionCreation &&
             record.worktree === record.request.cwd &&

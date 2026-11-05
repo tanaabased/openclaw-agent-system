@@ -1,10 +1,11 @@
+import gitDiagnostic from '../tools/git/diagnostic.ts';
 import type AgentSystemToolRuntime from '../api/runtime.ts';
 import type { DispatchCaller } from '../agent/openclaw-session-create.ts';
 import type { GitToolDefinition } from '../tools/git/tool.ts';
 
 /** keep delivery git inside the same binding and validation path as agent git. */
 export default async function executeOpenClawDeliveryGit(input: {
-  runtime: AgentSystemToolRuntime;
+  runtime: Pick<AgentSystemToolRuntime, 'executeCli'>;
   definition: GitToolDefinition;
   agentId: string;
   worktree: string;
@@ -28,6 +29,8 @@ export default async function executeOpenClawDeliveryGit(input: {
     input.signal,
   );
   if (result.output.exitCode !== 0 || result.output.truncated)
-    throw new Error('delivery-git-operation-failed');
+    throw Object.assign(new Error('delivery-git-operation-failed'), {
+      providerDiagnostic: gitDiagnostic(result.output.stderr),
+    });
   return result.output.stdout;
 }

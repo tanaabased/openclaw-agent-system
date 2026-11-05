@@ -32,7 +32,7 @@ export default async function hydrateImplementation(
     let text = '';
     while (request) {
       const page = (await run(request)) as Record<string, unknown>;
-      assert.equal(page.status, 'material');
+      assert.equal(page.status, 'material', JSON.stringify(page));
       assert.ok(JSON.stringify(page).length <= implementationContextBudget);
       const value = page.materialPage as { offset: number; digest: string; text: string };
       assert.equal(value.digest, field.digest);

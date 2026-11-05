@@ -575,8 +575,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   if (
     !id ||
-    (!revision &&
-      !prompt.includes('Agent System: assess this admitted issue and retain its complete plan.'))
+    (!revision && !prompt.includes('Call agent_system_dispatch with action context and id '))
   )
     return;
   const context = result('context');
@@ -612,25 +611,21 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   if (!git) return call('git', 'agent_system_git', { argv: ['rev-parse', '--show-toplevel'] });
   if (git.exitCode !== 0 || String(git.stdout).trim() !== project.path || git.truncated !== false)
     return;
+  if (revision?.[1] === 'Clarify')
+    return { content: 'Should cleanup close the issue only after evidence capture?' };
   const saved = result('result');
   if (!saved)
     return dispatch(
       'result',
       assessmentRequest(context, {
         version: 1,
-        outcome: revision?.[1] === 'Clarify' ? 'clarification-needed' : 'plan-ready',
+        outcome: 'plan-ready',
         summary: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
         assessment: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
-        ...(revision?.[1] === 'Clarify'
-          ? { questions: ['Should cleanup close the issue only after evidence capture?'] }
-          : {
-              plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
-            }),
+        plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
         fullAssessment: revision
           ? String((context.previousResult as Record<string, unknown>).fullAssessment) +
-            (revision?.[1] === 'Clarify'
-              ? '\n\nShould cleanup close the issue only after evidence capture? The ordering is unresolved.'
-              : '\n\nThe operator confirmed cleanup only after evidence capture; retain the original findings.')
+            '\n\nThe operator confirmed cleanup only after evidence capture; retain the original findings.'
           : fullAssessment,
         reviewSummary,
         evidence: [

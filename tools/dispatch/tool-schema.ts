@@ -1,4 +1,5 @@
 import { implementationMaterialSchema } from './implementation-material-schema.ts';
+import { implementationDecisionSchema } from '../../agent/issue-progression.ts';
 import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
 import { launchRequestSchema } from './launch-schema.ts';
 import { retirementRequestSchema } from './retirement-schema.ts';
@@ -80,6 +81,7 @@ const dispatchRequestVariants = Type.Union([
   object({
     action: Type.Literal('implementation-context'),
     id,
+    decision: Type.Optional(implementationDecisionSchema),
     material: Type.Optional(implementationMaterialSchema),
     scope: Type.Optional(Type.Union([Type.Literal('local'), Type.Literal('pull-request')])),
   }),
@@ -92,6 +94,7 @@ const dispatchRequestVariants = Type.Union([
     action: Type.Literal('delivery'),
     id,
     operation: Type.Union([
+      Type.Literal('link'),
       Type.Literal('bind'),
       Type.Literal('prepare'),
       Type.Literal('publish'),
@@ -101,7 +104,9 @@ const dispatchRequestVariants = Type.Union([
       Type.Literal('candidate'),
       Type.Literal('announce'),
     ]),
-    pullRequest: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+    pullRequest: Type.Optional(
+      Type.Union([Type.String({ minLength: 1, maxLength: 4096 }), Type.Null()]),
+    ),
     digest: Type.Optional(id),
     publicText: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
     title: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: '\\S' })),

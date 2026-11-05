@@ -256,6 +256,9 @@ export function deliveryCompletionInstructions(
         ? 'Native PR attachment is confirmed. '
         : 'Call native attach_artifact for this pull_request URL, then list_artifacts and delivery reconcile. ';
   return (
+    (updated
+      ? ''
+      : 'Use delivery link for the initial task/PR association and supported native attachment. ') +
     attachment +
     (updated
       ? 'This delivery updated the existing PR. Invoke Task Update for its material verified changes as a separate publication, coalescing any source-bound reply that already conveys them. An update failure does not undo delivery or prevent card presentation. '
@@ -265,7 +268,7 @@ export function deliveryCompletionInstructions(
     announcementRecoveryInstructions(delivery.announcement, delivery.announcementRecovery) +
     ' Then call delivery present and reproduce its complete private PR card and announcement outcome. Attempt these steps in this turn; retain any specific failure without reopening implementation or preparing a generic resume. Never recreate the verified PR. ' +
     (runtime === 'codex'
-      ? 'Use deliveryRuntime directly for these external effects; the completed implementation no longer requires continuationRuntime.'
+      ? 'Use deliveryRuntime directly for these independent external effects; no conversation phase changes.'
       : 'Use agent_system_dispatch action delivery with the requested operation.')
   );
 }

@@ -1,3 +1,4 @@
+import nativeClarification from './native-clarification.ts';
 import { observeCodexActivity } from './codex-capacity-reconcile.ts';
 import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 import assessmentMaterial from './assessment-material.ts';
@@ -435,6 +436,7 @@ export async function assessDispatch(
             ),
           }
         : {}),
+      recording: 'optional-history' as const,
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
       resultSubmission: assessmentSubmission({
@@ -459,6 +461,18 @@ export async function assessDispatch(
     let result: AssessmentResult;
     try {
       result = parseAssessmentSubmission(input.result);
+      if (result.outcome === 'clarification-needed')
+        return nativeClarification(
+          record.id,
+          assessmentPresentation(result, record, intake, current.workspace, {
+            debug: current.manifest.debug,
+            routingManifestPath:
+              current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
+            manifestPath:
+              current.manifestSources?.['/github/issue-assignment/assessment/guidance']?.path ??
+              current.manifestPath,
+          }),
+        );
       if (record.issueMode === 'auto' && !result.decision)
         throw new Error('assessment-decision-required');
       if (

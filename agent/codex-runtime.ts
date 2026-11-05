@@ -1,6 +1,6 @@
 import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
-import ProjectPickupFailure from './project-pickup-failure.ts';
-import { projectPickupAutomationId } from './project-pickup-jobs.ts';
+import IssuePickupFailure from './issue-pickup-failure.ts';
+import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import runCodexNotificationReset from './codex-notification-reset.ts';
 import runCodexFeedback from './codex-feedback.ts';
 import codexRuntimeRequest from './codex-runtime-request.ts';
@@ -18,7 +18,7 @@ import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexHostAccess from './codex-host-access.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import { runCodexDispatch } from './codex-dispatch.ts';
-import { inspectCodexIntake, runCodexIntake, runCodexProjectPickup } from './codex-intake.ts';
+import { inspectCodexIntake, runCodexIntake, runCodexIssuePickup } from './codex-intake.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 
 import {
@@ -299,7 +299,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'delivery') {
     if (args[1] === '--help') {
       process.stdout.write(
-        'Usage: delivery <bind|prepare|publish|reconcile|compose|candidate|announce|present> --plugin-data <path>\nRequest data is JSON on stdin; action is visible in argv and stdin cannot change it; id is the retained managed issue receipt. bind previews an explicit existing same-repository PR using pullRequest and id; apply its digest to preserve local work and select that PR without publishing. Prepare returns a digest for publication within the verified implementation stage or current user direction; no separate publication approval is required. compose selects the reply skill; candidate prepares the issue announcement; announce publishes its exact digest or reconciles an uncertain post. Reconcile verifies native attachment; present renders the card and notices even when attachment is pending.\n',
+        'Usage: delivery <link|bind|prepare|publish|reconcile|compose|candidate|announce|present> --plugin-data <path>\nRequest data is JSON on stdin; action is visible in argv and stdin cannot change it; id is the retained managed issue receipt. link records the initial PR association and returns native attachment instructions; an explicit pullRequest URL or null changes or clears the association independently of prior effects. bind previews an explicit existing same-repository PR using pullRequest and id; apply its digest to preserve local work and select that PR without publishing. Prepare returns a digest for publication within the verified implementation stage or current user direction; no separate publication approval is required. compose selects the reply skill; candidate prepares the issue announcement; announce publishes its exact digest or reconciles an uncertain post. Reconcile verifies native attachment; present renders the card and notices even when attachment is pending.\n',
       );
       return;
     }
@@ -372,7 +372,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     if (action === 'inspect') writeJson(await inspectCodexIntake(pluginData));
     else if (action === 'pickup')
       writeJson(
-        await runCodexProjectPickup(
+        await runCodexIssuePickup(
           pluginData,
           JSON.parse(await readStandardInput()),
           Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -516,12 +516,12 @@ runCodexRuntime().catch((error: unknown) => {
             error instanceof RoutingError ||
             error instanceof CodexAutomationError
           ? { code: error.code }
-          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment|assessment-result|implementation|heartbeat|notification-reset|project-pickup)-[a-z-]+$/u.test(
+          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment|assessment-result|implementation|heartbeat|notification-reset|issue-pickup)-[a-z-]+$/u.test(
                 message,
               )
             ? { code: message }
             : { code: evidence.code };
-  const pickup = error instanceof ProjectPickupFailure ? error : undefined;
+  const pickup = error instanceof IssuePickupFailure ? error : undefined;
   const notice =
     !pickup &&
     ['intake', 'dispatch', 'continuation', 'delivery', 'model-routing'].includes(
@@ -535,7 +535,7 @@ runCodexRuntime().catch((error: unknown) => {
         })
       : undefined;
   process.stderr.write(
-    `${JSON.stringify({ status: 'error', ...failureScope, ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(pickup ? { response: codexHeartbeatEnvelope(pickup.automationId ?? projectPickupAutomationId, pickup.failure.response, true) } : {}), ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
+    `${JSON.stringify({ status: 'error', ...failureScope, ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(pickup ? { response: codexHeartbeatEnvelope(pickup.automationId ?? issuePickupAutomationId, pickup.failure.response, true) } : {}), ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
   );
   process.exitCode = 1;
 });

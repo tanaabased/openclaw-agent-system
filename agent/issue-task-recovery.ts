@@ -2,6 +2,21 @@ import { automationHash } from './automation-hash.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { ManagedIssue } from './managed-issue.ts';
 import type { AdoptedPullRequest } from './delivery-state.ts';
+import type { OpenClawFeedbackEvent } from './openclaw-feedback-state.ts';
+
+/** Replacement must preserve input and uncertain effects, not old reporting checkpoints. */
+export function pendingRecoveryFeedback(event: OpenClawFeedbackEvent) {
+  if (event.native) return event.phase !== 'delivered';
+  const delivery = event.workDelivery;
+  return Boolean(
+    ['queued', 'prepared', 'running'].includes(event.phase) ||
+    (event.turn && event.turn.status !== 'completed' && !event.turn.inactive) ||
+    (event.publicationAttempted && !event.receipt) ||
+    delivery?.pendingPush ||
+    (delivery?.creationAttempted && !delivery.pullRequest) ||
+    (delivery?.announcement?.attempted && !delivery.announcement.receipt),
+  );
+}
 
 function recoveryBlockers(
   record: SharedDispatchRecord,
@@ -9,7 +24,6 @@ function recoveryBlockers(
 ) {
   return Object.entries({
     nativeTaskMissing: !record.threadId || !record.worktree || !record.request,
-    assessmentMissing: !record.result,
     inactiveLifecycle: Boolean(record.reset || record.retired || record.retirement),
     uncertainAssessmentSummary: record.assessmentSummaries?.some(
       (summary) => summary.attempt && !summary.receipt,

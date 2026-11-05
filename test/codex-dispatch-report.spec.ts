@@ -378,7 +378,7 @@ describe('agent/codex-dispatch-report', () => {
     assert.deepEqual(report.started, ['good']);
     assert.match(report.response, /codex:\/\/threads\/good-chat/);
     assert.match(report.response, /Operation:\*\* assignment preparation/);
-    assert.match(report.response, /Status:\*\* needs-attention/);
+    assert.match(report.response, /dispatch-operation-failed/);
     assert.doesNotMatch(report.response, /Intake could not finish/);
   });
   it('should keep closed historical feedback quiet but retain unresolved execution and publication diagnostics', () => {

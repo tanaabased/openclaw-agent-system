@@ -118,6 +118,39 @@ describe('agent/feedback-reply', () => {
     assert.ok('digest' in result && result.status === 'publication-ready');
     return result.digest;
   }
+  it('should preserve legacy drafts while writing each new operation independently', async () => {
+    const first = await candidate();
+    const store = new ReplyStore(deps.root, deps.binding);
+    const drafts = await store.read();
+    const firstPath = join(deps.root, `github-reply-${store.scope}-${first}.json`);
+    await writeFile(store.path, JSON.stringify({ scope: store.scope, drafts }), { mode: 0o600 });
+    await rm(firstPath);
+    deps.inputId = 'later-input';
+    const second = await candidate(`${url}#issuecomment-5`);
+    assert.notEqual(second, first);
+    assert.equal((await store.read()).length, 2);
+    const oldContents = await readFile(store.path, 'utf8');
+    const digest = await preview(first);
+    await call('publish', { id: first, digest });
+    const readback = await new ReplyStore(deps.root, deps.binding).read();
+    assert.ok(readback.find((draft) => draft.id === first)?.receipt);
+    assert.ok(readback.find((draft) => draft.id === second));
+    assert.equal(await readFile(store.path, 'utf8'), oldContents);
+  });
+
+  it('should reconcile a sent reply after its source comment disappears', async () => {
+    const id = await candidate(`${url}#issuecomment-4`);
+    const digest = await preview(id);
+    lost = hidden = true;
+    await assert.rejects(call('publish', { id, digest }), /transport lost/);
+    provider.getIssueComment = async () => {
+      throw new Error('source deleted');
+    };
+    hidden = false;
+    assert.equal((await call('reconcile', { id })).status, 'published');
+    assert.equal(writes, 1);
+  });
+
   const progressFact = {
     key: 'unit-check',
     reference: 'commit:abc',

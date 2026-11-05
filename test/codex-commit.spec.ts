@@ -96,8 +96,11 @@ describe('agent/codex-commit', () => {
         },
       };
     }
+    const request = before.records[1]!.request;
+    delete before.records[1]!.request;
     before.records[0]!.phase = 'creating';
     const proposed = structuredClone(before);
+    proposed.records[1]!.request = request;
     proposed.records[1]!.phase = 'creating';
     assert.throws(() => codexCommit(1).validate(before, proposed), /dispatch-at-capacity/);
     assert.doesNotThrow(() => codexCommit(2).validate(before, proposed));

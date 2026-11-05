@@ -1,6 +1,7 @@
 import type { dispatchStorageNotice } from '../../../agent/dispatch-storage.ts';
 import type { GitHubNotificationRuntimeDiagnostic } from '../notification-policy.ts';
 import type { RepositoryScopeDecision } from '../repository-scope.ts';
+import type { IntakeRecord } from '../intake/record-store.ts';
 import {
   githubNotificationItemMatchesSelector,
   type GitHubNotificationItemSelector,
@@ -30,8 +31,9 @@ export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarge
 ]);
 
 export interface GitHubNotificationStatusItem {
-  repositoryScope?: RepositoryScopeDecision;
+  repositoryScope?: IntakeRecord['evidence']['repositoryScope'];
   workflow?: { phase: string; conversation?: string };
+  assessmentOutcome?: string;
   feedback?: { queued: number; active: number; blocked: number };
   disposition: GitHubNotificationItemDisposition;
   failureCode?: string;
@@ -102,7 +104,7 @@ export function evaluateGitHubNotificationWait(
       : target === 'retired'
         ? item.stage === 'retired'
         : target === 'plan-ready'
-          ? item.workflow?.phase === 'plan-ready'
+          ? item.assessmentOutcome === 'plan-ready' || item.workflow?.phase === 'plan-ready'
           : target === 'prepared'
             ? item.stage === 'prepared'
             : item.worktree === 'ready' && ['prepared', 'retired'].includes(item.stage ?? '');

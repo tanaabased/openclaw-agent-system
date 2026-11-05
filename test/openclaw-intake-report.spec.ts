@@ -247,7 +247,7 @@ describe('agent/openclaw-intake-report', () => {
     });
     assert.match(report.response, /Issue:/);
     assert.match(report.response, /Operation:\*\* preparation/);
-    assert.match(report.response, /Status:\*\* needs-attention/);
+    assert.match(report.response, /dispatch-assignment-event-missing/);
     assert.match(report.response, /assignment-history/);
     assert.doesNotMatch(report.response, /pending assignments are unknown/);
   });

@@ -1,4 +1,4 @@
-import GitHubProjectPickupClient from './project-pickup-client.ts';
+import GitHubIssuePickupClient from './issue-pickup-client.ts';
 import GitHubReviewReplyClient from './review-reply-client.ts';
 import GitHubReviewClient from './review-client.ts';
 import type { ConnectedGitHubAccountClient } from '../../../core/github-account-client.ts';
@@ -51,7 +51,7 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
   readonly #api: GitHubWorkEventApiClient;
   readonly #comments: GitHubIssueCommentClient;
   readonly #items: GitHubWorkItemClient;
-  readonly #pickup: GitHubProjectPickupClient;
+  readonly #pickup: GitHubIssuePickupClient;
   readonly maximumCommentCharacters: number;
 
   constructor(
@@ -65,7 +65,7 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
     this.replies = new GitHubReviewReplyClient(this.#api, this.reviews);
     this.#comments = new GitHubIssueCommentClient(this.#api, this.maximumCommentCharacters);
     this.#items = new GitHubWorkItemClient(this.#api);
-    this.#pickup = new GitHubProjectPickupClient(this.#api);
+    this.#pickup = new GitHubIssuePickupClient(this.#api);
   }
 
   listIssueCommentPage(owner: string, name: string, number: number, page: number, since: string) {

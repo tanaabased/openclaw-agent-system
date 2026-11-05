@@ -66,6 +66,7 @@ export function workflowFailureScope(runtime: 'codex' | 'openclaw', route: strin
     'retire',
     'recover',
     'bind',
+    'link',
     'cancel',
     'start',
     'assess',

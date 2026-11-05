@@ -1,7 +1,5 @@
-import {
-  hasDeliveredImplementation,
-  retainImplementationDelivery,
-} from './implementation-delivery.ts';
+import taskPullRequest from './task-pull-request.ts';
+import { retainImplementationDelivery } from './implementation-delivery.ts';
 import {
   managedPullRequest,
   managedTargetUrl,
@@ -67,17 +65,53 @@ export default async function openClawDelivery(input: {
 }) {
   const { record, intake, action, assertCurrent } = input;
   retainImplementationDelivery(record);
-  const delivered = hasDeliveredImplementation(record);
   const save = async () => {
     retainImplementationDelivery(record);
     await input.save();
   };
-  if (action.pullRequest !== undefined && action.operation !== 'bind')
+  if (action.pullRequest !== undefined && !['bind', 'link'].includes(action.operation))
     throw new Error('delivery-request-invalid');
   if (action.operation === 'present')
     return presentOpenClawDelivery(record, intake, input.feedbackEnabled);
   const adoptedPullRequest = managedPullRequest(intake);
   if (record.supersededBy) throw new Error('dispatch-task-superseded');
+  if (action.operation === 'link') {
+    if (action.pullRequest === undefined) {
+      if (record.pullRequestLink === undefined && record.work?.delivery?.pullRequest)
+        record.pullRequestLink = record.work.delivery.pullRequest;
+      await save();
+      return { status: 'linked', pullRequest: taskPullRequest(record) };
+    }
+    if (!input.operator) throw new Error('delivery-link-operator-required');
+    await assertCurrent();
+    if (action.pullRequest === null) record.pullRequestLink = null;
+    else {
+      const connection = await input.connect();
+      if (connection.account.identity.nodeId !== intake.receiving.nodeId)
+        throw new Error('delivery-adoption-account-changed');
+      const provider = new IssueDeliveryProvider(connection.account);
+      const adopted = await provider.adopt(
+        {
+          repositoryNodeId: intake.repository.nodeId,
+          item: {
+            number: intake.issue.number,
+            itemNodeId: intake.issue.nodeId,
+            itemDatabaseId: intake.issue.databaseId,
+            repositoryOwner: intake.repository.owner.login,
+            repositoryName: intake.repository.name,
+            repositoryDefaultBranch: input.base,
+          },
+        },
+        action.pullRequest,
+      );
+      record.pullRequestLink = {
+        pullRequestNodeId: adopted.pullRequestNodeId,
+        pullRequestNumber: adopted.pullRequestNumber,
+      };
+    }
+    await save();
+    return { status: 'linked', pullRequest: taskPullRequest(record) };
+  }
   if (action.operation === 'bind') {
     if (!input.operator || !action.pullRequest || input.existingOnly)
       throw new Error('delivery-binding-operator-required');
@@ -130,9 +164,13 @@ export default async function openClawDelivery(input: {
       assertCurrent,
     });
     if (result.status !== 'bound' || result.retained) return result;
-    record.work ??= { assessmentDigest: automationHash(record.result) };
+    record.work ??= { assessmentDigest: automationHash(record.result ?? null) };
     if (record.work.delivery) (record.deliveryHistory ??= []).push(record.work.delivery);
     record.adoptedPullRequest = adopted;
+    record.pullRequestLink = {
+      pullRequestNodeId: adopted.pullRequestNodeId,
+      pullRequestNumber: adopted.pullRequestNumber,
+    };
     record.work.delivery = {
       ...adoptedIssueDelivery({
         id: record.id,
@@ -161,19 +199,15 @@ export default async function openClawDelivery(input: {
     await save();
     return result;
   }
-  const work = record.work;
-  if (work?.scope === 'local') throw new Error('implementation-publication-not-authorized');
-  if (!work) throw new Error('delivery-implementation-incomplete');
-  if (!delivered) {
-    if (
-      (!retainedIssueProgression(record) && !work.publication) ||
-      (work.result && work.result.outcome !== 'done') ||
-      (work.implementation && work.result?.outcome !== 'done')
-    )
-      throw new Error('delivery-implementation-incomplete');
-    if (work.assessmentDigest !== automationHash(record.result))
-      throw new Error('dispatch-work-assessment-changed');
-  }
+  if (record.work?.scope === 'local') throw new Error('implementation-publication-not-authorized');
+  if (
+    ['prepare', 'publish'].includes(action.operation) &&
+    !retainedIssueProgression(record) &&
+    !input.operator &&
+    !record.work?.publication
+  )
+    throw new Error('delivery-implementation-not-authorized');
+  const work = (record.work ??= { assessmentDigest: automationHash(record.result ?? null) });
   await assertCurrent();
   const connection = await input.connect();
   const git = async (argv: string[]) => {
@@ -344,7 +378,7 @@ export default async function openClawDelivery(input: {
     title,
     body,
     source: input.source,
-    progression: delivered ? undefined : (retainedIssueProgression(record) ?? work.publication),
+    progression: retainedIssueProgression(record) ?? work.publication,
     previous: previous ?? null,
   });
   if (
@@ -517,12 +551,14 @@ export function presentOpenClawDelivery(
   feedbackEnabled: boolean,
 ) {
   const delivery = record.work?.delivery;
-  if (!delivery?.pullRequest) throw new Error('delivery-reconciliation-required');
-  const receipt = delivery.pullRequest;
+  const receipt = taskPullRequest(record);
+  if (!receipt) throw new Error('delivery-reconciliation-required');
+  const linkedDelivery =
+    delivery?.pullRequest?.pullRequestNodeId === receipt.pullRequestNodeId ? delivery : undefined;
   const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
   const url = `https://github.com/${repository}/pull/${receipt.pullRequestNumber}`;
 
-  delivery.presentation =
+  const presentation =
     githubNotificationPullRequestOpenedCard({
       issueNumber: managedPullRequest(intake) ? undefined : intake.issue.number,
       updated: Boolean(managedPullRequest(intake)),
@@ -533,10 +569,10 @@ export function presentOpenClawDelivery(
     }) +
     '\n\n' +
     announcementPresentation(
-      delivery.announcement,
+      linkedDelivery?.announcement,
       managedTargetUrl(intake),
       undefined,
-      delivery.announcementRecovery,
+      linkedDelivery?.announcementRecovery,
     );
   return {
     status: 'presented',
@@ -544,7 +580,7 @@ export function presentOpenClawDelivery(
     workflowStatus: workflowStatus(record),
     id: record.id,
     url,
-    presentation: delivery.presentation,
+    presentation,
     instructions:
       'Reproduce the complete quoted PR card in this issue chat. Card generation does not establish visible delivery. Never recreate the PR for a presentation failure.',
   };

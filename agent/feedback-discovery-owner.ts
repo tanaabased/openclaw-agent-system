@@ -10,6 +10,7 @@ export interface FeedbackDiscoveryOwner {
   retirement?: unknown;
   reset?: unknown;
   supersededBy?: unknown;
+  pullRequestLink?: unknown;
   delivery?: { pullRequest?: unknown };
   work?: { delivery?: { pullRequest?: unknown } };
   feedback?: unknown;
@@ -27,7 +28,10 @@ export default function feedbackDiscoveryOwner(record: FeedbackDiscoveryOwner) {
     retirement: record.retirement,
     reset: record.reset,
     supersededBy: record.supersededBy,
-    pullRequest: record.delivery?.pullRequest ?? record.work?.delivery?.pullRequest,
+    pullRequest:
+      record.pullRequestLink !== undefined
+        ? record.pullRequestLink
+        : (record.delivery?.pullRequest ?? record.work?.delivery?.pullRequest),
     feedback: record.feedback,
   });
 }

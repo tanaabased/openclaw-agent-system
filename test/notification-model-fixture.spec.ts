@@ -1,4 +1,3 @@
-import assessmentMaterial from '../agent/assessment-material.ts';
 import summaryFixture from './assessment-summary-fixture.ts';
 import type { AssessmentSummaryRequest } from '../agent/assessment-summary-state.ts';
 import assert from 'node:assert/strict';
@@ -206,6 +205,39 @@ for (const scenario of [
       ...(hold ? { code: 'assessment-summary-native-approval-denied' } : {}),
       presentation: hold ? 'Summary held; no publication.' : 'Published retained plan.',
     });
+  }
+
+  async function publishNativeQuestion(input: ChatCompletionRequest) {
+    const target = 'https://github.com/owner/repo/issues/3';
+    const observed = await action(input, 'reply');
+    assert.equal(observed.operation, 'context');
+    assert.equal(observed.target, target);
+    append(input, 'native-plan-context', { status: 'status-update-context', observation: digest });
+    const composed = await action(input, 'reply');
+    assert.equal(composed.operation, 'compose');
+    assert.match(composed.privateText!, /Should disposable test issues/);
+    append(input, 'native-plan-compose', {
+      status: 'composition-ready',
+      id,
+      digest,
+      selection: { defaultSkill: true, skill: { path: '/fixture/reply/SKILL.md' } },
+    });
+    const read = await response(input);
+    assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
+    append(input, 'summary-skill', 'Reply guidance');
+    assert.equal((await action(input, 'reply')).operation, 'candidate');
+    append(input, 'native-plan-candidate', {
+      status: 'candidate-recorded',
+      publication: 'workflow-authorized',
+    });
+    assert.equal((await action(input, 'reply')).operation, 'publish');
+    append(input, 'native-plan-preview', { status: 'publication-ready', digest });
+    assert.equal((await action(input, 'reply')).digest, digest);
+    append(input, 'native-plan-publish', {
+      status: 'published',
+      presentation: 'Question published.',
+    });
+    assert.deepEqual(await response(input), { content: 'Question published.' });
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
@@ -661,6 +693,8 @@ for (const scenario of [
         runtime: 'openclaw',
         ...assessmentContract(),
         id,
+        currentTurnId: 'initial',
+        evidence: { source: 'https://github.com/owner/repo/issues/3' },
         project: { path: '/tmp/managed-worktree' },
         assessment: {
           defaultSkill: scenario.id !== 'openclaw-issue-journey',
@@ -689,22 +723,22 @@ for (const scenario of [
         const read = await response(input);
         assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
         append(input, 'assessment-skill', 'Default assessment.');
+        await publishNativeQuestion(input);
+        return;
       }
       const saved = await action(input, 'result');
       assert.equal(saved.id, id);
-      assert.equal(
-        saved.result.outcome,
-        scenario.id === 'openclaw-pr-journey' ? 'clarification-needed' : 'plan-ready',
-      );
-      if (scenario.id === 'openclaw-pr-journey')
-        assert.ok('questions' in saved.result && saved.result.questions.length);
+      assert.equal(saved.result.outcome, 'plan-ready');
       const presentation = saved.result.reviewSummary ?? 'The complete retained presentation.';
       append(input, 'result', { status: 'recorded', presentation });
       const nextResponse = await response(input);
       assert.equal('content' in nextResponse && nextResponse.content, presentation);
       if (['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id)) {
-        await publishProgressionSummary(input);
-        assert.deepEqual(await response(input), { content: 'Published retained plan.' });
+        const held = scenario.id === 'openclaw-issue-progression';
+        await publishProgressionSummary(input, scenario, held);
+        assert.deepEqual(await response(input), {
+          content: held ? 'Summary held; no publication.' : 'Published retained plan.',
+        });
       }
       if (!['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id)) {
         assert.deepEqual(await action(input, 'present'), {
@@ -780,178 +814,47 @@ for (const scenario of [
         await publishProgressionSummary(input);
         assert.deepEqual(await response(input), { content: 'Published retained plan.' });
       });
-    if (scenario.id === 'openclaw-issue-progression')
-      it('should hold an auto plan and accept only the later operator continuation', async () => {
+    if (scenario.id === 'openclaw-issue-progression') {
+      it('should ask an auto clarification in native chat without recording another assessment', async () => {
         const selected = resolveExampleModelScenario('openclaw-issue-auto-plan');
-        const input = request(`Refresh agent_system_dispatch action context with id ${id}.`);
-        await action(input, 'context', selected);
-        append(input, 'refresh-context', {
-          status: 'verified',
-          mode: 'auto',
-          previousResult: {
-            version: 1,
-            outcome: 'plan-ready',
-            summary: 'Ready.',
-            assessment: 'Bounded documentation.',
-            fullAssessment: 'Complete retained assessment, evidence and plan.',
-            plan: 'Retained plan.',
-            evidence: [],
-            progress: { completed: [], remaining: [] },
-          },
-          previousResultDigest: digest,
-        });
-        const decision = await action(input, 'result', selected);
-        assert.equal(decision.result.decision?.mode, 'plan');
-        assert.ok(decision.result.decision?.reasons.length);
-        append(input, 'refresh-result', {
-          status: 'recorded',
-          presentation: 'Retained plan.',
-          handoff: { next: 'planning' },
-        });
-        await publishProgressionSummary(input, selected);
-        assert.deepEqual(await response(input, selected), { content: 'Published retained plan.' });
+        const input = request(
+          `Consider current plan for managed issue ${id}: decide whether to implement.`,
+        );
+        const question = await response(input, selected);
+        assert.ok('content' in question && !('toolCalls' in question));
+        assert.match(question.content!, /cleanup.*evidence/i);
         const followup = request(
           `Continue plan for managed issue ${id}: Implement the retained plan; ask about cleanup timing if needed. Do not push or publish a PR.`,
         );
-        await action(followup, 'implementation-context', selected);
-        append(followup, 'work-context', {
-          status: 'verified',
-          runtime: 'openclaw',
-          deliveryOnly: false,
-          publicationAuthorized: true,
-          project: { path: '/tmp/owned' },
-        });
-        const work = await action(followup, 'implementation-result', selected);
-        assert.equal(work.implementationResult?.outcome, 'clarification-needed');
+        const context = await action(followup, 'implementation-context', selected);
+        assert.equal(context.id, id);
+        assert.equal(context.scope, 'local');
       });
-    if (scenario.id === 'openclaw-issue-progression') {
       for (const interrupted of [false, true])
-        it(`should record an auto decision only after verified context with interruption ${interrupted}`, async () => {
+        it(`should select auto work in native context with interruption ${interrupted}`, async () => {
           const selected = interrupted
             ? resolveExampleModelScenario('openclaw-issue-decision-recovery')
             : scenario;
-          const input = request(`Refresh agent_system_dispatch action context with id ${id}.`);
+          const input = request(
+            `Consider current plan for managed issue ${id}: decide whether to implement.`,
+          );
           if (interrupted) {
             const first = await response(input, selected);
             assert.ok('content' in first && !('toolCalls' in first));
-            input.messages[1]!.content = `Resume the unfinished Auto decision. Refresh agent_system_dispatch action context with id ${id}.`;
+            input.messages[1]!.content += ' Resume the discussion.';
           }
-          assert.equal((await action(input, 'context', selected)).id, id);
-          append(input, 'refresh-context', {
-            status: 'verified',
-            mode: 'plan',
-            previousResult: { outcome: 'plan-ready', plan: 'Retained plan.' },
-          });
-          assert.equal(matchFixture([...selected.fixtures], input), null);
-          input.messages.at(-1)!.content = JSON.stringify({
-            status: 'verified',
-            mode: 'auto',
-            previousResult: {
-              version: 1,
-              outcome: 'plan-ready',
-              summary: 'Ready.',
-              assessment: 'Bounded documentation.',
-              fullAssessment: 'Complete retained assessment, evidence and plan.',
-              plan: 'Retained plan.',
-              evidence: [],
-              progress: { completed: [], remaining: [] },
-            },
-            previousResultDigest: digest,
-          });
-          const result = await action(input, 'result', selected);
-          assert.equal(result.previousResultDigest, digest);
-          assert.ok(result.result.outcome === 'plan-ready');
-          assert.equal(result.result.plan, 'Retained plan.');
-          assert.equal(result.result.decision?.mode, 'work');
-          append(input, 'refresh-result', {
-            status: 'recorded',
-            presentation: 'Verified decision.',
-            handoff: { next: 'implementation' },
-          });
-          if (!interrupted) await publishProgressionSummary(input, selected, true);
-          assert.equal((await action(input, 'implementation-context', selected)).id, id);
+          const context = await action(input, 'implementation-context', selected);
+          assert.equal(context.id, id);
+          assert.equal(context.decision?.mode, 'work');
+          assert.ok(context.decision?.reasons.length);
         });
-      it('should reconstruct an oversized assessment before submitting the auto decision', async () => {
-        const input = request(`Refresh agent_system_dispatch action context with id ${id}.`);
-        await action(input, 'context');
-        const retained = {
-          version: 1,
-          outcome: 'plan-ready',
-          summary: 'Ready.',
-          assessment: retainedPlan,
-          fullAssessment: retainedPlan,
-          plan: retainedPlan,
-          evidence: [],
-          progress: { completed: [], remaining: [] },
-        };
-        assert.ok(JSON.stringify(retained).length > 64000);
-        const source = {
-          status: 'verified',
-          runtime: 'openclaw',
-          id,
-          mode: 'auto',
-          previousResult: retained,
-          previousResultDigest: digest,
-        };
-        const ownerRequest = { action: 'context', id };
-        append(input, 'refresh-context', assessmentMaterial(source, ownerRequest));
-        let pages = 0;
-        for (; pages < 64; pages++) {
-          const next = await response(input);
-          assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
-          const args = JSON.parse(next.toolCalls[0]!.arguments);
-          if (!args.material) break;
-          assert.ok(Value.Check(dispatchParameters, args));
-          assert.equal(args.action, 'context');
-          append(
-            input,
-            `assessment-material-${pages}`,
-            assessmentMaterial(source, ownerRequest, args.material),
-          );
-        }
-        assert.ok(pages > 0 && pages < 64);
-        const submitted = await action(input, 'result');
-        assert.equal(submitted.previousResultDigest, digest);
-        assert.deepEqual(submitted.result, {
-          ...retained,
-          decision: {
-            mode: 'work',
-            reasons: ['The retained documentation plan is bounded and actionable.'],
-          },
-        });
-      });
       for (const direct of [false, true])
         it(`should ask clarification during automatic work and resume an answer with direct handoff ${direct}`, async () => {
           const automatic = request(
             direct
-              ? `Resume the unfinished Auto decision. Refresh agent_system_dispatch action context with id ${id}.`
+              ? `Consider current plan for managed issue ${id}: proceed with the bounded plan.`
               : `Continue this issue through implementation. Call agent_system_dispatch action implementation-context with id ${id}.`,
           );
-          if (direct) {
-            await action(automatic, 'context');
-            append(automatic, 'refresh-context', {
-              status: 'verified',
-              mode: 'auto',
-              previousResult: {
-                version: 1,
-                outcome: 'plan-ready',
-                summary: 'Ready.',
-                assessment: 'Bounded documentation.',
-                fullAssessment: 'Complete retained assessment, evidence and plan.',
-                plan: 'Document cleanup.',
-                evidence: [],
-                progress: { completed: [], remaining: [] },
-              },
-              previousResultDigest: digest,
-            });
-            await action(automatic, 'result');
-            append(automatic, 'refresh-result', {
-              status: 'recorded',
-              presentation: 'The retained plan.',
-              handoff: { next: 'implementation' },
-            });
-            await publishProgressionSummary(automatic, scenario, true);
-          }
           assert.equal((await action(automatic, 'implementation-context')).scope, undefined);
           await appendPagedContext(automatic, {
             id,
@@ -975,16 +878,9 @@ for (const scenario of [
             });
             await publishProgressionSummary(automatic);
           }
-          const question = await action(automatic, 'implementation-result');
-          assert.equal(question.implementationResult.outcome, 'clarification-needed');
-          append(automatic, 'work-result', {
-            status: 'recorded',
-            presentation: 'Which cleanup timing?',
-          });
-          assert.deepEqual(await response(automatic), {
-            content: direct
-              ? 'The retained plan.\n\nWhich cleanup timing?'
-              : 'Which cleanup timing?',
+          const question = await response(automatic);
+          assert.deepEqual(question, {
+            content: 'Should cleanup happen after evidence is captured?',
           });
           const answer = request(
             `Answer for managed issue ${id}: Yes, after evidence is captured. Do not push or publish a PR.`,
@@ -998,7 +894,6 @@ for (const scenario of [
             deliveryOnly: false,
             publicationAuthorized: false,
             project: { path: '/tmp/owned' },
-            previousImplementationResult: question.implementationResult,
           });
           for (const stage of ['apply', 'add', 'commit']) {
             const resumed = await response(answer);
@@ -1162,6 +1057,19 @@ for (const scenario of [
           assert.equal((await action(input, 'delivery')).operation, 'prepare');
           append(input, 'delivery-prepare', { status: 'prepared', digest });
           assert.equal((await action(input, 'delivery')).digest, digest);
+          const failedGit = structuredClone(input);
+          append(failedGit, 'delivery-publish', {
+            status: 'needs-attention',
+            code: 'delivery-git-operation-failed',
+            providerDiagnostic: {
+              classification: 'authentication',
+              providerMessage: 'Permission denied (publickey).',
+            },
+          });
+          const stopped = await response(failedGit);
+          assert.ok('content' in stopped);
+          assert.match(String(stopped.content), /delivery-git-operation-failed/u);
+          assert.match(String(stopped.content), /authentication/u);
           append(input, 'delivery-publish', {
             status: 'waiting',
             code: 'github-delivery-linkage-unverified',
@@ -1176,7 +1084,12 @@ for (const scenario of [
           assert.equal(linkageRetry.id, id);
           append(input, 'delivery-link-publish-0', {
             status: 'published',
-            workflowStatus: 'delivered',
+            workflowStatus: 'native-unobserved',
+          });
+          assert.equal((await action(input, 'delivery')).operation, 'link');
+          append(input, 'delivery-association', {
+            status: 'linked',
+            pullRequest: { pullRequestNumber: 456 },
           });
           assert.equal((await action(input, 'delivery')).operation, 'compose');
           append(input, 'delivery-compose', {
@@ -1267,7 +1180,12 @@ for (const scenario of [
         ]) {
           const invalid = structuredClone(input);
           append(invalid, 'delivery-publish-refreshed', rejected);
-          assert.equal(matchFixture([...scenario.fixtures], invalid), null);
+          if (rejected.status === 'blocked' || rejected.code !== waiting.code) {
+            const stopped = await response(invalid);
+            assert.ok('content' in stopped);
+            assert.match(String(stopped.content), /notification-delivery-stopped/u);
+            assert.match(String(stopped.content), new RegExp(rejected.code, 'u'));
+          } else assert.equal(matchFixture([...scenario.fixtures], invalid), null);
         }
         append(input, 'delivery-publish-refreshed', waiting);
         const exhausted = structuredClone(input);
@@ -1293,7 +1211,7 @@ for (const scenario of [
         assert.equal((await action(input, 'delivery')).digest, refreshedDigest);
         append(input, 'delivery-link-publish-0', {
           status: 'published',
-          workflowStatus: 'delivered',
+          workflowStatus: 'native-unobserved',
         });
         assert.equal((await action(input, 'delivery')).operation, 'announce');
         append(input, 'delivery-repeat', { status: 'announced' });
@@ -1419,20 +1337,16 @@ for (const scenario of [
           append(input, 'assessment-skill', 'Generic Assessment');
           await response(input);
           append(input, 'git', { exitCode: 0, stdout: '/tmp/managed-worktree', truncated: false });
+          if (stage === 'Clarify') {
+            assert.deepEqual(await response(input), {
+              content: 'Should cleanup close the issue only after evidence capture?',
+            });
+            continue;
+          }
           const submission = await action(input, 'result');
           assert.equal(submission.previousResultDigest, digest);
-          assert.equal(
-            submission.result.outcome,
-            stage === 'Clarify' ? 'clarification-needed' : 'plan-ready',
-          );
+          assert.equal(submission.result.outcome, 'plan-ready');
           assert.ok(submission.result.fullAssessment!.startsWith(String(previous.fullAssessment)));
-          if (stage === 'Clarify') {
-            assert.equal(submission.result.outcome, 'clarification-needed');
-            assert.ok('questions' in submission.result);
-            assert.deepEqual(submission.result.questions, [
-              'Should cleanup close the issue only after evidence capture?',
-            ]);
-          }
           append(input, 'result', { status: 'recorded', presentation: 'Retained native review.' });
           assert.deepEqual(await response(input), { content: 'Retained native review.' });
           previous = submission.result;
@@ -1549,6 +1463,66 @@ for (const scenario of [
             assert.equal(delivered.operation, 'publish');
             assert.equal(delivered.digest, digest);
             if (initial) {
+              const transient = {
+                status: 'retrying',
+                code: 'github-delivery-github-request',
+                providerDiagnostic: {
+                  provider: 'github',
+                  classification: 'transport',
+                  httpStatus: 500,
+                },
+              };
+              const recovery = structuredClone(input);
+              append(recovery, 'feedback-delivery-publish', transient);
+              const prepare = await runAction(recovery, 'delivery');
+              assert.equal(prepare.operation, 'prepare');
+              assert.equal(prepare.id, id);
+              assert.equal('eventId' in prepare, false);
+              append(recovery, 'feedback-link-prepare-0', {
+                status: 'prepared',
+                digest,
+                operation: { id: 'original-operation', creationAttempted: true },
+              });
+              const publish = await runAction(recovery, 'delivery');
+              assert.equal(publish.operation, 'publish');
+              assert.equal(publish.digest, digest);
+              append(recovery, 'feedback-link-publish-0', { status: 'published' });
+              assert.equal((await runAction(recovery, 'delivery')).operation, 'link');
+              append(recovery, 'feedback-delivery-association', {
+                status: 'linked',
+                pullRequest: { pullRequestNumber: 456 },
+              });
+              assert.equal((await runAction(recovery, 'delivery')).operation, 'compose');
+              for (const classification of [
+                'authentication',
+                'permission',
+                'rate-limit',
+                'unknown',
+              ]) {
+                const denied = structuredClone(input);
+                append(denied, 'feedback-delivery-publish', {
+                  ...transient,
+                  providerDiagnostic: { ...transient.providerDiagnostic, classification },
+                });
+                const stopped = await runResponse(denied);
+                assert.ok('content' in stopped);
+                assert.match(String(stopped.content), /notification-delivery-stopped/u);
+                assert.match(String(stopped.content), new RegExp(classification, 'u'));
+              }
+              const exhausted = structuredClone(input);
+              append(exhausted, 'feedback-delivery-publish', transient);
+              for (let index = 0; index < 3; index++) {
+                assert.equal((await runAction(exhausted, 'delivery')).operation, 'prepare');
+                append(exhausted, `feedback-link-prepare-${index}`, { status: 'prepared', digest });
+                assert.equal((await runAction(exhausted, 'delivery')).operation, 'publish');
+                append(exhausted, `feedback-link-publish-${index}`, transient);
+              }
+              assert.deepEqual(await runResponse(exhausted), {
+                content:
+                  'notification-delivery-reconciliation-exhausted: github-delivery-github-request',
+              });
+            }
+            if (initial) {
               append(input, 'feedback-delivery-publish', {
                 status: 'waiting',
                 code: 'github-delivery-linkage-unverified',
@@ -1576,6 +1550,11 @@ for (const scenario of [
               append(input, 'feedback-link-publish-0', { status: 'published' });
             } else append(input, 'feedback-delivery-publish', { status: 'published' });
             if (initial) {
+              assert.equal((await runAction(input, 'delivery')).operation, 'link');
+              append(input, 'feedback-delivery-association', {
+                status: 'linked',
+                pullRequest: { pullRequestNumber: 456 },
+              });
               assert.equal((await runAction(input, 'delivery')).operation, 'compose');
               append(input, 'feedback-delivery-compose', {
                 status: 'composition-ready',

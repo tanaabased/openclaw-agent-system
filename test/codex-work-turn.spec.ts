@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 
 import advance from '../agent/codex-work-turn.ts';
-import { automationHash } from '../agent/automation-hash.ts';
-import { hasDeliveredImplementation } from '../agent/implementation-delivery.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 import type { CodexWorkContext } from '../agent/codex-continuation-context.ts';
 
@@ -38,16 +36,16 @@ function fixture() {
   const receipts: string[] = [];
   const context = {
     records: [record],
-    input: { action: 'next' },
+    input: { action: 'context' },
     current: { policy: { policy: { maxConcurrentItems: 1 } }, manifest: {}, workspace: '/tmp' },
-    caller: 'intake',
+    caller: 'chat',
     activation: { sourceThreadId: 'intake' },
     occurrence: { id: 'scan' },
     deps: { now: () => 10 },
     native: { assessmentSkill: async () => ({ id: 'implementation' }) },
     continuationNative: async (_: string, attempt: { inputId: string; turnId: string }) => {
       receipts.push(attempt.inputId);
-      return { status: 'verified', turnId: attempt.turnId, ended: true };
+      return { status: 'verified', turnId: attempt.turnId, ended: false };
     },
     save: async () => {},
   } as unknown as CodexWorkContext;
@@ -58,9 +56,9 @@ function fixture() {
       id: 'chat',
       cwd: '/tmp',
       turnId: 'work',
-      status: 'idle',
-      turnStatus: 'completed',
-      turnEnded: true,
+      status: 'active',
+      turnStatus: 'inProgress',
+      turnEnded: false,
       followUpUserTurn: true,
     },
     transition: { status: 'ready', progression: record.progression },
@@ -72,17 +70,10 @@ function fixture() {
 }
 
 describe('agent/codex-work-turn', () => {
-  it('should enter the task work owner with the verified feedback send instead of inventing operator custody', async () => {
+  it('should use current verified feedback without replacing an uncertain older request', async () => {
     const { record, context, verified } = fixture();
-    context.input.action = 'context';
-    context.caller = 'chat';
-    verified.found = {
-      ...verified.found,
-      turnId: 'feedback',
-      status: 'active',
-      turnStatus: 'inProgress',
-      turnEnded: false,
-    };
+    const older = structuredClone(record.continuation!.attempt);
+    verified.found.turnId = 'feedback';
     const attempt = {
       id: 'f'.repeat(64),
       sourceThreadId: 'intake',
@@ -101,200 +92,62 @@ describe('agent/codex-work-turn', () => {
       assert.deepEqual(received, attempt);
       return { status: 'verified', turnId: 'feedback', ended: false };
     };
-    const result = await advance(record, context, verified);
-    assert.equal(result.ready, true);
-    assert.deepEqual(record.continuation!.attempt, attempt);
-    assert.equal('origin' in record.continuation!.attempt!, false);
-    assert.equal(record.progression!.workOwner, 'issue');
-    assert.equal(record.feedback, undefined);
-  });
-  it('should recover an interrupted handoff through its retained input without preparing a duplicate send', async () => {
-    const { record, context, verified, source, receipts } = fixture();
-    delete record.continuation!.attempt;
-    record.handoff = { at: 1, by: 'chat', ...source };
-    const result = await advance(record, context, verified);
-    assert.equal(result.ready, true);
-    if (result.ready) assert.equal(result.currentTurnEnded, true);
-    assert.deepEqual(receipts, ['original-input']);
-    assert.equal(record.handoff, undefined);
-    assert.equal(record.continuation!.handoffs?.[0]?.inputId, source.inputId);
-    assert.equal(record.continuation!.scope, 'local');
-    assert.equal(
-      (record.continuation as NonNullable<DispatchRecord['continuation']>).attempt?.origin,
-      'input',
-    );
-  });
-
-  it('should require explicit context for an older handoff without input custody', async () => {
-    const { record, context, verified } = fixture();
-    delete record.continuation!.attempt;
-    record.handoff = { at: 1, by: 'chat', turnId: 'unknown' };
-    await assert.rejects(advance(record, context, verified), /handoff-input-unverified/);
-    assert.equal(record.continuation!.attempt, undefined);
-  });
-
-  it('should preserve a denial while reconciling an interrupted handoff', async () => {
-    const { record, context, verified, source } = fixture();
-    delete record.continuation!.attempt;
-    record.handoff = { at: 1, by: 'chat', ...source };
-    context.continuationNative = async () => ({
-      status: 'blocked',
-      code: 'continuation-native-approval-denied',
-      turnId: 'work',
-      ended: true,
-    });
-    const result = await advance(record, context, verified);
-    assert.equal(result.ready, false);
-    assert.equal(record.continuation!.phase, 'blocked');
-    assert.equal(record.continuation!.code, 'continuation-native-approval-denied');
-    assert.ok(record.handoff);
-  });
-
-  it('should enforce shared capacity at preparation instead of reserving idle queued work forever', async () => {
-    const { record, context, verified } = fixture();
-    delete record.continuation!.attempt;
-    record.nativeInactive = true;
-    context.records.push({
-      ...record,
-      id: 'busy',
-      nativeInactive: false,
-      capacityObservation: { at: 2, code: 'dispatch-capacity-native-active' },
-    });
-    assert.equal((await advance(record, context, verified)).ready, false);
-    assert.equal(record.continuation!.attempt, undefined);
-    context.records.pop();
-    const prepared = await advance(record, context, verified);
-    assert.equal(prepared.ready, false);
-    if (!prepared.ready) assert.equal(prepared.response?.status, 'prepared');
-    assert.equal(record.nativeInactive, undefined);
-    assert.equal(
-      (record.continuation as NonNullable<DispatchRecord['continuation']>).attempt?.origin,
-      undefined,
-    );
-  });
-
-  it('should consume current human input before an older unverified automatic send', async () => {
-    const { record, context, verified, receipts } = fixture();
-    const work = record.continuation!;
-    const older = {
-      ...work.attempt!,
-      origin: undefined,
-      inputId: undefined,
-      turnId: undefined,
-      sourceThreadId: 'intake',
-      sourceTurnId: 'scan',
-    };
-    work.attempt = older;
-    work.phase = 'prepared';
-    context.input.action = 'context';
-    context.operatorInput = { turnId: 'human-turn', inputId: 'human-input' };
-    context.caller = 'chat';
-    verified.found.turnId = 'human-turn';
-    verified.found.turnEnded = false;
-    verified.found.turnStatus = 'inProgress';
-    context.continuationNative = async (_source, attempt) => {
-      receipts.push(attempt.inputId ?? 'old-automatic-send');
-      return attempt.origin === 'input'
-        ? { status: 'verified', turnId: attempt.turnId!, ended: false }
-        : { status: 'uncertain' };
-    };
-    const result = await advance(record, context, verified);
-    assert.equal(result.ready, true);
-    assert.deepEqual(receipts, ['human-input']);
-    assert.deepEqual(work.retries?.[0]?.attempt, older);
-    assert.equal(work.attempt?.inputId, 'human-input');
-    assert.equal(record.worktree, '/tmp');
-  });
-
-  it('should not mistake an unpublished completed revision for delivered work when a human continues', async () => {
-    const { record, context, verified, source } = fixture();
-    const work = record.continuation!;
-    work.scope = 'pull-request';
-    work.phase = 'delivery';
-    work.head = 'b'.repeat(40);
-    work.result = { outcome: 'done', summary: 'Done locally.', fullResult: 'Not yet published.' };
-    work.resultSource = source;
-    record.delivery = {
-      reconciled: true,
-      pushedHead: 'a'.repeat(40),
-      pullRequest: { pullRequestNodeId: 'pr', pullRequestNumber: 7 },
-    } as NonNullable<DispatchRecord['delivery']>;
-    context.input.action = 'context';
-    context.operatorInput = { turnId: 'human-turn', inputId: 'human-input' };
-    context.caller = 'chat';
-    verified.found.turnId = 'human-turn';
-    verified.found.turnEnded = false;
-    verified.found.turnStatus = 'inProgress';
-    context.continuationNative = async () => ({
-      status: 'verified',
-      turnId: 'human-turn',
-      ended: false,
-    });
-    assert.equal(hasDeliveredImplementation(record), false);
     assert.equal((await advance(record, context, verified)).ready, true);
-    assert.equal(work.result, undefined);
-    assert.equal(work.resultHistory?.[0]?.result.outcome, 'done');
-    assert.equal(hasDeliveredImplementation(record), false);
-    assert.equal(record.delivery.pushedHead, 'a'.repeat(40));
-  });
-
-  it('should preserve earlier work when the current human turn has a native denial', async () => {
-    const { record, context, verified, source, receipts } = fixture();
-    const work = record.continuation!;
-    work.result = { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' };
-    work.resultSource = source;
-    context.input.action = 'context';
-    context.operatorInput = { turnId: 'work', inputId: 'denied-input' };
-    const before = structuredClone(work);
-    context.continuationNative = async (_source, attempt) => {
-      receipts.push(attempt.inputId!);
-      return {
-        status: 'blocked',
-        code: 'continuation-native-approval-denied',
-        turnId: 'work',
-        ended: false,
-      };
-    };
-    const result = await advance(record, context, verified);
-    assert.equal(result.ready, false);
-    assert.deepEqual(receipts, ['denied-input']);
-    assert.deepEqual(work.result, before.result);
-    assert.deepEqual(work.attempt, before.attempt);
-    assert.equal(work.resultHistory, undefined);
-    assert.equal(work.phase, 'blocked');
-    assert.equal(work.code, 'continuation-native-approval-denied');
+    assert.deepEqual(record.continuation!.attempt, older);
+    assert.equal(record.continuation!.binding!.turnId, 'feedback');
+    assert.equal(record.progression!.workOwner, 'issue');
   });
 
   for (const outcome of ['done', 'clarification-needed', 'blocked'] as const)
-    it(`should consume a fresh same-turn input after ${outcome} and preserve the prior result and local scope`, async () => {
-      const { record, context, verified, source, receipts } = fixture();
+    it(`should accept current input without making ${outcome} history a gate`, async () => {
+      const { record, context, verified } = fixture();
       const work = record.continuation!;
-      const previous = {
+      work.result = {
         outcome,
         summary: 'Retained work.',
         fullResult: 'Original result.',
         ...(outcome === 'clarification-needed' ? { questions: ['Which option?'] } : {}),
       } as NonNullable<typeof work.result>;
-      work.result = previous;
-      work.resultSource = source;
-      work.phase = outcome === 'done' ? 'complete' : outcome;
-      context.input.action = 'context';
-      context.caller = 'chat';
+      const previous = structuredClone(work);
       context.operatorInput = { turnId: 'work', inputId: 'new-steering' };
-      verified.found.status = 'active';
-      verified.found.turnStatus = 'inProgress';
-      verified.found.turnEnded = false;
-      verified.resumeBlocked = outcome === 'blocked';
-      const result = await advance(record, context, verified);
-      assert.equal(result.ready, true);
-      assert.equal(work.result, undefined);
-      assert.deepEqual(work.resultHistory, [{ source, result: previous }]);
-      assert.deepEqual(work.revisionSource, context.operatorInput);
-      assert.deepEqual(receipts, ['new-steering']);
+      assert.equal((await advance(record, context, verified)).ready, true);
+      assert.deepEqual(work.result, previous.result);
+      assert.deepEqual(work.attempt, previous.attempt);
       assert.equal(work.scope, 'local');
-      assert.equal(work.phase, 'running');
-      const prior = automationHash(work.resultHistory);
-      await advance(record, context, verified);
-      assert.equal(automationHash(work.resultHistory), prior);
+      assert.equal(work.phase, previous.phase);
     });
+
+  it('should enter work without saving a plan or creating a coordinator request', async () => {
+    const { record, context, verified } = fixture();
+    delete record.result;
+    delete record.continuation!.attempt;
+    assert.equal((await advance(record, context, verified)).ready, true);
+    assert.equal(record.result, undefined);
+    assert.equal(record.continuation!.attempt, undefined);
+    assert.equal(record.continuation!.binding!.turnId, 'work');
+  });
+
+  it('should preserve current native denials without mutating prior receipts', async () => {
+    const { record, context, verified } = fixture();
+    const before = structuredClone(record);
+    context.continuationNative = async () => ({
+      status: 'blocked',
+      code: 'continuation-native-approval-denied',
+      turnId: 'work',
+      ended: false,
+    });
+    const result = await advance(record, context, verified);
+    assert.equal(result.ready, false);
+    if (!result.ready) assert.equal(result.response.code, 'continuation-native-approval-denied');
+    assert.deepEqual(record, before);
+  });
+
+  it('should leave an ended native turn to its host without preparing another send', async () => {
+    const { record, context, verified, receipts } = fixture();
+    verified.found.turnEnded = true;
+    const before = structuredClone(record);
+    assert.equal((await advance(record, context, verified)).ready, false);
+    assert.deepEqual(record, before);
+    assert.deepEqual(receipts, []);
+  });
 });

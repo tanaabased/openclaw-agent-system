@@ -1,4 +1,4 @@
-import type { ProjectPickupState } from './project-pickup-state.ts';
+import type { IssuePickupState } from './issue-pickup-state.ts';
 import { dispatchStorageNotice } from './dispatch-storage.ts';
 import { type default as assignmentIntakePolicy } from './assignment-intake-policy.ts';
 import {
@@ -63,7 +63,7 @@ interface Dependencies {
   ): Promise<'pending' | 'completed' | 'failed'>;
   readDispatch?(
     scope: string,
-  ): Promise<{ records: OpenClawDispatchRecord[]; projectPickup?: ProjectPickupState }>;
+  ): Promise<{ records: OpenClawDispatchRecord[]; projectPickup?: IssuePickupState }>;
   now?(): number;
   sleep?: typeof abortableDelay;
 }
@@ -187,7 +187,7 @@ export default class OpenClawNotifications {
                       ? ('active' as const)
                       : ('queued' as const),
               }),
-          ...(phase === 'clarification-needed' ? { waitingReason: 'clarification-needed' } : {}),
+          ...(record?.result ? { assessmentOutcome: record.result.outcome } : {}),
           worktree: record?.worktree ? 'ready' : 'pending',
           ...(feedbackFailure && phase !== 'awaiting-reassignment'
             ? { failureCode: feedbackFailure }

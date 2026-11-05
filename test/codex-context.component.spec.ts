@@ -48,11 +48,6 @@ describe('agent/codex-context', () => {
 
     assert.match(context, /supersedes every earlier Agent System context/u);
     assert.ok(context.includes(codexQuietHeartbeatInstructions));
-    assert.match(
-      context,
-      /Reproduce the complete returned presentation Markdown in the final reply/u,
-    );
-    assert.match(context, /card generation, not visible delivery/u);
     assert.doesNotMatch(context, /For new routed work, use/u);
     assert.deepEqual(envelope(context), {
       version: 1,
@@ -251,7 +246,7 @@ describe('agent/codex-context', () => {
             notifications: {
               schemaVersion: 3,
               runtimes: ['codex'],
-              allowedRepositoryOwners: [{ login: 'example', nodeId: 'O_example' }],
+              routing: ['example/*'],
               intervalMinutes: 5,
               maxConcurrentItems: 2,
             },

@@ -31,8 +31,6 @@ describe('agent/openclaw-continuation', () => {
     const before = structuredClone(record);
     const result = await advanceOpenClawWork({
       record,
-      mode: 'work',
-      now: 1,
       config: {},
       request: async () => {
         throw new Error('delivered work must not send or inspect a native turn');
@@ -46,20 +44,20 @@ describe('agent/openclaw-continuation', () => {
     assert.deepEqual(record, before);
   });
 
-  it('should retain already submitted delivery turns as history after verified delivery', () => {
+  it('should reconcile only the already submitted delivery turn after verified delivery', () => {
     const record = delivered();
     record.work!.deliveryTurn = { status: 'accepted', runId: 'delivery', message: 'Deliver.' };
-    assert.equal(openClawWorkSlot(record, 'work'), undefined);
+    assert.equal(openClawWorkSlot(record), 'deliveryTurn');
     record.work!.deliveryTurn.status = 'completed';
-    assert.equal(openClawWorkSlot(record, 'work'), undefined);
+    assert.equal(openClawWorkSlot(record), undefined);
   });
 
-  it('should recover unfinished implementation and publication before delivery', () => {
+  it('should not turn missing results or publication into a new request', () => {
     const record = delivered();
     record.work!.delivery!.reconciled = false;
-    assert.equal(openClawWorkSlot(record, 'work'), 'deliveryTurn');
+    assert.equal(openClawWorkSlot(record), undefined);
     delete record.work!.result;
-    assert.equal(openClawWorkSlot(record, 'work'), 'turn');
+    assert.equal(openClawWorkSlot(record), undefined);
   });
 
   it('should not let an announcement failure hold unfinished initial publication', () => {
@@ -68,7 +66,7 @@ describe('agent/openclaw-continuation', () => {
     record.work!.delivery!.announcement = { code: 'delivery-announcement-denied' } as NonNullable<
       NonNullable<typeof record.work>['delivery']
     >['announcement'];
-    assert.equal(openClawWorkSlot(record, 'work'), 'deliveryTurn');
+    assert.equal(openClawWorkSlot(record), undefined);
   });
 
   it('should leave a later human revision outside automatic continuation while retaining its history', () => {
@@ -76,13 +74,13 @@ describe('agent/openclaw-continuation', () => {
     const previous = record.work!.result!;
     delete record.work!.result;
     record.work!.resultHistory = [{ result: previous }];
-    assert.equal(openClawWorkSlot(record, 'work'), undefined);
+    assert.equal(openClawWorkSlot(record), undefined);
     assert.equal(record.work!.resultHistory[0]!.result, previous);
   });
 
   it('should preserve native cancellation as a stop', () => {
     const record = delivered();
     record.work!.code = 'dispatch-turn-cancelled';
-    assert.equal(openClawWorkSlot(record, 'work'), undefined);
+    assert.equal(openClawWorkSlot(record), undefined);
   });
 });

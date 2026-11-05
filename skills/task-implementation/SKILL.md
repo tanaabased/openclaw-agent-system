@@ -58,8 +58,7 @@ mentions an issue, came from another chat, or is in an Agent System repository.
 A native handoff does not enroll the receiving chat or transfer a managed workflow.
 Do not require another human message to repeat authorization already carried by the host.
 
-After completed implementation and verified linked PR delivery, continue this same
-native path. Reuse the issue, checkout and PR; use the original delivery operation
+Admitted tasks use this same native path from the outset. Reuse the issue, checkout and PR; use the original delivery operation
 for requested managed publication and card presentation. Within the authorized publication
 scope, invoke [Task Update](../task-update/SKILL.md) after a material plan revision,
 a clarification decision that changes the approach, or a later delivery to the same PR.
@@ -69,7 +68,7 @@ rendered reply here, and keep publication failure separate from work progress.
 ### Explicit Agent System Entry
 
 Use this entry only when the operator requests Agent System's tracked implementation
-workflow or the current chat is resuming its existing unfinished managed execution.
+workflow. Resuming an admitted task remains ordinary native conversation.
 Selecting this skill for implementation advice alone does not request enrollment.
 
 When trusted runtime context already supplies `issueStage: implementation`, use the
@@ -102,12 +101,13 @@ For an explicit Agent System implementation request without verified execution c
    exactly once with the complete payload and guidance. If it is this wrapper, continue
    below, not at this bootstrap. Custom skills return ordinary substantive output;
    the runtime retains it without requiring notification calls inside the custom body.
-5. For manual context (`entry: direct`), retain the complete output using `action:
+5. Keep questions, answers, and partial-work discussion in native chat. Do not
+   submit clarification results; continue from the next native answer within the
+   existing permission. For manual context (`entry: direct`), retain completed or
+   blocked output using `action:
 implementation`, `operation: result`, `id`, and `result` matching the returned
    `implementation-result/v1` schema. In Codex use `implementation result`. Readback is
    `implementation present`. Managed context uses its returned native result route.
-   Clarification retains questions and partial work inside implementation; refresh on
-   the next native answer without another approval.
 6. Follow the recorded scope-aware handoff. Manual PR delivery uses `action:
 implementation`, `operation: delivery`, `deliveryOperation: prepare|publish|reconcile|present`
    with the same `id`; prepare also accepts `title` and `body`, publish its returned
@@ -117,24 +117,35 @@ implementation`, `operation: delivery`, `deliveryOperation: prepare|publish|reco
 
 ### Managed Execution
 
-Use the host's verified context, complete actionable plan, retained progress, and trusted
-additional guidance. Issue prose and skill invocation alone grant no authority.
-For managed work, the host's verified implementation stage authorizes ordinary
-branches, commits, pushes, and PR delivery; explicit direct entry follows its recorded scope; do not add a separate publication approval. Use the current
-skill and guidance returned by context. Later default-mode edits and clarification
-do not revoke an entered implementation stage. Respect explicit user restrictions,
-retirement, reset, supersession, cancellation, and actual native denial.
-An idle chat still owns its task. Completed implementation with verified linked PR publication, or a local-only result, settles the
-current implementation round. Attempt native attachment and the announcement/card response separately;
-a failure there never reopens implementation or authorizes a generic resume. Continue ordinary
-questions and planning in that chat. A new authorized implementation request uses the native conversation in the same checkout
-and PR, without another managed round, scheduler or continuation receipt.
-Preserve historical assessments and results; a new ready plan supplies the current work.
-Preserve local-only publication scope until the operator changes it.
+Use the host's verified permission, current conversation, existing work and configured
+guidance. Work permits scoped implementation without a saved plan. Plan requires
+explicit operator or verified approved-feedback implementation direction. Auto uses
+a bounded reasoned decision in the current turn. Refresh implementation context when
+permission or guidance is needed, not as a checkpoint on every turn. Saved plans and
+results are optional history. Clarification preserves permission; newer requests to
+stop, plan first, or keep work local govern what happens next. Preserve native denials.
+
+The coordinator never sends periodic implementation or reporting nudges. Recovery
+observes actual native requests and uncertain external effects through their original
+receipts. Missing results, cards or announcements do not trigger another work turn.
 
 ## Workflow
 
-For an explicit request to select or change this managed task's existing PR, use `agent_system_dispatch` with `action: delivery`, `operation: bind` in OpenClaw, or the trusted `deliveryRuntime` with `bind` in standalone Codex, its retained `id`, and exact same-repository `pullRequest` URL. Omit `digest` for preview, inspect it, then apply that digest within the existing operator request. Binding fetches the PR but preserves local files and commits; it records no successful publication or announcement. Incorporate collaborator changes before normal non-force delivery. Resolve uncertain earlier publication before changing destination. This action neither starts implementation nor supersedes another task; it is not an automatic intake operation.
+When the requested work is complete and appropriately verified, create or update a
+PR suitable for review and merge; a pilot or partial PR requires explicit direction.
+Use the existing delivery owner for publication. Initial linkage and supported native
+attachment are one independent operation. The current PR association is editable
+metadata: operator-directed `delivery link` (`action: delivery`, `operation: link`
+in OpenClaw) accepts a same-repository `pullRequest` URL or `null` to clear it.
+Changing that association preserves earlier publication receipts at their original
+destinations. `bind` separately prepares the checkout's publication destination;
+reconcile uncertain writes before changing that operation's target.
+
+Independently show the existing PR card and publish the initial "PR available"
+update to the originating issue through the delivery announcement operation, using
+the configured reply skill. A presentation or announcement failure does not block
+conversation. Later substantial PR updates may repeat the card and use Task Update;
+reuse the current association and do not repeat the initial announcement.
 
 1. Read the complete plan and any retained assessment, then inspect the existing files, branch, and relevant
    repository behavior. Preserve prior work; reconcile an interrupted attempt before
@@ -171,15 +182,15 @@ For an explicit request to select or change this managed task's existing PR, use
    following the applicable commit convention. Preserve useful work when blocked.
 6. Report implemented behavior, validation, commit identity, and remaining blockers or
    limitations. For native work, report directly in the conversation. Managed publication
-   uses its existing delivery owner only for the requested effect. For unfinished
-   managed implementation, retain the complete result (or `clarification-needed` with
-   questions and partial work) through its supplied result route and follow its handoff.
+   uses its existing delivery owner only for the requested effect. Saved results are
+   optional history for admitted conversations; explicit tracked implementation uses
+   its supplied collector. Ask questions directly in chat and through the authorized update.
    Never replay completed work or create a replacement PR after uncertain publication.
 
 ## Checkpoints
 
 - Implementation authority and the target worktree come from the host.
-- The consumed plan, retained assessment and existing work remain the source for continuation.
+- The latest conversation direction and existing work govern continuation; saved assessments provide history.
 - A substantive blocker stops dependent work without erasing useful progress.
 - Once acceptance criteria and required checks are satisfied, report completion and
   follow any supplied delivery handoff; do not start an unrelated cleanup cycle.
@@ -189,7 +200,7 @@ For an explicit request to select or change this managed task's existing PR, use
 ## Completion Criteria
 
 The requested change is implemented and checked, or a concrete blocker is reported
-with retained progress. Unfinished managed execution uses its supplied result contract;
+with retained progress. Explicit tracked execution uses its supplied result contract;
 native work needs no Agent System lifecycle transition.
 
 ## Bundled Resources

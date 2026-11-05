@@ -1,3 +1,4 @@
+import taskPullRequest from './task-pull-request.ts';
 import replyOwnPublications from './reply-own-publications.ts';
 import { managedPullRequest, dispatchAdmission } from './managed-issue.ts';
 
@@ -51,11 +52,9 @@ export async function scanCodexFeedback(input: {
         !record.retired &&
         !record.retirement &&
         !record.reset &&
-        record.effective &&
         record.threadId &&
         record.request &&
         record.worktree &&
-        record.project &&
         record.feedback?.scannedAt !== input.occurrence,
     )
     .sort((a, b) => (a.feedback?.scannedTime ?? 0) - (b.feedback?.scannedTime ?? 0))
@@ -111,7 +110,7 @@ export async function scanCodexFeedback(input: {
         owner: admitted.repository.owner.login,
         name: admitted.repository.name,
       };
-      const pr = record.delivery?.pullRequest;
+      const pr = taskPullRequest(record);
       const sources = [
         {
           number: admitted.issue.number,

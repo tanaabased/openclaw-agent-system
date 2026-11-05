@@ -1,4 +1,4 @@
-import pickupTiming from '../channels/github/project-pickup-timing.ts';
+import pickupTiming from '../channels/github/issue-pickup-timing.ts';
 import codexSchedule from '../agent/codex-automation-schedule.ts';
 import assert from 'node:assert/strict';
 

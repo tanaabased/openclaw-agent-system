@@ -1,3 +1,4 @@
+import taskPullRequest from './task-pull-request.ts';
 import replyOwnPublications from './reply-own-publications.ts';
 import { managedIssueState } from './managed-issue.ts';
 import cleanupConfiguration from './cleanup-configuration.ts';
@@ -162,7 +163,7 @@ export default async function reconcileCodexLifecycle(
           };
         },
         reactivate: async (record, intake) => {
-          const pr = record.delivery?.pullRequest;
+          const pr = taskPullRequest(record);
           return reactivateAssignmentFeedback({
             record,
             intake,

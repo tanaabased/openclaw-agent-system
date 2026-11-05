@@ -28,7 +28,7 @@ describe('agent/assessment-handoff', () => {
       assert.equal(assessmentHandoff(record, 'work', runtime).next, 'implementation');
       assert.equal(record.progression, undefined);
     });
-    it(`should retain plan clarification and lifecycle holds for ${runtime}`, () => {
+    it(`should retain permission holds without treating saved questions as a gate for ${runtime}`, () => {
       assert.equal(assessmentHandoff(ready, 'plan', runtime).next, 'planning');
       assert.equal(assessmentHandoff(ready, 'auto', runtime).next, 'planning');
       const questions = {
@@ -40,7 +40,7 @@ describe('agent/assessment-handoff', () => {
           questions: ['Which behavior?'],
         },
       };
-      assert.equal(assessmentHandoff(questions, 'work', runtime).next, 'planning');
+      assert.equal(assessmentHandoff(questions, 'work', runtime).next, 'implementation');
       assert.equal(
         assessmentHandoff({ ...ready, reset: { at: 1, by: 'operator' } }, 'work', runtime).next,
         'planning',

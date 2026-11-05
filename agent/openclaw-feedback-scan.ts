@@ -1,3 +1,4 @@
+import taskPullRequest from './task-pull-request.ts';
 import replyOwnPublications from './reply-own-publications.ts';
 import { managedPullRequest } from './managed-issue.ts';
 import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
@@ -15,7 +16,7 @@ import {
   openClawDispatchFailureCode,
 } from './openclaw-dispatch-context.ts';
 import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
-import { feedbackSession } from './openclaw-feedback.ts';
+import observeIssueActivity from './openclaw-session-activity.ts';
 
 export function openClawFeedbackEnabled(manifest: AgentManifest) {
   return workflowFeedbackAvailable(manifest.github?.notifications, 'issue-assignment');
@@ -198,7 +199,7 @@ export async function scanOpenClawFeedback(input: {
               event.code = 'feedback-source-changed';
             }
         };
-        const pr = record.work?.delivery?.reconciled ? record.work.delivery.pullRequest : undefined;
+        const pr = taskPullRequest(record);
         const sources = [
           {
             number: intake.issue.number,
@@ -250,7 +251,7 @@ export async function scanOpenClawFeedback(input: {
               await validateLocal();
             },
           },
-          (request) => feedbackSession(request, record, service.dependencies.config()),
+          (request) => observeIssueActivity(request, record, service.dependencies.config()),
         );
         feedback.activity = { busy: activity.busy, observedAt: now };
         await validateLocal();
@@ -287,13 +288,6 @@ export async function scanOpenClawFeedback(input: {
         break;
       }
       feedback.code = openClawDispatchFailureCode(error);
-      if (/revoked|owner-changed/.test(feedback.code)) {
-        for (const event of feedback.events)
-          if (!['published', 'blocked'].includes(event.phase)) {
-            event.phase = 'blocked';
-            event.code = feedback.code;
-          }
-      }
     }
     feedback.discoveryPending = false;
     feedback.scannedTime = now;

@@ -30,6 +30,7 @@ const actions: Record<string, readonly string[]> = {
     'retry-denied',
   ],
   delivery: [
+    'link',
     'bind',
     'prepare',
     'publish',

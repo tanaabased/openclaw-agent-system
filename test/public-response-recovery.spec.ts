@@ -59,8 +59,7 @@ async function fixture() {
     ended = false,
     sourceStatus = 'ok',
     cancelled = false,
-    posts = 0,
-    lose = false;
+    posts = 0;
   let historical:
     | {
         runId?: string;
@@ -139,13 +138,8 @@ async function fixture() {
         ...(historical?.code ? { code: historical.code } : {}),
       };
     if (method === 'chat.send') {
-      assert.equal(record.summaryRecovery!.turn.status, 'attempted');
-      assert.equal(saved!.summaryRecovery!.turn.status, 'attempted');
       posts++;
-      active = true;
-      recoveryMessage = String(params.message);
-      if (lose) throw new Error('native response lost');
-      return { runId: params.idempotencyKey, status: 'started' };
+      throw new Error('summary recovery must not send another native turn');
     }
     throw new Error('unexpected boundary: ' + method);
   };
@@ -173,8 +167,14 @@ async function fixture() {
     restart: () => {
       Object.assign(record, JSON.parse(JSON.stringify(saved)));
     },
-    lose: (value = true) => {
-      lose = value;
+    async seedSubmitted() {
+      recoveryMessage = 'Recover the original summary publication.';
+      record.summaryRecovery = {
+        revision: 1,
+        turn: { runId: 'legacy-summary', message: recoveryMessage, status: 'attempted' },
+      };
+      active = true;
+      await save();
     },
     end: () => {
       ended = true;
@@ -222,33 +222,28 @@ describe('agent/public-response recovery', () => {
     assert.equal(pendingPublicResponse(f.record), undefined);
     assert.equal(f.record.assessmentSummaries, undefined);
   });
-  it('should queue only response recovery and reconcile an uncertain native send after restart', async () => {
+  it('should reconcile an already submitted summary request without sending another turn', async () => {
     const f = await fixture();
     await f.prepare();
-    f.lose();
-    await assert.rejects(f.run(), /native response lost/);
+    await f.seedSubmitted();
     const result = structuredClone(f.record.result);
     f.restart();
     f.record.summaryRecovery!.code = 'session-dispatch-chat-send-timeout-unverified';
     assert.equal(openClawResponsePending(f.record), true);
     assert.equal((await f.run())?.status, 'assessment-pending');
-    assert.equal(f.posts, 1);
+    assert.equal(f.posts, 0);
     assert.equal(f.record.summaryRecovery?.turn.status, 'consumed');
     f.end();
     assert.equal((await f.run())?.status, 'assessment-completed');
     assert.equal(openClawResponsePending(f.record), false);
-    assert.equal(f.posts, 1);
     assert.deepEqual(f.record.result, result);
+    const original = structuredClone(f.record.summaryRecovery);
     f.record.assessmentRevision = 2;
     await f.prepare();
-    f.lose(false);
     await f.run();
-    assert.equal(f.posts, 2);
-    assert.equal(f.record.previousSummaryTurns?.[0]?.revision, 1);
-    assert.match(
-      f.record.summaryRecovery!.turn.message,
-      /do not repeat assessment or implementation/i,
-    );
+    assert.equal(f.posts, 0);
+    assert.deepEqual(f.record.summaryRecovery, original);
+    assert.equal(f.record.previousSummaryTurns, undefined);
   });
   it('should retain an unfinished summary without waking a delivered issue conversation', async () => {
     const f = await fixture();

@@ -1,5 +1,8 @@
-import openClawFeedbackInput from './openclaw-feedback-input.ts';
 import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
+import recoverFeedbackPublication from './feedback-publication-recovery.ts';
+import feedbackPresentation from './feedback-presentation.ts';
+import openClawFeedbackInput from './openclaw-feedback-input.ts';
+import openClawResponseAuthority from './openclaw-response-authority.ts';
 import workflowStatus from './workflow-status.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
@@ -15,7 +18,6 @@ import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import continueOpenClawResponse, {
   openClawResponseEligible,
 } from './openclaw-response-continuation.ts';
-import openClawResponseAuthority from './openclaw-response-authority.ts';
 import type { Static } from 'typebox';
 
 import feedbackResponse from '../channels/github/presentation/feedback-response.ts';
@@ -36,7 +38,6 @@ import {
 } from './dispatch-retry.ts';
 import redactFeedback from './feedback-redaction.ts';
 import selectFeedbackStage from './feedback-stage.ts';
-import issueProgression from './issue-progression.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { issueAssessmentAction, selectOpenClawAssessment } from './openclaw-assessment.ts';
 import advanceOpenClawDecision, { openClawDecisionPending } from './openclaw-auto-decision.ts';
@@ -75,157 +76,44 @@ export default class OpenClawDispatchIssue {
     record: OpenClawDispatchRecord,
     save: () => Promise<void>,
     authority: DispatchAuthority & { caller?: DispatchCaller },
-    reconcileOnly = false,
   ) {
-    if (hasDeliveredImplementation(record))
-      return { status: 'implementation-idle' as const, id: record.id };
-    if (openClawResponseEligible(record)) {
-      try {
-        await this.context.validate(manifest, workspace, record, true);
-        return (
-          (await this.context.dependencies.credential.use(authority, (request) =>
-            continueOpenClawResponse({
-              record,
-              request,
-              config: this.context.dependencies.config(),
-              reconcileOnly,
-              save,
-              assertCurrent: async () => {
-                await authority.assertCurrent?.();
-                await this.context.validate(manifest, workspace, record, true);
-              },
-            }),
-          )) ?? { status: 'assessment-pending' as const, id: record.id }
-        );
-      } catch (error) {
-        const code = openClawDispatchFailureCode(error);
-        if (record.summaryRecovery) record.summaryRecovery.code = code;
-        await save();
-        return { status: 'assessment-pending' as const, id: record.id, code, nextAction: 'next' };
-      }
-    }
-    if (
-      openClawDecisionPending(record, issueWorkflowMode(manifest.github?.notifications, record))
-    ) {
-      const assertDecision = async () => {
-        await authority.assertCurrent?.();
-        authority.signal?.throwIfAborted();
-        const live = await this.context.validateLocal(manifest, workspace, record);
-        if (
-          !record.decisionTurn &&
-          !openClawDecisionPending(
-            record,
-            issueWorkflowMode(live.manifest.github?.notifications, record),
-          )
-        )
-          throw new WorkflowPolicyHeld('workflow-mode-updated');
-      };
-      try {
-        await this.context.validate(manifest, workspace, record);
-        return await this.context
-          .guardedCredential(async () => {
-            await this.context.validate(manifest, workspace, record);
-            await assertDecision();
-          })
-          .use({ ...authority, assertCurrent: assertDecision }, (request) =>
-            advanceOpenClawDecision({
-              record,
-              request,
-              config: this.context.dependencies.config(),
-              save,
-              assertCurrent: assertDecision,
-            }),
-          );
-      } catch (error) {
-        return {
-          status: 'assessment-pending' as const,
-          id: record.id,
-          ...workflowFailure(error, openClawDispatchFailureCode(error)),
-          nextAction: 'next',
-        };
-      }
-    }
-    const now = (this.context.dependencies.now ?? Date.now)();
     const assertCurrent = async () => {
       await authority.assertCurrent?.();
       authority.signal?.throwIfAborted();
-      const live = await this.context.validateLocal(manifest, workspace, record, true);
-      const transition = issueProgression(record, {
-        mode: issueWorkflowMode(live.manifest.github?.notifications, record),
-        now,
-      });
-      if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
+      await this.context.validateLocal(manifest, workspace, record, false, 'native');
     };
     try {
-      await this.context.validate(manifest, workspace, record, true);
-      const live = await this.context.validateLocal(manifest, workspace, record, true);
-      return await this.context
-        .guardedCredential(async () => {
-          await this.context.validate(manifest, workspace, record, true);
-          await assertCurrent();
-        })
-        .use({ ...authority, assertCurrent }, async (request) => {
-          if (!record.request || !('key' in record.request))
-            throw new Error('dispatch-work-context-mismatch');
-          const selection =
-            record.work?.selection ??
-            (!record.work
-              ? (
-                  await selectWorkflowStage({
-                    stage: 'implementation',
-                    configuration: {
-                      ...live.manifest.github?.notifications?.issueAssignment?.implementation,
-                      ...record.manualIssue?.selections?.implementation,
-                    },
-                    workspace,
-                    observedAt: now,
-                    resolveSkill: (id) =>
-                      openClawSkill(
-                        request,
-                        record.request as { key: string; agentId: string },
-                        id,
-                      ),
-                  })
-                ).selection
-              : undefined);
-          return advanceOpenClawWork({
+      await assertCurrent();
+      return await this.context.dependencies.credential.use(
+        { ...authority, assertCurrent },
+        async (request) => {
+          const common = {
             record,
-            reconcileOnly,
-            mode: issueWorkflowMode(live.manifest.github?.notifications, record),
-            selection,
-            now,
             request,
-            config: this.context.dependencies.config(),
             save,
             assertCurrent,
-          });
-        });
+            config: this.context.dependencies.config(),
+          };
+          const outcomes = [];
+          const recoveries = [
+            ...(openClawResponseEligible(record) ? [() => continueOpenClawResponse(common)] : []),
+            ...(openClawDecisionPending(record) ? [() => advanceOpenClawDecision(common)] : []),
+            () => advanceOpenClawWork(common),
+          ];
+          for (const recover of recoveries) {
+            try {
+              outcomes.push(await recover());
+            } catch (error) {
+              authority.signal?.throwIfAborted();
+              outcomes.push(workflowFailure(error, 'dispatch-turn-reconciliation-unavailable'));
+            }
+          }
+          return { status: 'reconciled' as const, id: record.id, outcomes };
+        },
+      );
     } catch (error) {
-      if (error instanceof WorkflowPolicyHeld)
-        return {
-          status: 'policy-held' as const,
-          id: record.id,
-          reason: error.reason,
-          nextAction: 'next',
-        };
       const code = openClawDispatchFailureCode(error);
-      if (
-        record.work &&
-        [
-          'dispatch-turn-cancelled',
-          'dispatch-turn-failed',
-          'dispatch-turn-input-mismatch',
-        ].includes(code)
-      ) {
-        record.work.code = code;
-        await save();
-      }
-      return {
-        status: 'implementation-pending' as const,
-        id: record.id,
-        ...workflowFailure(error, code),
-        nextAction: 'next',
-      };
+      return { status: 'implementation-pending' as const, id: record.id, code };
     }
   }
 
@@ -249,19 +137,44 @@ export default class OpenClawDispatchIssue {
         code: event.code,
         nextAction: 'next',
       };
+    if (!event.native && !event.publicationAttempted && event.phase !== 'published') {
+      event.native = true;
+      await save();
+    }
+    const feedbackScope = 'native' as const;
     try {
       const assertCurrent = async () => {
         authority.signal?.throwIfAborted();
         await authority.assertCurrent?.();
-        await this.context.validateLocal(manifest, workspace, record, false, true);
+        await this.context.validateLocal(manifest, workspace, record, false, feedbackScope);
       };
       await assertCurrent();
+      // Once sent, native receipt recovery has no dependency on GitHub source availability.
+      if (event.native && event.turn && (!action || action.operation === 'reconcile'))
+        return await this.context.dependencies.credential.use(
+          { ...authority, assertCurrent },
+          async (request) => {
+            const result = await advanceFeedbackTurn({
+              record,
+              event,
+              request,
+              save,
+              assertCurrent,
+              config: this.context.dependencies.config(),
+            });
+            if (event.turn?.status === 'completed' && record.feedback?.activity) {
+              record.feedback.activity.busy = false;
+              await save();
+            }
+            return result;
+          },
+        );
       const { intake, client, item } = await this.context.validate(
         manifest,
         workspace,
         record,
         false,
-        true,
+        feedbackScope,
         undefined,
         authority.signal,
       );
@@ -275,11 +188,20 @@ export default class OpenClawDispatchIssue {
       if (!provider) throw new Error('feedback-provider-unavailable');
       return await this.context
         .guardedCredential(() =>
-          this.context.validate(manifest, workspace, record, false, true, client, authority.signal),
+          this.context.validate(
+            manifest,
+            workspace,
+            record,
+            false,
+            feedbackScope,
+            client,
+            authority.signal,
+          ),
         )
         .use({ ...authority, assertCurrent }, async (request) => {
           const common = {
             operator,
+            conversation: event.native,
             record,
             event,
             caller,
@@ -311,7 +233,7 @@ export default class OpenClawDispatchIssue {
                 workspace,
                 record,
                 false,
-                true,
+                feedbackScope,
               );
               return live.manifest.github!.notifications!;
             },
@@ -327,7 +249,7 @@ export default class OpenClawDispatchIssue {
                   workspace,
                   record,
                   false,
-                  true,
+                  feedbackScope,
                   client,
                   authority.signal,
                 )
@@ -335,10 +257,33 @@ export default class OpenClawDispatchIssue {
             },
             save,
           };
+          if (
+            (!action || action.operation === 'reconcile') &&
+            event.publicationAttempted &&
+            !event.receipt
+          )
+            return {
+              id: record.id,
+              ...(await recoverFeedbackPublication({
+                event,
+                intake,
+                provider: common.provider,
+                save,
+              })),
+            };
           if (!action || action.operation === 'reconcile') {
             await authorizeFeedback(common);
             delete event.policyHeld;
-            const result = await advanceFeedbackTurn(common);
+            const result = await advanceFeedbackTurn({
+              ...common,
+              sourcePresentation: feedbackPresentation(
+                event,
+                intake.repository.owner.login + '/' + intake.repository.name,
+              ),
+              authorizeInput: async () => {
+                await authorizeFeedback(common);
+              },
+            });
             if (event.turn?.status === 'completed') {
               record.feedback!.lastServedAt = now;
               if (record.feedback!.activity) record.feedback!.activity.busy = false;
@@ -402,6 +347,7 @@ export default class OpenClawDispatchIssue {
         id: record.id,
         eventId: event.id,
         nextAction: code === 'feedback-composition-changed' ? 'compose' : 'next',
+        ...workflowFailure(error, code),
         code,
         ...(code === 'feedback-composition-changed'
           ? {
@@ -464,8 +410,8 @@ export default class OpenClawDispatchIssue {
     const feedbackSource = record.feedback?.events.find(
       (event) => event.turn?.runId === caller.runId,
     );
-    if (feedbackSource && !feedbackSource.native) {
-      if (input.action === 'delivery' && input.operation === 'bind')
+    if (feedbackSource && (input.action === 'context' || !feedbackSource.native)) {
+      if (input.action === 'delivery' && ['bind', 'link'].includes(input.operation))
         throw new Error('delivery-binding-operator-required');
       return this.feedback(
         manifest,
@@ -480,7 +426,7 @@ export default class OpenClawDispatchIssue {
               operation: input.action,
               eventId: feedbackSource.id,
             }
-          : input.action === 'delivery' && input.operation !== 'bind'
+          : input.action === 'delivery' && input.operation !== 'bind' && input.operation !== 'link'
             ? {
                 ...input,
                 action: 'feedback',
@@ -518,16 +464,14 @@ export default class OpenClawDispatchIssue {
       now,
     } = tx;
     const { client, intake, repo } = verified;
+    if (input.action === 'implementation-context' && hasDeliveredImplementation(record))
+      return nativeIssueContext(record);
     if (
       input.action === 'handoff' ||
       input.action === 'implementation-context' ||
       input.action === 'implementation-result' ||
       input.action === 'delivery'
     ) {
-      const delivered = hasDeliveredImplementation(record);
-      if (delivered && input.action !== 'delivery') return nativeIssueContext(record);
-      if (input.action === 'implementation-context' && input.scope && !operator)
-        throw new Error('implementation-operator-scope-required');
       const signal = authority.signal
         ? AbortSignal.any([authority.signal, transactionSignal])
         : transactionSignal;
@@ -546,6 +490,7 @@ export default class OpenClawDispatchIssue {
           );
           if (!provider) throw new Error('feedback-provider-unavailable');
           await authorizeFeedback({
+            conversation: true,
             record,
             event: feedbackEvent,
             intake,
@@ -561,7 +506,7 @@ export default class OpenClawDispatchIssue {
                   workspace,
                   record,
                   false,
-                  true,
+                  'native',
                   client,
                   signal,
                 )
@@ -581,17 +526,31 @@ export default class OpenClawDispatchIssue {
               request,
               this.context.dependencies.config(),
             ));
-          const bindingOnly = input.action === 'delivery' && input.operation === 'bind';
+          if (
+            input.action === 'implementation-context' &&
+            input.scope &&
+            !operator &&
+            !nativeFeedback
+          )
+            throw new Error('implementation-operator-scope-required');
+          const bindingOnly =
+            input.action === 'delivery' &&
+            (input.operation === 'bind' ||
+              (input.operation === 'link' && input.pullRequest !== undefined));
           if (bindingOnly && !operator) throw new Error('delivery-binding-operator-required');
-          const { source, message, progression, revisionAuthorized } =
-            bindingOnly || delivered
+          const receiptEffect =
+            input.action === 'delivery' &&
+            ['link', 'present', 'reconcile', 'compose', 'candidate', 'announce'].includes(
+              input.operation,
+            );
+          const { source, message, progression } =
+            bindingOnly || receiptEffect
               ? {
                   source:
                     nativeFeedback && !bindingOnly
                       ? { runId: caller.runId, inputEventId: nativeFeedback.inputId }
                       : await (
-                          input.action === 'delivery' &&
-                            ['compose', 'candidate', 'announce'].includes(input.operation)
+                          input.action === 'delivery' && receiptEffect && !bindingOnly
                             ? nativeInputEvent
                             : operatorInputEvent
                         )({
@@ -604,10 +563,11 @@ export default class OpenClawDispatchIssue {
                         }),
                   message: undefined,
                   progression: undefined,
-                  revisionAuthorized: false,
                 }
               : await verifyOpenClawWork({
                   record,
+                  decision: input.action === 'implementation-context' ? input.decision : undefined,
+                  save,
                   caller,
                   operator,
                   feedback: nativeFeedback
@@ -623,12 +583,7 @@ export default class OpenClawDispatchIssue {
                   config: this.context.dependencies.config(),
                 });
           await assertCurrent();
-          if (
-            input.action === 'implementation-context' &&
-            (record.work?.result?.outcome !== 'done' ||
-              revisionAuthorized ||
-              record.work?.revisionSource?.turnId === source.runId)
-          ) {
+          if (input.action === 'implementation-context') {
             if (!record.request || !('key' in record.request))
               throw new Error('dispatch-work-context-mismatch');
             if (
@@ -666,7 +621,6 @@ export default class OpenClawDispatchIssue {
               caller,
               source,
               progression: progression!,
-              revisionAuthorized,
               action: input,
               message,
               now,
@@ -706,7 +660,6 @@ export default class OpenClawDispatchIssue {
               progression: progression!,
               action: input,
               message,
-              revisionAuthorized,
               now,
               assertCurrent,
               save,
@@ -724,6 +677,7 @@ export default class OpenClawDispatchIssue {
               throw new Error('delivery-worktree-owner-changed');
           };
           await assertPRCheckout();
+          if (progression) record.progression = progression;
           return openClawDelivery({
             now,
             record,

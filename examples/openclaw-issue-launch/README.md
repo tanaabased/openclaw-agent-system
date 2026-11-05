@@ -59,7 +59,7 @@ openclaw agent-system automations list --json | jq -e '.status == "aligned" and 
 
 # should create one unassigned manual-launch target
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/emori"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System openclaw-issue-launch $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -f 'body=Disposable manual launch target; notification-hidden-initial-fact. Document closing disposable issues after evidence capture; do not assign.' | tee "$TMPDIR/manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
+node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" create --title "agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System openclaw-issue-launch $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --body 'Disposable manual launch target; notification-hidden-initial-fact. Document closing disposable issues after evidence capture; do not assign.' | tee "$TMPDIR/manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
 ```
 
 ## Testing

@@ -1,3 +1,4 @@
+import { issuePickupAutomationId } from '../../../agent/issue-pickup-jobs.ts';
 import { notificationResetDiagnostic } from '../../../agent/notification-reset-diagnostic.ts';
 import { automationHash } from '../../../agent/automation-hash.ts';
 import type { Readable } from 'node:stream';
@@ -131,7 +132,7 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
             label: 'action',
             style: 'action',
             value:
-              'pause issue assignment and any installed project pickup, wait for managed turns, clear cached tracking while retaining pickup safety evidence, establish a fresh assignment baseline, replace notification chats, then restore each prior schedule state',
+              'pause issue assignment and any installed issue pickup, wait for managed turns, clear cached tracking while retaining pickup safety evidence, establish a fresh assignment baseline, replace notification chats, then restore each prior schedule state',
           },
         ],
         styles,
@@ -147,7 +148,7 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
               label: 'jobs',
               style: 'field',
               value: preview.pickup
-                ? 'github-issue-assignment, github-project-pickup'
+                ? `github-issue-assignment, ${issuePickupAutomationId}`
                 : 'github-issue-assignment',
             },
             ...(preview.fresh || preview.continuing
@@ -200,7 +201,7 @@ async function resetNotificationsCommand(options: ResetNotificationsOptions) {
           purge: preview.purge,
           continuing: preview.continuing,
           fresh: preview.fresh,
-          jobs: ['github-issue-assignment', ...(preview.pickup ? ['github-project-pickup'] : [])],
+          jobs: ['github-issue-assignment', ...(preview.pickup ? [issuePickupAutomationId] : [])],
           resources: preview.resources,
         })),
       });

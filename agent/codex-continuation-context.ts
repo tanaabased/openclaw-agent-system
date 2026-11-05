@@ -1,4 +1,5 @@
 import type connectCodexFeedback from './codex-feedback-client.ts';
+import { implementationDecisionSchema } from './issue-progression.ts';
 import type { FeedbackEvent } from './codex-feedback-state.ts';
 import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import type { ManagedIssueState } from './managed-issue.ts';
@@ -36,6 +37,7 @@ export const requestSchema = Type.Object(
     ]),
     id: Type.Optional(Type.String()),
     material: Type.Optional(implementationMaterialSchema),
+    decision: Type.Optional(implementationDecisionSchema),
     digest: Type.Optional(Type.String()),
     approvedCallId: Type.Optional(Type.String()),
     result: Type.Optional(implementationResultSchema),

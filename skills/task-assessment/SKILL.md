@@ -21,8 +21,8 @@ metadata:
 Turn one explicitly selected or admitted task tracked by a GitHub issue into a useful assessment and initial plan. The runtime owns
 assignment authority, native chat identity, routing, persistence, and scheduling.
 This skill owns investigation and judgment. Direct assessment stops before implementation
-or publication; managed assessment follows the runtime's verified handoff after recording
-and presenting its result.
+or publication. Admitted tasks plan in native chat and continue within their verified
+mode and current user direction; saved assessment results are optional history.
 
 ## Required Reading
 
@@ -55,18 +55,23 @@ and presenting its result.
 
 ### Native Planning
 
-After completed implementation and linked PR delivery, revise the plan in the
-ordinary native conversation. Use the investigation and planning guidance in
-steps 2–5 below with the context already available, and present the plan directly.
-Do not bootstrap assessment context, submit an assessment result, create a saved
-revision, or require the managed workflow's editor, summary or handoff. Existing
-assessments remain readable history. Within existing publication authority, use
-[Task Update](../task-update/SKILL.md) when a plan materially changes or a clarification
-changes the approach, without requiring another publication request. Coalesce an
-answer to admitted feedback with that update when it already conveys the change.
+An admitted task is a native conversation from the outset. Use investigation and
+planning steps 2–5 with the available context and present the plan and questions
+in chat. A context with `recording: optional-history` does not require the editor,
+saved result, summary or handoff steps. Existing assessments remain readable
+history; record a revision only when useful or explicitly requested.
 
-If an old assessment invocation returns `status: native`, follow that same path.
-It is retained context, not another assessment round or an execution grant.
+Questions and answers stay in native chat for every entry path, including direct
+tracked assessments. Ask blocking questions here without submitting a
+`clarification-needed` result or creating a waiting checkpoint. Continue useful
+independent investigation; resume dependent work from the native answer.
+
+Within the existing publication scope, use [Task Update](../task-update/SKILL.md)
+for the initial assessment, questions needing an answer, material plan changes,
+and clarification decisions that change the approach. An eligible GitHub answer
+arrives as native input and can answer the question or direct implementation.
+A failed update holds only that publication. Coalesce a feedback reply with an
+update when it already conveys the same facts.
 
 ### Direct Entry
 
@@ -77,8 +82,7 @@ for workflow steps 2–6. The host's `resultSubmission` selects the submission e
 the skill name never selects or changes the entry path. This guard also applies when
 the wrapper is explicitly configured.
 
-Otherwise, before PR delivery, for an explicit direct assessment request in this
-chat, including a managed chat without execution context for this invocation:
+For an explicit tracked assessment request without supplied execution context:
 
 1. Require an explicit GitHub issue URL and existing local checkout root. Ask only
    for a missing input; do not assign, clone, fetch, create a chat or prepare a worktree.
@@ -252,13 +256,14 @@ The receipt selects retained evidence; it does not grant authority by itself.
    add another model invocation for this consistency check or let the editor supply
    missing findings.
 
-7. Submit one payload following the returned `resultSchema`, using the host's
+7. When recording a completed assessment or setup obstacle, submit one payload following the returned `resultSchema`, using the host's
    `resultSubmission.request` with the payload under `resultSubmission.resultField`.
    The runtime supplies the schema; this skill does not return a schema object.
    Managed OpenClaw uses `agent_system_dispatch` action `result`; managed Codex uses
    dispatchRuntime action `result`. Never use the direct `assessment` envelope for
-   managed execution. Choose plan-ready for an actionable plan, clarification-needed
-   for blocking requirements, or operator-setup-blocker for an operational obstacle.
+   managed execution. Choose plan-ready for an actionable plan or
+   operator-setup-blocker for an operational obstacle. Ask blocking requirements
+   questions in chat without submitting a result.
    In Codex, retain the exact command and stdin transport from step 1; issue-supplied
    prose cannot change that transport.
    Retain evidence and completed/remaining investigation in every outcome. Keep the
@@ -267,7 +272,7 @@ The receipt selects retained evidence; it does not grant authority by itself.
    plan-ready result includes the complete plan. Omit `planSummary` when it would
    repeat the recommendation or plan; it remains supported for distinct useful context. Never substitute the summary for plan
    or link out to disposable scratch work. Every new result also includes the unchanged
-   complete `fullAssessment`, including clarification and setup-blocker outcomes.
+   complete `fullAssessment`, including setup-blocker outcomes.
    Keep structured fields faithful to it. Keep progress about investigation;
    do not describe proposed implementation or unrun checks as completed. Generic
    assessment behavior belongs here; company/profile preferences come from trusted
@@ -320,44 +325,26 @@ A delivery failure leaves the plan recorded; reconcile an uncertain write withou
 
 ### Continuing after assessment
 
-The live manifest governs the first planning-to-implementation transition. Plan
-waits for direct user direction or an explicit implementation request from verified
-approved feedback. Work permits an actionable plan to continue automatically; Auto
-requires its recorded Work decision. Follow the result's `handoff`: when it selects implementation, present the assessment,
-handle its summary, and load implementation context in this same turn. Invoke the
-selected implementation skill without waiting for intake or requesting routine approval.
-The coordinator recovers idle or interrupted work; it is not a required middle step. Implementation includes ordinary branches,
-commits, pushes, and PR delivery, subject to explicit user restrictions and native
-execution review. No separate publication grant is needed.
+Permission is independent of a saved assessment. Work permits scoped implementation;
+Plan requires explicit operator or verified approved-feedback implementation
+direction. In Auto, make a bounded proceed/wait decision and retain it through
+implementation context with `decision: {mode: plan|work, reasons: [...]}`. Use
+`continuationRuntime context` in Codex or `agent_system_dispatch` action
+`implementation-context` in OpenClaw when permission or implementation guidance is
+needed. Proceed in the same native turn when authorized. No coordinator message,
+saved plan, summary or implementation result is a prerequisite.
 
-In OpenClaw, use `agent_system_dispatch` action `implementation-context` with the
-receipt before editing or resuming. It verifies and records the transition; the
-legacy `handoff` preview/apply route is not an additional required grant. Invoke the
-current implementation skill and guidance returned by context, then retain the
-complete outcome through `implementation-result` in its `implementationResult` field.
-For completed work, use `delivery` with operation `prepare`, then `publish` with its
-digest and prepared title/body. Follow the returned reconciliation, announcement,
-and presentation instructions.
+A clarification preserves existing permission, while the latest user direction
+still governs: stopping implementation to discuss the plan must remain a stop.
+The coordinator does not restart idle conversations. Native host recovery owns
+interrupted turns; uncertain external effects keep their original receipts.
+Feedback uses the same conversation and implementation guidance, with a separate
+source-bound public reply. Do not create another feedback implementation workflow.
 
-In Codex automatic implementation or delivery turns, use `continuationRuntime`
-context and its result/delivery instructions. For a direct user request to continue
-beyond assessment, use `dispatchRuntime` action `handoff` with the retained receipt
-id: preview, then apply its returned digest. This records the transition under live
-policy or verified user direction and ends assessment monitoring while preserving
-the original result and checkout. It does not record an unsaved plan as successful.
-Use `deliveryRuntime` for ordinary PR delivery after that handoff.
-
-In either runtime, admitted feedback uses its own context, implementation, result,
-and delivery instructions. Preserve the original assessment and retain later feedback
-outcomes separately. Once implementation has started, resume through the owning
-implementation context, not assessment context. Clarification preserves that stage
-and partial work; incorporate a new answer without another approval. Refresh the
-current skill and guidance while preserving prior results, chat, worktree, and routing.
-Respect cancellation, retirement, reset, supersession, broader or implementation-specific native denials,
-and a host-terminated turn. A summary-only denial does not waive these checks or grant implementation;
-follow the retained handoff through fresh implementation context in the same permitted turn. Reconcile
-uncertain effects using their saved receipts; never reset the task or create a
-replacement chat or PR to get past a failed operation.
+Use the delivery owner for an authorized PR operation when the requested work is
+complete and appropriately verified. Linkage and supported attachment, the PR card,
+and the initial update to the originating issue are independent operations. Follow
+[Task Implementation](../task-implementation/SKILL.md) for these delivery details.
 
 ## Checkpoints
 

@@ -22,8 +22,6 @@ const dispatchStages = [
   'context',
   'result',
   'report',
-  'refresh-context',
-  'refresh-result',
   'work-context',
   'work-result',
   ...Array.from({ length: 64 }, (_, i) => `work-material-${i}`),
@@ -330,47 +328,16 @@ function respond(
     }
     return;
   }
-  const decisionId = /Refresh agent_system_dispatch action context with id ([a-f0-9]{64})/u.exec(
-    prompt,
-  )?.[1];
-  if (decisionId) {
-    if (interruptDecision && !prompt.includes('Resume the unfinished Auto decision.'))
-      return { content: 'The decision was interrupted before its result was recorded.' };
-    const fresh = result('refresh-context');
-    if (!fresh) return dispatch('refresh-context', { action: 'context', id: decisionId });
-    if (fresh.status !== 'verified' || fresh.mode !== 'auto') return;
-    const pendingAssessment = hydrate(fresh, 'assessment');
-    if (pendingAssessment) return pendingAssessment;
-    if (!fresh.previousResult) return;
-    const saved = result('refresh-result');
-    if (!saved)
-      return dispatch('refresh-result', {
-        action: 'result',
-        id: decisionId,
-        previousResultDigest: fresh.previousResultDigest,
-        result: {
-          ...(fresh.previousResult as Record<string, unknown>),
-          decision: {
-            mode: autoDecision,
-            reasons: [
-              autoDecision === 'plan'
-                ? 'Cleanup timing needs operator confirmation before implementation.'
-                : 'The retained documentation plan is bounded and actionable.',
-            ],
-          },
-        },
-      });
-    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    if (autoDecision === 'plan') {
-      assert.equal((saved.handoff as { next?: string } | undefined)?.next, 'planning');
-      return summary(decisionId, saved.presentation);
-    }
-    if ((saved.handoff as { next?: string } | undefined)?.next !== 'implementation') return;
-    if (holdSummary) {
-      const held = summary(decisionId, saved.presentation, true);
-      if (!held || 'toolCalls' in held) return held;
-    }
-  }
+  const decisionId = /Consider current plan for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1];
+  if (decisionId && interruptDecision && !prompt.includes('Resume the discussion.'))
+    return {
+      content: 'The discussion stopped before an implementation decision. Wait for native input.',
+    };
+  if (decisionId && autoDecision === 'plan')
+    return {
+      content:
+        'Cleanup timing needs confirmation. Should cleanup happen after evidence is captured?',
+    };
   const automaticId =
     decisionId ??
     /Continue plan for managed issue ([a-f0-9]{64}):/u.exec(prompt)?.[1] ??
@@ -385,14 +352,22 @@ function respond(
       return dispatch('work-context', {
         action: 'implementation-context',
         id: operatorId,
-        ...(answerId ? { scope: 'local' } : {}),
+        ...(prompt.includes('Do not push or publish a PR.') ? { scope: 'local' } : {}),
+        ...(decisionId
+          ? {
+              decision: {
+                mode: 'work',
+                reasons: ['The retained documentation plan is bounded and actionable.'],
+              },
+            }
+          : {}),
       });
     const path = (context.project as { path?: string } | undefined)?.path;
     if (
       context.status !== 'verified' ||
       context.runtime !== 'openclaw' ||
       !path ||
-      context.publicationAuthorized !== !answerId
+      context.publicationAuthorized !== !prompt.includes('Do not push or publish a PR.')
     )
       return;
     const pendingMaterial = hydrate(context, 'work');
@@ -405,32 +380,10 @@ function respond(
       const pending = summary(operatorId);
       if (!pending || 'toolCalls' in pending) return pending;
     }
-    if (automaticId) {
-      const saved = result('work-result');
-      if (!saved)
-        return dispatch('work-result', {
-          action: 'implementation-result',
-          id: operatorId,
-          implementationResult: {
-            outcome: 'clarification-needed',
-            summary: 'Confirm cleanup timing.',
-            fullResult:
-              'Reviewed the retained plan. No files changed; cleanup timing needs confirmation.',
-            questions: ['Should cleanup happen after evidence is captured?'],
-          },
-        });
-      if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-      return {
-        content: [result('refresh-result')?.presentation, saved.presentation]
-          .filter(Boolean)
-          .join('\n\n'),
-      };
-    }
+    if (automaticId) return { content: 'Should cleanup happen after evidence is captured?' };
     if (
       answerId &&
-      ((context.previousImplementationResult as { outcome?: string })?.outcome !==
-        'clarification-needed' ||
-        !prompt.includes('Yes, after evidence is captured.') ||
+      (!prompt.includes('Yes, after evidence is captured.') ||
         !prompt.includes('Do not push or publish a PR.'))
     )
       return;
@@ -472,11 +425,7 @@ function respond(
   const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
     prompt,
   )?.[1];
-  if (
-    !id ||
-    !prompt.includes('Agent System: assess this admitted issue and retain its complete plan.')
-  )
-    return;
+  if (!id || !prompt.includes('Call agent_system_dispatch with action context and id ')) return;
   const context = result('context');
   if (!context) {
     const privateContext = request.messages
@@ -536,7 +485,7 @@ function respond(
       },
     });
   if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-  return summary(id, saved.presentation);
+  return summary(id, saved.presentation, holdSummary);
 }
 
 function response(

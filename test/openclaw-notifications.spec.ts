@@ -237,7 +237,7 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(JSON.stringify(result).includes('policyDigest'), false);
   });
 
-  it('should report implementation questions without changing the retained assessment', async () => {
+  it('should keep saved implementation questions out of native activity status', async () => {
     const f = fixture();
     const item = {
       ...record(),
@@ -256,8 +256,8 @@ describe('agent/openclaw-notifications', () => {
     } as OpenClawDispatchRecord;
     f.records.push(item);
     const result = await f.service.inspect(f.manifest, '/workspace', selector);
-    assert.equal(result.items[0]?.workflow?.phase, 'clarification-needed');
-    assert.equal(result.items[0]?.waitingReason, 'clarification-needed');
+    assert.equal(result.items[0]?.workflow?.phase, 'native-unobserved');
+    assert.equal(result.items[0]?.waitingReason, undefined);
     assert.equal(item.result!.outcome, 'plan-ready');
     assert.equal(f.requests, 0);
   });
@@ -279,7 +279,7 @@ describe('agent/openclaw-notifications', () => {
       if (outcome) item.work!.result = { outcome, summary: 'Done.', fullResult: 'Checked.' };
       const before = structuredClone(item);
       const result = await f.service.inspect(f.manifest, '/workspace', selector);
-      assert.equal(result.items[0]?.workflow?.phase, outcome ? 'delivery' : 'running');
+      assert.equal(result.items[0]?.workflow?.phase, 'native-unobserved');
       assert.equal(result.items[0]?.workflow?.phase, workflowStatus(item));
       assert.deepEqual(item, before);
     }
@@ -416,7 +416,7 @@ describe('agent/openclaw-notifications', () => {
     r.phase = 'creating';
     assert.equal(
       (await f.service.inspect(f.manifest, '/workspace')).items[0]?.workflow?.phase,
-      'uncertain',
+      'creating',
     );
     r.phase = 'created';
     r.worktree = '/worktree';
@@ -614,7 +614,8 @@ describe('agent/openclaw-notifications', () => {
       refresh: true,
     });
     assert.equal(result.status, 'completed');
-    assert.equal(result.observation.items[0]?.workflow?.phase, 'plan-ready');
+    assert.equal(result.observation.items[0]?.workflow?.phase, 'native-unobserved');
+    assert.equal(result.observation.items[0]?.assessmentOutcome, 'plan-ready');
     assert.equal(requests, 2);
     assert.equal(inspections, 2);
   });

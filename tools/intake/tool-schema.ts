@@ -1,5 +1,5 @@
 import { Type } from 'typebox';
-import { pickupInputSchema } from '../../agent/project-pickup.ts';
+import { pickupInputSchema } from '../../agent/issue-pickup.ts';
 
 export const intakeParameters = Type.Union([
   Type.Object(

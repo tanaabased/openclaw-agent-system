@@ -215,7 +215,7 @@ describe('agent/assessment-entry', () => {
     assert.ok(recovered.previousResult?.outcome === 'plan-ready');
     assert.equal(recovered.previousResult.plan, 'Revision 11.');
   });
-  it('should retain questions then revise with a later native answer and exact previous digest', async () => {
+  it('should keep questions native and record a completed assessment after the answer', async () => {
     const first = await call('context');
     assert.ok('id' in first);
     const question: AssessmentResult = {
@@ -228,7 +228,7 @@ describe('agent/assessment-entry', () => {
       evidence: [],
       progress: { completed: ['Inspected code.'], remaining: ['Answer.'] },
     };
-    await call('result', { id: first.id, result: question });
+    assert.equal((await call('result', { id: first.id, result: question })).status, 'native');
     deps.turnId = 'answer';
     deps.inputId = 'answer-input';
     await assert.rejects(
@@ -237,10 +237,7 @@ describe('agent/assessment-entry', () => {
     );
     const revised = await call('context', { id: first.id, revise: true });
     assert.ok('previousResultDigest' in revised);
-    await assert.rejects(
-      call('result', { id: first.id, result: ready }),
-      /assessment-result-conflict/,
-    );
+    assert.equal(revised.previousResultDigest, undefined);
     await call('result', {
       id: first.id,
       result: ready,

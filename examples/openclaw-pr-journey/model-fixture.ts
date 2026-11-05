@@ -16,6 +16,9 @@ const dispatchStages = [
   ...Array.from({ length: 8 }, (_, index) =>
     ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
   ).flat(),
+  ...['context', 'compose', 'candidate', 'preview', 'publish'].map(
+    (stage) => `native-plan-${stage}`,
+  ),
   'context',
   'result',
   'recovery-present',
@@ -34,6 +37,7 @@ const dispatchStages = [
     `delivery-link-prepare-${index}`,
     `delivery-link-publish-${index}`,
   ]).flat(),
+  'delivery-association',
   'delivery-compose',
   'delivery-candidate',
   'delivery-announce',
@@ -49,6 +53,7 @@ const dispatchStages = [
     `feedback-link-prepare-${index}`,
     `feedback-link-publish-${index}`,
   ]).flat(),
+  'feedback-delivery-association',
   'feedback-delivery-compose',
   'feedback-delivery-candidate',
   'feedback-delivery-announce',
@@ -97,13 +102,32 @@ function isContention(result: Record<string, unknown> | undefined) {
   );
 }
 
+function isTransientDelivery(result: Record<string, unknown>) {
+  const diagnostic = result.providerDiagnostic as Record<string, unknown> | undefined;
+  return (
+    result.status === 'retrying' &&
+    result.code === 'github-delivery-github-request' &&
+    diagnostic?.classification === 'transport' &&
+    [500, 502, 503, 504].includes(Number(diagnostic.httpStatus))
+  );
+}
+
 function isPendingDelivery(result: Record<string, unknown>) {
   return (
-    result.status === 'waiting' &&
-    ['github-delivery-linkage-unverified', 'github-delivery-head-not-observed'].includes(
-      String(result.code),
-    )
+    isTransientDelivery(result) ||
+    (result.status === 'waiting' &&
+      ['github-delivery-linkage-unverified', 'github-delivery-head-not-observed'].includes(
+        String(result.code),
+      ))
   );
+}
+
+function deliveryObstacle(result: Record<string, unknown>): FixtureResponse | undefined {
+  if (!['blocked', 'waiting', 'needs-attention', 'retrying'].includes(String(result.status)))
+    return;
+  return {
+    content: `notification-delivery-stopped: ${JSON.stringify({ status: result.status, code: result.code, providerDiagnostic: result.providerDiagnostic })}`,
+  };
 }
 
 const retryStage = (stage: string, attempt: number) =>
@@ -114,6 +138,7 @@ function call(stage: string, name: string, args: unknown): FixtureResponse {
 }
 
 interface PRFixtureOptions {
+  withoutSavedResults?: boolean;
   initialQuestion?: boolean;
   incorporateCollaborator?: boolean;
   interruptFeedbackReply?: boolean;
@@ -131,7 +156,8 @@ function respond(
     .join('\n');
   if (prompt.includes('Explain the completed PR in this ordinary conversation.')) {
     const retained = currentFacts(messages);
-    assert.equal(retained.previousImplementationResult?.outcome, 'done');
+    if (options.withoutSavedResults) assert.equal(retained.previousImplementationResult, undefined);
+    else assert.equal(retained.previousImplementationResult?.outcome, 'done');
     assert.ok(retained.pullRequest?.pullRequestNumber);
     assert.ok(retained.worktree);
     assert.ok(retained.branch);
@@ -203,9 +229,7 @@ function respond(
         digest: composed.digest,
         publicText: publicText(
           composed,
-          options.initialQuestion
-            ? 'Should disposable test issues be closed after capturing their evidence? Answer here when you want implementation to begin.'
-            : 'The plan is to document closing disposable test issues after capturing their evidence. The retained plan is ready for the configured workflow to continue.',
+          'The plan is to document closing disposable test issues after capturing their evidence. The retained plan is ready for the configured workflow to continue.',
         ),
       });
     if (candidate.status !== 'candidate-recorded') return;
@@ -217,6 +241,72 @@ function respond(
       return dispatch('summary-publish', { ...args, operation: 'publish', digest: preview.digest });
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
+  };
+  const nativePlan = (context: Record<string, unknown>): FixtureResponse | undefined => {
+    const target = (context.evidence as { source?: string })?.source;
+    assert.ok(target);
+    const plan = options.initialQuestion
+      ? 'Should disposable test issues be closed after capturing evidence?'
+      : 'Add a short cleanup rule for disposable test issues, then check and commit the diff before creating the PR.';
+    const observed = result('native-plan-context');
+    if (!observed)
+      return {
+        ...dispatch('native-plan-context', {
+          action: 'reply',
+          operation: 'context',
+          purpose: 'status-update',
+          target,
+        }),
+        content: plan,
+      };
+    assert.equal(observed.status, 'status-update-context');
+    const composed = result('native-plan-compose');
+    if (!composed)
+      return dispatch('native-plan-compose', {
+        action: 'reply',
+        operation: 'compose',
+        purpose: 'status-update',
+        target,
+        privateText: plan,
+        update: {
+          observation: observed.observation,
+          facts: [
+            { key: 'initial-plan', reference: context.currentTurnId, revision: '1', text: plan },
+          ],
+        },
+      });
+    assert.equal(composed.status, 'composition-ready');
+    const skill = (composed.selection as { skill: { path: string } }).skill;
+    if (!openClawAIMockToolResultText(messages, prefix + 'summary-skill'))
+      return call('summary-skill', 'read', { path: skill.path });
+    const candidate = result('native-plan-candidate');
+    if (!candidate)
+      return dispatch('native-plan-candidate', {
+        action: 'reply',
+        operation: 'candidate',
+        id: composed.id,
+        digest: composed.digest,
+        publicText: publicText(composed, plan),
+      });
+    assert.equal(candidate.publication, 'workflow-authorized');
+    const preview = result('native-plan-preview');
+    if (!preview)
+      return dispatch('native-plan-preview', {
+        action: 'reply',
+        operation: 'publish',
+        id: composed.id,
+      });
+    assert.equal(preview.status, 'publication-ready');
+    const published = result('native-plan-publish');
+    if (!published)
+      return dispatch('native-plan-publish', {
+        action: 'reply',
+        operation: 'publish',
+        id: composed.id,
+        digest: preview.digest,
+      });
+    assert.equal(published.status, 'published');
+    return { content: String(published.presentation) };
   };
   const recoveryId =
     /recover only the pending public assessment summary[\s\S]*?id ([a-f0-9]{64})/u.exec(
@@ -462,7 +552,11 @@ function respond(
         const operation = prepared.operation as Record<string, unknown> | undefined;
         const receipt = (operation?.pullRequest ?? delivered.pullRequest) as
           Record<string, unknown> | undefined;
-        if (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber) return;
+        if (
+          !isTransientDelivery(delivered) &&
+          (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber)
+        )
+          return;
         const published = result(`feedback-link-publish-${index}`);
         if (!published)
           return dispatch(`feedback-link-publish-${index}`, {
@@ -476,8 +570,17 @@ function respond(
       }
       if (isPendingDelivery(delivered))
         throw new Error(`notification-delivery-reconciliation-exhausted: ${delivered.code}`);
-      if (delivered.status !== 'published') return;
+      if (delivered.status !== 'published') return deliveryObstacle(delivered);
       if (initial) {
+        const linked = result('feedback-delivery-association');
+        if (!linked)
+          return dispatch('feedback-delivery-association', {
+            action: 'delivery',
+            id,
+            operation: 'link',
+          });
+        assert.equal(linked.status, 'linked');
+        assert.ok((linked.pullRequest as Record<string, unknown>)?.pullRequestNumber);
         const composed = result('feedback-delivery-compose');
         if (!composed)
           return dispatch('feedback-delivery-compose', {
@@ -570,10 +673,7 @@ function respond(
     prompt,
   )?.[1];
   let automaticId: string | undefined;
-  if (
-    id &&
-    prompt.includes('Agent System: assess this admitted issue and retain its complete plan.')
-  ) {
+  if (id && prompt.includes('Call agent_system_dispatch with action context and id ')) {
     const context = result('context');
     if (!context) {
       const privateContext = request.messages
@@ -614,55 +714,53 @@ function respond(
         /cleanup sequence/u,
       );
     }
-    const saved = result('result');
-    if (!saved)
-      return dispatch('result', {
-        action: 'result',
-        id,
-        result: {
-          version: 1,
-          ...(context.mode === 'auto'
-            ? {
-                decision: {
-                  mode: 'work',
-                  reasons: ['A bounded disposable documentation change with explicit cleanup.'],
-                },
-              }
-            : {}),
-          outcome: options.initialQuestion ? 'clarification-needed' : 'plan-ready',
-          ...(options.initialQuestion
-            ? { questions: ['Should disposable test issues be closed after capturing evidence?'] }
-            : {}),
-          summary: 'Document disposable issue cleanup.',
-          assessment: 'The admitted issue requests a small documentation change.',
-          ...(!options.initialQuestion
-            ? {
-                planSummary: 'Describe closing disposable test issues after capturing evidence.',
-                plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
-              }
-            : {}),
-          fullAssessment:
-            'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation or publication was performed.' +
-            (!selection.defaultSkill
-              ? ' Retain sanitized evidence before cleanup; live interpretation remains untested.'
-              : ''),
-          evidence: [
-            {
-              source: project.path,
-              status: 'observed',
-              detail: 'Managed Git confirmed this worktree.',
+    if (options.withoutSavedResults || options.initialQuestion) {
+      const published = nativePlan(context);
+      if (!published || 'toolCalls' in published || options.initialQuestion) return published;
+    } else {
+      const saved = result('result');
+      if (!saved)
+        return dispatch('result', {
+          action: 'result',
+          id,
+          result: {
+            version: 1,
+            ...(context.mode === 'auto'
+              ? {
+                  decision: {
+                    mode: 'work',
+                    reasons: ['A bounded disposable documentation change with explicit cleanup.'],
+                  },
+                }
+              : {}),
+            outcome: 'plan-ready',
+            summary: 'Document disposable issue cleanup.',
+            assessment: 'The admitted issue requests a small documentation change.',
+            planSummary: 'Describe closing disposable test issues after capturing evidence.',
+            plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
+            fullAssessment:
+              'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation or publication was performed.' +
+              (!selection.defaultSkill
+                ? ' Retain sanitized evidence before cleanup; live interpretation remains untested.'
+                : ''),
+            evidence: [
+              {
+                source: project.path,
+                status: 'observed',
+                detail: 'Managed Git confirmed this worktree.',
+              },
+            ],
+            progress: {
+              completed: ['Verified the managed worktree.'],
+              remaining: ['Implement after approval.'],
             },
-          ],
-          progress: {
-            completed: ['Verified the managed worktree.'],
-            remaining: ['Implement after approval.'],
           },
-        },
-      });
-    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    const summarized = summary(id, saved.presentation);
-    if (!summarized || 'toolCalls' in summarized) return summarized;
-    if ((saved.handoff as { next?: string })?.next !== 'implementation') return summarized;
+        });
+      if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
+      const summarized = summary(id, saved.presentation);
+      if (!summarized || 'toolCalls' in summarized) return summarized;
+      if ((saved.handoff as { next?: string })?.next !== 'implementation') return summarized;
+    }
     automaticId = id;
   }
   const operatorId =
@@ -773,7 +871,7 @@ function respond(
           });
         if (executed.exitCode !== 0 || executed.truncated !== false) return;
       }
-      if (!nativeWork) {
+      if (!nativeWork && !options.withoutSavedResults) {
         const saved = result('work-result');
         if (!saved)
           return dispatch('work-result', {
@@ -830,7 +928,11 @@ function respond(
       }
       for (let index = 0; index < 3 && isPendingDelivery(published); index++) {
         const receipt = published.pullRequest as Record<string, unknown> | undefined;
-        if (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber) return;
+        if (
+          !isTransientDelivery(published) &&
+          (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber)
+        )
+          return;
         const prepareStage = `delivery-link-prepare-${index}`;
         const retained = result(prepareStage);
         if (!retained)
@@ -857,13 +959,18 @@ function respond(
       }
       if (isPendingDelivery(published))
         throw new Error(`notification-delivery-reconciliation-exhausted: ${published.code}`);
-      if (published.status !== 'published') return;
-      if (!update && published.workflowStatus !== 'delivered')
-        throw new Error(
-          'completed implementation with verified pr linkage must be delivered before its announcement',
-        );
+      if (published.status !== 'published') return deliveryObstacle(published);
     }
     if (!retry && !update) {
+      const linked = result('delivery-association');
+      if (!linked)
+        return dispatch('delivery-association', {
+          action: 'delivery',
+          id: operatorId,
+          operation: 'link',
+        });
+      assert.equal(linked.status, 'linked');
+      assert.ok((linked.pullRequest as Record<string, unknown>)?.pullRequestNumber);
       const composed = result('delivery-compose');
       if (!composed)
         return dispatch('delivery-compose', {
@@ -941,7 +1048,7 @@ function response(request: ChatCompletionRequest, options: PRFixtureOptions) {
   } catch (error) {
     if (
       error instanceof Error &&
-      /^(?:notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)|notification-delivery-reconciliation-exhausted: github-delivery-(?:linkage-unverified|head-not-observed))$/u.test(
+      /^(?:notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)|notification-delivery-reconciliation-exhausted: github-delivery-(?:linkage-unverified|head-not-observed|github-request))$/u.test(
         error.message,
       )
     )

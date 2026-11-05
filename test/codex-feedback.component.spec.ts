@@ -3,7 +3,7 @@ import commentProviderFixture from './github-comment-provider-fixture.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
-import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
+import { type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
 import { parseCleanupConfiguration } from '../agent/cleanup-configuration.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
@@ -71,7 +71,7 @@ describe('agent/codex-feedback', () => {
           username: 'receiver',
           'schema-version': 3,
           runtimes: ['codex'],
-          'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+          routing: ['owner/*'],
           'issue-assignment': {
             mode: 'plan',
             allowed: [
@@ -253,112 +253,24 @@ describe('agent/codex-feedback', () => {
     manifest.github['issue-assignment'].mode = mode;
     await writeFile(path, JSON.stringify(manifest));
   }
-  for (const mode of ['plan', 'auto'] as const)
-    for (const message of ['Why this approach?', 'Keep the smaller approach in the plan.'])
-      it(`should retain ${mode} input without implementation for ${message.toLowerCase()}`, async () => {
-        await feedbackMode(mode);
-        const ref = await prepare(commenter, `@receiver ${message}`);
-        sent = true;
-        turn = 'feedback';
-        const context = await call('context', ref, true);
-        assert.equal(context.status, 'verified');
-        assert.equal('mode' in context && context.mode, mode);
-        const original = (await store.read()).records[0]!.result;
-        const saved = await call(
-          'result',
-          { ...ref, result: { privateText: 'Retained plan response.' }, reply: false },
-          true,
-        );
-        assert.equal(saved.status, 'recorded');
-        const record = (await store.read()).records[0]!;
-        assert.deepEqual(record.result, original);
-        assert.equal(record.progression, undefined);
-        assert.equal(record.feedback!.events[0]!.work, undefined);
-        assert.equal(creates, 0);
-      });
-  it('should retrieve oversized codex feedback material without changing source or entered authority', async () => {
-    await feedbackMode('work');
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    await call('context', ref, true);
-    const large = 'Complete approved feedback implementation plan.\n'.repeat(650);
-    const first = await call(
-      'implementation-context',
-      { ...ref, decision: { mode: 'work', reasons: ['Bounded repair.'], plan: large } },
-      true,
-    );
-    assert.equal(first.status, 'verified');
-    await feedbackMode('plan');
-    const before = (await store.read()).records[0]!;
-    const restored = await hydrateImplementation(first, async (request) =>
-      call('implementation-context', { ...ref, material: request.material }, true),
-    );
-    assert.equal(restored.plan, large);
-    const after = (await store.read()).records[0]!;
-    assert.deepEqual(after.feedback!.events[0], before.feedback!.events[0]);
-    assert.deepEqual(after.progression, before.progression);
-    assert.deepEqual(after.result, before.result);
-  });
-
-  it('should keep plan feedback in planning and use live work policy without install', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    const context = await call('context', ref, true);
-    assert.equal('mode' in context && context.mode, 'plan');
-    assert.equal((await store.read()).records[0]!.progression, undefined);
-    await feedbackMode('work');
-    const active = await call('implementation-context', ref, true);
-    assert.equal(active.status, 'verified');
-    await feedbackMode('plan');
-    const retained = await call('context', ref, true);
-    assert.equal('mode' in retained && retained.mode, 'work');
-    assert.equal((await store.read()).records[0]!.result!.outcome, 'plan-ready');
-  });
-
-  for (const scope of ['local', 'pull-request'] as const)
-    it(`should accept ${scope} re-entry through the public codex dispatcher without changing feedback ownership`, async () => {
+  for (const mode of ['plan', 'work', 'auto'] as const)
+    it(`should expose ${mode} feedback as native context without a per-comment implementation owner`, async () => {
+      await feedbackMode(mode);
       const ref = await prepare();
       sent = true;
       turn = 'feedback';
-      assert.equal((await call('context', ref, true)).status, 'verified');
-      await feedbackMode('work');
-      await store.exclusive(async (state, save) => {
-        state.records[0]!.assessment = {
-          version: 1,
-          requestedSkill: 'assessment',
-          defaultSkill: false,
-          observedAt: baseline,
-          skill: await deps.native!.assessmentSkill(root, 'assessment'),
-        };
-        await save();
-      });
-      const nativeDeps = {
-        ...deps,
-        threadId: 'child',
-        replyConnection: async () => ({
-          request: async () => assert.fail('feedback must not fall back to manual work'),
-          close: async () => {},
-        }),
-      };
-      const context = await runCodexDispatch(
-        pluginData,
-        'implementation',
-        {
-          operation: 'context',
-          id,
-          scope,
-        },
-        nativeDeps,
-      );
-      assert.ok(context && 'status' in context);
-      assert.equal(context.status, 'verified');
-      const retained = (await store.read()).records[0]!;
-      assert.equal(retained.progression?.workOwner, ref.eventId);
-      assert.ok(retained.feedback!.events[0]!.work);
-      assert.equal(retained.continuation, undefined);
-      assert.equal(creates, 0);
+      const before = (await store.read()).records[0]!;
+      for (const action of ['context', 'implementation-context', 'implementation-result']) {
+        const context = await call(action, ref, true);
+        assert.equal(context.status, 'verified');
+        assert.equal('mode' in context && context.mode, mode);
+        assert.equal('resultSchema' in context, false);
+      }
+      const after = (await store.read()).records[0]!;
+      assert.equal(after.feedback!.events[0]!.work, undefined);
+      assert.equal(after.feedback!.events[0]!.result, undefined);
+      assert.deepEqual(after.result, before.result);
+      assert.deepEqual(after.progression, before.progression);
     });
   it('should resume the retained feedback after provider access is repaired', async () => {
     const ref = await prepare();
@@ -382,146 +294,6 @@ describe('agent/codex-feedback', () => {
     assert.equal((await call('context', ref, true)).status, 'verified');
     assert.equal((await store.read()).records[0]!.feedback!.events.length, 1);
     assert.equal(creates, 0);
-  });
-  for (const mode of ['plan', 'auto'] as const)
-    it(`should enter work from approved direction in ${mode} without an extra decision`, async () => {
-      await feedbackMode(mode);
-      await store.exclusive(async (state, save) => {
-        state.records[0]!.result!.decision = { mode: 'plan', reasons: ['Wait for direction.'] };
-        await save();
-      });
-      const ref = await prepare(commenter, '@receiver Please implement the agreed plan.');
-      sent = true;
-      turn = 'feedback';
-      const context = await call('context', ref, true);
-      assert.equal('mode' in context && context.mode, mode);
-      const original = (await store.read()).records[0]!.result;
-      const result = await call('implementation-context', ref, true);
-      assert.equal(result.status, 'verified');
-      const record = (await store.read()).records[0]!;
-      assert.equal(record.progression?.via, 'operator');
-      assert.equal(record.progression?.stage, 'implementation');
-      assert.equal(record.feedback!.events[0]!.work!.decision, undefined);
-      assert.deepEqual(record.result, original);
-      assert.equal((await call('implementation-context', ref, true)).status, 'verified');
-      assert.equal((await store.read()).records[0]!.feedback!.events.length, 1);
-    });
-  it('should retain feedback clarification and completed work without overwriting the initial result', async () => {
-    await feedbackMode('work');
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    await call('context', ref, true);
-    const original = (await store.read()).records[0]!.result;
-    const decision = {
-      mode: 'work',
-      reasons: ['Approved revised plan.'],
-      plan: 'Use the smaller parser change.',
-    };
-    await call('implementation-context', { ...ref, decision }, true);
-    const result = {
-      outcome: 'clarification-needed',
-      summary: 'Need a value.',
-      fullResult: 'Partial work is retained.',
-      questions: ['Which value?'],
-    };
-    assert.equal(
-      (await call('implementation-result', { ...ref, implementationResult: result }, true)).status,
-      'recorded',
-    );
-    assert.equal((await call('implementation-context', ref, true)).status, 'finished');
-    const saved = (await store.read()).records[0]!;
-    assert.equal(saved.progression?.stage, 'implementation');
-    assert.deepEqual(saved.feedback!.events[0]!.work!.result, result);
-    assert.deepEqual(saved.result, original);
-    await call('result', { ...ref, result: { privateText: 'Which value?' }, reply: false }, true);
-    await feedbackMode('plan');
-    sent = false;
-    ended = true;
-    occurrence++;
-    comments.push({
-      ...comments[0]!,
-      nodeId: 'answer',
-      databaseId: 43,
-      body: '@receiver use the smaller value.',
-      createdAt: '2026-10-13T01:01:00Z',
-      updatedAt: '2026-10-13T01:01:00Z',
-    });
-    const next = await call('next');
-    assert.equal(next.status, 'feedback-prepared');
-    assert.ok('eventId' in next && next.eventId);
-    sent = true;
-    ended = false;
-    turn = 'feedback-answer';
-    await store.exclusive(async (state, save) => {
-      delete state.records[0]!.feedback!.events.at(-1)!.native;
-      await save();
-    });
-    const context = await call('context', { id, eventId: next.eventId }, true);
-    assert.ok('previousFeedbackWork' in context && context.previousFeedbackWork);
-    assert.deepEqual(context.previousFeedbackWork[0]!.decision, decision);
-    assert.deepEqual(context.previousFeedbackWork[0]!.result, result);
-    assert.equal(context.previousFeedbackWork[0]!.privateText, 'Which value?');
-    const resumed = await call('implementation-context', { id, eventId: next.eventId }, true);
-    assert.equal(resumed.status, 'verified');
-    assert.ok('previousFeedbackWork' in resumed && resumed.previousFeedbackWork);
-    assert.deepEqual(resumed.previousFeedbackWork[0]!.result, result);
-    assert.deepEqual(resumed.previousFeedbackWork, context.previousFeedbackWork);
-  });
-  it('should require a reasoned auto work decision and bind done feedback to its commit', async () => {
-    await feedbackMode('auto');
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    await call('context', ref, true);
-    const held = await call(
-      'implementation-context',
-      {
-        ...ref,
-        decision: {
-          mode: 'plan',
-          reasons: ['Scope needs review.'],
-          plan: 'Review scope first.',
-        },
-      },
-      true,
-    );
-    assert.equal('reason' in held && held.reason, 'auto-wait');
-    const selected = await call(
-      'implementation-context',
-      {
-        ...ref,
-        decision: {
-          mode: 'work',
-          reasons: ['Bounded correction.'],
-          plan: 'Correct and test the handler.',
-        },
-      },
-      true,
-    );
-    assert.equal(selected.status, 'verified');
-    const git = deps.git!;
-    deps.git = async (cwd, args, signal) =>
-      args[0] === 'status'
-        ? ''
-        : args.join(' ') === 'rev-parse --verify HEAD'
-          ? 'c'.repeat(40)
-          : git(cwd, args, signal);
-    const result = { outcome: 'done', summary: 'Corrected.', fullResult: 'Corrected and tested.' };
-    assert.equal(
-      (await call('implementation-result', { ...ref, implementationResult: result }, true)).status,
-      'recorded',
-    );
-    const saved = (await store.read()).records[0]!;
-    assert.equal(saved.feedback!.events[0]!.work!.head, 'c'.repeat(40));
-    assert.equal(saved.progression?.via, 'auto');
-    assert.equal((await call('implementation-context', ref, true)).status, 'finished');
-    const conflict = await call(
-      'implementation-result',
-      { ...ref, implementationResult: { ...result, summary: 'Different.' } },
-      true,
-    );
-    assert.equal('code' in conflict && conflict.code, 'feedback-implementation-result-conflict');
   });
   it('should retain the previous policy check even when feedback discovery is cached', async () => {
     const path = join(root, 'workspace', 'agent.yaml');
@@ -611,8 +383,12 @@ describe('agent/codex-feedback', () => {
       'running',
     );
     const missing = state.records.find((record) => record.id === missingId)!;
-    assert.equal(missing.feedback!.events[0]!.code, 'feedback-admission-missing');
-    assert.deepEqual(missing.feedback!.events[0]!.attempt, before.feedback!.events[0]!.attempt);
+    assert.equal(missing.feedback!.events[0]!.phase, 'running');
+    assert.equal(missing.feedback!.events[0]!.code, undefined);
+    assert.deepEqual(missing.feedback!.events[0]!.attempt, {
+      ...before.feedback!.events[0]!.attempt,
+      turnId: 'feedback',
+    });
     assert.equal(creates, 0);
   });
 
@@ -673,7 +449,7 @@ describe('agent/codex-feedback', () => {
     });
   }
 
-  async function prepare(author = commenter, body = '@receiver explain this', native = false) {
+  async function prepare(author = commenter, body = '@receiver explain this') {
     await call('next');
     comments.push({
       nodeId: 'comment',
@@ -688,18 +464,11 @@ describe('agent/codex-feedback', () => {
     const result = await call('next');
     assert.equal(result.status, 'feedback-prepared');
     assert.ok('eventId' in result && result.eventId);
-    // Legacy publication/recovery fixtures retain their original event contract.
-    await store.exclusive(async (state, save) => {
-      if (!native)
-        delete state.records[0]!.feedback!.events.find((event) => event.id === result.eventId)!
-          .native;
-      await save();
-    });
     return { id, eventId: result.eventId };
   }
   it('should deliver native conversation once without a feedback result or a reply gate', async () => {
     const before = (await store.read()).records[0]!;
-    const ref = await prepare(commenter, '@receiver why this approach?', true);
+    const ref = await prepare(commenter, '@receiver why this approach?');
     sent = true;
     turn = 'feedback';
     const context = await call('context', ref, true);
@@ -728,21 +497,16 @@ describe('agent/codex-feedback', () => {
       throw new Error('checkout unavailable');
     };
     await rm((await store.read()).records[0]!.worktree!, { recursive: true, force: true });
-    const ref = await prepare(commenter, '@receiver what is the status?', true);
+    const ref = await prepare(commenter, '@receiver what is the status?');
     sent = true;
     turn = 'feedback';
     assert.equal((await call('context', ref, true)).status, 'verified');
     assert.equal((await store.read()).records[0]!.feedback!.events[0]!.work, undefined);
   });
-  it('should compose and publish native feedback through the reply skill without a private-result checkpoint', async () => {
-    const ref = await prepare(commenter, '@receiver please explain.', true);
-    sent = true;
-    turn = 'feedback';
-    await call('context', ref, true);
+  async function replyTransport() {
     const workspace = join(root, 'workspace');
     const path = join(root, 'SKILL.md');
     await writeFile(path, '# configured reply');
-    await rm((await store.read()).records[0]!.worktree!, { recursive: true, force: true });
     deps.replyConnection = async () => ({
       request: async (method) => {
         if (method === 'thread/read') return { thread: { id: 'child' } };
@@ -782,6 +546,13 @@ describe('agent/codex-feedback', () => {
       },
       close: async () => {},
     });
+  }
+  it('should compose and publish native feedback through the reply skill without a private-result checkpoint', async () => {
+    const ref = await prepare(commenter, '@receiver please explain.');
+    sent = true;
+    turn = 'feedback';
+    await call('context', ref, true);
+    await replyTransport();
     const compose = await call(
       'reply',
       {
@@ -915,15 +686,19 @@ describe('agent/codex-feedback', () => {
     assert.equal((await store.read()).records[0]!.retirement?.reason, 'issue-closed');
     assert.equal((await store.read()).records[0]!.feedbackReactivation, undefined);
   });
-  it('should require occurrence activation before feedback discovery despite retained-work access', async () => {
-    const before = await store.read();
-    const activation = deps.activation!;
-    deps.activation = async (...args) => {
-      if (!args[3]) throw new Error('intake-automation-paused');
-      return activation(...args);
-    };
-    await assert.rejects(call('next'), /intake-automation-paused/u);
-    assert.deepEqual(await store.read(), before);
+  it('should not reset assignment bookkeeping when processing feedback', async () => {
+    await store.exclusive(async (state, save) => {
+      state.run = {
+        id: 'assignment-run',
+        automationId: 'automation',
+        currentTimeIso: new Date(baseline).toISOString(),
+        actions: 9,
+      };
+      await save();
+    });
+    const before = (await store.read()).run;
+    await prepare();
+    assert.deepEqual((await store.read()).run, before);
   });
 
   it('should keep the same admitted feedback event available through parent pause', async () => {
@@ -933,9 +708,7 @@ describe('agent/codex-feedback', () => {
     const path = join(root, 'workspace', 'agent.yaml');
     const manifest = JSON.parse(await readFile(path, 'utf8'));
     manifest.github['issue-assignment'].paused = true;
-    manifest.github['allowed-repository-owners'] = [
-      { login: 'elsewhere', 'node-id': 'O_elsewhere' },
-    ];
+    manifest.github.routing = ['elsewhere/*'];
     await writeFile(path, JSON.stringify(manifest));
     const paused = await call('context', ref, true);
     assert.equal(paused.status, 'verified', JSON.stringify(paused));
@@ -947,27 +720,6 @@ describe('agent/codex-feedback', () => {
     assert.equal((await store.read()).records[0]!.feedback!.events[0]!.id, ref.eventId);
   });
 
-  async function recordReply(
-    ref: { id: string; eventId: string },
-    privateText: string,
-    publicText: string,
-  ) {
-    const saved = await call('result', { ...ref, result: { privateText } }, true);
-    assert.equal(saved.status, 'recorded');
-    assert.ok('presentation' in saved && saved.presentation?.includes(privateText));
-    assert.ok(saved.presentation?.includes('[Comment ↗]'));
-    assert.ok(saved.presentation?.includes('#issuecomment-42)'));
-    const composition = await call('compose', ref, true);
-    assert.equal(composition.status, 'composition-ready');
-    assert.ok('digest' in composition && composition.digest);
-    const candidate = await call(
-      'candidate',
-      { ...ref, digest: composition.digest, publicText },
-      true,
-    );
-    assert.equal(candidate.status, 'candidate-recorded');
-    return composition;
-  }
   it('should reconcile a lost announcement receipt before admitting same-account feedback', async () => {
     await call('next');
     const announcement = attemptedAnnouncement(account.nodeId);
@@ -1025,77 +777,23 @@ describe('agent/codex-feedback', () => {
     assert.equal(state.records[0]!.feedback!.discoveryPending, false);
     assert.ok(Object.keys(state.records[0]!.feedback!.watermarks!).length);
   });
-  it('should keep same-account feedback private even when a public candidate is supplied', async () => {
-    const ref = await prepare(account);
+  it('should preserve the incoming quote and attribution without a private result', async () => {
+    const body = '@receiver **question**\n\n> quoted context\n\n```ts\nconst value = 1;\n```';
+    const ref = await prepare(account, body);
+    const attempt = (await store.read()).records[0]!.feedback!.events[0]!.attempt!;
+    assert.ok(attempt.request.prompt.startsWith('> @receiver **question**'));
+    assert.ok(attempt.request.prompt.includes('> > quoted context'));
+    assert.ok(attempt.request.prompt.includes('#issuecomment-42)'));
     sent = true;
     turn = 'feedback';
     const context = await call('context', ref, true);
     assert.equal('publication' in context && context.publication, 'private-only');
     assert.ok('presentation' in context && typeof context.presentation === 'string');
-    assert.match(context.presentation, /\[Comment ↗\]/u);
-    assert.ok(context.presentation.includes('> @receiver explain this'));
-    assert.ok(context.presentation.includes('#issuecomment-42)'));
-    const result = await call(
-      'result',
-      {
-        ...ref,
-        result: { privateText: 'Private answer.', publicText: '@receiver answer to myself.' },
-      },
-      true,
-    );
-    assert.equal('publication' in result && result.publication, 'private-only');
-    await call('publish', ref, true);
-    const event = (await store.read())!.records[0]!.feedback!.events[0]!;
-    assert.deepEqual(event.result, { privateText: 'Private answer.' });
-    assert.equal(event.phase, 'published');
+    assert.ok(attempt.request.prompt.startsWith(context.presentation));
+    assert.ok(context.presentation.includes('> <br>'));
+    assert.ok(context.presentation.includes('from [@receiver]'));
+    assert.equal((await store.read()).records[0]!.feedback!.events[0]!.result, undefined);
     assert.equal(creates, 0);
-  });
-  it('should prepare one send, verify its receipt, retain private analysis and reconcile a lost public write', async () => {
-    const ref = await prepare();
-    assert.equal((await call('reconcile', ref)).status, 'uncertain');
-    assert.equal((await call('next')).status, 'idle');
-    sent = true;
-    turn = 'feedback';
-    const context = await call('context', ref, true);
-    assert.equal(context.status, 'verified');
-    assert.ok(
-      'resultSchema' in context && context.resultSchema && 'properties' in context.resultSchema,
-    );
-    assert.deepEqual(Object.keys(context.resultSchema.properties), ['privateText']);
-    await recordReply(ref, 'Detailed private answer.', 'A concise answer.');
-    const preview = await call('publish', ref, true);
-    assert.equal(preview.status, 'publication-ready');
-    assert.ok('digest' in preview && preview.digest);
-    assert.equal(
-      'destination' in preview && preview.destination,
-      'https://github.com/owner/repo/issues/3',
-    );
-    assert.match(('body' in preview ? preview.body : '') ?? '', /@contributor/);
-    assert.doesNotMatch(JSON.stringify(preview), /Detailed private answer/);
-    assert.equal(creates, 0);
-    assert.equal((await call('publish', { ...ref, digest: 'stale' }, true)).status, 'waiting');
-    assert.equal(creates, 0);
-    lost = true;
-    const apply = { ...ref, digest: preview.digest };
-    assert.equal((await call('publish', apply, true)).status, 'waiting');
-    ended = true;
-    occurrence++;
-    const completed = await call('next');
-    assert.equal(completed.status, 'published');
-    assert.ok('presentation' in completed && completed.presentation);
-    assert.match(completed.presentation, /\[Comment ↗\]/u);
-    assert.ok(completed.presentation.includes('#issuecomment-42)'));
-    assert.ok(
-      completed.presentation.indexOf('#issuecomment-42)') <
-        completed.presentation.indexOf('## Response'),
-    );
-    assert.match(completed.presentation, /Detailed private answer/);
-    assert.match(completed.presentation, /> A concise answer/);
-    assert.match(completed.presentation, /#issuecomment-99/);
-    assert.equal(creates, 1);
-    const saved = (await store.read())!.records[0]!.feedback!.events[0]!;
-    assert.equal(saved.result!.privateText, 'Detailed private answer.');
-    assert.equal(saved.receipt!.nodeId, 'reply');
   });
   for (const kind of ['inline', 'group'] as const)
     it(`should preserve ${kind} review feedback through native context and publication`, async () => {
@@ -1110,7 +808,11 @@ describe('agent/codex-feedback', () => {
         replyToId: 70,
         body: '@receiver explain in this thread',
       });
-      const parent = reviewCommentFixture({ databaseId: 70, nodeId: 'parent', reviewId: 60 });
+      const parent = reviewCommentFixture({
+        databaseId: 70,
+        nodeId: 'parent',
+        reviewId: review.databaseId,
+      });
       const findings =
         kind === 'group'
           ? Array.from({ length: 12 }, (_, i) =>
@@ -1146,13 +848,20 @@ describe('agent/codex-feedback', () => {
           : getItem(owner, name, number);
       provider.comments.reviews = reviews as typeof provider.comments.reviews;
       const roots: number[] = [];
+      let publishedReply: { nodeId: string; databaseId: number; body: string } | undefined;
       provider.replies = {
-        create: async (_owner: string, _name: string, number: number, rootId: number) => {
+        create: async (
+          _owner: string,
+          _name: string,
+          number: number,
+          rootId: number,
+          body: string,
+        ) => {
           assert.equal(number, 45);
           roots.push(rootId);
-          return { nodeId: 'PRRC_published', databaseId: 99 };
+          return (publishedReply = { nodeId: 'PRRC_published', databaseId: 99, body });
         },
-        find: async () => undefined,
+        find: async () => publishedReply,
       } as unknown as typeof provider.replies;
       deps.feedbackConnect = async () => provider;
       await store.exclusive(async (state, save) => {
@@ -1183,10 +892,6 @@ describe('agent/codex-feedback', () => {
       assert.equal(prepared.status, 'feedback-prepared');
       assert.ok('eventId' in prepared && prepared.eventId);
       const ref = { id, eventId: prepared.eventId };
-      await store.exclusive(async (state, save) => {
-        delete state.records[0]!.feedback!.events.at(-1)!.native;
-        await save();
-      });
       sent = true;
       turn = 'feedback';
       const context = await call('context', ref, true);
@@ -1208,297 +913,42 @@ describe('agent/codex-feedback', () => {
         assert.notEqual((await call('context', request)).status, 'material');
         return;
       }
-      assert.equal(
-        (await call('result', { ...ref, result: { privateText: 'Full analysis.' } }, true)).status,
-        'recorded',
+      await replyTransport();
+      const composed = await call(
+        'reply',
+        {
+          operation: 'compose',
+          target: `https://github.com/owner/repo/pull/45#discussion_r${reply.databaseId}`,
+          privateText: 'Full analysis.',
+        },
+        true,
       );
-      const composed = await call('compose', ref, true);
-      assert.ok('digest' in composed && composed.digest);
-      assert.equal(
-        (
-          await call(
-            'candidate',
-            { ...ref, digest: composed.digest, publicText: 'Brief answer.' },
-            true,
-          )
-        ).status,
-        'candidate-recorded',
+      assert.ok('id' in composed && 'digest' in composed);
+      await call(
+        'reply',
+        {
+          operation: 'candidate',
+          id: composed.id,
+          digest: composed.digest,
+          publicText: 'Brief answer.',
+        },
+        true,
       );
-      const preview = await call('publish', ref, true);
-      assert.ok('digest' in preview && preview.digest);
-      assert.equal(
-        'destination' in preview && preview.destination,
-        'https://github.com/owner/repo/pull/45#discussion_r70',
+      const preview = await call('reply', { operation: 'publish', id: composed.id }, true);
+      assert.ok('digest' in preview);
+      const completed = await call(
+        'reply',
+        { operation: 'publish', id: composed.id, digest: preview.digest },
+        true,
       );
-      const completed = await call('publish', { ...ref, digest: preview.digest }, true);
       assert.equal(completed.status, 'published');
-      assert.ok('presentation' in completed && completed.presentation?.includes('#discussion_r99'));
-      await call('publish', { ...ref, digest: preview.digest }, true);
+      assert.equal(
+        (await call('reply', { operation: 'reconcile', id: composed.id }, true)).status,
+        'published',
+      );
       assert.deepEqual(roots, [70]);
       assert.equal(creates, 0);
     });
-  for (const debug of [false, true])
-    it(`should publish unchanged feedback with debug ${debug}`, async () => {
-      const path = join(root, 'workspace', 'agent.yaml');
-      const manifest = JSON.parse(await readFile(path, 'utf8'));
-      manifest.debug = !debug;
-      manifest.github['issue-assignment'].feedback = {
-        skill: 'custom:latin',
-        guidance: 'Base guidance.',
-      };
-      await writeFile(path, JSON.stringify(manifest));
-      const overlayPath = join(root, 'workspace', 'agent.local.yaml');
-      await writeFile(
-        overlayPath,
-        JSON.stringify({
-          github: {
-            'issue-assignment': { feedback: { guidance: 'Use concise phrasing.' } },
-          },
-        }),
-      );
-      const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
-      const activation = deps.activation!;
-      deps.activation = async (...args) => {
-        const result = await activation(...args);
-        result.schedule!.current.policyDigest = automationHash(
-          current.manifest.github!.notifications,
-        );
-        result.schedule!.saved.policyDigest = result.schedule!.current.policyDigest;
-        return result;
-      };
-      const ref = await prepare();
-      sent = true;
-      turn = 'feedback';
-      await call('result', { ...ref, result: { privateText: 'Private English answer.' } }, true);
-      const composition = await call('compose', ref, true);
-      assert.ok('digest' in composition && composition.digest);
-      manifest.debug = debug;
-      await writeFile(path, JSON.stringify(manifest));
-      const candidate = await call(
-        'candidate',
-        { ...ref, digest: composition.digest, publicText: 'Ita.' },
-        true,
-      );
-      assert.equal(candidate.status, 'candidate-recorded');
-      const preview = await call('publish', ref, true);
-      assert.ok('digest' in preview && preview.digest);
-      const completed = await call('publish', { ...ref, digest: preview.digest }, true);
-      assert.equal(completed.status, 'published');
-      assert.ok('presentation' in completed && completed.presentation);
-      assert.equal(
-        completed.presentation.includes('[`custom:latin`](</trusted/feedback/SKILL.md>)'),
-        debug,
-      );
-      assert.equal(completed.presentation.includes('Use concise phrasing.'), debug);
-      if (debug) {
-        assert.ok(completed.presentation.includes(`[Inline guidance](<${overlayPath}>)`));
-        assert.ok(
-          completed.presentation.indexOf('Feedback reply instructions') >
-            completed.presentation.indexOf('[Reply ↗]'),
-        );
-      }
-      assert.ok(
-        completed.presentation.includes(
-          `from [@${account.login}](https://github.com/${account.login})*`,
-        ),
-      );
-      assert.ok(!published!.includes('Use concise phrasing.'));
-      assert.ok(!published!.includes('custom:latin'));
-      assert.ok(!published!.includes('Private English'));
-    });
-  it('should preserve a pending reply after unrelated workflow settings change', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    await recordReply(ref, 'Private answer.', 'Public answer.');
-    const path = join(root, 'workspace', 'agent.yaml');
-    const manifest = JSON.parse(await readFile(path, 'utf8'));
-    manifest.github['issue-assignment'].mode = 'work';
-    manifest.github['issue-assignment'].implementation = {
-      skill: 'custom:implementation',
-    };
-    await writeFile(path, JSON.stringify(manifest));
-    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
-    const activation = deps.activation!;
-    deps.activation = async (...args) => {
-      const result = await activation(...args);
-      result.schedule!.current.policyDigest = automationHash(
-        current.manifest.github!.notifications,
-      );
-      result.schedule!.saved.policyDigest = result.schedule!.current.policyDigest;
-      return result;
-    };
-    const preview = await call('publish', ref, true);
-    assert.equal(preview.status, 'publication-ready');
-    assert.ok('digest' in preview && preview.digest);
-    assert.equal(
-      (await call('publish', { ...ref, digest: preview.digest }, true)).status,
-      'published',
-    );
-    assert.equal(creates, 1);
-  });
-  it('should reuse one issue observation per authorization and refresh it on the next call', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    const provider = await deps.feedbackConnect!('', new AbortController().signal);
-    const read = provider.client.getItem;
-    let reads = 0;
-    let closed = false;
-    provider.client.getItem = async (...args) => {
-      reads++;
-      const item = await read(...args);
-      return closed ? { ...item, state: 'closed' } : item;
-    };
-    deps.feedbackConnect = async () => provider;
-    assert.equal((await call('context', ref, true)).status, 'verified');
-    assert.equal(reads, 1);
-    closed = true;
-    const result = await call('context', ref, true);
-    assert.equal(result.status, 'blocked');
-    assert.equal('code' in result && result.code, 'dispatch-issue-closed');
-    assert.equal(reads, 2);
-    assert.equal(creates, 0);
-  });
-  it('should withhold publication when the admitted source changes', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    await recordReply(ref, 'Private answer.', 'Public answer.');
-    const preview = await call('publish', ref, true);
-    assert.ok('digest' in preview && preview.digest);
-    comments[0]!.body = '@receiver a different request';
-    const result = await call('publish', { ...ref, digest: preview.digest }, true);
-    assert.equal(result.status, 'blocked');
-    assert.equal('code' in result && result.code, 'feedback-source-changed');
-    assert.equal(creates, 0);
-    assert.ok((await store.read())!.records[0]!.feedback!.events[0]!.result);
-  });
-  it('should require private retention and a current skill selection before accepting a candidate', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    assert.equal((await call('compose', ref, true)).status, 'waiting');
-    const bypass = await call(
-      'result',
-      {
-        ...ref,
-        result: { privateText: 'Detailed explanation.', publicText: 'Bypass.' },
-      },
-      true,
-    );
-    assert.equal('code' in bypass && bypass.code, 'feedback-composition-required');
-    await call('result', { ...ref, result: { privateText: 'Detailed explanation.' } }, true);
-    const composition = await call('compose', ref, true);
-    assert.ok('selection' in composition && composition.selection);
-    assert.equal(composition.selection.requestedSkill, 'agent-system:agent-system-github-reply');
-    assert.equal(
-      'privateResponse' in composition && composition.privateResponse,
-      'Detailed explanation.',
-    );
-    assert.ok('verifiedOutcome' in composition && composition.verifiedOutcome?.assessment);
-    assert.equal(
-      (await call('candidate', { ...ref, digest: 'stale', publicText: 'Reply.' }, true)).status,
-      'waiting',
-    );
-    deps.native!.assessmentSkill = async (_cwd, name) => ({
-      name,
-      path: '/trusted/feedback/SKILL.md',
-      scope: 'user',
-      digest: 'a'.repeat(64),
-    });
-    const changed = await call(
-      'candidate',
-      { ...ref, digest: composition.digest, publicText: 'Reply.' },
-      true,
-    );
-    assert.equal('code' in changed && changed.code, 'feedback-composition-changed');
-    const refreshed = await call('compose', ref, true);
-    assert.equal(refreshed.status, 'composition-ready');
-    assert.ok('digest' in refreshed && refreshed.digest !== composition.digest);
-    assert.equal(
-      (
-        await call(
-          'candidate',
-          { ...ref, digest: refreshed.digest, publicText: 'Updated reply.' },
-          true,
-        )
-      ).status,
-      'candidate-recorded',
-    );
-
-    assert.equal(creates, 0);
-    assert.equal(
-      (await store.read()).records[0]!.feedback!.events[0]!.result!.privateText,
-      'Detailed explanation.',
-    );
-  });
-  it('should retain and display the private response when the selected skill is unavailable', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    await call(
-      'result',
-      { ...ref, result: { privateText: 'Useful evidence and an unresolved question.' } },
-      true,
-    );
-    deps.native!.assessmentSkill = async () => {
-      throw new Error('dispatch-assessment-skill-unavailable');
-    };
-    const reply = await call('compose', ref, true);
-    assert.equal('code' in reply && reply.code, 'feedback-skill-unavailable');
-    assert.ok('presentation' in reply && reply.presentation?.includes('Useful evidence'));
-    assert.ok(reply.presentation?.includes('[Comment ↗]'));
-    assert.equal(creates, 0);
-  });
-  it('should permit harmless file references while keeping the existing publisher', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    await recordReply(
-      ref,
-      'Private evidence.',
-      'The example references /Users/example/project/README.md.',
-    );
-    const preview = await call('publish', ref, true);
-    assert.ok('digest' in preview && preview.digest);
-    assert.equal(
-      (await call('publish', { ...ref, digest: preview.digest }, true)).status,
-      'published',
-    );
-    assert.equal(creates, 1);
-  });
-  it('should allow a child result during provider discovery and discard the stale scan', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    occurrence++;
-    const connect = deps.feedbackConnect!;
-    let savedDuringRead = false;
-    deps.feedbackConnect = async (...args) => {
-      const provider = await connect(...args);
-      const list = provider.comments.listIssueComments;
-      provider.comments.listIssueComments = async (...parameters) => {
-        if (!savedDuringRead) {
-          savedDuringRead = true;
-          const result = await call(
-            'result',
-            { ...ref, reply: false, result: { privateText: 'Concurrent result.' } },
-            true,
-          );
-          assert.equal(result.status, 'recorded');
-        }
-        return list(...parameters);
-      };
-      return provider;
-    };
-    assert.equal((await call('next')).status, 'idle');
-    assert.equal(savedDuringRead, true);
-    const feedback = (await store.read()).records[0]!.feedback!;
-    assert.equal(feedback.events[0]!.result!.privateText, 'Concurrent result.');
-    assert.equal(feedback.events[0]!.phase, 'published');
-    assert.notEqual(feedback.scannedAt, String(occurrence));
-  });
   for (const stale of [false, true]) {
     it(`should select the oldest queued revision and block only that source when stale is ${stale}`, async () => {
       await call('next');
@@ -1512,6 +962,7 @@ describe('agent/codex-feedback', () => {
           createdAt: new Date(baseline + index * 1000).toISOString(),
           updatedAt: new Date(baseline + updated).toISOString(),
         });
+      deps.now = () => baseline + 100000;
       if (stale) {
         const connect = deps.feedbackConnect!;
         deps.feedbackConnect = async (...args) => {
@@ -1582,52 +1033,17 @@ describe('agent/codex-feedback', () => {
     deps.native!.find = find;
     assert.equal((await call('next')).status, 'feedback-prepared');
   });
-  it('should preserve a concurrent publication receipt and exclude its reply on the next scan', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    await recordReply(ref, 'Retained explanation.', 'Public answer.');
-    const preview = await call('publish', ref, true);
-    assert.ok('digest' in preview && preview.digest);
-    occurrence++;
-    const connect = deps.feedbackConnect!;
-    let publishedDuringRead = false;
-    deps.feedbackConnect = async (...args) => {
-      const provider = await connect(...args);
-      const list = provider.comments.listIssueComments;
-      provider.comments.listIssueComments = async (...parameters) => {
-        if (!publishedDuringRead) {
-          publishedDuringRead = true;
-          assert.equal(
-            (await call('publish', { ...ref, digest: preview.digest }, true)).status,
-            'published',
-          );
-          comments.push({
-            nodeId: 'reply',
-            databaseId: 99,
-            author: account,
-            body: '@receiver public answer.',
-            bodyTruncated: false,
-            createdAt: '2026-10-13T01:00:01Z',
-            updatedAt: '2026-10-13T01:00:01Z',
-          });
-        }
-        return list(...parameters);
-      };
-      return provider;
-    };
-    assert.equal((await call('next')).status, 'idle');
-    assert.equal((await call('next')).status, 'idle');
-    const feedback = (await store.read()).records[0]!.feedback!;
-    assert.equal(feedback.events.length, 1);
-    assert.equal(feedback.events[0]!.receipt!.nodeId, 'reply');
-    assert.equal(creates, 1);
-  });
   it('should retain a completed legacy input without replaying it for an unfinished reply', async () => {
     const ref = await prepare();
     sent = true;
     turn = 'feedback';
-    await call('result', { ...ref, result: { privateText: 'Saved before interruption.' } }, true);
+    await call('context', ref, true);
+    await store.exclusive(async (state, save) => {
+      const event = state.records[0]!.feedback!.events[0]!;
+      delete event.native;
+      event.result = { privateText: 'Saved before interruption.' };
+      await save();
+    });
     ended = true;
     occurrence++;
     await call('next');
@@ -1666,22 +1082,14 @@ describe('agent/codex-feedback', () => {
       const next = await call('next');
       const events = (await store.read()).records[0]!.feedback!.events;
       assert.equal(events.length, 2);
-      if (outcome === 'ended' || outcome === 'capacity') {
-        assert.equal(next.status, 'idle');
-        assert.equal(events[0]!.phase, 'delivered');
-        assert.equal(events[1]!.phase, 'queued');
-        const repeated = await call('next');
-        assert.equal(repeated.status, 'feedback-prepared');
-        assert.notEqual('eventId' in repeated && repeated.eventId, first.eventId);
-      } else {
-        assert.equal(next.status, 'idle');
-        assert.equal(events[1]!.phase, 'queued');
-        assert.equal(events[0]!.phase, outcome === 'uncertain' ? 'prepared' : 'delivered');
-      }
+      assert.equal(next.status, 'feedback-prepared');
+      assert.equal(events[0]!.phase, outcome === 'uncertain' ? 'prepared' : 'delivered');
+      assert.equal(events[1]!.phase, 'prepared');
+      assert.notEqual('eventId' in next && next.eventId, first.eventId);
       assert.equal(creates, 0);
     });
   }
-  it('should bound same-poll recovery when many queued sources have changed', async () => {
+  it('should reject changed sources without consuming the assignment action budget', async () => {
     await prepare();
     sent = ended = true;
     turn = 'feedback';
@@ -1700,10 +1108,11 @@ describe('agent/codex-feedback', () => {
     await call('next');
     const state = await store.read();
     const events = state.records[0]!.feedback!.events;
-    assert.equal(state.run!.actions, 12);
-    assert.equal(events.filter((event) => event.phase === 'blocked').length, 12);
-    assert.equal(events.filter((event) => event.phase === 'queued').length, 3);
-    assert.equal((await call('next')).status, 'budget-exhausted');
+    assert.equal(state.run, undefined);
+    assert.equal(events.filter((event) => event.phase === 'blocked').length, 14);
+    assert.equal(events.filter((event) => event.phase === 'delivered').length, 1);
+    assert.equal(events.filter((event) => event.phase === 'queued').length, 0);
+    assert.equal((await call('next')).status, 'idle');
     assert.equal(creates, 0);
   });
   it('should deliver feedback independently of assignment occupancy', async () => {
@@ -1733,38 +1142,6 @@ describe('agent/codex-feedback', () => {
     occurrence++;
     assert.equal((await call('next')).status, 'feedback-prepared');
   });
-  it('should retain a private-only answer without publishing and release its slot', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    const result = await call(
-      'result',
-      { ...ref, reply: false, result: { privateText: 'Needs human input.' } },
-      true,
-    );
-    assert.equal(result.status, 'recorded');
-    const record = (await store.read())!.records[0]!;
-    assert.equal(record.feedback!.events[0]!.phase, 'published');
-    assert.ok(record.feedback!.lastServedAt);
-    assert.equal(creates, 0);
-  });
-  it('should withhold sensitive public content while retaining the private response', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    await recordReply(ref, 'Retained analysis.', 'password: private-value');
-    const reply = await call('publish', ref, true);
-    assert.equal(reply.status, 'blocked');
-    assert.equal(
-      'code' in reply && reply.code,
-      'github-notification-publication-secret-safety-rejected',
-    );
-    assert.equal(creates, 0);
-    const saved = (await store.read())!.records[0]!.feedback!.events[0]!;
-    assert.equal(saved.result!.privateText, 'Retained analysis.');
-    assert.equal(saved.publicationAttempted, undefined);
-    assert.equal(saved.phase, 'blocked');
-  });
   it('should retain admitted feedback when discovery configuration is removed', async () => {
     await prepare();
     const manifestPath = join(root, 'workspace', 'agent.yaml');
@@ -1778,7 +1155,7 @@ describe('agent/codex-feedback', () => {
           username: 'receiver',
           'schema-version': 3,
           runtimes: ['codex'],
-          'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+          routing: ['owner/*'],
           'issue-assignment': { allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }] },
         },
       }),
@@ -1794,71 +1171,5 @@ describe('agent/codex-feedback', () => {
     assert.equal((await store.read())!.records[0]!.feedback!.events[0]!.phase, 'blocked');
     occurrence++;
     assert.equal((await call('next')).status, 'idle');
-  });
-  it('should preserve native publication denial and bind explicit recovery to the exact draft', async () => {
-    const ref = await prepare();
-    sent = true;
-    turn = 'feedback';
-    await recordReply(ref, 'Private.', 'Approved reply.');
-    ended = true;
-    receiptStatus = 'blocked';
-    await call('next');
-    assert.equal(
-      (await store.read())!.records[0]!.feedback!.events[0]!.code,
-      'continuation-native-approval-denied',
-    );
-    occurrence++;
-    assert.equal((await call('next')).status, 'idle');
-    receiptTurn = turn;
-    turn = 'later-human-followup';
-    receiptStatus = 'blocked';
-    const operator = (digest?: string) =>
-      runCodexFeedback(
-        pluginData,
-        { action: 'publish-approved', ...ref, ...(digest ? { digest } : {}) },
-        { ...deps, threadId: 'operator' },
-      );
-    assert.equal((await call('publish-approved', ref)).status, 'blocked');
-    for (const state of ['uncertain', 'unfinished', 'different-turn'] as const) {
-      receiptStatus = state === 'uncertain' ? 'uncertain' : 'blocked';
-      ended = state !== 'unfinished';
-      receiptTurn = state === 'different-turn' ? 'unrelated' : 'feedback';
-      const rejected = await operator();
-      assert.equal(
-        'code' in rejected && rejected.code,
-        'feedback-publication-recovery-unavailable',
-      );
-      assert.equal(creates, 0);
-    }
-    receiptStatus = 'blocked';
-    receiptTurn = 'feedback';
-    ended = true;
-    const find = deps.native!.find;
-    for (const status of ['active', 'notLoaded']) {
-      deps.native!.find = async (input) => ({
-        ...(await find(input))!,
-        status,
-        turnStatus: 'interrupted',
-        turnEnded: false,
-      });
-      const busy = await operator();
-      assert.equal('code' in busy && busy.code, 'feedback-publication-recovery-unavailable');
-      assert.equal(creates, 0);
-    }
-    deps.native!.find = find;
-    const preview = await operator();
-    assert.equal(preview.status, 'publication-approval-required');
-    assert.ok('digest' in preview && preview.digest);
-    assert.equal(creates, 0);
-    const stale = await operator('bad-digest');
-    assert.equal('code' in stale && stale.code, 'feedback-publication-approval-stale');
-    assert.equal(creates, 0);
-    assert.equal((await operator(preview.digest)).status, 'published');
-    assert.equal((await operator(preview.digest)).status, 'published');
-    assert.equal(creates, 1);
-    assert.equal(
-      (await store.read())!.records[0]!.feedback!.events[0]!.publicationApproval!.by,
-      'operator',
-    );
   });
 });

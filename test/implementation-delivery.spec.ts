@@ -8,11 +8,8 @@ import {
   retainImplementationDelivery,
   nativeIssueContext,
 } from '../agent/implementation-delivery.ts';
-import issueWorkflowProgress, {
-  type IssueWorkflowState,
-} from '../agent/issue-workflow-progress.ts';
 import managedImplementationRoute from '../agent/managed-implementation-route.ts';
-import workflowStatus from '../agent/workflow-status.ts';
+import workflowStatus, { type IssueWorkflowState } from '../agent/workflow-status.ts';
 import type { AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
 
 describe('agent/implementation-delivery', () => {
@@ -31,19 +28,19 @@ describe('agent/implementation-delivery', () => {
         feedback: { events: [event] },
         ...(runtime === 'codex' ? { delivery } : { work: { delivery } }),
       };
-      assert.equal(workflowStatus(record), 'delivered');
-      assert.deepEqual(issueWorkflowProgress(record), { action: 'complete', status: 'delivered' });
+      assert.equal(workflowStatus(record), 'native-unobserved');
+      assert.equal(hasDeliveredImplementation(record), true);
       delivery.pushedHead = 'unpublished';
-      assert.equal(hasDeliveredImplementation(record), false);
+      assert.equal(hasDeliveredImplementation(record), true);
       delivery.pushedHead = 'first';
       delivery.reconciled = false;
       assert.equal(hasDeliveredImplementation(record), false);
       delivery.reconciled = true;
       event.work.result.outcome = 'clarification-needed';
-      assert.equal(hasDeliveredImplementation(record), false);
+      assert.equal(hasDeliveredImplementation(record), true);
     });
 
-    it(`should permanently finish ${runtime} execution without discarding later publication receipts`, () => {
+    it(`should retain ${runtime} publication history without discarding later receipts`, () => {
       const delivery = {
         reconciled: true,
         pushedHead: 'first',
@@ -65,11 +62,11 @@ describe('agent/implementation-delivery', () => {
         record.continuation.phase = 'blocked';
         record.continuation.code = 'continuation-send-unverified';
       } else record.work!.code = 'dispatch-turn-failed';
-      assert.deepEqual(issueWorkflowProgress(record), { action: 'complete', status: 'delivered' });
+      assert.equal(hasDeliveredImplementation(record), true);
       assert.equal(delivery.reconciled, false);
       assert.equal(delivery.pushedHead, 'second');
       record.retired = {};
-      assert.equal(issueWorkflowProgress(record).action, 'stopped');
+      assert.equal(workflowStatus(record), 'obsolete');
     });
   }
 
@@ -77,6 +74,7 @@ describe('agent/implementation-delivery', () => {
     const codex = {
       phase: 'complete',
       implementationDelivered: true,
+      nativeInactive: true,
       request: {},
       handoff: { at: 1, by: 'owner', turnId: 'old' },
       autoDecision: { attempt: {} },
@@ -84,6 +82,7 @@ describe('agent/implementation-delivery', () => {
       feedback: { events: [] },
     } as unknown as DispatchRecord;
     assert.equal(codexItemOccupied(codex), false);
+    codex.nativeInactive = false;
     codex.capacityObservation = { at: 2, code: 'dispatch-capacity-native-active' };
     assert.equal(codexItemOccupied(codex), true);
     delete codex.capacityObservation;
@@ -95,48 +94,44 @@ describe('agent/implementation-delivery', () => {
     const openclaw = {
       phase: 'complete',
       implementationDelivered: true,
+      nativeInactive: true,
       request: {},
-      work: { turn: { status: 'consumed' }, code: 'dispatch-turn-cancelled' },
-      decisionTurn: { status: 'attempted' },
+      sessionCreation: { verified: true },
+      work: { turn: { status: 'completed' } },
+      decisionTurn: { status: 'completed' },
       feedback: { events: [], activity: { busy: false } },
     } as unknown as OpenClawDispatchRecord;
     assert.equal(openClawItemOccupied(openclaw), false);
+    openclaw.nativeInactive = false;
     openclaw.feedback!.activity!.busy = true;
     assert.equal(openClawItemOccupied(openclaw), true);
   });
 
-  it('should require finished work and verified linkage before ending execution', () => {
+  it('should recognize verified pr publication without a saved implementation result', () => {
     const record: IssueWorkflowState = {
-      phase: 'complete',
-      progression: { stage: 'implementation' },
-      continuation: { phase: 'running', head: 'current' },
-      delivery: { reconciled: true, pushedHead: 'draft', pullRequest: { pullRequestNumber: 7 } },
+      phase: 'assessing',
+      delivery: {
+        reconciled: true,
+        pushedHead: 'published',
+        pullRequest: { pullRequestNumber: 7 },
+      },
     };
-    retainImplementationDelivery(record);
-    assert.equal(record.implementationDelivered, undefined);
-    record.continuation!.result = { outcome: 'done' };
-    assert.equal(hasDeliveredImplementation(record), false);
-    record.delivery!.pushedHead = 'current';
     assert.equal(hasDeliveredImplementation(record), true);
+    retainImplementationDelivery(record);
+    assert.equal(record.phase, 'assessing');
+    assert.equal(record.result, undefined);
+    assert.equal(record.progression, undefined);
+    assert.equal(record.implementationDelivered, true);
   });
 
-  it('should require the completed head when recognizing a legacy reopened codex round', () => {
+  it('should not treat an observed existing pr as a new publication', () => {
     const record: IssueWorkflowState = {
-      phase: 'complete',
-      continuation: {
-        phase: 'blocked',
-        head: 'original',
-        code: 'continuation-send-unverified',
-        resultHistory: [{ result: { outcome: 'done' } }],
-      },
-      delivery: { reconciled: true, pushedHead: 'original', pullRequest: { pullRequestNumber: 7 } },
+      phase: 'created',
+      delivery: { adopted: {}, reconciled: true, pullRequest: { pullRequestNumber: 7 } },
     };
-    assert.deepEqual(issueWorkflowProgress(record), { action: 'complete', status: 'delivered' });
-    assert.equal(record.continuation!.code, 'continuation-send-unverified');
-    record.continuation!.head = 'unpublished';
     assert.equal(hasDeliveredImplementation(record), false);
-    delete record.continuation!.head;
-    assert.equal(hasDeliveredImplementation(record), false);
+    record.delivery!.pushedHead = 'published';
+    assert.equal(hasDeliveredImplementation(record), true);
   });
 
   it('should return native facts without routing a delivered task into an implementation owner', async () => {

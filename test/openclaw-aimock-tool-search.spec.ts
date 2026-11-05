@@ -370,6 +370,8 @@ describe('scripts/aimock-tool-search', () => {
           status: 'verified',
           runtime: 'openclaw',
           id,
+          currentTurnId: 'initial',
+          evidence: { source: 'https://github.com/owner/repo/issues/3' },
           project: { path: '/tmp/owned' },
           assessment: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
           resultContract: 'assessment-result/v1',
@@ -383,38 +385,31 @@ describe('scripts/aimock-tool-search', () => {
       truncated: false,
     });
     await step('assessment-skill', 'read', 'Default assessment.');
-    const saved = await step('result', 'agent_system_dispatch', {
-      status: 'recorded',
-      presentation: '> Retained plan',
+    await step('native-plan-context', 'agent_system_dispatch', {
+      status: 'status-update-context',
+      observation: digest,
     });
-    assert.equal(saved.result.outcome, 'clarification-needed');
-    assert.ok(saved.result.questions.length);
-    const summaryResponse = (await reply(scenario, input)).response;
-    assert.equal('content' in summaryResponse && summaryResponse.content, '> Retained plan');
-    await step('summary-compose', 'agent_system_dispatch', {
+    const composed = await step('native-plan-compose', 'agent_system_dispatch', {
       status: 'composition-ready',
+      id,
       digest,
       selection: { defaultSkill: true, skill: { path: '/tmp/reply/SKILL.md' } },
     });
-    await step('summary-skill', 'read', { content: 'Compose a concise public summary.' });
-    assert.equal(
-      (await step('summary-candidate', 'agent_system_dispatch', { status: 'candidate-recorded' }))
-        .digest,
-      digest,
-    );
-    await step('summary-preview', 'agent_system_dispatch', { status: 'publication-ready', digest });
-    assert.equal(
-      (
-        await step('summary-publish', 'agent_system_dispatch', {
-          status: 'published',
-          presentation: '> Published plan summary',
-        })
-      ).digest,
-      digest,
-    );
-    assert.deepEqual((await reply(scenario, input)).response, {
-      content: '> Published plan summary',
+    assert.match(composed.privateText, /Should disposable test issues/);
+    await step('summary-skill', 'read', { content: 'Compose a concise public question.' });
+    await step('native-plan-candidate', 'agent_system_dispatch', {
+      status: 'candidate-recorded',
+      publication: 'workflow-authorized',
     });
+    await step('native-plan-preview', 'agent_system_dispatch', {
+      status: 'publication-ready',
+      digest,
+    });
+    await step('native-plan-publish', 'agent_system_dispatch', {
+      status: 'published',
+      presentation: '> Published question',
+    });
+    assert.deepEqual((await reply(scenario, input)).response, { content: '> Published question' });
     input.messages.push(
       { role: 'assistant', content: '> Retained plan' },
       {
@@ -450,11 +445,16 @@ describe('scripts/aimock-tool-search', () => {
       (
         await step('delivery-publish', 'agent_system_dispatch', {
           status: 'published',
-          workflowStatus: 'delivered',
+          workflowStatus: 'native-unobserved',
         })
       ).digest,
       digest,
     );
+    const linked = await step('delivery-association', 'agent_system_dispatch', {
+      status: 'linked',
+      pullRequest: { pullRequestNumber: 456 },
+    });
+    assert.equal(linked.operation, 'link');
     await step('delivery-compose', 'agent_system_dispatch', {
       status: 'composition-ready',
       digest,
