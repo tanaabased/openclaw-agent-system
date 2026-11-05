@@ -1,4 +1,5 @@
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
+import projectPickupJobs from '../agent/project-pickup-jobs.ts';
 import ProjectPickupEnrollmentStore from '../agent/project-pickup-enrollment.ts';
 import selectionFixture from './project-pickup-selection-fixture.ts';
 import assert from 'node:assert/strict';
@@ -954,19 +955,46 @@ describe('agent/automation-service', () => {
         }),
       activate: (id, nativeId, previous) => enrollments.activate(id, nativeId, previous),
     };
+    // seed the previous declaration through the existing installation owner.
+    const pickupPolicy = policy.projectPickup;
+    const legacyJob = {
+      ...projectPickupJobs(manifest, 'openclaw')[0]!,
+      id: 'github-project-pickup',
+      displayName: '📥 PROJECT PICKUP',
+      thread: { name: 'PROJECT PICKUP' },
+    };
+    delete policy.projectPickup;
+    manifest.automations = [legacyJob];
     await service.reconcile(manifest, root);
-    const pickup = native.find((job) => job.displayName === '📥 PROJECT PICKUP')!;
+    const legacyPickup = native.find((job) => job.displayName === '📥 PROJECT PICKUP')!;
+    const legacyChat = String(legacyPickup.sessionTarget).slice(8);
+    const legacyHistory = structuredClone(sessions.get(legacyChat));
+    policy.projectPickup = pickupPolicy;
+    const priorEnrollment = await service.dependencies.pickup.prepare(manifest, root);
+    await enrollments.activate(priorEnrollment.enrollment.id, legacyPickup.id);
+    manifest.automations = [];
+    await service.reconcile(manifest, root);
+    const pickup = native.find((job) => job.displayName === '📥 ISSUE PICKUP')!;
+    assert.notEqual(pickup.id, legacyPickup.id);
+    assert.equal(pickup.name, 'AGENT SYSTEM: issue-pickup');
+    assert.equal(pickup.declarationKey, store.marker('issue-pickup'));
+    assert.notEqual(pickup.sessionTarget, legacyPickup.sessionTarget);
+    assert.equal(sessions.get(String(pickup.sessionTarget).slice(8))!.displayName, 'ISSUE PICKUP');
+    assert.deepEqual(sessions.get(legacyChat), legacyHistory);
+    assert.equal(legacyPickup.enabled, false);
+    assert.deepEqual(pickup.schedule, legacyPickup.schedule);
     assert.ok(pickup.enabled);
     assert.equal(pickup.payload.model, 'openai/gpt-6-luna');
     assert.equal(pickup.payload.thinking, 'minimal');
     const enrollment = (await enrollments.read()).records[0]!;
     assert.equal(enrollment.nativeId, pickup.id);
+    assert.deepEqual(enrollment.enrollment, priorEnrollment.enrollment);
     const beforePickup = mutations().length;
     now += 60000;
     await service.reconcile(manifest, root);
     assert.equal(mutations().length, beforePickup);
     assert.deepEqual((await enrollments.read()).records, [enrollment]);
-    assert.equal(native.length, 2);
+    assert.equal(native.length, 3);
     assert.equal(
       await notificationAutomationReadiness(
         service,
@@ -974,7 +1002,7 @@ describe('agent/automation-service', () => {
         root,
         undefined,
         service.dependencies.request,
-        'github-project-pickup',
+        'issue-pickup',
       ),
       undefined,
     );
@@ -985,7 +1013,7 @@ describe('agent/automation-service', () => {
         root,
         undefined,
         service.dependencies.request,
-        'github-project-pickup',
+        'issue-pickup',
         'stale-job',
       ),
       'project-pickup-enrollment-changed',
@@ -1000,7 +1028,7 @@ describe('agent/automation-service', () => {
         root,
         undefined,
         service.dependencies.request,
-        'github-project-pickup',
+        'issue-pickup',
       ),
       'intake-automation-paused',
     );

@@ -4,7 +4,7 @@ import type { AgentManifest } from '../manifest/types.ts';
 import { projectPickupConfigurationCode } from '../channels/github/project-pickup-schema.ts';
 export { projectPickupConfigurationCode };
 
-export const projectPickupAutomationId = 'github-project-pickup';
+export const projectPickupAutomationId = 'issue-pickup';
 
 /** retain stable diagnostics without exposing provider or filesystem error text. */
 export function projectPickupErrorCode(error: unknown): string {
@@ -52,11 +52,11 @@ export default function projectPickupJobs(
       {
         id: projectPickupAutomationId,
         origin: 'builtin',
-        displayName: '📥 PROJECT PICKUP',
+        displayName: '📥 ISSUE PICKUP',
         enabled: !policy.projectPickup.paused && !policy.issueAssignment.paused,
         runtimes: [runtime],
         schedule: policy.projectPickup.scanSchedule,
-        thread: policy.projectPickup.thread ?? { name: 'PROJECT PICKUP' },
+        thread: policy.projectPickup.thread ?? { name: 'ISSUE PICKUP' },
         model: settings.model ?? 'default',
         ...(settings.effort === undefined ? {} : { effort: settings.effort }),
         overrides: {},

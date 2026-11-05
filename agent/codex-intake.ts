@@ -9,7 +9,11 @@ import { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexCapacity, { codexItemOccupied } from './codex-capacity.ts';
 import { codexInstanceStore } from './codex-assignment-claims.ts';
 import ProjectPickupEnrollmentStore from './project-pickup-enrollment.ts';
-import { projectPickupConfigurationCode, projectPickupErrorCode } from './project-pickup-jobs.ts';
+import {
+  projectPickupAutomationId,
+  projectPickupConfigurationCode,
+  projectPickupErrorCode,
+} from './project-pickup-jobs.ts';
 import projectPickup, { pickupAuthority, type PickupInput } from './project-pickup.ts';
 import type { ProjectPickupClient } from '../channels/github/provider/project-pickup-client.ts';
 import { assertDispatchStorage, dispatchStorageNotice } from './dispatch-storage.ts';
@@ -507,7 +511,7 @@ export async function runCodexProjectPickup(
       return {
         ...omit(result, ['selectionGuidance']),
         response: codexHeartbeatEnvelope(
-          nativeOccurrence?.automationId ?? 'github-project-pickup',
+          nativeOccurrence?.automationId ?? projectPickupAutomationId,
           report.response,
           report.notify,
         ),

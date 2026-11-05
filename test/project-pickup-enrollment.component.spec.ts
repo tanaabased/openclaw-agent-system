@@ -221,7 +221,7 @@ describe('project pickup installation enrollment', () => {
     for (const runtime of ['codex', 'openclaw'] as const) {
       const jobs = projectPickupJobs(manifest, runtime);
       assert.equal(jobs.length, 1);
-      assert.equal(jobs[0]!.id, 'github-project-pickup');
+      assert.equal(jobs[0]!.id, 'issue-pickup');
       assert.equal(jobs[0]!.schedule.kind, 'cron');
       if (jobs[0]!.schedule.kind === 'cron')
         assert.deepEqual(jobs[0]!.schedule.times, [600, 601, 602, 603, 605, 606, 607, 608]);

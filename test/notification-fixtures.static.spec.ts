@@ -74,7 +74,7 @@ for (const runtime of ['openclaw', 'codex']) {
       assert.equal(parsed.status, 'valid', JSON.stringify(parsed.diagnostics));
       assert.ok(parsed.manifest);
       const jobs = openclawIntakeJobs(parsed.manifest);
-      assert.ok(jobs.some((job) => job.id === 'github-project-pickup' && job.enabled));
+      assert.ok(jobs.some((job) => job.id === 'issue-pickup' && job.enabled));
       assert.ok(jobs.some((job) => job.id === 'github-issue-assignment' && job.enabled));
       const policy = parsed.manifest.github!.notifications!;
       assert.deepEqual(policy.runtimes, ['openclaw']);

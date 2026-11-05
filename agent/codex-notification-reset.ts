@@ -424,7 +424,7 @@ export default async function runCodexNotificationReset(
       purge: preview.purge,
       continuing: preview.continuing,
       fresh: preview.fresh,
-      jobs: ['github-issue-assignment', ...(preview.pickup ? ['github-project-pickup'] : [])],
+      jobs: ['github-issue-assignment', ...(preview.pickup ? [projectPickupAutomationId] : [])],
       resources: preview.resources,
       instruction:
         'confirm the selection, then repeat notifications reset with yes:true; both installed notification jobs pause and managed turns must finish before reset',

@@ -13,6 +13,27 @@ retain their native settings and reject explicit job model settings.
 See [automation configuration and recovery](./MANIFEST.md#automations) for precedence
 and handling busy chats or denied updates.
 
+## Issue pickup automation
+
+The generated pickup automation is now `📥 ISSUE PICKUP`, with declaration/YAML ID
+`issue-pickup` instead of `github-project-pickup`, in OpenClaw and standalone Codex.
+Its default chat name is `ISSUE PICKUP`, without the scheduler's emoji. Configuration
+remains under `github.project-pickup`; configured thread names and IDs remain unchanged.
+
+Run normal Install in each runtime to create the replacement. Verify its name,
+chat and native schedule, then manually delete the old scheduled automation.
+Identify the old native job by declaration `github-project-pickup`: OpenClaw uses
+`agent-system:<scope>:github-project-pickup` as its declaration key; Codex uses
+`Managed by Agent System (codex:<scope>:github-project-pickup).` in its prompt.
+Native scheduler IDs are installation-specific, not these declaration IDs.
+OpenClaw-hosted Codex uses the OpenClaw schedule.
+
+Normal cleanup may pause the old schedule but does not delete it. If standalone
+Codex uses an explicit chat ID shared with the old active schedule, pause or delete
+that old schedule **before** Install; the existing same-chat guard otherwise blocks
+replacement. Do not delete historical chats or task records. This is replacement,
+not identity migration or historical chat renaming.
+
 ## Skill names
 
 Task workflow skills now use task terminology. Update explicit skill selections in

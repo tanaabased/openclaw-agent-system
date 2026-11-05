@@ -48,7 +48,7 @@ import {
   inspectCodexWorkspaceBinding,
 } from '../agent/codex-workspace-binding.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
-import { inspectCodexIntake } from '../agent/codex-intake.ts';
+import { prepareCodexPickupEnrollment, inspectCodexIntake } from '../agent/codex-intake.ts';
 import normalizeAutomationSchedule from '../manifest/automation-schedule.ts';
 import { inspectCodexSetup, installCodexSetup } from '../agent/codex-setup.ts';
 
@@ -483,6 +483,7 @@ describe('agent/codex-automations', () => {
           paused: false,
           start: '10:00',
           window: '1 hour',
+          scans: 1,
           projects: [
             { repository: 'owner/repo', milestone: { number: 10, policy: 'only' }, limit: 1 },
           ],
@@ -524,30 +525,126 @@ describe('agent/codex-automations', () => {
         },
       },
     };
-    await syncThreads(dependencies);
     const reconcile = async () => {
       for (let index = 0; index < 4; index++) {
         const plan = await inspectCodexAutomations(pluginData, inputs(), dependencies);
         if (plan.status === 'aligned') return;
         assert.ok(plan.actions[0], JSON.stringify(plan));
-        await syncOne(dependencies, `pickup-native-${index}`);
+        await syncOne(
+          dependencies,
+          `pickup-native-${(await readCodexAutomations(codexHome)).length}`,
+        );
       }
       assert.fail('pickup installation did not converge');
     };
-    await reconcile();
-    assert.deepEqual(
-      [...conversations.values()].map(({ model, effort }) => ({ model, effort })),
-      [
-        { model: 'gpt-6.1-sol', effort: 'low' },
-        { model: 'gpt-6-astra', effort: 'minimal' },
+    // seed an installed old declaration; the native scheduler remains a fixture boundary.
+    const legacySource = {
+      ...source,
+      github: { ...source.github, 'project-pickup': undefined },
+      automations: [
+        {
+          id: 'github-project-pickup',
+          'display-name': '📥 PROJECT PICKUP',
+          thread: 'PROJECT PICKUP',
+          schedule: { cron: '0 10 * * *' },
+          prompt: 'Previous pickup scan.',
+          model: 'high',
+          effort: 'minimal',
+        },
       ],
-    );
+    };
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(legacySource));
+    const legacyPlan = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.notEqual(legacyPlan.status, 'blocked', JSON.stringify(legacyPlan));
+    await syncThreads(dependencies);
+    await reconcile();
+    const legacyPickup = (await readCodexAutomations(codexHome)).find(
+      ({ definition }) => definition.name === '📥 PROJECT PICKUP',
+    )!;
+    assert.ok(legacyPickup.definition.kind === 'heartbeat');
+    const legacyChat = legacyPickup.definition.targetThreadId;
+    const legacyHistory = structuredClone(conversations.get(legacyChat));
+    await saveManifest();
     const enrollments = new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root);
+    const priorEnrollment = await prepareCodexPickupEnrollment(pluginData, {
+      ...dependencies.intake,
+      codexHome,
+    });
+    await enrollments.activate(priorEnrollment.enrollment.id, legacyPickup.id);
+    // an explicit shared target must respect the existing one-active-schedule guard.
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...source,
+        github: {
+          ...source.github,
+          'project-pickup': { ...source.github['project-pickup'], thread: { id: legacyChat } },
+        },
+      }),
+    );
+    const sharedTarget = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    await syncCodexAutomationThreads(pluginData, sharedTarget.digest, inputs(), dependencies);
+    const blocked = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.equal(blocked.status, 'blocked', JSON.stringify(blocked));
+    assert.ok(
+      blocked.findings.some(
+        ({ id, code }) => id === 'issue-pickup' && code === 'automation-thread-schedule-conflict',
+      ),
+      JSON.stringify(blocked),
+    );
+    await assert.rejects(
+      prepareCodexAutomation(pluginData, blocked.digest, inputs(), dependencies),
+      rejectsCode('automation-plan-stale-or-blocked'),
+    );
+    await nativeWrite({ ...legacyPickup.definition, status: 'PAUSED' }, legacyPickup.id);
+    const ready = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    assert.ok(!ready.findings.some(({ code }) => code === 'automation-thread-schedule-conflict'));
+    await syncThreads(dependencies);
+    const sameChat = await inspectCodexAutomations(pluginData, inputs(), dependencies);
+    const sameChatReplacement = sameChat.actions.find(
+      ({ manifestId }) => manifestId === 'issue-pickup',
+    )!;
+    assert.equal(sameChatReplacement.mode, 'create');
+    assert.ok(sameChatReplacement.expected.kind === 'heartbeat');
+    assert.equal(sameChatReplacement.expected.targetThreadId, legacyChat);
+    await nativeWrite({ ...legacyPickup.definition, status: 'ACTIVE' }, legacyPickup.id);
+    await saveManifest();
+    await syncThreads(dependencies);
+    await reconcile();
+    const installedPickup = (await readCodexAutomations(codexHome)).find(
+      ({ definition }) => definition.name === '📥 ISSUE PICKUP',
+    )!;
+    assert.notEqual(installedPickup.id, legacyPickup.id);
+    assert.ok(installedPickup.definition.kind === 'heartbeat');
+    assert.notEqual(installedPickup.definition.targetThreadId, legacyChat);
+    assert.equal(
+      conversations.get(installedPickup.definition.targetThreadId)!.name,
+      'ISSUE PICKUP',
+    );
+    assert.deepEqual(conversations.get(legacyChat), legacyHistory);
+    assert.equal(
+      (await readCodexAutomations(codexHome)).find(({ id }) => id === legacyPickup.id)!.definition
+        .status,
+      'PAUSED',
+    );
+    assert.equal(installedPickup.definition.rrule, legacyPickup.definition.rrule);
+    assert.match(
+      installedPickup.definition.prompt,
+      /Managed by Agent System \(codex:[^:]+:issue-pickup\)\./u,
+    );
+    for (const { name, model, effort } of conversations.values())
+      assert.deepEqual(
+        { model, effort },
+        name === 'ISSUE ASSIGNMENTS'
+          ? { model: 'gpt-6.1-sol', effort: 'low' }
+          : { model: 'gpt-6-astra', effort: 'minimal' },
+      );
     const first = (await enrollments.read()).records[0]!;
+    assert.deepEqual(first.enrollment, priorEnrollment.enrollment);
     const active = await inspectCodexPickupActivation(pluginData, dependencies);
     assert.equal(active.nativeId, first.nativeId);
-    assert.equal((await readCodexAutomations(codexHome)).length, 2);
-    assert.equal(conversations.size, 2);
+    assert.equal((await readCodexAutomations(codexHome)).length, 3);
+    assert.equal(conversations.size, 3);
     await reconcile();
     assert.deepEqual((await enrollments.read()).records, [first]);
     source.github['project-pickup'].model = 'low';
@@ -556,7 +653,7 @@ describe('agent/codex-automations', () => {
     await syncThreads(dependencies);
     await reconcile();
     const pickupThread = [...conversations.values()].find(
-      (thread) => thread.name === 'PROJECT PICKUP',
+      (thread) => thread.name === 'ISSUE PICKUP',
     )!;
     assert.equal(pickupThread.model, 'gpt-6-luna');
     assert.equal(pickupThread.effort, 'high');
@@ -587,8 +684,8 @@ describe('agent/codex-automations', () => {
     assert.equal(replacement.nativeId, first.nativeId);
     assert.deepEqual(replacement, first);
     assert.equal(replacement.enrollment.startedAt, first.enrollment.startedAt);
-    assert.equal((await readCodexAutomations(codexHome)).length, 2);
-    assert.equal(conversations.size, 2);
+    assert.equal((await readCodexAutomations(codexHome)).length, 3);
+    assert.equal(conversations.size, 3);
     const saved = (await readCodexAutomations(codexHome)).find(
       (job) => job.id === active.nativeId,
     )!;
@@ -609,11 +706,7 @@ describe('agent/codex-automations', () => {
     assert.ok(resetBefore && resetBefore.definition.kind === 'heartbeat');
     conversations.get(resetBefore.definition.targetThreadId)!.archived = true;
     await rm(join(codexHome, 'automations', saved.id), { recursive: true });
-    const resetCreate = await replaceCoordinator(
-      resetBefore,
-      dependencies,
-      'github-project-pickup',
-    );
+    const resetCreate = await replaceCoordinator(resetBefore, dependencies, 'issue-pickup');
     assert.ok(
       resetCreate.status === 'native-action' && resetCreate.request.tool === 'automation_update',
     );
@@ -623,13 +716,13 @@ describe('agent/codex-automations', () => {
       { ...resetBefore.definition, targetThreadId: resetTarget },
       'pickup-replaced-native',
     );
-    const resetDone = await replaceCoordinator(resetBefore, dependencies, 'github-project-pickup');
+    const resetDone = await replaceCoordinator(resetBefore, dependencies, 'issue-pickup');
     assert.equal(resetDone.status, 'done');
     const enrollmentAfterReset = (await enrollments.read()).records[0]!;
     assert.deepEqual(enrollmentAfterReset.enrollment, first.enrollment);
     assert.equal(enrollmentAfterReset.nativeId, 'pickup-replaced-native');
     assert.deepEqual(
-      await replaceCoordinator(resetBefore, dependencies, 'github-project-pickup'),
+      await replaceCoordinator(resetBefore, dependencies, 'issue-pickup'),
       resetDone,
     );
     assert.equal(

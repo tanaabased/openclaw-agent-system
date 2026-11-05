@@ -41,16 +41,18 @@ describe('project pickup conversation selection', () => {
         assert.equal(parsed.status, 'valid', JSON.stringify(parsed));
         if (parsed.status !== 'valid') return;
         const job = projectPickupJobs(parsed.manifest, runtime)[0]!;
+        assert.equal(job.id, 'issue-pickup');
+        assert.equal(job.displayName, '📥 ISSUE PICKUP');
         assert.deepEqual(
           job.thread,
           thread === undefined
-            ? { name: 'PROJECT PICKUP' }
+            ? { name: 'ISSUE PICKUP' }
             : typeof thread === 'string'
               ? { name: 'pickup watch' }
               : { name: 'pickup watch', id: 'native-chat' },
         );
         const selected = automationThreadSelection(job, runtime)!;
-        assert.equal(selected.name, thread === undefined ? 'PROJECT PICKUP' : 'pickup watch');
+        assert.equal(selected.name, thread === undefined ? 'ISSUE PICKUP' : 'pickup watch');
         assert.equal(selected.exact, typeof thread === 'object' ? 'native-chat' : undefined);
         assert.equal(selected.managed, true);
         const policy = parsed.manifest.github!.notifications!;
