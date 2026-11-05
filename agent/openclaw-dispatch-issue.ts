@@ -401,6 +401,7 @@ export default class OpenClawDispatchIssue {
         id: record.id,
         eventId: event.id,
         nextAction: code === 'feedback-composition-changed' ? 'compose' : 'next',
+        ...workflowFailure(error, code),
         code,
         ...(code === 'feedback-composition-changed'
           ? {

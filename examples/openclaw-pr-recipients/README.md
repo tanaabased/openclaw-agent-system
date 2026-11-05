@@ -81,10 +81,10 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 
 # should create an issue as emori and assign it as tanaabot after the safe intake baseline
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-recipients/emori"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System pr flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -F "body=@$GITHUB_WORKSPACE/examples/openclaw-pr-recipients/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
+node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" create --title "agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System pr flow $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --body-file "$GITHUB_WORKSPACE/examples/openclaw-pr-recipients/issue.md" | tee "$TMPDIR/notification-issue.json" | jq -e '.state == "open" and .user.login == "emoriwan" and (.assignees | length) == 0'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-recipients/tanaabot"
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/assignees" -f 'assignees[]=tanaabot' | jq -e 'any(.assignees[]; .login == "tanaabot")'
+node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" assign --number "$number" | jq -e 'any(.assignees[]; .login == "tanaabot")'
 
 # should retain a plan through the installed owning coordinator
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-recipients/tanaabot"
@@ -113,7 +113,7 @@ feedback_diagnostics() {
 trap feedback_diagnostics EXIT
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-recipients/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot Please implement the agreed plan and publish its pull request.' > "$TMPDIR/notification-initial-source.json"
+node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" comment --number "$number" --body '@tanaabot Please implement the agreed plan and publish its pull request.' > "$TMPDIR/notification-initial-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-recipients/tanaabot"
 feedback_checkpoint
 feedback_run=

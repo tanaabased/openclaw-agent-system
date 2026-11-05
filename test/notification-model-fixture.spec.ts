@@ -1157,6 +1157,19 @@ for (const scenario of [
           assert.equal((await action(input, 'delivery')).operation, 'prepare');
           append(input, 'delivery-prepare', { status: 'prepared', digest });
           assert.equal((await action(input, 'delivery')).digest, digest);
+          const failedGit = structuredClone(input);
+          append(failedGit, 'delivery-publish', {
+            status: 'needs-attention',
+            code: 'delivery-git-operation-failed',
+            providerDiagnostic: {
+              classification: 'authentication',
+              providerMessage: 'Permission denied (publickey).',
+            },
+          });
+          const stopped = await response(failedGit);
+          assert.ok('content' in stopped);
+          assert.match(String(stopped.content), /delivery-git-operation-failed/u);
+          assert.match(String(stopped.content), /authentication/u);
           append(input, 'delivery-publish', {
             status: 'waiting',
             code: 'github-delivery-linkage-unverified',
@@ -1262,7 +1275,12 @@ for (const scenario of [
         ]) {
           const invalid = structuredClone(input);
           append(invalid, 'delivery-publish-refreshed', rejected);
-          assert.equal(matchFixture([...scenario.fixtures], invalid), null);
+          if (rejected.status === 'blocked' || rejected.code !== waiting.code) {
+            const stopped = await response(invalid);
+            assert.ok('content' in stopped);
+            assert.match(String(stopped.content), /notification-delivery-stopped/u);
+            assert.match(String(stopped.content), new RegExp(rejected.code, 'u'));
+          } else assert.equal(matchFixture([...scenario.fixtures], invalid), null);
         }
         append(input, 'delivery-publish-refreshed', waiting);
         const exhausted = structuredClone(input);
@@ -1546,6 +1564,61 @@ for (const scenario of [
             const delivered = await runAction(input, 'feedback');
             assert.equal(delivered.deliveryOperation, 'publish');
             assert.equal(delivered.digest, digest);
+            if (initial) {
+              const transient = {
+                status: 'retrying',
+                code: 'github-delivery-github-request',
+                providerDiagnostic: {
+                  provider: 'github',
+                  classification: 'transport',
+                  httpStatus: 500,
+                },
+              };
+              const recovery = structuredClone(input);
+              append(recovery, 'feedback-delivery-publish', transient);
+              const prepare = await runAction(recovery, 'feedback');
+              assert.equal(prepare.deliveryOperation, 'prepare');
+              assert.equal(prepare.id, id);
+              assert.equal(prepare.eventId, eventId);
+              append(recovery, 'feedback-link-prepare-0', {
+                status: 'prepared',
+                digest,
+                operation: { id: 'original-operation', creationAttempted: true },
+              });
+              const publish = await runAction(recovery, 'feedback');
+              assert.equal(publish.deliveryOperation, 'publish');
+              assert.equal(publish.digest, digest);
+              append(recovery, 'feedback-link-publish-0', { status: 'published' });
+              assert.equal((await runAction(recovery, 'feedback')).deliveryOperation, 'compose');
+              for (const classification of [
+                'authentication',
+                'permission',
+                'rate-limit',
+                'unknown',
+              ]) {
+                const denied = structuredClone(input);
+                append(denied, 'feedback-delivery-publish', {
+                  ...transient,
+                  providerDiagnostic: { ...transient.providerDiagnostic, classification },
+                });
+                const stopped = await runResponse(denied);
+                assert.ok('content' in stopped);
+                assert.match(String(stopped.content), /notification-delivery-stopped/u);
+                assert.match(String(stopped.content), new RegExp(classification, 'u'));
+              }
+              const exhausted = structuredClone(input);
+              append(exhausted, 'feedback-delivery-publish', transient);
+              for (let index = 0; index < 3; index++) {
+                assert.equal((await runAction(exhausted, 'feedback')).deliveryOperation, 'prepare');
+                append(exhausted, `feedback-link-prepare-${index}`, { status: 'prepared', digest });
+                assert.equal((await runAction(exhausted, 'feedback')).deliveryOperation, 'publish');
+                append(exhausted, `feedback-link-publish-${index}`, transient);
+              }
+              assert.deepEqual(await runResponse(exhausted), {
+                content:
+                  'notification-delivery-reconciliation-exhausted: github-delivery-github-request',
+              });
+            }
             if (initial) {
               append(input, 'feedback-delivery-publish', {
                 status: 'waiting',

@@ -97,13 +97,32 @@ function isContention(result: Record<string, unknown> | undefined) {
   );
 }
 
+function isTransientDelivery(result: Record<string, unknown>) {
+  const diagnostic = result.providerDiagnostic as Record<string, unknown> | undefined;
+  return (
+    result.status === 'retrying' &&
+    result.code === 'github-delivery-github-request' &&
+    diagnostic?.classification === 'transport' &&
+    [500, 502, 503, 504].includes(Number(diagnostic.httpStatus))
+  );
+}
+
 function isPendingDelivery(result: Record<string, unknown>) {
   return (
-    result.status === 'waiting' &&
-    ['github-delivery-linkage-unverified', 'github-delivery-head-not-observed'].includes(
-      String(result.code),
-    )
+    isTransientDelivery(result) ||
+    (result.status === 'waiting' &&
+      ['github-delivery-linkage-unverified', 'github-delivery-head-not-observed'].includes(
+        String(result.code),
+      ))
   );
+}
+
+function deliveryObstacle(result: Record<string, unknown>): FixtureResponse | undefined {
+  if (!['blocked', 'waiting', 'needs-attention', 'retrying'].includes(String(result.status)))
+    return;
+  return {
+    content: `notification-delivery-stopped: ${JSON.stringify({ status: result.status, code: result.code, providerDiagnostic: result.providerDiagnostic })}`,
+  };
 }
 
 const retryStage = (stage: string, attempt: number) =>
@@ -469,7 +488,11 @@ function respond(
         const operation = prepared.operation as Record<string, unknown> | undefined;
         const receipt = (operation?.pullRequest ?? delivered.pullRequest) as
           Record<string, unknown> | undefined;
-        if (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber) return;
+        if (
+          !isTransientDelivery(delivered) &&
+          (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber)
+        )
+          return;
         const published = result(`feedback-link-publish-${index}`);
         if (!published)
           return dispatch(`feedback-link-publish-${index}`, {
@@ -483,7 +506,7 @@ function respond(
       }
       if (isPendingDelivery(delivered))
         throw new Error(`notification-delivery-reconciliation-exhausted: ${delivered.code}`);
-      if (delivered.status !== 'published') return;
+      if (delivered.status !== 'published') return deliveryObstacle(delivered);
       if (initial) {
         const composed = result('feedback-delivery-compose');
         if (!composed)
@@ -833,7 +856,11 @@ function respond(
       }
       for (let index = 0; index < 3 && isPendingDelivery(published); index++) {
         const receipt = published.pullRequest as Record<string, unknown> | undefined;
-        if (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber) return;
+        if (
+          !isTransientDelivery(published) &&
+          (!receipt?.pullRequestNodeId || !receipt.pullRequestNumber)
+        )
+          return;
         const prepareStage = `delivery-link-prepare-${index}`;
         const retained = result(prepareStage);
         if (!retained)
@@ -860,7 +887,7 @@ function respond(
       }
       if (isPendingDelivery(published))
         throw new Error(`notification-delivery-reconciliation-exhausted: ${published.code}`);
-      if (published.status !== 'published') return;
+      if (published.status !== 'published') return deliveryObstacle(published);
       if (!update && published.workflowStatus !== 'delivered')
         throw new Error(
           'completed implementation with verified pr linkage must be delivered before its announcement',
@@ -944,7 +971,7 @@ function response(request: ChatCompletionRequest, options: PRFixtureOptions) {
   } catch (error) {
     if (
       error instanceof Error &&
-      /^(?:notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)|notification-delivery-reconciliation-exhausted: github-delivery-(?:linkage-unverified|head-not-observed))$/u.test(
+      /^(?:notification-retry-exhausted: (?:private-state-(?:file-lock-busy|snapshot-conflict)|discovery-checkpoint-changed)|notification-delivery-reconciliation-exhausted: github-delivery-(?:linkage-unverified|head-not-observed|github-request))$/u.test(
         error.message,
       )
     )

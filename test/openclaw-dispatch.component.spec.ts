@@ -49,6 +49,7 @@ import openClawCapacity from '../agent/openclaw-capacity.ts';
 import OpenClawIntake from '../agent/openclaw-intake.ts';
 import type { DispatchCaller } from '../agent/openclaw-session-create.ts';
 import { Value } from 'typebox/value';
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
@@ -7964,6 +7965,33 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(events[0]!.sourceId, comment.nodeId);
     assert.ok(events[0]!.turn);
   });
+  it('should return retained provider evidence when feedback fails before delivery completes', async () => {
+    const { id } = await feedbackOwner();
+    consumeSend = true;
+    await service.check(manifest, root);
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const event = (await record()).feedback!.events[0]!;
+    assert.ok(event.turn);
+    service.dependencies.feedbackConnect = async () => {
+      throw Object.assign(new Error('github-delivery-github-request'), {
+        providerDiagnostic: providerDiagnostic('github', 'api-request', 'transport', {
+          httpStatus: 500,
+        }),
+      });
+    };
+    const result = await service.run(manifest, root, assessor(id, event.turn.runId), {
+      action: 'feedback',
+      operation: 'context',
+      id,
+      eventId: event.id,
+    });
+    assert.equal(result.status, 'retrying');
+    assert.ok('providerDiagnostic' in result);
+    assert.equal(result.providerDiagnostic?.httpStatus, 500);
+    assert.equal(result.providerDiagnostic?.classification, 'transport');
+    assert.equal((await record()).feedback!.events[0]!.providerDiagnostic?.httpStatus, 500);
+  });
+
   for (const aborted of [false, true])
     it(`should resume feedback through operator dispatch with aborted handler ${aborted}`, async () => {
       const { id, comments } = await feedbackOwner();
@@ -8537,6 +8565,73 @@ describe('agent/openclaw issue dispatch', () => {
       }
       assert.ok(providerReads > 0);
     });
+
+  it('should launch manual work using only the default model profile', async () => {
+    fixture.item.assignees = [];
+    fixture.client.listAssignmentEvents = async () => {
+      throw new Error('manual work must not depend on assignment history');
+    };
+    manifest.models = { default: manifest.models!.default };
+    const selected = await service.dependencies.intake.select(manifest, root);
+    await rm(selected.store.location.path);
+    delete manifest.github!.notifications;
+    multiple = true;
+    const who = {
+      sessionKey: 'agent:receiver:manual-source',
+      sessionId: 'manual-source-id',
+      runId: 'manual-turn',
+      toolCallId: 'manual-launch',
+    };
+    sessions.set(who.sessionKey, { sessionId: who.sessionId });
+    histories.set(who.sessionKey, {
+      active: true,
+      inputReceipts: [],
+      messages: [
+        {
+          role: 'user',
+          content: 'Work on owner/repo#3',
+          __openclaw: {
+            id: 'manual-input',
+            runId: who.runId,
+            idempotencyKey: 'manual-turn:user',
+            senderIsOwner: true,
+          },
+        },
+      ],
+    });
+    const target = 'owner/repo#3';
+    const first = await service.run(
+      manifest,
+      root,
+      who,
+      {
+        action: 'launch',
+        operation: 'context',
+        target,
+        mode: 'plan',
+      },
+      true,
+    );
+    assert.ok('id' in first && typeof first.id === 'string', JSON.stringify(first));
+    assert.ok('digest' in first && typeof first.digest === 'string');
+    const launched = await service.run(
+      manifest,
+      root,
+      who,
+      {
+        action: 'launch',
+        operation: 'prepare',
+        target,
+        id: first.id,
+        digest: first.digest,
+        assessment: { complexity: 'medium', reason: 'Use existing workflow pieces.' },
+        title: 'MANUAL ISSUE',
+        fallback: 'default',
+      },
+      true,
+    );
+    assert.equal(launched.status, 'assessment-pending', JSON.stringify(launched));
+  });
 
   for (const kind of ['issue', 'pull-request'] as const)
     it(`should launch unassigned manual ${kind} work through existing native owners`, async () => {
