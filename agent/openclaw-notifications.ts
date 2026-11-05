@@ -189,9 +189,6 @@ export default class OpenClawNotifications {
               }),
           ...(record?.result ? { assessmentOutcome: record.result.outcome } : {}),
           worktree: record?.worktree ? 'ready' : 'pending',
-          ...(feedbackFailure && phase !== 'awaiting-reassignment'
-            ? { failureCode: feedbackFailure }
-            : {}),
           ...(feedback
             ? {
                 feedback: {
@@ -204,11 +201,7 @@ export default class OpenClawNotifications {
                 },
               }
             : {}),
-          ...(record?.work?.code || record?.blocker
-            ? { failureCode: record?.work?.code ?? record!.blocker }
-            : record?.result?.outcome === 'operator-setup-blocker'
-              ? { failureCode: record.result.code }
-              : {}),
+          ...(!prepared && record?.blocker ? { failureCode: record.blocker } : {}),
           workflow: { phase, ...(record?.threadId ? { conversation: record.threadId } : {}) },
         };
       });

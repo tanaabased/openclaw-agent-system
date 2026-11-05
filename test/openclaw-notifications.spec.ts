@@ -464,6 +464,49 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(result.status, 'completed');
   });
 
+  it('should observe native preparation independently of failed replies and historical results', async () => {
+    const f = fixture();
+    const r: OpenClawDispatchRecord = {
+      ...record(),
+      issueKey: issueKey(f.state!.records[0]!),
+      phase: 'created',
+      worktree: '/worktree',
+      threadId: 'issue-chat',
+      sessionCreation: {
+        attempted: true,
+        sourceSessionId: 'coordinator',
+        sourceRunId: 'run',
+        sourceToolCallId: 'tool',
+        sessionId: 'session',
+        verified: true,
+      },
+      feedback: { baseline: {}, events: [], code: 'feedback-publication-failed' },
+      blocker: 'historical-assessment-failed',
+    };
+    f.records.push(r);
+    const before = structuredClone(r);
+    for (const target of ['prepared', 'worktree-ready'] as const) {
+      const result = await f.service.wait(f.manifest, '/workspace', {
+        selector,
+        target,
+        timeoutMs: 1,
+        refresh: false,
+      });
+      assert.equal(result.status, 'completed');
+      assert.equal(result.observation.items[0]?.failureCode, undefined);
+      assert.equal(result.observation.items[0]?.reasonCode, 'feedback-publication-failed');
+      assert.equal(result.observation.items[0]?.assessmentOutcome, undefined);
+    }
+    const historical = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'plan-ready',
+      timeoutMs: 1,
+      refresh: false,
+    });
+    assert.equal(historical.status, 'timed-out');
+    assert.deepEqual(r, before);
+  });
+
   it('should report blocked and unreadable state as failure rather than an empty successful scan', async () => {
     const f = fixture();
     f.records.push({

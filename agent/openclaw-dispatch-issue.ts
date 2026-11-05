@@ -922,7 +922,7 @@ export default class OpenClawDispatchIssue {
     authority: DispatchAuthority,
     current: Pick<Awaited<ReturnType<OpenClawDispatchContext['scope']>>, 'admitted' | 'journal'>,
   ) {
-    let stage: 'snapshot' | 'verification' | 'commit' = 'snapshot';
+    let stage: 'snapshot' | 'verification' = 'snapshot';
     let enteredJournal = false;
     const signal = authority.signal ?? new AbortController().signal;
     try {
@@ -948,7 +948,6 @@ export default class OpenClawDispatchIssue {
           throw new Error('dispatch-assessment-caller-mismatch');
         return structuredClone(retained);
       }, false);
-      const snapshot = automationHash(record);
       if (record.retainedHistory?.terminal) {
         await authority.assertCurrent?.();
         return {
@@ -1003,21 +1002,7 @@ export default class OpenClawDispatchIssue {
               }
             : {}),
         };
-      stage = 'commit';
-      enteredJournal = false;
-      return await current.journal.exclusive(async (state, save, lockSignal) => {
-        enteredJournal = true;
-        signal.throwIfAborted();
-        lockSignal.throwIfAborted();
-        await authority.assertCurrent?.();
-        const retained = state.records.find((entry) => entry.id === action.id);
-        if (!retained || automationHash(retained) !== snapshot)
-          throw new Error('delivery-presentation-state-changed');
-        retained.work!.delivery!.presentation = record.work!.delivery!.presentation;
-        signal.throwIfAborted();
-        await save();
-        return result;
-      }, false);
+      return result;
     } catch (error) {
       signal.throwIfAborted();
       const code = openClawDispatchFailureCode(error);

@@ -5535,47 +5535,37 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).work!.delivery!.presentation, undefined);
   });
 
-  for (const stage of ['snapshot', 'commit'] as const) {
-    it(`should report retryable ${stage} contention without changing the publication receipt`, async () => {
-      const held = Promise.withResolvers<void>();
-      const release = Promise.withResolvers<void>();
-      let locking: Promise<void> | undefined;
-      const setup = await publishedFollowup(async () => {
-        if (stage === 'commit' && !locking) {
-          locking = setup.journal.exclusive(async () => {
-            held.resolve();
-            await release.promise;
-          });
-          await held.promise;
-        }
-      });
-      if (stage === 'snapshot') {
-        locking = setup.journal.exclusive(async () => {
-          held.resolve();
-          await release.promise;
-        });
-        await held.promise;
-      }
-      const before = await record();
-      try {
-        const result = await setup.present();
-        assert.equal(result.status, 'busy');
-        assert.ok(
-          'retryable' in result && result.retryable && 'stage' in result && result.stage === stage,
-        );
-        assert.deepEqual(
-          { ...(await record()), lifecycleCheckedAt: 0 },
-          { ...before, lifecycleCheckedAt: 0 },
-        );
-      } finally {
-        release.resolve();
-        await locking;
-      }
-      assert.equal((await setup.present()).status, 'presented');
+  it('should report retryable snapshot contention without changing the publication receipt', async () => {
+    const held = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const setup = await publishedFollowup();
+    const locking = setup.journal.exclusive(async () => {
+      held.resolve();
+      await release.promise;
     });
-  }
+    await held.promise;
+    const before = await record();
+    try {
+      const result = await setup.present();
+      assert.equal(result.status, 'busy');
+      assert.ok(
+        'retryable' in result &&
+          result.retryable &&
+          'stage' in result &&
+          result.stage === 'snapshot',
+      );
+      assert.deepEqual(
+        { ...(await record()), lifecycleCheckedAt: 0 },
+        { ...before, lifecycleCheckedAt: 0 },
+      );
+    } finally {
+      release.resolve();
+      await locking;
+    }
+    assert.equal((await setup.present()).status, 'presented');
+  });
 
-  it('should reject a changed record instead of saving a stale presentation snapshot', async () => {
+  it('should present the verified snapshot without overwriting concurrent task changes', async () => {
     const setup = await publishedFollowup(async () => {
       await setup.journal.exclusive(async (state, save) => {
         state.records[0]!.work!.delivery!.reconciled = false;
@@ -5583,9 +5573,24 @@ describe('agent/openclaw issue dispatch', () => {
       });
     });
     const result = await setup.present();
-    assert.ok('code' in result && result.code === 'delivery-presentation-state-changed');
+    assert.equal(result.status, 'presented');
     assert.equal((await record()).work!.delivery!.reconciled, false);
     assert.equal((await record()).work!.delivery!.presentation, undefined);
+  });
+
+  it('should present an explicit pr association without a delivery record', async () => {
+    const setup = await publishedFollowup();
+    await setup.journal.exclusive(async (state, save) => {
+      const retained = state.records[0]!;
+      retained.pullRequestLink = retained.work!.delivery!.pullRequest;
+      delete retained.work!.delivery;
+      await save();
+    });
+    const result = await setup.present();
+    assert.equal(result.status, 'presented');
+    assert.ok('presentation' in result && typeof result.presentation === 'string');
+    assert.match(result.presentation, /pull\/7/);
+    assert.equal((await record()).work!.delivery, undefined);
   });
 
   it('should preserve the published receipt across cancellation and later owner recovery', async () => {
