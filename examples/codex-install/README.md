@@ -189,7 +189,6 @@ printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
 printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
   | jq -e '.feedbackRuntime.argvPrefix[-1] == "feedback"'
 printf '%s\n' "$context" | grep -F 'For new routed work, use'
-printf '%s\n' "$context" | grep -F 'Reproduce the complete returned presentation Markdown in the final reply'
 
 # should approve installed runtime calls and leave unrelated commands to normal approval
 root="$TMPDIR/agent-system-codex-install"

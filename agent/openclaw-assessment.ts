@@ -5,7 +5,6 @@ import {
   managedPullRequest,
   type ManagedIssue as IntakeRecord,
 } from './managed-issue.ts';
-import openClawResponseAuthority from './openclaw-response-authority.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import assessmentHandoff from './assessment-handoff.ts';
 import { feedbackWorkContext } from './feedback-work.ts';
@@ -23,7 +22,6 @@ import assessmentPresentation from './dispatch-presentation.ts';
 import recordDispatchResult from './dispatch-result.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import issueInputEvent, { issueInputEventId } from './openclaw-session-input.ts';
-import openClawTurnReply from './openclaw-turn-evidence.ts';
 import { completeOpenClawMessage, openClawHistoryPages } from './openclaw-history.ts';
 import {
   describeIssueSession,
@@ -157,13 +155,6 @@ export async function issueAssessmentAction(input: {
     } else {
       if (issueInputEventId(user, caller.runId) !== meta.id)
         throw new Error('dispatch-assessment-input-unverified');
-      if (
-        record.assessmentTurn.status !== 'completed' &&
-        !(await openClawTurnReply(request, caller, record.assessmentTurn.runId, { first: history }))
-      ) {
-        if (!record.result) throw new Error('dispatch-assessment-continuation-not-ready');
-        await openClawResponseAuthority({ request, record, caller, config: input.config });
-      }
     }
     inputEventId = meta.id;
   }

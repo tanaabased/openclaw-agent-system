@@ -23,7 +23,10 @@ import {
   progressionExampleScenario,
   retainedPlan,
 } from '../examples/openclaw-issue-progression/model-fixture.ts';
-import { prExampleScenario } from '../examples/openclaw-pr-journey/model-fixture.ts';
+import {
+  createPRExampleScenario,
+  prExampleScenario,
+} from '../examples/openclaw-pr-journey/model-fixture.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
 import resolveExampleModelScenario from '../scripts/example-model-scenarios.ts';
@@ -110,6 +113,7 @@ for (const scenario of [
     let pages = 0;
     for (; pages < 64; pages++) {
       const next = await response(input);
+      if ('content' in next) break;
       assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
       const args = JSON.parse(next.toolCalls[0]!.arguments);
       if (!args.material) break;
@@ -971,13 +975,14 @@ for (const scenario of [
       });
       for (const mode of ['operator', 'work', 'auto', 'custom'])
         it(`should carry ${mode} through implementation and the same delivery on retry`, async () => {
+          const workScenario = createPRExampleScenario(scenario.id);
           const input = request(
             mode === 'operator'
               ? `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`
               : `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
           );
           if (mode !== 'operator') {
-            await action(input, 'context');
+            await action(input, 'context', workScenario);
             append(input, 'context', {
               status: 'verified',
               runtime: 'openclaw',
@@ -991,13 +996,13 @@ for (const scenario of [
                 guidance: { content: 'Preserve the evidence limit.\nExplain cleanup ordering.' },
               },
             });
-            const git = await response(input);
+            const git = await response(input, workScenario);
             assert.ok('toolCalls' in git && git.toolCalls?.[0]?.name === 'agent_system_git');
             append(input, 'git', { exitCode: 0, stdout: '/tmp/owned', truncated: false });
-            const read = await response(input);
+            const read = await response(input, workScenario);
             assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
             append(input, 'assessment-skill', 'Explain the cleanup sequence.');
-            const assessment = await action(input, 'result');
+            const assessment = await action(input, 'result', workScenario);
             if (mode === 'auto') {
               const decision = assessment.result.decision;
               assert.ok(decision && 'mode' in decision);
@@ -1011,11 +1016,14 @@ for (const scenario of [
               presentation: 'Retained plan.',
               handoff: { next: 'implementation' },
             });
-            await publishProgressionSummary(input);
+            await publishProgressionSummary(input, workScenario);
           }
           if (mode === 'operator')
-            assert.equal((await action(input, 'implementation')).operation, 'context');
-          else await action(input, 'implementation-context');
+            assert.equal(
+              (await action(input, 'implementation', workScenario)).operation,
+              'context',
+            );
+          else await action(input, 'implementation-context', workScenario);
           append(input, 'work-context', {
             status: 'verified',
             runtime: 'openclaw',
@@ -1031,11 +1039,11 @@ for (const scenario of [
               },
             },
           });
-          const selected = await response(input);
+          const selected = await response(input, workScenario);
           assert.ok('toolCalls' in selected && selected.toolCalls?.[0]?.name === 'read');
           append(input, 'implementation-skill', 'Implement the cleanup sequence.');
           for (const stage of ['apply', 'check', 'add', 'commit']) {
-            const next = await response(input);
+            const next = await response(input, workScenario);
             assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
             assert.equal(next.toolCalls[0]!.name, 'agent_system_git');
             assert.equal(JSON.parse(next.toolCalls[0]!.arguments).cwd, '/tmp/owned');
@@ -1046,7 +1054,7 @@ for (const scenario of [
               );
             append(input, stage, { exitCode: 0, truncated: false, stdout: '' });
           }
-          await action(input, 'implementation-result');
+          await action(input, 'implementation-result', workScenario);
           append(input, 'work-result', {
             status: 'recorded',
             handoff: {
@@ -1054,9 +1062,9 @@ for (const scenario of [
               request: { action: 'delivery', id, operation: 'prepare' },
             },
           });
-          assert.equal((await action(input, 'delivery')).operation, 'prepare');
+          assert.equal((await action(input, 'delivery', workScenario)).operation, 'prepare');
           append(input, 'delivery-prepare', { status: 'prepared', digest });
-          assert.equal((await action(input, 'delivery')).digest, digest);
+          assert.equal((await action(input, 'delivery', workScenario)).digest, digest);
           const failedGit = structuredClone(input);
           append(failedGit, 'delivery-publish', {
             status: 'needs-attention',
@@ -1066,7 +1074,7 @@ for (const scenario of [
               providerMessage: 'Permission denied (publickey).',
             },
           });
-          const stopped = await response(failedGit);
+          const stopped = await response(failedGit, workScenario);
           assert.ok('content' in stopped);
           assert.match(String(stopped.content), /delivery-git-operation-failed/u);
           assert.match(String(stopped.content), /authentication/u);
@@ -1075,55 +1083,57 @@ for (const scenario of [
             code: 'github-delivery-linkage-unverified',
             pullRequest: { pullRequestNodeId: 'PR_owned', pullRequestNumber: 456 },
           });
-          const reconciliation = await action(input, 'delivery');
+          const reconciliation = await action(input, 'delivery', workScenario);
           assert.equal(reconciliation.operation, 'prepare');
           assert.equal(reconciliation.id, id);
           append(input, 'delivery-link-prepare-0', { status: 'prepared', digest });
-          const linkageRetry = await action(input, 'delivery');
+          const linkageRetry = await action(input, 'delivery', workScenario);
           assert.equal(linkageRetry.operation, 'publish');
           assert.equal(linkageRetry.id, id);
           append(input, 'delivery-link-publish-0', {
             status: 'published',
             workflowStatus: 'native-unobserved',
           });
-          assert.equal((await action(input, 'delivery')).operation, 'link');
+          assert.equal((await action(input, 'delivery', workScenario)).operation, 'link');
           append(input, 'delivery-association', {
             status: 'linked',
             pullRequest: { pullRequestNumber: 456 },
           });
-          assert.equal((await action(input, 'delivery')).operation, 'compose');
+          assert.equal((await action(input, 'delivery', workScenario)).operation, 'compose');
           append(input, 'delivery-compose', {
             status: 'composition-ready',
             digest,
             selection: { defaultSkill: true, skill: { path: '/skills/reply/SKILL.md' } },
           });
-          const skill = await response(input);
+          const skill = await response(input, workScenario);
           assert.ok('toolCalls' in skill && skill.toolCalls?.[0]?.name === 'read');
           append(input, 'delivery-skill', { content: 'Reply skill instructions.' });
-          assert.equal((await action(input, 'delivery')).operation, 'candidate');
+          assert.equal((await action(input, 'delivery', workScenario)).operation, 'candidate');
           append(input, 'delivery-candidate', { status: 'announcement-prepared', digest });
-          assert.equal((await action(input, 'delivery')).operation, 'announce');
+          assert.equal((await action(input, 'delivery', workScenario)).operation, 'announce');
           append(input, 'delivery-announce', { status: 'announced' });
           if (mode === 'operator') {
-            assert.ok('content' in (await response(input)));
+            assert.ok('content' in (await response(input, workScenario)));
           } else {
-            assert.equal((await action(input, 'delivery')).operation, 'announce');
+            assert.equal((await action(input, 'delivery', workScenario)).operation, 'announce');
             append(input, 'delivery-repeat', { status: 'announced' });
-            assert.equal((await action(input, 'delivery')).operation, 'present');
+            assert.equal((await action(input, 'delivery', workScenario)).operation, 'present');
             append(input, 'delivery-present', { status: 'presented', presentation: '> PR card' });
-            assert.deepEqual(await response(input), { content: '> PR card' });
+            assert.deepEqual(await response(input, workScenario), { content: '> PR card' });
           }
           const retry = request(
             `Operator request for managed issue ${id}: Show the saved plan and existing PR card again.`,
           );
-          await action(retry, 'present');
+          await action(retry, 'present', workScenario);
           append(retry, 'assessment-present', {
             status: 'presented',
             presentation: '> Saved plan',
           });
-          assert.equal((await action(retry, 'delivery')).operation, 'present');
+          assert.equal((await action(retry, 'delivery', workScenario)).operation, 'present');
           append(retry, 'delivery-present', { status: 'presented', presentation: '> PR card' });
-          assert.deepEqual(await response(retry), { content: '> Saved plan\n\n> PR card' });
+          assert.deepEqual(await response(retry, workScenario), {
+            content: '> Saved plan\n\n> PR card',
+          });
         });
 
       it('should commit a follow-up and reuse the existing announcement after updating the pr', async () => {

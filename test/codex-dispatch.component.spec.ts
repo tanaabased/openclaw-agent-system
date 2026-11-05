@@ -4413,7 +4413,7 @@ describe('agent/codex-dispatch', () => {
     const retained = (await store.read()).records[0]!;
     assert.equal(retained.progression?.workOwner, 'issue');
     assert.equal(retained.progression?.via, 'operator');
-    assert.deepEqual(retained.result, question);
+    assert.equal(retained.result, undefined);
     assert.equal(retained.feedback!.events[0]!.work, undefined);
     assert.equal(retained.feedback!.events[0]!.result, undefined);
     assert.equal(retained.continuation!.attempt, undefined);

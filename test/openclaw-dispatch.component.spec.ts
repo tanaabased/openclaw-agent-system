@@ -6860,14 +6860,7 @@ describe('agent/openclaw issue dispatch', () => {
     );
     assert.equal(resumed.status, 'verified');
     assert.ok('previousResult' in resumed);
-    assert.deepEqual(resumed.previousResult, question);
-    assert.ok(
-      'contextMaterials' in resumed &&
-        resumed.contextMaterials?.aliases.some(
-          ({ path, from }) =>
-            path[0] === 'previousImplementationResult' && from[0] === 'previousResult',
-        ),
-    );
+    assert.equal(resumed.previousResult, undefined);
     assert.ok('implementation' in resumed);
     const hydrated = await hydrateImplementation(resumed, async (request) =>
       service.run(
