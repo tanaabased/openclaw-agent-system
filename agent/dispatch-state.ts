@@ -1,7 +1,7 @@
-import { projectPickupStateSchema } from './project-pickup-state.ts';
-import resetProjectPickup from './project-pickup-reset.ts';
+import { issuePickupStateSchema } from './issue-pickup-state.ts';
+import resetIssuePickup from './issue-pickup-reset.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { projectWorkSchema } from './project-pickup-authority.ts';
+import { projectWorkSchema } from './issue-pickup-authority.ts';
 import { issueKey } from './dispatch-pending.ts';
 import { adoptedPullRequestSchema } from './delivery-state.ts';
 import ColdHistory from './cold-history.ts';
@@ -161,7 +161,8 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       scope: hash,
       resetGeneration: Type.Optional(text),
       records: Type.Array(Type.Unsafe<R>(recordSchema)),
-      projectPickup: Type.Optional(projectPickupStateSchema),
+      // persisted compatibility field, not the current manifest policy name.
+      projectPickup: Type.Optional(issuePickupStateSchema),
       openclawOccurrence: Type.Optional(
         Type.Object(
           { sessionKey: text, sessionId: text, runId: text },
@@ -636,14 +637,14 @@ export default class DispatchStore<R extends SharedDispatchRecord> {
   async reset(generation: string): Promise<void> {
     await this.exclusive(async (state, save) => {
       if (state.resetGeneration === generation) return;
-      const projectPickup = resetProjectPickup(state.projectPickup, state.records);
+      const pickup = resetIssuePickup(state.projectPickup, state.records);
       for (const key of Object.keys(state)) delete (state as Record<string, unknown>)[key];
       Object.assign(state, {
         version: 1,
         scope: this.scope,
         resetGeneration: generation,
         records: [],
-        ...(projectPickup ? { projectPickup } : {}),
+        ...(pickup ? { projectPickup: pickup } : {}),
       });
       await save();
     }, true);

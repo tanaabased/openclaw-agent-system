@@ -27,7 +27,7 @@ export default async function notificationAutomationReadiness(
   const record = (await store.read()).records.find(({ id }) => id === declared.id);
   if (!record) return 'intake-activation-required';
   if (expectedNativeId && record.nativeId !== expectedNativeId)
-    return 'project-pickup-enrollment-changed';
+    return 'issue-pickup-enrollment-changed';
   if (!declared.enabled) return 'intake-automation-paused';
   if (record.removed || record.pending || !record.nativeId || !record.nativeHash)
     return 'intake-automation-update-required';

@@ -10,7 +10,7 @@ import {
   intakeFixture,
   removeFixtureAssignment,
 } from './github-intake-fixture.ts';
-import { reservedProjectPickup } from './project-pickup-fixture.ts';
+import { reservedIssuePickup } from './issue-pickup-fixture.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
 import cleanupConfiguration from '../agent/cleanup-configuration.ts';
 import CodexAssignmentClaims, { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
@@ -5405,7 +5405,7 @@ describe('agent/codex-dispatch', () => {
     );
     await selected.store.exclusive(async (state, save) => {
       const intake = state!.records[0]!;
-      const pickup = reservedProjectPickup(intake, 'codex');
+      const pickup = reservedIssuePickup(intake, 'codex');
       await journal.exclusive(async (dispatch, save) => {
         dispatch.projectPickup = pickup;
         await save();

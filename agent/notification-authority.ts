@@ -22,8 +22,9 @@ export function notificationAuthority(policy: GitHubNotificationPolicy) {
       : { routing: normalizeRepositoryRouting(policy.routing) }),
     issueAssignment: policy.issueAssignment,
     reviewRequest: policy.reviewRequest,
-    ...(policy.projectPickup
-      ? { projectPickup: { ...policy.projectPickup, paused: undefined } }
+    ...(policy.issuePickup
+      ? // this projection is hashed into retained receipts; keep its serialized key stable.
+        { projectPickup: { ...policy.issuePickup, paused: undefined } }
       : {}),
   });
   value.runtimes = ordered(value.runtimes);

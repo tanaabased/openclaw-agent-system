@@ -3,7 +3,7 @@ import recoverOpenClawAnnouncement from './openclaw-announcement-recovery.ts';
 import { announcementRecoveryAction } from './delivery-announcement-recovery.ts';
 import issueWorkflowProgress from './issue-workflow-progress.ts';
 import { assignmentClaimRoute } from './assignment-claim-source.ts';
-import projectPickupCapacity from './project-pickup-capacity.ts';
+import issuePickupCapacity from './issue-pickup-capacity.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
@@ -613,7 +613,7 @@ export default class OpenClawDispatchCoordinator {
         sessionId: caller.sessionId,
         runId: caller.runId,
         limit: current.policy.policy.maxConcurrentItems,
-        allowance: capacity.available + projectPickupCapacity(state.projectPickup),
+        allowance: capacity.available + issuePickupCapacity(state.projectPickup),
         candidates: [
           ...assignments.map(({ intake }) => ({
             id: intake.id,

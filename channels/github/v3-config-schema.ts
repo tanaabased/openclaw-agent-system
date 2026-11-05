@@ -1,8 +1,8 @@
 import { Type, type Static } from 'typebox';
 
-import decodeProjectPickup, { projectPickupSchema } from './project-pickup-schema.ts';
+import decodeIssuePickup, { issuePickupSchema } from './issue-pickup-schema.ts';
+import { decodeRepositoryRouting, repositoryRouteSchema } from './repository-scope.ts';
 import { automationModelProperties } from '../../manifest/automation-schema.ts';
-import { repositoryRouteSchema } from './repository-scope.ts';
 
 import {
   assessmentConfigurationSchema,
@@ -39,7 +39,8 @@ const trigger = {
 };
 
 export const githubV3Properties = {
-  'project-pickup': Type.Optional(projectPickupSchema),
+  'issue-pickup': Type.Optional(issuePickupSchema),
+  'project-pickup': Type.Optional(issuePickupSchema),
   'schema-version': Type.Optional(Type.Literal(3)),
   runtimes: Type.Optional(
     Type.Array(Type.Union([Type.Literal('openclaw'), Type.Literal('codex')]), {
@@ -113,16 +114,15 @@ export default function decodeGitHubV3(value: ExternalGitHubV3): GitHubNotificat
   const issue = value['issue-assignment'];
   const review = value['review-request'];
   const reviewers = (issue?.reviewers ?? []).map(identity);
+  const pickup = value['issue-pickup'] ?? value['project-pickup'];
   return {
     schemaVersion: 3,
     runtimes: value.runtimes ?? ['openclaw', 'codex'],
     intervalMinutes: value['interval-minutes'] ?? 5,
     maxConcurrentItems: value['max-concurrent-items'] ?? 3,
-    ...(value['project-pickup']
-      ? { projectPickup: decodeProjectPickup(value['project-pickup']) }
-      : {}),
+    ...(pickup ? { issuePickup: decodeIssuePickup(pickup) } : {}),
     ...('routing' in value
-      ? { routing: [...value.routing], allowedRepositoryOwners: [] }
+      ? { routing: decodeRepositoryRouting(value.routing), allowedRepositoryOwners: [] }
       : { allowedRepositoryOwners: value['allowed-repository-owners'].map(identity) }),
     ...(issue === undefined
       ? {}

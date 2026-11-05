@@ -1,4 +1,4 @@
-import type { ProjectWork } from './project-pickup-authority.ts';
+import type { ProjectWork } from './issue-pickup-authority.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 
 type Mode = 'plan' | 'work' | 'auto';

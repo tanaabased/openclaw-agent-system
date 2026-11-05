@@ -12,7 +12,7 @@ import {
   removeFixtureAssignment,
   originalIntakeDigest,
 } from './github-intake-fixture.ts';
-import { reservedProjectPickup } from './project-pickup-fixture.ts';
+import { reservedIssuePickup } from './issue-pickup-fixture.ts';
 import assert from 'node:assert/strict';
 import { attemptedAnnouncement } from './delivery-announcement-fixture.ts';
 import { automationHash } from '../agent/automation-hash.ts';
@@ -3624,7 +3624,7 @@ describe('agent/openclaw issue dispatch', () => {
     const journal = selected.journal;
     await selected.store.exclusive(async (state, save) => {
       const intake = state!.records[0]!;
-      const pickup = reservedProjectPickup(intake, 'openclaw');
+      const pickup = reservedIssuePickup(intake, 'openclaw');
       await journal.exclusive(async (dispatch, save) => {
         dispatch.projectPickup = pickup;
         await save();

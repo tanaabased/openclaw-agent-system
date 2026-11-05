@@ -1,6 +1,6 @@
 import { hasDeliveredImplementation } from './implementation-delivery.ts';
-import projectPickupCapacity from './project-pickup-capacity.ts';
-import type { ProjectPickupState } from './project-pickup-state.ts';
+import issuePickupCapacity from './issue-pickup-capacity.ts';
+import type { IssuePickupState } from './issue-pickup-state.ts';
 import issueWorkflowProgress from './issue-workflow-progress.ts';
 import { feedbackWorkStarted } from './feedback-work.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
@@ -60,11 +60,11 @@ export function codexItemOccupied(record: DispatchRecord): boolean {
 export default function codexCapacity(
   records: DispatchRecord[],
   limit: number,
-  pickup?: ProjectPickupState,
+  pickup?: IssuePickupState,
   excludeIssue?: string,
 ) {
   if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('dispatch-capacity-invalid');
   const occupied =
-    records.filter(codexItemOccupied).length + projectPickupCapacity(pickup, excludeIssue);
+    records.filter(codexItemOccupied).length + issuePickupCapacity(pickup, excludeIssue);
   return { occupied, available: Math.max(0, limit - occupied) };
 }

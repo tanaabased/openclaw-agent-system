@@ -63,7 +63,7 @@ describe('channels/github/repository-scope', () => {
       {
         id: 'main-pool',
         match: 'OWNER/REPO',
-        workflows: ['review-request', 'project-pickup', 'issue-assignment'],
+        workflows: ['review-request', 'issue-pickup', 'issue-assignment'],
         target: { instances: [a, b] },
       },
       { 'owner/*': 'local' },
@@ -73,10 +73,10 @@ describe('channels/github/repository-scope', () => {
     policy.routing.unshift({
       id: 'review-or-pickup',
       match: 'owner/repo',
-      workflows: ['review-request', 'project-pickup'],
+      workflows: ['review-request', 'issue-pickup'],
       target: { instance: b },
     });
-    for (const workflow of ['review-request', 'project-pickup'] as const) {
+    for (const workflow of ['review-request', 'issue-pickup'] as const) {
       const result = repositoryScope(policy, repository, workflow);
       assert.equal(result.ruleId, 'review-or-pickup');
       assert.equal(result.decision, 'swarm');

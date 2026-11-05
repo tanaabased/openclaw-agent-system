@@ -1,5 +1,5 @@
 import { githubIdentitySet } from './provider/work-item.ts';
-import { projectPickupConfigurationCode } from './project-pickup-schema.ts';
+import { issuePickupConfigurationCode } from './issue-pickup-schema.ts';
 import { repositoryRoutingDiagnostics, repositoryScopeCandidate } from './repository-scope.ts';
 import type { GitHubNotificationsDeclaration } from './workflow-policy.ts';
 import type { GitHubManifestConfiguration } from '../../manifest/github-schema.ts';
@@ -26,41 +26,41 @@ export function validateGitHubNotificationPolicy(
           ? 'allowed-repository-owners is deprecated. Use ordered github.routing name patterns for new work; legacy identity pins remain active until you migrate.'
           : 'github.routing takes precedence. allowed-repository-owners is ignored; remove the deprecated property after migration to avoid restoring it when routing is removed.',
     });
-  if (policy.projectPickup) {
+  if (policy.issuePickup) {
     if (!policy.issueAssignment)
       diagnostics.push({
-        code: 'github-project-pickup-assignment-required',
-        fieldPath: '/github/project-pickup',
+        code: 'github-issue-pickup-assignment-required',
+        fieldPath: '/github/issue-pickup',
         message:
-          'Project pickup requires issue-assignment and its existing actor and workflow settings.',
+          'Issue pickup requires issue-assignment and its existing actor and workflow settings.',
         severity: 'error',
       });
-    if (!policy.projectPickup.schedule)
+    if (!policy.issuePickup.schedule)
       diagnostics.push({
-        code: 'github-project-pickup-schedule-invalid',
-        fieldPath: '/github/project-pickup',
+        code: 'github-issue-pickup-schedule-invalid',
+        fieldPath: '/github/issue-pickup',
         message:
-          policy.projectPickup.timingError === 'project-pickup-timing-conflict'
+          policy.issuePickup.timingError === 'issue-pickup-timing-conflict'
             ? 'window, duration and end must describe the same pickup period.'
             : 'Use a local start time, a positive window of at most 24 hours, and scans spaced at least one minute apart.',
         severity: 'error',
       });
     const repositories = new Set<string>();
-    for (const [index, project] of policy.projectPickup.projects.entries()) {
+    for (const [index, project] of policy.issuePickup.projects.entries()) {
       const repository = project.repository.toLowerCase();
       const [owner, name] = repository.split('/') as [string, string];
-      const fieldPath = `/github/project-pickup/projects/${index}/repository`;
+      const fieldPath = `/github/issue-pickup/projects/${index}/repository`;
       if (repositories.has(repository))
         diagnostics.push({
-          code: 'github-project-pickup-repository-duplicate',
+          code: 'github-issue-pickup-repository-duplicate',
           fieldPath,
           message: 'Configure each pickup repository only once.',
           severity: 'error',
         });
       repositories.add(repository);
-      if (!repositoryScopeCandidate(policy, owner, name, 'project-pickup'))
+      if (!repositoryScopeCandidate(policy, owner, name, 'issue-pickup'))
         diagnostics.push({
-          code: 'github-project-pickup-repository-outside-workflow',
+          code: 'github-issue-pickup-repository-outside-workflow',
           fieldPath,
           message:
             'Choose a repository included by github.routing, or by legacy owners when routing is absent. Pickup does not expand repository access.',
@@ -110,14 +110,14 @@ export function validateGitHubNotificationPolicy(
 export interface GitHubNotificationRuntimeDiagnostic {
   code:
     | 'github-notification-runtime-unsupported'
-    | 'project-pickup-schedule-unsupported'
-    | 'project-pickup-timing-conflict'
-    | 'project-pickup-schedule-precision';
+    | 'issue-pickup-schedule-unsupported'
+    | 'issue-pickup-timing-conflict'
+    | 'issue-pickup-schedule-precision';
   fieldPath: string;
   message: string;
   remediation: string;
   status: 'blocked' | 'warning';
-  workflow: 'issue-assignment' | 'review-request' | 'project-pickup';
+  workflow: 'issue-assignment' | 'review-request' | 'issue-pickup';
 }
 
 /** scope missing capabilities to their workflow; optional feedback never gates assignment. */
@@ -127,16 +127,16 @@ export function githubNotificationRuntimeDiagnostics(
 ): GitHubNotificationRuntimeDiagnostic[] {
   if (!declaration || !declaration.runtimes.includes(runtime)) return [];
   const diagnostics: GitHubNotificationRuntimeDiagnostic[] = [];
-  const pickupCode = projectPickupConfigurationCode(declaration);
+  const pickupCode = issuePickupConfigurationCode(declaration);
   if (pickupCode)
     diagnostics.push({
       code: pickupCode,
-      fieldPath: '/github/project-pickup',
-      message: 'Project pickup timing is invalid or conflicting.',
+      fieldPath: '/github/issue-pickup',
+      message: 'Issue pickup timing is invalid or conflicting.',
       remediation:
         'Set start, window (or duration/end), and scans. Use matching duration fields and at least one minute between scans; the daily window cannot exceed 24 hours.',
       status: 'warning',
-      workflow: 'project-pickup',
+      workflow: 'issue-pickup',
     });
   const review = declaration.reviewRequest;
   if (review && (review.paused !== undefined || review.allowed.length))

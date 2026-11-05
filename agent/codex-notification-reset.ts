@@ -1,5 +1,5 @@
 import notificationResetPickup from './notification-reset-pickup.ts';
-import { projectPickupAutomationId } from './project-pickup-jobs.ts';
+import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -300,7 +300,7 @@ export default async function runCodexNotificationReset(
         before,
         deps,
         { nativeInventory: input.nativeInventory, placementReceipt: input.placementReceipt },
-        pickup ? projectPickupAutomationId : undefined,
+        pickup ? issuePickupAutomationId : undefined,
       );
       if (replacement.status !== 'done') return replacement;
       const saved = JSON.parse(replacement.automation) as SavedAutomation;
@@ -424,7 +424,7 @@ export default async function runCodexNotificationReset(
       purge: preview.purge,
       continuing: preview.continuing,
       fresh: preview.fresh,
-      jobs: ['github-issue-assignment', ...(preview.pickup ? [projectPickupAutomationId] : [])],
+      jobs: ['github-issue-assignment', ...(preview.pickup ? [issuePickupAutomationId] : [])],
       resources: preview.resources,
       instruction:
         'confirm the selection, then repeat notifications reset with yes:true; both installed notification jobs pause and managed turns must finish before reset',

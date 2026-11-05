@@ -1,5 +1,5 @@
 import manualPullRequest from './manual-pull-request.ts';
-import { projectWorkMatches } from './project-pickup-authority.ts';
+import { projectWorkMatches } from './issue-pickup-authority.ts';
 import { managedPullRequest, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
@@ -186,7 +186,7 @@ export async function inspectAdmittedIssue(
     throw new Error('dispatch-assignment-actor-changed');
   const work = record.evidence?.projectWork;
   if (work) {
-    if (!projectWorkMatches(work, record)) throw new Error('project-pickup-authority-mismatch');
+    if (!projectWorkMatches(work, record)) throw new Error('issue-pickup-authority-mismatch');
   }
   return current;
 }

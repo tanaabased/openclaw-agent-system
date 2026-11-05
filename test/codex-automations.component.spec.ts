@@ -1,6 +1,6 @@
 import { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
-import ProjectPickupEnrollmentStore from '../agent/project-pickup-enrollment.ts';
-import selectionFixture from './project-pickup-selection-fixture.ts';
+import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
+import selectionFixture from './issue-pickup-selection-fixture.ts';
 import assert from 'node:assert/strict';
 import {
   appendFile,
@@ -477,7 +477,7 @@ describe('agent/codex-automations', () => {
           mode: 'plan',
           allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
         },
-        'project-pickup': {
+        'issue-pickup': {
           model: 'high',
           effort: 'minimal',
           paused: false,
@@ -490,7 +490,22 @@ describe('agent/codex-automations', () => {
         },
       },
     };
-    const saveManifest = () => writeFile(join(workspace, 'agent.yaml'), JSON.stringify(source));
+    const saveManifest = (legacy = false) =>
+      writeFile(
+        join(workspace, 'agent.yaml'),
+        JSON.stringify(
+          legacy
+            ? {
+                ...source,
+                github: {
+                  ...source.github,
+                  'issue-pickup': undefined,
+                  'project-pickup': source.github['issue-pickup'],
+                },
+              }
+            : source,
+        ),
+      );
     await saveManifest();
     const conversations = new Map<
       string,
@@ -540,7 +555,7 @@ describe('agent/codex-automations', () => {
     // seed an installed old declaration; the native scheduler remains a fixture boundary.
     const legacySource = {
       ...source,
-      github: { ...source.github, 'project-pickup': undefined },
+      github: { ...source.github, 'issue-pickup': undefined },
       automations: [
         {
           id: 'github-project-pickup',
@@ -565,7 +580,7 @@ describe('agent/codex-automations', () => {
     const legacyChat = legacyPickup.definition.targetThreadId;
     const legacyHistory = structuredClone(conversations.get(legacyChat));
     await saveManifest();
-    const enrollments = new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root);
+    const enrollments = new IssuePickupEnrollmentStore(codexInstanceStore(pluginData).root);
     const priorEnrollment = await prepareCodexPickupEnrollment(pluginData, {
       ...dependencies.intake,
       codexHome,
@@ -578,7 +593,7 @@ describe('agent/codex-automations', () => {
         ...source,
         github: {
           ...source.github,
-          'project-pickup': { ...source.github['project-pickup'], thread: { id: legacyChat } },
+          'issue-pickup': { ...source.github['issue-pickup'], thread: { id: legacyChat } },
         },
       }),
     );
@@ -588,7 +603,8 @@ describe('agent/codex-automations', () => {
     assert.equal(blocked.status, 'blocked', JSON.stringify(blocked));
     assert.ok(
       blocked.findings.some(
-        ({ id, code }) => id === 'issue-pickup' && code === 'automation-thread-schedule-conflict',
+        ({ id, code }) =>
+          id === 'github-issue-pickup' && code === 'automation-thread-schedule-conflict',
       ),
       JSON.stringify(blocked),
     );
@@ -602,13 +618,13 @@ describe('agent/codex-automations', () => {
     await syncThreads(dependencies);
     const sameChat = await inspectCodexAutomations(pluginData, inputs(), dependencies);
     const sameChatReplacement = sameChat.actions.find(
-      ({ manifestId }) => manifestId === 'issue-pickup',
+      ({ manifestId }) => manifestId === 'github-issue-pickup',
     )!;
     assert.equal(sameChatReplacement.mode, 'create');
     assert.ok(sameChatReplacement.expected.kind === 'heartbeat');
     assert.equal(sameChatReplacement.expected.targetThreadId, legacyChat);
     await nativeWrite({ ...legacyPickup.definition, status: 'ACTIVE' }, legacyPickup.id);
-    await saveManifest();
+    await saveManifest(true);
     await syncThreads(dependencies);
     await reconcile();
     const installedPickup = (await readCodexAutomations(codexHome)).find(
@@ -630,7 +646,7 @@ describe('agent/codex-automations', () => {
     assert.equal(installedPickup.definition.rrule, legacyPickup.definition.rrule);
     assert.match(
       installedPickup.definition.prompt,
-      /Managed by Agent System \(codex:[^:]+:issue-pickup\)\./u,
+      /Managed by Agent System \(codex:[^:]+:github-issue-pickup\)\./u,
     );
     for (const { name, model, effort } of conversations.values())
       assert.deepEqual(
@@ -645,10 +661,11 @@ describe('agent/codex-automations', () => {
     assert.equal(active.nativeId, first.nativeId);
     assert.equal((await readCodexAutomations(codexHome)).length, 3);
     assert.equal(conversations.size, 3);
+    await saveManifest();
     await reconcile();
     assert.deepEqual((await enrollments.read()).records, [first]);
-    source.github['project-pickup'].model = 'low';
-    source.github['project-pickup'].effort = 'high';
+    source.github['issue-pickup'].model = 'low';
+    source.github['issue-pickup'].effort = 'high';
     await saveManifest();
     await syncThreads(dependencies);
     await reconcile();
@@ -658,20 +675,20 @@ describe('agent/codex-automations', () => {
     assert.equal(pickupThread.model, 'gpt-6-luna');
     assert.equal(pickupThread.effort, 'high');
     assert.deepEqual((await enrollments.read()).records, [first]);
-    source.github['project-pickup'].paused = true;
+    source.github['issue-pickup'].paused = true;
     await saveManifest();
     await reconcile();
     await assert.rejects(
       inspectCodexPickupActivation(pluginData, dependencies),
-      rejectsCode('project-pickup-paused'),
+      rejectsCode('issue-pickup-paused'),
     );
-    source.github['project-pickup'].paused = false;
+    source.github['issue-pickup'].paused = false;
     await saveManifest();
     await reconcile();
     assert.deepEqual(await inspectCodexPickupActivation(pluginData, dependencies), active);
     assert.deepEqual((await enrollments.read()).records, [first]);
-    source.github['project-pickup'].projects[0]!.limit = 3;
-    source.github['project-pickup'].projects[0]!.milestone.number = 11;
+    source.github['issue-pickup'].projects[0]!.limit = 3;
+    source.github['issue-pickup'].projects[0]!.milestone.number = 11;
     provider.milestone.number = 11;
     provider.milestone.nodeId = 'MI_next';
     await saveManifest();
@@ -692,13 +709,13 @@ describe('agent/codex-automations', () => {
     await nativeWrite({ ...saved.definition, rrule: 'FREQ=DAILY' }, saved.id);
     await assert.rejects(
       inspectCodexPickupActivation(pluginData, dependencies),
-      rejectsCode('project-pickup-automation-drift'),
+      rejectsCode('issue-pickup-automation-drift'),
     );
     await rm(join(codexHome, 'automations', saved.id), { recursive: true });
     await nativeWrite(saved.definition, 'copied-marker');
     await assert.rejects(
       inspectCodexPickupActivation(pluginData, dependencies),
-      rejectsCode('project-pickup-automation-drift'),
+      rejectsCode('issue-pickup-automation-drift'),
     );
     await rm(join(codexHome, 'automations', 'copied-marker'), { recursive: true });
     await nativeWrite({ ...saved.definition, status: 'PAUSED' }, saved.id);
@@ -706,7 +723,7 @@ describe('agent/codex-automations', () => {
     assert.ok(resetBefore && resetBefore.definition.kind === 'heartbeat');
     conversations.get(resetBefore.definition.targetThreadId)!.archived = true;
     await rm(join(codexHome, 'automations', saved.id), { recursive: true });
-    const resetCreate = await replaceCoordinator(resetBefore, dependencies, 'issue-pickup');
+    const resetCreate = await replaceCoordinator(resetBefore, dependencies, 'github-issue-pickup');
     assert.ok(
       resetCreate.status === 'native-action' && resetCreate.request.tool === 'automation_update',
     );
@@ -716,13 +733,13 @@ describe('agent/codex-automations', () => {
       { ...resetBefore.definition, targetThreadId: resetTarget },
       'pickup-replaced-native',
     );
-    const resetDone = await replaceCoordinator(resetBefore, dependencies, 'issue-pickup');
+    const resetDone = await replaceCoordinator(resetBefore, dependencies, 'github-issue-pickup');
     assert.equal(resetDone.status, 'done');
     const enrollmentAfterReset = (await enrollments.read()).records[0]!;
     assert.deepEqual(enrollmentAfterReset.enrollment, first.enrollment);
     assert.equal(enrollmentAfterReset.nativeId, 'pickup-replaced-native');
     assert.deepEqual(
-      await replaceCoordinator(resetBefore, dependencies, 'issue-pickup'),
+      await replaceCoordinator(resetBefore, dependencies, 'github-issue-pickup'),
       resetDone,
     );
     assert.equal(

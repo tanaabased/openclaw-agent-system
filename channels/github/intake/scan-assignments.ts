@@ -5,8 +5,8 @@ import repositoryScope, {
   type RepositoryScopeDecision,
 } from '../repository-scope.ts';
 import authorizeProjectAssignment, {
-  type ProjectPickupAuthority,
-} from '../../../agent/project-pickup-authority.ts';
+  type IssuePickupAuthority,
+} from '../../../agent/issue-pickup-authority.ts';
 import { GitHubAccountClientError } from '../../../core/github-account-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from '../../../agent/discovery-budget.ts';
 import isFilesystemAccessError from '../../../utils/is-filesystem-access-error.ts';
@@ -30,8 +30,8 @@ import {
 } from './record-store.ts';
 
 export interface AssignmentScanInput {
-  projectPickup?: ProjectPickupAuthority;
-  readProjectPickup?(): Promise<ProjectPickupAuthority | undefined>;
+  issuePickup?: IssuePickupAuthority;
+  readIssuePickup?(): Promise<IssuePickupAuthority | undefined>;
   runtime?: 'codex' | 'openclaw';
   store: Pick<IntakeRecordStore, 'exclusive' | 'location'>;
   workspaceDir: string;
@@ -304,9 +304,7 @@ export default async function scanAssignments(
           else state!.observedAssignments[observedIndex] = observation;
           if (seen.has(id)) return;
           // the attempt is persisted before github can expose the event; read it after observing that event.
-          const pickup = input.readProjectPickup
-            ? await input.readProjectPickup()
-            : input.projectPickup;
+          const pickup = input.readIssuePickup ? await input.readIssuePickup() : input.issuePickup;
           if (
             pickup?.withheldAssignments?.some(
               (hold) =>
@@ -360,7 +358,7 @@ export default async function scanAssignments(
           const diagnostic =
             error instanceof GitHubWorkEventClientError ? error.providerDiagnostic : undefined;
           const localCode =
-            error instanceof Error && /^project-pickup-[a-z-]+$/.test(error.message)
+            error instanceof Error && /^issue-pickup-[a-z-]+$/.test(error.message)
               ? error.message
               : error instanceof IntakeError &&
                   ['intake-resource-changed', 'intake-assignment-history-incomplete'].includes(

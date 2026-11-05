@@ -27,7 +27,7 @@ function argumentsOf(response: FixtureResponse | undefined) {
   return JSON.parse(response.toolCalls[0]!.arguments);
 }
 
-const prompt = 'Run the activated project pickup once.';
+const prompt = 'Run the activated issue pickup once.';
 
 describe('examples/openclaw-project-picker model fixture', () => {
   it('should select the supplied candidate through intake using the native snapshot identifiers', () => {

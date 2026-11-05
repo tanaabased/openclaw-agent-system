@@ -74,7 +74,7 @@ for (const runtime of ['openclaw', 'codex']) {
       assert.equal(parsed.status, 'valid', JSON.stringify(parsed.diagnostics));
       assert.ok(parsed.manifest);
       const jobs = openclawIntakeJobs(parsed.manifest);
-      assert.ok(jobs.some((job) => job.id === 'issue-pickup' && job.enabled));
+      assert.ok(jobs.some((job) => job.id === 'github-issue-pickup' && job.enabled));
       assert.ok(jobs.some((job) => job.id === 'github-issue-assignment' && job.enabled));
       const policy = parsed.manifest.github!.notifications!;
       assert.deepEqual(policy.runtimes, ['openclaw']);
@@ -83,8 +83,8 @@ for (const runtime of ['openclaw', 'codex']) {
         policy.issueAssignment!.allowed.map((identity) => identity.nodeId),
         ['U_emori'],
       );
-      assert.equal(policy.projectPickup!.windowMinutes, 1440);
-      assert.equal(policy.projectPickup!.timingError, undefined);
+      assert.equal(policy.issuePickup!.windowMinutes, 1440);
+      assert.equal(policy.issuePickup!.timingError, undefined);
     });
   });
 }

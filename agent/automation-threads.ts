@@ -5,7 +5,7 @@ import { Type, type Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { AutomationError } from './automation-gateway.ts';
-import { projectPickupAutomationId } from './project-pickup-jobs.ts';
+import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import { automationHash } from './automation-hash.ts';
 import ensurePrivateStateDirectories from '../core/ensure-private-state-directories.ts';
 import PrivateStateFile from '../core/private-state-file.ts';
@@ -310,7 +310,7 @@ export default class AutomationThreads {
           record?.phase === 'ready' &&
           (!native || native.archived) &&
           selection.managed &&
-          ['github-issue-assignment', projectPickupAutomationId].includes(job.id),
+          ['github-issue-assignment', issuePickupAutomationId].includes(job.id),
         );
         if (replace && !apply) throw new AutomationError('automation-thread-replacement-required');
         if (record && record.phase === 'ready' && !native && !replace)

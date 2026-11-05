@@ -2,7 +2,7 @@ import { Value } from 'typebox/value';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import { IntakeError } from '../../channels/github/intake/record-store.ts';
-import ProjectPickupFailure from '../../agent/project-pickup-failure.ts';
+import IssuePickupFailure from '../../agent/issue-pickup-failure.ts';
 import { AutomationError } from '../../agent/automation-gateway.ts';
 
 import type OpenClawIntake from '../../agent/openclaw-intake.ts';
@@ -42,7 +42,7 @@ export default function createIntakeTool(
       ) => JSON.stringify([context.agentId, context.sessionKey, context.sessionId, call]);
       const blocked = (reason: string) => ({
         block: true,
-        blockReason: `project-pickup-native-caller-required (${reason})`,
+        blockReason: `issue-pickup-native-caller-required (${reason})`,
       });
       hooks?.on('before_tool_call', async (event, context) => {
         if (
@@ -105,7 +105,7 @@ export default function createIntakeTool(
             const occurrence = pending.get(key(context, _id));
             pending.delete(key(context, _id));
             if (params.action === 'pickup' && !occurrence)
-              throw new IntakeError('project-pickup-tool-call-authorization-missing');
+              throw new IntakeError('issue-pickup-tool-call-authorization-missing');
             const result =
               params.action === 'pickup'
                 ? await service
@@ -129,7 +129,7 @@ export default function createIntakeTool(
                       },
                     )
                     .catch((error: unknown) => {
-                      if (!(error instanceof ProjectPickupFailure)) throw error;
+                      if (!(error instanceof IssuePickupFailure)) throw error;
                       return error.failure;
                     })
                 : params.action === 'inspect'

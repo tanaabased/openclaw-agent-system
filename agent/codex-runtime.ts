@@ -1,6 +1,6 @@
 import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
-import ProjectPickupFailure from './project-pickup-failure.ts';
-import { projectPickupAutomationId } from './project-pickup-jobs.ts';
+import IssuePickupFailure from './issue-pickup-failure.ts';
+import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import runCodexNotificationReset from './codex-notification-reset.ts';
 import runCodexFeedback from './codex-feedback.ts';
 import codexRuntimeRequest from './codex-runtime-request.ts';
@@ -18,7 +18,7 @@ import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexHostAccess from './codex-host-access.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import { runCodexDispatch } from './codex-dispatch.ts';
-import { inspectCodexIntake, runCodexIntake, runCodexProjectPickup } from './codex-intake.ts';
+import { inspectCodexIntake, runCodexIntake, runCodexIssuePickup } from './codex-intake.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 
 import {
@@ -372,7 +372,7 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     if (action === 'inspect') writeJson(await inspectCodexIntake(pluginData));
     else if (action === 'pickup')
       writeJson(
-        await runCodexProjectPickup(
+        await runCodexIssuePickup(
           pluginData,
           JSON.parse(await readStandardInput()),
           Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -516,12 +516,12 @@ runCodexRuntime().catch((error: unknown) => {
             error instanceof RoutingError ||
             error instanceof CodexAutomationError
           ? { code: error.code }
-          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment|assessment-result|implementation|heartbeat|notification-reset|project-pickup)-[a-z-]+$/u.test(
+          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment|assessment-result|implementation|heartbeat|notification-reset|issue-pickup)-[a-z-]+$/u.test(
                 message,
               )
             ? { code: message }
             : { code: evidence.code };
-  const pickup = error instanceof ProjectPickupFailure ? error : undefined;
+  const pickup = error instanceof IssuePickupFailure ? error : undefined;
   const notice =
     !pickup &&
     ['intake', 'dispatch', 'continuation', 'delivery', 'model-routing'].includes(
@@ -535,7 +535,7 @@ runCodexRuntime().catch((error: unknown) => {
         })
       : undefined;
   process.stderr.write(
-    `${JSON.stringify({ status: 'error', ...failureScope, ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(pickup ? { response: codexHeartbeatEnvelope(pickup.automationId ?? projectPickupAutomationId, pickup.failure.response, true) } : {}), ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
+    `${JSON.stringify({ status: 'error', ...failureScope, ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(pickup ? { response: codexHeartbeatEnvelope(pickup.automationId ?? issuePickupAutomationId, pickup.failure.response, true) } : {}), ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
   );
   process.exitCode = 1;
 });

@@ -1,5 +1,5 @@
 import automationModels from './automation-models.ts';
-import projectPickupJobs, { projectPickupAutomationId } from './project-pickup-jobs.ts';
+import issuePickupJobs, { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import { assessmentSummaryConsent } from './assessment-summary-state.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
@@ -14,7 +14,7 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
   const declarations = manifest.automations ?? [];
   if (
     declarations.some((job) =>
-      [openclawIntakeAutomationId, projectPickupAutomationId].includes(job.id),
+      [openclawIntakeAutomationId, issuePickupAutomationId].includes(job.id),
     )
   )
     throw new IntakeError('intake-automation-id-reserved');
@@ -73,6 +73,6 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
       manifest.models,
       'openclaw',
     ),
-    ...projectPickupJobs(manifest, 'openclaw'),
+    ...issuePickupJobs(manifest, 'openclaw'),
   ];
 }

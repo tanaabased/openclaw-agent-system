@@ -1,6 +1,6 @@
 import { providerDiagnosticSchema } from '../../../utils/provider-diagnostic.ts';
 import { repositoryScopeDecisionSchema } from '../repository-scope.ts';
-import { projectWorkSchema, projectWorkMatches } from '../../../agent/project-pickup-authority.ts';
+import { projectWorkSchema, projectWorkMatches } from '../../../agent/issue-pickup-authority.ts';
 import { historySoftBytes } from '../../../agent/history-state.ts';
 import { refreshStateSnapshot } from '../../../core/merge-state-snapshot.ts';
 import { assertNotificationManagement } from '../../../agent/notification-reset-state.ts';

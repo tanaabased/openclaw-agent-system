@@ -76,7 +76,7 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
   });
   const dispatch = (stage: string, args: unknown) => call(stage, 'agent_system_dispatch', args);
 
-  if (prompt.includes('Run the activated project pickup once.')) {
+  if (prompt.includes('Run the activated issue pickup once.')) {
     let args: Record<string, unknown> = { action: 'pickup' };
     for (const stage of pickupStages) {
       const observed = result(stage);
@@ -230,7 +230,7 @@ const final: Fixture = {
   },
 };
 
-export const projectPickupScenario: OpenClawAIMockScenario = {
+export const issuePickupScenario: OpenClawAIMockScenario = {
   id: 'openclaw-project-picker',
   model: { match: model, reference: 'aimock/gpt-5.5' },
   systemPromptSignals: [],

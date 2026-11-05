@@ -11,7 +11,7 @@ Verify that its ID, routing, channel readiness, and dispatch enrollment are pres
 
 ## What Does Not Belong Here
 
-- Pickup enrollment and assignment handoff: [Project Pickup](../openclaw-project-picker/README.md).
+- Pickup enrollment and assignment handoff: [Issue pickup](../openclaw-project-picker/README.md).
 - Issue admission, concurrent assessment, and duplicate prevention: [intake](../openclaw-issue-intake/README.md).
 - Assignment failures and authority: [assignment policy](../openclaw-issue-assignment-policy/README.md). Generic prompt/command scheduling: [automations](../openclaw-automation-command/README.md).
 

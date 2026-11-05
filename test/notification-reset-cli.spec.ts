@@ -130,7 +130,7 @@ describe('channels/github/cli/reset', () => {
             for (const signal of [
               'purge',
               'pauseissueassignment',
-              'issue-pickup',
+              'github-issue-pickup',
               'baseline',
               'restore',
               'one',

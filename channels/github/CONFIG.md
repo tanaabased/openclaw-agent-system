@@ -9,7 +9,7 @@ GitHub authorization without consuming the manifest token or managing OpenClaw c
 
 - [`github`](#github)
 - [`github.issue-assignment`](#githubissue-assignment)
-- [`github.project-pickup`](#githubproject-pickup)
+- [`github.issue-pickup`](#githubissue-pickup)
 - [`github.review-request`](#githubreview-request)
 - [Common Types](#common-types)
   - [Identity Lists](#identity-lists)
@@ -37,12 +37,12 @@ matches when the repository matches `match` and the current workflow appears in
 `workflows`. Omit `workflows` to include all three workflows. Put exceptions
 before broader rules and put an explicit `*/*` last if you want a fallback.
 
-| Field       | Values                                                                                       | Required |
-| ----------- | -------------------------------------------------------------------------------------------- | -------- |
-| `id`        | Unique name without whitespace. Matched-rule diagnostics include this name.                  | no       |
-| `match`     | Repository pattern without a leading `!`.                                                    | yes      |
-| `workflows` | Nonempty list of distinct `issue-assignment`, `project-pickup`, and `review-request` values. | no       |
-| `target`    | `local`, `deny`, `swarm`, `{instance: UUID}`, or `{instances: [UUID, ...]}`.                 | yes      |
+| Field       | Values                                                                                     | Required |
+| ----------- | ------------------------------------------------------------------------------------------ | -------- |
+| `id`        | Unique name without whitespace. Matched-rule diagnostics include this name.                | no       |
+| `match`     | Repository pattern without a leading `!`.                                                  | yes      |
+| `workflows` | Nonempty list of distinct `issue-assignment`, `issue-pickup`, and `review-request` values. | no       |
+| `target`    | `local`, `deny`, `swarm`, `{instance: UUID}`, or `{instances: [UUID, ...]}`.               | yes      |
 
 ```yaml
 routing:
@@ -73,11 +73,11 @@ same rule. Scope changes apply to new admissions without Install and preserve
 already admitted work and its original owner. Routing does not grant GitHub access,
 approve assignment actors, or enable unsupported workflows.
 
-`swarm` coordinates assignment-driven work and project pickup across participating
+`swarm` coordinates assignment-driven work and issue pickup across participating
 installations using claim comments and a second native pass before starting work. Use `swarm`
 for that repository on every participant sharing the receiving account. This is a
 comment-only proof of concept: incomplete concurrent reads can still produce
-overlapping work. It does not coordinate project pickup allowances or independent
+overlapping work. It does not coordinate issue pickup allowances or independent
 review requests.
 
 A UUID restricts new claims to that installation; a list restricts them to that
@@ -91,7 +91,7 @@ owner. If no eligible installation claims the assignment, it stays pending: an
 unknown, offline, paused, or full target does not trigger fallback. Silence alone
 does not identify which condition applies. Pool edits preserve existing ownership
 and uncertain native creation; an excluded claimant that has not started native
-creation is held for recovery. Project pickup checks shared routing eligibility before self-assignment. Ordinary
+creation is held for recovery. Issue pickup checks shared routing eligibility before self-assignment. Ordinary
 assignment intake then selects the work owner under its own routing rule.
 
 `local` creates no claim. A retained or visible Swarm claim still blocks new local
@@ -168,7 +168,14 @@ an installation UUID does not transfer that work. OpenClaw provides
 Workflow declarations default to `3`, the only supported version. Explicit unsupported
 versions are rejected. GitHub CLI-only configuration does not require this field.
 
-## `github.project-pickup`
+<a id="githubproject-pickup"></a>
+
+## `github.issue-pickup`
+
+`github.project-pickup` remains a deprecated input alias with the same settings.
+Declare only one key; supplying both is an error. Routing workflow `project-pickup`
+is also accepted as a deprecated alias for `issue-pickup`. Both aliases work in
+OpenClaw and standalone Codex; use the new spellings in maintained configuration.
 
 Declares pickup policy for one or more repositories, each with one milestone. It requires `issue-assignment`
 and each repository must be included by `routing` (or legacy owners when routing is absent).
@@ -204,7 +211,7 @@ assignments each repository has used out of its allowance.
 Verified pickup enters the existing
 assessment and Work workflow; ordinary assignments keep their configured mode.
 Missed windows are not replayed. Accepted issue work may finish after a window or pause.
-Both runtimes use `models.default` for project pickup unless `model` overrides it.
+Both runtimes use `models.default` for issue pickup unless `model` overrides it.
 Explicit `effort` wins over inherited effort. These settings select the pickup
 coordinator, not the models that assess or implement individual issues. Existing
 [standalone Codex limitations](../../MANIFEST.md#automations) still apply.

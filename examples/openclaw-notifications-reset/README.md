@@ -7,7 +7,7 @@ assignment baseline, and restores enabled intake alongside paused pickup.
 
 - An operator preview with readable targets and masked chat identifiers, and its exact confirmation token for the bound agent.
 - Native coordinator archival, cleared tracking, a new reset generation, and a ready empty baseline.
-- Restoration of enabled issue assignment and installed-but-paused project pickup after both chats are replaced.
+- Restoration of enabled issue assignment and installed-but-paused issue pickup after both chats are replaced.
 
 ## What Does Not Belong Here
 
@@ -141,7 +141,7 @@ jq -es '[.[].records[]] | length == 1 and .[0].retired.at != null' "$XDG_CONFIG_
 # should preview the selected agent with a masked coordinator before confirmation
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-reset/tanaabot"
 openclaw agent-system notifications reset --agent reset-tanaabot --fresh --preview --json > "$TMPDIR/reset-preview.json"
-jq -e '.status == "confirmation-required" and .targets[0].fresh == true and (.targets[0].jobs | index("issue-pickup")) != null and ([.targets[0].resources[] | select(.kind == "coordinator")] | length) == 2' "$TMPDIR/reset-preview.json"
+jq -e '.status == "confirmation-required" and .targets[0].fresh == true and (.targets[0].jobs | index("github-issue-pickup")) != null and ([.targets[0].resources[] | select(.kind == "coordinator")] | length) == 2' "$TMPDIR/reset-preview.json"
 old_coordinator=$(jq -er '.targets[0].resources | map(select(.kind == "coordinator")) | .[0].description' "$TMPDIR/reset-preview.json")
 human_preview=$(NO_COLOR=1 openclaw agent-system notifications reset --agent reset-tanaabot --fresh --preview)
 printf '%s\n' "$human_preview" | grep -F 'agent' | grep -F 'reset-tanaabot'
@@ -160,8 +160,8 @@ old_pickup=$(jq -er '.targets[0].resources | map(select(.kind == "coordinator"))
 for old_chat in "$old_coordinator" "$old_pickup"; do
   openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$old_chat" '{key:$key}')" --json | jq -e '.session.archived == true'
 done
-openclaw agent-system automations list --agent reset-tanaabot --json | tee "$TMPDIR/reset-automations-after.json" | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == true) and any(.jobs[]; .id == "issue-pickup" and .nativeEnabled == false)'
-pickup=$(jq -er '.jobs[] | select(.id == "issue-pickup") | .routing | sub("^session:"; "")' "$TMPDIR/reset-automations-after.json")
+openclaw agent-system automations list --agent reset-tanaabot --json | tee "$TMPDIR/reset-automations-after.json" | jq -e '.status == "aligned" and any(.jobs[]; .id == "github-issue-assignment" and .nativeEnabled == true) and any(.jobs[]; .id == "github-issue-pickup" and .nativeEnabled == false)'
+pickup=$(jq -er '.jobs[] | select(.id == "github-issue-pickup") | .routing | sub("^session:"; "")' "$TMPDIR/reset-automations-after.json")
 test "$pickup" != "$old_pickup"
 coordinator=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .routing | sub("^session:"; "")' "$TMPDIR/reset-automations-after.json")
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$coordinator" '{key:$key}')" --json | jq -e '.session.category == "AGENT SYSTEM"'

@@ -1,5 +1,5 @@
 import notificationResetPickup from './notification-reset-pickup.ts';
-import { projectPickupAutomationId } from './project-pickup-jobs.ts';
+import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import { managedPullRequest, managedIssueState, dispatchAdmission } from './managed-issue.ts';
 
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
@@ -490,10 +490,10 @@ export default class OpenClawNotificationReset {
     });
     const adapter = notificationResetPickup(
       participant(openclawIntakeAutomationId),
-      participant(projectPickupAutomationId),
+      participant(issuePickupAutomationId),
       async () =>
         (await deps.automations.notificationResetPickupSnapshot?.(manifest, workspace))
-          ? participant(projectPickupAutomationId).snapshot()
+          ? participant(issuePickupAutomationId).snapshot()
           : undefined,
     );
     return { store, adapter };
