@@ -24,8 +24,6 @@ const dispatchStages = [
   'summary-preview',
   'summary-publish',
   'report',
-  'handoff-preview',
-  'handoff',
   'binding-verify',
   'work-context',
   'work-result',
@@ -76,6 +74,18 @@ function currentTurn(request: ChatCompletionRequest) {
   );
 }
 
+function currentFacts(messages: ChatCompletionRequest['messages']) {
+  const context = messages
+    .filter(({ role }) => role === 'user')
+    .map(({ content }) => getTextContent(content) ?? '')
+    .join('\n');
+  const facts = /Agent System model-only current-turn facts \(keep private\):\n([^\n]+)/u.exec(
+    context,
+  )?.[1];
+  assert.ok(facts, 'the native hook must retain task facts in the current turn');
+  return JSON.parse(facts);
+}
+
 function isContention(result: Record<string, unknown> | undefined) {
   return (
     ['busy', 'blocked', 'waiting'].includes(String(result?.status)) &&
@@ -119,14 +129,7 @@ function respond(
     .map(({ content }) => getTextContent(content) ?? '')
     .join('\n');
   if (prompt.includes('Explain the completed PR in this ordinary conversation.')) {
-    const privateContext = request.messages
-      .map(({ content }) => getTextContent(content) ?? '')
-      .join('\n');
-    const facts = /Agent System model-only current-turn facts \(keep private\):\n([^\n]+)/u.exec(
-      privateContext,
-    )?.[1];
-    assert.ok(facts, 'the native hook must retain task facts after delivery');
-    const retained = JSON.parse(facts);
+    const retained = currentFacts(messages);
     assert.equal(retained.previousImplementationResult?.outcome, 'done');
     assert.ok(retained.pullRequest?.pullRequestNumber);
     assert.ok(retained.worktree);
@@ -709,21 +712,21 @@ function respond(
       ? 'Document closing disposable test issues and verifying the retained delivery after follow-up commits.'
       : 'Document closing disposable test issues after their evidence is captured.';
     if (!retry) {
-      const context = result('work-context');
+      const nativeWork = update;
+      const context = nativeWork ? currentFacts(messages) : result('work-context');
       if (!context)
         return dispatch('work-context', {
           ...(automaticId
             ? { action: 'implementation-context', id: operatorId }
             : { action: 'implementation', operation: 'context', id: operatorId }),
         });
-      const path = (context.project as { path?: string } | undefined)?.path;
-      const nativeWork = context.status === 'native';
+      const path = nativeWork ? context.worktree : context.project?.path;
       if (!path) return;
       let customized = false;
       if (nativeWork) {
-        assert.ok(update, 'native edits must follow the explicit update request');
-        assert.ok((context.pullRequest as { pullRequestNumber?: number })?.pullRequestNumber);
-        assert.equal('resultContract' in context, false);
+        assert.equal(context.receipt, operatorId);
+        assert.ok(context.pullRequest?.pullRequestNumber);
+        assert.ok(context.branch);
       } else {
         if (
           context.status !== 'verified' ||

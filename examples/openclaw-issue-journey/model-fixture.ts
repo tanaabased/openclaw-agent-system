@@ -77,7 +77,9 @@ function currentTurn(request: ChatCompletionRequest) {
       request.messages.findLastIndex(
         ({ role, content }) =>
           role === 'user' &&
-          !getTextContent(content)?.trimStart().startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>'),
+          !['<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>', 'OpenClaw runtime context:'].some((prefix) =>
+            getTextContent(content)?.trimStart().startsWith(prefix),
+          ),
       ),
     ),
   );

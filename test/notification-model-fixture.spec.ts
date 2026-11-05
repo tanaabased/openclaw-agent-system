@@ -75,7 +75,7 @@ for (const scenario of [
               {
                 role: 'user' as const,
                 content:
-                  '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts notification-hidden-initial-fact',
+                  'OpenClaw runtime context:\nAgent System model-only current-turn facts notification-hidden-initial-fact\nEnd OpenClaw runtime context.',
               },
             ]
           : []),
@@ -209,6 +209,23 @@ for (const scenario of [
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
+    if (scenario.id === 'openclaw-notifications-retirement')
+      it('should retire the current task across native runtime context', async () => {
+        const input = request(`Retire this managed task now ${'b'.repeat(64)}`);
+        input.messages.push(
+          { role: 'assistant', content: 'Earlier task retired.' },
+          { role: 'user', content: `Retire this managed task now ${id}` },
+          {
+            role: 'user',
+            content:
+              'OpenClaw runtime context:\nCurrent runtime facts.\nEnd OpenClaw runtime context.',
+          },
+        );
+        const next = await response(input);
+        assert.ok('toolCalls' in next && next.toolCalls?.[0]);
+        assert.deepEqual(JSON.parse(next.toolCalls[0].arguments), { action: 'retire', id });
+      });
+
     if (scenario.id === 'openclaw-issue-journey')
       it('should correct one rejected direct assessment shape without repeating investigation or changing source', async () => {
         const input = request(`Direct issue assessment target: ${source} checkout: /tmp/owned`);
@@ -1000,6 +1017,9 @@ for (const scenario of [
         const input = request(
           `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
         );
+        input.messages[1]!.content +=
+          '\nAgent System model-only current-turn facts (keep private):\n' +
+          JSON.stringify({ receipt: id, worktree: '/checkout', stage: 'assessment' });
         append(input, 'delivery-present', {
           status: 'presented',
           presentation: 'Previous PR card.',
@@ -1033,18 +1053,20 @@ for (const scenario of [
             sessionId: 'incarnation',
           },
         )!;
+        const question = input.messages.at(-1)!;
+        const prompt = question.content;
+        question.content += '\n\n' + context.appendContext;
         input.messages.push({
           role: 'user',
           content:
-            'OpenClaw runtime context:\n' +
-            context.appendContext +
-            '\nEnd OpenClaw runtime context.',
+            'OpenClaw runtime context:\nCurrent runtime facts.\nEnd OpenClaw runtime context.',
         });
         assert.deepEqual(await response(input), {
           content:
             'The linked PR contains the completed cleanup note. No further work was requested.',
         });
-        input.messages.pop();
+        input.messages[1]!.content += '\n' + context.appendContext;
+        question.content = prompt;
         assert.equal(matchFixture([...scenario.fixtures], input), null);
       });
       for (const mode of ['operator', 'work', 'auto', 'custom'])
@@ -1190,17 +1212,14 @@ for (const scenario of [
         const input = request(
           `Operator request for managed issue ${id}: Add a follow-up commit and update the existing PR title and body.`,
         );
-        append(input, 'handoff-preview', { status: 'handoff-available', digest });
-        append(input, 'handoff', { status: 'handed-off' });
-        append(input, 'work-context', {
-          status: 'verified',
-          runtime: 'openclaw',
-          deliveryOnly: false,
-          publicationAuthorized: true,
-          project: { path: '/tmp/owned' },
-          implementation: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
-        });
-        append(input, 'implementation-skill', 'Default implementation.');
+        input.messages[1]!.content +=
+          '\nAgent System model-only current-turn facts (keep private):\n' +
+          JSON.stringify({
+            receipt: id,
+            worktree: '/tmp/owned',
+            branch: 'retained-branch',
+            pullRequest: { pullRequestNumber: 456 },
+          });
         const patch = await response(input);
         assert.ok('toolCalls' in patch && patch.toolCalls?.[0]?.name === 'agent_system_git');
         const args = JSON.parse(patch.toolCalls[0].arguments);
@@ -1208,13 +1227,6 @@ for (const scenario of [
         assert.doesNotMatch(args.stdin, /new file mode/);
         for (const stage of ['apply', 'check', 'add', 'commit'])
           append(input, stage, { exitCode: 0, truncated: false, stdout: '' });
-        append(input, 'work-result', {
-          status: 'recorded',
-          handoff: {
-            next: 'delivery',
-            request: { action: 'delivery', id, operation: 'prepare' },
-          },
-        });
         const prepared = await action(input, 'delivery');
         assert.equal(prepared.operation, 'prepare');
         assert.match(prepared.title!, /cleanup and verification/);

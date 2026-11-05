@@ -20,9 +20,9 @@ function retirement(request: ChatCompletionRequest): FixtureResponse | undefined
   const start = request.messages.findLastIndex(
     (message) =>
       message.role === 'user' &&
-      !getTextContent(message.content)
-        ?.trimStart()
-        .startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>'),
+      !['<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>', 'OpenClaw runtime context:'].some((prefix) =>
+        getTextContent(message.content)?.trimStart().startsWith(prefix),
+      ),
   );
   const messages = request.messages.slice(start);
   const prompt = messages
