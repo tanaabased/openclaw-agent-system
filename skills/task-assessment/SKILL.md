@@ -60,8 +60,10 @@ ordinary native conversation. Use the investigation and planning guidance in
 steps 2–5 below with the context already available, and present the plan directly.
 Do not bootstrap assessment context, submit an assessment result, create a saved
 revision, or require the managed workflow's editor, summary or handoff. Existing
-assessments remain readable history. Use Task Update when the operator requests
-publication of the revised plan or material progress.
+assessments remain readable history. Within existing publication authority, use
+[Task Update](../task-update/SKILL.md) when a plan materially changes or a clarification
+changes the approach, without requiring another publication request. Coalesce an
+answer to admitted feedback with that update when it already conveys the change.
 
 If an old assessment invocation returns `status: native`, follow that same path.
 It is retained context, not another assessment round or an execution grant.

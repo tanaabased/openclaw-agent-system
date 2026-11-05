@@ -31,14 +31,13 @@ import workflowFailure from './workflow-failure.ts';
 import { dispatchFailurePhase, dispatchRetryDue, scheduleDispatchRetry } from './dispatch-retry.ts';
 import DiscoveryBudget from './discovery-budget.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
-import { realpath } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { automationHash } from './automation-hash.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
-import codexCapacity, { codexItemOccupied, codexUnresolvedRetirement } from './codex-capacity.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import { dispatchGit, verifyDispatchWorktree } from './codex-dispatch-project.ts';
@@ -56,7 +55,6 @@ import codexIssueBranch from './codex-issue-branch.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import codexSessionSettings from './codex-session-settings.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
-import pendingDispatchAssignments from './dispatch-pending.ts';
 import { requireWorkflowSchedule } from './workflow-result.ts';
 import {
   isReviewFeedback,
@@ -291,14 +289,6 @@ export default async function runCodexFeedback(
         state.run.actions++;
         await save();
       }
-      const queued = pendingDispatchAssignments(state, intake, codexUnresolvedRetirement).filter(
-        ({ record }) => !record?.request && (record?.retryAfter ?? 0) <= now,
-      );
-      const assignmentAt = Math.min(
-        ...queued.map(({ intake: item }) =>
-          item.assignment ? Date.parse(item.assignment.createdAt) : item.admittedAt,
-        ),
-      );
       const queuedEvent = (record: (typeof records)[number]) =>
         record.feedback?.events
           .filter((event) => event.phase === 'queued' && !event.policyHeld)
@@ -405,16 +395,17 @@ export default async function runCodexFeedback(
           if (
             !found?.turnId ||
             found.id !== record.threadId ||
-            (await realpath(found.cwd)) !== (await realpath(record.worktree!))
+            resolve(found.cwd) !== resolve(record.worktree!)
           )
             throw new Error('feedback-native-binding-mismatch');
-          await verifyDispatchWorktree(
-            record.project!,
-            found.cwd,
-            owner + '/' + name,
-            deps.git,
-            'handoff',
-          );
+          if (!event.native)
+            await verifyDispatchWorktree(
+              record.project!,
+              found.cwd,
+              owner + '/' + name,
+              deps.git,
+              'handoff',
+            );
           if (!input.material) {
             record.effective = codexSessionSettings(record, found);
             await save();
@@ -475,19 +466,7 @@ export default async function runCodexFeedback(
               throw new Error('feedback-turn-changed');
           } else {
             if (input.action !== 'next') throw new Error('feedback-send-unverified');
-            if (
-              assignmentAt < readyAt(record) ||
-              codexItemOccupied(record) ||
-              !codexCapacity(
-                state.records,
-                policy.maxConcurrentItems,
-                state.projectPickup,
-                record.projectWork?.pickup?.issueNodeId,
-              ).available ||
-              !['idle', 'notLoaded'].includes(found.status) ||
-              found.turnEnded !== true
-            )
-              continue;
+            if (!['idle', 'notLoaded'].includes(found.status) || found.turnEnded !== true) continue;
             const id = automationHash([event.id, occurrence!.id, found.turnId]);
             event.attempt = {
               id,

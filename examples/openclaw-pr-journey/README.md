@@ -1,12 +1,12 @@
 # OpenClaw PR Journey Example
 
-Assign an issue, save its plan, and implement approved GitHub direction to deliver a
+Assign an issue, ask a planning question, and implement its approved GitHub answer to deliver a
 linked PR from the same chat and worktree. Act on a PR comment, update that PR, and
 publish a reply. Verify that another scan repeats none of the completed actions.
 
 ## What Belongs Here
 
-- Authorized Plan-to-Work progression without an extra decision or delivery wake-up.
+- An initial question shown in chat and on GitHub, followed by an approved answer entering Work without rewriting the assessment or requiring another handoff.
 - Pushed changes, issue linkage, configured recipients, one issue announcement, and their durable receipts.
 - One uninterrupted PR feedback change preserving the assessment, owner, checkout, PR, and announcement, with exact source attribution and duplicate prevention.
 
@@ -113,12 +113,22 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
-openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for plan-ready --refresh --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1 and .observation.items[0].workflow.phase == "plan-ready"'
+openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --refresh --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1 and .observation.items[0].worktree == "ready"'
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
+assessment_run=$(jq -ers --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)][0] | (.assessmentTurn // .firstTurn).runId' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$assessment_run" 600000
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
 run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-dispatch-before.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
+
+# should show the initial question in its chat and publish it on the original issue
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
+jq -e '.result.outcome == "clarification-needed" and (.result.questions | length) > 0' "$TMPDIR/notification-dispatch-before.json"
+conversation=$(jq -er .threadId "$TMPDIR/notification-dispatch-before.json")
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --slurpfile saved "$TMPDIR/notification-dispatch-before.json" 'any(.messages[]; .role == "assistant" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains($saved[0].result.questions[0])))'
+number=$(jq -er .number "$TMPDIR/notification-issue.json")
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e 'any(.[]; .user.login == "tanaabot" and (.body | contains("Should disposable test issues")))'
 
 # should implement approved github direction without an extra decision and publish its linked pr
 set -o pipefail
@@ -135,7 +145,7 @@ feedback_diagnostics() {
 trap feedback_diagnostics EXIT
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
-openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot Please implement the agreed plan and publish its pull request.' > "$TMPDIR/notification-initial-source.json"
+openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot Yes, close disposable test issues after capturing evidence. Please implement that and publish its pull request.' > "$TMPDIR/notification-initial-source.json"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 feedback_checkpoint
 feedback_run=

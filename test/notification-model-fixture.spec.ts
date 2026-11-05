@@ -692,7 +692,12 @@ for (const scenario of [
       }
       const saved = await action(input, 'result');
       assert.equal(saved.id, id);
-      assert.equal(saved.result.outcome, 'plan-ready');
+      assert.equal(
+        saved.result.outcome,
+        scenario.id === 'openclaw-pr-journey' ? 'clarification-needed' : 'plan-ready',
+      );
+      if (scenario.id === 'openclaw-pr-journey')
+        assert.ok('questions' in saved.result && saved.result.questions.length);
       const presentation = saved.result.reviewSummary ?? 'The complete retained presentation.';
       append(input, 'result', { status: 'recorded', presentation });
       const nextResponse = await response(input);

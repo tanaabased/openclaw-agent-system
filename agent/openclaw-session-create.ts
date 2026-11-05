@@ -1,4 +1,5 @@
 import { realpath } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 import { validateSessionsCreateParams } from '@openclaw/gateway-protocol';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
@@ -32,7 +33,7 @@ export async function describeIssueSession(
   request: DispatchRequest,
   record: OpenClawDispatchRecord,
   config: OpenClawConfig,
-  retained = false,
+  scope: 'workflow' | 'feedback' | 'retained' = 'workflow',
 ) {
   const expected = record.request;
   if (!expected || !('key' in expected) || !record.sessionCreation)
@@ -68,8 +69,14 @@ export async function describeIssueSession(
   );
   match(row.archived !== true && !row.archivedAt, 'archived');
   // Retained presentation proves session custody only; it grants no new workflow authority.
-  if (retained) return row.sessionId;
-  match(typeof cwd === 'string' && (await realpath(cwd)) === (await realpath(expected.cwd)), 'cwd');
+  if (scope === 'retained') return row.sessionId;
+  match(
+    typeof cwd === 'string' &&
+      (scope === 'feedback'
+        ? resolve(cwd) === resolve(expected.cwd)
+        : (await realpath(cwd)) === (await realpath(expected.cwd))),
+    'cwd',
+  );
   const settings = sessionSettings({
     requested: { model: expected.model, effort: expected.thinkingLevel },
     observed: { model, effort },

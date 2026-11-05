@@ -31,7 +31,7 @@ export default async function openClawFeedbackInput(
     event.turn!.cancelled
   )
     throw new Error('reply-managed-context-invalid');
-  await describeIssueSession(request, record, config);
+  await describeIssueSession(request, record, config, 'feedback');
   const history = sessionObject(
     await request('chat.history', { sessionKey: caller.sessionKey, inputRunIds: [caller.runId] }),
   );

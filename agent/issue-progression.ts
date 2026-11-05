@@ -59,7 +59,13 @@ export default function issueProgression(
     return { status: 'stopped', reason: 'implementation-cancelled' };
   const retained = retainedIssueProgression(issue);
   if (retained) return { status: 'ready', progression: retained };
-  if (issue.result?.outcome !== 'plan-ready' && !(input.operator && input.actionablePlan?.trim()))
+  if (
+    issue.result?.outcome !== 'plan-ready' &&
+    !(
+      input.operator &&
+      (issue.result?.outcome === 'clarification-needed' || input.actionablePlan?.trim())
+    )
+  )
     return { status: 'held', reason: 'assessment-not-actionable' };
   if (!input.operator) {
     if (input.mode === 'plan') return { status: 'held', reason: 'implementation-disabled' };

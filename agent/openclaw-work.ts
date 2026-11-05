@@ -9,10 +9,7 @@ import type { Static } from 'typebox';
 
 import { implementationPresentation } from './implementation-result.ts';
 import { automationHash } from './automation-hash.ts';
-import issueProgression, {
-  retainedIssueProgression,
-  type IssueProgression,
-} from './issue-progression.ts';
+import issueProgression, { type IssueProgression } from './issue-progression.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { operatorInputEvent, nativeInputEvent } from './openclaw-session-input.ts';
@@ -43,8 +40,7 @@ export async function verifyOpenClawWork(input: {
     caller.sessionKey !== record.threadId ||
     caller.sessionId !== record.sessionCreation?.sessionId ||
     !record.result ||
-    !record.stageReceipt ||
-    (record.result.outcome !== 'plan-ready' && !retainedIssueProgression(record))
+    !record.stageReceipt
   )
     throw new Error('dispatch-work-context-mismatch');
   await describeIssueSession(input.request, record, input.config);

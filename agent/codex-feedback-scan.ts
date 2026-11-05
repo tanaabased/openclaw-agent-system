@@ -7,7 +7,7 @@ import feedbackOwnPublications from './feedback-own-publications.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
-import { automationHash } from './automation-hash.ts';
+import feedbackDiscoveryOwner from './feedback-discovery-owner.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import type connectCodexFeedback from './codex-feedback-client.ts';
 import { discoverCodexFeedback } from './codex-feedback-source.ts';
@@ -66,12 +66,12 @@ export async function scanCodexFeedback(input: {
     const feedback = structuredClone(
       record.feedback ?? { startedAt: now, baseline: {}, events: [] },
     );
-    let before = automationHash(record);
+    let before = feedbackDiscoveryOwner(record);
     const save = async () => {
       if (!input.checkpoint) return;
       await input.checkpoint({ id: record.id, before, feedback });
       record.feedback = structuredClone(feedback);
-      before = automationHash(record);
+      before = feedbackDiscoveryOwner(record);
     };
     feedback.scannedTime = now;
     feedback.discoveryPending = true;

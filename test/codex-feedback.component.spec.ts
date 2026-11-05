@@ -723,6 +723,17 @@ describe('agent/codex-feedback', () => {
     assert.equal((await call('next')).status, 'idle');
     assert.equal(creates, 0);
   });
+  it('should deliver a native question without requiring repository access', async () => {
+    deps.git = async () => {
+      throw new Error('checkout unavailable');
+    };
+    await rm((await store.read()).records[0]!.worktree!, { recursive: true, force: true });
+    const ref = await prepare(commenter, '@receiver what is the status?', true);
+    sent = true;
+    turn = 'feedback';
+    assert.equal((await call('context', ref, true)).status, 'verified');
+    assert.equal((await store.read()).records[0]!.feedback!.events[0]!.work, undefined);
+  });
   it('should compose and publish native feedback through the reply skill without a private-result checkpoint', async () => {
     const ref = await prepare(commenter, '@receiver please explain.', true);
     sent = true;
@@ -731,6 +742,7 @@ describe('agent/codex-feedback', () => {
     const workspace = join(root, 'workspace');
     const path = join(root, 'SKILL.md');
     await writeFile(path, '# configured reply');
+    await rm((await store.read()).records[0]!.worktree!, { recursive: true, force: true });
     deps.replyConnection = async () => ({
       request: async (method) => {
         if (method === 'thread/read') return { thread: { id: 'child' } };
@@ -1543,6 +1555,13 @@ describe('agent/codex-feedback', () => {
       createdAt: '2026-10-13T01:00:00Z',
       updatedAt: '2026-10-13T01:00:00Z',
     });
+    const find = deps.native!.find;
+    deps.native!.find = async (input) => ({
+      ...(await find(input))!,
+      status: 'active',
+      turnStatus: 'inProgress',
+      turnEnded: false,
+    });
     occurrence++;
     assert.equal((await call('next')).status, 'idle');
     assert.equal((await store.read())!.records[0]!.feedback!.events[0]!.phase, 'queued');
@@ -1550,7 +1569,6 @@ describe('agent/codex-feedback', () => {
       state.records[0]!.phase = 'complete';
       await save();
     });
-    const find = deps.native!.find;
     deps.native!.find = async (input) => ({
       ...(await find(input))!,
       status: 'notLoaded',
@@ -1648,7 +1666,7 @@ describe('agent/codex-feedback', () => {
       const next = await call('next');
       const events = (await store.read()).records[0]!.feedback!.events;
       assert.equal(events.length, 2);
-      if (outcome === 'ended') {
+      if (outcome === 'ended' || outcome === 'capacity') {
         assert.equal(next.status, 'idle');
         assert.equal(events[0]!.phase, 'delivered');
         assert.equal(events[1]!.phase, 'queued');
@@ -1688,7 +1706,7 @@ describe('agent/codex-feedback', () => {
     assert.equal((await call('next')).status, 'budget-exhausted');
     assert.equal(creates, 0);
   });
-  it('should respect assignment occupancy in the common pool', async () => {
+  it('should deliver feedback independently of assignment occupancy', async () => {
     await call('next');
     await store.exclusive(async (state, save) => {
       for (const digit of ['1', '2', '3']) {
@@ -1713,11 +1731,6 @@ describe('agent/codex-feedback', () => {
       updatedAt: '2026-10-13T01:00:00Z',
     });
     occurrence++;
-    assert.equal((await call('next')).status, 'idle');
-    await store.exclusive(async (state, save) => {
-      state.records.pop();
-      await save();
-    });
     assert.equal((await call('next')).status, 'feedback-prepared');
   });
   it('should retain a private-only answer without publishing and release its slot', async () => {

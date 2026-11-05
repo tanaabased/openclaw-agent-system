@@ -3,7 +3,7 @@ import codexContinuationNative from './codex-continuation-native.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import type { ReplyDraft } from './reply-store.ts';
 import { dispatchAdmission } from './managed-issue.ts';
-import { realpath } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 import { Value } from 'typebox/value';
 
@@ -176,11 +176,7 @@ export default async function codexReply(
                 threadId: record.threadId,
               }),
             );
-            if (
-              !native ||
-              native.id !== caller ||
-              (await realpath(native.cwd)) !== (await realpath(record.worktree))
-            )
+            if (!native || native.id !== caller || resolve(native.cwd) !== resolve(record.worktree))
               throw new Error('reply-managed-context-invalid');
           }
         }

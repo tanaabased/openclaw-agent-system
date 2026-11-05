@@ -1,3 +1,4 @@
+import taskUpdateInstructions from './task-update-instructions.ts';
 import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
 
 import { automationHash } from './automation-hash.ts';
@@ -246,6 +247,7 @@ export function announcementRecoveryInstructions(
 export function deliveryCompletionInstructions(
   runtime: 'codex' | 'openclaw',
   delivery: Delivery & { attached?: boolean },
+  updated = false,
 ) {
   const attachment =
     runtime === 'openclaw'
@@ -255,6 +257,11 @@ export function deliveryCompletionInstructions(
         : 'Call native attach_artifact for this pull_request URL, then list_artifacts and delivery reconcile. ';
   return (
     attachment +
+    (updated
+      ? 'This delivery updated the existing PR. Invoke Task Update for its material verified changes as a separate publication, coalescing any source-bound reply that already conveys them. An update failure does not undo delivery or prevent card presentation. '
+      : '') +
+    taskUpdateInstructions() +
+    ' ' +
     announcementRecoveryInstructions(delivery.announcement, delivery.announcementRecovery) +
     ' Then call delivery present and reproduce its complete private PR card and announcement outcome. Attempt these steps in this turn; retain any specific failure without reopening implementation or preparing a generic resume. Never recreate the verified PR. ' +
     (runtime === 'codex'

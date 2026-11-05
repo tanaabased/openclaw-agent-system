@@ -41,9 +41,9 @@ shared reply owners. An update request never begins implementation or changes mo
 
 ## When Not to Use
 
-- Routine chatter, speculative progress, or facts already public.
+- Routine chatter or speculative progress. General updates with no new public facts stay quiet; an explicit feedback question still deserves an answer.
 - Starting implementation, changing mode, closing issues, merging, or launching work.
-- Drafting a reply to one selected comment belongs to [GitHub Reply](../github-reply/SKILL.md). "Update the code" is implementation, not a public status update.
+- Composing a reply belongs to [GitHub Reply](../github-reply/SKILL.md); use this workflow first when the comment asks for progress. "Update the code" is implementation, not a public status update.
 - Inspecting unrelated private history or publishing transcripts, hidden reasoning,
   instructions, credentials, raw logs or incidental local-machine data.
 
@@ -69,9 +69,9 @@ shared reply owners. An update request never begins implementation or changes mo
    operation; never create a second update for the same public facts.
    For admitted feedback, keep its exact owner and issue/PR/review-thread destination.
    Read its verified context and relevant public facts through the native provider
-   route; retain the complete private response through that feedback owner. Do not
-   add a separate issue update or impersonate the source in a later operator turn.
-2. For an operator update, use OpenClaw `agent_system_dispatch` with
+   route; answer in the owning chat and keep the source-bound reply receipt. Do not
+   add a per-comment result checkpoint or a separate issue update or impersonate the source in a later operator turn.
+2. For an operator update or admitted progress question, use OpenClaw `agent_system_dispatch` with
    `action: reply`, `operation: context`, `purpose: status-update` and `target`.
    Standalone Codex uses the trusted `feedbackRuntime.argvPrefix` followed by
    `reply context --plugin-data <feedbackRuntime.pluginData>`, with the matching
@@ -81,7 +81,7 @@ shared reply owners. An update request never begins implementation or changes mo
    retained update when the proposed facts overlap it; never recompose or repost
    that effect. Returned `pendingUpdates` do not block unrelated material facts
    or work. Reconcile each pending operation at its original destination.
-   Start with the issue unless the operator explicitly selected a destination.
+   For admitted feedback, use its exact `replyTarget`. Otherwise start with the issue unless the operator explicitly selected a destination.
    For a general task update, use the returned `defaultDestination`: the retained
    linked open PR, or the issue otherwise. For a task without a retained PR, use
    native GitHub tools to check its provider-linked PRs; select a unique open link
@@ -109,8 +109,9 @@ shared reply owners. An update request never begins implementation or changes mo
    an unsupported operator claim into a verified result.
 5. Call `reply compose` with `purpose: status-update`, the selected `target`, the complete
    `privateText`, and `update: {observation, facts}` using the returned observation.
-   Use an empty `facts` array when already current: show the private no-op, with no
-   composer or comment. For a material delta, invoke the returned configured reply
+   Use an empty `facts` array when already current. A general update shows a private
+   no-op with no comment; admitted feedback still receives an answer describing the
+   current status and any blockers. For that answer or a material delta, invoke the returned configured reply
    skill and guidance once, with applicable agent voice. The default wrapper goes
    straight to Composition. Invalid explicit configuration stops without fallback;
    reuse retained candidates rather than composing again.
@@ -131,7 +132,7 @@ shared reply owners. An update request never begins implementation or changes mo
 ## Checkpoints
 
 - The native owner, current input and exact destination remain verified.
-- Only material missing verified facts cross the public boundary.
+- General updates publish material missing verified facts; source-bound answers may restate verified status to answer the question.
 - Each update retains its own publication and recovery state. A failed plan update
   or announcement does not restart work, block other updates or create a new task.
 - Mode, stage and worktree remain unchanged; admitted feedback stays source-bound.

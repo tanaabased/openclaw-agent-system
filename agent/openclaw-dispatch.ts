@@ -207,7 +207,7 @@ export default class OpenClawDispatch {
           create: (record) => record,
           verifyExisting: async (record) => {
             await this.dependencies.credential.use(authority, (request) =>
-              describeIssueSession(request, record, this.dependencies.config(), true),
+              describeIssueSession(request, record, this.dependencies.config(), 'retained'),
             );
           },
         });

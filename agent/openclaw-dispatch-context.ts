@@ -282,7 +282,7 @@ export default class OpenClawDispatchContext {
         : {}),
       repositoryDatabaseId: repo.databaseId,
     };
-    if (record.worktree) {
+    if (record.worktree && !feedback) {
       const path = await realpath(record.worktree).catch((cause) => {
         throw new Error('dispatch-worktree-unavailable', { cause });
       });

@@ -6,7 +6,7 @@ import { GitHubWorkEventClientError } from '../channels/github/provider/work-eve
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import { automationHash } from './automation-hash.ts';
+import feedbackDiscoveryOwner from './feedback-discovery-owner.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
 import feedbackOwnPublications from './feedback-own-publications.ts';
 import { discoverFeedback } from './feedback-source.ts';
@@ -57,7 +57,7 @@ export async function scanOpenClawFeedback(input: {
   let provider:
     Awaited<ReturnType<NonNullable<typeof service.dependencies.feedbackConnect>>> | undefined;
   for (const record of records) {
-    let before = automationHash(record);
+    let before = feedbackDiscoveryOwner(record);
     const feedback = structuredClone(
       record.feedback ?? { startedAt: now, baseline: {}, events: [] },
     );
@@ -72,7 +72,7 @@ export async function scanOpenClawFeedback(input: {
       if (!input.checkpoint) return;
       await input.checkpoint({ id: record.id, before, feedback });
       record.feedback = structuredClone(feedback);
-      before = automationHash(record);
+      before = feedbackDiscoveryOwner(record);
     };
     if (budget.exhausted) {
       feedback.discoveryPending = true;

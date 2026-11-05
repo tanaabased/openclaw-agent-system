@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import applyFeedbackScans from '../agent/apply-feedback-scans.ts';
-import { automationHash } from '../agent/automation-hash.ts';
+import feedbackDiscoveryOwner from '../agent/feedback-discovery-owner.ts';
 
 describe('agent/apply-feedback-scans', () => {
   const owner = () => ({
@@ -12,21 +12,39 @@ describe('agent/apply-feedback-scans', () => {
   it('should apply discovery only to the unchanged owner and preserve other results', () => {
     const record = owner();
     const feedback = { events: ['discovered'] };
-    const scan = { id: record.id, before: automationHash(record), feedback };
+    const scan = { id: record.id, before: feedbackDiscoveryOwner(record), feedback };
     assert.equal(applyFeedbackScans([record], [scan]), true);
     assert.deepEqual(record.feedback, feedback);
     assert.deepEqual(record.result, { receipt: 'saved' });
     assert.equal(applyFeedbackScans([record], [scan]), false);
   });
-  it('should preserve a concurrently published receipt instead of replacing it with a stale scan', () => {
+  it('should merge discovery while preserving independently advanced issue results', () => {
     const record = owner();
-    const scan = { id: record.id, before: automationHash(record), feedback: { events: ['stale'] } };
+    const scan = {
+      id: record.id,
+      before: feedbackDiscoveryOwner(record),
+      feedback: { events: ['stale'] },
+    };
     record.result.receipt = 'newly-published';
-    assert.equal(applyFeedbackScans([record], [scan]), false);
-    assert.deepEqual(record.feedback.events, ['retained']);
+    assert.equal(applyFeedbackScans([record], [scan]), true);
+    assert.deepEqual(record.feedback.events, ['stale']);
     assert.equal(record.result.receipt, 'newly-published');
   });
-  for (const flag of ['retired', 'retirement', 'reset'])
+  it('should reject a concurrent feedback change or a changed chat binding', () => {
+    for (const field of ['feedback', 'threadId'] as const) {
+      const record = { ...owner(), threadId: 'chat' };
+      const scan = {
+        id: record.id,
+        before: feedbackDiscoveryOwner(record),
+        feedback: { events: ['stale'] },
+      };
+      if (field === 'feedback') record.feedback.events.push('concurrent');
+      else record.threadId = 'replacement';
+      assert.equal(applyFeedbackScans([record], [scan]), false);
+      assert.ok(!record.feedback.events.includes('stale'));
+    }
+  });
+  for (const flag of ['retired', 'retirement', 'reset', 'supersededBy'])
     it(`should not apply discovery to a ${flag} owner even when its snapshot matches`, () => {
       const record = { ...owner(), [flag]: { at: 1 } };
       assert.equal(
@@ -35,7 +53,7 @@ describe('agent/apply-feedback-scans', () => {
           [
             {
               id: record.id,
-              before: automationHash(record),
+              before: feedbackDiscoveryOwner(record),
               feedback: { events: ['stale'] },
             },
           ],
@@ -52,7 +70,7 @@ describe('agent/apply-feedback-scans', () => {
         [
           {
             id: 'other',
-            before: automationHash(record),
+            before: feedbackDiscoveryOwner(record),
             feedback: { events: ['other'] },
           },
         ],

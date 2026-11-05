@@ -114,6 +114,7 @@ function call(stage: string, name: string, args: unknown): FixtureResponse {
 }
 
 interface PRFixtureOptions {
+  initialQuestion?: boolean;
   incorporateCollaborator?: boolean;
   interruptFeedbackReply?: boolean;
 }
@@ -202,7 +203,9 @@ function respond(
         digest: composed.digest,
         publicText: publicText(
           composed,
-          'The plan is to document closing disposable test issues after capturing their evidence. The retained plan is ready for the configured workflow to continue.',
+          options.initialQuestion
+            ? 'Should disposable test issues be closed after capturing their evidence? Answer here when you want implementation to begin.'
+            : 'The plan is to document closing disposable test issues after capturing their evidence. The retained plan is ready for the configured workflow to continue.',
         ),
       });
     if (candidate.status !== 'candidate-recorded') return;
@@ -626,11 +629,18 @@ function respond(
                 },
               }
             : {}),
-          outcome: 'plan-ready',
+          outcome: options.initialQuestion ? 'clarification-needed' : 'plan-ready',
+          ...(options.initialQuestion
+            ? { questions: ['Should disposable test issues be closed after capturing evidence?'] }
+            : {}),
           summary: 'Document disposable issue cleanup.',
           assessment: 'The admitted issue requests a small documentation change.',
-          planSummary: 'Describe closing disposable test issues after capturing evidence.',
-          plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
+          ...(!options.initialQuestion
+            ? {
+                planSummary: 'Describe closing disposable test issues after capturing evidence.',
+                plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
+              }
+            : {}),
           fullAssessment:
             'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation or publication was performed.' +
             (!selection.defaultSkill
@@ -1015,4 +1025,6 @@ export function createPRExampleScenario(
   };
 }
 
-export const prExampleScenario = createPRExampleScenario('openclaw-pr-journey');
+export const prExampleScenario = createPRExampleScenario('openclaw-pr-journey', {
+  initialQuestion: true,
+});

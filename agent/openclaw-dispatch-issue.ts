@@ -1016,7 +1016,7 @@ export default class OpenClawDispatchIssue {
       const intake = dispatchAdmission(record, current.admitted.records ?? []);
       if (!intake) throw new Error('dispatch-intake-record-missing');
       await this.context.dependencies.credential.use({ signal, assertCurrent }, async (request) => {
-        await describeIssueSession(request, record, this.context.dependencies.config(), true);
+        await describeIssueSession(request, record, this.context.dependencies.config(), 'retained');
       });
       await assertCurrent();
       const result =

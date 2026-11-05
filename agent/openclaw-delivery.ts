@@ -502,7 +502,11 @@ export default async function openClawDelivery(input: {
     pullRequest: receipt,
     workflowStatus: workflowStatus(record),
     url,
-    instructions: deliveryCompletionInstructions('openclaw', delivery),
+    instructions: deliveryCompletionInstructions(
+      'openclaw',
+      delivery,
+      action.operation === 'publish' && Boolean(previous?.reconciled && previous.pullRequest),
+    ),
   };
 }
 

@@ -1,3 +1,4 @@
+import { feedbackRevision } from '../agent/feedback-source.ts';
 import {
   retainAnnouncementFailure,
   retainedAnnouncementPublication,
@@ -4373,6 +4374,75 @@ describe('agent/codex-dispatch', () => {
       },
     };
   }
+
+  it('should enter issue work from a verified native answer to the original clarification', async () => {
+    const question = {
+      version: 1,
+      outcome: 'clarification-needed',
+      summary: 'Choose approach.',
+      assessment: 'A decision is needed.',
+      fullAssessment: 'Choose the smaller approach before implementation.',
+      questions: ['Which approach?'],
+      evidence: [],
+      progress: { completed: [], remaining: ['Answer.'] },
+    };
+    const work = await workIssue(question, 'Follow the answer.', 'company:implement', 'plan');
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    assert.equal((await work.run('next')).status, 'idle');
+    const source = {
+      nodeId: 'C_answer',
+      databaseId: 42,
+      author: fixture.client.identity,
+      body: '@receiver Use the smaller approach and implement it.',
+      bodyTruncated: false,
+      createdAt: '2026-10-13T01:00:00Z',
+      updatedAt: '2026-10-13T01:00:00Z',
+    };
+    work.receive();
+    const attempt = {
+      id: 'f'.repeat(64),
+      sourceThreadId: 'intake-thread',
+      sourceTurnId: 'scan',
+      beforeTurnId: 'assessment',
+      turnId: native!.turnId!,
+      request: { threadId: native!.id, prompt: 'Verified feedback input.' },
+    };
+    const provider = await deps.feedbackConnect!(workspace, AbortSignal.timeout(10000));
+    provider.comments.getIssueComment = async () => source;
+    work.continuation.feedbackConnect = async () => provider;
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.feedback = {
+        baseline: {},
+        events: [
+          {
+            id: 'e'.repeat(64),
+            sourceId: source.nodeId,
+            nodeId: fixture.item.nodeId,
+            number: 3,
+            itemType: 'issue',
+            source: JSON.stringify(source),
+            revision: feedbackRevision(source),
+            createdAt: now,
+            policyDigest: 'c'.repeat(64),
+            phase: 'running',
+            native: true,
+            attempt,
+          },
+        ],
+      };
+      await save();
+    });
+    const context = await work.run('context', {}, true);
+    assert.equal(context.status, 'verified', JSON.stringify(context));
+    const retained = (await store.read()).records[0]!;
+    assert.equal(retained.progression?.workOwner, 'issue');
+    assert.equal(retained.progression?.via, 'operator');
+    assert.deepEqual(retained.result, question);
+    assert.equal(retained.feedback!.events[0]!.work, undefined);
+    assert.equal(retained.feedback!.events[0]!.result, undefined);
+    assert.deepEqual(retained.continuation!.attempt, attempt);
+  });
 
   for (const setting of ['model', 'effort'] as const)
     it(`should preserve auto work and its original receipt after operator ${setting} tuning`, async () => {

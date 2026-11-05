@@ -85,7 +85,7 @@ export async function feedbackSession(
   record: OpenClawDispatchRecord,
   config: OpenClawConfig,
 ) {
-  const sessionId = await describeIssueSession(request, record, config);
+  const sessionId = await describeIssueSession(request, record, config, 'feedback');
   const history = sessionObject(
     await request('chat.history', { sessionKey: record.threadId, limit: 1 }),
   );
@@ -150,7 +150,7 @@ export async function advanceFeedbackTurn(input: {
       save,
     });
   }
-  await describeIssueSession(request, record, input.config);
+  await describeIssueSession(request, record, input.config, 'feedback');
   await reconcileOpenClawTurn({
     request,
     sessionKey: expected.key,
@@ -281,7 +281,7 @@ export default async function openClawFeedback(input: {
         (event.work && event.work.result?.outcome !== 'done')
       )
         throw new Error('feedback-resume-unavailable');
-      await describeIssueSession(request, record, input.config);
+      await describeIssueSession(request, record, input.config, 'feedback');
       const current = await operatorInputEvent({
         request,
         senderIsOwner: input.operator,
@@ -392,7 +392,7 @@ export default async function openClawFeedback(input: {
       event.turn.status === 'completed'
     )
       throw new Error('feedback-owner-caller-required');
-    await describeIssueSession(request, record, input.config);
+    await describeIssueSession(request, record, input.config, 'feedback');
     const history = sessionObject(
       await request('chat.history', {
         sessionKey: record.threadId,

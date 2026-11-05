@@ -878,7 +878,11 @@ export default async function runCodexDelivery(
             pullRequest: delivery.pullRequest,
             workflowStatus: workflowStatus(record),
             url: url(delivery.pullRequest!.pullRequestNumber),
-            instruction: deliveryCompletionInstructions('codex', delivery),
+            instruction: deliveryCompletionInstructions(
+              'codex',
+              delivery,
+              Boolean(previous?.reconciled && previous.pullRequest),
+            ),
           };
         } catch (error) {
           signal.throwIfAborted();

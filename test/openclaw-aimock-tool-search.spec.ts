@@ -387,7 +387,8 @@ describe('scripts/aimock-tool-search', () => {
       status: 'recorded',
       presentation: '> Retained plan',
     });
-    assert.equal(saved.result.outcome, 'plan-ready');
+    assert.equal(saved.result.outcome, 'clarification-needed');
+    assert.ok(saved.result.questions.length);
     const summaryResponse = (await reply(scenario, input)).response;
     assert.equal('content' in summaryResponse && summaryResponse.content, '> Retained plan');
     await step('summary-compose', 'agent_system_dispatch', {
@@ -418,7 +419,7 @@ describe('scripts/aimock-tool-search', () => {
       { role: 'assistant', content: '> Retained plan' },
       {
         role: 'user',
-        content: `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
+        content: `Operator request for managed issue ${id}: Yes, close disposable issues after capturing evidence. Implement the retained plan and open a linked pull request.`,
       },
     );
     await discover();

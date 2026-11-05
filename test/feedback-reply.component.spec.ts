@@ -140,7 +140,7 @@ describe('agent/feedback-reply', () => {
     assert.ok('kind' in result.source && result.source.kind === 'status-update');
     assert.ok('facts' in result.source);
     assert.deepEqual(result.source.facts, [progressFact]);
-    assert.equal(result.source.destination, target);
+    assert.equal(result.source.destination, target.split('#')[0]);
     await call('candidate', {
       id: result.id,
       digest: result.digest,
@@ -764,12 +764,12 @@ describe('agent/feedback-reply', () => {
     assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
     assert.equal(writes, 1);
   });
-  async function nativeFeedback() {
-    const source = await provider.getIssueComment('owner', 'repo', 3, 42);
+  async function nativeFeedback(number = 42) {
+    const source = await provider.getIssueComment('owner', 'repo', 3, number);
     const revision = feedbackRevision(source);
     deps.feedback = {
       ownerId: 'a'.repeat(64),
-      eventId: 'b'.repeat(64),
+      eventId: String(number).padStart(64, 'b'),
       revision,
       source: JSON.stringify(source),
       number: 3,
@@ -781,7 +781,7 @@ describe('agent/feedback-reply', () => {
       if (target.source?.nodeId !== source.nodeId || target.revision !== revision)
         throw new Error('feedback-source-changed');
     };
-    return url + '#issuecomment-42';
+    return url + '#issuecomment-' + number;
   }
   it('should keep a native reply independent of evolving issue outcomes without progress comparison', async () => {
     const target = await nativeFeedback();
@@ -847,7 +847,70 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 1);
     assert.equal(selections, 1);
   });
-  it('should keep native self feedback private and reject status-update substitution', async () => {
+  for (const facts of [[progressFact], []])
+    it(`should answer a native status question with ${facts.length} new facts at its original source`, async () => {
+      const target = await nativeFeedback();
+      linkedPullRequest();
+      owners = [
+        {
+          id: deps.feedback!.ownerId,
+          repository: 'owner/repo',
+          number: 3,
+          pullRequestNumber: 4,
+          threadId: 'chat',
+          incarnation: 'session',
+          inactive: false,
+        },
+      ];
+      const read = await call('context', { purpose: 'status-update', target });
+      assert.ok('observation' in read);
+      assert.equal('defaultDestination' in read && read.defaultDestination, target);
+      const composed = await call('compose', {
+        purpose: 'status-update',
+        target,
+        privateText: 'The checks passed; no further progress.',
+        update: { observation: read.observation, facts },
+      });
+      assert.equal(composed.status, 'composition-ready');
+      assert.ok('id' in composed && 'digest' in composed && 'source' in composed);
+      assert.equal('request' in composed.source && composed.source.request?.databaseId, 42);
+      await call('candidate', {
+        id: composed.id,
+        digest: composed.digest,
+        publicText: 'The checks passed; no further progress.',
+      });
+      const digest = await preview(composed.id!);
+      lost = hidden = true;
+      assert.equal((await call('publish', { id: composed.id, digest })).status, 'uncertain');
+      hidden = false;
+      assert.equal((await call('reconcile', { id: composed.id })).status, 'published');
+      assert.equal(postedNumber, 3);
+      assert.ok(posted?.body.includes('@author'));
+      assert.equal(
+        (await call('compose', { target, privateText: 'Reply again.' })).status,
+        'reply-reconciliation-required',
+      );
+      const repeated = await call('compose', {
+        purpose: 'status-update',
+        target,
+        privateText: 'New wording.',
+        update: { observation: 'f'.repeat(64), facts: [{ ...progressFact, revision: 'new' }] },
+      });
+      assert.equal(repeated.status, 'reply-reconciliation-required');
+      assert.equal('id' in repeated && repeated.id, composed.id);
+      assert.equal(writes, 1);
+      assert.equal(selections, 1);
+    });
+  it('should allow the same progress facts to answer separate native questions', async () => {
+    const target = await nativeFeedback();
+    const id = await updateCandidate(target);
+    await call('publish', { id, digest: await preview(id) });
+    const next = await updateCandidate(await nativeFeedback(43));
+    assert.notEqual(next, id);
+    await call('publish', { id: next, digest: await preview(next) });
+    assert.equal(writes, 2);
+  });
+  it('should keep native self feedback private for replies and status updates', async () => {
     const target = await nativeFeedback();
     const original = provider.getIssueComment;
     provider.getIssueComment = async (...args) => ({
@@ -860,7 +923,7 @@ describe('agent/feedback-reply', () => {
     );
     await assert.rejects(
       call('context', { target, purpose: 'status-update' }),
-      /reply-feedback-target-required/,
+      /feedback-self-publication-denied/,
     );
     assert.equal(writes, 0);
     assert.equal(selections, 0);

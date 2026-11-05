@@ -49,7 +49,8 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
         (!direction && needsAutoDecision(record, liveMode)) ||
         (record.autoDecision && !record.autoDecision.ended && input.action !== 'context') ||
         (feedbackWorkStarted(record) && !direction) ||
-        record.result?.outcome !== 'plan-ready' ||
+        (record.result?.outcome !== 'plan-ready' &&
+          !(direction && record.result?.outcome === 'clarification-needed')) ||
         !record.project ||
         !record.worktree ||
         !record.request ||

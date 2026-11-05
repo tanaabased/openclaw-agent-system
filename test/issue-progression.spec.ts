@@ -28,8 +28,8 @@ describe('agent/issue-progression', () => {
     }
   });
 
-  it('should require an actionable plan even with an operator transition', () => {
-    for (const outcome of ['clarification-needed', 'operator-setup-blocker'])
+  it('should retain setup blockers even with an operator transition', () => {
+    for (const outcome of ['operator-setup-blocker'])
       for (const mode of ['plan', 'work', 'auto'] as const)
         assert.deepEqual(
           issueProgression(
@@ -46,6 +46,21 @@ describe('agent/issue-progression', () => {
       status: 'ready',
       progression: { stage: 'implementation', via: 'operator', enteredAt: 20 },
     });
+  });
+
+  it('should let verified direction resolve an original question without rewriting the assessment', () => {
+    const issue = { ...planning, result: { outcome: 'clarification-needed' } };
+    for (const mode of ['plan', 'work', 'auto'] as const) {
+      assert.deepEqual(issueProgression(issue, { mode, now: 20 }), {
+        status: 'held',
+        reason: 'assessment-not-actionable',
+      });
+      assert.deepEqual(issueProgression(issue, { mode, now: 20, operator: true }), {
+        status: 'ready',
+        progression: { stage: 'implementation', via: 'operator', enteredAt: 20 },
+      });
+      assert.equal(issue.result.outcome, 'clarification-needed');
+    }
   });
 
   it('should preserve the first transition across mode changes and repeated evaluation', () => {
