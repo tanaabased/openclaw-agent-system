@@ -3047,6 +3047,54 @@ describe('agent/codex-dispatch', () => {
     assert.equal(gitCalls.length, 0);
   });
 
+  it('should reject malformed project inventories without retaining a task failure', async () => {
+    deps.prepareRepository = async () => assert.fail('invalid input must not prepare a checkout');
+    deps.connect = async () => assert.fail('invalid input must not read assignments or claim work');
+    for (const projects of [undefined, {}, Array(1001).fill(null)]) {
+      await assert.rejects(request('next', { projects }), /dispatch-project-inventory-invalid/);
+      assert.deepEqual((await request('inspect')).records, []);
+      assert.equal(gitCalls.length, 0);
+    }
+  });
+
+  it('should recover a retained inventory error with valid input and preserve its identity', async () => {
+    const selected = await next();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      delete record.project;
+      delete record.context;
+      delete record.preparationObservation;
+      record.phase = 'waiting';
+      record.result = {
+        version: 1,
+        outcome: 'operator-setup-blocker',
+        code: 'dispatch-project-inventory-invalid',
+        summary: 'The issue assessment needs setup or recovery.',
+        remediation: 'Register the project.',
+        evidence: [],
+        progress: { completed: [], remaining: [] },
+      };
+      await save();
+    });
+    const previous = (await store.read()).records;
+    await assert.rejects(request('next'), /dispatch-project-inventory-invalid/);
+    const afterInvalid = (await store.read()).records;
+    assert.equal(afterInvalid.length, 1);
+    assert.equal(afterInvalid[0]!.id, previous[0]!.id);
+    assert.equal(afterInvalid[0]!.phase, previous[0]!.phase);
+    assert.deepEqual(afterInvalid[0]!.result, previous[0]!.result);
+    assert.equal(afterInvalid[0]!.request, undefined);
+    const resumed = await next();
+    assert.equal(resumed.status, 'routing-required');
+    assert.equal(resumed.id, selected.id);
+    const records = (await store.read()).records;
+    assert.equal(records.length, 1);
+    assert.equal(records[0]!.result, undefined);
+    assert.equal(records[0]!.request, undefined);
+  });
+
   it('should retain one quiet setup blocker and resume the same assignment after project setup', async () => {
     projects = [];
     const blocked = await next();

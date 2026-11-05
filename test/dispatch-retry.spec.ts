@@ -24,6 +24,7 @@ describe('agent/dispatch-retry', () => {
 
   it('should recheck known prerequisites and native custody at a bounded cadence', () => {
     for (const code of [
+      'dispatch-project-inventory-invalid',
       'dispatch-project-registration-unavailable',
       'dispatch-assessment-skill-unavailable',
       'dispatch-assessment-guidance-unreadable',

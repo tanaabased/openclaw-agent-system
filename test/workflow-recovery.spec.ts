@@ -4,6 +4,12 @@ import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { intakeRemediation } from '../channels/github/intake/record-store.ts';
 
 describe('agent/workflow-recovery', () => {
+  it('should distinguish a missing project inventory from repository registration', () => {
+    const recovery = workflowRecovery('dispatch-project-inventory-invalid')!;
+    assert.match(recovery.summary, /dispatch call.*inventory/);
+    assert.match(recovery.next, /list_projects.*projects array/);
+    assert.match(recovery.next, /without resetting state or registering/);
+  });
   it('should distinguish intentional additional work from stale selection and predecessor replacement', () => {
     assert.match(workflowRecovery('launch-owner-ambiguous')!.next, /exact task id/);
     assert.match(workflowRecovery('delivery-binding-stale')!.next, /Refresh.*preview/);

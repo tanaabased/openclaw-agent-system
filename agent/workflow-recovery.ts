@@ -19,6 +19,10 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     };
   }
   const reasons: Record<string, [string, string]> = {
+    'dispatch-project-inventory-invalid': [
+      'The dispatch call did not supply a valid saved-project inventory.',
+      'Read the saved Codex projects with list_projects and supply its projects array to dispatch next. Preserve the pending assignment; a valid call can retry it without resetting state or registering the repository again.',
+    ],
     'delivery-implementation-incomplete': [
       'Completed implementation has not been established, so PR delivery was refused before publication.',
       'Refresh implementation context and inspect the retained outcome. Preserve partial work, explain the missing prerequisite or question and its resume condition, and finish authorized implementation before requesting delivery. Do not retry publication or mark unfinished work done to bypass the guard.',

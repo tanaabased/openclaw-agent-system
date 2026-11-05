@@ -44,6 +44,7 @@ import {
   type CodexDispatchSelection as Selection,
 } from './codex-dispatch-context.ts';
 import {
+  assertDispatchProjectInventory,
   dispatchGit,
   resolveDispatchProject,
   verifyDispatchWorktree,
@@ -495,6 +496,7 @@ export async function prepareIssueProject(
 ) {
   const { current, deps, state, activation, now, signal, save, fresh } = tx;
   const fail = (record: DispatchRecord, error: unknown) => failDispatch(record, error, tx);
+  assertDispatchProjectInventory(input.projects);
   try {
     if (!record.manualIssue) record.intakeId = intake.id;
     const { client, repo } = await revalidateDispatchAssignment(current, intake, deps, signal);
