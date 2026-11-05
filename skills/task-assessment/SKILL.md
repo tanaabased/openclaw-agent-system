@@ -53,6 +53,19 @@ and presenting its result.
 
 ## Preconditions
 
+### Native Planning
+
+After completed implementation and linked PR delivery, revise the plan in the
+ordinary native conversation. Use the investigation and planning guidance in
+steps 2–5 below with the context already available, and present the plan directly.
+Do not bootstrap assessment context, submit an assessment result, create a saved
+revision, or require the managed workflow's editor, summary or handoff. Existing
+assessments remain readable history. Use Task Update when the operator requests
+publication of the revised plan or material progress.
+
+If an old assessment invocation returns `status: native`, follow that same path.
+It is retained context, not another assessment round or an execution grant.
+
 ### Direct Entry
 
 If trusted verified execution context already supplies `entry: managed` or
@@ -62,8 +75,8 @@ for workflow steps 2–6. The host's `resultSubmission` selects the submission e
 the skill name never selects or changes the entry path. This guard also applies when
 the wrapper is explicitly configured.
 
-Otherwise, for an explicit direct assessment request in this chat, including a
-managed chat without execution context for this invocation:
+Otherwise, before PR delivery, for an explicit direct assessment request in this
+chat, including a managed chat without execution context for this invocation:
 
 1. Require an explicit GitHub issue URL and existing local checkout root. Ask only
    for a missing input; do not assign, clone, fetch, create a chat or prepare a worktree.

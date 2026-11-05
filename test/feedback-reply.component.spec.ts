@@ -7,6 +7,7 @@ import assessmentSkillSource from '../agent/assessment-skill-source.ts';
 import feedbackReply, { type FeedbackReplyDependencies } from '../agent/feedback-reply.ts';
 import type { OpenClawFeedbackProvider } from '../agent/openclaw-feedback.ts';
 import replyOwner, { type ReplyOwner } from '../agent/reply-owner.ts';
+import ReplyStore from '../agent/reply-store.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import runCodexFeedback from '../agent/codex-feedback.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -23,6 +24,7 @@ const url = 'https://github.com/owner/repo/issues/3';
 describe('agent/feedback-reply', () => {
   let root: string, deps: FeedbackReplyDependencies, provider: OpenClawFeedbackProvider;
   let selections: number, writes: number, lost: boolean, hidden: boolean;
+  let postedNumber: number | undefined;
   let posted: { nodeId: string; databaseId: number; body: string } | undefined;
   let owners: ReplyOwner[];
   beforeEach(async () => {
@@ -31,17 +33,14 @@ describe('agent/feedback-reply', () => {
     selections = writes = 0;
     lost = hidden = false;
     posted = undefined;
+    postedNumber = undefined;
     owners = [];
     const fixture = intakeFixture();
     provider = {
       ...fixture.client,
-      getItemContext: async () => ({
-        title: 'issue',
-        body: '',
-        comments: [],
-        labels: [],
-        truncated: false,
-      }),
+      getItemContext: async () => {
+        throw new Error('reply publication must not load planning context');
+      },
       listIssueComments: async () => ({ comments: [], truncated: false }),
       getIssueComment: async (_o, _n, _number, id) => ({
         nodeId: `C_${id}`,
@@ -54,8 +53,9 @@ describe('agent/feedback-reply', () => {
       }),
       findOwnIssueComment: async (_o, _n, _number, marker) =>
         hidden || !posted?.body.includes(marker) ? undefined : posted,
-      createIssueComment: async (_o, _n, _number, body) => {
+      createIssueComment: async (_o, _n, number, body) => {
         writes++;
+        postedNumber = number;
         posted = { nodeId: 'C_published', databaseId: 9, body };
         if (lost) throw new Error('transport lost');
         return posted;
@@ -103,7 +103,7 @@ describe('agent/feedback-reply', () => {
       outcome: 'No checks were run.',
     });
     assert.equal(composed.status, 'composition-ready');
-    assert.ok('id' in composed && 'digest' in composed);
+    assert.ok('id' in composed && typeof composed.id === 'string' && 'digest' in composed);
     await call('candidate', {
       id: composed.id,
       digest: composed.digest,
@@ -122,23 +122,23 @@ describe('agent/feedback-reply', () => {
     revision: 'abc:unit-run-1',
     text: 'The unit checks passed.',
   };
-  async function updateContext() {
-    const result = await call('context', { purpose: 'status-update', target: url });
+  async function updateContext(target = url) {
+    const result = await call('context', { purpose: 'status-update', target });
     assert.ok('observation' in result && typeof result.observation === 'string');
     return result.observation;
   }
-  async function updateCandidate() {
+  async function updateCandidate(target = url) {
     const result = await call('compose', {
       purpose: 'status-update',
-      target: url,
+      target,
       privateText: 'Complete private answer.\nPreserve the caveats.',
-      update: { observation: await updateContext(), facts: [progressFact] },
+      update: { observation: await updateContext(target), facts: [progressFact] },
     });
     assert.ok('id' in result && 'digest' in result && 'source' in result);
     assert.ok('kind' in result.source && result.source.kind === 'status-update');
     assert.ok('facts' in result.source);
     assert.deepEqual(result.source.facts, [progressFact]);
-    assert.equal(result.source.destination, url);
+    assert.equal(result.source.destination, target);
     await call('candidate', {
       id: result.id,
       digest: result.digest,
@@ -146,6 +146,223 @@ describe('agent/feedback-reply', () => {
     });
     return result.id!;
   }
+  function linkedPullRequest() {
+    const pr = {
+      ...intakeFixture().item,
+      nodeId: 'PR_4',
+      number: 4,
+      itemType: 'pull-request' as const,
+      pullRequest: {
+        baseRef: 'main',
+        headRef: 'topic',
+        headSha: 'a'.repeat(40),
+        baseRepositoryNodeId: 'R_repo',
+        baseRepositoryDatabaseId: 10,
+        draft: true,
+        merged: false,
+      },
+    };
+    const prUrl = 'https://github.com/owner/repo/pull/4';
+    const originalItem = provider.getItem;
+    provider.getItem = async (owner, name, number) =>
+      number === 4 ? pr : originalItem(owner, name, number);
+    return { item: pr, url: prUrl };
+  }
+  it('should start with the issue and select only an open linked pr for the default update destination', async () => {
+    const read = () => call('context', { purpose: 'status-update', target: url });
+    const noLink = await read();
+    assert.ok('defaultDestination' in noLink && noLink.defaultDestination === url);
+    const pr = linkedPullRequest();
+    const mentioned = await read();
+    assert.ok('defaultDestination' in mentioned && mentioned.defaultDestination === url);
+    owners = [
+      {
+        id: 'a'.repeat(64),
+        repository: 'owner/repo',
+        number: 3,
+        pullRequestNumber: 4,
+        threadId: 'chat',
+        incarnation: 'session',
+        inactive: false,
+      },
+    ];
+    const linked = await read();
+    assert.ok('defaultDestination' in linked && linked.defaultDestination === pr.url);
+    assert.equal(linked.destination, url);
+    for (const merged of [false, true]) {
+      pr.item.state = 'closed';
+      pr.item.pullRequest.merged = merged;
+      const closed = await read();
+      assert.ok('defaultDestination' in closed && closed.defaultDestination === url);
+    }
+    assert.equal(writes, 0);
+  });
+  it('should ignore pr mentions while reading the actual retained link', async () => {
+    const pr = linkedPullRequest();
+    const originalItem = provider.getItem;
+    provider.getItem = async (owner, name, number) => {
+      if (number === 3) return originalItem(owner, name, number);
+      if (number === 7) return { ...pr.item, number, nodeId: `PR_${number}` };
+      throw new Error('unrelated pr unavailable');
+    };
+    provider.listIssueComments = async (_owner, _name, number) => {
+      assert.equal(number, 3);
+      return {
+        comments: [
+          {
+            ...(await provider.getIssueComment('owner', 'repo', 3, 9)),
+            body: [4, 5, 6]
+              .map((value) => `https://github.com/owner/repo/pull/${value}`)
+              .join('\n'),
+          },
+        ],
+        truncated: false,
+      };
+    };
+    const read = () => call('context', { purpose: 'status-update', target: url });
+    const multiple = await read();
+    assert.ok('defaultDestination' in multiple && multiple.defaultDestination === url);
+    assert.ok('publicContext' in multiple && multiple.publicContext);
+    assert.deepEqual(multiple.publicContext.pullRequests, []);
+    owners = [
+      {
+        id: 'a'.repeat(64),
+        repository: 'owner/repo',
+        number: 3,
+        pullRequestNumber: 7,
+        threadId: 'chat',
+        incarnation: 'session',
+        inactive: false,
+      },
+    ];
+    const retained = await read();
+    assert.ok(
+      'defaultDestination' in retained &&
+        retained.defaultDestination === 'https://github.com/owner/repo/pull/7',
+    );
+    assert.ok('publicContext' in retained && retained.publicContext);
+    assert.deepEqual(
+      retained.publicContext.pullRequests.map(({ item }) => item.number),
+      [7],
+    );
+    assert.equal(writes, 0);
+  });
+  it('should publish at the selected pr or explicit issue without rerouting either write', async () => {
+    const pr = linkedPullRequest();
+    const prId = await updateCandidate(pr.url);
+    const prResult = await call('publish', { id: prId, digest: await preview(prId) });
+    assert.ok('url' in prResult && prResult.url === `${pr.url}#issuecomment-9`);
+    assert.equal(postedNumber, 4);
+    const issueId = await updateCandidate(url);
+    await call('publish', { id: issueId, digest: await preview(issueId) });
+    assert.equal(postedNumber, 3);
+    assert.equal(writes, 2);
+  });
+  it('should publish current progress with partial discussion without loading planning context', async () => {
+    const pr = linkedPullRequest();
+    const reads = new Set<number>();
+    provider.listIssueComments = async (_owner, _name, number) => {
+      reads.add(number);
+      return {
+        comments: [
+          {
+            ...(await provider.getIssueComment('owner', 'repo', number, 9)),
+            body: 'Earlier discussion. '.repeat(150),
+            bodyTruncated: true,
+          },
+        ],
+        truncated: true,
+      };
+    };
+    for (const target of [url, pr.url]) {
+      const context = await call('context', { purpose: 'status-update', target });
+      assert.ok('publicContext' in context && context.publicContext);
+      assert.equal(context.publicContext.discussion.truncated, true);
+      assert.equal(context.publicContext.discussion.comments[0]!.bodyTruncated, true);
+      const id = await updateCandidate(target);
+      assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
+    }
+    assert.deepEqual([...reads], [3, 4]);
+    assert.equal(writes, 2);
+  });
+  it('should reconcile an uncertain pr update at its original destination after the pr closes', async () => {
+    const pr = linkedPullRequest();
+    owners = [
+      {
+        id: 'a'.repeat(64),
+        repository: 'owner/repo',
+        number: 3,
+        pullRequestNumber: 4,
+        threadId: 'chat',
+        incarnation: 'session',
+        inactive: false,
+      },
+    ];
+    const id = await updateCandidate(pr.url);
+    lost = true;
+    assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'uncertain');
+    pr.item.state = 'closed';
+    pr.item.pullRequest.merged = true;
+    const issueContext = await call('context', { purpose: 'status-update', target: url });
+    assert.equal(issueContext.status, 'reply-reconciliation-required');
+    assert.ok('id' in issueContext && issueContext.id === id);
+    const recovered = await call('reconcile', { id });
+    assert.ok('url' in recovered && recovered.url === `${pr.url}#issuecomment-9`);
+    assert.equal(postedNumber, 4);
+    assert.equal(writes, 1);
+  });
+  it('should compose a fresh pr comment instead of returning the original delivery card', async () => {
+    const pr = linkedPullRequest();
+    owners = [
+      {
+        id: 'a'.repeat(64),
+        repository: 'owner/repo',
+        number: 3,
+        pullRequestNumber: 4,
+        threadId: 'chat',
+        incarnation: 'session',
+        inactive: false,
+        ...{ delivery: { announcement: { receipt: { nodeId: 'existing' } } } },
+      },
+    ];
+    deps.manifest.github = {
+      notifications: {
+        ...intakeFixture().policy,
+        issueAssignment: {
+          allowed: [],
+          mode: 'plan',
+          feedback: {
+            inherit: true,
+            allowed: [],
+            skill: 'agent:voice-reply',
+            guidance: 'Keep the agent voice.',
+          },
+        },
+        reviewRequest: {
+          allowed: [],
+          feedback: {
+            inherit: true,
+            allowed: [],
+            skill: 'other:reply',
+          },
+        },
+      },
+    } as AgentManifest['github'];
+    const before = structuredClone(owners);
+    const update = await call('compose', {
+      purpose: 'status-update',
+      target: pr.url,
+      privateText: 'Verified progress.',
+      update: { observation: await updateContext(pr.url), facts: [progressFact] },
+    });
+    assert.ok('selection' in update && update.selection);
+    assert.equal(update.selection.requestedSkill, 'agent:voice-reply');
+    assert.equal(update.selection.guidance?.content, 'Keep the agent voice.');
+    const id = await candidate(pr.url);
+    assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
+    assert.equal(postedNumber, 4);
+    assert.deepEqual(owners, before);
+  });
   it('should return current public and retained facts before selecting a status composer and no-op without a draft', async () => {
     const observation = await updateContext();
     assert.equal(selections, 0);
@@ -197,6 +414,29 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 1);
     assert.equal(selections, 1);
   });
+  it('should keep completed and uncertain receipts usable after more than forty distinct drafts', async () => {
+    const completed = await updateCandidate();
+    await call('publish', { id: completed, digest: await preview(completed) });
+    const completedComment = posted;
+    for (let index = 0; index < 40; index++) {
+      const next = await call('compose', {
+        target: url,
+        privateText: `Distinct progress ${index}.`,
+      });
+      assert.equal(next.status, 'composition-ready');
+    }
+    const uncertain = await candidate();
+    assert.equal(typeof uncertain, 'string');
+    lost = true;
+    await assert.rejects(
+      call('publish', { id: uncertain, digest: await preview(uncertain) }),
+      /transport lost/,
+    );
+    assert.equal((await call('reconcile', { id: uncertain })).status, 'published');
+    posted = completedComment;
+    assert.equal((await call('reconcile', { id: completed })).status, 'published');
+    assert.equal(writes, 2);
+  });
   it('should recover an uncertain status attempt before a different delta without another composer or create', async () => {
     const id = await updateCandidate();
     const digest = await preview(id);
@@ -215,13 +455,15 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 1);
     assert.equal(selections, 1);
   });
-  it('should withhold a new status update when public facts changed and never substitute a stale observation', async () => {
+  it('should refresh an unattempted update after public facts change without changing its identity', async () => {
     const old = await updateContext();
-    provider.getItemContext = async () => ({
-      title: 'issue',
-      body: 'The checks are now public.',
-      comments: [],
-      labels: [],
+    provider.listIssueComments = async () => ({
+      comments: [
+        {
+          ...(await provider.getIssueComment('owner', 'repo', 3, 9)),
+          body: 'The checks are now public.',
+        },
+      ],
       truncated: false,
     });
     await assert.rejects(
@@ -235,17 +477,98 @@ describe('agent/feedback-reply', () => {
     );
     const id = await updateCandidate();
     const digest = await preview(id);
-    const read = provider.getItemContext;
-    provider.getItemContext = async (...args) => ({
-      ...(await read(...args)),
-      body: 'Newer public facts.',
-    });
+    const read = provider.listIssueComments;
+    provider.listIssueComments = async (...args) => {
+      const discussion = await read(...args);
+      return {
+        ...discussion,
+        comments: discussion.comments.map((comment) => ({
+          ...comment,
+          body: 'Newer public facts.',
+        })),
+      };
+    };
     const changed = await call('publish', { id, digest });
     assert.equal(changed.status, 'blocked');
     assert.ok('code' in changed && changed.code === 'status-update-observation-changed');
     assert.equal(writes, 0);
+    assert.equal(await updateCandidate(), id);
+    await assert.rejects(call('publish', { id, digest }), /reply-publication-stale/);
+    assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
+    assert.equal(writes, 1);
+    assert.equal(selections, 2);
   });
-  it('should reject incomplete status evidence and invalid or duplicate fact identities before composition', async () => {
+  it('should keep task history out of drafts and reconcile an older attempt after history grows', async () => {
+    owners = [
+      {
+        id: 'a'.repeat(64),
+        repository: 'owner/repo',
+        number: 3,
+        threadId: 'chat',
+        incarnation: 'session',
+        inactive: false,
+        events: Array.from({ length: 9 }, (_, index) => ({
+          id: index.toString(16).padStart(64, '0'),
+          sourceId: `C_${index}`,
+          number: 3,
+          nodeId: 'I_issue',
+          itemType: 'issue' as const,
+          source: '{}',
+          revision: 'b'.repeat(64),
+          createdAt: index,
+          policyDigest: 'c'.repeat(64),
+          phase: 'responded' as const,
+          result: { privateText: 'retained history '.repeat(1800) },
+        })),
+      },
+    ];
+    const id = await updateCandidate();
+    const store = new ReplyStore(deps.root, deps.binding);
+    const stored = () => store.exclusive(async (drafts) => structuredClone(drafts[0]!));
+    assert.deepEqual(JSON.parse((await stored()).ownerContext), {
+      ownerId: owners[0]!.id,
+      workflow: 'issue-assignment',
+    });
+    await store.exclusive(async (drafts, save) => {
+      drafts[0]!.ownerContext = JSON.stringify({
+        status: 'status-update-context',
+        ownerId: owners[0]!.id,
+        workflow: 'issue-assignment',
+        verifiedOutcome: { feedback: [] },
+      });
+      drafts[0]!.update!.observation = 'f'.repeat(64);
+      await save();
+    });
+    assert.equal(await updateCandidate(), id);
+    lost = true;
+    assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'uncertain');
+    await store.exclusive(async (drafts, save) => {
+      drafts[0]!.ownerContext = JSON.stringify({
+        status: 'status-update-context',
+        ownerId: owners[0]!.id,
+        workflow: 'issue-assignment',
+        verifiedOutcome: { feedback: [] },
+      });
+      await save();
+    });
+    const attempted = await stored();
+    owners[0]!.events!.push({ ...owners[0]!.events![0]!, id: 'd'.repeat(64) });
+    const pending = await call('context', { purpose: 'status-update', target: url });
+    assert.equal(pending.status, 'reply-reconciliation-required');
+    const refused = await call('compose', {
+      id,
+      purpose: 'status-update',
+      privateText: 'Replacement text.',
+      update: { observation: 'e'.repeat(64), facts: [{ ...progressFact, text: 'Reworded.' }] },
+    });
+    assert.equal(refused.status, 'reply-reconciliation-required');
+    assert.deepEqual(await stored(), attempted);
+    assert.equal((await call('reconcile', { id })).status, 'published');
+    assert.equal((await stored()).ownerContext, attempted.ownerContext);
+    assert.equal((await stored()).publicText, attempted.publicText);
+    assert.equal(writes, 1);
+  });
+  it('should reject invalid fact identities and surface failed discussion reads before composition', async () => {
     const observation = await updateContext();
     for (const facts of [[{ ...progressFact, key: ' ' }], [progressFact, progressFact]])
       await assert.rejects(
@@ -257,14 +580,10 @@ describe('agent/feedback-reply', () => {
         }),
         /status-update-facts-invalid/,
       );
-    provider.getItemContext = async () => ({
-      title: 'issue',
-      body: '',
-      comments: [],
-      labels: [],
-      truncated: true,
-    });
-    await assert.rejects(updateContext(), /status-update-context-incomplete/);
+    provider.listIssueComments = async () => {
+      throw new Error('provider unavailable');
+    };
+    await assert.rejects(updateContext(), /provider unavailable/);
     assert.equal(selections, 0);
     assert.equal(writes, 0);
   });
@@ -277,8 +596,10 @@ describe('agent/feedback-reply', () => {
         threadId: 'chat',
         incarnation: 'session',
         inactive: false,
-        summary: { attempt: 'uncertain-summary' },
-        delivery: { announcement: { attempted: true } },
+        ...{
+          summary: { attempt: 'uncertain-summary' },
+          delivery: { announcement: { attempted: true } },
+        },
       },
     ];
     const before = structuredClone(owners);
@@ -293,6 +614,17 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 0);
   });
   it('should include verified linked pr facts and withhold a candidate after the linked head changes', async () => {
+    owners = [
+      {
+        id: 'a'.repeat(64),
+        repository: 'owner/repo',
+        number: 3,
+        pullRequestNumber: 4,
+        threadId: 'chat',
+        incarnation: 'session',
+        inactive: false,
+      },
+    ];
     const originalItem = provider.getItem;
     let head = 'a'.repeat(40);
     provider.getItem = async (owner, name, number) =>
@@ -312,13 +644,6 @@ describe('agent/feedback-reply', () => {
               merged: false,
             },
           };
-    provider.getItemContext = async (_owner, _name, number) => ({
-      title: 'Progress',
-      body: number === 3 ? 'See https://github.com/owner/repo/pull/4' : 'Linked work.',
-      comments: [],
-      labels: [],
-      truncated: false,
-    });
     const read = await call('context', { purpose: 'status-update', target: url });
     assert.ok('publicContext' in read && read.publicContext);
     assert.equal(read.publicContext.pullRequests.length, 1);
@@ -330,6 +655,9 @@ describe('agent/feedback-reply', () => {
     assert.equal(result.status, 'blocked');
     assert.ok('code' in result && result.code === 'status-update-observation-changed');
     assert.equal(writes, 0);
+    assert.equal(await updateCandidate(), id);
+    assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
+    assert.equal(writes, 1);
   });
   it('should prepare the default context without automation and reuse its draft without another selection', async () => {
     const id = await candidate();
@@ -479,18 +807,15 @@ describe('agent/feedback-reply', () => {
               merged: false,
             },
           });
+        const target = workflow === 'issueAssignment' ? url : url.replace('/issues/', '/pull/');
         const result = await call('compose', {
-          target: workflow === 'issueAssignment' ? url : url.replace('/issues/', '/pull/'),
+          target,
           privateText: JSON.stringify(configuration),
-          ...(workflow === 'issueAssignment'
-            ? {
-                purpose: 'status-update',
-                update: {
-                  observation: await updateContext(),
-                  facts: [{ ...progressFact, key: JSON.stringify(configuration) }],
-                },
-              }
-            : {}),
+          purpose: 'status-update',
+          update: {
+            observation: await updateContext(target),
+            facts: [{ ...progressFact, key: JSON.stringify(configuration) }],
+          },
         });
         assert.ok('selection' in result && result.selection);
         assert.equal(
@@ -509,7 +834,7 @@ describe('agent/feedback-reply', () => {
     }
     assert.equal(selections, 12);
   });
-  it('should reuse managed owners without resolving another skill and never bypass invalid or foreign owners', async () => {
+  it('should compose new requested comments independently of prior summaries and reject invalid or foreign owners', async () => {
     owners = [
       {
         id: 'a'.repeat(64),
@@ -518,7 +843,7 @@ describe('agent/feedback-reply', () => {
         threadId: 'chat',
         incarnation: 'session',
         inactive: false,
-        summary: { receipt: { nodeId: 'existing' } },
+        ...{ summary: { receipt: { nodeId: 'existing' } } },
         result: {
           version: 1,
           outcome: 'plan-ready',
@@ -530,8 +855,10 @@ describe('agent/feedback-reply', () => {
         },
       },
     ];
-    assert.equal((await call('compose', { target: url })).status, 'managed-reply-required');
-    assert.equal(selections, 0);
+    const before = structuredClone(owners);
+    await candidate();
+    assert.deepEqual(owners, before);
+    assert.equal(selections, 1);
     assert.equal(writes, 0);
     owners[0]!.inactive = true;
     await assert.rejects(call('compose', { target: url }), /reply-managed-context-invalid/);
@@ -812,11 +1139,12 @@ describe('agent/feedback-reply', () => {
     await direct('reconcile', { id: result.id });
     assert.equal(writes, 1);
     assert.equal(calls.filter((x) => x === 'skills/list').length, 1);
-    const update = await direct('context', { purpose: 'status-update', target: url });
+    const pr = linkedPullRequest();
+    const update = await direct('context', { purpose: 'status-update', target: pr.url });
     assert.ok('observation' in update && typeof update.observation === 'string');
     const status = await direct('compose', {
       purpose: 'status-update',
-      target: url,
+      target: pr.url,
       privateText: 'Native status answer.',
       update: { observation: update.observation, facts: [progressFact] },
     });
@@ -837,6 +1165,7 @@ describe('agent/feedback-reply', () => {
     });
     assert.equal(statusPublished.status, 'published');
     assert.equal(writes, 2);
+    assert.equal(postedNumber, 4);
     assert.ok(posted?.body.includes(':status-update:'));
   });
   it('should use bound openclaw user input and skills without activating a coordinator or preparing a worktree', async () => {
@@ -933,7 +1262,7 @@ describe('agent/feedback-reply', () => {
       /reply-operator-required/,
     );
     const composed = await direct('compose', { target: url, privateText: 'Answer.' });
-    assert.ok('id' in composed && 'digest' in composed);
+    assert.ok('id' in composed && typeof composed.id === 'string' && 'digest' in composed);
     await direct('candidate', {
       id: composed.id,
       digest: composed.digest,
@@ -946,11 +1275,12 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 1);
     assert.equal(calls.filter((x) => x === 'skills.status').length, 1);
     assert.ok(!(await readdir(root)).includes('intake'));
-    const update = await direct('context', { purpose: 'status-update', target: url });
+    const pr = linkedPullRequest();
+    const update = await direct('context', { purpose: 'status-update', target: pr.url });
     assert.ok('observation' in update && typeof update.observation === 'string');
     const status = await direct('compose', {
       purpose: 'status-update',
-      target: url,
+      target: pr.url,
       privateText: 'Native status answer.',
       update: { observation: update.observation, facts: [progressFact] },
     });
@@ -964,6 +1294,7 @@ describe('agent/feedback-reply', () => {
     assert.ok('digest' in statusPreview);
     await direct('publish', { id: status.id, digest: statusPreview.digest });
     assert.equal(writes, 2);
+    assert.equal(postedNumber, 4);
     assert.ok(posted?.body.includes(':status-update:'));
   });
 });

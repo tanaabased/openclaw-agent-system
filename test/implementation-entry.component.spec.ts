@@ -89,6 +89,40 @@ describe('agent/implementation-entry', () => {
       deps,
     );
 
+  it('should retain completed implementation after more than twenty direct entries', async () => {
+    const connect = deps.connectProvider;
+    deps.connectProvider = async () => {
+      const provider = await connect();
+      return {
+        ...provider,
+        getItem: async (owner, name, number) => ({
+          ...(await provider.getItem(owner, name, number)),
+          number,
+          nodeId: `I_${number}`,
+        }),
+      };
+    };
+    const first = await call();
+    assert.ok('id' in first);
+    await call('result', { id: first.id, result: ready });
+    for (let number = 4; number <= 23; number++)
+      await call('context', { target: `https://github.com/owner/repo/issues/${number}` });
+    const entries = await new DirectEntryStore(
+      deps.root,
+      deps.binding,
+      implementationEntriesSchema,
+      'implementation',
+    ).exclusive(async (entries) => entries);
+    assert.equal(entries.length, 21);
+    deps.connectProvider = async () => {
+      throw new Error('completed work must recover without provider access');
+    };
+    const recovered = await call('context', { id: first.id });
+    assert.equal(recovered.status, 'presented');
+    assert.ok('previousResult' in recovered);
+    assert.deepEqual(recovered.previousResult, ready);
+  });
+
   for (const runtime of ['codex', 'openclaw'] as const)
     it(`should recover oversized ${runtime} retained material without changing scope or consumed inputs`, async () => {
       deps.binding.runtime = runtime;

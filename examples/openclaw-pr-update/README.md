@@ -177,6 +177,22 @@ number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-announcements.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
 ```
 
+## Native skill acceptance still required
+
+The strict fixture above verifies repeated code/PR edits, not model selection of Task Update.
+In a native acceptance run, replan in the delivered chat without assessment submission
+or a saved revision; keep prior assessments readable. Then request a task progress update from the issue: use its linked
+open PR, preserve an explicit issue destination, and return to the issue after the PR closes.
+Verify one material comment, the configured reply skill and agent voice, and recovery of an
+uncertain comment at its original destination. Keep the original issue announcement intact.
+Refresh an unposted update after public discussion changes; recompose the same facts and
+publish once. Grow retained task history before reconciling an uncertain update and verify
+the original text and receipt are preserved without another post.
+On both runtimes, repeat with a long discussion and a truncated comment sample: preserve
+the visible limitations, inspect relevant omitted context when needed, and publish verified
+current progress without loading a complete planning snapshot or PR file inventory.
+Both adapters have controlled component coverage; native interpretation and voice remain unrun.
+
 ## Cleanup
 
 GitHub issues, PRs, branches, and SSH registrations persist beyond the runner. Quiesce the Gateway once before disposing of those resources; the runner owns local files and the mock process.

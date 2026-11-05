@@ -1,6 +1,5 @@
 import type { Static } from 'typebox';
 
-import type { assessmentSelectionSchema } from './assessment-selection.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import type { ReplyTarget } from './reply-target.ts';
 import type { AssessmentResult } from './assessment-result.ts';
@@ -27,13 +26,6 @@ export interface ReplyOwner {
   number?: number;
   pullRequestNumber?: number;
   events?: FeedbackSourceEvent[];
-  summary?: {
-    selection?: Static<typeof assessmentSelectionSchema>;
-    receipt?: unknown;
-    publicText?: string;
-    attempt?: string;
-  };
-  delivery?: unknown;
   deliveredPullRequest?: unknown;
   implementation?: Static<typeof implementationResultSchema>;
   result?: AssessmentResult;
@@ -106,17 +98,7 @@ export default function replyOwner(
       (event) => event.nodeId === target.nodeId && event.sourceId === target.source!.nodeId,
     );
     const event = matching?.at(-1);
-    if (!event)
-      return {
-        status: 'manual-reply-context' as const,
-        workflow: 'issue-assignment' as const,
-        ownerId: owner.id,
-        verifiedOutcome: {
-          assessment: owner.result,
-          implementation: owner.implementation,
-          delivery: owner.deliveredPullRequest,
-        },
-      };
+    if (!event) return manualContext(owner);
     if (!event.result || event.phase === 'blocked')
       throw new Error('reply-managed-response-required');
     if (event.receipt) {
@@ -166,33 +148,19 @@ export default function replyOwner(
         'Reuse this exact managed feedback route and retained response. The owning route verifies current source and authority. If its previous run ended, use supported owner resume with explicit user direction; never fall back to manual reply or repeat implementation.',
     };
   }
-  if (target.number === owner.number && owner.summary)
-    return {
-      status: 'managed-reply-required' as const,
-      id: owner.id,
-      digest: undefined,
-      route: 'summary',
-      operation: owner.summary.receipt
-        ? 'present'
-        : owner.summary.attempt
-          ? 'reconcile'
-          : 'compose',
-      selection: owner.summary.selection,
-      retainedResult: owner.result,
-      receipt: owner.summary.receipt,
-      instruction:
-        'Reuse the retained assessment-summary owner and result. Use dispatch present for a delivered summary; otherwise use summary compose/reconcile as directed by its owner. Do not create a manual update or repeat assessment.',
-    };
-  if (owner.delivery)
-    return {
-      status: 'managed-reply-required' as const,
-      id: owner.id,
-      digest: undefined,
-      route: 'delivery',
-      operation: 'present',
-      retainedResult: owner.result,
-      instruction:
-        'Reuse the existing delivery owner and retained PR/announcement receipts. Present or recover its supported operation; do not create another reply, PR or implementation turn.',
-    };
-  throw new Error('reply-managed-response-required');
+  return manualContext(owner);
+}
+
+/** A new requested comment is independent of earlier summary and delivery effects. */
+function manualContext(owner: ReplyOwner) {
+  return {
+    status: 'manual-reply-context' as const,
+    workflow: 'issue-assignment' as const,
+    ownerId: owner.id,
+    verifiedOutcome: {
+      assessment: owner.result,
+      implementation: owner.implementation,
+      delivery: owner.deliveredPullRequest,
+    },
+  };
 }

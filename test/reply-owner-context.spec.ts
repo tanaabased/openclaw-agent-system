@@ -41,7 +41,6 @@ describe('agent/reply-owner-context', () => {
     assert.equal(context.incarnation, 'native-session');
     assert.equal(context.inactive, false);
     assert.equal(context.deliveredPullRequest, delivery.pullRequest);
-    assert.equal(context.delivery, delivery);
   });
   it('should reject a missing admission for the calling managed chat without claiming unrelated work', () => {
     const input = fixture();

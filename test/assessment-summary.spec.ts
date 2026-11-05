@@ -3,10 +3,8 @@ import assert from 'node:assert/strict';
 import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 import issueProgression from '../agent/issue-progression.ts';
 import pendingPublicResponse from '../agent/pending-public-response.ts';
-import replyOwnerContext from '../agent/reply-owner-context.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import type { AssessmentSummaryRequest } from '../agent/assessment-summary-state.ts';
-import { intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/assessment-summary', () => {
   for (const runtime of ['openclaw', 'codex'] as const) {
@@ -97,32 +95,6 @@ describe('agent/assessment-summary', () => {
       assert.deepEqual(f.record.assessmentSummaries, summaries);
     }
   });
-  it('should project an older uncertain summary for reply recovery without replacing it with the latest revision', async () => {
-    const t = fixture();
-    t.retain();
-    await t.compose();
-    const older = t.record.assessmentSummaries![0]!;
-    older.attempt = 'uncertain-publication';
-    t.retain({ ...t.result, plan: 'The revised implementation plan.' });
-    const before = structuredClone(t.record);
-    const github = intakeFixture();
-    const context = replyOwnerContext({
-      record: t.record,
-      caller: 'issue',
-      custodyInvalid: false,
-      intake: {
-        repository: github.repository,
-        issue: github.item,
-        receiving: github.client.identity,
-      },
-    });
-    assert.equal(context.summary?.attempt, 'uncertain-publication');
-    assert.equal(context.summary?.publicText, older.publicText);
-    assert.equal(context.summary?.selection, older.selection);
-    assert.deepEqual(t.record, before);
-    assert.equal(t.writes, 0);
-  });
-
   it('should retain a summary-only denial without publishing or granting implementation', async () => {
     const f = fixture();
     f.retain();

@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import assessmentEntry, { type AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
+import AssessmentEntryStore from '../agent/assessment-entry-store.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import assessmentOwner from '../agent/assessment-owner.ts';
+import { nativeIssueContext } from '../agent/implementation-delivery.ts';
 import assessmentSkillSource from '../agent/assessment-skill-source.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import type { AssessmentEntry } from '../agent/assessment-entry-state.ts';
@@ -168,6 +170,51 @@ describe('agent/assessment-entry', () => {
     );
     assert.ok('presentation' in full && full.presentation!.includes(ready.fullAssessment!));
   });
+  it('should retain assessments and revision history beyond the former lifetime counts', async () => {
+    const connect = deps.connectProvider;
+    deps.connectProvider = async () => {
+      const provider = await connect();
+      return {
+        ...provider,
+        getItem: async (owner, name, number) => ({
+          ...(await provider.getItem(owner, name, number)),
+          number,
+          nodeId: `I_${number}`,
+        }),
+      };
+    };
+    const first = await call('context');
+    assert.ok('id' in first);
+    await call('result', { id: first.id, result: ready });
+    for (let number = 4; number <= 23; number++)
+      await call('context', { target: `https://github.com/owner/repo/issues/${number}` });
+    for (let revision = 1; revision <= 11; revision++) {
+      deps.turnId = `revision-${revision}`;
+      deps.inputId = deps.turnId;
+      const context = await call('context', { id: first.id, revise: true });
+      assert.ok('previousResultDigest' in context);
+      await call('result', {
+        id: first.id,
+        previousResultDigest: context.previousResultDigest,
+        result: { ...ready, plan: `Revision ${revision}.` },
+      });
+    }
+    const entries = await new AssessmentEntryStore(deps.root, deps.binding).exclusive(
+      async (entries) => entries,
+    );
+    assert.equal(entries.length, 21);
+    assert.deepEqual(
+      entries[0]!.history?.map((result) => {
+        assert.ok(result.outcome === 'plan-ready');
+        return result.plan;
+      }),
+      [ready.plan, ...Array.from({ length: 10 }, (_, index) => `Revision ${index + 1}.`)],
+    );
+    const recovered = await call('context', { id: first.id });
+    assert.ok('previousResult' in recovered);
+    assert.ok(recovered.previousResult?.outcome === 'plan-ready');
+    assert.equal(recovered.previousResult.plan, 'Revision 11.');
+  });
   it('should retain questions then revise with a later native answer and exact previous digest', async () => {
     const first = await call('context');
     assert.ok('id' in first);
@@ -271,6 +318,57 @@ describe('agent/assessment-entry', () => {
     assert.equal(entries[0]!.result!.fullAssessment, 'Revised assessment only.');
     assert.equal(selections.length, 0);
   });
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should keep post-delivery ${runtime} planning native without creating or revising an assessment`, async () => {
+      deps.binding.runtime = runtime;
+      const skill = await deps.resolveSkill('configured');
+      selections = [];
+      const history = [{ result: ready }];
+      const nativeContext = nativeIssueContext({
+        id: 'delivered',
+        phase: 'complete',
+        worktree: root,
+        implementationDelivered: true,
+        result: ready,
+        directAssessments: history,
+      });
+      const before = structuredClone(nativeContext);
+      deps.managed = async () => ({
+        digest: 'c'.repeat(64),
+        path: root,
+        evidence: '{}',
+        result: ready,
+        selection: {
+          version: 1,
+          requestedSkill: 'configured',
+          defaultSkill: false,
+          skill,
+          observedAt: 1,
+        },
+        nativeContext,
+        entries: async () => {
+          throw new Error('assessment history must remain untouched');
+        },
+      });
+      deps.git = async () => {
+        throw new Error('native planning must not inspect managed checkout');
+      };
+      deps.connectProvider = async () => {
+        throw new Error('native planning must not load provider context');
+      };
+      for (const request of [
+        { operation: 'context', revise: true },
+        { operation: 'result', id: 'a'.repeat(64), result: { ...ready, plan: 'Revised plan.' } },
+        { operation: 'present', id: 'a'.repeat(64) },
+      ]) {
+        const response = await call(request.operation, request);
+        assert.deepEqual(response, before);
+        assert.equal('resultSubmission' in response, false);
+      }
+      assert.deepEqual(history, [{ result: ready }]);
+      assert.equal(selections.length, 0);
+      assert.deepEqual(await readdir(deps.root), []);
+    });
   it('should fail explicitly on invalid managed context without selecting a manual method', async () => {
     deps.managed = async () => {
       throw new Error('assessment-managed-context-invalid');
@@ -294,7 +392,7 @@ describe('agent/assessment-entry', () => {
   it('should preserve dirty checkout evidence and reject an invalid configured skill without fallback', async () => {
     dirty = true;
     const context = await call('context');
-    assert.ok('project' in context);
+    assert.ok('project' in context && 'dirty' in context.project);
     assert.equal(context.project.dirty, true);
     deps.turnId = 'later';
     deps.inputId = 'later-input';
@@ -329,7 +427,7 @@ describe('agent/assessment-entry', () => {
         },
       } as AgentManifest;
       const selected = await call('context');
-      assert.ok('assessment' in selected);
+      assert.ok('resultSubmission' in selected);
       assert.equal(
         selected.assessment!.requestedSkill,
         configuration?.skill ?? 'agent-system:agent-system-task-assessment',

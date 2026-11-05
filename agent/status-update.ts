@@ -9,43 +9,27 @@ export default async function statusUpdateContext(
   target: ReplyTarget,
   retainedPullRequest?: number,
 ) {
-  if (target.itemType !== 'issue' || target.source) throw new Error('status-update-issue-required');
-  const issue = await provider.getItemContext(target.owner, target.name, target.number, 'issue');
-  if (issue.truncated) throw new Error('status-update-context-incomplete');
-  const links = [issue.body, ...issue.comments.map((comment) => comment.body)].join('\n');
-  const numbers = new Set<number>(retainedPullRequest ? [retainedPullRequest] : []);
-  for (const match of links.matchAll(
-    /https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/([1-9]\d*)\b/gu,
-  )) {
-    if (
-      match[1]!.toLowerCase() === target.owner.toLowerCase() &&
-      match[2]!.toLowerCase() === target.name.toLowerCase()
-    )
-      numbers.add(Number(match[3]));
-  }
-  if (numbers.size > 3) throw new Error('status-update-context-incomplete');
+  if (target.source) throw new Error('status-update-item-required');
+  const discussion = await provider.listIssueComments(target.owner, target.name, target.number);
+  const number = target.itemType === 'pull-request' ? target.number : retainedPullRequest;
   const pullRequests = [];
-  for (const number of numbers) {
+  if (number !== undefined) {
     const item = await provider.getItem(target.owner, target.name, number);
     if (
       item.itemType !== 'pull-request' ||
       item.pullRequest.baseRepositoryNodeId !== target.repositoryNodeId
     )
       throw new Error('status-update-pr-diverged');
-    const context = await provider.getItemContext(
-      target.owner,
-      target.name,
-      number,
-      'pull-request',
-    );
-    if (context.truncated) throw new Error('status-update-context-incomplete');
     pullRequests.push({
       url: `https://github.com/${target.owner}/${target.name}/pull/${number}`,
       item,
-      context,
     });
   }
-  return { issue, pullRequests };
+  const linked = pullRequests.find(
+    ({ item }) =>
+      item.number === retainedPullRequest && item.state === 'open' && !item.pullRequest.merged,
+  );
+  return { discussion, pullRequests, defaultDestination: linked?.url ?? target.destination };
 }
 
 /** effect identity follows cited facts, not wording, public chatter, or native turn ids. */
