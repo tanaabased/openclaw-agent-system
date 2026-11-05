@@ -1,11 +1,56 @@
 import assert from 'node:assert/strict';
 import report from '../agent/project-pickup-report.ts';
+import ProjectPickupFailure from '../agent/project-pickup-failure.ts';
 import fixture from './project-pickup-selection-fixture.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 
 const allowances = [{ repository: 'owner/repo', milestone: 10, used: 0, limit: 1 }];
 
 describe('agent/project-pickup-report', () => {
+  it('should preserve safe diagnostics and recovery without loading private state', () => {
+    const diagnostic = providerDiagnostic('github', 'client-create', 'permission', {
+      httpStatus: 403,
+      providerMessage: 'denied with ghp_abcdefghijklmnopqrstuvwxyz1234567890',
+    });
+    const original = Object.assign(new Error('github-account-permission-denied'), {
+      providerDiagnostic: diagnostic,
+    });
+    const error = new ProjectPickupFailure(original);
+    assert.equal(error.cause, original);
+    assert.equal(error.code, original.message);
+    assert.equal(error.failure.status, 'error');
+    assert.match(error.failure.response, /❌.*Project pickup/);
+    assert.match(error.failure.response, /github-account-permission-denied/);
+    assert.match(error.failure.response, /denied with/);
+    assert.match(error.failure.response, /permissions/);
+    assert.match(error.failure.response, /Reconcile/);
+    assert.doesNotMatch(error.failure.response, /ghp_|Debug|no eligible|Selected/);
+  });
+
+  for (const source of ['built-in', 'inline', 'file'] as const) {
+    it(`should render literal ${source} guidance only in debug output`, () => {
+      const outcome = {
+        status: 'empty',
+        allowances,
+        selectionGuidance: {
+          source,
+          content: 'prefer [ready](bad)\n```\n> literal',
+          path: source === 'file' ? '/workspace/selection.md' : undefined,
+        },
+      };
+      const result = report({ outcome, debug: true });
+      assert.match(result.response, new RegExp('Guidance source.*' + source));
+      assert.match(
+        result.response,
+        /> ````text\n> prefer \[ready\]\(bad\)\n> ```\n> > literal\n> ````/,
+      );
+      assert.equal(
+        report({ outcome }).response,
+        report({ outcome: { status: 'empty', allowances } }).response,
+      );
+    });
+  }
+
   it('should report the current comparison and verified assignment without issue lifecycle history', async () => {
     const f = fixture();
     const selection = await f.select();

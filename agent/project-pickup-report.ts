@@ -1,4 +1,8 @@
-import type { PickupAllowance, PickupScanSummary } from './project-pickup.ts';
+import type {
+  PickupAllowance,
+  PickupScanSummary,
+  PickupSelectionGuidance,
+} from './project-pickup.ts';
 import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import card, {
   githubNotificationMarkdownCode as code,
@@ -16,6 +20,7 @@ export default function projectPickupReport(input: {
     summary?: PickupScanSummary;
     allowances?: PickupAllowance[];
     providerDiagnostic?: ProviderDiagnostic;
+    selectionGuidance?: PickupSelectionGuidance;
   };
   debug?: boolean;
   capacity?: { occupied: number; limit: number };
@@ -134,12 +139,48 @@ export default function projectPickupReport(input: {
             },
           ]
         : []),
+      ...(failed
+        ? [
+            {
+              label: 'Next',
+              value: [
+                outcome.providerDiagnostic?.explanation ??
+                  (outcome.code?.startsWith('dispatch-assessment-guidance-')
+                    ? 'Check the configured selection guidance and restore a readable, valid source.'
+                    : 'Inspect the diagnostic and resolve the pickup setup or state problem.'),
+                'Reconcile any existing assignment attempt before trying again.',
+              ].join(' '),
+            },
+          ]
+        : []),
     ],
   });
   const debug = debugCard({
     debug: input.debug,
     context: 'Project pickup',
-    facts: [{ label: 'Outcome', value: code(outcome.status) }],
+    facts: [
+      { label: 'Outcome', value: code(outcome.status) },
+      ...(outcome.selectionGuidance?.source
+        ? [{ label: 'Guidance source', value: code(outcome.selectionGuidance.source) }]
+        : []),
+      ...(outcome.selectionGuidance?.path
+        ? [{ label: 'Guidance file', value: code(outcome.selectionGuidance.path) }]
+        : []),
+    ],
+    ...(input.debug && outcome.selectionGuidance
+      ? {
+          detail: (() => {
+            const content = outcome.selectionGuidance.content.replace(/\r\n?/gu, '\n');
+            const fence = '`'.repeat(
+              (content.match(/`+/gu) ?? []).reduce(
+                (size, run) => Math.max(size, run.length + 1),
+                3,
+              ),
+            );
+            return [fence + 'text', content, fence].join('\n');
+          })(),
+        }
+      : {}),
   });
   return { response: [message, debug].filter(Boolean).join('\n\n'), notify: true };
 }

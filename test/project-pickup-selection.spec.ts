@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
-import projectPickup, { pickupAuthority } from '../agent/project-pickup.ts';
+import projectPickup, {
+  pickupAuthority,
+  pickupSelectionInstructions,
+} from '../agent/project-pickup.ts';
 import { pickupOperationSchema } from '../agent/project-pickup-state.ts';
 import pickupCapacity, { pickupIssueKey } from '../agent/project-pickup-capacity.ts';
 import DiscoveryBudget from '../agent/discovery-budget.ts';
@@ -12,6 +15,22 @@ import fixture from './project-pickup-selection-fixture.ts';
 
 describe('agent/project-pickup', () => {
   for (const runtime of ['codex', 'openclaw'] as const) {
+    for (const guidance of [undefined, 'prefer urgent work']) {
+      it(`should report the effective comparison guidance without retaining it in ${runtime} with custom guidance ${guidance !== undefined}`, async () => {
+        const f = fixture(runtime);
+        f.policy.projectPickup!.selection = guidance === undefined ? undefined : { guidance };
+        const selection = await f.select();
+        const result = await f.run({ selection: { ...selection, issueNodeId: null } });
+        assert.ok('selectionGuidance' in result && result.selectionGuidance);
+        assert.deepEqual(result.selectionGuidance, {
+          source: guidance === undefined ? 'built-in' : 'inline',
+          content: [pickupSelectionInstructions, guidance].filter(Boolean).join('\n\n'),
+        });
+        assert.deepEqual(f.state.projectPickup!.operations, []);
+        const next = await f.run();
+        assert.equal('selectionGuidance' in next, false);
+      });
+    }
     it(`should pass complete candidates and guidance to the model without selecting in ${runtime}`, async () => {
       const f = fixture(runtime);
       const result = await f.run();

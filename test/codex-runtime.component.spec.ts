@@ -8,6 +8,28 @@ import { runInNewContext } from 'node:vm';
 import codexDispatchHandoff from '../agent/codex-dispatch-handoff.ts';
 
 describe('agent/codex-runtime', () => {
+  it('should report an early pickup failure in its native envelope while exiting unsuccessfully', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codex-pickup-failure-'));
+    try {
+      const result = spawnSync(
+        process.execPath,
+        ['dist/codex/codex-runtime.js', 'intake', 'pickup', '--plugin-data', root],
+        { input: '{}', encoding: 'utf8', timeout: 10000 },
+      );
+      assert.ifError(result.error);
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      const failure = JSON.parse(result.stderr);
+      assert.equal(failure.status, 'error');
+      assert.match(failure.response, /<decision>NOTIFY<\/decision>/);
+      assert.match(failure.response, /❌.*Project pickup/);
+      assert.ok(failure.response.includes(failure.code));
+      assert.match(failure.response, /Next/);
+      assert.equal(failure.notice, undefined);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it('should run the built failure formatter through the saved path launcher', async () => {
     const root = await mkdtemp(join(tmpdir(), 'codex-failure-formatter-'));
     try {

@@ -81,6 +81,8 @@ export const pickupOperationSchema = Type.Object(
       ),
     ),
     guidance: Type.Optional(Type.String({ maxLength: maximumAssessmentGuidanceBytes })),
+    guidanceSource: Type.Optional(Type.Union([Type.Literal('inline'), Type.Literal('file')])),
+    guidancePath: Type.Optional(text),
     selectionDigest: Type.Optional(text),
     selected: Type.Optional(
       Type.Object(
