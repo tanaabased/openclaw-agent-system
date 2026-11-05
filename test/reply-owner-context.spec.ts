@@ -68,6 +68,27 @@ describe('agent/reply-owner-context', () => {
     ])
       assert.equal(replyOwnerContext({ ...input, record }).inactive, true);
   });
+  it('should exclude saved writeups from fresh replies and progress updates', () => {
+    const input = fixture();
+    const owner = replyOwnerContext({
+      ...input,
+      implementation: { outcome: 'done', summary: 'OLD-WORK', fullResult: 'OLD-PLAN' },
+      delivery: { pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 } },
+    });
+    owner.events = [
+      {
+        id: 'old-event',
+        result: { privateText: 'OLD-FEEDBACK' },
+      },
+    ] as typeof owner.events;
+    const target = { owner: 'owner', name: 'repo', number: 3 } as ReplyTarget;
+    for (const purpose of [undefined, 'status-update'] as const) {
+      const response = replyOwner([owner], 'chat', 'chat', target, purpose);
+      assert.ok(response && 'verifiedOutcome' in response);
+      assert.deepEqual(response.verifiedOutcome, { delivery: owner.deliveredPullRequest });
+      assert.doesNotMatch(JSON.stringify(response), /OLD-WORK|OLD-PLAN|OLD-FEEDBACK/);
+    }
+  });
   it('should keep source-bound reply ownership after clearing the current pr association', () => {
     const input = fixture();
     const owner = replyOwnerContext({

@@ -4570,7 +4570,7 @@ describe('agent/codex-dispatch', () => {
       const context = await work.run('context', {}, true);
       assert.equal(context.status, 'verified');
       assert.ok('previousResult' in context);
-      assert.deepEqual(context.previousResult, retained);
+      assert.equal(context.previousResult, undefined);
       assert.equal('deliveryOnly' in context && context.deliveryOnly, false);
       assert.deepEqual((await store.read()).records[0]!.continuation!.result, retained);
       const revised = { outcome: 'done', summary: 'Revised.', fullResult: 'New evidence.' };
@@ -4724,7 +4724,14 @@ describe('agent/codex-dispatch', () => {
             /continuation-managed-issue-required/,
           );
         }
-        const entered = mode === 'plan' ? undefined : await work.run('context', {}, true);
+        const entered =
+          mode === 'plan'
+            ? undefined
+            : await work.run(
+                'context',
+                assessment.decision ? { decision: assessment.decision } : {},
+                true,
+              );
         const permitted = mode !== 'plan' && mode !== 'auto-plan';
         if (entered)
           assert.equal(
@@ -4876,7 +4883,10 @@ describe('agent/codex-dispatch', () => {
         { id: work.id, result: assessment },
         { threadId: native!.id },
       );
-      assert.equal((recorded.handoff as { next: string }).next, 'implementation');
+      assert.equal(
+        (recorded.handoff as { next: string }).next,
+        mode === 'auto' ? 'planning' : 'implementation',
+      );
       assert.ok(String(recorded.presentation).includes(assessment.reviewSummary));
       assert.ok(!String(recorded.presentation).includes(assessment.fullAssessment));
       const detailed = await request(
@@ -4933,13 +4943,26 @@ describe('agent/codex-dispatch', () => {
             ],
           };
         });
-        const pending = await work.run('context', {}, true);
+        const pending = await work.run(
+          'context',
+          assessment.decision ? { decision: assessment.decision } : {},
+          true,
+        );
         assert.equal(pending.status, 'observation-required', JSON.stringify(pending));
         assert.deepEqual('request' in pending && pending.request, {
           tool: 'read_thread',
           arguments: { threadId: native!.id, turnLimit: 1, includeOutputs: false },
         });
-        assert.equal((await work.run('context', {}, true)).status, 'observation-required');
+        assert.equal(
+          (
+            await work.run(
+              'context',
+              assessment.decision ? { decision: assessment.decision } : {},
+              true,
+            )
+          ).status,
+          'observation-required',
+        );
         assert.equal((await work.run('next')).status, 'reconciled');
         const current = await selectCodexIntake(pluginData, deps);
         const state = await new CodexDispatchStore(
@@ -4950,7 +4973,11 @@ describe('agent/codex-dispatch', () => {
         assert.notEqual(state.records[0]!.progression?.stage, 'implementation');
         readReceived = true;
       }
-      const verified = await work.run('context', {}, true);
+      const verified = await work.run(
+        'context',
+        assessment.decision ? { decision: assessment.decision } : {},
+        true,
+      );
       assert.equal(verified.status, 'verified', JSON.stringify(verified));
       assert.ok('assessment' in verified);
       assert.equal(verified.assessment, undefined);
@@ -4967,7 +4994,16 @@ describe('agent/codex-dispatch', () => {
       assert.equal(started.continuation!.attempt, undefined);
       assert.equal(started.continuation!.binding!.turnId, turnId);
       assert.equal(started.progression!.via, mode);
-      assert.equal((await work.run('context', {}, true)).status, 'verified');
+      assert.equal(
+        (
+          await work.run(
+            'context',
+            assessment.decision ? { decision: assessment.decision } : {},
+            true,
+          )
+        ).status,
+        'verified',
+      );
       assert.deepEqual(
         (await store.read()).records[0]!.continuation!.attempt,
         started.continuation!.attempt,
@@ -4993,7 +5029,16 @@ describe('agent/codex-dispatch', () => {
         /direct-delivery-boundary/,
       );
       assert.equal(delivered, true);
-      assert.equal((await work.run('context', {}, true)).status, 'verified');
+      assert.equal(
+        (
+          await work.run(
+            'context',
+            assessment.decision ? { decision: assessment.decision } : {},
+            true,
+          )
+        ).status,
+        'verified',
+      );
       assert.equal(native!.turnId, turnId);
       native!.status = 'idle';
       native!.turnStatus = 'completed';

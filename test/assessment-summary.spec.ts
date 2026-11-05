@@ -89,7 +89,7 @@ describe('agent/assessment-summary', () => {
       const pending = pendingPublicResponse(f.record);
       if (held) {
         assert.equal(pending?.state, 'blocked');
-        assert.equal(pending?.summary?.code, 'assessment-summary-native-approval-denied');
+        assert.equal(pending?.code, 'assessment-summary-native-approval-denied');
         assert.match(pending!.instruction, /Do not retry/);
       } else assert.equal(pending, undefined);
       assert.deepEqual(f.record.assessmentSummaries, summaries);
@@ -153,9 +153,14 @@ describe('agent/assessment-summary', () => {
       f.record.assessmentSummaries?.[0]?.diagnostic,
       'Native review refused this summary.',
     );
-    assert.equal(pendingPublicResponse(f.record)?.state, 'blocked');
+    const pending = pendingPublicResponse(f.record);
+    assert.equal(pending?.state, 'blocked');
+    assert.doesNotMatch(
+      JSON.stringify(pending),
+      /A revised assessment|publicText|publicationCommand/,
+    );
     assert.equal(
-      pendingPublicResponse(f.record)?.summary?.diagnostic,
+      pendingPublicResponse(f.record)?.diagnostic,
       'Native review refused this summary.',
     );
     assert.equal(f.writes, 0);

@@ -87,20 +87,7 @@ export default function replyOwner(
       ownerId: owner.id,
       pullRequestNumber: owner.pullRequestNumber,
       verifiedOutcome: {
-        implementation: owner.implementation,
         delivery: owner.deliveredPullRequest,
-        feedback: owner.events?.flatMap((event) =>
-          event.result || event.work?.result
-            ? [
-                {
-                  eventId: event.id,
-                  result: event.result,
-                  work: event.work?.result,
-                  receipt: event.receipt,
-                },
-              ]
-            : [],
-        ),
       },
     };
   if (target.source) {
@@ -170,7 +157,6 @@ function manualContext(owner: ReplyOwner) {
     workflow: 'issue-assignment' as const,
     ownerId: owner.id,
     verifiedOutcome: {
-      implementation: owner.implementation,
       delivery: owner.deliveredPullRequest,
     },
   };

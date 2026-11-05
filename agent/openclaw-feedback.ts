@@ -409,7 +409,6 @@ export default async function openClawFeedback(input: {
       id: record.id,
       eventId: event.id,
       presentation: sourcePresentation,
-      previousImplementation: record.work?.result,
       project: { path: record.worktree },
       implementation: record.work?.selection,
     };
@@ -525,7 +524,6 @@ export default async function openClawFeedback(input: {
       issueStage: retainedIssueProgression(record)?.stage ?? 'planning',
       decisionSchema: feedbackDecisionSchema,
       work: event.work,
-      previousImplementation: record.work?.result,
       discussion: await provider.getItemContext(owner, name, event.number),
       workInstructions: feedbackWorkInstructions,
       workAuthorized: feedbackConversationMode(record, await livePolicy()) === 'work',

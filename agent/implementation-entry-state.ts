@@ -20,7 +20,7 @@ export const implementationEntriesSchema = Type.Array(
         { additionalProperties: false },
       ),
       plan: Type.Optional(Type.String({ minLength: 1, maxLength: 64000 })),
-      evidence: Type.String({ maxLength: 96000 }),
+      evidence: Type.Optional(Type.String({ maxLength: 96000 })),
       selection: Type.Optional(assessmentSelectionSchema),
       progression: Type.Optional(issueProgressionSchema),
       scope: Type.Union([Type.Literal('local'), Type.Literal('pull-request')]),

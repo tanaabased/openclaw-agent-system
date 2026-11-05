@@ -58,7 +58,6 @@ export default function issueProgression(
     mode: 'plan' | 'work' | 'auto';
     now: number;
     operator?: boolean;
-    actionablePlan?: string;
     decision?: Static<typeof implementationDecisionSchema>;
   },
 ):
@@ -73,7 +72,7 @@ export default function issueProgression(
   if (retained) return { status: 'ready', progression: retained };
   if (!input.operator) {
     if (input.mode === 'plan') return { status: 'held', reason: 'implementation-disabled' };
-    const decision = input.decision ?? issue.implementationDecision ?? issue.result?.decision;
+    const decision = input.decision ?? issue.implementationDecision;
     if (input.mode === 'auto' && assessmentDecisionMode(decision) !== 'work')
       return {
         status: 'held',

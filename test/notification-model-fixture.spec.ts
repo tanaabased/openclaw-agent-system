@@ -77,7 +77,7 @@ for (const scenario of [
               {
                 role: 'user' as const,
                 content:
-                  'OpenClaw runtime context:\nAgent System model-only current-turn facts notification-hidden-initial-fact\nEnd OpenClaw runtime context.',
+                  'OpenClaw runtime context:\nAgent System model-only current-turn facts\nEnd OpenClaw runtime context.',
               },
             ]
           : []),
@@ -1347,7 +1347,7 @@ for (const scenario of [
           input.messages.push({
             role: 'user',
             content:
-              '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts notification-hidden-initial-fact',
+              '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts',
           });
           assert.equal((await action(input, 'context')).id, id);
           append(input, 'context', {

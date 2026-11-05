@@ -61,7 +61,7 @@ export default async function implementationEntry(
       owner: managed.owner,
       runtime: deps.binding.runtime,
       instruction:
-        'Use the existing implementation owner with its original plan, stage inputs, source and receipts. Do not bootstrap manual work.',
+        'Use the existing implementation owner with current native direction and its source and publication receipts. Do not bootstrap manual work.',
     };
   }
   if (deps.operator === false) throw new Error('implementation-operator-required');
@@ -141,7 +141,7 @@ export default async function implementationEntry(
       throw new Error('implementation-managed-context-changed');
     await deps.assertCurrent();
     if (input.operation === 'context') {
-      if (input.material && (!entry?.progression || !entry.selection || !entry.plan))
+      if (input.material && (!entry?.progression || !entry.selection))
         throw new Error('implementation-material-context-required');
       if (!entry) {
         entry = {
@@ -150,17 +150,9 @@ export default async function implementationEntry(
           repositoryId: repo.nodeId,
           subjectId: issue.nodeId,
           checkout,
-          evidence: JSON.stringify(
-            dispatchContext(
-              await provider.getItemContext(locator.owner, locator.name, locator.number),
-              canonical,
-              deps.now,
-            ),
-          ),
           scope: input.scope ?? 'local',
           authorization: source,
           scopeSource: source,
-          ...(deps.message ? { authorizationText: deps.message } : {}),
           caller: source,
         };
         entries.push(entry);
@@ -173,14 +165,10 @@ export default async function implementationEntry(
           throw new Error('implementation-scope-new-input-required');
         entry.scope = input.scope;
         entry.scopeSource = source;
-        entry.scopeText = deps.message;
       }
-      if (entry.plan && input.plan && entry.plan !== input.plan)
-        throw new Error('implementation-consumed-plan-changed');
-      // A native implementation request supplies its current plan; never recover
-      // an original assessment from the legacy assessment store implicitly.
-      entry.plan ??= input.plan;
-      if (!entry.plan?.trim()) {
+      // The supplied plan already belongs to native tool history. Do not retain it
+      // or make a historical plan a prerequisite for an admitted implementation.
+      if (!entry.progression && !input.plan?.trim()) {
         await save();
         return {
           status: 'clarification-needed',
@@ -194,7 +182,6 @@ export default async function implementationEntry(
         const transition = issueProgression(entry, {
           mode: 'plan',
           operator: true,
-          actionablePlan: entry.plan,
           now: deps.now,
         });
         if (transition.status !== 'ready') throw new Error(transition.reason);
@@ -218,7 +205,6 @@ export default async function implementationEntry(
           runtime: deps.binding.runtime,
           id: entry.id,
           path: checkout.path,
-          plan: entry.plan,
           implementation: entry.selection,
           previousResult: entry.result,
           scope: entry.scope,
@@ -226,10 +212,13 @@ export default async function implementationEntry(
         }),
         entry: 'direct',
         target: canonical,
-        evidence: JSON.parse(entry.evidence),
-        currentInput: deps.message,
+        evidence: dispatchContext(
+          await provider.getItemContext(locator.owner, locator.name, locator.number),
+          canonical,
+          deps.now,
+        ),
         instructions:
-          'Execute the selected implementation body once using this verified context; never invoke its bootstrap again. Preserve partial files, consumed plan and selection. Reconcile current operator input with this plan. Do not assess, create another chat/worktree, activate notifications or change session settings. Respect the retained publicationAuthorized scope. Local scope forbids push and PR publication. A plan and skill composition grant no publication authority; pull-request scope is collected only from an explicit operator publication request, not inferred from the plan. For requested publication use the host-owned delivery handoff, never publish independently. Built-in and custom skills return their ordinary complete substantive output without Agent System fields or commands. You, the calling agent, preserve that output unchanged inside fullResult and construct result matching resultSchema: outcome done|blocked, summary and fullResult. Ask questions directly in native chat without submitting a clarification result. Submit dispatch implementation operation result with the returned id and that result object; do not submit the prose itself as result. Only the runtime acknowledgment proves recording. After an uncertain submission, refresh this same context and reconcile its retained previousResult before retrying; never repeat completed implementation. Keep partial files and questions in the native conversation; an answer is ordinary input and needs no clarification checkpoint. Existing publication effects must resume through their original owner and receipts, never a substitute publication.',
+          'Execute the selected implementation body once using this verified context; never invoke its bootstrap again. Preserve partial files and follow the latest native plan and user direction. The plan supplied to this tool stays in native conversation; Agent System does not save or reload it. Do not assess, create another chat/worktree, activate notifications or change session settings. Respect the retained publicationAuthorized scope. Local scope forbids push and PR publication. A plan and skill composition grant no publication authority; pull-request scope is collected only from an explicit operator publication request, not inferred from the plan. For requested publication use the host-owned delivery handoff, never publish independently. Built-in and custom skills return their ordinary complete substantive output without Agent System fields or commands. You, the calling agent, preserve that output unchanged inside fullResult and construct result matching resultSchema: outcome done|blocked, summary and fullResult. Ask questions directly in native chat without submitting a clarification result. Submit dispatch implementation operation result with the returned id and that result object; do not submit the prose itself as result. Only the runtime acknowledgment proves recording. After an uncertain submission, refresh this same context and reconcile its retained previousResult before retrying; never repeat completed implementation. Keep partial files and questions in the native conversation; an answer is ordinary input and needs no clarification checkpoint. Existing publication effects must resume through their original owner and receipts, never a substitute publication.',
       };
       return implementationMaterial(
         response,

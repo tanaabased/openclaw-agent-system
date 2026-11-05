@@ -1,4 +1,3 @@
-import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -124,42 +123,41 @@ describe('agent/implementation-entry', () => {
   });
 
   for (const runtime of ['codex', 'openclaw'] as const)
-    it(`should recover oversized ${runtime} retained material without changing scope or consumed inputs`, async () => {
+    it(`should keep ${runtime} plans in native input without saving or freezing them`, async () => {
       deps.binding.runtime = runtime;
-      const largePlan = 'Complete engineering plan.\n'.repeat(1300);
+      const largePlan = 'NATIVE-PLAN-ONLY.\n'.repeat(1300);
+      deps.message = 'Implement ' + largePlan;
       const first = await call('context', { plan: largePlan });
+      assert.ok('id' in first);
       assert.equal(first.status, 'verified');
-      assert.ok('publicationAuthorized' in first);
-      assert.equal(first.publicationAuthorized, false);
+      assert.doesNotMatch(JSON.stringify(first), /NATIVE-PLAN-ONLY/);
       const store = new DirectEntryStore(
         deps.root,
         deps.binding,
         implementationEntriesSchema,
         'implementation',
       );
-      const before = await store.exclusive(async (entries) => structuredClone(entries));
-      const count = selections.length;
-      const restored = await hydrateImplementation(first, async (request) =>
-        implementationEntry(request, deps),
+      const entries = await store.exclusive(async (entries) => structuredClone(entries));
+      assert.equal(entries[0]!.plan, undefined);
+      assert.equal(entries[0]!.authorizationText, undefined);
+      assert.equal(entries[0]!.scopeText, undefined);
+      assert.equal(
+        (await call('context', { id: first.id, plan: 'Current revised plan.' })).status,
+        'verified',
       );
-      assert.equal(restored.plan, largePlan);
-      assert.equal(restored.publicationAuthorized, false);
-      assert.deepEqual(await store.exclusive(async (entries) => entries), before);
-      assert.equal(selections.length, count);
-      assert.ok('contextMaterials' in first && first.contextMaterials);
-      const fields = (first.contextMaterials as { fields: Field[] }).fields;
-      const read = fields[0]!.request;
-      await assert.rejects(
-        implementationEntry({ ...read, id: 'b'.repeat(64) }, deps),
-        /implementation-entry-unavailable/,
+      await store.exclusive(async (entries, save) => {
+        entries[0]!.plan = 'HISTORICAL-PLAN';
+        entries[0]!.evidence = JSON.stringify({ body: 'HISTORICAL-ISSUE-SNAPSHOT' });
+        await save();
+      });
+      const resumed = await call('context', { id: first.id, plan: undefined });
+      assert.equal(resumed.status, 'verified');
+      assert.doesNotMatch(JSON.stringify(resumed), /HISTORICAL-PLAN|HISTORICAL-ISSUE-SNAPSHOT/);
+      assert.match(JSON.stringify(resumed), /Requested handler/);
+      assert.doesNotMatch(
+        JSON.stringify(await store.exclusive(async (entries) => entries)),
+        /NATIVE-PLAN-ONLY|Current revised plan/,
       );
-      const denied = {
-        ...deps,
-        assertCurrent: async () => {
-          throw new Error('current-owner-denied');
-        },
-      };
-      await assert.rejects(implementationEntry(read, denied), /current-owner-denied/);
     });
 
   for (const runtime of ['codex', 'openclaw'] as const) {
@@ -167,7 +165,7 @@ describe('agent/implementation-entry', () => {
       deps.binding.runtime = runtime;
       const first = await call();
       assert.ok('implementation' in first && first.implementation);
-      assert.equal(first.plan, plan);
+      assert.equal(first.plan, undefined);
       assert.equal(first.assessment, undefined);
       assert.equal(first.issueStage, 'implementation');
       assert.equal(first.resultContract, 'implementation-result/v1');
@@ -342,9 +340,9 @@ describe('agent/implementation-entry', () => {
   it('should preserve consumed inputs across restart and reject changed targets native custody and publication scope', async () => {
     const first = await call();
     assert.ok('id' in first);
-    await assert.rejects(
-      call('context', { id: first.id, plan: 'Replace consumed plan' }),
-      /implementation-consumed-plan-changed/,
+    assert.equal(
+      (await call('context', { id: first.id, plan: 'Current plan' })).status,
+      'verified',
     );
     await assert.rejects(
       call('context', { id: first.id, scope: 'pull-request' }),

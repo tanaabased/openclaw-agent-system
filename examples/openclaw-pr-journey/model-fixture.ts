@@ -157,8 +157,7 @@ function respond(
     .join('\n');
   if (prompt.includes('Explain the completed PR in this ordinary conversation.')) {
     const retained = currentFacts(messages);
-    if (options.withoutSavedResults) assert.equal(retained.previousImplementationResult, undefined);
-    else assert.equal(retained.previousImplementationResult?.outcome, 'done');
+    assert.equal(retained.previousImplementationResult, undefined);
     assert.ok(retained.pullRequest?.pullRequestNumber);
     assert.ok(retained.worktree);
     assert.ok(retained.branch);
@@ -709,11 +708,7 @@ function respond(
       const privateContext = request.messages
         .map(({ content }) => getTextContent(content) ?? '')
         .join('\n');
-      if (
-        !privateContext.includes('Agent System model-only current-turn facts') ||
-        !privateContext.includes('notification-hidden-initial-fact')
-      )
-        return;
+      if (!privateContext.includes('Agent System model-only current-turn facts')) return;
       return dispatch('context', { action: 'context', id });
     }
     const project = context.project as { path?: unknown } | undefined;
@@ -789,7 +784,7 @@ function respond(
       if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
       const summarized = summary(id, saved.presentation);
       if (!summarized || 'toolCalls' in summarized) return summarized;
-      if ((saved.handoff as { next?: string })?.next !== 'implementation') return summarized;
+      if (context.mode !== 'work' && context.mode !== 'auto') return summarized;
     }
     automaticId = id;
   }
@@ -842,7 +837,11 @@ function respond(
       if (!context)
         return dispatch('work-context', {
           ...(automaticId
-            ? { action: 'implementation-context', id: operatorId }
+            ? {
+                action: 'implementation-context',
+                id: operatorId,
+                decision: { mode: 'work', reasons: ['The current cleanup scope is clear.'] },
+              }
             : { action: 'implementation', operation: 'context', id: operatorId }),
         });
       const path = nativeWork ? context.worktree : context.project?.path;

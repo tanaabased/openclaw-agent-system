@@ -135,13 +135,18 @@ describe('agent/implementation-delivery', () => {
   });
 
   it('should return native facts without routing a delivered task into an implementation owner', async () => {
+    const previous = { outcome: 'done', summary: 'OLD-WORK', fullResult: 'OLD-PLAN' };
     const nativeContext = nativeIssueContext({
       id: 'issue',
       phase: 'complete',
       worktree: '/tmp',
-      work: { delivery: { binding: { branch: 'retained-branch' } } },
+      work: {
+        result: previous,
+        delivery: { binding: { branch: 'retained-branch' } },
+      },
     });
     assert.equal(nativeContext.branch, 'retained-branch');
+    assert.doesNotMatch(JSON.stringify(nativeContext), /OLD-WORK|OLD-PLAN/);
     const owner = {
       owner: { id: 'issue' },
       path: '/tmp',

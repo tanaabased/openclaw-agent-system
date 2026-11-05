@@ -20,10 +20,10 @@ describe('agent/issue-progression', () => {
     });
     for (const mode of ['plan', 'work'] as const) {
       const issue = { ...planning, result: { ...planning.result, decision: { mode } } };
-      assert.equal(
-        issueProgression(issue, { mode: 'auto', now: 20 }).status,
-        mode === 'work' ? 'ready' : 'held',
-      );
+      assert.deepEqual(issueProgression(issue, { mode: 'auto', now: 20 }), {
+        status: 'held',
+        reason: 'auto-decision-required',
+      });
       assert.equal(issueProgression(issue, { mode: 'plan', now: 20 }).status, 'held');
     }
   });
@@ -59,6 +59,22 @@ describe('agent/issue-progression', () => {
       ).status,
       'ready',
     );
+  });
+
+  it('should use explicit saved permission instead of a conflicting historical assessment', () => {
+    for (const mode of ['plan', 'work'] as const) {
+      const issue = {
+        implementationDecision: { mode, reasons: ['Current native decision.'] },
+        result: {
+          outcome: 'plan-ready',
+          decision: { mode: mode === 'plan' ? ('work' as const) : ('plan' as const) },
+        },
+      };
+      assert.equal(
+        issueProgression(issue, { mode: 'auto', now: 20 }).status,
+        mode === 'work' ? 'ready' : 'held',
+      );
+    }
   });
 
   it('should preserve the first transition across mode changes and repeated evaluation', () => {

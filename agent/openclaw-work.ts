@@ -153,7 +153,7 @@ export default async function openClawWorkAction(input: {
       status: 'handed-off',
       id: record.id,
       instructions:
-        'Call implementation-context before changing files, or delivery prepare for already implemented work. Preserve the complete assessment, worktree, and selected model/effort. Continue within the verified task scope; implementation includes ordinary PR delivery. Honor explicit user restrictions without requiring another stage approval.',
+        'Call implementation-context before changing files, or delivery prepare for already implemented work. Use the current native conversation and preserve the worktree and selected model/effort. Continue within the verified task scope; implementation includes ordinary PR delivery. Honor explicit user restrictions without requiring another stage approval.',
     };
   }
   const resultSource = { turnId: source.runId, inputId: source.inputEventId };
@@ -186,7 +186,6 @@ export default async function openClawWorkAction(input: {
         id: record.id,
         path: record.worktree!,
         implementation: record.work.selection,
-        previousResult: record.work.result,
         scope: record.work.scope,
       }),
       issueStage: record.progression?.stage ?? 'planning',
@@ -195,7 +194,6 @@ export default async function openClawWorkAction(input: {
         record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
       routing: record.routing && JSON.parse(record.routing),
       effective: record.effective,
-
       pendingPublicResponse: pendingPublicResponse(record),
       instructions: nativeTaskInstructions('openclaw'),
     };

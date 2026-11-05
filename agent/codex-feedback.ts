@@ -565,7 +565,6 @@ export default async function runCodexFeedback(
                 id: record.id,
                 eventId: event.id,
                 presentation: sourcePresentation,
-                previousImplementation: record.continuation?.result,
                 project: { path: record.worktree },
                 implementation: record.continuation?.selection,
               };
@@ -592,9 +591,7 @@ export default async function runCodexFeedback(
                 issueStage: retainedIssueProgression(record)?.stage ?? 'planning',
                 decisionSchema: feedbackDecisionSchema,
                 work: event.work,
-
                 effective: record.effective,
-                previousImplementation: record.continuation?.result,
                 discussion: await provider.client.getItemContext(owner, name, event.number),
                 workInstructions: feedbackWorkInstructions,
                 presentation: sourcePresentation,

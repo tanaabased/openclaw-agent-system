@@ -22,14 +22,14 @@ const binding = {
 describe('agent/openclaw-turn-context', () => {
   it('should bind private facts to the native current input and keep provider data out of trusted instructions', () => {
     const output = openclawTurnContext(record, binding)!;
-    assert.match(output.appendContext, /PRIVATE-GITHUB-FACT/);
+    assert.doesNotMatch(output.appendContext, /PRIVATE-GITHUB-FACT/);
     assert.match(output.appendContext, /current-input/);
-    assert.match(output.appendContext, /BEGIN UNTRUSTED GITHUB PROVIDER DATA/);
+    assert.doesNotMatch(output.appendContext, /BEGIN UNTRUSTED GITHUB PROVIDER DATA/);
     assert.doesNotMatch(output.appendSystemContext, /PRIVATE-GITHUB-FACT/);
   });
   it('should bind native runs without inventing an optional input id', () => {
     const output = openclawTurnContext(record, { ...binding, inputId: undefined })!;
-    assert.match(output.appendContext, /PRIVATE-GITHUB-FACT/);
+    assert.doesNotMatch(output.appendContext, /PRIVATE-GITHUB-FACT/);
     assert.match(output.appendContext, /"runId":"assessment"/);
     assert.doesNotMatch(output.appendContext, /inputId/);
   });
@@ -76,12 +76,12 @@ describe('agent/openclaw-turn-context', () => {
       result: { outcome: 'plan-ready', plan: 'ORIGINAL-PLAN' },
       progression: { stage: 'implementation', via: 'work' },
       work: {
-        result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' },
+        result: { outcome: 'done', summary: 'Done.', fullResult: 'OUTDATED-IMPLEMENTATION-PLAN' },
         delivery: { reconciled: true, pullRequest: { pullRequestNumber: 7 } },
       },
     } as OpenClawDispatchRecord;
     const output = openclawTurnContext(delivered, { ...binding, runId: 'human-question' })!;
-    assert.doesNotMatch(output.appendContext, /ORIGINAL-PLAN/);
+    assert.doesNotMatch(output.appendContext, /ORIGINAL-PLAN|OUTDATED-IMPLEMENTATION-PLAN/);
     assert.equal(delivered.work?.result?.outcome, 'done');
   });
 
@@ -106,7 +106,7 @@ describe('agent/openclaw-turn-context', () => {
     })!;
     assert.doesNotMatch(output.appendContext, /FULL-RETAINED-PLAN/);
     assert.match(output.appendContext, /later-input/);
-    assert.match(output.appendContext, /previousResultDigest/);
+    assert.doesNotMatch(output.appendContext, /previousResultDigest/);
     assert.equal(later.progression, undefined);
     assert.match(output.appendContext, /"runId":"later"/);
   });

@@ -28,7 +28,7 @@ export default function pendingPublicResponse(record: SharedDispatchRecord) {
       revision: record.assessmentRevision,
       state: 'blocked' as const,
       code: 'assessment-summary-source-unavailable',
-      summary,
+      diagnostic: summary.diagnostic,
       instruction:
         'The saved assessment lacks complete summary source or its revision. Keep the assessment readable and preserve publication receipts. Restore complete source through the authorized assessment flow in this chat before composing its summary. Do not reconstruct source from summaries, repeat assessment automatically, or change the implementation stage.',
     };
@@ -36,7 +36,8 @@ export default function pendingPublicResponse(record: SharedDispatchRecord) {
     kind: 'assessment-summary' as const,
     revision: summary?.revision ?? record.assessmentRevision!,
     state,
-    summary,
+    code: summary.code,
+    diagnostic: summary.diagnostic,
     instruction:
       state === 'blocked' && summary?.code && /denied|cancelled/.test(summary.code)
         ? 'Report the retained summary hold and diagnostic separately from implementation progress. Do not retry, compose, publish, reconcile or use another publication route while this hold remains. Supported verified recovery or renewed authorization is required for publication. Continue independently authorized implementation only through fresh native context; broader denial, cancellation and lost authority remain stops.'

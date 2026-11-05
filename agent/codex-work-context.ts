@@ -46,8 +46,6 @@ export default async function codexWorkContext(
       id: record.id,
       path: record.worktree!,
       implementation: selection,
-      previousResult:
-        work.result ?? (work.revisionSource ? work.resultHistory?.at(-1)?.result : undefined),
       revision: Boolean(work.revisionSource),
       scope: work.scope,
       existingPullRequest: Boolean(record.adoptedPullRequest),
@@ -73,7 +71,6 @@ export default async function codexWorkContext(
     routing: record.routing && JSON.parse(record.routing),
     effective: record.effective,
     binding: work.binding,
-
     pendingPublicResponse: pendingPublicResponse(record),
     instructions: nativeTaskInstructions('codex'),
   };

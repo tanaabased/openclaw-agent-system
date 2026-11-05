@@ -53,7 +53,7 @@ describe('core/register-hooks', () => {
         appendContext: string;
         appendSystemContext: string;
       };
-      assert.match(output.appendContext, /PRIVATE-GITHUB-FACT/);
+      assert.doesNotMatch(output.appendContext, /PRIVATE-GITHUB-FACT/);
       assert.match(output.appendContext, /"runId":"assessment"/);
       assert.doesNotMatch(output.appendSystemContext, /PRIVATE-GITHUB-FACT/);
       if (currentUserMessageId) assert.match(output.appendContext, /native-input/);

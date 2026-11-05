@@ -480,11 +480,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     const privateContext = request.messages
       .map(({ content }) => getTextContent(content) ?? '')
       .join('\n');
-    if (
-      !privateContext.includes('Agent System model-only current-turn facts') ||
-      !privateContext.includes('previousResultDigest')
-    )
-      return;
+    if (!privateContext.includes('Agent System model-only current-turn facts')) return;
     const fresh = result('refresh-context');
     if (!fresh) return dispatch('refresh-context', { action: 'context', id: refreshId });
     const evidence = fresh.evidence as { body?: string } | undefined;
@@ -587,11 +583,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     const privateContext = request.messages
       .map(({ content }) => getTextContent(content) ?? '')
       .join('\n');
-    if (
-      !privateContext.includes('Agent System model-only current-turn facts') ||
-      !privateContext.includes('notification-hidden-initial-fact')
-    )
-      return;
+    if (!privateContext.includes('Agent System model-only current-turn facts')) return;
     return dispatch('context', { action: 'context', id });
   }
   const project = context.project as { path?: unknown } | undefined;

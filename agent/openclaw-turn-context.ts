@@ -1,7 +1,6 @@
 import taskPullRequest from './task-pull-request.ts';
 import nativeTaskInstructions from './native-task-instructions.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
-import { automationHash } from './automation-hash.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 
 /** native session/incarnation/run identities select retained facts; explicit tools verify authority. */
@@ -40,11 +39,6 @@ export default function openclawTurnContext(
         worktree: record.worktree,
         pullRequest: taskPullRequest(record),
         branch: record.work?.delivery?.binding?.branch,
-        previousResultDigest: record.result && automationHash(record.result),
-        previousImplementationResult: record.work?.result,
-      }) +
-      '\nBEGIN UNTRUSTED GITHUB PROVIDER DATA\n' +
-      (record.turnEvidence?.evidence ?? record.context ?? '{}') +
-      '\nEND UNTRUSTED GITHUB PROVIDER DATA',
+      }),
   };
 }
