@@ -1,3 +1,4 @@
+import { hasDeliveredImplementation } from './implementation-delivery.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import { dispatchAdmission } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
@@ -37,7 +38,7 @@ export default async function advanceCodexAutoDecision(
   if (occurrence) {
     for (const record of state.records) {
       const liveMode = issueWorkflowMode(current.manifest.github?.notifications, record);
-      if (input.id && input.id !== record.id) continue;
+      if (hasDeliveredImplementation(record) || (input.id && input.id !== record.id)) continue;
       const pending = record.autoDecision && !record.autoDecision.ended;
       if (!pending && !needsAutoDecision(record, liveMode)) continue;
       if (

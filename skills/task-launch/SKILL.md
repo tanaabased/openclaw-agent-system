@@ -33,6 +33,7 @@ Start the existing managed task workflow from an explicit operator request inste
 
 ## When Not to Use
 
+- Native chat creation or context handoff, including moving research and an authorized plan to another project. Use the host's native chat tools; an issue reference or destination repository does not request managed launch.
 - Assessing or planning an issue in this chat: use [Task Assessment](../task-assessment/SKILL.md).
 - Implementing an actionable plan in the existing task checkout: use [Task Implementation](../task-implementation/SKILL.md), including "continue working" requests in that active task.
 - Cleaning up or retiring a managed task: use [Task Retirement](../task-retirement/SKILL.md). Direct replies and PR reviews also belong to their separate workflows.

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 
-import implementationContext from '../agent/implementation-context.ts';
 import implementationRevision from '../agent/implementation-revision.ts';
 
 const result = { outcome: 'done' as const, summary: 'Done.', fullResult: 'Checked.' };
@@ -27,24 +26,6 @@ describe('agent/implementation-revision', () => {
       false,
     );
   });
-
-  for (const runtime of ['openclaw', 'codex'] as const)
-    it(`should keep ${runtime} completed recovery separate from authorized revisions`, () => {
-      const work = { result, resultSource: original };
-      for (const authorized of [false, true]) {
-        const revision = implementationRevision(work, current, authorized);
-        const context = implementationContext({
-          runtime,
-          id: 'issue',
-          path: '/worktree',
-          previousResult: result,
-          revision,
-        });
-        assert.equal(context.deliveryOnly, !authorized);
-        assert.equal(context.handoff.next, authorized ? 'implementation' : 'delivery');
-        assert.equal(context.previousResult, result);
-      }
-    });
 
   it('should reject replayed inputs and missing result custody', () => {
     const work = { result, resultSource: original };

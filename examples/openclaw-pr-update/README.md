@@ -20,8 +20,8 @@ After one delivered PR, accept an explicit operator request to add a follow-up c
 - Strict AIMock supplies the model text and tool choices. GitHub requests, chat execution, dispatch, managed Git, and saved results still run normally. Only Tanaabot is assigned; EMORI creates the test issues and comments.
 - Each job prepares its own issue, assessment, and linked PR. The coordinator has up to three passes to verify the assessment before handling initial feedback, keeping the same source revision. Refreshes target only this issue; a 24-hour schedule avoids unrelated discovery.
 - The first follow-up also invokes `delivery bind` on its exact retained PR in the real agent/tool loop; this adds one tool call, no chat, model turn, or provider fixture. Missing-receipt adoption and replacement remain component/native acceptance below.
-- Operator follow-ups collect direct implementation context from the retained owner and plan, without a separate assessment or handoff; delivery preserves the same PR and announcement.
-- A second operator revision starts from the issue owner’s retained `done` result. Its extra native turn proves that completion does not freeze later edits; the first revision starts from feedback-owned work.
+- Operator follow-ups use the current turn’s retained task facts with intake scheduling disabled, without an implementation-context call or another handoff. Delivery preserves the same PR and announcement, and each turn displays the refreshed PR card.
+- A second operator revision proves that completion does not freeze later edits; both revisions preserve the initial feedback-owned implementation history.
 - Native operator messages use the public Gateway SDK with `operator.admin`; the enrolled dispatch device retains `operator.read` and `operator.write`. Native transcript receipts bind the input.
 - If the closing-issue link is delayed, the shared fixture checks the same delivery through at most three prepare/publish passes. Unknown failures and uncertain writes never create replacement PRs.
 
@@ -146,6 +146,11 @@ openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$n
 ## Testing
 
 ```bash
+# should disable intake scheduling before ordinary native updates
+cd "$GITHUB_WORKSPACE/examples/openclaw-pr-update/tanaabot"
+native=$(openclaw agent-system automations list --json | jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId')
+openclaw cron edit "$native" --disable --json | jq -e '.enabled == false'
+
 # should update the existing pr after a follow-up commit without another announcement
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-update/tanaabot"
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
@@ -157,9 +162,10 @@ params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg lea
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-update"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-update" 600000
 jq -es --arg id "$receipt" '[.[].records[] | select(.id == $id)] | .[0]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-first-update.json"
-jq -e '.work.result.outcome == "done"' "$TMPDIR/notification-first-update.json"
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,inputRunIds:["notification-update"],limit:200,maxChars:100000}')" --json | jq -e --slurpfile saved "$TMPDIR/notification-first-update.json" '($saved[0].work.delivery.presentation | length) > 0 and any(.messages[]; .role == "assistant" and .__openclaw.runId == "notification-update" and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains($saved[0].work.delivery.presentation)))'
+jq -e --slurp '.[1].implementationDelivered == true and .[1].work.result == .[0].work.result and .[1].work.resultSource == .[0].work.resultSource and .[1].work.resultHistory == .[0].work.resultHistory and .[1].work.turn == .[0].work.turn' "$TMPDIR/notification-delivery.json" "$TMPDIR/notification-first-update.json"
 
-# should accept another revision from a retained completed implementation
+# should publish another native edit while preserving the initial implementation history
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-update/tanaabot"
 conversation=$(jq -er .threadId "$TMPDIR/notification-first-update.json")
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-first-update.json")
@@ -169,13 +175,30 @@ params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg lea
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-revision"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "notification-revision" 600000
 jq -es --arg id "$receipt" '[.[].records[] | select(.id == $id)] | .[0]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-updated.json"
-jq -e --slurp '.[1].work.result.outcome == "done" and .[1].work.resultHistory[0].result == .[0].work.result and .[1].work.resultHistory[0].source == .[0].work.resultSource and .[1].work.resultSource.turnId == "notification-revision" and .[1].work.delivery.binding.head != .[0].work.delivery.binding.head and .[1].work.delivery.pullRequest == .[0].work.delivery.pullRequest' "$TMPDIR/notification-first-update.json" "$TMPDIR/notification-updated.json"
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,inputRunIds:["notification-revision"],limit:200,maxChars:100000}')" --json | jq -e --slurpfile saved "$TMPDIR/notification-updated.json" '($saved[0].work.delivery.presentation | length) > 0 and any(.messages[]; .role == "assistant" and .__openclaw.runId == "notification-revision" and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains($saved[0].work.delivery.presentation)))'
+jq -e --slurp '.[1].implementationDelivered == true and .[1].work.result == .[0].work.result and .[1].work.resultSource == .[0].work.resultSource and .[1].work.resultHistory == .[0].work.resultHistory and .[1].work.implementation == .[0].work.implementation and .[1].work.turn == .[0].work.turn and .[1].work.delivery.binding.head != .[0].work.delivery.binding.head and .[1].work.delivery.pullRequest == .[0].work.delivery.pullRequest' "$TMPDIR/notification-first-update.json" "$TMPDIR/notification-updated.json"
 jq -e --slurp '.[0].progression.stage == .[1].progression.stage and .[0].progression.via == .[1].progression.via and .[0].feedback == .[1].feedback and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].work.delivery.id == .[1].work.delivery.id and .[0].work.delivery.pullRequest == .[1].work.delivery.pullRequest and .[0].work.delivery.announcement == .[1].work.delivery.announcement and .[0].work.delivery.binding.head != .[1].work.delivery.binding.head and .[1].work.delivery.binding.head == .[1].work.delivery.pushedHead and .[1].work.delivery.reconciled == true and .[1].work.delivery.contentUpdate == null' "$TMPDIR/notification-delivery.json" "$TMPDIR/notification-updated.json"
 pr=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-updated.json")
 openclaw agent-system tool gh -- pr view "$pr" --repo tanaabased/big-test-bucket --json number,title,body,headRefOid,closingIssuesReferences | jq -e --slurpfile delivery "$TMPDIR/notification-updated.json" --argjson issue "$(jq -er .number "$TMPDIR/notification-issue.json")" '.number == $delivery[0].work.delivery.pullRequest.pullRequestNumber and .headRefOid == $delivery[0].work.delivery.pushedHead and .title == "Document disposable notification fixture cleanup and verification" and (.body | contains("verifying the retained delivery after follow-up commits")) and any(.closingIssuesReferences[]; .number == $issue)'
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile before "$TMPDIR/notification-announcements.json" '[.[] | select(.user.login == "tanaabot") | .node_id] == [$before[0][] | select(.user.login == "tanaabot") | .node_id]'
 ```
+
+## Native skill acceptance still required
+
+The strict fixture above verifies repeated code/PR edits, not model selection of Task Update.
+In a native acceptance run, replan in the delivered chat without assessment submission
+or a saved revision; keep prior assessments readable. Then request a task progress update from the issue: use its linked
+open PR, preserve an explicit issue destination, and return to the issue after the PR closes.
+Verify one material comment, the configured reply skill and agent voice, and recovery of an
+uncertain comment at its original destination. Keep the original issue announcement intact.
+Refresh an unposted update after public discussion changes; recompose the same facts and
+publish once. Grow retained task history before reconciling an uncertain update and verify
+the original text and receipt are preserved without another post.
+On both runtimes, repeat with a long discussion and a truncated comment sample: preserve
+the visible limitations, inspect relevant omitted context when needed, and publish verified
+current progress without loading a complete planning snapshot or PR file inventory.
+Both adapters have controlled component coverage; native interpretation and voice remain unrun.
 
 ## Cleanup
 

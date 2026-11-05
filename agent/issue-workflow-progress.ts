@@ -1,14 +1,11 @@
 import { awaitingReassignment } from './assignment-retirement.ts';
+import { hasDeliveredImplementation } from './implementation-delivery.ts';
 
 interface Delivery {
-  adopted?: unknown;
+  binding?: { branch: string };
   pullRequest?: { pullRequestNumber: number };
   reconciled?: boolean;
-  attached?: boolean;
-  cardAttempts?: number;
   pushedHead?: string;
-  announcement?: { receipt?: unknown; code?: string };
-  announcementRecovery?: { status: string };
 }
 export interface IssueWorkflowState {
   phase: string;
@@ -22,9 +19,19 @@ export interface IssueWorkflowState {
   retry?: unknown;
   result?: { code?: string; outcome?: string };
   progression?: { stage: string; workOwner?: string };
+  implementationDelivered?: true;
   autoDecision?: { ended?: boolean; code?: string };
   decisionTurn?: { status: string; inactive?: boolean };
   delivery?: Delivery;
+  feedback?: {
+    events: Array<{
+      id?: string;
+      phase: string;
+      retry?: unknown;
+      work?: { head?: string; result?: { outcome: string } };
+      workDelivery?: Delivery;
+    }>;
+  };
   continuation?: {
     scope?: 'local' | 'pull-request';
     message?: string;
@@ -33,12 +40,14 @@ export interface IssueWorkflowState {
     retry?: unknown;
     policyHeld?: string;
     result?: { outcome: string };
+    resultHistory?: Array<{ result: { outcome: string } }>;
     head?: string;
   };
   work?: {
     scope?: 'local' | 'pull-request';
     delivery?: Delivery;
     result?: { outcome: string };
+    resultHistory?: Array<{ result: { outcome: string } }>;
     code?: string;
     turn?: { status: string };
     implementation?: unknown;
@@ -66,6 +75,7 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
     record.result?.code === 'dispatch-assignment-superseded'
   )
     return { action: 'stopped', status: 'obsolete' };
+  if (hasDeliveredImplementation(record)) return { action: 'complete', status: 'delivered' };
   if (record.implementationPreparationError)
     return { action: 'implementation', status: record.retry ? 'retrying' : 'needs-attention' };
   // openclaw also retains a continuation message; it is transport, not codex work state.
@@ -99,41 +109,8 @@ export default function issueWorkflowProgress(record: IssueWorkflowState): Progr
   if (result?.outcome === 'blocked' && !resumed) return { action: 'wait-input', status: 'blocked' };
   if (result?.outcome === 'done' && (continuation?.scope ?? work?.scope) === 'local')
     return { action: 'complete', status: 'publication-held' };
-  const delivery = record.delivery ?? work?.delivery;
-  const implementing =
-    (result && result.outcome !== 'done' && resumed) ||
-    (!result &&
-      (work?.implementation ||
-        work?.turn ||
-        (continuation && !['delivery', 'complete'].includes(continuation.phase!))));
-  const observationOnly = Boolean(delivery?.adopted && !delivery.pushedHead);
-  if (
-    !implementing &&
-    (result?.outcome === 'done' || (delivery?.pullRequest && !observationOnly))
-  ) {
-    const published =
-      delivery?.pullRequest &&
-      delivery.reconciled &&
-      (!continuation?.head || delivery.pushedHead === continuation.head);
-    const complete =
-      published &&
-      delivery.attached !== false &&
-      delivery.cardAttempts !== 0 &&
-      delivery.announcement?.receipt &&
-      !delivery.announcement.code &&
-      !delivery.announcementRecovery;
-    return complete
-      ? { action: 'complete', status: 'delivered' }
-      : {
-          action: 'delivery',
-          status: published
-            ? delivery.announcementRecovery
-              ? `announcement-${delivery.announcementRecovery.status}`
-              : 'delivered-response-pending'
-            : 'delivery',
-          publicationPending: !published,
-        };
-  }
+  if (result?.outcome === 'done')
+    return { action: 'delivery', status: 'delivery', publicationPending: true };
   if (record.progression?.stage !== 'implementation') {
     if (record.autoDecision && !record.autoDecision.ended)
       return { action: 'assessment', status: record.autoDecision.code ? 'blocked' : 'assessing' };

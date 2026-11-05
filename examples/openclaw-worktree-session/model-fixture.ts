@@ -7,7 +7,9 @@ function currentTurn(request: ChatCompletionRequest) {
   const index = request.messages.findLastIndex(
     ({ role, content }) =>
       role === 'user' &&
-      !getTextContent(content)?.trimStart().startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>'),
+      !['<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>', 'OpenClaw runtime context:'].some((prefix) =>
+        getTextContent(content)?.trimStart().startsWith(prefix),
+      ),
   );
   return request.messages.slice(Math.max(0, index));
 }
@@ -17,7 +19,12 @@ function currentPrompt(request: ChatCompletionRequest, phase: string): boolean {
     request.messages
       .filter(({ role }) => role === 'user')
       .map(({ content }) => getTextContent(content) ?? '')
-      .findLast((text) => !text.trimStart().startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>'))
+      .findLast(
+        (text) =>
+          !['<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>', 'OpenClaw runtime context:'].some((prefix) =>
+            text.trimStart().startsWith(prefix),
+          ),
+      )
       ?.includes(`Execute the worktree ${phase} probe.`) ?? false
   );
 }

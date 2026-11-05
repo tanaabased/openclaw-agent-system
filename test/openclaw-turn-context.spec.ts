@@ -71,6 +71,23 @@ describe('agent/openclaw-turn-context', () => {
     assert.match(output.appendContext, /clarification-needed/);
     assert.equal(working.work, undefined);
   });
+  it('should retain delivered task facts without gating ordinary human conversation', () => {
+    const delivered = {
+      ...structuredClone(record),
+      result: { outcome: 'plan-ready', plan: 'ORIGINAL-PLAN' },
+      progression: { stage: 'implementation', via: 'work' },
+      work: {
+        result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' },
+        delivery: { reconciled: true, pullRequest: { pullRequestNumber: 7 } },
+      },
+    } as OpenClawDispatchRecord;
+    const output = openclawTurnContext(delivered, { ...binding, runId: 'human-question' })!;
+    assert.match(output.appendContext, /ORIGINAL-PLAN/);
+    assert.match(output.appendSystemContext, /ordinary native conversation/);
+    assert.doesNotMatch(output.appendSystemContext, /before dependent work/);
+    assert.equal(delivered.work?.result?.outcome, 'done');
+  });
+
   it('should refuse wrong agent, session, incarnation, missing run and premature later turns', () => {
     for (const change of [
       { agentId: 'other' },

@@ -1,3 +1,4 @@
+import { hasDeliveredImplementation } from './implementation-delivery.ts';
 import issueWorkflowProgress from './issue-workflow-progress.ts';
 import sendOpenClawTurn from './openclaw-send-turn.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
@@ -9,6 +10,7 @@ import { reconcileOpenClawTurn } from './openclaw-turn.ts';
 import pendingPublicResponse from './pending-public-response.ts';
 
 export function openClawResponsePending(record: OpenClawDispatchRecord) {
+  if (hasDeliveredImplementation(record)) return false;
   if (
     record.retired ||
     record.retirement ||
@@ -38,11 +40,10 @@ export function openClawResponsePending(record: OpenClawDispatchRecord) {
 }
 
 export function openClawResponseEligible(record: OpenClawDispatchRecord) {
-  return (
+  return Boolean(
     openClawResponsePending(record) &&
     ((!record.work && !record.handoff) ||
-      issueWorkflowProgress(record).action === 'complete' ||
-      (record.summaryRecovery && record.summaryRecovery!.turn.status !== 'completed'))
+      (record.summaryRecovery && record.summaryRecovery!.turn.status !== 'completed')),
   );
 }
 
@@ -56,6 +57,7 @@ export default async function continueOpenClawResponse(input: {
   save(): Promise<void>;
 }) {
   const { record, request } = input;
+  if (hasDeliveredImplementation(record)) return;
   const pending = pendingPublicResponse(record);
   if (pending?.state === 'blocked') return;
   const expected = record.request;
@@ -83,7 +85,7 @@ export default async function continueOpenClawResponse(input: {
         id: record.id,
       };
   }
-  if (!pending || !pending.revision) return;
+  if (issueWorkflowProgress(record).action === 'complete' || !pending || !pending.revision) return;
   if (input.reconcileOnly) return { status: 'assessment-pending' as const, id: record.id };
   const session = await feedbackSession(request, record, input.config);
   if (session.busy) return { status: 'assessment-pending' as const, id: record.id };

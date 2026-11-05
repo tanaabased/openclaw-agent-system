@@ -143,7 +143,6 @@ export default async function implementationEntry(
       if (input.material && (!entry?.progression || !entry.selection || !entry.plan))
         throw new Error('implementation-material-context-required');
       if (!entry) {
-        if (entries.length >= 20) throw new Error('implementation-entry-capacity');
         entry = {
           id: automationHash({ binding: deps.binding, canonical }),
           target: canonical,

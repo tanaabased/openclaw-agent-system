@@ -1,3 +1,7 @@
+import { hasDeliveredImplementation } from './implementation-delivery.ts';
+import recoverOpenClawAnnouncement from './openclaw-announcement-recovery.ts';
+import { announcementRecoveryAction } from './delivery-announcement-recovery.ts';
+import issueWorkflowProgress from './issue-workflow-progress.ts';
 import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import projectPickupCapacity from './project-pickup-capacity.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
@@ -231,6 +235,7 @@ export default class OpenClawDispatchCoordinator {
     );
     const recoverable = state.records.some(
       (record) =>
+        !hasDeliveredImplementation(record) &&
         !record.retired &&
         !record.retirement &&
         !record.reset &&
@@ -251,21 +256,32 @@ export default class OpenClawDispatchCoordinator {
             intake.evidence?.projectWork?.pickup?.issueNodeId,
           ).available > 0,
       );
+    const announcementPending = state.records.some(
+      (record) =>
+        issueWorkflowProgress(record).status === 'delivered' &&
+        announcementRecoveryAction(
+          record.work?.delivery,
+          (this.context.dependencies.now ?? Date.now)(),
+        ) === 'check',
+    );
     const workPending = state.records.some(
       (record) =>
+        !hasDeliveredImplementation(record) &&
         (openClawDecisionPending(
           record,
           issueWorkflowMode(manifest.github?.notifications, record),
         ) ||
-          openClawWorkSlot(
-            record,
-            issueWorkflowMode(manifest.github?.notifications, record),
-            (this.context.dependencies.now ?? Date.now)(),
-          )) &&
+          openClawWorkSlot(record, issueWorkflowMode(manifest.github?.notifications, record))) &&
         (openClawItemOccupied(record) || available(record.projectWork?.pickup?.issueNodeId) > 0),
     );
     const responsePending = state.records.some((record) => openClawResponseEligible(record));
-    const actionable = responsePending || feedbackPending || recoverable || workPending || pending;
+    const actionable =
+      announcementPending ||
+      responsePending ||
+      feedbackPending ||
+      recoverable ||
+      workPending ||
+      pending;
     const code = state.records.find(
       (record) => !record.retired && !record.retirement && !record.reset && record.feedback?.code,
     )?.feedback?.code;
@@ -372,6 +388,7 @@ export default class OpenClawDispatchCoordinator {
     if (policyObserved) await save();
     for (const record of state.records) {
       if (
+        hasDeliveredImplementation(record) ||
         record.retired ||
         record.retirement ||
         record.reset ||
@@ -468,10 +485,23 @@ export default class OpenClawDispatchCoordinator {
         }
     }
     await save();
+    for (const record of state.records
+      .filter(
+        (entry) =>
+          issueWorkflowProgress(entry).status === 'delivered' &&
+          announcementRecoveryAction(entry.work?.delivery, now) === 'check',
+      )
+      .slice(0, 12))
+      await recoverOpenClawAnnouncement(this.context, manifest, current.workspace, record, save, {
+        ...authority,
+        signal,
+        caller,
+      });
     // Resolve finished native turns before freezing this pass's available slots.
     for (const record of state.records
       .filter(
         (entry) =>
+          !hasDeliveredImplementation(entry) &&
           !entry.retired &&
           !entry.retirement &&
           !entry.reset &&
@@ -549,12 +579,12 @@ export default class OpenClawDispatchCoordinator {
         const slot = openClawWorkSlot(
           record,
           issueWorkflowMode(manifest.github?.notifications, record),
-          now,
         );
         const decision = openClawDecisionPending(
           record,
           issueWorkflowMode(manifest.github?.notifications, record),
         );
+        if (hasDeliveredImplementation(record)) return [];
         return slot || decision || openClawResponseEligible(record)
           ? [
               {

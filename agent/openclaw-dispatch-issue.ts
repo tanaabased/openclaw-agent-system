@@ -1,3 +1,4 @@
+import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 import workflowStatus from './workflow-status.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
@@ -6,7 +7,7 @@ import {
   dispatchAdmission,
   type ManagedIssue as IntakeRecord,
 } from './managed-issue.ts';
-import { operatorInputEvent } from './openclaw-session-input.ts';
+import { nativeInputEvent, operatorInputEvent } from './openclaw-session-input.ts';
 import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
 
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
@@ -61,11 +62,6 @@ import openClawWorkAction, { verifyOpenClawWork } from './openclaw-work.ts';
 import workflowFailure from './workflow-failure.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 import workflowRecovery from './workflow-recovery.ts';
-import {
-  announcementRecoveryAction,
-  retainAnnouncementFailure,
-} from './delivery-announcement-recovery.ts';
-import { recoverRetainedAnnouncement } from './delivery-announcement.ts';
 
 function source(intake: IntakeRecord) {
   return managedTargetUrl(intake);
@@ -80,6 +76,8 @@ export default class OpenClawDispatchIssue {
     authority: DispatchAuthority & { caller?: DispatchCaller },
     reconcileOnly = false,
   ) {
+    if (hasDeliveredImplementation(record))
+      return { status: 'implementation-idle' as const, id: record.id };
     if (openClawResponseEligible(record)) {
       try {
         await this.context.validate(manifest, workspace, record, true);
@@ -168,44 +166,6 @@ export default class OpenClawDispatchIssue {
         .use({ ...authority, assertCurrent }, async (request) => {
           if (!record.request || !('key' in record.request))
             throw new Error('dispatch-work-context-mismatch');
-          const delivery = record.work?.delivery;
-          if (
-            !reconcileOnly &&
-            delivery &&
-            record.work?.turn?.status === 'completed' &&
-            (!record.work.deliveryTurn || record.work.deliveryTurn.status === 'completed') &&
-            announcementRecoveryAction(delivery, now) !== 'ready'
-          ) {
-            const { intake } = await this.context.validate(manifest, workspace, record, true);
-            await recoverRetainedAnnouncement({
-              delivery,
-              intake,
-              now,
-              signal: authority.signal,
-              save,
-              authorize: async () => {
-                await assertCurrent();
-                await this.context.validate(manifest, workspace, record, true);
-              },
-              connect: async () => {
-                if (!authority.caller || !this.context.dependencies.delivery)
-                  throw new Error('delivery-runtime-unavailable');
-                return this.context.dependencies.delivery({
-                  manifest,
-                  workspaceDir: workspace,
-                  worktree: record.worktree!,
-                  caller: authority.caller,
-                  signal: authority.signal ?? new AbortController().signal,
-                });
-              },
-            });
-            if (announcementRecoveryAction(delivery, now) !== 'ready')
-              return {
-                status: 'implementation-pending' as const,
-                id: record.id,
-                nextAction: 'next' as const,
-              };
-          }
           const selection =
             record.work?.selection ??
             (!record.work
@@ -248,17 +208,6 @@ export default class OpenClawDispatchIssue {
           nextAction: 'next',
         };
       const code = openClawDispatchFailureCode(error);
-      const delivery = record.work?.delivery;
-      if (delivery?.announcementRecovery && announcementRecoveryAction(delivery, now) === 'check') {
-        retainAnnouncementFailure(
-          delivery,
-          delivery.announcementRecovery.binding,
-          error,
-          now,
-          delivery.announcementRecovery.phase,
-        );
-        await save();
-      }
       if (
         record.work &&
         [
@@ -574,6 +523,8 @@ export default class OpenClawDispatchIssue {
       input.action === 'implementation-result' ||
       input.action === 'delivery'
     ) {
+      const delivered = hasDeliveredImplementation(record);
+      if (delivered && input.action !== 'delivery') return nativeIssueContext(record);
       if (input.action === 'implementation-context' && input.scope && !operator)
         throw new Error('implementation-operator-scope-required');
       const signal = authority.signal
@@ -590,33 +541,39 @@ export default class OpenClawDispatchIssue {
         async (request) => {
           const bindingOnly = input.action === 'delivery' && input.operation === 'bind';
           if (bindingOnly && !operator) throw new Error('delivery-binding-operator-required');
-          const { source, message, progression, revisionAuthorized } = bindingOnly
-            ? {
-                source: await operatorInputEvent({
-                  request,
-                  senderIsOwner: operator,
-                  sessionKey: caller.sessionKey,
-                  sessionId: caller.sessionId,
-                  runId: caller.runId,
-                  retained: [],
-                }),
-                message: undefined,
-                progression: undefined,
-                revisionAuthorized: false,
-              }
-            : await verifyOpenClawWork({
-                record,
-                caller,
-                operator,
-                mode: issueWorkflowMode(
-                  (await this.context.validateLocal(manifest, workspace, record, true)).manifest
-                    .github?.notifications,
+          const { source, message, progression, revisionAuthorized } =
+            bindingOnly || delivered
+              ? {
+                  source: await (
+                    input.action === 'delivery' &&
+                      ['compose', 'candidate', 'announce'].includes(input.operation)
+                      ? nativeInputEvent
+                      : operatorInputEvent
+                  )({
+                    request,
+                    senderIsOwner: operator,
+                    sessionKey: caller.sessionKey,
+                    sessionId: caller.sessionId,
+                    runId: caller.runId,
+                    retained: [],
+                  }),
+                  message: undefined,
+                  progression: undefined,
+                  revisionAuthorized: false,
+                }
+              : await verifyOpenClawWork({
                   record,
-                ),
-                now,
-                request,
-                config: this.context.dependencies.config(),
-              });
+                  caller,
+                  operator,
+                  mode: issueWorkflowMode(
+                    (await this.context.validateLocal(manifest, workspace, record, true)).manifest
+                      .github?.notifications,
+                    record,
+                  ),
+                  now,
+                  request,
+                  config: this.context.dependencies.config(),
+                });
           await assertCurrent();
           if (
             input.action === 'implementation-context' &&

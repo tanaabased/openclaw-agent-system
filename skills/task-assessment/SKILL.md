@@ -49,9 +49,22 @@ and presenting its result.
 - Launching chats, choosing assignments, preparing repositories, or changing models.
 - "Work on task" requests that start or reopen managed work belong to [Task Launch](../task-launch/SKILL.md); an explicit request to implement an existing actionable plan belongs to [Task Implementation](../task-implementation/SKILL.md).
 - Implementing the task, publishing to GitHub, or handling PR reviews and feedback.
-- Replacing an ordinary user request with an unsolicited assessment workflow.
+- Replacing ordinary research, native context handoffs or a supplied plan with an unsolicited assessment workflow. A mentioned issue or destination repository does not request Agent System tracking.
 
 ## Preconditions
+
+### Native Planning
+
+After completed implementation and linked PR delivery, revise the plan in the
+ordinary native conversation. Use the investigation and planning guidance in
+steps 2–5 below with the context already available, and present the plan directly.
+Do not bootstrap assessment context, submit an assessment result, create a saved
+revision, or require the managed workflow's editor, summary or handoff. Existing
+assessments remain readable history. Use Task Update when the operator requests
+publication of the revised plan or material progress.
+
+If an old assessment invocation returns `status: native`, follow that same path.
+It is retained context, not another assessment round or an execution grant.
 
 ### Direct Entry
 
@@ -62,8 +75,8 @@ for workflow steps 2–6. The host's `resultSubmission` selects the submission e
 the skill name never selects or changes the entry path. This guard also applies when
 the wrapper is explicitly configured.
 
-Otherwise, for an explicit direct assessment request in this chat, including a
-managed chat without execution context for this invocation:
+Otherwise, before PR delivery, for an explicit direct assessment request in this
+chat, including a managed chat without execution context for this invocation:
 
 1. Require an explicit GitHub issue URL and existing local checkout root. Ask only
    for a missing input; do not assign, clone, fetch, create a chat or prepare a worktree.

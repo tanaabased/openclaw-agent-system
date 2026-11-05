@@ -1,4 +1,8 @@
 import {
+  hasDeliveredImplementation,
+  retainImplementationDelivery,
+} from './implementation-delivery.ts';
+import {
   managedPullRequest,
   managedTargetUrl,
   type ManagedIssue as IntakeRecord,
@@ -61,7 +65,13 @@ export default async function openClawDelivery(input: {
   signal: AbortSignal;
   now?: number;
 }) {
-  const { record, intake, action, assertCurrent, save } = input;
+  const { record, intake, action, assertCurrent } = input;
+  retainImplementationDelivery(record);
+  const delivered = hasDeliveredImplementation(record);
+  const save = async () => {
+    retainImplementationDelivery(record);
+    await input.save();
+  };
   if (action.pullRequest !== undefined && action.operation !== 'bind')
     throw new Error('delivery-request-invalid');
   if (action.operation === 'present')
@@ -153,15 +163,17 @@ export default async function openClawDelivery(input: {
   }
   const work = record.work;
   if (work?.scope === 'local') throw new Error('implementation-publication-not-authorized');
-  if (!work || (!retainedIssueProgression(record) && !work.publication))
-    throw new Error('delivery-implementation-incomplete');
-  if (
-    (work.result && work.result.outcome !== 'done') ||
-    (work.implementation && work.result?.outcome !== 'done')
-  )
-    throw new Error('delivery-implementation-incomplete');
-  if (work.assessmentDigest !== automationHash(record.result))
-    throw new Error('dispatch-work-assessment-changed');
+  if (!work) throw new Error('delivery-implementation-incomplete');
+  if (!delivered) {
+    if (
+      (!retainedIssueProgression(record) && !work.publication) ||
+      (work.result && work.result.outcome !== 'done') ||
+      (work.implementation && work.result?.outcome !== 'done')
+    )
+      throw new Error('delivery-implementation-incomplete');
+    if (work.assessmentDigest !== automationHash(record.result))
+      throw new Error('dispatch-work-assessment-changed');
+  }
   await assertCurrent();
   const connection = await input.connect();
   const git = async (argv: string[]) => {
@@ -332,7 +344,7 @@ export default async function openClawDelivery(input: {
     title,
     body,
     source: input.source,
-    progression: retainedIssueProgression(record) ?? work.publication,
+    progression: delivered ? undefined : (retainedIssueProgression(record) ?? work.publication),
     previous: previous ?? null,
   });
   if (
@@ -488,7 +500,7 @@ export default async function openClawDelivery(input: {
     status: action.operation === 'publish' ? 'published' : 'ready',
     id: record.id,
     pullRequest: receipt,
-    workflowStatus: workflowStatus({ phase: 'complete', delivery }),
+    workflowStatus: workflowStatus(record),
     url,
     instructions: deliveryCompletionInstructions('openclaw', delivery),
   };
@@ -525,7 +537,7 @@ export function presentOpenClawDelivery(
   return {
     status: 'presented',
     retained: true,
-    workflowStatus: workflowStatus({ phase: 'complete', delivery }),
+    workflowStatus: workflowStatus(record),
     id: record.id,
     url,
     presentation: delivery.presentation,

@@ -237,6 +237,11 @@ describe('scripts/example-model-scenarios', () => {
           { callId, content },
         );
         value.messages[0]!.content = input.messages[0]!.content;
+        value.messages.push({
+          role: 'user',
+          content:
+            'OpenClaw runtime context:\nCurrent runtime facts.\nEnd OpenClaw runtime context.',
+        });
         return value;
       };
       assert.equal(

@@ -106,7 +106,10 @@ describe('agent/codex-capacity', () => {
   });
   it('should release reconciled pr delivery without releasing active feedback or implementation', () => {
     const item = record('complete');
-    item.continuation = { phase: 'delivery' } as DispatchRecord['continuation'];
+    item.continuation = {
+      phase: 'delivery',
+      result: { outcome: 'done' },
+    } as DispatchRecord['continuation'];
     item.delivery = {
       reconciled: false,
       pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
@@ -118,6 +121,7 @@ describe('agent/codex-capacity', () => {
     assert.deepEqual(codexCapacity([item], 3), { occupied: 1, available: 2 });
     item.feedback!.events = [];
     item.continuation!.phase = 'running';
+    delete item.continuation!.result;
     assert.deepEqual(codexCapacity([item], 3), { occupied: 1, available: 2 });
   });
 });

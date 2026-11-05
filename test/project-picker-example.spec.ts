@@ -10,6 +10,10 @@ function request(prompt: string, results: Array<[string, unknown]> = []): ChatCo
     model: 'gpt-5.5',
     messages: [
       { role: 'user', content: prompt },
+      {
+        role: 'user',
+        content: 'OpenClaw runtime context:\nCurrent runtime facts.\nEnd OpenClaw runtime context.',
+      },
       ...results.map(([id, value]) => ({
         role: 'tool' as const,
         tool_call_id: `call_pickup_${id}-0`,
@@ -74,7 +78,7 @@ describe('examples/openclaw-project-picker model fixture', () => {
 
   it('should keep prior scan results out of the next native turn', () => {
     const input = request(prompt, [['scan-0', { status: 'empty', response: '📥 empty' }]]);
-    input.messages.push({ role: 'user', content: prompt });
+    input.messages.push(...request(prompt).messages);
     assert.deepEqual(argumentsOf(pickupResponse(input)), { action: 'pickup' });
   });
 

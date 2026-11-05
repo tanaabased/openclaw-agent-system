@@ -1,4 +1,5 @@
 import { managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
+import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 
 import type { ImplementationResult } from './implementation-result.ts';
 import managedImplementationRoute from './managed-implementation-route.ts';
@@ -60,12 +61,13 @@ export default async function codexEntryContext<T>(
         (await realpath(native.cwd)) !== (await realpath(record.worktree!))
       )
         throw new Error('assessment-managed-context-invalid');
-      const eventId =
-        record.progression?.workOwner && record.progression.workOwner !== 'issue'
-          ? record.progression.workOwner
-          : record.feedback?.events.find((event) => event.attempt?.turnId === native.turnId)?.id;
+      const eventId = record.feedback?.events.find(
+        (event) => event.attempt?.turnId === native.turnId,
+      )?.id;
       const feedback = eventId && record.feedback?.events.find((event) => event.id === eventId);
       return {
+        nativeContext:
+          !feedback && hasDeliveredImplementation(record) ? nativeIssueContext(record) : undefined,
         implementationResult: feedback ? feedback.work?.result : record.continuation?.result,
         digest,
         owner: { id: record.id, ...(eventId ? { eventId } : {}) },

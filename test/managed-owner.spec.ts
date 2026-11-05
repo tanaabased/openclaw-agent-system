@@ -51,10 +51,6 @@ describe('agent/managed-owner', () => {
             record === current
               ? {
                   pullRequest: { pullRequestNodeId: 'pr', pullRequestNumber: 10 },
-                  announcement: {
-                    attempted: true,
-                    receipt: { nodeId: 'announcement', databaseId: 1 },
-                  },
                 }
               : undefined,
         }),
@@ -156,7 +152,6 @@ describe('agent/managed-owner', () => {
       custodyInvalid: false,
       delivery: { adopted: {}, pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 } },
     });
-    assert.equal(projection.announcementPending, false);
     assert.equal(projection.deliveredPullRequest, undefined);
   });
 });

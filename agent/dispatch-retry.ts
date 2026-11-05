@@ -52,6 +52,7 @@ const transient = new Set([
 // these owners can inspect repaired prerequisites or reconcile retained native intent.
 // rechecking never authorizes replay of an uncertain creation or a native denial.
 const recheckable = new Set([
+  'dispatch-project-inventory-invalid',
   'dispatch-project-registration-unavailable',
   'dispatch-assessment-skill-unavailable',
   'dispatch-assessment-guidance-unreadable',

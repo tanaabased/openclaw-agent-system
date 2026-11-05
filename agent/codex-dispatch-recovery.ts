@@ -1,3 +1,4 @@
+import { hasDeliveredImplementation } from './implementation-delivery.ts';
 import { dispatchGit, type DispatchGit } from './codex-dispatch-project.ts';
 import recoverIssueTask from './issue-task-recovery.ts';
 import { type CleanupConfiguration } from './cleanup-configuration.ts';
@@ -56,6 +57,7 @@ export default async function recoverDispatch(
     if (state.records.some((entry) => [entry.threadId, entry.receiptThreadId].includes(caller)))
       throw new Error('dispatch-operator-caller-required');
     const operatorInput = () => withNative((host) => host.operatorInput(caller));
+    const execution = hasDeliveredImplementation(record) ? undefined : record;
     return recoverIssueTask({
       ...context,
       operator: await operatorInput(),
@@ -72,10 +74,10 @@ export default async function recoverDispatch(
         uncertainAnnouncement: Boolean(
           record.delivery?.announcement?.attempted && !record.delivery.announcement.receipt,
         ),
-        pendingSummaryTurn: Boolean(record.summaryRecovery && !record.summaryRecovery.ended),
-        pendingAutoDecision: Boolean(record.autoDecision && !record.autoDecision.ended),
+        pendingSummaryTurn: Boolean(execution?.summaryRecovery && !execution.summaryRecovery.ended),
+        pendingAutoDecision: Boolean(execution?.autoDecision && !execution.autoDecision.ended),
         unfinishedImplementation: Boolean(
-          record.continuation && record.continuation.phase !== 'complete',
+          execution?.continuation && execution.continuation.phase !== 'complete',
         ),
         pendingFeedback: record.feedback?.events.some(
           (event) => !['complete', 'cancelled', 'held'].includes(event.phase),

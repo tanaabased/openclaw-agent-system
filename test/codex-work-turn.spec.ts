@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import advance from '../agent/codex-work-turn.ts';
 import { automationHash } from '../agent/automation-hash.ts';
+import { hasDeliveredImplementation } from '../agent/implementation-delivery.ts';
 import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 import type { CodexWorkContext } from '../agent/codex-continuation-context.ts';
 
@@ -136,6 +137,98 @@ describe('agent/codex-work-turn', () => {
     );
   });
 
+  it('should consume current human input before an older unverified automatic send', async () => {
+    const { record, context, verified, receipts } = fixture();
+    const work = record.continuation!;
+    const older = {
+      ...work.attempt!,
+      origin: undefined,
+      inputId: undefined,
+      turnId: undefined,
+      sourceThreadId: 'intake',
+      sourceTurnId: 'scan',
+    };
+    work.attempt = older;
+    work.phase = 'prepared';
+    context.input.action = 'context';
+    context.operatorInput = { turnId: 'human-turn', inputId: 'human-input' };
+    context.caller = 'chat';
+    verified.found.turnId = 'human-turn';
+    verified.found.turnEnded = false;
+    verified.found.turnStatus = 'inProgress';
+    context.continuationNative = async (_source, attempt) => {
+      receipts.push(attempt.inputId ?? 'old-automatic-send');
+      return attempt.origin === 'input'
+        ? { status: 'verified', turnId: attempt.turnId!, ended: false }
+        : { status: 'uncertain' };
+    };
+    const result = await advance(record, context, verified);
+    assert.equal(result.ready, true);
+    assert.deepEqual(receipts, ['human-input']);
+    assert.deepEqual(work.retries?.[0]?.attempt, older);
+    assert.equal(work.attempt?.inputId, 'human-input');
+    assert.equal(record.worktree, '/tmp');
+  });
+
+  it('should not mistake an unpublished completed revision for delivered work when a human continues', async () => {
+    const { record, context, verified, source } = fixture();
+    const work = record.continuation!;
+    work.scope = 'pull-request';
+    work.phase = 'delivery';
+    work.head = 'b'.repeat(40);
+    work.result = { outcome: 'done', summary: 'Done locally.', fullResult: 'Not yet published.' };
+    work.resultSource = source;
+    record.delivery = {
+      reconciled: true,
+      pushedHead: 'a'.repeat(40),
+      pullRequest: { pullRequestNodeId: 'pr', pullRequestNumber: 7 },
+    } as NonNullable<DispatchRecord['delivery']>;
+    context.input.action = 'context';
+    context.operatorInput = { turnId: 'human-turn', inputId: 'human-input' };
+    context.caller = 'chat';
+    verified.found.turnId = 'human-turn';
+    verified.found.turnEnded = false;
+    verified.found.turnStatus = 'inProgress';
+    context.continuationNative = async () => ({
+      status: 'verified',
+      turnId: 'human-turn',
+      ended: false,
+    });
+    assert.equal(hasDeliveredImplementation(record), false);
+    assert.equal((await advance(record, context, verified)).ready, true);
+    assert.equal(work.result, undefined);
+    assert.equal(work.resultHistory?.[0]?.result.outcome, 'done');
+    assert.equal(hasDeliveredImplementation(record), false);
+    assert.equal(record.delivery.pushedHead, 'a'.repeat(40));
+  });
+
+  it('should preserve earlier work when the current human turn has a native denial', async () => {
+    const { record, context, verified, source, receipts } = fixture();
+    const work = record.continuation!;
+    work.result = { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' };
+    work.resultSource = source;
+    context.input.action = 'context';
+    context.operatorInput = { turnId: 'work', inputId: 'denied-input' };
+    const before = structuredClone(work);
+    context.continuationNative = async (_source, attempt) => {
+      receipts.push(attempt.inputId!);
+      return {
+        status: 'blocked',
+        code: 'continuation-native-approval-denied',
+        turnId: 'work',
+        ended: false,
+      };
+    };
+    const result = await advance(record, context, verified);
+    assert.equal(result.ready, false);
+    assert.deepEqual(receipts, ['denied-input']);
+    assert.deepEqual(work.result, before.result);
+    assert.deepEqual(work.attempt, before.attempt);
+    assert.equal(work.resultHistory, undefined);
+    assert.equal(work.phase, 'blocked');
+    assert.equal(work.code, 'continuation-native-approval-denied');
+  });
+
   for (const outcome of ['done', 'clarification-needed', 'blocked'] as const)
     it(`should consume a fresh same-turn input after ${outcome} and preserve the prior result and local scope`, async () => {
       const { record, context, verified, source, receipts } = fixture();
@@ -161,7 +254,7 @@ describe('agent/codex-work-turn', () => {
       assert.equal(work.result, undefined);
       assert.deepEqual(work.resultHistory, [{ source, result: previous }]);
       assert.deepEqual(work.revisionSource, context.operatorInput);
-      assert.deepEqual(receipts, ['original-input', 'new-steering']);
+      assert.deepEqual(receipts, ['new-steering']);
       assert.equal(work.scope, 'local');
       assert.equal(work.phase, 'running');
       const prior = automationHash(work.resultHistory);

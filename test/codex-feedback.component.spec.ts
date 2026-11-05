@@ -568,6 +568,50 @@ describe('agent/codex-feedback', () => {
       [['e'.repeat(64), undefined]],
     );
   });
+  it('should isolate missing feedback admission during discovery and queued delivery', async () => {
+    const ref = await prepare();
+    const before = (await store.read()).records[0]!;
+    const missingId = 'e'.repeat(64);
+    await store.exclusive(async (state, save) => {
+      const missing = structuredClone(before);
+      missing.id = missingId;
+      missing.issueKey = missingId;
+      missing.intakeId = 'f'.repeat(64);
+      missing.issueBranch!.attemptId = missingId;
+      // Both records have a retained prepared send; neither may be sent again.
+      state.records.unshift(missing);
+      await save();
+    });
+    occurrence++;
+    const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+    const scans = await scanCodexFeedback({
+      state: await store.read(),
+      current,
+      provider: await deps.feedbackConnect!(current.workspace, new AbortController().signal),
+      occurrence: 'missing-admission',
+      sourceThreadId: 'intake',
+      now: baseline + 71000,
+    });
+    assert.equal(
+      scans.find((scan) => scan.id === missingId)!.feedback.code,
+      'feedback-admission-missing',
+    );
+    assert.equal(scans.find((scan) => scan.id === ref.id)!.feedback.code, undefined);
+    sent = true;
+    turn = 'feedback';
+    const next = await call('next');
+    assert.equal(next.status, 'idle');
+    const state = await store.read();
+    assert.equal(
+      state.records.find((record) => record.id === ref.id)!.feedback!.events[0]!.phase,
+      'running',
+    );
+    const missing = state.records.find((record) => record.id === missingId)!;
+    assert.equal(missing.feedback!.events[0]!.code, 'feedback-admission-missing');
+    assert.deepEqual(missing.feedback!.events[0]!.attempt, before.feedback!.events[0]!.attempt);
+    assert.equal(creates, 0);
+  });
+
   for (const malformed of [false, true]) {
     it(`should ${malformed ? 'retain a safe parsing cause and continue another record' : 'discover approved feedback after a bot comment'}`, async () => {
       const state = await store.read();

@@ -38,7 +38,7 @@ const draftSchema = Type.Object(
   { additionalProperties: false },
 );
 const schema = Type.Object(
-  { scope: hash, drafts: Type.Array(draftSchema, { maxItems: 40 }) },
+  { scope: hash, drafts: Type.Array(draftSchema) },
   { additionalProperties: false },
 );
 export type ReplyDraft = Static<typeof draftSchema>;

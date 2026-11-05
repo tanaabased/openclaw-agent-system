@@ -24,8 +24,6 @@ const dispatchStages = [
   'summary-preview',
   'summary-publish',
   'report',
-  'handoff-preview',
-  'handoff',
   'binding-verify',
   'work-context',
   'work-result',
@@ -68,10 +66,24 @@ function currentTurn(request: ChatCompletionRequest) {
       request.messages.findLastIndex(
         ({ role, content }) =>
           role === 'user' &&
-          !getTextContent(content)?.trimStart().startsWith('<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>'),
+          !['<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>', 'OpenClaw runtime context:'].some((prefix) =>
+            getTextContent(content)?.trimStart().startsWith(prefix),
+          ),
       ),
     ),
   );
+}
+
+function currentFacts(messages: ChatCompletionRequest['messages']) {
+  const context = messages
+    .filter(({ role }) => role === 'user')
+    .map(({ content }) => getTextContent(content) ?? '')
+    .join('\n');
+  const facts = /Agent System model-only current-turn facts \(keep private\):\n([^\n]+)/u.exec(
+    context,
+  )?.[1];
+  assert.ok(facts, 'the native hook must retain task facts in the current turn');
+  return JSON.parse(facts);
 }
 
 function isContention(result: Record<string, unknown> | undefined) {
@@ -116,6 +128,16 @@ function respond(
     .filter(({ role }) => role === 'user')
     .map(({ content }) => getTextContent(content) ?? '')
     .join('\n');
+  if (prompt.includes('Explain the completed PR in this ordinary conversation.')) {
+    const retained = currentFacts(messages);
+    assert.equal(retained.previousImplementationResult?.outcome, 'done');
+    assert.ok(retained.pullRequest?.pullRequestNumber);
+    assert.ok(retained.worktree);
+    assert.ok(retained.branch);
+    return {
+      content: 'The linked PR contains the completed cleanup note. No further work was requested.',
+    };
+  }
   // repeat only known contention, preserving the operation and its retained arguments.
   const attempts = new Map<string, number>();
   const result = (stage: string): Record<string, unknown> | undefined => {
@@ -690,38 +712,44 @@ function respond(
       ? 'Document closing disposable test issues and verifying the retained delivery after follow-up commits.'
       : 'Document closing disposable test issues after their evidence is captured.';
     if (!retry) {
-      const context = result('work-context');
+      const nativeWork = update;
+      const context = nativeWork ? currentFacts(messages) : result('work-context');
       if (!context)
         return dispatch('work-context', {
           ...(automaticId
             ? { action: 'implementation-context', id: operatorId }
             : { action: 'implementation', operation: 'context', id: operatorId }),
         });
-      const path = (context.project as { path?: string } | undefined)?.path;
-      if (
-        context.status !== 'verified' ||
-        context.runtime !== 'openclaw' ||
-        !path ||
-        context.publicationAuthorized !== true
-      )
-        return;
-      assert.equal(context.deliveryOnly, false);
-      if (secondUpdate)
-        assert.equal((context.previousResult as { outcome?: string })?.outcome, 'done');
-      const selected = context.implementation as {
-        defaultSkill: boolean;
-        skill: { path: string };
-        guidance?: { content: string };
-      };
-      if (openClawAIMockToolResultText(messages, prefix + 'implementation-skill') === undefined)
-        return call('implementation-skill', 'read', { path: selected.skill.path });
-      const customized = !selected.defaultSkill;
-      if (customized) {
-        assert.match(selected.guidance!.content, /Retain sanitized evidence/u);
-        assert.match(
-          openClawAIMockToolResultText(messages, prefix + 'implementation-skill')!,
-          /cleanup sequence/u,
-        );
+      const path = nativeWork ? context.worktree : context.project?.path;
+      if (!path) return;
+      let customized = false;
+      if (nativeWork) {
+        assert.equal(context.receipt, operatorId);
+        assert.ok(context.pullRequest?.pullRequestNumber);
+        assert.ok(context.branch);
+      } else {
+        if (
+          context.status !== 'verified' ||
+          context.runtime !== 'openclaw' ||
+          context.publicationAuthorized !== true
+        )
+          return;
+        assert.equal(context.deliveryOnly, false);
+        const selected = context.implementation as {
+          defaultSkill: boolean;
+          skill: { path: string };
+          guidance?: { content: string };
+        };
+        if (openClawAIMockToolResultText(messages, prefix + 'implementation-skill') === undefined)
+          return call('implementation-skill', 'read', { path: selected.skill.path });
+        customized = !selected.defaultSkill;
+        if (customized) {
+          assert.match(selected.guidance!.content, /Retain sanitized evidence/u);
+          assert.match(
+            openClawAIMockToolResultText(messages, prefix + 'implementation-skill')!,
+            /cleanup sequence/u,
+          );
+        }
       }
       const file = `notification-fixture-${operatorId}.md`;
       const patch = secondUpdate
@@ -748,23 +776,25 @@ function respond(
           });
         if (executed.exitCode !== 0 || executed.truncated !== false) return;
       }
-      const saved = result('work-result');
-      if (!saved)
-        return dispatch('work-result', {
-          action: 'implementation-result',
-          id: operatorId,
-          implementationResult: {
-            outcome: 'done',
-            summary: 'Committed the disposable cleanup note.',
-            fullResult:
-              'Committed and diff-checked the cleanup note in the verified worktree.' +
-              (customized ? ' Retained sanitized evidence before cleanup.' : ''),
-          },
-        });
-      const handoff = saved.handoff as { next?: string; request?: Record<string, unknown> };
-      if (saved.status !== 'recorded' || handoff?.next !== 'delivery') return;
-      if (!result('delivery-prepare'))
-        return dispatch('delivery-prepare', { ...handoff.request, title, body });
+      if (!nativeWork) {
+        const saved = result('work-result');
+        if (!saved)
+          return dispatch('work-result', {
+            action: 'implementation-result',
+            id: operatorId,
+            implementationResult: {
+              outcome: 'done',
+              summary: 'Committed the disposable cleanup note.',
+              fullResult:
+                'Committed and diff-checked the cleanup note in the verified worktree.' +
+                (customized ? ' Retained sanitized evidence before cleanup.' : ''),
+            },
+          });
+        const handoff = saved.handoff as { next?: string; request?: Record<string, unknown> };
+        if (saved.status !== 'recorded' || handoff?.next !== 'delivery') return;
+        if (!result('delivery-prepare'))
+          return dispatch('delivery-prepare', { ...handoff.request, title, body });
+      }
     }
     if (!retry) {
       const prepared = result('delivery-prepare');
@@ -831,8 +861,10 @@ function respond(
       if (isPendingDelivery(published))
         throw new Error(`notification-delivery-reconciliation-exhausted: ${published.code}`);
       if (published.status !== 'published') return;
-      if (!update && published.workflowStatus !== 'delivered-response-pending')
-        throw new Error('published pr must retain pending announcement as partial delivery');
+      if (!update && published.workflowStatus !== 'delivered')
+        throw new Error(
+          'completed implementation with verified pr linkage must be delivered before its announcement',
+        );
     }
     if (!retry && !update) {
       const composed = result('delivery-compose');

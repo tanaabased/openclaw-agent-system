@@ -35,6 +35,5 @@ export const implementationEntriesSchema = Type.Array(
     },
     { additionalProperties: false },
   ),
-  { maxItems: 20 },
 );
 export type ImplementationEntry = Static<typeof implementationEntriesSchema>[number];

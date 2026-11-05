@@ -4,6 +4,7 @@ import codexIssueLaunch from './codex-issue-launch.ts';
 import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import codexImplementationEntry from './codex-implementation-entry.ts';
+import runCodexDelivery from './codex-delivery.ts';
 import runCodexContinuation from './codex-continuation.ts';
 import codexAssessmentEntry from './codex-assessment-entry.ts';
 import cleanupConfiguration from './cleanup-configuration.ts';
@@ -54,6 +55,24 @@ export async function runCodexDispatch(
       action,
     });
     const context = await codexImplementationEntry(pluginData, request, deps);
+    if (context.status === 'native' && 'id' in context && request.operation === 'delivery')
+      return runCodexDelivery(
+        pluginData,
+        {
+          id: context.id,
+          action: request.deliveryOperation ?? 'prepare',
+          title: request.title,
+          body: request.body,
+          digest: request.digest,
+        },
+        {
+          codexHome: deps.codexHome,
+          inspectBinding: deps.inspectBinding,
+          threadId: deps.threadId,
+          git: deps.git,
+          connect: deps.deliveryConnect,
+        },
+      );
     if (context.status !== 'managed' || !('owner' in context) || !context.owner) return context;
     if (context.owner.eventId) {
       if (request.operation === 'delivery')
@@ -259,6 +278,12 @@ async function executeCodexDispatch(
             await reconcileIntakeDenial(record, tx);
           } catch (error) {
             const result = await fail(record, error);
+            // Missing evidence holds this retained operation; it does not establish a shared refusal.
+            if (
+              workflowFailure(error, 'dispatch-operation-failed').code ===
+              'dispatch-denial-history-unavailable'
+            )
+              continue;
             if (state.run) state.run.stopped = 'blocked';
             await save();
             return {

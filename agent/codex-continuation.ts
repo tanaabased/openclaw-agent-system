@@ -1,3 +1,5 @@
+import recoverCodexAnnouncement from './codex-announcement-recovery.ts';
+import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 import workflowFailure from './workflow-failure.ts';
 import codexCommit from './codex-commit.ts';
 import implementationMaterial from './implementation-material.ts';
@@ -48,11 +50,28 @@ export default async function runCodexContinuation(
   const retry = input.action === 'retry' || retryDenied;
   if (!caller) throw new Error('continuation-caller-required');
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
-  const manualOwner = (await store.read()).records.find(
-    (record) => record.id === input.id && record.manualIssue && record.threadId === caller,
+  const localOwner = (await store.read()).records.find(
+    (record) =>
+      record.id === input.id &&
+      record.threadId === caller &&
+      !['next', 'reconcile'].includes(input.action),
   );
-  const activation = manualOwner
-    ? { sourceThreadId: manualOwner.sourceThreadId }
+  if (localOwner && hasDeliveredImplementation(localOwner)) {
+    if (input.action === 'delivery' && input.delivery && typeof input.delivery === 'object')
+      return (deps.deliver ?? runCodexDelivery)(
+        pluginData,
+        { ...input.delivery, id: localOwner.id },
+        {
+          ...deps.deliveryDependencies,
+          threadId: caller,
+          codexHome: current.codexHome,
+          inspectBinding: deps.inspectBinding,
+        },
+      );
+    return nativeIssueContext(localOwner);
+  }
+  const activation = localOwner
+    ? { sourceThreadId: localOwner.sourceThreadId }
     : await (deps.activation ?? inspectCodexDispatchActivation)(
         pluginData,
         { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
@@ -61,7 +80,7 @@ export default async function runCodexContinuation(
         input.action === 'delivery' ? 'publication' : 'implementation',
       );
   const schedule = activation.schedule;
-  if (!schedule && !manualOwner) throw new Error('workflow-schedule-reconciliation-required');
+  if (!schedule && !localOwner) throw new Error('workflow-schedule-reconciliation-required');
   if (schedule)
     requireWorkflowSchedule(
       schedule.saved,
@@ -153,6 +172,11 @@ export default async function runCodexContinuation(
       if (!input.material) await prepareCodexWork(state, context);
       if (input.action === 'next') {
         for (const record of state.records) {
+          if (hasDeliveredImplementation(record)) {
+            if (!record.retired && !record.retirement && !record.reset && !record.supersededBy)
+              await recoverCodexAnnouncement(record, context);
+            continue;
+          }
           if (state.continuationRun?.responses?.includes(record.id)) continue;
           if (
             !record.summaryRecovery &&
@@ -186,6 +210,7 @@ export default async function runCodexContinuation(
         input.action === 'next'
           ? state.records.filter(
               (record) =>
+                !hasDeliveredImplementation(record) &&
                 record.continuation &&
                 !feedbackWorkStarted(record) &&
                 record.result &&
@@ -206,11 +231,22 @@ export default async function runCodexContinuation(
           : state.records.filter((record) => record.id === input.id);
       if (!candidates.length && input.action !== 'next')
         throw new Error('continuation-record-missing');
+      let pending: Awaited<ReturnType<typeof advanceCodexWork>>;
       for (const record of candidates) {
         const result = await advanceCodexWork(record, context);
-        if (result !== undefined) return result;
+        if (result === undefined) continue;
+        if (input.action !== 'next' || result.status === 'prepared') return result;
+        if (
+          'providerDiagnostic' in result &&
+          ['authentication', 'missing-credential'].includes(
+            result.providerDiagnostic?.classification ?? '',
+          )
+        )
+          return { ...result, nextAction: 'report' };
+        pending ??= result;
       }
-      return decisionPending ?? { status: 'idle' as const };
+      const held = pending ?? decisionPending;
+      return held ? { ...held, nextAction: 'dispatch' } : { status: 'idle' as const };
     }, commitOptions);
     if (
       input.action === 'context' &&
@@ -248,15 +284,16 @@ export default async function runCodexContinuation(
             record && retainedIssueProgression(record) ? 'continued-work' : 'implementation',
           );
           if (held) throw new WorkflowPolicyHeld(held);
-          const fresh = record?.manualIssue
-            ? { sourceThreadId: record.sourceThreadId }
-            : await (deps.activation ?? inspectCodexDispatchActivation)(
-                pluginData,
-                { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-                false,
-                true,
-                'publication',
-              );
+          const fresh =
+            record?.threadId === caller || record?.manualIssue
+              ? { sourceThreadId: record.sourceThreadId }
+              : await (deps.activation ?? inspectCodexDispatchActivation)(
+                  pluginData,
+                  { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
+                  false,
+                  true,
+                  'publication',
+                );
           if (fresh.sourceThreadId !== activation.sourceThreadId)
             throw new Error('continuation-schedule-binding-mismatch');
         },

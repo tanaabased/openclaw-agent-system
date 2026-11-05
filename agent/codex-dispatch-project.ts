@@ -66,6 +66,11 @@ export function githubOrigin(value: string): string | undefined {
   }
 }
 
+export function assertDispatchProjectInventory(projects: unknown): asserts projects is unknown[] {
+  if (!Array.isArray(projects) || projects.length > 1000)
+    throw new Error('dispatch-project-inventory-invalid');
+}
+
 /** verify one saved project's primary checkout; repository preparation remains a separate step. */
 export async function resolveDispatchProject(
   input: {
@@ -78,8 +83,7 @@ export async function resolveDispatchProject(
   },
   git: DispatchGit = dispatchGit,
 ): Promise<DispatchProject> {
-  if (!Array.isArray(input.projects) || input.projects.length > 1000)
-    throw new Error('dispatch-project-inventory-invalid');
+  assertDispatchProjectInventory(input.projects);
   const configured = input.explicitPath;
   const expectedPath =
     configured === undefined

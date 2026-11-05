@@ -4,6 +4,7 @@ import { realpath } from 'node:fs/promises';
 import openClawResponseAuthority from '../agent/openclaw-response-authority.ts';
 import continueOpenClawResponse, {
   openClawResponsePending,
+  openClawResponseEligible,
 } from '../agent/openclaw-response-continuation.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 import pendingPublicResponse from '../agent/pending-public-response.ts';
@@ -240,6 +241,22 @@ describe('agent/public-response recovery', () => {
       /do not repeat assessment or implementation/i,
     );
   });
+  it('should retain an unfinished summary without waking a delivered issue conversation', async () => {
+    const f = await fixture();
+    f.record.work = {
+      assessmentDigest: 'b'.repeat(64),
+      result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' },
+      delivery: { reconciled: true, pullRequest: { pullRequestNumber: 7 } } as NonNullable<
+        OpenClawDispatchRecord['work']
+      >['delivery'],
+    };
+    assert.equal(pendingPublicResponse(f.record)?.state, 'pending');
+    assert.equal(openClawResponseEligible(f.record), false);
+    await f.run();
+    assert.equal(f.posts, 0);
+    assert.equal(pendingPublicResponse(f.record)?.state, 'pending');
+  });
+
   it('should authorize a genuinely newer native turn only after the source execution ended', async () => {
     const f = await fixture();
     f.sourceStatus('timeout');

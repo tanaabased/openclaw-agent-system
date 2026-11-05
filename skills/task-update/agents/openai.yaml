@@ -1,9 +1,9 @@
 interface:
   display_name: 'Agent System Task Update'
-  short_description: 'Publish verified task progress to its GitHub issue'
+  short_description: 'Publish verified task progress to its issue or PR'
   icon_small: './assets/icon-small.svg'
   icon_large: './assets/icon-large.svg'
   brand_color: '#db2777'
-  default_prompt: "Use $agent-system-task-update to update the selected task's GitHub issue with verified progress from this chat. Publish only material missing facts and show the confirmed public reply; do not post if already current."
+  default_prompt: "Use $agent-system-task-update to publish verified progress from this chat. Start with the task's issue and use its linked open PR when available, unless I selected a destination. Publish only material missing facts and show the confirmed public reply; do not post if already current."
 policy:
   allow_implicit_invocation: true

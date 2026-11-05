@@ -22,6 +22,7 @@ import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import type { DispatchGit } from './codex-dispatch-project.ts';
 import dispatchContext from './dispatch-context.ts';
 import type { ImplementationResult } from './implementation-result.ts';
+import type { nativeIssueContext } from './implementation-delivery.ts';
 import type { OpenClawDeliveryConnection } from './openclaw-delivery.ts';
 import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
 import { replyLocator } from './reply-target.ts';
@@ -49,6 +50,7 @@ export interface AssessmentEntryDependencies {
         digest: string;
         owner?: { id: string; eventId?: string };
         implementationResult?: ImplementationResult;
+        nativeContext?: ReturnType<typeof nativeIssueContext>;
         path: string;
         selection: AssessmentSelection;
         evidence: string;
@@ -99,6 +101,7 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     throw new Error('assessment-issue-url-required');
   const repository = `${locator.owner}/${locator.name}`;
   const managed = await deps.managed({ repository, number: locator.number });
+  if (managed?.nativeContext) return managed.nativeContext;
   const managedEntry = managed
     ? await managed.entries(async (entries) =>
         entries.find(
@@ -262,7 +265,6 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
           instruction,
         };
       if (!entry) {
-        if (records.length >= 20) throw new Error('assessment-entry-capacity');
         const selected =
           managed?.selection ??
           (
@@ -356,7 +358,6 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     // this record has no workflow permissions; a model-authored auto decision cannot grant them.
     if (entry.result && automationHash(entry.result) !== automationHash(result)) {
       entry.history ??= [];
-      if (entry.history.length >= 10) throw new Error('assessment-revision-capacity');
       entry.history.push(entry.result);
     }
     entry.result = result;

@@ -22,12 +22,12 @@ export const assessmentEntrySchema = Type.Object(
     inputId: text,
     ownerDigest: Type.Optional(hash),
     result: Type.Optional(assessmentResultSchema),
-    history: Type.Optional(Type.Array(assessmentResultSchema, { maxItems: 10 })),
+    history: Type.Optional(Type.Array(assessmentResultSchema)),
     resultTurnId: Type.Optional(text),
   },
   { additionalProperties: false },
 );
-export const assessmentEntriesSchema = Type.Array(assessmentEntrySchema, { maxItems: 20 });
+export const assessmentEntriesSchema = Type.Array(assessmentEntrySchema);
 export type AssessmentEntry = Static<typeof assessmentEntrySchema>;
 export type AssessmentEntries = <T>(
   run: (entries: AssessmentEntry[], save: () => Promise<void>) => Promise<T>,

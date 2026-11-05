@@ -3501,9 +3501,9 @@ describe('agent/openclaw issue dispatch', () => {
     service.dependencies.now = () => clock;
     await current.journal.exclusive(async (state, save) => {
       const record = state.records[0]!;
-      record.work!.turn!.status = 'completed';
+      record.work!.turn!.status = 'consumed';
+      record.work!.code = 'dispatch-turn-cancelled';
       record.work!.turn!.consumedByEventId = 'implementation-input';
-      record.work!.turn!.replyEventId = 'implementation-reply';
       record.work!.result = { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' };
       record.work!.delivery = {
         id,
@@ -3556,6 +3556,8 @@ describe('agent/openclaw issue dispatch', () => {
     await workPass('after-exhaustion');
     assert.equal((await record()).work!.delivery!.announcementRecovery!.status, 'exhausted');
     assert.equal((await record()).work!.deliveryTurn, undefined);
+    assert.equal((await record()).work!.turn!.status, 'consumed');
+    assert.equal((await record()).work!.code, 'dispatch-turn-cancelled');
     assert.equal(checks, 4);
     assert.equal(sends().length, sent);
     assert.equal(creates().length, 1);
@@ -3866,51 +3868,9 @@ describe('agent/openclaw issue dispatch', () => {
         id: input.id,
         implementationResult: { outcome: 'done', summary: 'Done.', fullResult: 'Validated.' },
       });
-      const originalInput = structuredClone((await record()).work!.implementation);
-      messages.push({
-        role: 'user',
-        content: 'Continue with a follow-up commit.',
-        idempotencyKey: 'followup:user',
-        __openclaw: { id: 'followup-input', idempotencyKey: 'followup:user', senderIsOwner: true },
-      });
-      const followup = { ...who, runId: 'followup' };
-      const handoff = {
-        action: 'handoff' as const,
-        id: input.id,
-        permission: 'implementation-and-publication' as const,
-      };
-      const preview = await service.run(manifest, root, followup, handoff, true);
-      assert.ok('digest' in preview && typeof preview.digest === 'string');
-      const handedOff = await service.run(
-        manifest,
-        root,
-        followup,
-        { ...handoff, digest: preview.digest },
-        true,
-      );
-      assert.equal(handedOff.status, 'handed-off', JSON.stringify(handedOff));
-      assert.deepEqual((await record()).work!.implementation, originalInput);
-      assert.equal(
-        (
-          await service.run(
-            manifest,
-            root,
-            followup,
-            { action: 'implementation-context', id: input.id },
-            true,
-          )
-        ).status,
-        'verified',
-      );
-      assert.equal((await record()).work!.caller!.runId, 'followup');
-      assessmentReply(input.id);
-      service = new OpenClawDispatch(service.dependencies);
-      await workPass('recover-direct-delivery');
-      assert.equal((await record()).work?.result, undefined);
-      assert.equal((await record()).work?.resultHistory?.at(-1)?.result.outcome, 'done');
-      assert.equal((await record()).work?.deliveryTurn, undefined);
-      assert.equal((await record()).work?.turn?.runId, `${input.id}:implementation:resume:1`);
-      assert.equal(sends().length, 2);
+      assert.equal((await record()).work!.result!.outcome, 'done');
+      assert.equal((await record()).work!.turn!.runId, who.runId);
+      assert.equal(sends().length, 1);
       assert.equal(creates().length, 1);
     });
 
@@ -4222,6 +4182,28 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 2);
     assert.equal((await record()).work, undefined);
     assert.equal((await record()).progression, undefined);
+  });
+
+  it('should retain an uncertain implementation send while preparing another assignment', async () => {
+    await assignments(1, 2);
+    const first = await next();
+    const id = first.id;
+    await prepare(first);
+    await assess(id);
+    await completeAssessment(id);
+    manifest.github!.notifications!.issueAssignment!.mode = 'work';
+    loseSend = true;
+    assert.equal((await workPass('isolated-work')).status, 'implementation-pending');
+    const before = (await record(assessor(id).sessionKey)).work!.turn!;
+    await assignments(2, 2);
+    await workPass('after-uncertain');
+    const pending = await workPass('after-uncertain');
+    assert.equal(pending.status, 'routing-required', JSON.stringify(pending));
+    assert.ok('id' in pending && pending.id !== id);
+    const after = (await record(assessor(id).sessionKey)).work!.turn!;
+    assert.equal(after.runId, before.runId);
+    assert.equal(after.message, before.message);
+    assert.equal(sends().length, 2);
   });
 
   for (const mode of ['work', 'auto'] as const) {
@@ -5710,7 +5692,7 @@ describe('agent/openclaw issue dispatch', () => {
 
   for (const outcome of ['plan-ready', 'clarification-needed'] as const)
     it(`should preserve feedback-created pr state after an original ${outcome} assessment across restart`, async () => {
-      const { journal } = await publishedFollowup();
+      const { journal, id, who } = await publishedFollowup();
       const before = await record();
       const original: AssessmentResult =
         outcome === 'plan-ready'
@@ -5729,6 +5711,7 @@ describe('agent/openclaw issue dispatch', () => {
         current.result = original;
         current.stageReceipt!.resultDigest = automationHash(original);
         delete current.handoff;
+        delete current.implementationDelivered;
         current.progression = { stage: 'implementation', via: 'work', enteredAt: 2 };
         current.work = {
           assessmentDigest: automationHash(original),
@@ -5779,6 +5762,17 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(restored.threadId, before.threadId);
       assert.equal(restored.worktree, before.worktree);
       assert.equal(creates().length, 1);
+      messages.length = 0;
+      const context = await service.run(
+        manifest,
+        root,
+        { ...who, runId: 'human-after-feedback-delivery' },
+        { action: 'implementation', operation: 'context', id },
+        true,
+      );
+      assert.equal(context.status, 'native');
+      assert.equal('resultContract' in context, false);
+      assert.deepEqual(await record(), restored);
       await assert.rejects(
         journal.exclusive(async (state, save) => {
           delete state.records[0]!.progression;
@@ -6684,6 +6678,50 @@ describe('agent/openclaw issue dispatch', () => {
       ),
       /implementation-answer-required/,
     );
+  });
+
+  it('should keep delivered human work outside implementation custody and retain old receipts', async () => {
+    const { id, who } = await operatorFollowup();
+    await service.run(manifest, root, who, { action: 'implementation-context', id }, true);
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      const current = state.records[0]!;
+      current.implementationDelivered = true;
+      current.work!.result = { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' };
+      current.work!.code = 'dispatch-turn-failed';
+      await save();
+    });
+    const before = await record();
+    messages.length = 0; // expired original native evidence must not gate ordinary conversation.
+    const nativeCaller = { ...who, runId: 'human-follow-up' };
+    const result = await service.run(
+      manifest,
+      root,
+      nativeCaller,
+      {
+        action: 'implementation',
+        operation: 'context',
+        id,
+      },
+      true,
+    );
+    assert.equal(result.status, 'native');
+    assert.equal('resultContract' in result, false);
+    assert.deepEqual((await record()).work, before.work);
+    assert.deepEqual((await record()).progression, before.progression);
+    assert.equal((await record()).worktree, before.worktree);
+    const legacy = await service.run(
+      manifest,
+      root,
+      nativeCaller,
+      {
+        action: 'implementation-context',
+        id,
+      },
+      true,
+    );
+    assert.equal(legacy.status, 'native');
+    assert.deepEqual((await record()).work, before.work);
   });
 
   it('should retain one implementation transition without replacing the assessment', async () => {
@@ -8313,6 +8351,23 @@ describe('agent/openclaw issue dispatch', () => {
       await prepare(input);
       await assess(input.id);
       await completeAssessment(input.id);
+      if (!claimed) {
+        const { journal } = await service.scope(manifest, root);
+        await journal.exclusive(async (state, save) => {
+          const retained = state.records[0]!;
+          retained.implementationDelivered = true;
+          retained.decisionTurn = {
+            runId: `${retained.id}:auto-decision`,
+            message: 'Old decision.',
+            status: 'attempted',
+          };
+          retained.summaryRecovery = {
+            revision: 1,
+            turn: { runId: 'obsolete-summary', message: 'Old summary.', status: 'attempted' },
+          };
+          await save();
+        });
+      }
       const predecessor = await record();
       const operator = {
         sessionKey: 'agent:receiver:recovery-operator',

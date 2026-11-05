@@ -68,6 +68,19 @@ function context(agentId = 'tanaabot') {
 }
 
 describe('agent/command-security', () => {
+  it('should leave native session handoffs outside managed command authorization', async () => {
+    const { handler, logs } = setup({ active: { status: 'unmanaged' } as AgentManifestLoadResult });
+    const result = await handler(
+      {
+        toolName: 'sessions_send',
+        params: { sessionKey: 'another-project', message: 'Continue the authorized issue plan.' },
+      } as never,
+      context() as never,
+    );
+    assert.equal(result, undefined);
+    assert.deepEqual(logs, { error: [], warn: [] });
+  });
+
   it('should reserve shared installation identity changes for the operator', async () => {
     for (const alias of ['agent-system', 'as']) {
       for (const action of ['rename other-machine', 'rotate --expected-id private-marker']) {

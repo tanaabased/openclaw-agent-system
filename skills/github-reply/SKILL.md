@@ -103,7 +103,7 @@ existing admitted-feedback authority without adding a manual confirmation gate.
    For a manual response, use the supplied facts without inventing a commenter
    or converting supplied claims into verified execution results.
    For a status-update source, compose only its selected material missing facts at
-   the verified issue destination. Preserve evidence references and uncertainty;
+   the verified issue or PR destination. Preserve evidence references and uncertainty;
    current-session evidence is supplied by the reconciler, not independently
    executed by the composer. Use native retained outcomes where supplied. There is
    no incoming commenter to invent. The caller owns no-op/recovery decisions and

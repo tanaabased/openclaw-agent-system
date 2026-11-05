@@ -2,7 +2,6 @@ import { recoverRetainedAnnouncement } from '../agent/delivery-announcement.ts';
 import { openClawWorkSlot } from '../agent/openclaw-continuation.ts';
 import manualPullRequest from '../agent/manual-pull-request.ts';
 import { fixturePullRequest, intakeFixture } from './github-intake-fixture.ts';
-import openClawWorkAction from '../agent/openclaw-work.ts';
 import issueWorkflowProgress from '../agent/issue-workflow-progress.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
@@ -497,6 +496,12 @@ describe('agent/openclaw-delivery', () => {
   }
 
   it('should finish a new implementation through the same pr after earlier delivery completed', async () => {
+    record.work!.result = {
+      outcome: 'done',
+      summary: 'First pass.',
+      fullResult: 'First pass checked.',
+    };
+    record.work!.resultSource = { turnId: 'first-run', inputId: 'first-input' };
     await publish();
     const composed = await request('compose');
     assert.ok('digest' in composed);
@@ -508,38 +513,17 @@ describe('agent/openclaw-delivery', () => {
     await request('announce', { digest: candidate.digest });
     assert.equal(issueWorkflowProgress(record).action, 'complete');
     const receipt = structuredClone(record.work!.delivery!.pullRequest);
-    record.work!.caller = input.source;
-    head = 'b'.repeat(40);
-    await openClawWorkAction({
-      record,
-      source: input.source,
-      caller: {
-        sessionKey: record.threadId!,
-        sessionId: 'issue-session',
-        runId: input.source.runId,
-        toolCallId: 'result',
-      },
-      progression: { stage: 'implementation', via: 'operator' },
-      action: {
-        action: 'implementation-result',
-        id: record.id,
-        implementationResult: {
-          outcome: 'done',
-          summary: 'Follow-up complete.',
-          fullResult: 'Committed and checked.',
-        },
-      },
-      now: 3,
-      assertCurrent: input.assertCurrent,
-      save: input.save,
-    });
-    assert.equal(issueWorkflowProgress(record).action, 'delivery');
+    const initialResult = structuredClone(record.work!.result);
+    assert.equal(record.implementationDelivered, true);
+    head = 'b'.repeat(40); // ordinary native edits; no managed context/result round.
+    assert.equal(issueWorkflowProgress(record).action, 'complete');
     assert.deepEqual(record.work!.delivery!.pullRequest, receipt);
     await publish();
     assert.equal(issueWorkflowProgress(record).action, 'complete');
     assert.equal(creates, 1);
     assert.equal(announcement.posts, 1);
     assert.equal(record.work!.delivery!.pushedHead, head);
+    assert.deepEqual(record.work!.result, initialResult);
   });
 
   it('should retry pr creation after a definite provider rejection', async () => {
@@ -606,7 +590,7 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(pushes, 1);
   });
 
-  it('should wait and recheck the same published pr before making delivery runnable', async () => {
+  it('should recheck the published pr without waking delivery after announcement recovery', async () => {
     await publish();
     let linked = false,
       checks = 0;
@@ -633,7 +617,7 @@ describe('agent/openclaw-delivery', () => {
     record.work!.result = { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' };
     const delivery = record.work!.delivery!;
     const first = delivery.announcementRecovery!.retryAfter!;
-    assert.equal(openClawWorkSlot(record, 'work', first - 1), undefined);
+    assert.equal(openClawWorkSlot(record, 'work'), undefined);
     const check = (now: number) =>
       recoverRetainedAnnouncement({
         delivery,
@@ -648,10 +632,10 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(checks, 1);
     assert.equal(await check(first), false);
     assert.equal(checks, 2);
-    assert.equal(openClawWorkSlot(record, 'work', first), undefined);
+    assert.equal(openClawWorkSlot(record, 'work'), undefined);
     linked = true;
     assert.equal(await check(delivery.announcementRecovery!.retryAfter!), true);
-    assert.equal(openClawWorkSlot(record, 'work', first), 'deliveryTurn');
+    assert.equal(openClawWorkSlot(record, 'work'), undefined);
     const composed = await request('compose');
     assert.ok('digest' in composed);
     const candidate = await request('candidate', {
@@ -748,8 +732,13 @@ describe('agent/openclaw-delivery', () => {
     assert.equal((await request('prepare')).status, 'prepared');
     assert.equal(pushes, 1);
   });
-  it('should fast forward the verified branch while retaining the same pr', async () => {
+  it('should update the delivered pr without the original implementation stage', async () => {
+    record.work!.result = { outcome: 'done', summary: 'Done.', fullResult: 'Implemented.' };
     await publish();
+    assert.equal(record.implementationDelivered, true);
+    delete record.progression;
+    delete record.handoff;
+    delete record.work!.publication;
     const receipt = structuredClone(record.work!.delivery!.pullRequest);
     head = 'b'.repeat(40);
     await publish();

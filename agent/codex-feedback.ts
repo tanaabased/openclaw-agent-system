@@ -306,10 +306,6 @@ export default async function runCodexFeedback(
       records.sort((a, b) => readyAt(a) - readyAt(b));
       for (const record of records) {
         if (input.action !== 'next' && record.id !== input.id) continue;
-        const admitted = dispatchAdmission(record, intake.records ?? []);
-        if (!admitted) throw new Error('feedback-admission-missing');
-        const owner = admitted.repository.owner.login,
-          name = admitted.repository.name;
         const feedback = (record.feedback ??= { startedAt: now, baseline: {}, events: [] });
         let sourcePresentation: string | undefined;
         // reconcile every prepared send before considering another event for this owner.
@@ -320,6 +316,10 @@ export default async function runCodexFeedback(
               ) ?? queuedEvent(record))
             : feedback.events.find((item) => item.id === input.eventId);
         try {
+          const admitted = dispatchAdmission(record, intake.records ?? []);
+          if (!admitted) throw new Error('feedback-admission-missing');
+          const owner = admitted.repository.owner.login,
+            name = admitted.repository.name;
           if (!event) continue;
           const reconcilingPublication =
             ['next', 'reconcile'].includes(input.action) && event.publicationAttempted === true;
@@ -905,6 +905,7 @@ export default async function runCodexFeedback(
           if (codexHostAccess(error)) throw error;
           const failure = workflowFailure(error, 'feedback-operation-failed');
           const { code } = failure;
+          if (!event) feedback.code = code;
           if (event) {
             event.code = code;
             if (

@@ -1,3 +1,4 @@
+import { hasDeliveredImplementation } from './implementation-delivery.ts';
 import projectPickupCapacity from './project-pickup-capacity.ts';
 import type { ProjectPickupState } from './project-pickup-state.ts';
 import issueWorkflowProgress from './issue-workflow-progress.ts';
@@ -12,6 +13,14 @@ function reserved(record: DispatchRecord): boolean {
   if (record.nativeInactive) return false;
   // native activity and unresolved custody reserve a slot regardless of workflow progress.
   if (record.capacityObservation) return true;
+  const feedbackActive = Boolean(
+    record.feedback?.events.some(
+      (event) =>
+        ['prepared', 'running', 'responded'].includes(event.phase) ||
+        (event.phase === 'blocked' && Boolean(event.attempt) && !record.nativeInactive),
+    ),
+  );
+  if (hasDeliveredImplementation(record)) return feedbackActive;
   const progress = issueWorkflowProgress(record);
   const { action } = progress;
   return (
@@ -35,13 +44,7 @@ function reserved(record: DispatchRecord): boolean {
           !record.nativeInactive) ||
         (action === 'delivery' && progress.publicationPending)),
     ) ||
-    Boolean(
-      record.feedback?.events.some(
-        (event) =>
-          ['prepared', 'running', 'responded'].includes(event.phase) ||
-          (event.phase === 'blocked' && Boolean(event.attempt) && !record.nativeInactive),
-      ),
-    )
+    feedbackActive
   );
 }
 
