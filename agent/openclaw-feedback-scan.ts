@@ -1,3 +1,4 @@
+import replyOwnPublications from './reply-own-publications.ts';
 import { managedPullRequest } from './managed-issue.ts';
 import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
@@ -162,6 +163,20 @@ export async function scanOpenClawFeedback(input: {
                 intake,
                 client: provider!,
                 announcement: record.work?.delivery?.announcement,
+                replies: () =>
+                  replyOwnPublications({
+                    root: service.dependencies.root,
+                    binding: {
+                      runtime: 'openclaw',
+                      agentId: manifest.agent.id,
+                      workspace: input.workspace,
+                      namespace: service.dependencies.intake.dependencies.namespace,
+                      session: record.threadId!,
+                      incarnation: record.sessionCreation!.sessionId!,
+                    },
+                    client: provider!,
+                    replies: provider!.replies,
+                  }),
               }),
             )),
           client: provider,

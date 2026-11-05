@@ -65,7 +65,9 @@ export default async function openClawEntryContext<T>(
       )
         throw new Error('assessment-managed-context-invalid');
       await describeIssueSession(request, record, deps.config());
-      const feedback = record.feedback?.events.find((event) => event.turn?.runId === caller.runId);
+      const feedback = record.feedback?.events.find(
+        (event) => !event.native && event.turn?.runId === caller.runId,
+      );
       return {
         nativeContext:
           !feedback && hasDeliveredImplementation(record) ? nativeIssueContext(record) : undefined,

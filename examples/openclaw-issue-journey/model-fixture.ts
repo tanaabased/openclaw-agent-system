@@ -459,13 +459,12 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   }
   const questionId = /Explain retained plan for managed issue ([a-f0-9]{64})/u.exec(prompt)?.[1];
   if (questionId) {
-    const context = result('direct-question-context');
-    if (!context) return dispatch('direct-question-context', { action: 'context', id: questionId });
-    if (context.status !== 'verified' || context.mode !== 'plan') return;
-    const history = context.feedbackWork as Array<{ privateText?: string }>;
-    assert.equal(history.length, 2);
-    assert.ok(history.every((entry) => entry.privateText?.includes('disposable issue cleanup')));
-    return { content: history[0]!.privateText! };
+    const history = request.messages.map(({ content }) => getTextContent(content) ?? '').join('\n');
+    assert.ok(history.includes('disposable issue cleanup'));
+    return {
+      content:
+        'The retained plan proposes documenting disposable issue cleanup after evidence is captured. Implementation remains unstarted.',
+    };
   }
   const recoveryId =
     /recover only the pending public assessment summary[\s\S]*?id ([a-f0-9]{64})/u.exec(
@@ -525,23 +524,17 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       context.publication !== 'allowed'
     )
       return;
-    const history = context.previousFeedbackWork as Array<{ privateText?: string }>;
-    const source = context.source as { body: string };
-    if (source.body.includes('using the earlier explanation')) {
-      assert.equal(history.length, 1);
-      assert.ok(history[0]!.privateText?.includes('disposable issue cleanup'));
-    } else assert.deepEqual(history, []);
-    const saved = result('feedback-result');
-    if (!saved)
-      return dispatch('feedback-result', {
-        ...args,
-        operation: 'result',
-        privateText:
-          'The retained plan proposes documenting disposable issue cleanup after evidence is captured. This feedback turn explains the plan; implementation remains unstarted and no pull request has been created.',
-      });
-    if (saved.status !== 'recorded') return;
+    const privateText =
+      'The retained plan proposes documenting disposable issue cleanup after evidence is captured. This feedback turn explains the plan; implementation remains unstarted and no pull request has been created.';
     const composition = result('feedback-compose');
-    if (!composition) return dispatch('feedback-compose', { ...args, operation: 'compose' });
+    if (!composition)
+      return dispatch('feedback-compose', {
+        action: 'reply',
+        operation: 'compose',
+        target: context.replyTarget,
+        privateText,
+      });
+    const reply = { action: 'reply', id: composition.id };
     const skill = (composition.selection as { skill?: { path?: string } } | undefined)?.skill;
     if (
       composition.status !== 'composition-ready' ||
@@ -554,7 +547,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     const candidate = result('feedback-candidate');
     if (!candidate)
       return dispatch('feedback-candidate', {
-        ...args,
+        ...reply,
         operation: 'candidate',
         digest: composition.digest,
         publicText:
@@ -562,17 +555,17 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       });
     if (candidate.status !== 'candidate-recorded') return;
     const preview = result('feedback-preview');
-    if (!preview) return dispatch('feedback-preview', { ...args, operation: 'publish' });
+    if (!preview) return dispatch('feedback-preview', { ...reply, operation: 'publish' });
     if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
     const published = result('feedback-publish');
     if (!published)
       return dispatch('feedback-publish', {
-        ...args,
+        ...reply,
         operation: 'publish',
         digest: preview.digest,
       });
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
-    return { content: published.presentation };
+    return { content: privateText + '\n\n' + published.presentation };
   }
   const revision = /(Clarify|Answer) ordinary assessment for managed issue ([a-f0-9]{64})/u.exec(
     prompt,

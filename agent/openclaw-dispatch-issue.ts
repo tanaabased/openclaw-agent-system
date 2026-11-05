@@ -1,3 +1,4 @@
+import openClawFeedbackInput from './openclaw-feedback-input.ts';
 import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 import workflowStatus from './workflow-status.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
@@ -463,7 +464,7 @@ export default class OpenClawDispatchIssue {
     const feedbackSource = record.feedback?.events.find(
       (event) => event.turn?.runId === caller.runId,
     );
-    if (feedbackSource) {
+    if (feedbackSource && !feedbackSource.native) {
       if (input.action === 'delivery' && input.operation === 'bind')
         throw new Error('delivery-binding-operator-required');
       return this.feedback(
@@ -530,33 +531,77 @@ export default class OpenClawDispatchIssue {
       const signal = authority.signal
         ? AbortSignal.any([authority.signal, transactionSignal])
         : transactionSignal;
+      const feedbackEvent = record.feedback?.events.find(
+        (event) => event.native && event.turn?.runId === caller.runId,
+      );
       const assertCurrent = async () => {
         signal.throwIfAborted();
         await authority.assertCurrent?.();
-        await this.context.validateLocal(manifest, workspace, record, true);
+        const live = await this.context.validateLocal(manifest, workspace, record, true);
+        if (feedbackEvent) {
+          const provider = await this.context.dependencies.feedbackConnect?.(
+            { manifest: live.manifest, workspaceDir: workspace },
+            signal,
+            client,
+          );
+          if (!provider) throw new Error('feedback-provider-unavailable');
+          await authorizeFeedback({
+            record,
+            event: feedbackEvent,
+            intake,
+            provider,
+            policy: live.manifest.github!.notifications!,
+            assertCurrent: async () => {
+              await authority.assertCurrent?.();
+            },
+            reauthorize: async () =>
+              (
+                await this.context.validate(
+                  manifest,
+                  workspace,
+                  record,
+                  false,
+                  true,
+                  client,
+                  signal,
+                )
+              ).item,
+          });
+        }
         signal.throwIfAborted();
       };
       return this.context.dependencies.credential.use(
         { signal, assertCurrent },
         async (request) => {
+          const nativeFeedback =
+            feedbackEvent &&
+            (await openClawFeedbackInput(
+              record,
+              caller,
+              request,
+              this.context.dependencies.config(),
+            ));
           const bindingOnly = input.action === 'delivery' && input.operation === 'bind';
           if (bindingOnly && !operator) throw new Error('delivery-binding-operator-required');
           const { source, message, progression, revisionAuthorized } =
             bindingOnly || delivered
               ? {
-                  source: await (
-                    input.action === 'delivery' &&
-                      ['compose', 'candidate', 'announce'].includes(input.operation)
-                      ? nativeInputEvent
-                      : operatorInputEvent
-                  )({
-                    request,
-                    senderIsOwner: operator,
-                    sessionKey: caller.sessionKey,
-                    sessionId: caller.sessionId,
-                    runId: caller.runId,
-                    retained: [],
-                  }),
+                  source:
+                    nativeFeedback && !bindingOnly
+                      ? { runId: caller.runId, inputEventId: nativeFeedback.inputId }
+                      : await (
+                          input.action === 'delivery' &&
+                            ['compose', 'candidate', 'announce'].includes(input.operation)
+                            ? nativeInputEvent
+                            : operatorInputEvent
+                        )({
+                          request,
+                          senderIsOwner: operator,
+                          sessionKey: caller.sessionKey,
+                          sessionId: caller.sessionId,
+                          runId: caller.runId,
+                          retained: [],
+                        }),
                   message: undefined,
                   progression: undefined,
                   revisionAuthorized: false,
@@ -565,6 +610,9 @@ export default class OpenClawDispatchIssue {
                   record,
                   caller,
                   operator,
+                  feedback: nativeFeedback
+                    ? { inputId: nativeFeedback.inputId, message: nativeFeedback.event.source }
+                    : undefined,
                   mode: issueWorkflowMode(
                     (await this.context.validateLocal(manifest, workspace, record, true)).manifest
                       .github?.notifications,

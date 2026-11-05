@@ -1,3 +1,5 @@
+import openClawFeedbackInput from '../agent/openclaw-feedback-input.ts';
+import { verifyOpenClawWork } from '../agent/openclaw-work.ts';
 import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
 import {
@@ -134,6 +136,8 @@ describe('agent/openclaw-feedback', () => {
       now: Date.now(),
     });
     event = record.feedback!.events[0]!;
+    // Retained pre-native events continue through their original publication owner.
+    delete event.native;
     input = {
       record,
       event,
@@ -237,6 +241,58 @@ describe('agent/openclaw-feedback', () => {
     await advanceFeedbackTurn(input);
     return action('context');
   }
+  it('should reuse native feedback custody for the initial task transition and preserve cancellation', async () => {
+    event.native = true;
+    await start();
+    const feedback = await openClawFeedbackInput(record, input.caller, input.request, input.config);
+    assert.ok(feedback);
+    record.result = {
+      outcome: 'plan-ready',
+      summary: 'Existing actionable plan.',
+      fullAssessment: 'Implement the requested change.',
+    } as never;
+    record.stageReceipt = {} as never;
+    const verified = await verifyOpenClawWork({
+      record,
+      caller: input.caller,
+      operator: false,
+      feedback: { inputId: feedback.inputId, message: event.source },
+      mode: 'plan',
+      now: input.now,
+      request: input.request,
+      config: input.config,
+    });
+    assert.equal(verified.progression.stage, 'implementation');
+    assert.equal(verified.progression.workOwner, 'issue');
+    assert.equal(verified.source.inputEventId, feedback.inputId);
+    assert.equal(event.work, undefined);
+    event.turn!.cancelled = true;
+    await assert.rejects(
+      openClawFeedbackInput(record, input.caller, input.request, input.config),
+      /reply-managed-context-invalid/,
+    );
+  });
+  it('should settle native delivery independently of private results and public replies', async () => {
+    event.native = true;
+    const before = structuredClone(record);
+    const context = await start();
+    assert.equal(context.status, 'verified');
+    assert.equal('resultSchema' in context, false);
+    assert.equal(
+      'replyTarget' in context && context.replyTarget,
+      'https://github.com/owner/repo/issues/3#issuecomment-42',
+    );
+    assert.equal(event.work, undefined);
+    assert.equal(event.result, undefined);
+    assert.deepEqual(record.result, before.result);
+    event.turn!.status = 'completed';
+    busy = false;
+    assert.equal((await advanceFeedbackTurn(input)).status, 'feedback-completed');
+    await advanceFeedbackTurn(input);
+    assert.equal(sends, 1);
+    assert.equal(event.phase, 'delivered');
+    assert.equal(writes, 0);
+  });
   for (const change of [{ model: 'openai/operator-model' }, { thinkingLevel: 'low' }])
     it(`should retain feedback authority after operator ${'model' in change ? 'model' : 'thinking'} tuning`, async () => {
       input.policy.issueAssignment!.mode = 'work';
@@ -377,6 +433,7 @@ describe('agent/openclaw-feedback', () => {
       now: input.now + 1000,
     });
     event = record.feedback!.events[1]!;
+    delete event.native;
     input.event = event;
     input.caller.runId = `${record.id}:feedback:${event.id}`;
     busy = false;
@@ -648,44 +705,19 @@ describe('agent/openclaw-feedback', () => {
     assert.ok('digest' in preview);
     return preview.digest;
   }
-  it('should resume interrupted composition with saved work and a distinct native request', async () => {
-    // Exercise the durable dispatch journal, not only the embedded feedback schema.
-    record.phase = 'creating';
-    record.context = '{}';
-    record.routing = '{}';
-    record.routingNote = 'Retained fixture routing.';
-    record.effective = { status: 'verified', model: 'openai/test', effort: 'high' };
-    const journal = new OpenClawDispatchStore(root, 'd'.repeat(64));
-    const originalSave = input.save;
-    input.save = async () => {
-      await originalSave();
-      await journal.exclusive(async (state, save) => {
-        state.records = [structuredClone(record)];
-        await save();
-      });
-    };
+  it('should retain a completed legacy input without replaying work for its missing reply', async () => {
     await start();
     await action('result', { privateText: 'Retained answer.' });
     const oldRun = event.turn!.runId;
     event.turn!.status = 'completed';
     busy = false;
-    const resumed = await advanceFeedbackTurn(input);
-    assert.equal(resumed.status, 'feedback-queued');
+    assert.equal((await advanceFeedbackTurn(input)).status, 'feedback-completed');
+    assert.equal(event.phase, 'delivered');
     assert.equal(event.result!.privateText, 'Retained answer.');
-    assert.deepEqual(event.previousTurnIds, [oldRun]);
+    await advanceFeedbackTurn(input);
+    assert.equal(event.turn!.runId, oldRun);
     assert.equal(sends, 1);
-    await advanceFeedbackTurn(input);
-    assert.notEqual(event.turn!.runId, oldRun);
-    assert.equal(sends, 2);
     assert.equal(writes, 0);
-    assert.ok(Value.Check(openclawFeedbackSchema, record.feedback));
-    const restored = (await new OpenClawDispatchStore(root, 'd'.repeat(64)).read()).records[0]!;
-    assert.equal(restored.feedback!.events[0]!.turn!.runId, oldRun + ':resume:1');
-    const mismatched = structuredClone(restored);
-    mismatched.feedback!.events[0]!.previousTurnIds = ['unrelated-native-turn'];
-    assert.equal(journal.contract.validRecord(mismatched), false);
-    await advanceFeedbackTurn(input);
-    assert.equal(sends, 2);
   });
   it('should finish a retained reply after a manual stop and explicit owner follow-up', async () => {
     await start();
@@ -1125,6 +1157,7 @@ describe('agent/openclaw-feedback', () => {
       now: Date.now(),
     });
     event = record.feedback.events.find((e) => e.sourceId === reply.nodeId)!;
+    delete event.native;
     input.event = event;
     input.caller.runId = `${record.id}:feedback:${event.id}`;
     const context = await start();

@@ -12,9 +12,11 @@ export default async function feedbackOwnPublications(input: {
   intake: IntakeRecord;
   client: GitHubNotificationPublicationClient;
   announcement?: DeliveryAnnouncementState;
+  replies?: () => Promise<string[]>;
 }) {
   const { record, intake, client, announcement } = input;
   const ids = await assessmentSummaryOwnPublications(record, intake, { client }, redactFeedback);
+  if (input.replies) ids.push(...(await input.replies()));
   if (announcement?.receipt) ids.push(announcement.receipt.nodeId);
   else if (announcement?.attempted) {
     const receipt = await reconcileAnnouncement({

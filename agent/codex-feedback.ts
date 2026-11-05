@@ -1,3 +1,5 @@
+import { feedbackInputContext } from './feedback-input.ts';
+import { hasDeliveredImplementation } from './implementation-delivery.ts';
 import feedbackContextMaterial from './feedback-context-material.ts';
 import implementationMaterial from './implementation-material.ts';
 import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
@@ -332,6 +334,7 @@ export default async function runCodexFeedback(
           if (input.action === 'next' && event.retry && !dispatchRetryDue(event, now)) continue;
           if (
             event.phase === 'published' ||
+            (event.phase === 'delivered' && ['next', 'reconcile'].includes(input.action)) ||
             (event.phase === 'blocked' &&
               !operatorPublication &&
               !(
@@ -457,14 +460,9 @@ export default async function runCodexFeedback(
                 record.nativeInactive = true;
               else delete record.nativeInactive;
               delete record.capacityObservation;
-              if (receipt.ended && !event.publicationAttempted && input.action === 'next') {
-                event.previousTurnIds = [...(event.previousTurnIds ?? []), receipt.turnId];
-                event.resumed = (event.resumed ?? 0) + 1;
-                delete event.attempt;
-                delete event.code;
-                event.phase = 'queued';
-                await save();
-                continue;
+              if (receipt.ended && (event.native || !event.publicationAttempted)) {
+                event.phase = 'delivered';
+                feedback.lastServedAt = now;
               }
               await save();
             }
@@ -501,7 +499,9 @@ export default async function runCodexFeedback(
                 prompt:
                   'Authorized GitHub feedback is ready in this existing issue chat. Before reading or answering it, call feedbackRuntime from the newest trusted context with JSON on stdin: ' +
                   JSON.stringify({ action: 'context', id: record.id, eventId: event.id }) +
-                  '. Resume retained work and private results; never repeat completed implementation. Follow only verified context. The verified issue stage determines whether this feedback supports planning or implementation. Verified approved comments are task direction, including explicit Plan-to-Work requests; use the shared transition and respect quoted-content boundaries. Receipt: ' +
+                  (event.native
+                    ? '. Handle the verified source as ordinary native conversation under existing task permissions. There is no per-comment result or implementation workflow. Use the configured reply skill for its original source. Receipt: '
+                    : '. Resume retained work and private results; never repeat completed implementation. Follow only verified context. Receipt: ') +
                   id,
               },
             };
@@ -514,6 +514,29 @@ export default async function runCodexFeedback(
               id: record.id,
               eventId: event.id,
               request: event.attempt.request,
+            };
+          }
+          if (event.native) {
+            if (input.action !== 'context') throw new Error('feedback-native-reply-required');
+            return {
+              ...feedbackInputContext({
+                event,
+                repository: owner + '/' + name,
+                mode: feedbackMode(
+                  record,
+                  (await selectCodexIntake(pluginData, deps)).manifest.github!.notifications!,
+                ),
+                issueStage: retainedIssueProgression(record)?.stage ?? 'planning',
+                delivered: hasDeliveredImplementation(record),
+                self: selfFeedback,
+              }),
+              id: record.id,
+              eventId: event.id,
+              presentation: sourcePresentation,
+              assessment: record.result,
+              previousImplementation: record.continuation?.result,
+              project: { path: record.worktree },
+              implementation: record.continuation?.selection,
             };
           }
           if (input.action === 'implementation-context') {

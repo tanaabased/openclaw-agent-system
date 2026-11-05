@@ -1834,6 +1834,13 @@ describe('agent/openclaw issue dispatch', () => {
     const records = (await (await service.scope(manifest, root)).journal.read()).records;
     return (key ? records.find((record) => record.threadId === key) : records[0])!;
   }
+  async function retainLegacyFeedback() {
+    const { journal } = await service.scope(manifest, root);
+    await journal.exclusive(async (state, save) => {
+      for (const event of state.records[0]!.feedback!.events) delete event.native;
+      await save();
+    });
+  }
   const creates = () => calls.filter(({ method }) => method === 'sessions.create');
 
   function enableClaims(mode: 'local' | 'swarm' = 'swarm') {
@@ -6836,6 +6843,7 @@ describe('agent/openclaw issue dispatch', () => {
     comments[0]!.body = '@receiver Please implement the agreed plan.';
     consumeSend = true;
     await service.check(manifest, root);
+    await retainLegacyFeedback();
     await service.run(manifest, root, coordinator, { action: 'reconcile', id });
     await service.run(manifest, root, coordinator, { action: 'next' });
     const event = (await record()).feedback!.events[0]!;
@@ -6934,12 +6942,93 @@ describe('agent/openclaw issue dispatch', () => {
       },
       true,
     );
-    assert.equal(answer.status, 'recorded');
+    assert.equal(answer.status, 'needs-attention');
+    assert.equal('code' in answer && answer.code, 'feedback-native-reply-required');
     const after = await record();
     assert.equal(after.progression, undefined);
     assert.equal(after.feedback!.events[0]!.work, undefined);
     assert.deepEqual(after.work, before.work);
     assert.deepEqual(after.result, before.result);
+  });
+
+  it('should keep native feedback implementation and its reply independent in the original task', async () => {
+    const { id, comments } = await feedbackOwner(false);
+    comments[0]!.body = '@receiver Please implement the agreed plan.';
+    comments[0]!.author = { login: 'pirog', nodeId: 'U_operator', type: 'User' };
+    manifest.github!.notifications!.issueAssignment!.feedback = {
+      inherit: false,
+      allowed: [{ login: 'pirog', nodeId: 'U_operator' }],
+    };
+    consumeSend = true;
+    await service.check(manifest, root);
+    await service.run(manifest, root, coordinator, { action: 'reconcile', id });
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    const before = await record();
+    const event = before.feedback!.events[0]!;
+    const who = assessor(id, event.turn!.runId);
+    const context = await service.run(
+      manifest,
+      root,
+      who,
+      { action: 'implementation-context', id },
+      false,
+    );
+    assert.equal(context.status, 'verified');
+    assert.equal((await record()).progression?.workOwner, 'issue');
+    const result = {
+      outcome: 'done' as const,
+      summary: 'Implemented.',
+      fullResult: 'Changed and checked the agreed behavior.',
+    };
+    assert.equal(
+      (
+        await service.run(
+          manifest,
+          root,
+          who,
+          { action: 'implementation-result', id, implementationResult: result },
+          false,
+        )
+      ).status,
+      'recorded',
+    );
+    const afterWork = await record();
+    assert.deepEqual(afterWork.work?.result, result);
+    assert.equal(afterWork.feedback!.events[0]!.work, undefined);
+    assert.equal(afterWork.feedback!.events[0]!.result, undefined);
+    const reply = await service.run(
+      manifest,
+      root,
+      who,
+      {
+        action: 'reply',
+        operation: 'compose',
+        target: 'https://github.com/owner/repo/issues/3#issuecomment-99',
+        privateText: 'Implemented the requested change and checked it.',
+      },
+      false,
+    );
+    assert.equal(reply.status, 'composition-ready', JSON.stringify(reply));
+    assert.deepEqual(await record(), afterWork);
+    comments[0]!.body = '@receiver Withdrawn.';
+    await assert.rejects(
+      service.run(
+        manifest,
+        root,
+        who,
+        {
+          action: 'reply',
+          operation: 'compose',
+          target: 'https://github.com/owner/repo/issues/3#issuecomment-99',
+          privateText: 'Stale answer.',
+        },
+        false,
+      ),
+      /feedback-source-changed/,
+    );
+    assert.equal((await record()).threadId, before.threadId);
+    assert.equal((await record()).worktree, before.worktree);
+    assert.deepEqual((await record()).result, before.result);
   });
 
   for (const scope of [undefined, 'local', 'pull-request'] as const)
@@ -6948,6 +7037,7 @@ describe('agent/openclaw issue dispatch', () => {
       comments[0]!.body = '@receiver Please implement the agreed plan.';
       consumeSend = true;
       await service.check(manifest, root);
+      await retainLegacyFeedback();
       await service.run(manifest, root, coordinator, { action: 'reconcile', id });
       await service.run(manifest, root, coordinator, { action: 'next' });
       const before = await record();
@@ -7974,6 +8064,7 @@ describe('agent/openclaw issue dispatch', () => {
       };
       consumeSend = true;
       await service.check(manifest, root);
+      await retainLegacyFeedback();
       await service.run(manifest, root, coordinator, { action: 'next' });
       const event = (await record()).feedback!.events[0]!;
       assert.ok(event.turn);
@@ -8059,6 +8150,7 @@ describe('agent/openclaw issue dispatch', () => {
     const { id } = await feedbackOwner();
     consumeSend = true;
     assert.equal((await service.check(manifest, root)).changed, true);
+    await retainLegacyFeedback();
     assert.equal((await record()).feedback!.events.length, 1);
     await service.run(manifest, root, coordinator, { action: 'next' });
     const event = (await record()).feedback!.events[0]!;

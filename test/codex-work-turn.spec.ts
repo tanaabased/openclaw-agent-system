@@ -72,6 +72,42 @@ function fixture() {
 }
 
 describe('agent/codex-work-turn', () => {
+  it('should enter the task work owner with the verified feedback send instead of inventing operator custody', async () => {
+    const { record, context, verified } = fixture();
+    context.input.action = 'context';
+    context.caller = 'chat';
+    verified.found = {
+      ...verified.found,
+      turnId: 'feedback',
+      status: 'active',
+      turnStatus: 'inProgress',
+      turnEnded: false,
+    };
+    const attempt = {
+      id: 'f'.repeat(64),
+      sourceThreadId: 'intake',
+      sourceTurnId: 'scan',
+      beforeTurnId: 'assessment',
+      turnId: 'feedback',
+      request: { threadId: 'chat', prompt: 'Verified feedback input.' },
+    };
+    context.feedbackInput = {
+      turnId: 'feedback',
+      inputId: attempt.id,
+      attempt,
+      authorize: async () => {},
+    };
+    context.continuationNative = async (_source, received) => {
+      assert.deepEqual(received, attempt);
+      return { status: 'verified', turnId: 'feedback', ended: false };
+    };
+    const result = await advance(record, context, verified);
+    assert.equal(result.ready, true);
+    assert.deepEqual(record.continuation!.attempt, attempt);
+    assert.equal('origin' in record.continuation!.attempt!, false);
+    assert.equal(record.progression!.workOwner, 'issue');
+    assert.equal(record.feedback, undefined);
+  });
   it('should recover an interrupted handoff through its retained input without preparing a duplicate send', async () => {
     const { record, context, verified, source, receipts } = fixture();
     delete record.continuation!.attempt;

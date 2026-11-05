@@ -62,7 +62,7 @@ export default async function codexEntryContext<T>(
       )
         throw new Error('assessment-managed-context-invalid');
       const eventId = record.feedback?.events.find(
-        (event) => event.attempt?.turnId === native.turnId,
+        (event) => !event.native && event.attempt?.turnId === native.turnId,
       )?.id;
       const feedback = eventId && record.feedback?.events.find((event) => event.id === eventId);
       return {

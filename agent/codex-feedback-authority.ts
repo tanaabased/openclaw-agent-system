@@ -3,7 +3,10 @@ import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts
 import { admitFeedback, feedbackRevision } from './feedback-source.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
-import type connectCodexFeedback from './codex-feedback-client.ts';
+import type {
+  GitHubNotificationIntakeClient,
+  GitHubNotificationCommentClient,
+} from '../channels/github/provider/work-event-types.ts';
 import type { selectCodexIntake } from './codex-intake.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
@@ -17,9 +20,12 @@ import {
 export default async function authorizeCodexFeedback(input: {
   current: Awaited<ReturnType<typeof selectCodexIntake>>;
   record: DispatchRecord;
-  event: FeedbackSourceEvent;
+  event: Pick<FeedbackSourceEvent, 'number' | 'nodeId' | 'itemType' | 'source' | 'revision'>;
   intake: IntakeRecord;
-  provider: Awaited<ReturnType<typeof connectCodexFeedback>>;
+  provider: {
+    client: GitHubNotificationIntakeClient;
+    comments: GitHubNotificationCommentClient;
+  };
 }) {
   const { current, record, event, intake, provider } = input;
   if (record.supersededBy) throw new Error('dispatch-task-superseded');
@@ -44,7 +50,7 @@ export default async function authorizeCodexFeedback(input: {
   const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
   const exact = isReviewFeedback(source)
     ? await readReviewFeedback(
-        provider.comments.reviews,
+        provider.comments.reviews!,
         owner,
         name,
         event.number,

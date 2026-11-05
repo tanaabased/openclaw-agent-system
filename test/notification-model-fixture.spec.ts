@@ -1355,8 +1355,7 @@ for (const scenario of [
         assert.deepEqual(await response(current), { content: 'Already current.' });
       });
     if (scenario.id === 'openclaw-issue-journey')
-      it('should answer paired github and direct questions using retained responses without work', async () => {
-        const privateText = 'The retained plan documents disposable issue cleanup after evidence.';
+      it('should answer github and direct questions from native conversation without a result checkpoint', async () => {
         const github = request(
           `Call agent_system_dispatch with action feedback, operation context, id ${id}, eventId ${'e'.repeat(64)}`,
         );
@@ -1365,23 +1364,24 @@ for (const scenario of [
           status: 'verified',
           runtime: 'openclaw',
           publication: 'allowed',
+          replyTarget: source,
           source: { body: '@tanaabot explain the plan using the earlier explanation.' },
-          previousFeedbackWork: [{ eventId: 'd'.repeat(64), privateText }],
         });
-        assert.equal((await action(github, 'feedback')).operation, 'result');
+        const composed = await action(github, 'reply');
+        assert.equal(composed.operation, 'compose');
+        assert.equal(composed.target, source);
+        assert.match(composed.privateText!, /implementation remains unstarted/);
         const direct = request(
           `Explain retained plan for managed issue ${id}: explain the plan using the earlier explanation.`,
         );
-        assert.equal((await action(direct, 'context')).id, id);
-        append(direct, 'direct-question-context', {
-          status: 'verified',
-          mode: 'plan',
-          feedbackWork: [
-            { eventId: 'd'.repeat(64), privateText },
-            { eventId: 'e'.repeat(64), privateText },
-          ],
+        direct.messages.unshift({
+          role: 'assistant',
+          content: 'The plan documents disposable issue cleanup after evidence.',
         });
-        assert.deepEqual(await response(direct), { content: privateText });
+        assert.deepEqual(await response(direct), {
+          content:
+            'The retained plan proposes documenting disposable issue cleanup after evidence is captured. Implementation remains unstarted.',
+        });
       });
     if (scenario.id === 'openclaw-issue-journey')
       it('should adapt ordinary clarification and an answer using retained full output', async () => {
@@ -1442,7 +1442,7 @@ for (const scenario of [
             [false, 'openclaw-pr-reply-recovery'],
           ] as const)
         : ([[false, undefined]] as const))
-        it(`should keep feedback ${initial ? 'initial implementation' : (driver ?? scenario.id) + ' continuation'} private retention skill selection candidate and publication as distinct stages`, async () => {
+        it(`should keep feedback ${initial ? 'initial implementation' : (driver ?? scenario.id) + ' continuation'} native work and independent reply publication as distinct stages`, async () => {
           const selectedScenario = driver ? resolveExampleModelScenario(driver) : scenario;
           const collaboration = driver === 'openclaw-pr-collaboration';
           const replyRecovery = driver === 'openclaw-pr-reply-recovery';
@@ -1460,7 +1460,7 @@ for (const scenario of [
             status: 'verified',
             runtime: 'openclaw',
             publication: 'allowed',
-            previousFeedbackWork: [],
+            replyTarget: source,
             source: { body: '@tanaabot explain the plan.' },
           });
           if (scenario.id === 'openclaw-pr-journey') {
@@ -1471,27 +1471,22 @@ for (const scenario of [
               publication: 'allowed',
               mode: initial ? 'plan' : 'work',
               issueStage: initial ? 'planning' : 'implementation',
-              previousFeedbackWork: initial
-                ? []
-                : [{ eventId: 'd'.repeat(64), result: { outcome: 'done' } }],
-            });
-            const entry = await runAction(input, 'implementation');
-            assert.deepEqual(entry, {
-              action: 'implementation',
-              operation: 'context',
-              id,
-              scope: 'local',
-            });
-            append(input, 'feedback-work-context', {
-              status: 'verified',
-              worktree: '/tmp/worktree',
-              issueStage: 'implementation',
-              work: {},
+              replyTarget: source,
+              project: { path: '/tmp/worktree' },
               implementation: { skill: { path: '/tmp/IMPLEMENT.md' } },
-              previousFeedbackWork: initial
-                ? []
-                : [{ eventId: 'd'.repeat(64), result: { outcome: 'done' } }],
             });
+            if (initial) {
+              assert.deepEqual(await runAction(input, 'implementation-context'), {
+                action: 'implementation-context',
+                id,
+              });
+              append(input, 'feedback-work-context', {
+                status: 'verified',
+                project: { path: '/tmp/worktree' },
+                issueStage: 'implementation',
+                implementation: { skill: { path: '/tmp/IMPLEMENT.md' } },
+              });
+            }
             const selected = await runResponse(input);
             assert.ok('toolCalls' in selected);
             assert.equal(selected.toolCalls?.[0]?.name, 'read');
@@ -1539,12 +1534,14 @@ for (const scenario of [
                 ]);
               append(input, stage, { exitCode: 0, truncated: false });
             }
-            assert.equal((await runAction(input, 'feedback')).operation, 'implementation-result');
-            append(input, 'feedback-work-result', { status: 'recorded' });
-            assert.equal((await runAction(input, 'feedback')).deliveryOperation, 'prepare');
+            if (initial) {
+              assert.equal((await runAction(input, 'implementation-result')).id, id);
+              append(input, 'feedback-work-result', { status: 'recorded' });
+            }
+            assert.equal((await runAction(input, 'delivery')).operation, 'prepare');
             append(input, 'feedback-delivery-prepare', { status: 'prepared', digest });
-            const delivered = await runAction(input, 'feedback');
-            assert.equal(delivered.deliveryOperation, 'publish');
+            const delivered = await runAction(input, 'delivery');
+            assert.equal(delivered.operation, 'publish');
             assert.equal(delivered.digest, digest);
             if (initial) {
               append(input, 'feedback-delivery-publish', {
@@ -1552,10 +1549,10 @@ for (const scenario of [
                 code: 'github-delivery-linkage-unverified',
                 nextAction: 'next',
               });
-              const recovery = await runAction(input, 'feedback');
-              assert.equal(recovery.deliveryOperation, 'prepare');
+              const recovery = await runAction(input, 'delivery');
+              assert.equal(recovery.operation, 'prepare');
               assert.equal(recovery.id, id);
-              assert.equal(recovery.eventId, eventId);
+              assert.equal('eventId' in recovery, false);
               const missingReceipt = structuredClone(input);
               append(missingReceipt, 'feedback-link-prepare-0', { status: 'prepared', digest });
               assert.equal(matchFixture([...scenario.fixtures], missingReceipt), null);
@@ -1566,15 +1563,15 @@ for (const scenario of [
                   pullRequest: { pullRequestNodeId: 'PR_owned', pullRequestNumber: 456 },
                 },
               });
-              const retry = await runAction(input, 'feedback');
-              assert.equal(retry.deliveryOperation, 'publish');
+              const retry = await runAction(input, 'delivery');
+              assert.equal(retry.operation, 'publish');
               assert.equal(retry.digest, digest);
               assert.equal(retry.id, id);
-              assert.equal(retry.eventId, eventId);
+              assert.equal('eventId' in retry, false);
               append(input, 'feedback-link-publish-0', { status: 'published' });
             } else append(input, 'feedback-delivery-publish', { status: 'published' });
             if (initial) {
-              assert.equal((await runAction(input, 'feedback')).deliveryOperation, 'compose');
+              assert.equal((await runAction(input, 'delivery')).operation, 'compose');
               append(input, 'feedback-delivery-compose', {
                 status: 'composition-ready',
                 digest,
@@ -1583,41 +1580,23 @@ for (const scenario of [
               const selected = await runResponse(input);
               assert.ok('toolCalls' in selected && selected.toolCalls?.[0]?.name === 'read');
               append(input, 'delivery-skill', { content: 'Reply skill instructions.' });
-              assert.equal((await runAction(input, 'feedback')).deliveryOperation, 'candidate');
+              assert.equal((await runAction(input, 'delivery')).operation, 'candidate');
               append(input, 'feedback-delivery-candidate', {
                 status: 'announcement-prepared',
                 digest,
               });
-              assert.equal((await runAction(input, 'feedback')).deliveryOperation, 'announce');
+              assert.equal((await runAction(input, 'delivery')).operation, 'announce');
               append(input, 'feedback-delivery-announce', { status: 'announced' });
             }
           }
-          const retained = await runAction(input, 'feedback');
-          assert.equal(retained.operation, 'result');
+          const composition = await runAction(input, 'reply');
+          assert.equal(composition.operation, 'compose');
+          assert.equal(composition.target, source);
           if (scenario.id !== 'openclaw-pr-journey')
-            assert.match(retained.privateText!, /implementation remains unstarted/);
-          append(input, 'feedback-result', {
-            status: 'recorded',
-            presentation: 'Full private response',
-          });
-          if (replyRecovery) {
-            assert.ok('content' in (await runResponse(input)));
-            input = request(
-              `Resume the retained feedback reply only. Use operation context, id ${id}, eventId ${eventId}.`,
-            );
-            const resumed = await runAction(input, 'feedback');
-            assert.equal(resumed.operation, 'context');
-            assert.equal(resumed.resume, true);
-            append(input, 'feedback-context', {
-              status: 'verified',
-              runtime: 'openclaw',
-              publication: 'allowed',
-              mode: 'work',
-            });
-          }
-          assert.equal((await runAction(input, 'feedback')).operation, 'compose');
+            assert.match(composition.privateText!, /implementation remains unstarted/);
           append(input, 'feedback-compose', {
             status: 'composition-ready',
+            id,
             digest,
             selection: { defaultSkill: true, skill: { path: '/tmp/SKILL.md' } },
           });
@@ -1625,20 +1604,28 @@ for (const scenario of [
           assert.ok('toolCalls' in read);
           assert.equal(read.toolCalls?.[0]?.name, 'read');
           append(input, 'feedback-skill', { text: 'Selected reply method' });
-          const candidate = await runAction(input, 'feedback');
+          const candidate = await runAction(input, 'reply');
           assert.equal(candidate.operation, 'candidate');
           if (scenario.id !== 'openclaw-pr-journey')
             assert.match(candidate.publicText!, /Implementation has not started/);
           append(input, 'feedback-candidate', { status: 'candidate-recorded' });
-          assert.equal((await runAction(input, 'feedback')).digest, undefined);
+          if (replyRecovery) {
+            assert.deepEqual(await runResponse(input), {
+              content: composition.privateText + '\n\nReply draft retained: ' + id,
+            });
+            input = request(`Publish retained reply draft: ${id}`);
+          }
+          assert.equal((await runAction(input, 'reply')).digest, undefined);
           append(input, 'feedback-preview', { status: 'publication-ready', digest });
-          assert.equal((await runAction(input, 'feedback')).digest, digest);
+          assert.equal((await runAction(input, 'reply')).digest, digest);
           append(input, 'feedback-publish', {
             status: 'published',
             presentation: 'Complete private and public presentation',
           });
           assert.deepEqual(await runResponse(input), {
-            content: 'Complete private and public presentation',
+            content:
+              (replyRecovery ? '' : composition.privateText + '\n\n') +
+              'Complete private and public presentation',
           });
         });
   });

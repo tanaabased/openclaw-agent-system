@@ -1,3 +1,6 @@
+import codexFeedbackInput from './codex-feedback-input.ts';
+import authorizeCodexFeedback from './codex-feedback-authority.ts';
+import connectCodexFeedback from './codex-feedback-client.ts';
 import recoverCodexAnnouncement from './codex-announcement-recovery.ts';
 import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 import workflowFailure from './workflow-failure.ts';
@@ -161,11 +164,47 @@ export default async function runCodexContinuation(
         admissions,
         save,
         signal,
-        ...(deps.directOperator ? { operatorInput: await native.operatorInput(caller) } : {}),
       };
-      const decision = context.operatorInput
-        ? { response: undefined, decisionPending: undefined }
-        : await advanceCodexAutoDecision(state, context);
+      if (localOwner?.feedback?.events.some((event) => event.native) && input.action !== 'cancel') {
+        const found = await native.find({
+          sourceThreadId: localOwner.sourceThreadId,
+          prompt: localOwner.request!.prompt,
+          createdAfter: localOwner.createdAt,
+          threadId: caller,
+        });
+        const source =
+          found?.turnId &&
+          (await codexFeedbackInput(state.records, caller, found.turnId, continuationNative));
+        if (source) {
+          const admitted = dispatchAdmission(source.record, admissions?.records ?? []);
+          if (!admitted) throw new Error('feedback-admission-missing');
+          const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
+            current.workspace,
+            signal,
+          );
+          const authorize = async () =>
+            authorizeCodexFeedback({
+              current: await selectCodexIntake(pluginData, deps),
+              record: source.record,
+              event: source.event,
+              intake: admitted,
+              provider,
+            });
+          await authorize();
+          context.feedbackInput = {
+            turnId: found!.turnId!,
+            inputId: source.attempt.id,
+            attempt: source.attempt,
+            authorize,
+          };
+        }
+      }
+      if (deps.directOperator && !context.feedbackInput)
+        context.operatorInput = await native.operatorInput(caller);
+      const decision =
+        context.operatorInput || context.feedbackInput
+          ? { response: undefined, decisionPending: undefined }
+          : await advanceCodexAutoDecision(state, context);
       if (decision.response) return decision.response;
       const decisionPending = decision.decisionPending;
       if (input.action !== 'next' && decisionPending) return decisionPending;

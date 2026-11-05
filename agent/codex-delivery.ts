@@ -430,13 +430,27 @@ export default async function runCodexDelivery(
       const feedbackEvent = record.feedback?.events.find(
         (event) => event.attempt?.turnId === found.turnId,
       );
-      if (feedbackEvent && input.eventId !== feedbackEvent.id)
+      if (feedbackEvent && !feedbackEvent.native && input.eventId !== feedbackEvent.id)
         throw new Error('feedback-event-required');
       if (input.eventId && feedbackEvent?.id !== input.eventId)
         throw new Error('feedback-owner-caller-required');
       const announcementOnly = ['compose', 'candidate', 'announce'].includes(input.action);
       const authorizePublication = async () => {
         await deps.authorizeSchedule?.();
+        if (feedbackEvent?.native) {
+          const live = await selectCodexIntake(pluginData, { ...deps, connect: undefined });
+          await authorizeCodexFeedback({
+            current: live,
+            record,
+            event: feedbackEvent,
+            intake,
+            provider: await (deps.feedbackConnect ?? connectCodexFeedback)(
+              current.workspace,
+              signal,
+            ),
+          });
+          return;
+        }
         if (!input.eventId) return;
         const event = feedbackEvent!;
         if (

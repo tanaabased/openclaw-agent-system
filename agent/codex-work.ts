@@ -35,6 +35,7 @@ import { selectWorkflowStage } from './workflow-stage.ts';
 
 export async function prepareCodexWork(state: DispatchState, context: CodexWorkContext) {
   const { input, deps, current, caller, native, admissions, save } = context;
+  const direction = context.operatorInput ?? context.feedbackInput;
   if (input.action === 'next' || input.action === 'context')
     for (const record of state.records) {
       const liveMode = issueWorkflowMode(current.manifest.github?.notifications, record);
@@ -45,9 +46,9 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
       if (
         hasDeliveredImplementation(record) ||
         record.continuation ||
-        (!context.operatorInput && needsAutoDecision(record, liveMode)) ||
+        (!direction && needsAutoDecision(record, liveMode)) ||
         (record.autoDecision && !record.autoDecision.ended && input.action !== 'context') ||
-        feedbackWorkStarted(record) ||
+        (feedbackWorkStarted(record) && !direction) ||
         record.result?.outcome !== 'plan-ready' ||
         !record.project ||
         !record.worktree ||
@@ -61,7 +62,7 @@ export async function prepareCodexWork(state: DispatchState, context: CodexWorkC
           current.manifest,
           'codex',
           admitted,
-          context.operatorInput ? 'continued-work' : 'implementation',
+          direction ? 'continued-work' : 'implementation',
         )
       )
         continue;
@@ -118,6 +119,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     signal,
   } = context;
   if (hasDeliveredImplementation(record)) return undefined;
+  const direction = context.operatorInput ?? context.feedbackInput;
   const liveMode = issueWorkflowMode(current.manifest.github?.notifications, record);
   const retryDenied = input.action === 'retry-denied';
   const retry = input.action === 'retry' || retryDenied;
@@ -129,7 +131,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       ['continuation-auto-wait', 'continuation-assessment-not-actionable'].includes(
         work.code ?? '',
       ) &&
-      (!retainedIssueProgression(record) || context.operatorInput)
+      (!retainedIssueProgression(record) || direction)
     ) {
       work.phase = 'waiting';
       delete work.code;
@@ -208,10 +210,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     const progress = issueWorkflowProgress(record);
     if (!retry && !resumeBlocked && ['stopped', 'complete'].includes(progress.action)) {
       if (input.action === 'next') return undefined;
-      if (
-        (progress.action === 'stopped' && !context.operatorInput) ||
-        (!work.result && !context.operatorInput)
-      )
+      if ((progress.action === 'stopped' && !direction) || (!work.result && !direction))
         return { status: progress.status, id: record.id, code: work.code };
     }
     if (!record.result) return undefined;
@@ -219,12 +218,13 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     if (!admitted) throw new Error('continuation-admission-missing');
     const enteringImplementation = !retainedIssueProgression(record);
     const authorizeLive = async () => {
+      await context.feedbackInput?.authorize();
       const live = await selectCodexIntake(pluginData, deps);
       const held = liveWorkflowPolicy(
         live.manifest,
         'codex',
         admitted,
-        enteringImplementation && !context.operatorInput ? 'implementation' : 'continued-work',
+        enteringImplementation && !direction ? 'implementation' : 'continued-work',
       );
       if (held) throw new WorkflowPolicyHeld(held);
       if (
@@ -240,9 +240,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       !work.attempt &&
       !work.binding &&
       (input.action === 'next' ||
-        (context.operatorInput &&
-          input.action === 'context' &&
-          !context.preparedSelections?.has(record.id)))
+        (direction && input.action === 'context' && !context.preparedSelections?.has(record.id)))
     ) {
       const live = await authorizeLive();
       const selected = await selectWorkflowStage({
@@ -258,7 +256,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       work.selection = selected.selection;
     }
     if (!input.material) delete work.policyHeld;
-    if (enteringImplementation && liveMode === 'auto' && !context.operatorInput) {
+    if (enteringImplementation && liveMode === 'auto' && !direction) {
       if (!record.result.decision) throw new WorkflowPolicyHeld('auto-decision-required');
       if (
         !record.stageReceipt ||
@@ -282,7 +280,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     const transition = issueProgression(record, {
       mode: liveMode ?? 'auto',
       now: (deps.now ?? Date.now)(),
-      operator: Boolean(context.operatorInput),
+      operator: Boolean(direction),
     });
     if (!['reconcile', 'cancel', 'result'].includes(input.action) && transition.status !== 'ready')
       throw new WorkflowPolicyHeld(transition.reason);
@@ -335,7 +333,7 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
       return { status: 'cancelled' as const, id: record.id };
     }
     let selection = work.selection;
-    if (input.action === 'context' && work.result?.outcome !== 'done' && !context.operatorInput) {
+    if (input.action === 'context' && work.result?.outcome !== 'done' && !direction) {
       const currentSelection = await selectWorkflowStage({
         stage: 'implementation',
         configuration: {

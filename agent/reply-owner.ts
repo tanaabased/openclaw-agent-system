@@ -99,6 +99,7 @@ export default function replyOwner(
     );
     const event = matching?.at(-1);
     if (!event) return manualContext(owner);
+    if (event.native) return manualContext(owner);
     if (!event.result || event.phase === 'blocked')
       throw new Error('reply-managed-response-required');
     if (event.receipt) {

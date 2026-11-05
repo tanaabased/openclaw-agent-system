@@ -111,7 +111,12 @@ function terminalEffects(record: Record): TerminalEffect[] {
       });
   }
   for (const event of record.feedback?.completed ?? [])
-    effects.push({ kind: 'feedback', ...event, status: 'published', reported: true });
+    effects.push({
+      kind: 'feedback',
+      ...event,
+      status: event.native ? 'delivered' : 'published',
+      reported: true,
+    });
   const deliveries = [
     record.delivery,
     record.work?.delivery,
@@ -168,6 +173,7 @@ function deliverySettled(delivery: Record['delivery'] | NonNullable<Record['work
 }
 
 export function settledFeedback(event: FeedbackSourceEvent) {
+  if (event.native) return event.phase === 'delivered';
   // a reply alone does not settle implementation, attachment, or an uncertain native turn.
   const turn = event as FeedbackSourceEvent & {
     turn?: { status: string };
@@ -258,6 +264,7 @@ export default function retainDispatchHistory<R extends SharedDispatchRecord>(
   if (record.feedback) {
     const current = new Set([
       events.findLast((event) => event.result),
+      events.findLast((event) => event.native),
       events.findLast((event) => event.work?.decision),
       events.findLast((event) => event.work?.result),
     ]);
@@ -275,7 +282,8 @@ export default function retainDispatchHistory<R extends SharedDispatchRecord>(
           sourceId: event.sourceId,
           revision: event.revision,
           nodeId: event.nodeId,
-          receipt: event.receipt!,
+          receipt: event.receipt,
+          ...(event.native ? { native: event.native } : {}),
         })),
       ];
       for (const event of removed) {

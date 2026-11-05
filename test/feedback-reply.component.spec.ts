@@ -1,3 +1,5 @@
+import { feedbackRevision } from '../agent/feedback-source.ts';
+import replyOwnPublications from '../agent/reply-own-publications.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -761,6 +763,107 @@ describe('agent/feedback-reply', () => {
     assert.equal(await updateCandidate(), id);
     assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
     assert.equal(writes, 1);
+  });
+  async function nativeFeedback() {
+    const source = await provider.getIssueComment('owner', 'repo', 3, 42);
+    const revision = feedbackRevision(source);
+    deps.feedback = {
+      ownerId: 'a'.repeat(64),
+      eventId: 'b'.repeat(64),
+      revision,
+      source: JSON.stringify(source),
+      number: 3,
+      nodeId: 'I_issue',
+      itemType: 'issue',
+    };
+    deps.authorizeFeedback = async (reference, target) => {
+      assert.equal(reference.eventId, deps.feedback!.eventId);
+      if (target.source?.nodeId !== source.nodeId || target.revision !== revision)
+        throw new Error('feedback-source-changed');
+    };
+    return url + '#issuecomment-42';
+  }
+  it('should keep a native reply independent of evolving issue outcomes without progress comparison', async () => {
+    const target = await nativeFeedback();
+    owners = [
+      {
+        id: deps.feedback!.ownerId,
+        threadId: 'chat',
+        incarnation: 'session',
+        inactive: false,
+        repository: 'owner/repo',
+        number: 3,
+        result: { outcome: 'plan-ready', summary: 'Old plan.' } as never,
+      },
+    ];
+    const id = await candidate(target);
+    owners[0]!.result = { outcome: 'clarification-needed', summary: 'Changed plan.' } as never;
+    const digest = await preview(id);
+    assert.equal((await call('publish', { id, digest })).status, 'published');
+    const repeated = await call('compose', {
+      target,
+      privateText: 'Different wording for the same source.',
+    });
+    assert.equal(repeated.status, 'reply-reconciliation-required');
+    assert.equal('id' in repeated && repeated.id, id);
+    assert.equal(writes, 1);
+    assert.equal(selections, 1);
+  });
+  it('should recheck native source authority before writing while keeping uncertain reply recovery independent', async () => {
+    const target = await nativeFeedback();
+    const id = await candidate(target);
+    const digest = await preview(id);
+    const authorize = deps.authorizeFeedback!;
+    deps.authorizeFeedback = async () => {
+      throw new Error('feedback-not-approved');
+    };
+    await assert.rejects(call('publish', { id, digest }), /feedback-not-approved/);
+    assert.equal(writes, 0);
+    deps.authorizeFeedback = authorize;
+    lost = hidden = true;
+    await assert.rejects(call('publish', { id, digest }));
+    deps.authorizeFeedback = async () => {
+      throw new Error('feedback-not-approved');
+    };
+    hidden = false;
+    assert.equal((await call('reconcile', { id })).status, 'published');
+    assert.equal(writes, 1);
+  });
+  it('should identify an uncertain native reply during discovery without posting or repeating work', async () => {
+    const id = await candidate(await nativeFeedback());
+    const digest = await preview(id);
+    lost = hidden = true;
+    await assert.rejects(call('publish', { id, digest }));
+    hidden = false;
+    assert.deepEqual(
+      await replyOwnPublications({
+        root: deps.root,
+        binding: deps.binding,
+        client: provider,
+        replies: provider.replies,
+      }),
+      ['C_published'],
+    );
+    assert.equal(writes, 1);
+    assert.equal(selections, 1);
+  });
+  it('should keep native self feedback private and reject status-update substitution', async () => {
+    const target = await nativeFeedback();
+    const original = provider.getIssueComment;
+    provider.getIssueComment = async (...args) => ({
+      ...(await original(...args)),
+      author: provider.identity,
+    });
+    await assert.rejects(
+      call('compose', { target, privateText: 'Self answer.' }),
+      /feedback-self-publication-denied/,
+    );
+    await assert.rejects(
+      call('context', { target, purpose: 'status-update' }),
+      /reply-feedback-target-required/,
+    );
+    assert.equal(writes, 0);
+    assert.equal(selections, 0);
   });
   it('should prepare the default context without automation and reuse its draft without another selection', async () => {
     const id = await candidate();

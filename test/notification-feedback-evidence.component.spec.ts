@@ -15,7 +15,8 @@ describe('examples/openclaw-pr-journey retained feedback evidence', () => {
       id: 'initial',
       source: 'exact source',
       revision: 'exact revision',
-      phase: 'published',
+      native: true,
+      phase: 'running',
       receipt: { nodeId: 'reply' },
       result: { privateText: 'Private answer.', publicText: 'Public answer.' },
       work: { head: 'original head' },
@@ -28,6 +29,7 @@ describe('examples/openclaw-pr-journey retained feedback evidence', () => {
     };
     const after = {
       ...before,
+      phase: 'delivered',
       turn: {
         ...before.turn,
         status: 'completed',
@@ -103,6 +105,7 @@ for (const [scenario, itemType] of [
                 ? [{ itemType: 'issue', turn: { runId: 'earlier' } }]
                 : []),
               {
+                id: 'event',
                 itemType,
                 source: JSON.stringify({ nodeId: 'source' }),
                 receipt: { nodeId: 'reply' },
@@ -112,6 +115,14 @@ for (const [scenario, itemType] of [
             ],
           },
         });
+        await write('reply-drafts', [
+          {
+            feedback: { eventId: 'event' },
+            receipt: { nodeId: 'reply' },
+            privateText: 'Private explanation.',
+            publicText: 'Public answer.',
+          },
+        ]);
         await write('feedback-source', { node_id: 'source' });
         const replies = [
           ...summaries.map((node_id) => ({

@@ -42,6 +42,7 @@ export default async function advanceCodexWorkTurn(
   } = context;
   const { admitted, found, transition, liveMode, authorizeLive, resumeBlocked, blockedTurnId } =
     verified;
+  const direction = context.operatorInput ?? context.feedbackInput;
   let selection = verified.selection;
   const work = record.continuation!;
   const retryDenied = input.action === 'retry-denied';
@@ -57,7 +58,7 @@ export default async function advanceCodexWorkTurn(
     ...(record.feedback?.events.map(({ attempt }) => attempt?.turnId) ?? []),
   ].includes(found.turnId);
   const currentInput =
-    context.operatorInput ??
+    direction ??
     (work.revisionSource?.turnId === found.turnId ? work.revisionSource : undefined) ??
     (input.action === 'context' &&
     work.result?.outcome === 'done' &&
@@ -81,22 +82,25 @@ export default async function advanceCodexWorkTurn(
     input.action === 'context' &&
     revisionInput?.turnId === found.turnId &&
     (unfinishedResult ||
-      work.attempt?.origin !== 'input' ||
-      work.attempt.inputId !== revisionInput.inputId ||
-      work.attempt.turnId !== revisionInput.turnId ||
+      (context.feedbackInput
+        ? work.attempt?.id !== context.feedbackInput.attempt.id
+        : work.attempt?.origin !== 'input' || work.attempt.inputId !== revisionInput.inputId) ||
+      work.attempt?.turnId !== revisionInput.turnId ||
       work.publicationAttempt)
   ) {
-    const revisionAttempt = {
-      ...work.attempt,
-      id: automationHash({ attempt: work.attempt?.id ?? record.id, source: revisionInput }),
-      origin: 'input' as const,
-      inputId: revisionInput.inputId,
-      sourceThreadId: record.threadId!,
-      sourceTurnId: revisionInput.turnId,
-      beforeTurnId: revisionInput.turnId,
-      turnId: revisionInput.turnId,
-      request: { threadId: record.threadId!, prompt: 'Continue the authorized revision.' },
-    };
+    const revisionAttempt = context.feedbackInput
+      ? { ...context.feedbackInput.attempt, turnId: found.turnId }
+      : {
+          ...work.attempt,
+          id: automationHash({ attempt: work.attempt?.id ?? record.id, source: revisionInput }),
+          origin: 'input' as const,
+          inputId: revisionInput.inputId,
+          sourceThreadId: record.threadId!,
+          sourceTurnId: revisionInput.turnId,
+          beforeTurnId: revisionInput.turnId,
+          turnId: revisionInput.turnId,
+          request: { threadId: record.threadId!, prompt: 'Continue the authorized revision.' },
+        };
     const currentReceipt = await continuationNative(
       record.sourceThreadId,
       revisionAttempt,
@@ -192,13 +196,13 @@ export default async function advanceCodexWorkTurn(
       instruction:
         'Preserve the assessment, chat and worktree. Reconcile the current native turn through its owning workflow; do not force a send or treat an interrupted turn as active.',
     });
-    if (found.turnId !== record.resultTurnId && context.operatorInput?.turnId !== found.turnId)
+    if (found.turnId !== record.resultTurnId && direction?.turnId !== found.turnId)
       return { ready: false as const, response: unresolved('assessment-turn-changed') };
     if (found.turnEnded || ['completed', 'failed'].includes(found.turnStatus ?? ''))
       return { ready: false as const, response: unresolved('assessment-turn-ended') };
     if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
     if (
-      (!context.operatorInput && record.stageReceipt?.binding.turnId !== found.turnId) ||
+      (!direction && record.stageReceipt?.binding.turnId !== found.turnId) ||
       record.stageReceipt?.resultDigest !== automationHash(record.result)
     )
       throw new Error('continuation-assessment-changed');
@@ -260,8 +264,8 @@ export default async function advanceCodexWorkTurn(
         assessmentTurn: found.turnId,
         result: work.assessmentDigest,
       }),
-      origin: context.operatorInput ? 'input' : 'assessment',
-      ...(context.operatorInput ? { inputId: context.operatorInput.inputId } : {}),
+      origin: direction ? 'input' : 'assessment',
+      ...(direction ? { inputId: direction.inputId } : {}),
       sourceThreadId: record.threadId!,
       sourceTurnId: found.turnId,
       beforeTurnId: found.turnId,

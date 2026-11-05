@@ -211,7 +211,7 @@ export async function discoverFeedback(input: {
     if (
       ownCommentIds?.includes(source.nodeId) ||
       state.events.some((event) => event.receipt?.nodeId === source.nodeId) ||
-      state.completed?.some((event) => event.receipt.nodeId === source.nodeId)
+      state.completed?.some((event) => event.receipt?.nodeId === source.nodeId)
     )
       continue;
     if (!accepting) continue;
@@ -230,6 +230,7 @@ export async function discoverFeedback(input: {
     )
       continue;
     pending.push({
+      native: true,
       id,
       sourceId: source.nodeId,
       number,

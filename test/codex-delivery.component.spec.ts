@@ -144,6 +144,7 @@ describe('agent/codex-delivery', () => {
         now: baseline + 80000,
       });
       const event = record.feedback.events[0]!;
+      delete event.native; // retained legacy work still uses its original publication owner
       event.phase = 'running';
       event.attempt = {
         id: 'f'.repeat(64),

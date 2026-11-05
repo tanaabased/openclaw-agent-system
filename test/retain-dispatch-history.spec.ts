@@ -205,6 +205,40 @@ describe('agent/retain-dispatch-history', () => {
     assert.equal(validTerminalRecord(terminal), true);
   });
 
+  it('should compact delivered native input without waiting for a reply or losing source revision custody', () => {
+    const source = record();
+    delete source.retired;
+    delete source.retirement;
+    const first = {
+      ...event(1),
+      native: true as const,
+      phase: 'delivered' as const,
+      receipt: undefined,
+      result: undefined,
+    };
+    const next = {
+      ...event(2),
+      native: true as const,
+      phase: 'running' as const,
+      receipt: undefined,
+      result: undefined,
+    };
+    source.feedback = { baseline: {}, events: [first, next] };
+    const projected = retainDispatchHistory(source)!;
+    assert.deepEqual(projected.feedback!.events, [next]);
+    assert.deepEqual(projected.feedback!.completed, [
+      {
+        id: first.id,
+        sourceId: first.sourceId,
+        revision: first.revision,
+        nodeId: first.nodeId,
+        native: true,
+        receipt: undefined,
+      },
+    ]);
+    assert.equal(settledFeedback(first), true);
+    assert.equal(settledFeedback(next), false);
+  });
   it('should keep the latest context, current work owner and unfinished feedback exact', () => {
     const source = { ...record(), retired: undefined, retirement: undefined };
     source.feedback = { baseline: {}, events: [event(1), event(2), event(3), event(4)] };

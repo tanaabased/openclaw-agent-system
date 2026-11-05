@@ -1,0 +1,38 @@
+import type { DispatchRecord } from './codex-dispatch-state.ts';
+import type codexContinuationNative from './codex-continuation-native.ts';
+
+/** Reuse the exact native-send receipt; delegated feedback is never an operator input. */
+export default async function codexFeedbackInput(
+  records: DispatchRecord[],
+  caller: string,
+  turnId: string,
+  receiptFor: ReturnType<typeof codexContinuationNative>,
+) {
+  const candidates = records.flatMap((record) =>
+    record.threadId === caller
+      ? (record.feedback?.events ?? []).flatMap((event) =>
+          event.native &&
+          event.attempt &&
+          (!event.attempt.turnId || event.attempt.turnId === turnId)
+            ? [{ record, event, attempt: event.attempt }]
+            : [],
+        )
+      : [],
+  );
+  const verified = [];
+  for (const candidate of candidates) {
+    const receipt = await receiptFor(candidate.record.sourceThreadId, candidate.attempt);
+    if (receipt.status === 'blocked') throw new Error(receipt.code);
+    if (receipt.status !== 'verified' || receipt.turnId !== turnId || receipt.ended) continue;
+    if (
+      candidate.record.retired ||
+      candidate.record.retirement ||
+      candidate.record.reset ||
+      candidate.record.supersededBy
+    )
+      throw new Error('reply-managed-context-invalid');
+    verified.push(candidate);
+  }
+  if (verified.length > 1) throw new Error('feedback-native-input-ambiguous');
+  return verified[0];
+}

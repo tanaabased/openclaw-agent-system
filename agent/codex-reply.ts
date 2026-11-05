@@ -1,3 +1,7 @@
+import codexFeedbackInput from './codex-feedback-input.ts';
+import codexContinuationNative from './codex-continuation-native.ts';
+import authorizeCodexFeedback from './codex-feedback-authority.ts';
+import type { ReplyDraft } from './reply-store.ts';
 import { dispatchAdmission } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
 
@@ -34,7 +38,32 @@ export default async function codexReply(
     current.codexHome,
   );
   try {
-    const turn = await codexReplyInput(connection.request, caller);
+    const journal = new CodexDispatchStore(
+      current.store.location.root,
+      current.store.location.scope,
+    );
+    let feedback: ReplyDraft['feedback'];
+    const nativeInput = () =>
+      codexReplyInput(connection.request, caller, async (turnId) => {
+        const match = await codexFeedbackInput(
+          (await journal.read()).records,
+          caller,
+          turnId,
+          deps.continuationNative ?? codexContinuationNative(connection.request),
+        );
+        if (!match) return;
+        feedback = {
+          ownerId: match.record.id,
+          eventId: match.event.id,
+          revision: match.event.revision,
+          source: match.event.source,
+          number: match.event.number,
+          nodeId: match.event.nodeId,
+          itemType: match.event.itemType,
+        };
+        return { inputId: match.attempt.id, message: match.event.source };
+      });
+    const turn = await nativeInput();
     const connect = async (): Promise<OpenClawFeedbackProvider> => {
       const providerConnection = await (deps.feedbackConnect ?? connectCodexFeedback)(
         current.workspace,
@@ -70,10 +99,6 @@ export default async function codexReply(
     const provider = deps.replyProvider
       ? await deps.replyProvider(current.workspace, AbortSignal.timeout(60000))
       : await connect();
-    const journal = new CodexDispatchStore(
-      current.store.location.root,
-      current.store.location.scope,
-    );
     const readManifest = async () => {
       const fresh = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
       if (fresh.store.location.scope !== current.store.location.scope)
@@ -91,6 +116,37 @@ export default async function codexReply(
         incarnation: caller,
       },
       ...turn,
+      feedback,
+      authorizeFeedback: async (source, target) => {
+        const state = await journal.read();
+        const record = state.records.find(
+          (entry) => entry.id === source.ownerId && entry.threadId === caller,
+        );
+        const retained =
+          record?.feedback?.events.find((entry) => entry.id === source.eventId) ??
+          record?.feedback?.completed?.find((entry) => entry.id === source.eventId);
+        const event = source;
+        const fresh = await selectCodexIntake(pluginData, deps);
+        const admitted =
+          record && dispatchAdmission(record, (await fresh.store.read())?.records ?? []);
+        if (
+          !record ||
+          !retained?.native ||
+          !admitted ||
+          retained.revision !== source.revision ||
+          retained.sourceId !== target.source?.nodeId ||
+          retained.nodeId !== target.nodeId ||
+          target.nodeId !== event.nodeId
+        )
+          throw new Error('reply-feedback-source-changed');
+        await authorizeCodexFeedback({
+          current: fresh,
+          record,
+          event,
+          intake: admitted,
+          provider: { client: provider, comments: provider },
+        });
+      },
       manifest: current.manifest,
       readManifest,
       now: (deps.now ?? Date.now)(),
@@ -98,14 +154,14 @@ export default async function codexReply(
       resolveSkill: (id) => codexAssessmentSkill(connection.request, current.workspace, id),
       assertCurrent: async () => {
         await readManifest();
-        const fresh = await codexReplyInput(connection.request, caller);
+        const fresh = await nativeInput();
         if (fresh.turnId !== turn.turnId || fresh.inputId !== turn.inputId)
           throw new Error('reply-native-input-changed');
       },
       managed: async (target, purpose) => {
         const state = await journal.read();
         const admitted = await current.store.read();
-        if (purpose) {
+        if (purpose || feedback) {
           const owners = state.records.filter((record) => record.threadId === caller);
           if (owners.length > 1) throw new Error('reply-managed-owner-ambiguous');
           const record = owners[0];

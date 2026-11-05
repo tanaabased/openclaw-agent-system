@@ -32,6 +32,7 @@ export async function verifyOpenClawWork(input: {
   record: OpenClawDispatchRecord;
   caller: DispatchCaller;
   operator: boolean;
+  feedback?: { inputId: string; message: string };
   mode: 'plan' | 'work' | 'auto';
   now: number;
   request: DispatchRequest;
@@ -64,7 +65,11 @@ export async function verifyOpenClawWork(input: {
   const transition =
     automatic.status === 'ready'
       ? automatic
-      : issueProgression(record, { mode: input.mode, now: input.now, operator });
+      : issueProgression(record, {
+          mode: input.mode,
+          now: input.now,
+          operator: operator || Boolean(input.feedback),
+        });
   if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
   const retained = [
     record.work?.operatorInput,
@@ -80,8 +85,9 @@ export async function verifyOpenClawWork(input: {
     runId: caller.runId,
     retained,
   };
-  const verifiedInput =
-    automatic.status !== 'ready' || (operator && record.work?.result?.outcome === 'done')
+  const verifiedInput = input.feedback
+    ? { runId: caller.runId, inputEventId: input.feedback.inputId, message: input.feedback.message }
+    : automatic.status !== 'ready' || (operator && record.work?.result?.outcome === 'done')
       ? await operatorInputEvent({ ...context, senderIsOwner: operator })
       : await nativeInputEvent(context);
   const { runId, inputEventId } = verifiedInput;
@@ -92,8 +98,10 @@ export async function verifyOpenClawWork(input: {
   return {
     source: { runId, inputEventId },
     message,
-    progression: transition.progression,
-    revisionAuthorized: operator,
+    progression: input.feedback
+      ? { ...transition.progression, workOwner: 'issue' }
+      : transition.progression,
+    revisionAuthorized: operator || Boolean(input.feedback),
   };
 }
 

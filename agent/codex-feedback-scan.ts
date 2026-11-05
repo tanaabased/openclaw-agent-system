@@ -1,3 +1,4 @@
+import replyOwnPublications from './reply-own-publications.ts';
 import { managedPullRequest, dispatchAdmission } from './managed-issue.ts';
 
 import workflowFailure from './workflow-failure.ts';
@@ -88,6 +89,20 @@ export async function scanCodexFeedback(input: {
             intake: admitted,
             client: provider.comments,
             announcement: record.delivery?.announcement,
+            replies: () =>
+              replyOwnPublications({
+                root: current.store.location.root,
+                binding: {
+                  runtime: 'codex',
+                  agentId: current.agentId,
+                  workspace: current.workspace,
+                  namespace: current.codexHome,
+                  session: record.threadId!,
+                  incarnation: record.threadId!,
+                },
+                client: provider.comments,
+                replies: provider.replies,
+              }),
           })),
         client: provider.comments,
         policy,

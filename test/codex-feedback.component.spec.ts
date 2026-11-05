@@ -453,6 +453,10 @@ describe('agent/codex-feedback', () => {
     sent = true;
     ended = false;
     turn = 'feedback-answer';
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.feedback!.events.at(-1)!.native;
+      await save();
+    });
     const context = await call('context', { id, eventId: next.eventId }, true);
     assert.ok('previousFeedbackWork' in context && context.previousFeedbackWork);
     assert.deepEqual(context.previousFeedbackWork[0]!.decision, decision);
@@ -669,7 +673,7 @@ describe('agent/codex-feedback', () => {
     });
   }
 
-  async function prepare(author = commenter, body = '@receiver explain this') {
+  async function prepare(author = commenter, body = '@receiver explain this', native = false) {
     await call('next');
     comments.push({
       nodeId: 'comment',
@@ -684,8 +688,128 @@ describe('agent/codex-feedback', () => {
     const result = await call('next');
     assert.equal(result.status, 'feedback-prepared');
     assert.ok('eventId' in result && result.eventId);
+    // Legacy publication/recovery fixtures retain their original event contract.
+    await store.exclusive(async (state, save) => {
+      if (!native)
+        delete state.records[0]!.feedback!.events.find((event) => event.id === result.eventId)!
+          .native;
+      await save();
+    });
     return { id, eventId: result.eventId };
   }
+  it('should deliver native conversation once without a feedback result or a reply gate', async () => {
+    const before = (await store.read()).records[0]!;
+    const ref = await prepare(commenter, '@receiver why this approach?', true);
+    sent = true;
+    turn = 'feedback';
+    const context = await call('context', ref, true);
+    assert.equal(context.status, 'verified');
+    assert.equal('resultSchema' in context, false);
+    assert.equal(
+      'replyTarget' in context && context.replyTarget,
+      'https://github.com/owner/repo/issues/3#issuecomment-42',
+    );
+    const during = (await store.read()).records[0]!;
+    assert.equal(during.feedback!.events[0]!.work, undefined);
+    assert.equal(during.feedback!.events[0]!.result, undefined);
+    assert.deepEqual(during.result, before.result);
+    assert.deepEqual(during.progression, before.progression);
+    ended = true;
+    occurrence++;
+    await call('next');
+    const after = (await store.read()).records[0]!;
+    assert.equal(after.feedback!.events[0]!.phase, 'delivered');
+    assert.equal(after.feedback!.events[0]!.resumed, undefined);
+    assert.equal((await call('next')).status, 'idle');
+    assert.equal(creates, 0);
+  });
+  it('should compose and publish native feedback through the reply skill without a private-result checkpoint', async () => {
+    const ref = await prepare(commenter, '@receiver please explain.', true);
+    sent = true;
+    turn = 'feedback';
+    await call('context', ref, true);
+    const workspace = join(root, 'workspace');
+    const path = join(root, 'SKILL.md');
+    await writeFile(path, '# configured reply');
+    deps.replyConnection = async () => ({
+      request: async (method) => {
+        if (method === 'thread/read') return { thread: { id: 'child' } };
+        if (method === 'thread/turns/list') return { data: [{ id: turn, status: 'inProgress' }] };
+        if (method === 'thread/items/list')
+          return {
+            data: [
+              {
+                turnId: turn,
+                item: {
+                  type: 'functionCallOutput',
+                  namespace: 'codex_app',
+                  name: 'send_message_to_thread',
+                  output: 'native delegation',
+                },
+              },
+            ],
+          };
+        if (method === 'skills/list')
+          return {
+            data: [
+              {
+                cwd: workspace,
+                errors: [],
+                skills: [
+                  {
+                    name: 'agent-system:agent-system-github-reply',
+                    path,
+                    scope: 'user',
+                    enabled: true,
+                  },
+                ],
+              },
+            ],
+          };
+        throw new Error('unexpected native call: ' + method);
+      },
+      close: async () => {},
+    });
+    const compose = await call(
+      'reply',
+      {
+        operation: 'compose',
+        target: 'https://github.com/owner/repo/issues/3#issuecomment-42',
+        privateText: 'The explanation.',
+      },
+      true,
+    );
+    assert.equal(compose.status, 'composition-ready');
+    assert.ok('id' in compose && 'digest' in compose);
+    await call(
+      'reply',
+      { operation: 'candidate', id: compose.id, digest: compose.digest, publicText: 'The answer.' },
+      true,
+    );
+    const preview = await call('reply', { operation: 'publish', id: compose.id }, true);
+    assert.ok('digest' in preview);
+    assert.equal(
+      (await call('reply', { operation: 'publish', id: compose.id, digest: preview.digest }, true))
+        .status,
+      'published',
+    );
+    assert.equal(creates, 1);
+    assert.equal((await store.read()).records[0]!.feedback!.events[0]!.result, undefined);
+    receiptStatus = 'uncertain';
+    await assert.rejects(
+      call(
+        'reply',
+        {
+          operation: 'compose',
+          target: 'https://github.com/owner/repo/issues/3#issuecomment-42',
+          privateText: 'Unverified delegation.',
+        },
+        true,
+      ),
+      /reply-native-user-input-required/,
+    );
+    assert.equal(creates, 1);
+  });
   for (const setting of ['model', 'effort'] as const)
     it(`should preserve feedback after operator ${setting} tuning without overriding settings`, async () => {
       const before = (await store.read()).records[0]!;
@@ -1047,6 +1171,10 @@ describe('agent/codex-feedback', () => {
       assert.equal(prepared.status, 'feedback-prepared');
       assert.ok('eventId' in prepared && prepared.eventId);
       const ref = { id, eventId: prepared.eventId };
+      await store.exclusive(async (state, save) => {
+        delete state.records[0]!.feedback!.events.at(-1)!.native;
+        await save();
+      });
       sent = true;
       turn = 'feedback';
       const context = await call('context', ref, true);
@@ -1477,7 +1605,7 @@ describe('agent/codex-feedback', () => {
     assert.equal(feedback.events[0]!.receipt!.nodeId, 'reply');
     assert.equal(creates, 1);
   });
-  it('should resume an interrupted composition while retaining its private response', async () => {
+  it('should retain a completed legacy input without replaying it for an unfinished reply', async () => {
     const ref = await prepare();
     sent = true;
     turn = 'feedback';
@@ -1486,11 +1614,10 @@ describe('agent/codex-feedback', () => {
     occurrence++;
     await call('next');
     const event = (await store.read()).records[0]!.feedback!.events[0]!;
-    assert.equal(event.phase, 'queued');
-    assert.equal(event.code, undefined);
-    assert.deepEqual(event.previousTurnIds, ['feedback']);
-    const resumed = await call('next');
-    assert.equal(resumed.status, 'feedback-prepared');
+    assert.equal(event.phase, 'delivered');
+    assert.equal(event.attempt!.turnId, 'feedback');
+    assert.equal(event.previousTurnIds, undefined);
+    assert.equal((await call('next')).status, 'idle');
     assert.equal(event.result!.privateText, 'Saved before interruption.');
     assert.equal(creates, 0);
   });
@@ -1523,15 +1650,15 @@ describe('agent/codex-feedback', () => {
       assert.equal(events.length, 2);
       if (outcome === 'ended') {
         assert.equal(next.status, 'idle');
-        assert.equal(events[0]!.phase, 'queued');
+        assert.equal(events[0]!.phase, 'delivered');
         assert.equal(events[1]!.phase, 'queued');
         const repeated = await call('next');
         assert.equal(repeated.status, 'feedback-prepared');
-        assert.equal('eventId' in repeated && repeated.eventId, first.eventId);
+        assert.notEqual('eventId' in repeated && repeated.eventId, first.eventId);
       } else {
         assert.equal(next.status, 'idle');
         assert.equal(events[1]!.phase, 'queued');
-        assert.equal(events[0]!.phase, outcome === 'uncertain' ? 'prepared' : 'queued');
+        assert.equal(events[0]!.phase, outcome === 'uncertain' ? 'prepared' : 'delivered');
       }
       assert.equal(creates, 0);
     });

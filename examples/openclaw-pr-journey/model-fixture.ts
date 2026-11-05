@@ -317,17 +317,31 @@ function respond(
     }
     return;
   }
+  const retainedReply = /Publish retained reply draft: ([a-f0-9]{64})/u.exec(prompt)?.[1];
+  if (retainedReply) {
+    const args = { action: 'reply', id: retainedReply };
+    const preview = result('feedback-preview');
+    if (!preview) return dispatch('feedback-preview', { ...args, operation: 'publish' });
+    if (preview.status !== 'publication-ready') return;
+    const published = result('feedback-publish');
+    if (!published)
+      return dispatch('feedback-publish', {
+        ...args,
+        operation: 'publish',
+        digest: preview.digest,
+      });
+    if (published.status !== 'published') return;
+    return { content: String(published.presentation) };
+  }
   const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
   if (feedback) {
     const [, id, eventId] = feedback;
     const args = { action: 'feedback', id, eventId };
-    const resume = prompt.includes('Resume the retained feedback reply only.');
     const context = result('feedback-context');
     if (!context)
       return dispatch('feedback-context', {
         ...args,
         operation: 'context',
-        ...(resume ? { resume: true } : {}),
       });
     if (
       context.status !== 'verified' ||
@@ -336,37 +350,13 @@ function respond(
     )
       return;
     const initial = context.issueStage === 'planning';
-    if (!resume) {
-      if (initial) {
-        assert.equal(context.mode, 'plan');
-        assert.equal(context.previousImplementation, undefined);
-        assert.deepEqual(context.previousFeedbackWork, []);
-      } else {
-        assert.equal(context.mode, 'work');
-        assert.equal(context.previousImplementation, undefined);
-        const previous = context.previousFeedbackWork as Array<{ result?: { outcome?: string } }>;
-        assert.equal(previous.length, 1);
-        assert.equal(previous[0]?.result?.outcome, 'done');
-      }
-      const work = result('feedback-work-context');
-      if (!work)
-        return dispatch('feedback-work-context', {
-          action: 'implementation',
-          operation: 'context',
-          id,
-          scope: 'local',
-        });
+    {
+      assert.equal(context.mode, initial ? 'plan' : 'work');
+      const work = initial ? result('feedback-work-context') : context;
+      if (!work) return dispatch('feedback-work-context', { action: 'implementation-context', id });
       const implementation = work.implementation as { skill?: { path?: string } } | undefined;
-      if (
-        work.status !== 'verified' ||
-        typeof work.worktree !== 'string' ||
-        !implementation?.skill?.path
-      )
-        return;
-      assert.equal(work.issueStage, 'implementation');
-      assert.equal((work.work as { decision?: unknown }).decision, undefined);
-      assert.deepEqual(work.previousFeedbackWork, context.previousFeedbackWork);
-      assert.deepEqual(work.previousImplementation, context.previousImplementation);
+      const worktree = (work.project as { path?: string } | undefined)?.path;
+      if (work.status !== 'verified' || !worktree || !implementation?.skill?.path) return;
       if (
         openClawAIMockToolResultText(messages, prefix + 'feedback-implementation-skill') ===
         undefined
@@ -377,7 +367,7 @@ function respond(
         if (!branch)
           return call('feedback-branch', 'agent_system_git', {
             argv: ['branch', '--show-current'],
-            cwd: work.worktree,
+            cwd: worktree,
           });
         if (
           branch.exitCode !== 0 ||
@@ -414,16 +404,16 @@ function respond(
         if (!executed)
           return call(step.stage, 'agent_system_git', {
             argv: step.argv,
-            cwd: work.worktree,
+            cwd: worktree,
             ...('stdin' in step ? { stdin: step.stdin } : {}),
           });
         if (executed.exitCode !== 0 || executed.truncated !== false) return;
       }
       const completed = result('feedback-work-result');
-      if (!completed)
+      if (initial && !completed)
         return dispatch('feedback-work-result', {
-          ...args,
-          operation: 'implementation-result',
+          action: 'implementation-result',
+          id,
           implementationResult: {
             outcome: 'done',
             summary: initial
@@ -434,24 +424,24 @@ function respond(
               : 'Updated the original note, checked the diff, and committed the feedback change.',
           },
         });
-      if (completed.status !== 'recorded') return;
+      if (initial && completed?.status !== 'recorded') return;
       const title = 'Document disposable notification fixture cleanup';
       const body = 'Document closing disposable test issues after their evidence is captured.';
       const delivery = result('feedback-delivery-prepare');
       if (!delivery)
         return dispatch('feedback-delivery-prepare', {
-          ...args,
-          operation: 'delivery',
-          deliveryOperation: 'prepare',
+          action: 'delivery',
+          id,
+          operation: 'prepare',
           ...(initial ? { title, body } : {}),
         });
       if (delivery.status !== 'prepared' || typeof delivery.digest !== 'string') return;
       let delivered = result('feedback-delivery-publish');
       if (!delivered)
         return dispatch('feedback-delivery-publish', {
-          ...args,
-          operation: 'delivery',
-          deliveryOperation: 'publish',
+          action: 'delivery',
+          id,
+          operation: 'publish',
           digest: delivery.digest,
           ...(initial ? { title, body } : {}),
         });
@@ -459,9 +449,9 @@ function respond(
         const prepared = result(`feedback-link-prepare-${index}`);
         if (!prepared)
           return dispatch(`feedback-link-prepare-${index}`, {
-            ...args,
-            operation: 'delivery',
-            deliveryOperation: 'prepare',
+            action: 'delivery',
+            id,
+            operation: 'prepare',
             ...(initial ? { title, body } : {}),
           });
         if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
@@ -473,9 +463,9 @@ function respond(
         const published = result(`feedback-link-publish-${index}`);
         if (!published)
           return dispatch(`feedback-link-publish-${index}`, {
-            ...args,
-            operation: 'delivery',
-            deliveryOperation: 'publish',
+            action: 'delivery',
+            id,
+            operation: 'publish',
             digest: prepared.digest,
             ...(initial ? { title, body } : {}),
           });
@@ -488,9 +478,9 @@ function respond(
         const composed = result('feedback-delivery-compose');
         if (!composed)
           return dispatch('feedback-delivery-compose', {
-            ...args,
-            operation: 'delivery',
-            deliveryOperation: 'compose',
+            action: 'delivery',
+            id,
+            operation: 'compose',
           });
         const selection = composed.selection as { skill?: { path?: string } } | undefined;
         if (
@@ -504,9 +494,9 @@ function respond(
         const candidate = result('feedback-delivery-candidate');
         if (!candidate)
           return dispatch('feedback-delivery-candidate', {
-            ...args,
-            operation: 'delivery',
-            deliveryOperation: 'candidate',
+            action: 'delivery',
+            id,
+            operation: 'candidate',
             digest: composed.digest,
             publicText: publicText(composed, 'Adds the disposable issue cleanup note.'),
           });
@@ -515,31 +505,26 @@ function respond(
         const announced = result('feedback-delivery-announce');
         if (!announced)
           return dispatch('feedback-delivery-announce', {
-            ...args,
-            operation: 'delivery',
-            deliveryOperation: 'announce',
+            action: 'delivery',
+            id,
+            operation: 'announce',
             digest: candidate.digest,
           });
         if (announced.status !== 'announced') return;
       }
-      const saved = result('feedback-result');
-      if (!saved)
-        return dispatch('feedback-result', {
-          ...args,
-          operation: 'result',
-          privateText: initial
-            ? 'Implemented the retained plan from approved feedback without an extra decision, checked the diff, and published its linked PR in the same chat and worktree.'
-            : 'The approved feedback added a continuity note on the original branch. The diff check passed and the new commit was pushed to the same PR; the original assessment and announcement remain intact.',
-        });
-      if (saved.status !== 'recorded') return;
-      if (!initial && options.interruptFeedbackReply)
-        return {
-          content:
-            'The pushed repair and private reply are retained. Awaiting the explicit reply-only continuation.',
-        };
     }
+    const privateText = initial
+      ? 'Implemented the retained plan from approved feedback, checked the diff, and published its linked PR in the same chat and worktree.'
+      : 'The approved feedback added a continuity note on the original branch. The diff check passed and the new commit was pushed to the same PR; the original assessment and announcement remain intact.';
     const composition = result('feedback-compose');
-    if (!composition) return dispatch('feedback-compose', { ...args, operation: 'compose' });
+    if (!composition)
+      return dispatch('feedback-compose', {
+        action: 'reply',
+        operation: 'compose',
+        target: context.replyTarget,
+        privateText,
+      });
+    const reply = { action: 'reply', id: composition.id };
     const skill = (composition.selection as { skill?: { path?: string } } | undefined)?.skill;
     if (
       composition.status !== 'composition-ready' ||
@@ -552,7 +537,7 @@ function respond(
     const candidate = result('feedback-candidate');
     if (!candidate)
       return dispatch('feedback-candidate', {
-        ...args,
+        ...reply,
         operation: 'candidate',
         digest: composition.digest,
         publicText: publicText(
@@ -563,18 +548,20 @@ function respond(
         ),
       });
     if (candidate.status !== 'candidate-recorded') return;
+    if (!initial && options.interruptFeedbackReply)
+      return { content: privateText + '\n\nReply draft retained: ' + composition.id };
     const preview = result('feedback-preview');
-    if (!preview) return dispatch('feedback-preview', { ...args, operation: 'publish' });
+    if (!preview) return dispatch('feedback-preview', { ...reply, operation: 'publish' });
     if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
     const published = result('feedback-publish');
     if (!published)
       return dispatch('feedback-publish', {
-        ...args,
+        ...reply,
         operation: 'publish',
         digest: preview.digest,
       });
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
-    return { content: published.presentation };
+    return { content: privateText + '\n\n' + published.presentation };
   }
   const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
     prompt,

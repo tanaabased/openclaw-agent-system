@@ -21,6 +21,20 @@ const draftSchema = Type.Object(
     privateText: Type.String({ minLength: 1, maxLength: 32000 }),
     outcome: Type.Optional(Type.String({ maxLength: 32000 })),
     update: Type.Optional(statusUpdateSchema),
+    feedback: Type.Optional(
+      Type.Object(
+        {
+          ownerId: hash,
+          eventId: hash,
+          revision: hash,
+          source: Type.String({ minLength: 1, maxLength: 256000 }),
+          number: Type.Integer({ minimum: 1 }),
+          nodeId: text,
+          itemType: Type.Union([Type.Literal('issue'), Type.Literal('pull-request')]),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     configuration: hash,
     selection: assessmentSelectionSchema,
     authorLogin: text,
@@ -81,6 +95,14 @@ export default class ReplyStore {
     } finally {
       await lock.release();
     }
+  }
+  async read(): Promise<ReplyDraft[]> {
+    const contents = await this.file.read();
+    const state: unknown =
+      contents === undefined ? { scope: this.scope, drafts: [] } : JSON.parse(contents);
+    if (!Value.Check(schema, state) || state.scope !== this.scope)
+      throw new Error('reply-state-invalid');
+    return state.drafts;
   }
   async exclusive<T>(run: (drafts: ReplyDraft[], save: () => Promise<void>) => Promise<T>) {
     await ensurePrivateStateDirectories({

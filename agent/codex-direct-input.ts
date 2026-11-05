@@ -7,6 +7,7 @@ import codexTurnApprovalDenied from './codex-turn-approval.ts';
 export default async function codexDirectInput(
   request: CodexThreadRequest,
   threadId: string,
+  admittedInput?: (turnId: string) => Promise<{ inputId: string; message?: string } | undefined>,
 ): Promise<{ turnId: string; inputId: string; message?: string }> {
   const thread = await request('thread/read', { threadId, includeTurns: false });
   if (
@@ -38,6 +39,8 @@ export default async function codexDirectInput(
     throw new Error('reply-native-input-unverified');
   const items = entries.map((entry) => entry.item).filter(nativeObject);
   if (codexTurnApprovalDenied(items)) throw new Error('reply-native-approval-denied');
+  const admitted = await admittedInput?.(turn.id);
+  if (admitted) return { turnId: turn.id, ...admitted };
   const user = items.findLastIndex((item) => item.type === 'userMessage');
   const delegated = items.findLastIndex(
     (item) =>

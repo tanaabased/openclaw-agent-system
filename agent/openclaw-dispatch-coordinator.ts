@@ -223,7 +223,9 @@ export default class OpenClawDispatchCoordinator {
             ((!event.retry ||
               dispatchRetryDue(event, (this.context.dependencies.now ?? Date.now)())) &&
               event.phase !== 'blocked' &&
-              ((event.turn && (event.phase !== 'published' || event.turn.status !== 'completed')) ||
+              ((event.turn &&
+                (!['published', 'delivered'].includes(event.phase) ||
+                  event.turn.status !== 'completed')) ||
                 (event.publicationAttempted && !event.receipt))) ||
             (event.phase === 'queued' &&
               !event.policyHeld &&
@@ -454,7 +456,8 @@ export default class OpenClawDispatchCoordinator {
           (event) =>
             event.phase !== 'blocked' &&
             event.turn &&
-            (event.phase !== 'published' || event.turn.status !== 'completed'),
+            (!['published', 'delivered'].includes(event.phase) ||
+              event.turn.status !== 'completed'),
         )
         .map((event) => ({ record, event })),
     );
