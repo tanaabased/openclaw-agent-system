@@ -2,6 +2,7 @@ import { Value } from 'typebox/value';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import { IntakeError } from '../../channels/github/intake/record-store.ts';
+import ProjectPickupFailure from '../../agent/project-pickup-failure.ts';
 import { AutomationError } from '../../agent/automation-gateway.ts';
 
 import type OpenClawIntake from '../../agent/openclaw-intake.ts';
@@ -107,25 +108,30 @@ export default function createIntakeTool(
               throw new IntakeError('project-pickup-tool-call-authorization-missing');
             const result =
               params.action === 'pickup'
-                ? await service.pickup(
-                    loaded.manifest,
-                    loaded.scope.workspaceDir,
-                    {
-                      selection: params.selection,
-                      context: params.context,
-                      material: params.material,
-                    },
-                    Intl.DateTimeFormat().resolvedOptions().timeZone,
-                    {
-                      nativeId: occurrence!.authorization.nativeId,
-                      runId: occurrence!.runId,
-                      async assertCurrent() {
-                        context.assertInvocationCurrent();
-                        await occurrence!.authorization.assertCurrent();
-                        context.assertInvocationCurrent();
+                ? await service
+                    .pickup(
+                      loaded.manifest,
+                      loaded.scope.workspaceDir,
+                      {
+                        selection: params.selection,
+                        context: params.context,
+                        material: params.material,
                       },
-                    },
-                  )
+                      Intl.DateTimeFormat().resolvedOptions().timeZone,
+                      {
+                        nativeId: occurrence!.authorization.nativeId,
+                        runId: occurrence!.runId,
+                        async assertCurrent() {
+                          context.assertInvocationCurrent();
+                          await occurrence!.authorization.assertCurrent();
+                          context.assertInvocationCurrent();
+                        },
+                      },
+                    )
+                    .catch((error: unknown) => {
+                      if (!(error instanceof ProjectPickupFailure)) throw error;
+                      return error.failure;
+                    })
                 : params.action === 'inspect'
                   ? await service.inspect(loaded.manifest, loaded.scope.workspaceDir)
                   : await service.run(

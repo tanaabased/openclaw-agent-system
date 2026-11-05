@@ -1,3 +1,5 @@
+import ProjectPickupFailure from './project-pickup-failure.ts';
+import { omit } from 'lodash-es';
 import reconcileProjectPickup from './project-pickup-reconcile.ts';
 import projectPickupReport from './project-pickup-report.ts';
 import openClawCapacity, { openClawItemOccupied } from './openclaw-capacity.ts';
@@ -105,118 +107,123 @@ export default class OpenClawIntake {
     timezone: string,
     occurrence?: { nativeId: string; runId?: string; assertCurrent(): Promise<void> },
   ) {
-    const { store, workspace } = await this.select(manifest, workspaceDir);
-    let authority = this.dependencies.projectPickup;
-    if (!authority) {
-      if (!this.dependencies.pickupStore || !manifest.github?.notifications || !occurrence)
-        throw new IntakeError('project-pickup-native-caller-required');
-      await occurrence.assertCurrent();
-      const retained = await this.dependencies.pickupStore.inspect(
-        manifest.github.notifications,
-        'openclaw',
-        store.location.scope,
-      );
-      if (retained.nativeId !== occurrence.nativeId)
-        throw new IntakeError('project-pickup-native-caller-required');
-      authority = { enrollment: retained.enrollment, receipts: [] };
-    }
-    const code = await this.readiness(manifest, workspace);
-    if (code) throw new IntakeError(code);
-    const journal = new OpenClawDispatchStore(store.location.root, store.location.scope);
-    return journal.exclusive(async (state, save, signal) => {
-      const readPolicy = async () => {
-        const loaded = await this.dependencies.manifestService.loadForAgentId(
-          manifest.agent.id,
-          'service',
+    try {
+      const { store, workspace } = await this.select(manifest, workspaceDir);
+      let authority = this.dependencies.projectPickup;
+      if (!authority) {
+        if (!this.dependencies.pickupStore || !manifest.github?.notifications || !occurrence)
+          throw new IntakeError('project-pickup-native-caller-required');
+        await occurrence.assertCurrent();
+        const retained = await this.dependencies.pickupStore.inspect(
+          manifest.github.notifications,
+          'openclaw',
+          store.location.scope,
         );
-        if (
-          loaded.status !== 'loaded' ||
-          (await realpath(loaded.scope.workspaceDir)) !== workspace ||
-          loaded.manifest.agent.id !== manifest.agent.id
-        )
-          throw new IntakeError('intake-workspace-binding-changed');
-        const live = assignmentIntakePolicy(loaded.manifest, 'openclaw');
-        if (!live) throw new IntakeError('intake-policy-disabled');
-        if (!this.dependencies.projectPickup) {
-          await occurrence!.assertCurrent();
-          await this.dependencies.pickupStore!.inspect(
-            live.policy,
-            'openclaw',
-            store.location.scope,
+        if (retained.nativeId !== occurrence.nativeId)
+          throw new IntakeError('project-pickup-native-caller-required');
+        authority = { enrollment: retained.enrollment, receipts: [] };
+      }
+      const code = await this.readiness(manifest, workspace);
+      if (code) throw new IntakeError(code);
+      const journal = new OpenClawDispatchStore(store.location.root, store.location.scope);
+      return await journal.exclusive(async (state, save, signal) => {
+        const readPolicy = async () => {
+          const loaded = await this.dependencies.manifestService.loadForAgentId(
+            manifest.agent.id,
+            'service',
           );
-        }
-        return live.policy;
-      };
-      await readPolicy();
-      const client = (await this.dependencies.connect(
-        { manifest, workspaceDir: workspace },
-        signal,
-      )) as ProjectPickupClient;
-      if (
-        !client.discoverProject ||
-        !client.projectCandidate ||
-        !client.projectBlocked ||
-        !client.assignProjectIssue
-      )
-        throw new IntakeError('project-pickup-provider-unavailable');
-      const result = await projectPickup({
-        runtime: 'openclaw',
-        scope: store.location.scope,
-        workspaceDir: workspace,
-        agentId: manifest.agent.id,
-        enrollment: authority.enrollment,
-        timezone,
-        state,
-        save,
-        assertWriteCapacity: () => {
-          assertDispatchStorage(state, true);
-        },
-        now: this.dependencies.now ?? Date.now,
-        readPolicy,
-        client,
-        instance: {
-          inspect: async () =>
-            this.dependencies.pickupStore
-              ? new AssignmentClaimStore(this.dependencies.pickupStore.root).inspect()
-              : undefined,
-        },
-        runId: occurrence?.runId ?? authority.enrollment.id,
-        occupied: openClawItemOccupied,
-        input,
-      });
-      if (['material', 'selection-required', 'discovering'].includes(result.status))
+          if (
+            loaded.status !== 'loaded' ||
+            (await realpath(loaded.scope.workspaceDir)) !== workspace ||
+            loaded.manifest.agent.id !== manifest.agent.id
+          )
+            throw new IntakeError('intake-workspace-binding-changed');
+          const live = assignmentIntakePolicy(loaded.manifest, 'openclaw');
+          if (!live) throw new IntakeError('intake-policy-disabled');
+          if (!this.dependencies.projectPickup) {
+            await occurrence!.assertCurrent();
+            await this.dependencies.pickupStore!.inspect(
+              live.policy,
+              'openclaw',
+              store.location.scope,
+            );
+          }
+          return live.policy;
+        };
+        await readPolicy();
+        const client = (await this.dependencies.connect(
+          { manifest, workspaceDir: workspace },
+          signal,
+        )) as ProjectPickupClient;
+        if (
+          !client.discoverProject ||
+          !client.projectCandidate ||
+          !client.projectBlocked ||
+          !client.assignProjectIssue
+        )
+          throw new IntakeError('project-pickup-provider-unavailable');
+        const result = await projectPickup({
+          runtime: 'openclaw',
+          scope: store.location.scope,
+          workspaceDir: workspace,
+          agentId: manifest.agent.id,
+          enrollment: authority.enrollment,
+          timezone,
+          state,
+          save,
+          assertWriteCapacity: () => {
+            assertDispatchStorage(state, true);
+          },
+          now: this.dependencies.now ?? Date.now,
+          readPolicy,
+          client,
+          instance: {
+            inspect: async () =>
+              this.dependencies.pickupStore
+                ? new AssignmentClaimStore(this.dependencies.pickupStore.root).inspect()
+                : undefined,
+          },
+          runId: occurrence?.runId ?? authority.enrollment.id,
+          occupied: openClawItemOccupied,
+          input,
+        });
+        if (['material', 'selection-required', 'discovering'].includes(result.status))
+          return {
+            ...result,
+            response: '',
+            instructions:
+              'instructions' in result
+                ? result.instructions
+                : result.status === 'discovering'
+                  ? 'Call pickup again to continue discovery.'
+                  : 'Follow next until the complete material is restored before selection.',
+          };
+        const reportPolicy = await readPolicy();
+        const report = projectPickupReport({
+          outcome: result,
+          debug: manifest.debug,
+          capacity: {
+            occupied: openClawCapacity(
+              state.records,
+              reportPolicy.maxConcurrentItems,
+              state.projectPickup,
+            ).occupied,
+            limit: reportPolicy.maxConcurrentItems,
+          },
+        });
         return {
-          ...result,
-          response: '',
+          ...omit(result, ['selectionGuidance']),
+          response: report.response,
           instructions:
             'instructions' in result
               ? result.instructions
-              : result.status === 'discovering'
-                ? 'Call pickup again to continue discovery.'
-                : 'Follow next until the complete material is restored before selection.',
+              : 'Reproduce response unchanged as the whole final report. An empty response means no card. Report preparation does not prove visible delivery.',
         };
-      const reportPolicy = await readPolicy();
-      const report = projectPickupReport({
-        outcome: result,
-        debug: manifest.debug,
-        capacity: {
-          occupied: openClawCapacity(
-            state.records,
-            reportPolicy.maxConcurrentItems,
-            state.projectPickup,
-          ).occupied,
-          limit: reportPolicy.maxConcurrentItems,
-        },
       });
-      return {
-        ...result,
-        response: report.response,
-        instructions:
-          'instructions' in result
-            ? result.instructions
-            : 'Reproduce response unchanged as the whole final report. An empty response means no card. Report preparation does not prove visible delivery.',
-      };
-    });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') throw error;
+      throw new ProjectPickupFailure(error, { debug: manifest.debug });
+    }
   }
   async preparePickup(manifest: AgentManifest, workspaceDir: string) {
     const { selected, store, workspace } = await this.select(manifest, workspaceDir);

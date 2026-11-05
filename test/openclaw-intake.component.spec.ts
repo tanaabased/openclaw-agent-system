@@ -1,5 +1,6 @@
 import { automationThreadSelection } from '../agent/automation-threads.ts';
 import assert from 'node:assert/strict';
+import ProjectPickupFailure from '../agent/project-pickup-failure.ts';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -871,6 +872,17 @@ describe('openclaw v2 intake slice', () => {
     await invoke('before_agent_reply', {}, context);
     assert.equal(await invoke('before_tool_call', event), undefined);
     await tool.execute('call', event.params, controller.signal);
+    const successfulPickup = f.service.pickup;
+    f.service.pickup = async () => {
+      throw new ProjectPickupFailure(new Error('project-pickup-enrollment-changed'));
+    };
+    assert.equal(await invoke('before_tool_call', event), undefined);
+    const failure = await tool.execute('call', event.params, controller.signal);
+    const details = failure.details as { status: string; code: string; response: string };
+    assert.equal(details.status, 'error');
+    assert.equal(details.code, 'project-pickup-enrollment-changed');
+    assert.match(details.response, /❌.*Project pickup/);
+    f.service.pickup = successfulPickup;
     assert.equal(await invoke('before_tool_call', event, { ...context, runId: '' }), undefined);
     await tool.execute('call', event.params, controller.signal);
     assert.match(

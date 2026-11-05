@@ -2,6 +2,8 @@ import type { RepositoryRoute } from '../channels/github/repository-scope.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import ProjectPickupEnrollmentStore from '../agent/project-pickup-enrollment.ts';
 import assert from 'node:assert/strict';
+import ProjectPickupFailure from '../agent/project-pickup-failure.ts';
+import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -29,7 +31,9 @@ import pickupClaims from './project-pickup-claim-fixture.ts';
 import CodexAssignmentClaims from '../agent/codex-assignment-claims.ts';
 import OpenClawAssignmentClaims from '../agent/openclaw-assignment-claims.ts';
 import GitHubProjectPickupClient from '../channels/github/provider/project-pickup-client.ts';
-import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
+import GitHubWorkEventApiClient, {
+  GitHubWorkEventClientError,
+} from '../channels/github/provider/work-event-api-client.ts';
 import hydrateImplementation from './implementation-material-fixture.ts';
 
 describe('project pickup selection through native journals', () => {
@@ -52,6 +56,11 @@ describe('project pickup selection through native journals', () => {
     await new AssignmentClaimStore(instanceRoot).identity();
     const enrollmentStore = new ProjectPickupEnrollmentStore(instanceRoot);
     const caller = { current: true };
+    const connectionFailure: { error?: Error } = {};
+    const connect = async () => {
+      if (connectionFailure.error) throw connectionFailure.error;
+      return f.client;
+    };
     const tick = { id: 'pickup-turn-1' };
     const claims = coordinated ? pickupClaims(f, instanceRoot) : undefined;
     const assertCurrent = async () => {
@@ -67,6 +76,7 @@ describe('project pickup selection through native journals', () => {
 
     const declaration = {
       'schema-version': 1,
+      debug: false,
       agent: { id: 'receiver' },
       github: {
         username: 'receiver',
@@ -110,7 +120,7 @@ describe('project pickup selection through native journals', () => {
         codexHome: home,
         now: () => f.clock.now,
         assertActive: async () => {},
-        connect: async () => f.client,
+        connect,
         threadId: 'pickup-thread',
         pickupActivation: async () => ({ threadId: 'pickup-thread', nativeId: 'pickup-job' }),
         intakeNative: {
@@ -141,7 +151,7 @@ describe('project pickup selection through native journals', () => {
         namespace: root,
         now: () => f.clock.now,
         readiness: async () => undefined,
-        connect: async () => f.client,
+        connect,
         manifestService: {
           loadForAgentId: async () => ({
             status: 'loaded',
@@ -204,10 +214,83 @@ describe('project pickup selection through native journals', () => {
       instanceRoot,
       configure,
       enrollmentStore,
+      connectionFailure,
     };
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should report missing guidance before selection without discarding its diagnostic through ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      await rm(join(root, 'workspace', 'selection.md'));
+      await assert.rejects(f.pickup(), (error: unknown) => {
+        assert.ok(error instanceof ProjectPickupFailure);
+        assert.equal(error.code, 'dispatch-assessment-guidance-unreadable');
+        assert.match(error.failure.response, /dispatch-assessment-guidance-unreadable/);
+        assert.match(error.failure.response, /restore a readable/);
+        assert.doesNotMatch(error.failure.response, /Guidance source|Selected|no eligible/);
+        return true;
+      });
+      assert.equal(f.effects.writes, 0);
+    });
+
+    it(`should preserve a pre-scan provider failure and shared card through ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const diagnostic = providerDiagnostic('github', 'client-create', 'authentication', {
+        httpStatus: 401,
+        providerMessage: 'Bad credentials',
+      });
+      f.connectionFailure.error = new GitHubWorkEventClientError(
+        'github-client-unavailable',
+        'Bad credentials',
+        {},
+        undefined,
+        diagnostic,
+      );
+      await assert.rejects(f.pickup(), (error: unknown) => {
+        assert.ok(error instanceof ProjectPickupFailure);
+        assert.equal(error.code, 'github-client-unavailable');
+        assert.equal(error.failure.status, 'error');
+        assert.equal(error.failure.providerDiagnostic?.httpStatus, 401);
+        assert.match(error.failure.response, /❌.*Project pickup/);
+        assert.match(error.failure.response, /github-client-unavailable/);
+        assert.match(error.failure.response, /Bad credentials/);
+        assert.match(error.failure.response, /Next/);
+        assert.doesNotMatch(error.failure.response, /Selected|no eligible|Debug/);
+        if (runtime === 'codex') assert.equal(error.automationId, 'pickup-job');
+        return true;
+      });
+      assert.equal(f.effects.writes, 0);
+    });
+
+    for (const debug of [false, true]) {
+      it(`should report the captured file guidance after deletion with debug ${debug} through ${runtime}`, async () => {
+        const f = await fixture(runtime);
+        await f.configure((source) => {
+          source.debug = debug;
+        });
+        const selection = await f.select();
+        const path = join(root, 'workspace', 'selection.md');
+        await writeFile(path, 'changed priorities must not be reported');
+        await rm(path);
+        const result = await f.pickup({ selection });
+        assert.equal(result.status, 'assigned');
+        assert.equal('selectionGuidance' in result, false);
+        if (debug) {
+          assert.match(result.response, /Guidance source.*file/);
+          assert.match(result.response, /prefer high impact ready work/);
+        } else assert.doesNotMatch(result.response, /Guidance|prefer high impact ready work|Debug/);
+        assert.doesNotMatch(result.response, /changed priorities/);
+        if (runtime === 'codex') assert.match(result.response, /<decision>NOTIFY<\/decision>/);
+        const retained = (await f.journal.read()).projectPickup!.operations[0]!;
+        assert.equal(retained.guidance, undefined);
+        assert.equal(retained.guidanceSource, undefined);
+        assert.equal(retained.guidancePath, undefined);
+        await writeFile(path, 'new guidance for later scans');
+        const exhausted = await f.pickup();
+        assert.doesNotMatch(exhausted.response, /Guidance|prefer high impact ready work/);
+        assert.equal(f.effects.writes, 1);
+      });
+    }
     it(`should reconcile a removed repository and retain its allowance across live limits in ${runtime}`, async () => {
       const f = await fixture(runtime);
       const other = f.addRepository('other', 2);
