@@ -4,7 +4,6 @@ import implementationContext from './implementation-context.ts';
 import pendingPublicResponse from './pending-public-response.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import implementationHandoff from './implementation-handoff.ts';
-import { feedbackWorkContext } from './feedback-work.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { Static } from 'typebox';
 
@@ -138,7 +137,6 @@ export default async function openClawWorkAction(input: {
         id: record.id,
         digest,
         permission: action.permission,
-        assessment: record.result,
         instructions:
           'Apply this digest to record the single implementation transition. Work includes ordinary branch, commit, push, and PR delivery. Honor explicit user restrictions; this preview does not override cancellation or native denial.',
       };
@@ -187,8 +185,6 @@ export default async function openClawWorkAction(input: {
         runtime: 'openclaw',
         id: record.id,
         path: record.worktree!,
-        assessment: record.result,
-        reassessments: record.directAssessments,
         implementation: record.work.selection,
         previousResult: record.work.result,
         scope: record.work.scope,
@@ -199,7 +195,7 @@ export default async function openClawWorkAction(input: {
         record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
       routing: record.routing && JSON.parse(record.routing),
       effective: record.effective,
-      feedbackWork: feedbackWorkContext(record),
+
       pendingPublicResponse: pendingPublicResponse(record),
       instructions: nativeTaskInstructions('openclaw'),
     };

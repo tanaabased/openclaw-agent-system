@@ -56,7 +56,6 @@ export default function replyOwnerContext(input: {
     ],
     implementation: input.implementation,
     deliveredPullRequest: observationOnly ? undefined : delivery?.pullRequest,
-    result: record.result,
     publisherLogin: intake?.receiving.login,
   };
 }

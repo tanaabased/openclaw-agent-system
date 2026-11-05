@@ -643,7 +643,6 @@ export default class OpenClawDispatchIssue {
                         id: record.predecessorId,
                         threadId: previous?.threadId,
                         worktree: previous?.worktree,
-                        assessment: previous?.result,
                         instruction:
                           'Preserved evidence is not current implementation or publication authority.',
                       };
@@ -899,7 +898,6 @@ export default class OpenClawDispatchIssue {
                     id: record.predecessorId,
                     threadId: previous?.threadId,
                     worktree: previous?.worktree,
-                    assessment: previous?.result,
                     instruction:
                       'Preserved evidence is not current implementation or publication authority.',
                   };
@@ -979,6 +977,8 @@ export default class OpenClawDispatchIssue {
               return {
                 status: 'presented' as const,
                 retained: true,
+                previousResult: record.result,
+                previousResultDigest: automationHash(record.result),
                 id: record.id,
                 presentation: assessmentPresentation(record.result, record, intake, workspace, {
                   debug: manifest.debug,

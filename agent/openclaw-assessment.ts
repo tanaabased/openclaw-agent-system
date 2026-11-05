@@ -7,14 +7,13 @@ import {
 } from './managed-issue.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import assessmentHandoff from './assessment-handoff.ts';
-import { feedbackWorkContext } from './feedback-work.ts';
 import { assessmentSummaryInstructions } from './assessment-summary-state.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import assignmentCard from '../channels/github/presentation/assignment-card.ts';
 import { nativeAssessmentInstructions } from './assessment-instructions.ts';
 import { assessmentResultContextSchema, parseAssessmentSubmission } from './assessment-result.ts';
-import assessmentSubmission from './assessment-submission.ts';
+import { assessmentPresentationRequest } from './assessment-render.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 import openClawSkill from './openclaw-skill.ts';
 import { automationHash } from './automation-hash.ts';
@@ -191,38 +190,13 @@ export async function issueAssessmentAction(input: {
       executionEffort: 'unverified',
       evidence: JSON.parse(record.turnEvidence?.evidence ?? record.context!),
       assessment: record.turnEvidence?.selection ?? record.assessment,
-      feedbackWork: feedbackWorkContext(record),
       currentTurnId: caller.runId,
-      ...(record.result
-        ? {
-            previousResult: record.result,
-            handoff: assessmentHandoff(record, issueWorkflowMode(input.policy, record), 'openclaw'),
-            previousResultDigest: automationHash(record.result),
-            previousResultTurnId: record.resultTurnId,
-            ...(record.resultTurnId === caller.runId
-              ? {
-                  previousPresentation: assessmentPresentation(
-                    record.result,
-                    record,
-                    intake,
-                    workspace,
-                    {
-                      debug: input.debug,
-                    },
-                  ),
-                }
-              : {}),
-          }
-        : {}),
       mode: issueWorkflowMode(input.policy, record),
-      recording: 'optional-history' as const,
+      previousResultDigest: record.result ? automationHash(record.result) : undefined,
+      recording: 'native-context' as const,
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
-      resultSubmission: assessmentSubmission({
-        entry: 'managed',
-        id: record.id,
-        previousResultDigest: record.result ? automationHash(record.result) : undefined,
-      }),
+      presentationRequest: assessmentPresentationRequest(managedTargetUrl(intake)),
       instructions: nativeAssessmentInstructions('openclaw'),
     };
   }

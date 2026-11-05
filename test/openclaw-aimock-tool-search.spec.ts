@@ -10,7 +10,6 @@ import resolveScenario from '../scripts/example-model-scenarios.ts';
 import withToolSearch, { normalizeToolSearchRequest } from '../scripts/aimock-tool-search.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
-import assessmentSubmission from '../agent/assessment-submission.ts';
 
 function request(prompt = githubExampleTanaabotPrompt): ChatCompletionRequest {
   return {
@@ -224,7 +223,7 @@ describe('scripts/aimock-tool-search', () => {
               id,
               target,
               resultSchema: assessmentResultContextSchema,
-              resultSubmission: assessmentSubmission({ entry: 'direct', id, target }),
+
               assessment: { skill: { path: '/fixture/SKILL.md' } },
             }),
           },
@@ -385,6 +384,12 @@ describe('scripts/aimock-tool-search', () => {
       truncated: false,
     });
     await step('assessment-skill', 'read', 'Default assessment.');
+    await step('native-plan-render', 'agent_system_dispatch', {
+      status: 'formatted',
+      retained: false,
+      assessment: { fullAssessment: 'Complete engineering source.' },
+      presentation: 'Choose cleanup behavior.',
+    });
     await step('native-plan-context', 'agent_system_dispatch', {
       status: 'status-update-context',
       observation: digest,

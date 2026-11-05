@@ -28,6 +28,8 @@ const dispatchStages = [
   'detail-readback',
   'report',
   'refresh-context',
+  'refresh-history',
+  'revision-history',
   'refresh-result',
   'recovery-present',
   'summary-compose',
@@ -56,18 +58,13 @@ const dispatchStages = [
 
 function assessmentRequest(context: Record<string, unknown>, payload: object) {
   assert.ok(Value.Check(context.resultSchema as TSchema, payload));
-  const submission = context.resultSubmission as {
-    request: Record<string, unknown>;
-    resultField: string;
-  };
-  assert.equal(submission.resultField, 'result');
-  assert.deepEqual(submission.request, {
+  return {
     action: context.entry === 'direct' ? 'assessment' : 'result',
     ...(context.entry === 'direct' ? { operation: 'result', target: context.target } : {}),
     id: context.id,
     ...(context.previousResultDigest ? { previousResultDigest: context.previousResultDigest } : {}),
-  });
-  return { ...submission.request, [submission.resultField]: payload };
+    result: payload,
+  };
 }
 
 function currentTurn(request: ChatCompletionRequest) {
@@ -493,24 +490,31 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     const evidence = fresh.evidence as { body?: string } | undefined;
     if (
       fresh.status !== 'verified' ||
-      !fresh.previousResult ||
       typeof fresh.previousResultDigest !== 'string' ||
       !evidence?.body?.includes('notification-hidden-later-fact')
     )
       return;
+    const history = result('refresh-history');
+    if (!history)
+      return dispatch('refresh-history', {
+        action: 'present',
+        id: refreshId,
+        includeDetails: true,
+      });
+    assert.ok(history.previousResult);
     const saved = result('refresh-result');
     if (!saved)
       return dispatch(
         'refresh-result',
         assessmentRequest(fresh, {
-          ...(fresh.previousResult as Record<string, unknown>),
+          ...(history.previousResult as Record<string, unknown>),
           fullAssessment:
-            String((fresh.previousResult as Record<string, unknown>).fullAssessment) +
+            String((history.previousResult as Record<string, unknown>).fullAssessment) +
             '\n\nFresh issue context verified after restart.',
         }),
       );
     if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    return summary(refreshId, saved, fresh.previousResult as Record<string, unknown>);
+    return summary(refreshId, saved, history.previousResult as Record<string, unknown>);
   }
   const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
   if (feedback) {
@@ -613,6 +617,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     return;
   if (revision?.[1] === 'Clarify')
     return { content: 'Should cleanup close the issue only after evidence capture?' };
+  const history = revision ? result('revision-history') : undefined;
+  if (revision && !history)
+    return dispatch('revision-history', { action: 'present', id, includeDetails: true });
   const saved = result('result');
   if (!saved)
     return dispatch(
@@ -624,7 +631,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         assessment: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
         plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
         fullAssessment: revision
-          ? String((context.previousResult as Record<string, unknown>).fullAssessment) +
+          ? String((history!.previousResult as Record<string, unknown>).fullAssessment) +
             '\n\nThe operator confirmed cleanup only after evidence capture; retain the original findings.'
           : fullAssessment,
         reviewSummary,

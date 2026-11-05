@@ -227,7 +227,7 @@ describe('agent/implementation-entry', () => {
     assert.ok('assessment' in answered);
     assert.equal(answered.assessment, undefined);
   });
-  it('should reuse an actual retained actionable assessment without reassessment', async () => {
+  it('should not implicitly load an old assessment when the native plan is missing', async () => {
     const context = await assessmentEntry(
       { action: 'assessment', operation: 'context', target, path: root },
       deps,
@@ -254,9 +254,9 @@ describe('agent/implementation-entry', () => {
     );
     selections = [];
     const direct = await call('context', { plan: undefined });
-    assert.ok('plan' in direct);
-    assert.equal(direct.plan, plan);
-    assert.equal(selections.length, 1);
+    assert.equal(direct.status, 'clarification-needed');
+    assert.equal('plan' in direct, false);
+    assert.equal(selections.length, 0);
   });
   it('should keep questions in native chat without a clarification checkpoint', async () => {
     const first = await call();

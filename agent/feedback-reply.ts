@@ -328,7 +328,6 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
           : (target.source ?? { kind: 'manual-response', destination: target.destination }),
         privateResponse: record.privateText,
         verifiedOutcome: {
-          assessment: managed?.verifiedOutcome.assessment,
           implementation: managed?.verifiedOutcome.implementation,
           feedbackWork: undefined,
           delivery: managed?.verifiedOutcome.delivery,

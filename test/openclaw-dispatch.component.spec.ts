@@ -1772,9 +1772,12 @@ describe('agent/openclaw issue dispatch', () => {
     assert.ok(recorded.presentation.includes('routing.md'));
     assert.ok(!recorded.presentation.includes('Prefer complex work.'));
     manifest.models!.routing = { guidance: 'Later configuration is not this decision.' };
-    const reloaded = await context(input.id);
-    assert.ok('previousPresentation' in reloaded);
-    assert.equal(reloaded.previousPresentation, recorded.presentation);
+    const reloaded = await service.run(manifest, root, assessor(input.id), {
+      action: 'present',
+      id: input.id,
+    });
+    assert.ok('presentation' in reloaded);
+    assert.equal(reloaded.presentation, recorded.presentation);
   });
 
   it('should refuse stale routing guidance before creating a session', async () => {
@@ -3607,10 +3610,10 @@ describe('agent/openclaw issue dispatch', () => {
     const restored = await hydrateImplementation(first, async (read) =>
       service.run(manifest, root, assessor(input.id), read as typeof request),
     );
-    assert.deepEqual(restored.assessment, result);
+    assert.equal(restored.assessment, undefined);
     assert.deepEqual(restored.previousResult, blocker);
     assert.deepEqual(restored.previousImplementationResult, blocker);
-    assert.equal(restored.plan, large);
+    assert.equal(restored.plan, undefined);
     assert.equal(restored.publicationAuthorized, true);
     const after = await record();
     assert.deepEqual(after.result, before.result);
@@ -3873,7 +3876,7 @@ describe('agent/openclaw issue dispatch', () => {
       });
       assert.equal(verified.status, 'verified', JSON.stringify(verified));
       assert.ok('assessment' in verified);
-      assert.deepEqual(verified.assessment, assessment);
+      assert.equal(verified.assessment, undefined);
       assert.deepEqual((await record()).result, assessment);
       assert.equal((await record()).work?.turn?.runId, who.runId);
       assert.equal((await record()).work?.turn?.origin, 'assessment');
@@ -4535,14 +4538,11 @@ describe('agent/openclaw issue dispatch', () => {
       'resultSchema' in verified && verified.resultSchema,
       assessmentResultContextSchema,
     );
-    assert.ok('resultSubmission' in verified && 'entry' in verified);
+    assert.ok('presentationRequest' in verified && 'entry' in verified);
     assert.equal(verified.entry, 'managed');
-    assert.deepEqual(verified.resultSubmission.request, { action: 'result', id: input.id });
-    assert.deepEqual(verified.resultSubmission.refreshRequest, { action: 'context', id: input.id });
-    const candidate = {
-      ...verified.resultSubmission.request,
-      [verified.resultSubmission.resultField]: plan,
-    };
+    assert.equal(verified.presentationRequest.operation, 'render');
+    // Explicit compatibility recording, not the normal presentation request.
+    const candidate = { action: 'result', id: input.id, result: plan };
     assert.ok(Value.Check(dispatchParameters, candidate));
     const recorded = await service.run(manifest, root, assessor(input.id), candidate);
     assert.ok('presentation' in recorded && recorded.presentation?.includes(plan.fullAssessment!));
@@ -4555,12 +4555,8 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(saved.stageReceipt?.binding.threadId, assessor(input.id).sessionKey);
     assert.equal(saved.stageReceipt?.binding.worktree, join(root, 'worktree'));
     const readback = await context(input.id);
-    assert.ok('previousResultTurnId' in readback && 'currentTurnId' in readback);
-    assert.equal(readback.previousResultTurnId, readback.currentTurnId);
-    assert.equal(
-      'previousPresentation' in readback && readback.previousPresentation,
-      recorded.presentation,
-    );
+    assert.equal('previousResult' in readback, false);
+    assert.equal('previousPresentation' in readback, false);
     assert.equal((await record()).assessmentHistory?.length, 1);
     assessmentReply(input.id);
     service = new OpenClawDispatch(service.dependencies);
@@ -4721,10 +4717,13 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(recorded.presentation.includes('Assessment instructions'), debug);
       assert.equal(recorded.presentation.includes('Model routing instructions'), debug);
       assert.ok(recorded.presentation.includes('Model routing'));
-      const reloaded = await context(input.id);
-      assert.ok('previousPresentation' in reloaded);
-      assert.equal(reloaded.previousPresentation, recorded.presentation);
-      assert.ok('previousResult' in reloaded && 'resultContract' in reloaded);
+      const reloaded = await service.run(manifest, root, assessor(input.id), {
+        action: 'present',
+        id: input.id,
+      });
+      assert.ok('presentation' in reloaded);
+      assert.equal(reloaded.presentation, recorded.presentation);
+      assert.ok('previousResult' in reloaded);
       assert.deepEqual(reloaded.previousResult, result);
       assert.equal(Value.Check(assessmentResultSchema, result), true);
       assert.ok(JSON.stringify(reloaded).length <= implementationContextBudget);
@@ -5127,7 +5126,7 @@ describe('agent/openclaw issue dispatch', () => {
     return { ...setup, before };
   }
 
-  it('should include a github plan revision in direct planning context without entering work', async () => {
+  it('should leave prior github plan revisions in native history without reinjecting them', async () => {
     const { id, who } = await operatorFollowup();
     const { journal } = await service.scope(manifest, root);
     await journal.exclusive(async (state, save) => {
@@ -5153,8 +5152,7 @@ describe('agent/openclaw issue dispatch', () => {
     });
     const response = await context(id, who);
     assert.equal(response.status, 'verified');
-    assert.ok('feedbackWork' in response && response.feedbackWork);
-    assert.equal(response.feedbackWork[0]!.privateText, 'Keep the smaller approach.');
+    assert.equal('feedbackWork' in response, false);
     assert.equal((await record()).progression, undefined);
   });
 
@@ -5162,8 +5160,8 @@ describe('agent/openclaw issue dispatch', () => {
     const { id, who, before } = await originalAssignment();
     const refreshed = await context(id, who);
     assert.equal(refreshed.status, 'verified');
-    assert.ok('previousResult' in refreshed && 'previousResultDigest' in refreshed);
-    assert.deepEqual(refreshed.previousResult, plan);
+    assert.ok('previousResultDigest' in refreshed);
+    assert.equal('previousResult' in refreshed, false);
     assert.equal(refreshed.previousResultDigest, automationHash(plan));
     const afterRefresh = await record();
     assert.deepEqual(afterRefresh.stageReceipt, before.stageReceipt);
@@ -6108,10 +6106,7 @@ describe('agent/openclaw issue dispatch', () => {
       false,
     );
     assert.equal(response.status, 'verified');
-    assert.ok('feedbackWork' in response);
-    assert.equal(response.feedbackWork?.[0]?.privateText, 'Keep the smaller approach.');
-    assert.equal(response.feedbackWork?.[1]?.decision?.plan, 'Implement the agreed approach.');
-    assert.equal(response.feedbackWork?.[1]?.result?.outcome, 'clarification-needed');
+    assert.equal('feedbackWork' in response, false);
     assert.deepEqual((await record()).result, question);
     assert.equal((await record()).progression?.stage, 'implementation');
     assert.equal(creates().length, 1);
@@ -6477,7 +6472,7 @@ describe('agent/openclaw issue dispatch', () => {
     );
     assert.equal(verified.status, 'verified');
     assert.ok('assessment' in verified);
-    assert.deepEqual(verified.assessment, plan);
+    assert.equal(verified.assessment, undefined);
     const result = {
       outcome: 'done' as const,
       summary: 'Implemented.',

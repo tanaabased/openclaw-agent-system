@@ -40,7 +40,6 @@ export default function openclawTurnContext(
         worktree: record.worktree,
         pullRequest: taskPullRequest(record),
         branch: record.work?.delivery?.binding?.branch,
-        previousResult: record.result,
         previousResultDigest: record.result && automationHash(record.result),
         previousImplementationResult: record.work?.result,
       }) +

@@ -15,7 +15,7 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
-import assessmentSubmission from '../agent/assessment-submission.ts';
+import renderNativeAssessment from '../agent/assessment-render.ts';
 import { issueExampleScenario } from '../examples/openclaw-issue-journey/model-fixture.ts';
 import { intakeExampleScenario } from '../examples/openclaw-issue-intake/model-fixture.ts';
 import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
@@ -59,8 +59,8 @@ for (const scenario of [
   function assessmentContract(previousResultDigest?: string) {
     return {
       entry: 'managed',
+      previousResultDigest,
       resultSchema: assessmentResultContextSchema,
-      resultSubmission: assessmentSubmission({ entry: 'managed', id, previousResultDigest }),
     };
   }
 
@@ -213,6 +213,11 @@ for (const scenario of [
 
   async function publishNativeQuestion(input: ChatCompletionRequest) {
     const target = 'https://github.com/owner/repo/issues/3';
+    const formatting = await action(input, 'assessment');
+    assert.equal(formatting.operation, 'render');
+    const formatted = renderNativeAssessment(formatting);
+    assert.equal(formatted.retained, false);
+    append(input, 'native-plan-render', formatted);
     const observed = await action(input, 'reply');
     assert.equal(observed.operation, 'context');
     assert.equal(observed.target, target);
@@ -273,7 +278,7 @@ for (const scenario of [
           id,
           target: source,
           resultSchema: assessmentResultContextSchema,
-          resultSubmission: assessmentSubmission({ entry: 'direct', id, target: source }),
+
           assessment: { skill: { path: '/fixture/SKILL.md' } },
         });
         const read = await response(input);
@@ -629,6 +634,20 @@ for (const scenario of [
             progress: { completed: [], remaining: [] },
           },
           evidence: { body: 'notification-hidden-later-fact' },
+        });
+        assert.equal((await action(later, 'present')).includeDetails, true);
+        append(later, 'refresh-history', {
+          status: 'presented',
+          previousResult: {
+            version: 1,
+            outcome: 'plan-ready',
+            summary: 'Retained.',
+            assessment: 'Observed.',
+            plan: 'Complete retained plan.',
+            fullAssessment: 'Complete retained plan.',
+            evidence: [],
+            progress: { completed: [], remaining: [] },
+          },
         });
         const revised = await action(later, 'result');
         assert.equal(revised.previousResultDigest, digest);
@@ -1353,6 +1372,8 @@ for (const scenario of [
             });
             continue;
           }
+          assert.equal((await action(input, 'present')).includeDetails, true);
+          append(input, 'revision-history', { status: 'presented', previousResult: previous });
           const submission = await action(input, 'result');
           assert.equal(submission.previousResultDigest, digest);
           assert.equal(submission.result.outcome, 'plan-ready');

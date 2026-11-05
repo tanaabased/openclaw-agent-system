@@ -1,3 +1,4 @@
+import renderNativeAssessment from './assessment-render.ts';
 import workflowFailure from './workflow-failure.ts';
 import { automationHash } from './automation-hash.ts';
 import codexIssueLaunch from './codex-issue-launch.ts';
@@ -114,6 +115,14 @@ export async function runCodexDispatch(
       { ...deps, directOperator: true, directScope: request.scope },
     );
   }
+  if (
+    action === 'assessment' &&
+    input &&
+    typeof input === 'object' &&
+    'operation' in input &&
+    input.operation === 'render'
+  )
+    return renderNativeAssessment({ ...input, action });
   if (action === 'assessment')
     return codexAssessmentEntry(
       pluginData,

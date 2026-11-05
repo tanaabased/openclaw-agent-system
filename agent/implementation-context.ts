@@ -20,20 +20,14 @@ export default function implementationContext(input: {
   revision?: boolean;
   existingPullRequest?: boolean;
 }) {
-  const reassessment = input.reassessments?.findLast(
-    ({ result }) => result?.outcome === 'plan-ready',
-  )?.result;
   return {
     status: 'verified' as const,
     runtime: input.runtime,
     issueStage: 'implementation' as const,
     id: input.id,
     project: { path: input.path },
-    assessment: input.assessment,
-    plan:
-      input.plan ??
-      (reassessment?.outcome === 'plan-ready' ? reassessment.plan : undefined) ??
-      (input.assessment?.outcome === 'plan-ready' ? input.assessment.plan : undefined),
+    assessment: undefined,
+    plan: input.plan,
     implementation: input.implementation,
     resultContract: 'implementation-result/v1' as const,
     resultSchema: implementationResultSchema,

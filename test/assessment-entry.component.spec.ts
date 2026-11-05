@@ -100,32 +100,28 @@ describe('agent/assessment-entry', () => {
         /assessment-result-incomplete/,
       );
       const unchanged = await call('context');
-      assert.ok('previousResult' in unchanged);
-      assert.equal(unchanged.previousResult, undefined);
+      assert.equal('previousResult' in unchanged, false);
       assert.equal((await call('result', { id: context.id, result: ready })).status, 'recorded');
     });
   it('should select once and retain complete output without workflow authority or invented routing', async () => {
     const context = await call('context');
-    assert.ok('id' in context && 'assessment' in context && 'resultSubmission' in context);
+    assert.ok('id' in context && 'assessment' in context && 'presentationRequest' in context);
     assert.deepEqual(context.resultSchema, assessmentResultContextSchema);
-    assert.deepEqual(context.resultSubmission.request, {
+    assert.deepEqual(context.presentationRequest, {
       action: 'assessment',
-      operation: 'result',
-      id: context.id,
+      operation: 'render',
       target,
-    });
-    assert.deepEqual(context.resultSubmission.refreshRequest, {
-      action: 'assessment',
-      operation: 'context',
-      id: context.id,
-      target,
+      assessmentOnly: true,
     });
     assert.equal(context.assessment!.requestedSkill, 'agent-system:agent-system-task-assessment');
     assert.equal((await call('context')).status, 'verified');
     assert.equal(selections.length, 1);
     const result = await assessmentEntry(
       {
-        ...context.resultSubmission.request,
+        action: 'assessment',
+        operation: 'result',
+        id: context.id,
+        target,
         result: {
           ...ready,
           decision: { mode: 'work', reasons: ['Model recommendation is not permission.'] },
@@ -137,7 +133,7 @@ describe('agent/assessment-entry', () => {
     assert.deepEqual('handoff' in result && result.handoff, { next: 'assessment-only' });
     assert.ok('presentation' in result && !result.presentation!.includes('Continue automatically'));
     assert.ok('presentation' in result && !result.presentation!.includes('Model routing'));
-    const recovered = await call('context');
+    const recovered = await call('present', { id: context.id });
     assert.equal(recovered.status, 'presented');
     assert.ok('currentTurnId' in recovered && 'previousResultTurnId' in recovered);
     assert.equal(recovered.currentTurnId, recovered.previousResultTurnId);
@@ -162,7 +158,7 @@ describe('agent/assessment-entry', () => {
     deps.git = async () => {
       throw new Error('checkout unavailable');
     };
-    const restored = await call('context');
+    const restored = await call('present', { id: context.id });
     assert.equal(restored.status, 'presented');
     const full = await assessmentEntry(
       { action: 'assessment', operation: 'present', id: context.id, includeDetails: true },
@@ -210,7 +206,7 @@ describe('agent/assessment-entry', () => {
       }),
       [ready.plan, ...Array.from({ length: 10 }, (_, index) => `Revision ${index + 1}.`)],
     );
-    const recovered = await call('context', { id: first.id });
+    const recovered = await call('present', { id: first.id });
     assert.ok('previousResult' in recovered);
     assert.ok(recovered.previousResult?.outcome === 'plan-ready');
     assert.equal(recovered.previousResult.plan, 'Revision 11.');
@@ -260,7 +256,7 @@ describe('agent/assessment-entry', () => {
       call('result', { id: first.id, result: { ...ready, progress: [] } }),
       /assessment-result-invalid/,
     );
-    const correction = await call('context');
+    const correction = await call('present', { id: first.id });
     assert.ok('previousResult' in correction);
     assert.deepEqual(correction.previousResult, ready);
     assert.equal((await call('result', { id: first.id, result: ready })).status, 'recorded');
@@ -273,7 +269,7 @@ describe('agent/assessment-entry', () => {
     };
     await assert.rejects(call('context'), /native-input-changed/);
     deps.assertCurrent = async () => {};
-    const read = await call('context');
+    const read = await call('present', { id: first.id });
     assert.ok('previousResult' in read);
     assert.equal(read.previousResult?.fullAssessment, ready.fullAssessment);
   });
@@ -299,8 +295,8 @@ describe('agent/assessment-entry', () => {
     };
     deps.managed = async () => managed;
     const retained = await call('context');
-    assert.equal(retained.status, 'presented');
-    assert.deepEqual('receipt' in retained && retained.receipt, managed.receipt);
+    assert.equal(retained.status, 'verified');
+    assert.equal('previousResult' in retained, false);
     assert.equal(selections.length, 0);
     const entries: AssessmentEntry[] = [];
     managed.entries = async (run) => run(entries, async () => {});
@@ -356,7 +352,6 @@ describe('agent/assessment-entry', () => {
       for (const request of [
         { operation: 'context', revise: true },
         { operation: 'result', id: 'a'.repeat(64), result: { ...ready, plan: 'Revised plan.' } },
-        { operation: 'present', id: 'a'.repeat(64) },
       ]) {
         const response = await call(request.operation, request);
         assert.deepEqual(response, before);
@@ -424,7 +419,7 @@ describe('agent/assessment-entry', () => {
         },
       } as AgentManifest;
       const selected = await call('context');
-      assert.ok('resultSubmission' in selected);
+      assert.ok('presentationRequest' in selected);
       assert.equal(
         selected.assessment!.requestedSkill,
         configuration?.skill ?? 'agent-system:agent-system-task-assessment',

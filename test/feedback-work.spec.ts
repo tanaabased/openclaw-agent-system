@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
 
-import { feedbackConversationMode, feedbackWorkContext } from '../agent/feedback-work.ts';
+import { feedbackConversationMode } from '../agent/feedback-work.ts';
 import { feedbackSourceEventSchema, type FeedbackSourceEvent } from '../agent/feedback-state.ts';
 import { openClawWorkSlot } from '../agent/openclaw-continuation.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
@@ -46,45 +46,6 @@ describe('agent/feedback-work', () => {
     assert.equal(feedbackConversationMode(record, intakeFixture().policy), 'plan');
   });
 
-  it('should preserve earlier plan revisions and partial work before interpreting another message', () => {
-    const revision = {
-      ...eventFixture(),
-      result: { privateText: 'Use the smaller approach and retain the existing PR.' },
-    };
-    const partial = {
-      ...eventFixture(),
-      id: 'c'.repeat(64),
-      work: {
-        selection: {} as never,
-        decision: {
-          mode: 'work' as const,
-          reasons: ['Requested.'],
-          plan: 'Change only the parser.',
-        },
-        result: {
-          outcome: 'clarification-needed' as const,
-          summary: 'Choose a value.',
-          fullResult: 'Parser changes are retained.',
-          questions: ['Which value?'],
-        },
-      },
-    };
-    const current = {
-      ...eventFixture(),
-      id: 'd'.repeat(64),
-      result: { privateText: 'Current answer.' },
-    };
-    const record = { feedback: { events: [revision, partial, current] } };
-    const before = structuredClone(record);
-    const context = feedbackWorkContext(record, current.id);
-    assert.equal(context.length, 2);
-    assert.equal(context[0]!.privateText, revision.result.privateText);
-    assert.deepEqual(context[1]!.decision, partial.work.decision);
-    assert.deepEqual(context[1]!.result, partial.work.result);
-    assert.deepEqual(feedbackWorkContext(record).slice(0, 2), context);
-    assert.deepEqual(record, before);
-    assert.deepEqual(feedbackWorkContext({}), []);
-  });
   it('should preserve legacy feedback history without creating another work owner', () => {
     const event = eventFixture();
     assert.ok(Value.Check(feedbackSourceEventSchema, event));

@@ -15,6 +15,7 @@ import githubNotificationCard, {
 
 interface AssessmentPresentationContext extends WorkflowInstructionsPresentation {
   includeDetails?: boolean;
+  retained?: boolean;
   issue: { label: string; url: string; kind?: 'Issue' | 'Pull request' };
   assessmentOnly?: boolean;
   routing?: Pick<RoutingDecision, 'complexity' | 'profile' | 'reason' | 'source'> & {
@@ -138,7 +139,7 @@ export default function renderAssessmentResult(
       ? ['## Full plan', result.plan]
       : []),
   ];
-  if (reviewOnly)
+  if (reviewOnly && context.retained !== false)
     content.push(
       'The full assessment and engineering plan are saved for implementation. Ask for the full assessment to inspect them.',
     );

@@ -275,8 +275,6 @@ tables when they make it easier to review.
 ## Proposed change
 
 <problem and proposed solution as a concise user journey, brief documentation/test impact, and consequential limits or decisions>
-
-The full assessment and engineering plan are saved for implementation. Ask for the full assessment to inspect them.
 ```
 
 When a result includes both `reviewSummary` and `fullAssessment`, show the review
@@ -289,8 +287,9 @@ need less. Do not apply review-length guidance to the retained assessment or pla
 
 The full engineering assessment remains authoritative for implementation: rationale,
 tradeoffs, owners, dependencies, constraints, complete plan, validation, evidence, and
-unresolved questions. Keep it unchanged in `fullAssessment` and retain the full
-implementation plan in `plan`. `reviewSummary` is a derived human view, never a
+unresolved questions. Keep it unchanged in `fullAssessment` and the full implementation plan in `plan`
+within the native tool exchange. New assessments do not save either field in Agent
+System. Only explicit historical readback may describe older results as saved. `reviewSummary` is a derived human view, never a
 replacement source. `assessment` may repeat the recommendation; `planSummary` remains
 optional. Requesting `includeDetails: true` shows the complete assessment and any
 distinct plan, followed by supporting evidence and investigation.

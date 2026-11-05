@@ -7,7 +7,7 @@ const assessment = (plan: string) => ({ outcome: 'plan-ready', plan }) as Assess
 
 describe('agent/implementation-context', () => {
   for (const runtime of ['codex', 'openclaw'] as const)
-    it(`should use a later ready plan in ${runtime} without replacing the historical assessment`, () => {
+    it(`should omit historical assessments and revisions from ${runtime} implementation context`, () => {
       const original = assessment('Original plan.');
       const reassessments = [
         { result: assessment('First revision.') },
@@ -21,8 +21,8 @@ describe('agent/implementation-context', () => {
         assessment: original,
         reassessments,
       });
-      assert.equal(response.plan, 'Current plan.');
-      assert.equal(response.assessment, original);
+      assert.equal(response.plan, undefined);
+      assert.equal(response.assessment, undefined);
       assert.deepEqual({ original, reassessments }, before);
     });
 

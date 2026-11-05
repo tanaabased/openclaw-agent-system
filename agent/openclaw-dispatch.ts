@@ -1,3 +1,4 @@
+import renderNativeAssessment from './assessment-render.ts';
 import feedbackContextMaterial from './feedback-context-material.ts';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -310,6 +311,8 @@ export default class OpenClawDispatch {
               ? { action: 'implementation-result', id, implementationResult: input.result }
               : { action: 'implementation-context', id };
     }
+    if (input.action === 'assessment' && input.operation === 'render')
+      return renderNativeAssessment(input);
     if (input.action === 'assessment')
       return openClawAssessmentEntry({
         manifest,

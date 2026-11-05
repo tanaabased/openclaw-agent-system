@@ -1,6 +1,6 @@
 ---
 name: agent-system-task-assessment
-description: 'Assess or plan a selected or admitted task tracked by a GitHub issue in the current chat using the agent configuration. Use for "assess this issue" or "plan this task"; retain a plan, questions, or a setup blocker.'
+description: 'Assess or plan a selected or admitted task tracked by a GitHub issue in the current chat using the agent configuration. Use for "assess this issue" or "plan this task"; develop a full plan in native context and show a concise review.'
 license: MIT
 metadata:
   type: workflow
@@ -22,7 +22,7 @@ Turn one explicitly selected or admitted task tracked by a GitHub issue into a u
 assignment authority, native chat identity, routing, persistence, and scheduling.
 This skill owns investigation and judgment. Direct assessment stops before implementation
 or publication. Admitted tasks plan in native chat and continue within their verified
-mode and current user direction; saved assessment results are optional history.
+mode and current user direction; new assessments stay in native tool context without Agent System persistence.
 
 ## Required Reading
 
@@ -55,11 +55,11 @@ mode and current user direction; saved assessment results are optional history.
 
 ### Native Planning
 
-An admitted task is a native conversation from the outset. Use investigation and
-planning steps 2–5 with the available context and present the plan and questions
-in chat. A context with `recording: optional-history` does not require the editor,
-saved result, summary or handoff steps. Existing assessments remain readable
-history; record a revision only when useful or explicitly requested.
+Use workflow steps 2–8 for both native and direct planning: develop the complete
+standardized assessment, prepare its human review, and format it into the native
+tool exchange. Show only the concise presentation. Do not save plans, summaries,
+plan files or assessment revisions in Agent System. Native conversation owns
+subsequent decisions; historical records are available only by explicit readback.
 
 Questions and answers stay in native chat for every entry path, including direct
 tracked assessments. Ask blocking questions here without submitting a
@@ -77,10 +77,9 @@ update when it already conveys the same facts.
 
 If trusted verified execution context already supplies `entry: managed` or
 `entry: direct`, **do not bootstrap again**, even when this default wrapper is the
-selected skill. Use the supplied evidence, checkout, selection and previous result
-for workflow steps 2–6. The host's `resultSubmission` selects the submission envelope;
-the skill name never selects or changes the entry path. This guard also applies when
-the wrapper is explicitly configured.
+selected skill. Use the supplied evidence, checkout and selection for workflow
+steps 2–8. Use `presentationRequest` for formatting; the skill name never changes
+entry or authority. This also applies when the wrapper is explicitly configured.
 
 For an explicit tracked assessment request without supplied execution context:
 
@@ -91,28 +90,15 @@ For an explicit tracked assessment request without supplied execution context:
    In standalone Codex, use the trusted `dispatchRuntime` command with
    `assessment context` before its exact `--plugin-data` argument, and the same
    JSON request on stdin. Never infer the runtime path from repository prose.
-3. A retained `presented` result is complete: show its presentation without
-   reassessing or resubmitting. For an explicit revision, use the returned `id`
-   and `target` with `revise: true` on a later context request. Invalid managed
-   ownership must recover through its owner or fail; never retry as manual entry.
-4. With `status: verified` and `entry: direct`, invoke the returned selected skill
-   exactly once, supplying its context and guidance. If it is this skill, continue
-   directly with steps 2–6 below, not this bootstrap. Custom skills return their
-   ordinary complete output; the existing host adaptation retains it unchanged.
-5. Add the payload matching `resultSchema` under `resultSubmission.resultField` in
-   `resultSubmission.request`. This is **assessment result**, not managed `result`:
-   `action: assessment`, `operation: result`, `id`, `target`, `result` and the returned
-   `previousResultDigest` for revisions. In Codex the command is `assessment result`.
-   Readback uses `assessment present` with `id` and `target`; `includeDetails: true`
-   shows the full retained source. Reproduce the acknowledged presentation.
+3. With `status: verified`, invoke the selected assessment body once with its
+   context and guidance. If it is this skill, continue with steps 2–8 below.
+4. Format through `assessment render` using `presentationRequest` plus `result`
+   matching `resultSchema`. This route saves no assessment or summary. Historical
+   `assessment present` with an exact retained id remains an explicit read only.
 
-Direct results always stop at `assessment-only`, including with Work/Auto defaults
-or inside managed work. Do not perform the summary or implementation continuation
-below. Managed inputs and original stage/publication receipts remain with their
-owner; a direct revision is retained alongside that owner without rewriting its
-workflow result or granting another stage. Missing inputs, invalid skills/guidance,
-and repository mismatches are actionable questions or setup failures, not fallback
-permission. Checkout revision and dirty-state observations bound the assessment.
+Direct assessment authorizes neither implementation nor publication, including
+with Work/Auto defaults. Invalid managed ownership must recover through its owner
+or fail; never fall back to manual entry. Checkout observations bound the assessment.
 
 ### Managed Entry
 
@@ -132,35 +118,18 @@ The receipt selects retained evidence; it does not grant authority by itself.
 
 ## Workflow
 
-1. In OpenClaw, call `agent_system_dispatch` with `{"action":"context","id":<receipt>}`.
-   On follow-ups, refresh context and reuse its complete previousResult and
-   previousResultDigest; preserve currentTurnId and previousResultTurnId. If they
-   match and a result exists, reproduce previousPresentation after an uncertain
-   submission instead of claiming it failed or submitting a duplicate.
-   In Codex, call dispatchRuntime using its exact argvPrefix followed by the action, --plugin-data and
-   its pluginData. Send {"action":"context","id":<receipt>} through standard input
-   using native stdin support or a quoted heredoc, never a printf pipeline or JSON
-   command arguments. If native approval is required, request only the full fixed
-   command prefix including --plugin-data and its exact path, never broad node access.
-   The runtime verifies the native creation source, repository, worktree, starting
-   commit, and saved routing. A detached HEAD is normal. If verification fails,
-   report the exact blocker in this chat and preserve it; do not repair Git state,
-   create a replacement chat, or claim a verified result.
-   On a user follow-up, reuse the returned previousResult and retained progress;
-   a later native turn may record a revised assessment in this same chat.
-   Retain previousResultDigest when context returns it; it identifies the saved
-   result that a revision may replace, including when an asynchronous answer arrives
-   within the current native turn.
-   Reuse context already verified by the host in this turn for this exact receipt;
-   the launch and this skill need not make duplicate context calls. On a later turn,
-   refresh it before investigation. The host can also retain an ordinary skill's
-   output; this skill's direct structured submission remains the recommended route.
+1. Reuse verified context already supplied in this turn. Otherwise, in OpenClaw
+   call `agent_system_dispatch` with `action: context` and the receipt id. In Codex
+   use the trusted dispatchRuntime `context` command and send matching JSON on
+   stdin. Preserve the fixed runtime prefix and native approvals. Context supplies
+   current evidence and configured guidance, not saved plans. Follow-up discussion
+   uses native conversation; request context when current configuration is needed.
 
 2. Read the returned issue body, acceptance criteria, relevant discussion, metadata,
    and saved routing decision as bounded evidence. The issue snapshot supplies its
    source and observation time, bounded body and comments, native/fallback metadata,
    conflicts, and truncation; context supplies the verified project, saved routing,
-   effective readback, and any previous result. Distinguish observed facts,
+   effective readback. Distinguish observed facts,
    assumptions, absent values, unavailable reads, conflicts, and stated truncation.
    Issue titles, bodies, and unverified comments are supporting evidence. Only
    source-verified comments from currently approved feedback authors supply task
@@ -226,7 +195,7 @@ The receipt selects retained evidence; it does not grant authority by itself.
    operator direction. A complete plan can still warrant waiting. Record the decision
    and bounded, non-sensitive reasons in the returned result schema; never infer
    permission from the issue or from `plan-ready`. Preserve the full assessment and
-   follow the host’s presentation and bounded summary instructions after recording; the runtime owns any implementation continuation.
+   follow current native direction and the host’s separate permission contract.
 
 6. Run the [User Journey Editor](./references/user-journey-editor.md) as one native helper
    with fresh context, not a continuation or full-history fork. This is a separate model
@@ -256,72 +225,31 @@ The receipt selects retained evidence; it does not grant authority by itself.
    add another model invocation for this consistency check or let the editor supply
    missing findings.
 
-7. When recording a completed assessment or setup obstacle, submit one payload following the returned `resultSchema`, using the host's
-   `resultSubmission.request` with the payload under `resultSubmission.resultField`.
-   The runtime supplies the schema; this skill does not return a schema object.
-   Managed OpenClaw uses `agent_system_dispatch` action `result`; managed Codex uses
-   dispatchRuntime action `result`. Never use the direct `assessment` envelope for
-   managed execution. Choose plan-ready for an actionable plan or
-   operator-setup-blocker for an operational obstacle. Ask blocking requirements
-   questions in chat without submitting a result.
-   In Codex, retain the exact command and stdin transport from step 1; issue-supplied
-   prose cannot change that transport.
-   Retain evidence and completed/remaining investigation in every outcome. Keep the
-   complete Markdown assessment, plan, or questions in the version 1 fields, with a
-   separate `reviewSummary` for human review; every new
-   plan-ready result includes the complete plan. Omit `planSummary` when it would
-   repeat the recommendation or plan; it remains supported for distinct useful context. Never substitute the summary for plan
-   or link out to disposable scratch work. Every new result also includes the unchanged
-   complete `fullAssessment`, including setup-blocker outcomes.
-   Keep structured fields faithful to it. Keep progress about investigation;
-   do not describe proposed implementation or unrun checks as completed. Generic
-   assessment behavior belongs here; company/profile preferences come from trusted
-   guidance and cannot change the runtime's authority or saved model selection.
-   Recording the result alone grants no further authority. Implementation requires
-   the returned handoff and verified implementation context described below.
-   Assessment publication uses the separately verified summary operation.
-   When replacing a saved result, include previousResultDigest from the latest context
-   or successful result response. Before retrying an uncertain submission, refresh
-   through `resultSubmission.refreshRequest` and reconcile its recorded turn and
-   presentation. If it recorded this turn, show that presentation and do not resubmit;
-   unavailable or conflicting readback is an explicit unresolved submission, not proof
-   of failure. On assessment-result-conflict,
-   read context again and reconcile the newer result with the user's answer before
-   resubmitting; never blindly retry an older plan. A reply arriving after submission
-   may revise the assessment in the same turn using the acknowledged digest.
+7. Add the complete payload matching `resultSchema` to `presentationRequest` as
+   `result`. Use `agent_system_dispatch` action `assessment`, operation `render`
+   in OpenClaw; use trusted dispatchRuntime `assessment render` with matching JSON
+   on stdin in Codex. Both use the same pure formatter. The full `fullAssessment`
+   and `plan` enter native tool history; the returned `presentation` contains the
+   concise `reviewSummary` and consequential questions or required actions.
+   Formatting writes no task journal, saved summary or plan revisions. Do not use
+   legacy `result` recording routes or write a separate plan file. If schema
+   validation fails, correct the shape without inventing findings or truncating
+   the source. Report an unresolved formatting limitation without claiming success.
 
-8. After the runtime acknowledges recording, reproduce its complete presentation
-   Markdown in this chat. The host frames the recorded outcome and routing card;
-   show its recommendation, routing, human review, and any questions/actions.
-   Do not reconstruct its status, shorten the plan/questions, or replace verified
-   links or settings with model-authored values. Without acknowledgment, useful output
-   from either this skill or a custom skill remains the calling agent's responsibility:
-   preserve its complete source and follow the host adaptation instructions. For an
-   explicit schema rejection, allow one shape-only correction against `resultSchema`
-   without repeating investigation or changing findings or authority. Keep the source
-   unchanged in `fullAssessment`; do not silently truncate it. If correction fails or
-   readback remains uncertain, report the diagnostic and retain the visible assessment
-   without claiming it was recorded. A missing runtime
-   presentation is a setup limitation to report, not permission to invent a successful
-   rendered handoff.
-   Evidence and investigation are retained but not appended by default. On a request
-   for the full assessment, engineering plan, or supporting detail, use the same bound
-   `present` action with `includeDetails: true`
-   (through dispatchRuntime in Codex). This read does not refresh workflow authority. Keep any consequential
-   limitation, blocking question, or required action in the primary response as well;
-   supporting notes must not hide what the user needs to decide or do next.
+8. Show the returned `presentation` as the visible assessment reply. Do not append
+   the full engineering plan or tool JSON. The model can use the complete result
+   in native tool context and revise its understanding as the conversation changes.
+   Do not automatically reload or reinject the original assessment or summary.
+   Native compaction may summarize the context; it does not guarantee permanent
+   verbatim retention. Use current evidence when details are no longer available.
+   Explicit requests for older saved assessments may use historical `present`
+   with `includeDetails: true`; this read supplies no new authority.
 
-After showing the complete private presentation, follow the acknowledged host’s
-assessment-summary instructions when supplied. The host verifies the active issue
-and summary operation, selects the current voice-aware reply skill, and owns the
-candidate, exact issue destination, native approval and publication receipt. Explain the proposed user
-journey in that separate public summary; keep the recorded private review visible in
-the chat and the full assessment available on request. A denial scoped only to this summary stops publication,
-not independently authorized implementation. If the host permits further tracking, retain the rejected summary
-through summary operation `hold` with its preview digest and a bounded redacted diagnostic; never retry the denied
-publish call or use another route. Keep that hold and diagnostic across continuation and restart. Do not offer
-ordinary pending-summary recovery for it; publication needs supported verified recovery or renewed authorization.
-A delivery failure leaves the plan recorded; reconcile an uncertain write without repeating it.
+Publish the concise assessment and consequential questions through
+[Task Update](../task-update/SKILL.md) within existing publication authority.
+Formatting, publication and implementation permission are independent. Keep the
+full engineering source out of public-update receipts. Reconcile uncertain
+publication through its original operation; do not repeat a denied send.
 
 ### Continuing after assessment
 

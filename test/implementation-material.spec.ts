@@ -14,16 +14,7 @@ const original = () => {
       runtime: 'openclaw',
       id: 'a'.repeat(64),
       path: '/task/worktree',
-      assessment: {
-        version: 1,
-        outcome: 'plan-ready',
-        summary: 'Bound delivery.',
-        assessment: 'Repair.',
-        plan: text,
-        fullAssessment: text,
-        evidence: [],
-        progress: { completed: [], remaining: [] },
-      },
+      plan: text,
       previousResult: {
         outcome: 'blocked',
         summary: 'Interrupted.',
@@ -64,31 +55,14 @@ describe('agent/implementation-material', () => {
     assert.deepEqual(restored, JSON.parse(snapshot));
     assert.equal(JSON.stringify(source), snapshot);
     const fields = 'contextMaterials' in delivered ? delivered.contextMaterials?.fields : [];
-    assert.ok(fields?.some(({ path }) => path.join('.') === 'assessment.plan'));
+    assert.ok(fields?.some(({ path }) => path.join('.') === 'plan'));
     assert.ok(
       !fields?.some(
         ({ path }) =>
           path.join('.') === 'assessment.fullAssessment' ||
-          path.join('.') === 'plan' ||
           path[0] === 'previousImplementationResult',
       ),
     );
-  });
-
-  it('should preserve a distinct full assessment and return independent complete json pages', async () => {
-    const source = original();
-    source.assessment!.fullAssessment = 'Additional decision and evidence.\n'.repeat(800);
-    const response = implementationMaterial(source, request);
-    const restored = await hydrateImplementation(response, async (next) => {
-      const page = implementationMaterial(
-        source,
-        request,
-        next.material as ImplementationMaterialRead,
-      );
-      assert.equal(JSON.parse(JSON.stringify(page)).status, 'material');
-      return page;
-    });
-    assert.deepEqual(restored, JSON.parse(JSON.stringify(source)));
   });
 
   it('should preserve result aliases regardless of object property order', async () => {

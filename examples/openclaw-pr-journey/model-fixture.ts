@@ -19,6 +19,7 @@ const dispatchStages = [
   ...['context', 'compose', 'candidate', 'preview', 'publish'].map(
     (stage) => `native-plan-${stage}`,
   ),
+  'native-plan-render',
   'context',
   'result',
   'recovery-present',
@@ -248,6 +249,35 @@ function respond(
     const plan = options.initialQuestion
       ? 'Should disposable test issues be closed after capturing evidence?'
       : 'Add a short cleanup rule for disposable test issues, then check and commit the diff before creating the PR.';
+    const rendered = result('native-plan-render');
+    if (!rendered)
+      return dispatch('native-plan-render', {
+        action: 'assessment',
+        operation: 'render',
+        target,
+        result: {
+          version: 1,
+          outcome: options.initialQuestion ? 'clarification-needed' : 'plan-ready',
+          summary: plan,
+          assessment: 'Disposable test issues need an explicit cleanup rule.',
+          fullAssessment:
+            'Inspected the existing test guidance. Add a cleanup rule after evidence capture, preserve evidence limits, review the diff and verify both runtimes. No deployment is needed.',
+          reviewSummary: plan,
+          ...(options.initialQuestion
+            ? { questions: [plan] }
+            : {
+                plan: 'Update the disposable issue cleanup guidance, inspect the diff, commit it and create the authorized PR.',
+              }),
+          evidence: [],
+          progress: {
+            completed: ['Inspected test guidance.'],
+            remaining: ['Apply the agreed cleanup rule.'],
+          },
+        },
+      });
+    assert.equal(rendered.status, 'formatted');
+    assert.equal(rendered.retained, false);
+    assert.ok((rendered.assessment as { fullAssessment: string }).fullAssessment);
     const observed = result('native-plan-context');
     if (!observed)
       return {
@@ -257,7 +287,7 @@ function respond(
           purpose: 'status-update',
           target,
         }),
-        content: plan,
+        content: String(rendered.presentation),
       };
     assert.equal(observed.status, 'status-update-context');
     const composed = result('native-plan-compose');

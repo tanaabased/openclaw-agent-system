@@ -11,7 +11,6 @@ import {
   feedbackConversationMode,
   feedbackDecisionSchema,
   feedbackWorkInstructions,
-  feedbackWorkContext,
 } from './feedback-work.ts';
 import openClawDelivery, { type OpenClawDeliveryConnection } from './openclaw-delivery.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
@@ -410,7 +409,6 @@ export default async function openClawFeedback(input: {
       id: record.id,
       eventId: event.id,
       presentation: sourcePresentation,
-      assessment: record.result,
       previousImplementation: record.work?.result,
       project: { path: record.worktree },
       implementation: record.work?.selection,
@@ -527,9 +525,7 @@ export default async function openClawFeedback(input: {
       issueStage: retainedIssueProgression(record)?.stage ?? 'planning',
       decisionSchema: feedbackDecisionSchema,
       work: event.work,
-      assessment: record.result,
       previousImplementation: record.work?.result,
-      previousFeedbackWork: feedbackWorkContext(record, event.id),
       discussion: await provider.getItemContext(owner, name, event.number),
       workInstructions: feedbackWorkInstructions,
       workAuthorized: feedbackConversationMode(record, await livePolicy()) === 'work',
@@ -608,7 +604,6 @@ export default async function openClawFeedback(input: {
           source,
           privateResponse: event.result.privateText,
           verifiedOutcome: {
-            assessment: record.result,
             implementation: event.work?.result ?? record.work?.result,
             feedbackWork: event.work,
             delivery: record.work?.delivery?.pullRequest,

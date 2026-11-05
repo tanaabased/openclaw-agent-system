@@ -63,7 +63,7 @@ describe('core/register-hooks', () => {
     const later = (await hook(event, { ...binding, runId: 'later' })) as {
       appendContext: string;
     };
-    assert.match(later.appendContext, /RETAINED-PLAN/);
+    assert.doesNotMatch(later.appendContext, /RETAINED-PLAN/);
     assert.match(later.appendContext, /"runId":"later"/);
     for (const change of [
       { runId: undefined },

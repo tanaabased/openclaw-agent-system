@@ -67,7 +67,7 @@ describe('agent/openclaw-turn-context', () => {
     } as unknown as OpenClawDispatchRecord;
     const output = openclawTurnContext(working, { ...binding, runId: 'answer' })!;
     assert.match(output.appendSystemContext, /implementation-context/);
-    assert.match(output.appendContext, /clarification-needed/);
+    assert.doesNotMatch(output.appendContext, /clarification-needed/);
     assert.equal(working.work, undefined);
   });
   it('should retain delivered task facts without gating ordinary human conversation', () => {
@@ -81,7 +81,7 @@ describe('agent/openclaw-turn-context', () => {
       },
     } as OpenClawDispatchRecord;
     const output = openclawTurnContext(delivered, { ...binding, runId: 'human-question' })!;
-    assert.match(output.appendContext, /ORIGINAL-PLAN/);
+    assert.doesNotMatch(output.appendContext, /ORIGINAL-PLAN/);
     assert.equal(delivered.work?.result?.outcome, 'done');
   });
 
@@ -94,7 +94,7 @@ describe('agent/openclaw-turn-context', () => {
     ])
       assert.equal(openclawTurnContext(record, { ...binding, ...change }), undefined);
   });
-  it('should recover the complete prior result with a fresh input binding without granting implementation', () => {
+  it('should retain a fresh input binding without reinjecting the prior assessment', () => {
     const later = {
       ...structuredClone(record),
       result: { outcome: 'plan-ready', plan: 'FULL-RETAINED-PLAN' },
@@ -104,7 +104,7 @@ describe('agent/openclaw-turn-context', () => {
       runId: 'later',
       inputId: 'later-input',
     })!;
-    assert.match(output.appendContext, /FULL-RETAINED-PLAN/);
+    assert.doesNotMatch(output.appendContext, /FULL-RETAINED-PLAN/);
     assert.match(output.appendContext, /later-input/);
     assert.match(output.appendContext, /previousResultDigest/);
     assert.equal(later.progression, undefined);

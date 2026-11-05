@@ -7,7 +7,7 @@ import { directAssessmentRequestSchema } from '../tools/dispatch/assessment-sche
 import type { AgentManifest } from '../manifest/types.ts';
 import renderAssessmentResult from '../channels/github/presentation/assessment-result.ts';
 import assessmentSkillSource from './assessment-skill-source.ts';
-import assessmentSubmission from './assessment-submission.ts';
+import { assessmentPresentationRequest } from './assessment-render.ts';
 import assessmentCheckout from './assessment-checkout.ts';
 import { assessmentInstructions } from './assessment-instructions.ts';
 import {
@@ -102,7 +102,7 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     throw new Error('assessment-issue-url-required');
   const repository = `${locator.owner}/${locator.name}`;
   const managed = await deps.managed({ repository, number: locator.number });
-  if (managed?.nativeContext) return managed.nativeContext;
+  if (managed?.nativeContext && input.operation !== 'present') return managed.nativeContext;
   const managedEntry = managed
     ? await managed.entries(async (entries) =>
         entries.find(
@@ -113,10 +113,7 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
       )
     : undefined;
   const saved = managedEntry ?? retained;
-  if (
-    saved?.result &&
-    (input.operation === 'present' || (input.operation === 'context' && !input.revise))
-  ) {
+  if (saved?.result && input.operation === 'present') {
     if (
       saved.ownerDigest !== managed?.digest ||
       saved.target.toLowerCase() !== targetUrl.toLowerCase() ||
@@ -154,7 +151,7 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
       status: 'clarification-needed',
       questions: ['Which existing local checkout root belongs to this issue?'],
     };
-  if (managed?.result && !managedEntry && !input.id && !input.revise) {
+  if (managed?.result && !managedEntry && input.operation === 'present') {
     if ((await realpath(path)) !== managed.path)
       throw new Error('assessment-managed-checkout-mismatch');
     await deps.assertCurrent();
@@ -230,41 +227,21 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
       evidence: JSON.parse(record.evidence),
       assessment: record.selection,
       currentTurnId: deps.turnId,
-      previousResult: record.result ?? managed?.result,
-      previousResultDigest:
-        (record.result ?? managed?.result)
-          ? automationHash(record.result ?? managed!.result)
-          : undefined,
-      previousResultTurnId: record.resultTurnId,
-      previousPresentation: record.result
-        ? presentation(record.result, record.selection)
-        : undefined,
       mode: 'plan',
       handoff,
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
-      resultSubmission: assessmentSubmission({
-        entry: 'direct',
-        id: record.id,
-        target: canonical,
-        previousResultDigest:
-          (record.result ?? managed?.result)
-            ? automationHash(record.result ?? managed!.result)
-            : undefined,
-      }),
+      previousResultDigest:
+        (record.result ?? managed?.result)
+          ? automationHash(record.result ?? managed!.result)
+          : undefined,
+      recording: 'native-context' as const,
+      presentationRequest: assessmentPresentationRequest(canonical, true),
       instructions:
         assessmentInstructions +
-        '\n\nDirect execution: use these verified inputs and the selected assessment body, never its entry bootstrap again. Preserve the current chat/model. Submit using resultSubmission.request plus result matching resultSchema through dispatch assessment result (action assessment, operation result); use resultSubmission.refreshRequest for reconciliation and assessment present for readback. Do not use managed context/result or publication routes. The runtime returns assessment-only even with Work/Auto defaults. Missing or dirty checkout limitations belong in evidence. No assignment, setup, implementation, publication, or new chat is authorized.',
+        '\n\nDirect execution: use these verified inputs and the selected assessment body once. Preserve the current chat/model. Use presentationRequest plus result matching resultSchema through dispatch assessment render. This pure formatter saves no assessment or summary. Show its presentation; keep the full result in native tool context. Historical assessment present remains an explicit read. No assignment, setup, implementation, publication, or new chat is authorized.',
     });
     if (input.operation === 'context') {
-      if (entry?.result && !input.revise)
-        return {
-          ...response(entry),
-          status: 'presented',
-          retained: true,
-          presentation: presentation(entry.result, entry.selection),
-          instruction,
-        };
       if (!entry) {
         const selected =
           managed?.selection ??

@@ -7,7 +7,6 @@ import type { CodexWorkContext } from './codex-continuation-context.ts';
 import type { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 import dispatchContext from './dispatch-context.ts';
-import { feedbackWorkContext } from './feedback-work.ts';
 import type { ManagedIssue } from './managed-issue.ts';
 import workflowRecovery from './workflow-recovery.ts';
 
@@ -46,8 +45,6 @@ export default async function codexWorkContext(
       runtime: 'codex',
       id: record.id,
       path: record.worktree!,
-      assessment: record.result,
-      reassessments: record.directAssessments,
       implementation: selection,
       previousResult:
         work.result ?? (work.revisionSource ? work.resultHistory?.at(-1)?.result : undefined),
@@ -76,7 +73,7 @@ export default async function codexWorkContext(
     routing: record.routing && JSON.parse(record.routing),
     effective: record.effective,
     binding: work.binding,
-    feedbackWork: feedbackWorkContext(record),
+
     pendingPublicResponse: pendingPublicResponse(record),
     instructions: nativeTaskInstructions('codex'),
   };

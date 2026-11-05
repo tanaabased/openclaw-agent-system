@@ -15,7 +15,6 @@ import {
   feedbackConversationMode,
   feedbackDecisionSchema,
   feedbackWorkInstructions,
-  feedbackWorkContext,
 } from './feedback-work.ts';
 import { implementationResultSchema } from './implementation-result.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
@@ -566,7 +565,6 @@ export default async function runCodexFeedback(
                 id: record.id,
                 eventId: event.id,
                 presentation: sourcePresentation,
-                assessment: record.result,
                 previousImplementation: record.continuation?.result,
                 project: { path: record.worktree },
                 implementation: record.continuation?.selection,
@@ -594,10 +592,9 @@ export default async function runCodexFeedback(
                 issueStage: retainedIssueProgression(record)?.stage ?? 'planning',
                 decisionSchema: feedbackDecisionSchema,
                 work: event.work,
-                assessment: record.result,
+
                 effective: record.effective,
                 previousImplementation: record.continuation?.result,
-                previousFeedbackWork: feedbackWorkContext(record, event.id),
                 discussion: await provider.client.getItemContext(owner, name, event.number),
                 workInstructions: feedbackWorkInstructions,
                 presentation: sourcePresentation,
@@ -697,7 +694,6 @@ export default async function runCodexFeedback(
                     source,
                     privateResponse: event.result.privateText,
                     verifiedOutcome: {
-                      assessment: record.result,
                       implementation: event.work?.result ?? record.continuation?.result,
                       feedbackWork: event.work,
                       delivery: record.delivery?.pullRequest,

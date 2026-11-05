@@ -5,7 +5,7 @@ import { realpath } from 'node:fs/promises';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import assessmentCheckout from './assessment-checkout.ts';
 import type { AssessmentEntryDependencies } from './assessment-entry.ts';
-import AssessmentEntryStore, { DirectEntryStore } from './assessment-entry-store.ts';
+import { DirectEntryStore } from './assessment-entry-store.ts';
 import { automationHash } from './automation-hash.ts';
 import dispatchContext from './dispatch-context.ts';
 import implementationHandoff from './implementation-handoff.ts';
@@ -177,20 +177,9 @@ export default async function implementationEntry(
       }
       if (entry.plan && input.plan && entry.plan !== input.plan)
         throw new Error('implementation-consumed-plan-changed');
-      if (!entry.plan) {
-        const assessment = await new AssessmentEntryStore(deps.root, deps.binding).exclusive(
-          async (records) =>
-            records.find(
-              (record) =>
-                record.target === canonical &&
-                record.checkout.path === checkout.path &&
-                record.repositoryId === repo.nodeId &&
-                record.subjectId === issue.nodeId,
-            )?.result,
-        );
-        entry.plan =
-          input.plan ?? (assessment?.outcome === 'plan-ready' ? assessment.plan : undefined);
-      }
+      // A native implementation request supplies its current plan; never recover
+      // an original assessment from the legacy assessment store implicitly.
+      entry.plan ??= input.plan;
       if (!entry.plan?.trim()) {
         await save();
         return {

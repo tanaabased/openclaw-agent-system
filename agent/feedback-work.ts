@@ -3,7 +3,6 @@ import type { OperatorIssue } from './managed-issue.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { Type } from 'typebox';
 
-import type { FeedbackSourceEvent } from './feedback-state.ts';
 import { type default as issueProgression, retainedIssueProgression } from './issue-progression.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 
@@ -23,35 +22,6 @@ type Issue = Parameters<typeof issueProgression>[0] & {
   manualIssue?: Pick<OperatorIssue, 'selections'>;
 };
 
-/** retained conversation context is evidence, not fresh direction or implementation authority. */
-export function feedbackWorkContext(
-  record: { feedback?: { events: FeedbackSourceEvent[] } } & Pick<
-    SharedDispatchRecord,
-    'retainedHistory'
-  >,
-  currentEventId?: string,
-) {
-  return (record.feedback?.events ?? [])
-    .filter(
-      (event) =>
-        event.id !== currentEventId && (event.result || event.work?.decision || event.work?.result),
-    )
-    .map((event) => ({
-      eventId: event.id,
-      decision: event.work?.decision,
-      result: event.work?.result,
-      privateText: event.result?.privateText,
-      ...(record.retainedHistory
-        ? {
-            history: {
-              instruction:
-                'Older detail was offloaded. Use present with includeDetails for available cold history; expired detail is unavailable.',
-              expired: Boolean(record.retainedHistory.expired),
-            },
-          }
-        : {}),
-    }));
-}
 /** Conversation reports the task stage without granting permission to resume stopped work. */
 export function feedbackConversationMode(record: Issue, policy: GitHubNotificationPolicy) {
   return retainedIssueProgression(record) ? 'work' : issueWorkflowMode(policy, record);

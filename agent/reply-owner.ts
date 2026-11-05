@@ -87,7 +87,6 @@ export default function replyOwner(
       ownerId: owner.id,
       pullRequestNumber: owner.pullRequestNumber,
       verifiedOutcome: {
-        assessment: owner.result,
         implementation: owner.implementation,
         delivery: owner.deliveredPullRequest,
         feedback: owner.events?.flatMap((event) =>
@@ -171,7 +170,6 @@ function manualContext(owner: ReplyOwner) {
     workflow: 'issue-assignment' as const,
     ownerId: owner.id,
     verifiedOutcome: {
-      assessment: owner.result,
       implementation: owner.implementation,
       delivery: owner.deliveredPullRequest,
     },

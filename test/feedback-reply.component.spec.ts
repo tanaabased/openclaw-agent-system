@@ -990,7 +990,7 @@ describe('agent/feedback-reply', () => {
     });
     assert.ok('id' in composed && 'digest' in composed && 'factsProvenance' in composed);
     assert.equal(composed.factsProvenance, 'operator-supplied');
-    assert.ok('verifiedOutcome' in composed && !composed.verifiedOutcome.assessment);
+    assert.ok('verifiedOutcome' in composed && !('assessment' in composed.verifiedOutcome));
     await assert.rejects(
       call('candidate', { id: composed.id, digest: 'a'.repeat(64), publicText: 'Answer.' }),
       /reply-composition-stale/,
@@ -1342,10 +1342,9 @@ describe('agent/feedback-reply', () => {
     });
     assert.ok('selection' in result && result.selection);
     assert.equal(result.selection.requestedSkill, 'issue:reply');
-    assert.ok(
-      'verifiedOutcome' in result &&
-        result.verifiedOutcome?.assessment?.summary === 'Retained plan.',
-    );
+    assert.ok('verifiedOutcome' in result && result.verifiedOutcome);
+    assert.equal('assessment' in result.verifiedOutcome, false);
+    assert.doesNotMatch(JSON.stringify(result), /Retained plan\./);
     assert.equal(owners[0]!.events, undefined);
     assert.equal(writes, 0);
   });

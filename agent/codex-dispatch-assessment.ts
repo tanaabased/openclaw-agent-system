@@ -4,12 +4,16 @@ import { hasDeliveredImplementation, nativeIssueContext } from './implementation
 import assessmentMaterial from './assessment-material.ts';
 import type { ImplementationMaterialRead } from './implementation-material.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
-import { dispatchAdmission, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
+import {
+  dispatchAdmission,
+  managedTargetUrl,
+  type ManagedIssue as IntakeRecord,
+} from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
 import readRetainedHistory from './read-retained-history.ts';
 
 import assessmentHandoff from './assessment-handoff.ts';
-import assessmentSubmission from './assessment-submission.ts';
+import { assessmentPresentationRequest } from './assessment-render.ts';
 import {
   assessmentDecisionMode,
   assessmentResultContextSchema,
@@ -50,7 +54,6 @@ import { connectCodexThreads } from './codex-thread-client.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
 import recordDispatchResult from './dispatch-result.ts';
 import selectFeedbackStage from './feedback-stage.ts';
-import { feedbackWorkContext } from './feedback-work.ts';
 import issueProgression from './issue-progression.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { requireWorkflowSchedule } from './workflow-result.ts';
@@ -94,6 +97,8 @@ export async function presentDispatch(
     return {
       status: 'presented' as const,
       retained: true,
+      previousResult: record.result,
+      previousResultDigest: automationHash(record.result),
       id: record.id,
       ...(input.includeDetails === true && record.retainedHistory
         ? {
@@ -171,7 +176,6 @@ export async function handoffDispatch(
       deps.git,
       'handoff',
     );
-    const retainedAssessment = record.result ? { previousResult: record.result } : {};
     if (record.continuation?.phase === 'cancelled') throw new Error('implementation-cancelled');
     if (
       record.continuation?.phase === 'blocked' &&
@@ -193,7 +197,6 @@ export async function handoffDispatch(
         id: record.id,
         threadId: record.threadId,
         issueBranch: record.issueBranch?.name,
-        ...retainedAssessment,
       };
     const operatorInput = native.followUpUserTurn
       ? await withNative(current, deps, (host) => host.operatorInput(record.threadId!))
@@ -229,7 +232,6 @@ export async function handoffDispatch(
         id: record.id,
         digest,
         threadId: record.threadId,
-        ...retainedAssessment,
         instruction:
           'Apply this handoff when the live workflow or explicit user request permits implementation. It records the transition and preserves the assessment and checkout. Implementation includes ordinary PR delivery; honor explicit restrictions and native denials.',
       };
@@ -255,7 +257,7 @@ export async function handoffDispatch(
     observeCodexActivity(record, native, (deps.now ?? Date.now)());
     const response = notice(record, intake);
     await save();
-    return { ...response, issueBranch: record.issueBranch?.name, ...retainedAssessment };
+    return { ...response, issueBranch: record.issueBranch?.name };
   }, true);
 }
 export async function assessDispatch(
@@ -399,7 +401,6 @@ export async function assessDispatch(
                 id: record.predecessorId,
                 threadId: previous?.threadId,
                 worktree: previous?.worktree,
-                assessment: previous?.result,
                 instruction:
                   'Preserved predecessor evidence is context, not current implementation or publication authority.',
               };
@@ -407,46 +408,14 @@ export async function assessDispatch(
           }
         : {}),
       assessment,
-      feedbackWork: feedbackWorkContext(record),
       ...(native.turnId ? { currentTurnId: native.turnId } : {}),
-      ...(record.result
-        ? {
-            previousResult: record.result,
-            handoff: assessmentHandoff(
-              record,
-              issueWorkflowMode(current.manifest.github?.notifications, record),
-              'codex',
-            ),
-            previousResultDigest: automationHash(record.result),
-            previousResultTurnId: record.resultTurnId,
-            previousPresentation: assessmentPresentation(
-              record.result,
-              record,
-              intake,
-              current.workspace,
-              {
-                debug: current.manifest.debug,
-                routingManifestPath:
-                  current.manifestSources?.['/models/routing/guidance']?.path ??
-                  current.manifestPath,
-                manifestPath:
-                  current.manifestSources?.['/github/issue-assignment/assessment/guidance']?.path ??
-                  current.manifestPath,
-              },
-            ),
-          }
-        : {}),
-      recording: 'optional-history' as const,
+      previousResultDigest: record.result ? automationHash(record.result) : undefined,
+      recording: 'native-context' as const,
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
-      resultSubmission: assessmentSubmission({
-        entry: 'managed',
-        id: record.id,
-        previousResultDigest: record.result ? automationHash(record.result) : undefined,
-      }),
+      presentationRequest: assessmentPresentationRequest(managedTargetUrl(intake)),
       mode: issueWorkflowMode(current.manifest.github?.notifications, record),
       instructions:
-        'Read feedbackWork for retained plan revisions and responses before interpreting the current input. Historical responses supply context, not fresh authorization. ' +
         codexAssessmentInstructions +
         (record.issueMode === 'auto' ? '\n\n' + autoAssessmentInstructions : ''),
     };
