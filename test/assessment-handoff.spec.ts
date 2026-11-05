@@ -46,14 +46,19 @@ describe('agent/assessment-handoff', () => {
         'planning',
       );
     });
-    it(`should use the recorded auto decision for ${runtime}`, () => {
+    it(`should use explicit implementation permission instead of a saved assessment for ${runtime}`, () => {
       for (const mode of ['plan', 'work'] as const) {
         const record = {
           ...ready,
           result: { ...ready.result!, decision: { mode, reasons: ['Assessed.'] } },
         };
+        assert.equal(assessmentHandoff(record, 'auto', runtime).next, 'planning');
         assert.equal(
-          assessmentHandoff(record, 'auto', runtime).next,
+          assessmentHandoff(
+            { ...record, implementationDecision: { mode, reasons: ['Current native decision.'] } },
+            'auto',
+            runtime,
+          ).next,
           mode === 'work' ? 'implementation' : 'planning',
         );
       }
