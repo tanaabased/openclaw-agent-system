@@ -60,7 +60,11 @@ Do not require another human message to repeat authorization already carried by 
 
 After completed implementation and verified linked PR delivery, continue this same
 native path. Reuse the issue, checkout and PR; use the original delivery operation
-for requested managed publication and card presentation, and Task Update for material news.
+for requested managed publication and card presentation. Within the authorized publication
+scope, invoke [Task Update](../task-update/SKILL.md) after a material plan revision,
+a clarification decision that changes the approach, or a later delivery to the same PR.
+Coalesce related changes; a push alone does not require a post. Present its exact
+rendered reply here, and keep publication failure separate from work progress.
 
 ### Explicit Agent System Entry
 

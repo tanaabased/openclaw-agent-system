@@ -3,7 +3,7 @@ import {
   managedTargetUrl,
   type ManagedIssue as IntakeRecord,
 } from './managed-issue.ts';
-import publicResponse from './public-response.ts';
+import taskUpdate, { type TaskUpdateDraft } from './task-update.ts';
 import publicResponsePresentation from '../channels/github/presentation/public-response.ts';
 import workflowFailure from './workflow-failure.ts';
 import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
@@ -32,6 +32,7 @@ function summaryDigest(summary: AssessmentSummary) {
     publicationCommand: undefined,
     nativeDenial: undefined,
     previewDigest: undefined,
+    publication: undefined,
   });
 }
 
@@ -70,33 +71,61 @@ export default async function assessmentSummary(input: {
         : { draft: true },
     });
   let summary: AssessmentSummary | undefined;
+  const draft: TaskUpdateDraft = {
+    get publicText() {
+      return summary!.publicText;
+    },
+    set publicText(value) {
+      summary!.publicText = value;
+    },
+    get publication() {
+      return summary!.publication;
+    },
+    set publication(value) {
+      summary!.publication = value;
+    },
+    get attempted() {
+      return Boolean(summary!.attempt);
+    },
+    set attempted(value) {
+      if (value) summary!.attempt ??= randomUUID();
+      else delete summary!.attempt;
+    },
+    get receipt() {
+      return summary!.receipt;
+    },
+    set receipt(value) {
+      summary!.receipt = value;
+    },
+  };
   try {
     if (
       action.material &&
       (action.operation !== 'compose' || action.digest || action.publicText || action.diagnostic)
     )
       throw new Error('assessment-summary-material-request-invalid');
-    const binding = record.stageReceipt?.binding;
-    if (
-      !record.result?.fullAssessment ||
-      !binding ||
-      !record.resultTurnId ||
-      !record.assessmentRevision ||
-      record.stageReceipt?.resultDigest !== automationHash(record.result) ||
-      binding.workflow !== 'issue-assignment' ||
-      binding.admissionId !== intake.id ||
-      binding.repositoryId !== intake.repository.nodeId ||
-      binding.subjectId !== intake.issue.nodeId ||
-      record.reset ||
-      record.retired
-    )
-      throw new Error('assessment-summary-source-unavailable');
     const summaries = record.assessmentSummaries ?? [];
     // Uncertain older writes must be reconciled before a revised summary can be composed.
     summary =
       summaries.find((entry) => entry.code && /denied|cancelled/.test(entry.code)) ??
       summaries.find((entry) => entry.attempt && !entry.receipt) ??
       summaries.find((entry) => entry.revision === record.assessmentRevision);
+    const recovering = Boolean(summary?.attempt || summary?.receipt);
+    const binding = record.stageReceipt?.binding;
+    if (record.reset || record.retired) throw new Error('assessment-summary-source-unavailable');
+    if (
+      !recovering &&
+      (!record.result?.fullAssessment ||
+        !binding ||
+        !record.resultTurnId ||
+        !record.assessmentRevision ||
+        record.stageReceipt?.resultDigest !== automationHash(record.result) ||
+        binding.workflow !== 'issue-assignment' ||
+        binding.admissionId !== intake.id ||
+        binding.repositoryId !== intake.repository.nodeId ||
+        binding.subjectId !== intake.issue.nodeId)
+    )
+      throw new Error('assessment-summary-source-unavailable');
     if (
       summary &&
       (summary.binding.workflow !== 'issue-assignment' ||
@@ -105,7 +134,8 @@ export default async function assessmentSummary(input: {
         summary.binding.subjectId !== intake.issue.nodeId ||
         summary.binding.threadId !== record.threadId ||
         summary.binding.worktree !== record.worktree ||
-        (summary.revision === record.assessmentRevision &&
+        (!recovering &&
+          summary.revision === record.assessmentRevision &&
           summary.resultDigest !== automationHash(record.result)))
     )
       throw new Error('assessment-summary-binding-mismatch');
@@ -198,6 +228,7 @@ export default async function assessmentSummary(input: {
           throw new Error('assessment-summary-composition-changed');
         summary.selection = selection;
         delete summary.publicText;
+        delete summary.publication;
         delete summary.code;
         await input.save();
       }
@@ -210,9 +241,9 @@ export default async function assessmentSummary(input: {
             entry.attempt || entry.receipt || (entry.code && /denied|cancelled/.test(entry.code)),
         );
         summary = {
-          revision: record.assessmentRevision,
+          revision: record.assessmentRevision!,
           resultDigest: automationHash(record.result),
-          binding,
+          binding: binding!,
           turnId: input.turnId,
           authorityDigest: input.authorityDigest,
           selection,
@@ -231,15 +262,22 @@ export default async function assessmentSummary(input: {
         );
         if (
           [
-            record.result.fullAssessment.trim(),
-            'plan' in record.result ? record.result.plan.trim() : undefined,
+            record.result!.fullAssessment!.trim(),
+            'plan' in record.result! ? record.result!.plan.trim() : undefined,
           ].includes(text)
         )
           throw new Error('assessment-summary-private-plan-rejected');
         if (summary.publicText && summary.publicText !== text)
           throw new Error('assessment-summary-candidate-conflict');
-        summary.publicText = text;
-        await input.save();
+        await taskUpdate({
+          request: { operation: 'candidate', text, digest: action.digest, expectedDigest: digest },
+          draft,
+          publication: (text) => ({
+            ...assessmentSummaryPublication(record, intake, summary!),
+            text,
+          }),
+          save: input.save,
+        });
         return {
           status: 'candidate-recorded',
           instruction:
@@ -267,19 +305,14 @@ export default async function assessmentSummary(input: {
       if (action.digest !== digest) throw new Error('assessment-summary-publication-stale');
     }
     if (!summary?.publicText) throw new Error('assessment-summary-candidate-required');
-    const publication = assessmentSummaryPublication(record, intake, summary);
-    const result = await publicResponse({
-      publication,
-      attempted: Boolean(summary.attempt),
-      receipt: summary.receipt,
-      reconcileOnly: action.operation === 'reconcile',
-      setAttempted: (attempted) => {
-        if (attempted) summary!.attempt = randomUUID();
-        else delete summary!.attempt;
+    const result = await taskUpdate({
+      request: {
+        operation: action.operation === 'reconcile' ? 'reconcile' : 'publish',
+        digest: action.digest,
+        expectedDigest: summaryDigest(summary),
       },
-      setReceipt: (receipt) => {
-        summary!.receipt = receipt;
-      },
+      draft,
+      publication: (text) => ({ ...assessmentSummaryPublication(record, intake, summary!), text }),
       save: async () => {
         const retained = { revision: summary!.revision, resultDigest: summary!.resultDigest };
         await input.save();

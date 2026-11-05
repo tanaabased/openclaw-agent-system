@@ -27,6 +27,7 @@ const draftSchema = Type.Object(
     authorNodeId: text,
     ownerContext: Type.String({ maxLength: 256000 }),
     publicText: Type.Optional(Type.String({ maxLength: 32000 })),
+    publication: Type.Optional(Type.String({ minLength: 1, maxLength: 65536 })),
     attempted: Type.Optional(Type.Boolean()),
     receipt: Type.Optional(
       Type.Object(

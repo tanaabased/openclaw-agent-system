@@ -4871,6 +4871,12 @@ describe('agent/openclaw issue dispatch', () => {
     await assess(input.id);
     await context(input.id);
     await submit(input.id);
+    const preparedSummary = await service.run(manifest, root, assessor(input.id), {
+      action: 'summary',
+      id: input.id,
+      operation: 'compose',
+    });
+    assert.equal(preparedSummary.status, 'composition-ready');
     assessmentReply(input.id);
     await assess(input.id);
     loseSend = true;
@@ -4965,19 +4971,16 @@ describe('agent/openclaw issue dispatch', () => {
           { action: 'next' },
         )
       ).status,
-      'assessment-pending',
+      'idle',
     );
     const completed = await record();
-    assert.match(
-      completed.summaryRecovery!.turn.message,
-      /recover only the pending public assessment summary/,
-    );
+    assert.equal(completed.summaryRecovery, undefined);
     assert.deepEqual(completed.result, saved.result);
     assert.deepEqual(completed.stageReceipt, saved.stageReceipt);
     assert.equal(completed.threadId, saved.threadId);
     assert.equal(completed.worktree, saved.worktree);
     assert.equal(creates().length, 1);
-    assert.equal(sends().length, 2);
+    assert.equal(sends().length, 1);
     assert.equal(preparedWorktrees, 1);
   });
 

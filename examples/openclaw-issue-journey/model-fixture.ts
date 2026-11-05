@@ -182,6 +182,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (candidate.status === 'waiting' && typeof candidate.code === 'string')
       return { content: `Assessment summary candidate was not recorded: ${candidate.code}.` };
     if (candidate.status !== 'candidate-recorded') return;
+    if (prompt.includes('leave summary pending')) return { content: saved.presentation };
     const preview = result('summary-preview');
     if (!preview) return dispatch('summary-preview', { ...args, operation: 'publish' });
     if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
@@ -510,7 +511,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         }),
       );
     if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    if (prompt.includes('leave summary pending')) return { content: saved.presentation };
     return summary(refreshId, saved, fresh.previousResult as Record<string, unknown>);
   }
   const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);

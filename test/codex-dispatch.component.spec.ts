@@ -1165,7 +1165,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(composed.privateResponse, complete.fullAssessment);
   });
 
-  it('should read an older incomplete codex assessment and expose its blocked summary', async () => {
+  it('should read an older incomplete codex assessment without inventing a pending publication', async () => {
     const prepared = await prepare();
     created();
     const child = { threadId: 'issue-thread' };
@@ -1183,10 +1183,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal((recovered.previousResult as { plan: string }).plan, result.plan);
     assert.ok(String(recovered.previousPresentation).includes(result.plan));
     const pending = pendingPublicResponse((await store.read()).records[0]!);
-    assert.equal(pending?.state, 'blocked');
-    assert.ok(
-      pending && 'code' in pending && pending.code === 'assessment-summary-source-unavailable',
-    );
+    assert.equal(pending, undefined);
   });
 
   for (const loseResponse of [false, true]) {
@@ -4654,6 +4651,16 @@ describe('agent/codex-dispatch', () => {
         },
       };
     };
+    const draft = await request(
+      'summary',
+      { id: work.id, operation: 'compose' },
+      {
+        threadId: native!.id,
+        activation: work.continuation.activation,
+        summaryAuthority: async () => {},
+      },
+    );
+    assert.equal(draft.status, 'composition-ready', JSON.stringify(draft));
     const first = await work.run('next');
     assert.equal(first.status, 'prepared', JSON.stringify(first));
     assert.ok('request' in first && first.request);

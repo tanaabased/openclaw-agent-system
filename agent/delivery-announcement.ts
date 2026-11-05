@@ -17,9 +17,7 @@ import GitHubWorkEventApiClient, {
   GitHubWorkEventClientError,
 } from '../channels/github/provider/work-event-api-client.ts';
 import redactFeedback from './feedback-redaction.ts';
-import GitHubNotificationCommentPublisher, {
-  type GitHubNotificationCommentPublicationInput,
-} from '../channels/github/publication/comment-publisher.ts';
+import type { GitHubNotificationCommentPublicationInput } from '../channels/github/publication/comment-publisher.ts';
 import { githubNotificationPublicationText } from '../channels/github/publication/publication-contract.ts';
 import IssueDeliveryProvider, {
   type IssueDeliveryInput,
@@ -27,7 +25,7 @@ import IssueDeliveryProvider, {
 import type { GitHubNotificationPublicationClient } from '../channels/github/provider/work-event-client.ts';
 import { githubCommentCard } from '../channels/github/presentation/comment.ts';
 import publicResponsePresentation from '../channels/github/presentation/public-response.ts';
-import publicResponse from './public-response.ts';
+import taskUpdate from './task-update.ts';
 
 type CommentClient = Pick<
   GitHubNotificationPublicationClient,
@@ -57,16 +55,21 @@ export async function reconcileAnnouncement(input: {
 }) {
   if (input.state.authorId !== input.authorId)
     throw new Error('delivery-announcement-author-changed');
-  const publisher = new GitHubNotificationCommentPublisher({
-    redactText: redactFeedback,
-    authorize: () => ({ authorized: true }),
-    connect: () => ({ client: input.client }),
-    exclusive: async (_key, run) => run(),
+  const draft = { ...input.state };
+  const result = await taskUpdate({
+    request: { operation: 'reconcile', expectedDigest: '' },
+    draft,
+    publication: (text) => ({ ...announcementPublication(input.state, input.item), text }),
+    save: async () => {},
+    dependencies: {
+      redactText: redactFeedback,
+      authorize: () => ({ authorized: true }),
+      connect: () => ({ client: input.client }),
+      exclusive: async (_key, run) => run(),
+    },
   });
-  const found = await publisher.reconcile(announcementPublication(input.state, input.item));
-  if (!found || (input.state.receipt && found.receipt.nodeId !== input.state.receipt.nodeId))
-    throw new Error('delivery-announcement-unconfirmed');
-  return { nodeId: found.receipt.nodeId, databaseId: found.receipt.databaseId };
+  if (result.status !== 'published') throw new Error('delivery-announcement-unconfirmed');
+  return result.receipt;
 }
 
 export function announcementPresentation(
@@ -350,13 +353,21 @@ export default async function deliveryAnnouncement(input: {
       };
     }
     const state = delivery.announcement;
-    if (!state || automationHash({ ...state, publicText: undefined, code: undefined }) !== digest)
+    if (
+      !state ||
+      automationHash({
+        ...state,
+        publicText: undefined,
+        code: undefined,
+        publication: undefined,
+      }) !== digest
+    )
       throw new Error('delivery-announcement-stale');
     if (input.operation === 'candidate') {
       if (input.digest !== digest) throw new Error('delivery-announcement-stale');
       if (!input.publicText?.trim() || input.publicText.length > 500)
         throw new Error('delivery-announcement-description-required');
-      state.publicText = githubNotificationPublicationText(
+      const text = githubNotificationPublicationText(
         'pull-request-handoff',
         [
           {
@@ -365,6 +376,15 @@ export default async function deliveryAnnouncement(input: {
         ],
         redactFeedback,
       );
+      await taskUpdate({
+        request: { operation: 'candidate', text, digest: input.digest, expectedDigest: digest },
+        draft: state,
+        publication: (text) => ({
+          ...announcementPublication({ ...state, publicText: text }, item),
+          text,
+        }),
+        save: input.save,
+      });
       delete state.code;
       delete delivery.announcementRecovery;
       await input.save();
@@ -393,16 +413,10 @@ export default async function deliveryAnnouncement(input: {
           'Publish this exact announcement using delivery announce with this digest through native approval. Existing managed-delivery authority covers only this issue/PR announcement; stop on denial. Afterwards present the full private PR card and announcement outcome.',
       };
     if (input.digest !== previewDigest) throw new Error('delivery-announcement-stale');
-    const result = await publicResponse({
-      publication: prepared,
-      attempted: state.attempted,
-      receipt: state.receipt,
-      setAttempted: (attempted) => {
-        state.attempted = attempted;
-      },
-      setReceipt: (receipt) => {
-        state.receipt = receipt;
-      },
+    const result = await taskUpdate({
+      request: { operation: 'publish', digest: input.digest, expectedDigest: previewDigest },
+      draft: state,
+      publication: (text) => ({ ...prepared, text }),
       save: input.save,
       beforeCreate: async () => {
         await input.authorize();

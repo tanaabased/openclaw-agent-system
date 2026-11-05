@@ -1,7 +1,7 @@
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import publicResponseState from './public-response-state.ts';
 
-/** the saved source revision is the durable obligation, including before composition starts. */
+/** only an explicitly prepared publication is pending; a conversation result is not a write. */
 export default function pendingPublicResponse(record: SharedDispatchRecord) {
   if (record.supersededBy || record.retired || record.retirement || record.reset || !record.result)
     return;
@@ -11,13 +11,18 @@ export default function pendingPublicResponse(record: SharedDispatchRecord) {
     ) ??
     record.assessmentSummaries?.find((entry) => entry.attempt && !entry.receipt) ??
     record.assessmentSummaries?.find((entry) => entry.revision === record.assessmentRevision);
+  if (!summary) return;
   const state = publicResponseState({
     attempted: Boolean(summary?.attempt),
     receipt: summary?.receipt,
     code: summary?.code,
   });
   if (state === 'delivered') return;
-  if ((!record.result.fullAssessment || !record.assessmentRevision) && !summary?.code)
+  if (
+    !summary.attempt &&
+    (!record.result.fullAssessment || !record.assessmentRevision) &&
+    !summary.code
+  )
     return {
       kind: 'assessment-summary' as const,
       revision: record.assessmentRevision,
