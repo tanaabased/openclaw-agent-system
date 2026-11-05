@@ -3,6 +3,8 @@ import { Type, type Static } from 'typebox';
 
 import { assessmentConfigurationSchema } from '../../manifest/assessment-schema.ts';
 import {
+  automationModelProperties,
+  type AutomationModelSettings,
   automationThreadValueSchema,
   normalizeAutomationThread,
 } from '../../manifest/automation-schema.ts';
@@ -11,6 +13,7 @@ import pickupTiming from './project-pickup-timing.ts';
 
 export const projectPickupSchema = Type.Object(
   {
+    ...automationModelProperties,
     paused: Type.Optional(Type.Boolean()),
     thread: Type.Optional(automationThreadValueSchema),
     start: Type.Optional(Type.String()),
@@ -49,7 +52,7 @@ export const projectPickupSchema = Type.Object(
 );
 
 type Declaration = Static<typeof projectPickupSchema>;
-export interface ProjectPickupPolicy {
+export interface ProjectPickupPolicy extends AutomationModelSettings {
   paused: boolean;
   thread?: { id?: string; name?: string };
   /** undefined is rejected by semantic validation, without throwing from manifest decoding. */
@@ -78,6 +81,8 @@ export default function decodeProjectPickup(value: Declaration): ProjectPickupPo
         : 'project-pickup-schedule-unsupported';
   }
   return {
+    ...(value.model === undefined ? {} : { model: value.model }),
+    ...(value.effort === undefined ? {} : { effort: value.effort }),
     paused: value.paused ?? false,
     ...(value.thread === undefined ? {} : { thread: normalizeAutomationThread(value.thread) }),
     schedule: timing?.schedule,

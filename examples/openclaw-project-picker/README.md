@@ -66,6 +66,7 @@ for runtime in codex openclaw; do
   openclaw agent-system automations list --json > "$TMPDIR/pickup-$runtime-jobs.json"
   native=$(jq -er '.jobs[] | select(.id == "github-project-pickup" and .nativeEnabled == true) | .nativeId' "$TMPDIR/pickup-$runtime-jobs.json")
   chat=$(jq -er '.jobs[] | select(.id == "github-project-pickup") | .routing | select(startswith("session:"))' "$TMPDIR/pickup-$runtime-jobs.json")
+  openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.payload.thinking == "high" and (.payload.model | length > 0)'
   if test "$runtime" = openclaw; then
     openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .stepId == "github-project-pickup" and .status == "unchanged")'
     openclaw agent-system doctor --json | jq -e 'any(.findings[]; .code == "project-pickup-ready")'

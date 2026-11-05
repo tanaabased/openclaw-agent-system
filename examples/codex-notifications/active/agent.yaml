@@ -17,6 +17,8 @@ github:
     - login: example-owner
       node-id: O_example
   issue-assignment:
+    model: medium
+    effort: low
     allowed:
       - login: example-operator
         node-id: U_operator

@@ -1,6 +1,7 @@
 import { Type, type Static } from 'typebox';
 
 import decodeProjectPickup, { projectPickupSchema } from './project-pickup-schema.ts';
+import { automationModelProperties } from '../../manifest/automation-schema.ts';
 import { repositoryRouteSchema } from './repository-scope.ts';
 
 import {
@@ -52,6 +53,7 @@ export const githubV3Properties = {
     Type.Object(
       {
         ...trigger,
+        ...automationModelProperties,
         mode: Type.Optional(
           Type.Union([Type.Literal('plan'), Type.Literal('work'), Type.Literal('auto')]),
         ),
@@ -126,6 +128,8 @@ export default function decodeGitHubV3(value: ExternalGitHubV3): GitHubNotificat
       ? {}
       : {
           issueAssignment: {
+            ...(issue.model === undefined ? {} : { model: issue.model }),
+            ...(issue.effort === undefined ? {} : { effort: issue.effort }),
             paused: issue.paused ?? false,
             allowed: (issue.allowed ?? []).map(identity),
             mode: issue.mode ?? 'auto',

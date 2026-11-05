@@ -181,6 +181,8 @@ Pickup uses the existing GitHub access and approved assignment and feedback auth
 
 | Field                | Required | Meaning                                                                                                                                                                                                                                                                                |
 | -------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `effort`             | no       | Optional [automation effort](../../MANIFEST.md#automations). Inherits the selected profile’s effort; a direct model reference inherits `models.default.effort`.                                                                                                                        |
+| `model`              | no       | String: `default`, `low`, `medium`, `high`, or a `provider/model` reference. Defaults to `default` in both runtimes. Uses [automation model rules](../../MANIFEST.md#automations).                                                                                                     |
 | `paused`             | no       | Defaults to `false`; pauses new pickup immediately. Run Install to synchronize the saved native job.                                                                                                                                                                                   |
 | `start`              | no       | Daily local start time; defaults to `"03:00"`. Accepts `"3 am"`, `"3 A.M."`, `"3:00am"` and 24-hour clocks.                                                                                                                                                                            |
 | `window`             | no       | Duration, default `"2 hours"`; accepts seconds, minutes, hours, days, short units (`"2h"`) and compounds (`"1 hour 30 minutes"`). Maximum 24 hours. `duration` is an alias.                                                                                                            |
@@ -202,7 +204,10 @@ assignments each repository has used out of its allowance.
 Verified pickup enters the existing
 assessment and Work workflow; ordinary assignments keep their configured mode.
 Missed windows are not replayed. Accepted issue work may finish after a window or pause.
-Both runtimes use the `models.default` profile for project pickup.
+Both runtimes use `models.default` for project pickup unless `model` overrides it.
+Explicit `effort` wins over inherited effort. These settings select the pickup
+coordinator, not the models that assess or implement individual issues. Existing
+[standalone Codex limitations](../../MANIFEST.md#automations) still apply.
 
 Repository, milestone, limit, guidance and route changes apply on the next run
 without Install. Edits preserve assignments already counted in the window and
@@ -243,6 +248,20 @@ requires a currently approved author.
 Customize how the agent investigates an issue and produces its assessment or plan.
 All three modes use assessment. Guidance can set planning priorities; changing the
 skill does not change which mode may proceed to implementation.
+
+### `effort` and `model`
+
+| Field    | Type or supported values                                         | Required | Default                                                                          |
+| -------- | ---------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------- |
+| `effort` | [Automation effort](../../MANIFEST.md#automations)               | no       | Selected profile’s effort; `models.default.effort` for a direct model reference. |
+| `model`  | String: `default`, `low`, `medium`, `high`, or `provider/model`. | no       | `low` in standalone Codex; `default` in OpenClaw.                                |
+
+Choose the assignment coordinator’s model independently of issue assessment and
+implementation routing. Explicit settings win; omitted fields keep the defaults
+above. An effort-only setting keeps the runtime’s default model profile.
+Run Install to apply changes to the existing native job and chat. Profile changes
+also need Install. Selection follows the shared [automation model rules](../../MANIFEST.md#automations),
+including standalone Codex provider and effort limits.
 
 ### `feedback`
 
