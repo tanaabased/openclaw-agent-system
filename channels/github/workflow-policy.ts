@@ -1,3 +1,4 @@
+import type { AutomationModelSettings } from '../../manifest/automation-schema.ts';
 import type { AssessmentConfiguration } from '../../manifest/assessment-schema.ts';
 import type { ProjectPickupPolicy } from './project-pickup-schema.ts';
 import type { RepositoryRoute } from './repository-scope.ts';
@@ -31,7 +32,7 @@ export interface GitHubNotificationPolicy {
   maxConcurrentItems: number;
   allowedRepositoryOwners: GitHubIdentityPin[];
   routing?: RepositoryRoute[];
-  issueAssignment?: {
+  issueAssignment?: AutomationModelSettings & {
     paused?: boolean;
     allowed: GitHubApprovedActor[];
     mode: 'plan' | 'work' | 'auto';

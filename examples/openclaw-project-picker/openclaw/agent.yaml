@@ -1,4 +1,5 @@
 schema-version: 1
+debug: true
 
 agent:
   id: pickup-openclaw-tanaabot
@@ -43,6 +44,8 @@ github:
       - login: emoriwan
         node-id: __ACTOR_NODE_ID__
   project-pickup:
+    model: default
+    effort: high
     start: '00:00'
     window: 24 hours
     scans: 1

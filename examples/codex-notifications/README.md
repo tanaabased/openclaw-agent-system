@@ -8,6 +8,7 @@ conversation remains usable independently of the schedule.
 
 - Active and paused declaration handling without silently activating intake or writing scheduler files.
 - Installed runtime/caller/receipt boundaries before managed workflow effects, including rejection of unowned retained assessments.
+- Built-in assignment model/effort selection with real app-server chat readback, without activating its schedule or generating a model response.
 - A native schedule request using the installed runtime and bound plugin data, without global scanner rules; its saved launch block survives replacement of the host PATH Node executable.
 
 ## What Does Not Belong Here
@@ -165,6 +166,7 @@ if output=$(node "$runtime" intake scan --plugin-data "$plugin_data" 2>&1); then
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "intake-activation-required"'
 printf '%s\n' '{"nativeInventory":{"schemaVersion":4,"sections":[],"unavailableHosts":[],"unavailableSources":[]}}' | node "$runtime" automations plan --plugin-data "$plugin_data" \
   | jq -e 'any(.findings[]; .code == "automation-thread-sync-required") and (.conversations | length) == 1'
+node "$GITHUB_WORKSPACE/scripts/codex-sidebar-fixture.mjs" "$runtime" "$plugin_data" "$root/notification-sidebar-input.json" | jq -e '.status == "verified" and .threads["github-issue-assignment"].settings.requested == {model: "gpt-6.1-sol", effort: "low"} and .threads["github-issue-assignment"].settings.observed == .threads["github-issue-assignment"].settings.requested'
 node "$runtime" setup inspect --plugin-data "$plugin_data" \
   | jq -e 'any(.findings[]; .code == "github-notification-runtime-unsupported" and .status == "warning") and all(.findings[]; .code != "github-notification-runtime-unsupported" or .status != "blocked")'
 test ! -e "$GITHUB_WORKSPACE/examples/codex-notifications/active/.setup-applied"

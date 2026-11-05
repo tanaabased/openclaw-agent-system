@@ -1,4 +1,6 @@
 import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
+import ProjectPickupFailure from './project-pickup-failure.ts';
+import { projectPickupAutomationId } from './project-pickup-jobs.ts';
 import runCodexNotificationReset from './codex-notification-reset.ts';
 import runCodexFeedback from './codex-feedback.ts';
 import codexRuntimeRequest from './codex-runtime-request.ts';
@@ -519,18 +521,21 @@ runCodexRuntime().catch((error: unknown) => {
               )
             ? { code: message }
             : { code: evidence.code };
-  const notice = ['intake', 'dispatch', 'continuation', 'delivery', 'model-routing'].includes(
-    process.argv[2] ?? '',
-  )
-    ? codexIssueNotice({
-        event: 'failure',
-        changed: true,
-        code: 'code' in details ? details.code : undefined,
-        providerDiagnostic: evidence.providerDiagnostic,
-      })
-    : undefined;
+  const pickup = error instanceof ProjectPickupFailure ? error : undefined;
+  const notice =
+    !pickup &&
+    ['intake', 'dispatch', 'continuation', 'delivery', 'model-routing'].includes(
+      process.argv[2] ?? '',
+    )
+      ? codexIssueNotice({
+          event: 'failure',
+          changed: true,
+          code: 'code' in details ? details.code : undefined,
+          providerDiagnostic: evidence.providerDiagnostic,
+        })
+      : undefined;
   process.stderr.write(
-    `${JSON.stringify({ status: 'error', ...failureScope, ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
+    `${JSON.stringify({ status: 'error', ...failureScope, ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(pickup ? { response: codexHeartbeatEnvelope(pickup.automationId ?? projectPickupAutomationId, pickup.failure.response, true) } : {}), ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
   );
   process.exitCode = 1;
 });

@@ -66,6 +66,7 @@ for runtime in codex openclaw; do
   openclaw agent-system automations list --json > "$TMPDIR/pickup-$runtime-jobs.json"
   native=$(jq -er '.jobs[] | select(.id == "github-project-pickup" and .nativeEnabled == true) | .nativeId' "$TMPDIR/pickup-$runtime-jobs.json")
   chat=$(jq -er '.jobs[] | select(.id == "github-project-pickup") | .routing | select(startswith("session:"))' "$TMPDIR/pickup-$runtime-jobs.json")
+  openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.payload.thinking == "high" and (.payload.model | length > 0)'
   if test "$runtime" = openclaw; then
     openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .stepId == "github-project-pickup" and .status == "unchanged")'
     openclaw agent-system doctor --json | jq -e 'any(.findings[]; .code == "project-pickup-ready")'
@@ -95,6 +96,7 @@ for runtime in codex openclaw; do
   openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .stepId == "github-project-pickup" and .status == "updated")'
   openclaw agent-system automations list --json | jq -e --arg id "$native" --arg chat "$chat" 'any(.jobs[]; .id == "github-project-pickup" and .nativeId == $id and .routing == $chat and .nativeEnabled == true)'
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" --scheduled-after github-project-pickup "$native" "$due" > "$TMPDIR/pickup-$runtime-scheduled.json"
+  jq -e '(.summary | contains("Guidance source")) and (.summary | contains("inline")) and (.summary | contains("bounded cleanup clarification"))' "$TMPDIR/pickup-$runtime-scheduled.json"
   grep -F 'code=automation-lifecycle-' "$(openclaw-gateway log-path)" | tail -n 80 | node "$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
   number=$(jq -er .number "$TMPDIR/pickup-$runtime-selected.json")
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api "repos/tanaabased/big-test-bucket/issues/$number" | jq -e '.assignees | length == 1 and .[0].login == "tanaabot"'

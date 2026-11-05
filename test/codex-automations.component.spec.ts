@@ -472,10 +472,14 @@ describe('agent/codex-automations', () => {
         runtimes: ['codex'],
         'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
         'issue-assignment': {
+          model: 'medium',
+          effort: 'low',
           mode: 'plan',
           allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
         },
         'project-pickup': {
+          model: 'high',
+          effort: 'minimal',
           paused: false,
           start: '10:00',
           window: '1 hour',
@@ -509,6 +513,12 @@ describe('agent/codex-automations', () => {
           conversations.set(id, { id, ...settings });
           return id;
         },
+        async updateSettings(
+          current: { id: string },
+          settings: { model?: string; effort?: string },
+        ) {
+          Object.assign(conversations.get(current.id)!, settings);
+        },
         async rename(id: string, name: string) {
           conversations.get(id)!.name = name;
         },
@@ -525,6 +535,13 @@ describe('agent/codex-automations', () => {
       assert.fail('pickup installation did not converge');
     };
     await reconcile();
+    assert.deepEqual(
+      [...conversations.values()].map(({ model, effort }) => ({ model, effort })),
+      [
+        { model: 'gpt-6.1-sol', effort: 'low' },
+        { model: 'gpt-6-astra', effort: 'minimal' },
+      ],
+    );
     const enrollments = new ProjectPickupEnrollmentStore(codexInstanceStore(pluginData).root);
     const first = (await enrollments.read()).records[0]!;
     const active = await inspectCodexPickupActivation(pluginData, dependencies);
@@ -532,6 +549,17 @@ describe('agent/codex-automations', () => {
     assert.equal((await readCodexAutomations(codexHome)).length, 2);
     assert.equal(conversations.size, 2);
     await reconcile();
+    assert.deepEqual((await enrollments.read()).records, [first]);
+    source.github['project-pickup'].model = 'low';
+    source.github['project-pickup'].effort = 'high';
+    await saveManifest();
+    await syncThreads(dependencies);
+    await reconcile();
+    const pickupThread = [...conversations.values()].find(
+      (thread) => thread.name === 'PROJECT PICKUP',
+    )!;
+    assert.equal(pickupThread.model, 'gpt-6-luna');
+    assert.equal(pickupThread.effort, 'high');
     assert.deepEqual((await enrollments.read()).records, [first]);
     source.github['project-pickup'].paused = true;
     await saveManifest();

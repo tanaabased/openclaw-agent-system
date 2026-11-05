@@ -3,7 +3,6 @@ import projectPickupJobs, { projectPickupAutomationId } from './project-pickup-j
 import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import { assessmentSummaryConsent } from './assessment-summary-state.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
-import { projectRoutingProfile } from './model-routing.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 import type { ResolvedAutomation } from '../manifest/automation-schema.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -22,9 +21,9 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
   const jobs = automationModels(declarations, manifest.models, 'openclaw');
   const selected = assignmentIntakePolicy(manifest, 'openclaw');
   if (!selected) return jobs;
-  if (!manifest.models?.default) throw new IntakeError('intake-default-profile-required');
-  const model = projectRoutingProfile(manifest.models.default, 'openclaw');
-  if (model.status !== 'mapped') throw new IntakeError(model.code);
+  const settings = selected.policy.issueAssignment!;
+  if (settings.model === undefined && !manifest.models?.default)
+    throw new IntakeError('intake-default-profile-required');
   const message = [
     assessmentSummaryConsent,
     'Fill initially available intake slots in one bounded pass. Consume saved discoveries by iterating agent_system_dispatch action next; for discovery-progress, reproduce its presentation card and call next again. The runtime retains this native run’s fixed starting allowance and selects each issue or feedback owner at most once. For routing-required, classify only the returned bounded evidence using assessmentSchema and call prepare with its id, digest, assessment and title. ' +
@@ -46,26 +45,34 @@ export default function openclawIntakeJobs(manifest: AgentManifest): ResolvedAut
   ].join('\n');
   return [
     ...jobs,
-    {
-      id: openclawIntakeAutomationId,
-      origin: 'builtin',
-      displayName: '📥 ISSUE ASSIGNMENTS',
-      enabled: !selected.policy.issueAssignment!.paused,
-      runtimes: ['openclaw'],
-      schedule: {
-        kind: 'every',
-        seconds: selected.policy.intervalMinutes * 60,
-        missedRun: 'native',
-      },
-      thread: { name: 'ISSUE ASSIGNMENTS' },
-      overrides: { openclaw: { model: model.model, effort: model.thinking } },
-      payload: { kind: 'prompt', prompt: message },
-      internalOpenClaw: {
-        trigger: { script },
-        // retain the owning agent's tools; host policy and denials still apply.
-        toolsAllow: ['*'],
-      },
-    },
+    ...automationModels(
+      [
+        {
+          id: openclawIntakeAutomationId,
+          origin: 'builtin',
+          displayName: '📥 ISSUE ASSIGNMENTS',
+          enabled: !selected.policy.issueAssignment!.paused,
+          runtimes: ['openclaw'],
+          schedule: {
+            kind: 'every',
+            seconds: selected.policy.intervalMinutes * 60,
+            missedRun: 'native',
+          },
+          thread: { name: 'ISSUE ASSIGNMENTS' },
+          model: settings.model ?? 'default',
+          ...(settings.effort === undefined ? {} : { effort: settings.effort }),
+          overrides: {},
+          payload: { kind: 'prompt', prompt: message },
+          internalOpenClaw: {
+            trigger: { script },
+            // retain the owning agent's tools; host policy and denials still apply.
+            toolsAllow: ['*'],
+          },
+        },
+      ],
+      manifest.models,
+      'openclaw',
+    ),
     ...projectPickupJobs(manifest, 'openclaw'),
   ];
 }
