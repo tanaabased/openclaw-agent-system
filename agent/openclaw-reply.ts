@@ -21,6 +21,7 @@ export default async function openClawReply(input: {
   authority: DispatchAuthority;
   dependencies: OpenClawDispatchDependencies;
 }) {
+  if (!input.operator) throw new Error('reply-operator-required');
   const { manifest, caller, dependencies: deps, authority } = input;
   await authority.assertCurrent?.();
   const current = await deps.intake.select(manifest, input.workspace, { resolvePolicy: false });

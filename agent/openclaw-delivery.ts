@@ -163,16 +163,17 @@ export default async function openClawDelivery(input: {
   }
   const work = record.work;
   if (work?.scope === 'local') throw new Error('implementation-publication-not-authorized');
-  if (!work || (!retainedIssueProgression(record) && !work.publication))
-    throw new Error('delivery-implementation-incomplete');
-  if (
-    !delivered &&
-    ((work.result && work.result.outcome !== 'done') ||
-      (work.implementation && work.result?.outcome !== 'done'))
-  )
-    throw new Error('delivery-implementation-incomplete');
-  if (!delivered && work.assessmentDigest !== automationHash(record.result))
-    throw new Error('dispatch-work-assessment-changed');
+  if (!work) throw new Error('delivery-implementation-incomplete');
+  if (!delivered) {
+    if (
+      (!retainedIssueProgression(record) && !work.publication) ||
+      (work.result && work.result.outcome !== 'done') ||
+      (work.implementation && work.result?.outcome !== 'done')
+    )
+      throw new Error('delivery-implementation-incomplete');
+    if (work.assessmentDigest !== automationHash(record.result))
+      throw new Error('dispatch-work-assessment-changed');
+  }
   await assertCurrent();
   const connection = await input.connect();
   const git = async (argv: string[]) => {
@@ -343,7 +344,7 @@ export default async function openClawDelivery(input: {
     title,
     body,
     source: input.source,
-    progression: retainedIssueProgression(record) ?? work.publication,
+    progression: delivered ? undefined : (retainedIssueProgression(record) ?? work.publication),
     previous: previous ?? null,
   });
   if (

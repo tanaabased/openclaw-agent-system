@@ -1,5 +1,4 @@
 import codexTurnApprovalDenied from './codex-turn-approval.ts';
-import codexInputAuthority from './codex-input-authority.ts';
 import codexSummaryDenial from './codex-summary-denial.ts';
 import type { AssessmentSummary } from './assessment-summary-state.ts';
 import { nativeObject } from './automation-gateway.ts';
@@ -49,20 +48,24 @@ export default function codexContinuationNative(request: CodexThreadRequest) {
           turnId: attempt.turnId!,
           ended,
         };
-      try {
-        await codexInputAuthority(request, attempt.request.threadId, items, attempt.inputId);
-      } catch (error) {
-        if (!(error instanceof Error)) throw error;
-        if (error.message === 'reply-native-approval-denied')
-          return {
-            status: 'blocked' as const,
-            code: 'continuation-native-approval-denied',
-            turnId: attempt.turnId!,
-            ended,
-          };
-        if (error.message !== 'reply-native-user-input-required') throw error;
-        throw new Error('continuation-input-unverified', { cause: error });
-      }
+      // later operator steering does not erase custody of the retained input receipt.
+      const user = items.findIndex(
+        (item) => item.type === 'userMessage' && item.id === attempt.inputId,
+      );
+      if (
+        user < 0 ||
+        items.filter((item) => item.type === 'userMessage' && item.id === attempt.inputId)
+          .length !== 1 ||
+        items
+          .slice(user + 1)
+          .some(
+            (item) =>
+              item.type === 'functionCallOutput' &&
+              item.namespace === 'codex_app' &&
+              ['create_thread', 'send_message_to_thread'].includes(String(item.name)),
+          )
+      )
+        throw new Error('continuation-input-unverified');
       return { status: 'verified' as const, turnId: attempt.turnId!, ended };
     }
     if (attempt.origin === 'assessment') {

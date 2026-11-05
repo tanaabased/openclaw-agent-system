@@ -8351,6 +8351,23 @@ describe('agent/openclaw issue dispatch', () => {
       await prepare(input);
       await assess(input.id);
       await completeAssessment(input.id);
+      if (!claimed) {
+        const { journal } = await service.scope(manifest, root);
+        await journal.exclusive(async (state, save) => {
+          const retained = state.records[0]!;
+          retained.implementationDelivered = true;
+          retained.decisionTurn = {
+            runId: `${retained.id}:auto-decision`,
+            message: 'Old decision.',
+            status: 'attempted',
+          };
+          retained.summaryRecovery = {
+            revision: 1,
+            turn: { runId: 'obsolete-summary', message: 'Old summary.', status: 'attempted' },
+          };
+          await save();
+        });
+      }
       const predecessor = await record();
       const operator = {
         sessionKey: 'agent:receiver:recovery-operator',
@@ -8569,46 +8586,6 @@ describe('agent/openclaw issue dispatch', () => {
           },
         ],
       });
-      if (kind === 'issue') {
-        const history = histories.get(who.sessionKey)!;
-        history.messages[0]!.timestamp = 20;
-        history.messages[0]!.provenance = {
-          kind: 'inter_session',
-          sourceTool: 'sessions_send',
-          sourceSessionKey: 'agent:receiver:human-source',
-        };
-        (history.messages[0]!.__openclaw as Record<string, unknown>).senderIsOwner = false;
-        sessions.set('agent:receiver:human-source', { sessionId: 'human-source-id' });
-        histories.set('agent:receiver:human-source', {
-          active: true,
-          inputReceipts: [],
-          messages: [
-            {
-              role: 'user',
-              content: 'Delegate this issue; retain plan-only scope.',
-              __openclaw: {
-                id: 'human-input',
-                runId: 'human-run',
-                idempotencyKey: 'human-run:user',
-                senderIsOwner: true,
-              },
-            },
-            {
-              role: 'assistant',
-              timestamp: 10,
-              __openclaw: { id: 'handoff-call', runId: 'human-run' },
-              content: [
-                {
-                  type: 'toolCall',
-                  name: 'sessions_send',
-                  id: 'native-send',
-                  arguments: { sessionKey: who.sessionKey, message: 'Work on owner/repo#3' },
-                },
-              ],
-            },
-          ],
-        });
-      }
       const target =
         kind === 'pull-request' ? 'https://github.com/owner/repo/pull/3' : 'owner/repo#3';
       const first = await service.run(
@@ -8628,7 +8605,7 @@ describe('agent/openclaw issue dispatch', () => {
             },
           },
         },
-        kind === 'pull-request',
+        true,
       );
       assert.ok('id' in first && typeof first.id === 'string', JSON.stringify(first));
       assert.ok('digest' in first && typeof first.digest === 'string');
@@ -8645,7 +8622,7 @@ describe('agent/openclaw issue dispatch', () => {
           assessment: { complexity: 'medium', reason: 'Use existing workflow pieces.' },
           title: 'MANUAL ISSUE',
         },
-        kind === 'pull-request',
+        true,
       );
       assert.equal(launched.status, 'assessment-pending', JSON.stringify(launched));
       const state = await (await service.scope(manifest, root)).journal.read();

@@ -1,5 +1,4 @@
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
-import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import type { ImplementationResult } from './implementation-result.ts';
@@ -17,7 +16,6 @@ export default function replyOwnerContext(input: {
     adopted?: unknown;
     pushedHead?: string;
     pullRequest?: { pullRequestNodeId: string; pullRequestNumber: number };
-    announcement?: Pick<DeliveryAnnouncementState, 'attempted' | 'receipt' | 'code'>;
   };
   implementation?: ImplementationResult;
 }): ReplyOwner {
@@ -58,15 +56,6 @@ export default function replyOwnerContext(input: {
         }
       : undefined,
     delivery,
-    summaryPending: Boolean(pending),
-    announcementPending: Boolean(
-      !observationOnly &&
-      delivery?.pullRequest &&
-      (!delivery.announcement?.receipt || delivery.announcement.code),
-    ),
-    announcementAttempted: Boolean(
-      delivery?.announcement?.attempted || delivery?.announcement?.receipt,
-    ),
     implementation: input.implementation,
     deliveredPullRequest: observationOnly ? undefined : delivery?.pullRequest,
     result: record.result,

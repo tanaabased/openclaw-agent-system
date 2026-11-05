@@ -732,8 +732,13 @@ describe('agent/openclaw-delivery', () => {
     assert.equal((await request('prepare')).status, 'prepared');
     assert.equal(pushes, 1);
   });
-  it('should fast forward the verified branch while retaining the same pr', async () => {
+  it('should update the delivered pr without the original implementation stage', async () => {
+    record.work!.result = { outcome: 'done', summary: 'Done.', fullResult: 'Implemented.' };
     await publish();
+    assert.equal(record.implementationDelivered, true);
+    delete record.progression;
+    delete record.handoff;
+    delete record.work!.publication;
     const receipt = structuredClone(record.work!.delivery!.pullRequest);
     head = 'b'.repeat(40);
     await publish();

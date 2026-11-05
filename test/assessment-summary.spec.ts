@@ -116,7 +116,6 @@ describe('agent/assessment-summary', () => {
         receiving: github.client.identity,
       },
     });
-    assert.equal(context.summaryPending, true);
     assert.equal(context.summary?.attempt, 'uncertain-publication');
     assert.equal(context.summary?.publicText, older.publicText);
     assert.equal(context.summary?.selection, older.selection);

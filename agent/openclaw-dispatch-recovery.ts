@@ -1,3 +1,4 @@
+import { hasDeliveredImplementation } from './implementation-delivery.ts';
 import recoverIssueTask from './issue-task-recovery.ts';
 import openClawEntryContext from './openclaw-entry-context.ts';
 import { observeRetiringSession } from './openclaw-retirement-observation.ts';
@@ -47,13 +48,14 @@ export default async function recoverOpenClawTask(options: {
         const verified = await service.validate(manifest, workspace, selected, true);
         const { intake } = verified;
         const delivery = record.work?.delivery;
+        const execution = hasDeliveredImplementation(record) ? undefined : record;
         const turns = [
-          record.firstTurn,
-          record.assessmentTurn,
-          record.decisionTurn,
-          record.summaryRecovery?.turn,
-          record.work?.turn,
-          record.work?.deliveryTurn,
+          execution?.firstTurn,
+          execution?.assessmentTurn,
+          execution?.decisionTurn,
+          execution?.summaryRecovery?.turn,
+          execution?.work?.turn,
+          execution?.work?.deliveryTurn,
         ];
         return recoverIssueTask<OpenClawDispatchRecord>({
           record,

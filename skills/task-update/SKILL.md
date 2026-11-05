@@ -64,8 +64,7 @@ shared reply owners. An update request never begins implementation or changes mo
    `reply context --plugin-data <feedbackRuntime.pluginData>`, with the matching
    JSON request on stdin. Never infer another runtime, executable or workspace.
    Native state selects manual versus managed entry, without intake activation,
-   another worktree, repeated assessment or implementation. Follow any returned
-   original summary/PR-announcement recovery operation first. Reconcile an uncertain
+   another worktree, repeated assessment or implementation. Reconcile an uncertain
    retained update before considering new facts; never recompose or repost it.
 3. Compare the returned public issue/comments and relevant linked PR facts with
    that owner's retained assessment, implementation, feedback and delivery results,
@@ -104,7 +103,7 @@ shared reply owners. An update request never begins implementation or changes mo
 
 - The native owner, current input and exact destination remain verified.
 - Only material missing verified facts cross the public boundary.
-- Original pending publications recover through their own receipts; no second writer runs.
+- Updates reconcile their own uncertain writes; summary and PR-announcement recovery stay separate.
 - Mode, stage and worktree remain unchanged; admitted feedback stays source-bound.
 
 ## Completion Criteria

@@ -1,4 +1,5 @@
 import { observeCodexActivity } from './codex-capacity-reconcile.ts';
+import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 import assessmentMaterial from './assessment-material.ts';
 import type { ImplementationMaterialRead } from './implementation-material.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
@@ -161,6 +162,7 @@ export async function handoffDispatch(
       (await realpath(native.cwd)) !== (await realpath(record.worktree))
     )
       throw new Error('dispatch-native-readback-diverged');
+    if (hasDeliveredImplementation(record)) return nativeIssueContext(record);
     await verifyDispatchWorktree(
       record.project,
       native.cwd,

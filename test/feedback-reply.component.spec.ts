@@ -268,7 +268,7 @@ describe('agent/feedback-reply', () => {
     assert.equal(selections, 0);
     assert.equal(writes, 0);
   });
-  it('should recover pending original publications but allow new status facts after delivered summaries and announcements', async () => {
+  it('should keep status updates independent of pending summaries and announcements', async () => {
     owners = [
       {
         id: 'a'.repeat(64),
@@ -277,32 +277,17 @@ describe('agent/feedback-reply', () => {
         threadId: 'chat',
         incarnation: 'session',
         inactive: false,
-        summary: {},
+        summary: { attempt: 'uncertain-summary' },
+        delivery: { announcement: { attempted: true } },
       },
     ];
-    const summary = await call('context', { purpose: 'status-update', target: url });
-    assert.ok('route' in summary && summary.route === 'summary');
-    owners[0]!.summary!.attempt = 'attempt';
-    const uncertain = await call('context', { purpose: 'status-update', target: url });
-    assert.ok('operation' in uncertain && uncertain.operation === 'reconcile');
-    owners[0]!.summary!.receipt = { nodeId: 'summary' };
-    owners[0]!.delivery = {};
-    owners[0]!.announcementPending = true;
-    const announcement = await call('context', { purpose: 'status-update', target: url });
-    assert.ok(
-      'route' in announcement &&
-        announcement.route === 'delivery' &&
-        announcement.operation === 'compose',
-    );
-    owners[0]!.announcementAttempted = true;
-    const attempted = await call('context', { purpose: 'status-update', target: url });
-    assert.ok('operation' in attempted && attempted.operation === 'announce');
-    owners[0]!.announcementPending = false;
+    const before = structuredClone(owners);
     const context = await call('context', { purpose: 'status-update', target: url });
     assert.ok('entry' in context && context.entry === 'managed');
     assert.equal(selections, 0);
     await updateCandidate();
     assert.equal(selections, 1);
+    assert.deepEqual(owners, before);
     owners[0]!.inactive = true;
     await assert.rejects(updateContext(), /reply-managed-context-invalid/);
     assert.equal(writes, 0);
@@ -945,7 +930,7 @@ describe('agent/feedback-reply', () => {
         target: url,
         privateText: 'Answer.',
       }),
-      /dispatch-operator-input-unverified/,
+      /reply-operator-required/,
     );
     const composed = await direct('compose', { target: url, privateText: 'Answer.' });
     assert.ok('id' in composed && 'digest' in composed);

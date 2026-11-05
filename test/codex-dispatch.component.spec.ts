@@ -430,7 +430,6 @@ describe('agent/codex-dispatch', () => {
     const observed = selectedPullRequest();
     const selected = await selectCodexIntake(pluginData, deps);
     const store = new CodexDispatchStore(pluginData, selected.store.location.scope);
-    const before = await store.read();
     const input = { id: prepared.id, pullRequest: 'https://github.com/owner/repo/pull/7' };
     await assert.rejects(
       request('recover', input, { threadId: 'operator' }),
@@ -439,6 +438,35 @@ describe('agent/codex-dispatch', () => {
     native!.status = 'idle';
     native!.turnStatus = 'completed';
     native!.turnEnded = true;
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      const attempt = {
+        id: 'a'.repeat(64),
+        sourceTurnId: 'old',
+        beforeTurnId: 'old',
+        request: { threadId: record.threadId!, prompt: 'Old recovery.' },
+      };
+      record.summaryRecovery = { revision: 1, attempt };
+      record.autoDecision = { attempt };
+      record.continuation = {
+        phase: 'delivery',
+        policyDigest: 'a'.repeat(64),
+        selection: record.assessment!,
+      };
+      await save();
+    });
+    const unfinished = await request('recover', input, { threadId: 'operator' });
+    assert.equal(unfinished.status, 'blocked');
+    assert.deepEqual(unfinished.blockers, [
+      'pendingSummaryTurn',
+      'pendingAutoDecision',
+      'unfinishedImplementation',
+    ]);
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.implementationDelivered = true;
+      await save();
+    });
+    const before = await store.read();
     const preview = await request('recover', input, { threadId: 'operator' });
     assert.equal(preview.status, 'recovery-available');
     assert.deepEqual(await store.read(), before);
@@ -7404,6 +7432,10 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual((await store.read()).records[0]!.continuation!.attempt, attempt);
     const context = await work.run('context', {}, true);
     assert.equal(context.status, 'native');
+    const beforeHandoff = await store.read();
+    const handoff = await request('handoff', { id: work.id }, { threadId: native!.id });
+    assert.equal(handoff.status, 'native');
+    assert.deepEqual(await store.read(), beforeHandoff);
     const retainedWork = structuredClone((await store.read()).records[0]!.continuation);
     work.continuation.activation = async () => {
       throw new Error('scheduler-must-not-own-native-work');

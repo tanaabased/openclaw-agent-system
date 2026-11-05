@@ -15,11 +15,7 @@ import issueProgression, {
 } from './issue-progression.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
-import {
-  operatorInputEvent,
-  nativeInputEvent,
-  delegatedOperatorInput,
-} from './openclaw-session-input.ts';
+import { operatorInputEvent, nativeInputEvent } from './openclaw-session-input.ts';
 import { describeIssueSession, type DispatchCaller } from './openclaw-session-create.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
@@ -51,7 +47,8 @@ export async function verifyOpenClawWork(input: {
   )
     throw new Error('dispatch-work-context-mismatch');
   await describeIssueSession(input.request, record, input.config);
-  const freshInput =
+  const operator =
+    input.operator &&
     caller.runId !== record.firstTurn?.runId &&
     caller.runId !== record.assessmentTurn?.runId &&
     caller.runId !== record.decisionTurn?.runId &&
@@ -63,17 +60,6 @@ export async function verifyOpenClawWork(input: {
     caller.runId !== record.work?.deliveryTurn?.runId &&
     !record.work?.previousTurns?.some(({ turn }) => turn.runId === caller.runId) &&
     !record.feedback?.events.some((event) => event.turn?.runId === caller.runId);
-  const delegated =
-    freshInput && !input.operator
-      ? await delegatedOperatorInput({
-          request: input.request,
-          sessionKey: caller.sessionKey,
-          sessionId: caller.sessionId,
-          runId: caller.runId,
-          retained: [],
-        })
-      : undefined;
-  const operator = freshInput && (input.operator || Boolean(delegated));
   const automatic = issueProgression(record, { mode: input.mode, now: input.now });
   const transition =
     automatic.status === 'ready'
@@ -96,7 +82,7 @@ export async function verifyOpenClawWork(input: {
   };
   const verifiedInput =
     automatic.status !== 'ready' || (operator && record.work?.result?.outcome === 'done')
-      ? (delegated ?? (await operatorInputEvent({ ...context, senderIsOwner: operator })))
+      ? await operatorInputEvent({ ...context, senderIsOwner: operator })
       : await nativeInputEvent(context);
   const { runId, inputEventId } = verifiedInput;
   const message =
