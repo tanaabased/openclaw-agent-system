@@ -997,7 +997,17 @@ for (const scenario of [
     }
     if (scenario.id === 'openclaw-pr-journey') {
       it('should answer a post-delivery question through the native retained context without tools', async () => {
-        const input = request('Explain the completed PR in this ordinary conversation.');
+        const input = request(
+          `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
+        );
+        append(input, 'delivery-present', {
+          status: 'presented',
+          presentation: 'Previous PR card.',
+        });
+        input.messages.push(
+          { role: 'assistant', content: 'Previous PR card.' },
+          { role: 'user', content: 'Explain the completed PR in this ordinary conversation.' },
+        );
         const context = openclawTurnContext(
           {
             id,
@@ -1024,13 +1034,18 @@ for (const scenario of [
           },
         )!;
         input.messages.push({
-          role: 'system',
-          content: context.appendSystemContext + '\n' + context.appendContext,
+          role: 'user',
+          content:
+            'OpenClaw runtime context:\n' +
+            context.appendContext +
+            '\nEnd OpenClaw runtime context.',
         });
         assert.deepEqual(await response(input), {
           content:
             'The linked PR contains the completed cleanup note. No further work was requested.',
         });
+        input.messages.pop();
+        assert.equal(matchFixture([...scenario.fixtures], input), null);
       });
       for (const mode of ['operator', 'work', 'auto', 'custom'])
         it(`should carry ${mode} through implementation and the same delivery on retry`, async () => {
