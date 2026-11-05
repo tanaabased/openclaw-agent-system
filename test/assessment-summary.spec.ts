@@ -75,7 +75,7 @@ describe('agent/assessment-summary', () => {
     const composed = await f.run({ operation: 'compose' });
     assert.ok('code' in composed && composed.code === 'assessment-summary-source-unavailable');
     assert.equal(f.record.assessmentSummaries, undefined);
-    assert.equal(pendingPublicResponse(f.record)?.state, 'blocked');
+    assert.equal(pendingPublicResponse(f.record), undefined);
     assert.equal(f.writes, 0);
   });
   it('should preserve delivered receipts and denial holds when legacy source is missing', async () => {
@@ -95,6 +95,21 @@ describe('agent/assessment-summary', () => {
       assert.deepEqual(f.record.assessmentSummaries, summaries);
     }
   });
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should reconcile an attempted ${runtime} plan update without restoring a conversation checkpoint`, async () => {
+      const f = fixture(runtime);
+      f.retain();
+      const digest = await f.compose();
+      f.lose();
+      await f.run({ operation: 'publish', digest });
+      delete f.record.result!.fullAssessment;
+      const recovered = await f.run({ operation: 'reconcile' });
+      assert.equal(recovered.status, 'published');
+      assert.equal(f.writes, 1);
+      assert.equal(f.record.result!.fullAssessment, undefined);
+      assert.equal(f.record.progression, undefined);
+    });
+  }
   it('should retain a summary-only denial without publishing or granting implementation', async () => {
     const f = fixture();
     f.retain();

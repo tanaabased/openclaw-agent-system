@@ -22,6 +22,7 @@ export const deliveryAnnouncementStateSchema = Type.Object(
     authorLogin: Type.Optional(text),
     publicText: Type.Optional(Type.String({ minLength: 1, maxLength: 800 })),
     attempted: Type.Boolean(),
+    publication: Type.Optional(Type.String({ minLength: 1, maxLength: 65536 })),
     receipt: Type.Optional(
       Type.Object(
         { nodeId: text, databaseId: Type.Integer({ minimum: 1 }) },

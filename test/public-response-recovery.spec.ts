@@ -8,6 +8,7 @@ import continueOpenClawResponse, {
 } from '../agent/openclaw-response-continuation.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 import pendingPublicResponse from '../agent/pending-public-response.ts';
+import summaryFixture from './assessment-summary-fixture.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 
 async function fixture() {
@@ -185,6 +186,15 @@ async function fixture() {
     cancel: () => {
       cancelled = true;
     },
+    async prepare() {
+      const summary = summaryFixture();
+      summary.retain();
+      await summary.run({ operation: 'compose' });
+      record.assessmentSummaries = summary.record.assessmentSummaries!.map((entry) => ({
+        ...entry,
+        revision: record.assessmentRevision!,
+      }));
+    },
     get posts() {
       return posts;
     },
@@ -198,25 +208,23 @@ describe('agent/public-response recovery', () => {
     for (const revision of [1, undefined]) {
       f.record.assessmentRevision = revision;
       const pending = pendingPublicResponse(f.record);
-      assert.equal(pending?.state, 'blocked');
-      assert.ok(pending && 'code' in pending);
-      assert.equal(pending.code, 'assessment-summary-source-unavailable');
-      assert.match(pending.instruction, /complete source.*authorized assessment flow/);
+      assert.equal(pending, undefined);
       assert.equal(openClawResponsePending(f.record), false);
       await f.run();
       assert.equal(f.posts, 0);
       assert.equal(f.record.result?.outcome, 'plan-ready');
     }
   });
-  it('should retain the summary obligation before composition and never reset implementation stage', async () => {
+  it('should not turn a conversation checkpoint into a publication obligation', async () => {
     const f = await fixture();
-    assert.equal(pendingPublicResponse(f.record)?.state, 'pending');
+    assert.equal(pendingPublicResponse(f.record), undefined);
     f.record.handoff = { at: 2, by: 'issue', turnId: 'work' };
-    assert.equal(pendingPublicResponse(f.record)?.state, 'pending');
+    assert.equal(pendingPublicResponse(f.record), undefined);
     assert.equal(f.record.assessmentSummaries, undefined);
   });
   it('should queue only response recovery and reconcile an uncertain native send after restart', async () => {
     const f = await fixture();
+    await f.prepare();
     f.lose();
     await assert.rejects(f.run(), /native response lost/);
     const result = structuredClone(f.record.result);
@@ -232,6 +240,7 @@ describe('agent/public-response recovery', () => {
     assert.equal(f.posts, 1);
     assert.deepEqual(f.record.result, result);
     f.record.assessmentRevision = 2;
+    await f.prepare();
     f.lose(false);
     await f.run();
     assert.equal(f.posts, 2);
@@ -243,6 +252,7 @@ describe('agent/public-response recovery', () => {
   });
   it('should retain an unfinished summary without waking a delivered issue conversation', async () => {
     const f = await fixture();
+    await f.prepare();
     f.record.work = {
       assessmentDigest: 'b'.repeat(64),
       result: { outcome: 'done', summary: 'Done.', fullResult: 'Checked.' },

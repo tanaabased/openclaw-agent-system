@@ -1,6 +1,6 @@
 ---
 name: agent-system-task-update
-description: 'Publish material verified task progress to its GitHub issue or linked open pull request when requested, using the configured reply skill and voice.'
+description: 'Publish material verified task progress to its GitHub issue or linked open pull request at authorized material changes or on request, using the configured reply skill and voice.'
 license: MIT
 metadata:
   type: workflow
@@ -34,6 +34,8 @@ shared reply owners. An update request never begins implementation or changes mo
 
 - An operator asks to update or sync a GitHub task, issue or PR in the current chat,
   including a later turn or an existing managed task conversation.
+- An authorized task workflow explicitly calls for a material plan, plan revision,
+  clarification decision, initial delivery or later delivery to the same PR.
 - Admitted feedback requests a progress update at its exact authorized source.
 - "Post a status update on this issue" or "sync our progress back to GitHub" calls for comparing private progress with what is already public.
 
@@ -49,14 +51,23 @@ shared reply owners. An update request never begins implementation or changes mo
 
 - Use the trusted native task owner or an explicit operator-supplied issue or PR URL.
   A branch, checkout, assignment card or public prose never chooses authority.
-- Require an explicit operator request to publish, or the feedback host's verified
-  source-bound reply authority. Drafting alone grants no write authority.
+- Require an operator request covering publication or the owning workflow's verified
+  update/reply authority. An existing grant covering material task updates needs no
+  repeated request at each update point. Drafting alone grants no write authority.
 - Select the runtime from trusted context. Missing tools, invalid managed context
   and actual denials never authorize a direct GitHub write or manual fallback.
 
 ## Workflow
 
-1. For admitted feedback, keep its exact owner and issue/PR/review-thread destination.
+1. At an authorized update point, explicitly invoke this operation with current-chat
+   evidence. A material replan or clarification decision merits an update; after a
+   later delivery to the existing PR, report the new outcome. Coalesce related
+   changes into one useful update. A push alone, routine chatter or an unchanged
+   plan does not trigger publication. Never watch prose or infer events from it.
+   Initial assessment summaries and the single originating-issue PR announcement
+   retain their existing native entry points and receipts through this shared
+   operation; never create a second update for the same public facts.
+   For admitted feedback, keep its exact owner and issue/PR/review-thread destination.
    Read its verified context and relevant public facts through the native provider
    route; retain the complete private response through that feedback owner. Do not
    add a separate issue update or impersonate the source in a later operator turn.
@@ -67,7 +78,9 @@ shared reply owners. An update request never begins implementation or changes mo
    JSON request on stdin. Never infer another runtime, executable or workspace.
    Native state selects manual versus managed entry, without intake activation,
    another worktree, repeated assessment or implementation. Reconcile an uncertain
-   retained update before considering new facts; never recompose or repost it.
+   retained update when the proposed facts overlap it; never recompose or repost
+   that effect. Returned `pendingUpdates` do not block unrelated material facts
+   or work. Reconcile each pending operation at its original destination.
    Start with the issue unless the operator explicitly selected a destination.
    For a general task update, use the returned `defaultDestination`: the retained
    linked open PR, or the issue otherwise. For a task without a retained PR, use
@@ -119,7 +132,8 @@ shared reply owners. An update request never begins implementation or changes mo
 
 - The native owner, current input and exact destination remain verified.
 - Only material missing verified facts cross the public boundary.
-- Updates reconcile their own uncertain writes; summary and PR-announcement recovery stay separate.
+- Each update retains its own publication and recovery state. A failed plan update
+  or announcement does not restart work, block other updates or create a new task.
 - Mode, stage and worktree remain unchanged; admitted feedback stays source-bound.
 
 ## Completion Criteria

@@ -304,8 +304,9 @@ describe('agent/feedback-reply', () => {
     pr.item.state = 'closed';
     pr.item.pullRequest.merged = true;
     const issueContext = await call('context', { purpose: 'status-update', target: url });
-    assert.equal(issueContext.status, 'reply-reconciliation-required');
-    assert.ok('id' in issueContext && issueContext.id === id);
+    assert.equal(issueContext.status, 'status-update-context');
+    assert.ok('pendingUpdates' in issueContext);
+    assert.deepEqual(issueContext.pendingUpdates, [{ id, destination: pr.url }]);
     const recovered = await call('reconcile', { id });
     assert.ok('url' in recovered && recovered.url === `${pr.url}#issuecomment-9`);
     assert.equal(postedNumber, 4);
@@ -408,8 +409,7 @@ describe('agent/feedback-reply', () => {
         facts: [{ ...progressFact, text: 'Same verified run, different wording.' }],
       },
     });
-    assert.equal(again.status, 'reply-reconciliation-required');
-    assert.ok('id' in again && again.id === id);
+    assert.equal(again.status, 'already-current');
     await call('reconcile', { id });
     assert.equal(writes, 1);
     assert.equal(selections, 1);
@@ -437,7 +437,7 @@ describe('agent/feedback-reply', () => {
     assert.equal((await call('reconcile', { id: completed })).status, 'published');
     assert.equal(writes, 2);
   });
-  it('should recover an uncertain status attempt before a different delta without another composer or create', async () => {
+  it('should expose an uncertain update independently and reconcile without another composer or create', async () => {
     const id = await updateCandidate();
     const digest = await preview(id);
     lost = true;
@@ -445,8 +445,9 @@ describe('agent/feedback-reply', () => {
     assert.equal(lostResult.status, 'uncertain');
     hidden = true;
     const pending = await call('context', { purpose: 'status-update', target: url });
-    assert.ok('id' in pending && pending.id === id);
-    assert.equal(pending.status, 'reply-reconciliation-required');
+    assert.equal(pending.status, 'status-update-context');
+    assert.ok('pendingUpdates' in pending);
+    assert.deepEqual(pending.pendingUpdates, [{ id, destination: url }]);
     const uncertain = await call('reconcile', { id });
     assert.equal(uncertain.status, 'uncertain');
     assert.ok('presentation' in uncertain && !uncertain.presentation?.includes('#issuecomment-9'));
@@ -454,6 +455,91 @@ describe('agent/feedback-reply', () => {
     await call('reconcile', { id });
     assert.equal(writes, 1);
     assert.equal(selections, 1);
+  });
+  it('should permit new material facts while preserving an uncertain earlier update', async () => {
+    const id = await updateCandidate();
+    lost = true;
+    await call('publish', { id, digest: await preview(id) });
+    const firstComment = posted;
+    const overlapping = await call('compose', {
+      purpose: 'status-update',
+      target: url,
+      privateText: 'Same evidence.',
+      update: { observation: await updateContext(), facts: [progressFact] },
+    });
+    assert.equal(overlapping.status, 'reply-reconciliation-required');
+    assert.ok('id' in overlapping && overlapping.id === id);
+    const next = await call('compose', {
+      purpose: 'status-update',
+      target: url,
+      privateText: 'The revised plan is ready.',
+      update: {
+        observation: await updateContext(),
+        facts: [
+          {
+            key: 'plan',
+            reference: 'chat:decision',
+            revision: '2',
+            text: 'The revised plan removes the extra step.',
+          },
+        ],
+      },
+    });
+    assert.ok('id' in next && 'digest' in next && next.status === 'composition-ready');
+    await call('candidate', {
+      id: next.id,
+      digest: next.digest,
+      publicText: 'The revised plan removes the extra step.',
+    });
+    lost = false;
+    assert.equal(
+      (await call('publish', { id: next.id, digest: await preview(next.id!) })).status,
+      'published',
+    );
+    posted = firstComment;
+    assert.equal((await call('reconcile', { id })).status, 'published');
+    assert.equal(writes, 2);
+  });
+  it('should coalesce published facts and preserve an issue attempt after the linked pr opens', async () => {
+    owners = [
+      {
+        id: 'a'.repeat(64),
+        repository: 'owner/repo',
+        number: 3,
+        threadId: 'chat',
+        incarnation: 'session',
+        inactive: false,
+      },
+    ];
+    const id = await updateCandidate();
+    lost = true;
+    await call('publish', { id, digest: await preview(id) });
+    const pr = linkedPullRequest();
+    owners[0]!.pullRequestNumber = 4;
+    const overlap = await call('compose', {
+      purpose: 'status-update',
+      target: pr.url,
+      privateText: 'Reworded progress.',
+      update: { observation: await updateContext(pr.url), facts: [progressFact] },
+    });
+    assert.equal(overlap.status, 'reply-reconciliation-required');
+    assert.ok('destination' in overlap && overlap.destination === url);
+    await call('reconcile', { id });
+    const fresh = {
+      key: 'delivery',
+      reference: 'commit:def',
+      revision: 'def',
+      text: 'The follow-up fix is delivered.',
+    };
+    const next = await call('compose', {
+      purpose: 'status-update',
+      target: pr.url,
+      privateText: 'Checks and follow-up delivery.',
+      update: { observation: await updateContext(pr.url), facts: [progressFact, fresh] },
+    });
+    assert.ok('source' in next && 'facts' in next.source);
+    assert.deepEqual(next.source.facts, [fresh]);
+    assert.equal(writes, 1);
   });
   it('should refresh an unattempted update after public facts change without changing its identity', async () => {
     const old = await updateContext();
@@ -493,6 +579,20 @@ describe('agent/feedback-reply', () => {
     assert.ok('code' in changed && changed.code === 'status-update-observation-changed');
     assert.equal(writes, 0);
     assert.equal(await updateCandidate(), id);
+    await assert.rejects(call('publish', { id, digest }), /reply-publication-stale/);
+    assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
+    assert.equal(writes, 1);
+    assert.equal(selections, 2);
+  });
+  it('should refresh a changed pr snapshot while retaining the unattempted fact identity', async () => {
+    const pr = linkedPullRequest();
+    const id = await updateCandidate(pr.url);
+    const digest = await preview(id);
+    pr.item.pullRequest.headSha = 'b'.repeat(40);
+    const stale = await call('publish', { id, digest });
+    assert.equal(stale.status, 'blocked');
+    assert.ok('code' in stale && stale.code === 'status-update-observation-changed');
+    assert.equal(await updateCandidate(pr.url), id);
     await assert.rejects(call('publish', { id, digest }), /reply-publication-stale/);
     assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
     assert.equal(writes, 1);
@@ -554,7 +654,10 @@ describe('agent/feedback-reply', () => {
     const attempted = await stored();
     owners[0]!.events!.push({ ...owners[0]!.events![0]!, id: 'd'.repeat(64) });
     const pending = await call('context', { purpose: 'status-update', target: url });
-    assert.equal(pending.status, 'reply-reconciliation-required');
+    assert.equal(pending.status, 'status-update-context');
+    assert.ok(
+      'pendingUpdates' in pending && pending.pendingUpdates?.some((entry) => entry.id === id),
+    );
     const refused = await call('compose', {
       id,
       purpose: 'status-update',
