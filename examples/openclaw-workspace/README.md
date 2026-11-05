@@ -9,6 +9,7 @@ healthy state and setup drift.
 - Validation without host-value resolution, setup execution, or reconciliation.
 - Ordered host/agent setup and dotenv resolution producing the installed identity, Codex prerequisite, and model routing.
 - Repeat convergence and Doctor inspection without repair or secret-value disclosure.
+- Explicit operator reconciliation of an older shared Codex plugin, without replacement by workspace Install.
 
 ## What Does Not Belong Here
 
@@ -22,6 +23,7 @@ healthy state and setup drift.
 
 - Direct Ubuntu checks need no Gateway, model, or provider credential. The installed name proves environment resolution; direct configuration reads prove routing and the Codex prerequisite.
 - Setup writes receipts beside the checked-in manifest on the disposable runner. Independent configuration snapshots prove validation, repeat install, and Doctor leave the relevant state unchanged.
+- The upgrade check deliberately installs Codex `2026.10.6` after the missing-plugin path, then explicitly restores the release-owned version. These two extra plugin installs prove the installed conflict/reconciliation boundary without another Gateway or model turn.
 - Pending relocation: the final setup-failure fixture verifies safe child termination and diagnostic redaction through the installed CLI.
 
 ## Setup
@@ -62,6 +64,23 @@ cp "$OPENCLAW_CONFIG_PATH" "$TMPDIR/workspace-before-repeat.json"
 openclaw agent-system install --yes --json | jq -e '.outcomes | any(.code == "codex-plugin-unchanged" and .status == "unchanged") and any(.stepId == "host-ready" and .status == "unchanged") and any(.stepId == "agent-ready" and .status == "unchanged") and any(.code == "agent-models-unchanged" and .status == "unchanged")'
 cmp "$OPENCLAW_CONFIG_PATH" "$TMPDIR/workspace-before-repeat.json"
 printf 'host\nagent\n' | diff - setup-runs
+
+# should refuse an older shared codex plugin without replacing it
+cd "$GITHUB_WORKSPACE/examples/openclaw-workspace"
+export AGENT_SYSTEM_WORKSPACE_HOST_NAME=Workspace
+openclaw plugins install npm:@openclaw/codex@2026.10.6 --force --pin --accept-capabilities
+cp "$OPENCLAW_CONFIG_PATH" "$TMPDIR/workspace-before-conflict.json"
+if output=$(openclaw agent-system install --yes --json); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.blocked.code == "codex-plugin-conflict" and (.blocked.message | contains("2026.10.6") and contains("explicitly reconcile"))'
+cmp "$OPENCLAW_CONFIG_PATH" "$TMPDIR/workspace-before-conflict.json"
+openclaw plugins inspect codex --json | jq -e '.plugin.version == "2026.10.6" and .install.version == "2026.10.6"'
+
+# should converge after explicit operator reconciliation of the shared codex plugin
+cd "$GITHUB_WORKSPACE/examples/openclaw-workspace"
+export AGENT_SYSTEM_WORKSPACE_HOST_NAME=Workspace
+codex_spec=$(node -p 'require(process.argv[1]).openclaw.agentSystem.codexPlugin' "$GITHUB_WORKSPACE/package.json")
+openclaw plugins install "npm:$codex_spec" --force --pin --accept-capabilities
+openclaw agent-system install --yes --json | jq -e '.outcomes | any(.code == "codex-plugin-unchanged" and .status == "unchanged")'
 
 # should inspect healthy state and setup drift without applying repairs
 cd "$GITHUB_WORKSPACE/examples/openclaw-workspace"

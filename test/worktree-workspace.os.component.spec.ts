@@ -1,16 +1,12 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
 import isManagedWorktreeWorkspace from '../tools/git/worktree-workspace.ts';
 import loadBoundToolManifest from '../api/manifest-binding.ts';
 import worktreeGuidance from '../agent/worktree-guidance.ts';
 import type { AgentManifestLoadResult } from '../manifest/service.ts';
-
-const git = promisify(execFile);
 
 describe('managed worktree workspace binding', () => {
   let root: string;
@@ -84,24 +80,6 @@ describe('managed worktree workspace binding', () => {
 
   it('should bind two agents sharing a local source only to their own worktrees', async () => {
     const source = join(root, 'source');
-    await mkdir(source);
-    await git('git', ['init', '--initial-branch=main', source]);
-    await git('git', [
-      '-C',
-      source,
-      '-c',
-      'user.name=Fixture',
-      '-c',
-      'user.email=fixture@example.invalid',
-      '-c',
-      'commit.gpgsign=false',
-      '-c',
-      'core.hooksPath=/dev/null',
-      'commit',
-      '--allow-empty',
-      '-m',
-      'seed',
-    ]);
     const agents = [
       { id: 'data', workspace, configuration: { repositories: { local: { fixture: source } } } },
       {
@@ -122,7 +100,14 @@ describe('managed worktree workspace binding', () => {
     );
     for (const [index, agent] of agents.entries()) {
       await mkdir(agent.workspace, { recursive: true });
-      await git('git', ['-C', source, 'worktree', 'add', '--detach', checkouts[index]!, 'HEAD']);
+      // fixture linked-worktree registration without inheriting host launchers or hooks.
+      const checkout = checkouts[index]!;
+      const registration = join(source, '.git/worktrees', agent.id);
+      await mkdir(checkout, { recursive: true });
+      await mkdir(registration, { recursive: true });
+      await writeFile(join(checkout, '.git'), `gitdir: ${registration}\n`);
+      await writeFile(join(registration, 'commondir'), '../..\n');
+      await writeFile(join(registration, 'gitdir'), `${checkout}/.git\n`);
     }
     for (const [index, agent] of agents.entries()) {
       const checkout = checkouts[index]!;
