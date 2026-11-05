@@ -251,7 +251,7 @@ describe('agent/codex-context', () => {
             notifications: {
               schemaVersion: 3,
               runtimes: ['codex'],
-              allowedRepositoryOwners: [{ login: 'example', nodeId: 'O_example' }],
+              routing: ['example/*'],
               intervalMinutes: 5,
               maxConcurrentItems: 2,
             },

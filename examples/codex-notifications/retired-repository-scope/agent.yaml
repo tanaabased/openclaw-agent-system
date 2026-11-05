@@ -1,0 +1,8 @@
+schema-version: 1
+agent:
+  id: codex-notification-example
+github:
+  username: example-agent
+  runtimes: [codex]
+  allowed-repository-owners: ['@example-owner']
+  issue-assignment: {}

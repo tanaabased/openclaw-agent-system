@@ -470,7 +470,7 @@ describe('agent/codex-automations', () => {
       github: {
         username: 'receiver',
         runtimes: ['codex'],
-        'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+        routing: ['owner/*'],
         'issue-assignment': {
           model: 'medium',
           effort: 'low',
@@ -654,7 +654,7 @@ describe('agent/codex-automations', () => {
           username: 'receiver',
           'schema-version': 3,
           runtimes: ['codex'],
-          'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+          routing: ['owner/*'],
           'issue-assignment': {
             mode: 'plan',
             allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],

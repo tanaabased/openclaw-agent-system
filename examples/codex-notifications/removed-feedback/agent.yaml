@@ -5,9 +5,7 @@ github:
   username: example-agent
   schema-version: 3
   runtimes: [codex]
-  allowed-repository-owners:
-    - login: example-owner
-      node-id: O_example
+  routing: ['example-owner/*']
   feedback:
     paused: true
     allowed:

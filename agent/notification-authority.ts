@@ -16,10 +16,7 @@ export function notificationAuthority(policy: GitHubNotificationPolicy) {
   const value = structuredClone({
     schemaVersion: policy.schemaVersion,
     runtimes: policy.runtimes,
-    allowedRepositoryOwners: policy.routing === undefined ? policy.allowedRepositoryOwners : [],
-    ...(policy.routing === undefined
-      ? {}
-      : { routing: normalizeRepositoryRouting(policy.routing) }),
+    routing: normalizeRepositoryRouting(policy.routing),
     issueAssignment: policy.issueAssignment,
     reviewRequest: policy.reviewRequest,
     ...(policy.projectPickup
@@ -27,7 +24,6 @@ export function notificationAuthority(policy: GitHubNotificationPolicy) {
       : {}),
   });
   value.runtimes = ordered(value.runtimes);
-  value.allowedRepositoryOwners = ordered(value.allowedRepositoryOwners);
   for (const workflow of [value.issueAssignment, value.reviewRequest]) {
     if (!workflow) continue;
     delete workflow.paused;
@@ -53,10 +49,7 @@ function feedbackAuthority(policy: GitHubNotificationPolicy) {
     effect: 'feedback-reply',
     schemaVersion: policy.schemaVersion,
     runtimes: policy.runtimes,
-    allowedRepositoryOwners: policy.routing === undefined ? policy.allowedRepositoryOwners : [],
-    ...(policy.routing === undefined
-      ? {}
-      : { routing: normalizeRepositoryRouting(policy.routing) }),
+    routing: normalizeRepositoryRouting(policy.routing),
     enabled: Boolean(policy.issueAssignment),
     authors: feedbackIdentities(
       policy.issueAssignment?.allowed ?? [],
@@ -70,7 +63,6 @@ export function feedbackAuthorityDigest(policy: GitHubNotificationPolicy) {
   return automationHash({
     ...value,
     runtimes: ordered(value.runtimes),
-    allowedRepositoryOwners: ordered(value.allowedRepositoryOwners),
     authors: ordered(value.authors),
   });
 }

@@ -52,7 +52,7 @@ describe('agent/live-workflow-policy', () => {
     assert.equal(liveWorkflowPolicy(manifest, 'codex', intake, 'implementation'), undefined);
     f.policy.issueAssignment!.paused = true;
     assert.equal(liveWorkflowPolicy(manifest, 'codex', intake, 'feedback'), undefined);
-    f.policy.allowedRepositoryOwners = [];
+    f.policy.routing = [];
     assert.equal(liveWorkflowPolicy(manifest, 'codex', intake, 'implementation'), undefined);
     f.policy.routing = [];
     for (const runtime of ['codex', 'openclaw'] as const) {

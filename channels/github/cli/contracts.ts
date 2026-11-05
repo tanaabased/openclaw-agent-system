@@ -1,6 +1,7 @@
 import type { dispatchStorageNotice } from '../../../agent/dispatch-storage.ts';
 import type { GitHubNotificationRuntimeDiagnostic } from '../notification-policy.ts';
 import type { RepositoryScopeDecision } from '../repository-scope.ts';
+import type { IntakeRecord } from '../intake/record-store.ts';
 import {
   githubNotificationItemMatchesSelector,
   type GitHubNotificationItemSelector,
@@ -30,7 +31,7 @@ export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarge
 ]);
 
 export interface GitHubNotificationStatusItem {
-  repositoryScope?: RepositoryScopeDecision;
+  repositoryScope?: IntakeRecord['evidence']['repositoryScope'];
   workflow?: { phase: string; conversation?: string };
   feedback?: { queued: number; active: number; blocked: number };
   disposition: GitHubNotificationItemDisposition;

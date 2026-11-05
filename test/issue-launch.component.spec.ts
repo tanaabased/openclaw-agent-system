@@ -420,7 +420,7 @@ describe('agent/issue-launch', () => {
         runtimes: ['openclaw'],
         intervalMinutes: 5,
         maxConcurrentItems: 1,
-        allowedRepositoryOwners: [],
+        routing: [],
         issueAssignment: assignment,
       },
     };

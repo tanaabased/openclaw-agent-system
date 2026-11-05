@@ -27,7 +27,7 @@ function parse(pickup: unknown, assignment: unknown = {}) {
       agent: { id: 'receiver' },
       github: {
         username: 'receiver',
-        'allowed-repository-owners': ['@owner'],
+        routing: ['owner/*'],
         'issue-assignment': assignment,
         'project-pickup': pickup,
       },
@@ -36,16 +36,13 @@ function parse(pickup: unknown, assignment: unknown = {}) {
 }
 
 describe('github project pickup policy', () => {
-  it('should intersect pickup scope with ordered routing without consulting legacy pins', async () => {
+  it('should intersect pickup scope with ordered routing', async () => {
     const f = pickupFixture();
     f.policy.routing = ['!owner/repo', '*/*'];
     assert.equal(await projectPickupScope(f.policy, f.client, f.repository), undefined);
     f.policy.routing.reverse();
-    f.policy.allowedRepositoryOwners = [{ login: 'other', nodeId: 'O_other' }];
     assert.equal(await projectPickupScope(f.policy, f.client, f.repository), f.milestone);
     f.policy.routing = [];
-    assert.equal(await projectPickupScope(f.policy, f.client, f.repository), undefined);
-    delete f.policy.routing;
     assert.equal(await projectPickupScope(f.policy, f.client, f.repository), undefined);
   });
 
@@ -125,7 +122,7 @@ describe('github project pickup policy', () => {
         agent: { id: 'receiver' },
         github: {
           username: 'receiver',
-          'allowed-repository-owners': ['@owner'],
+          routing: ['owner/*'],
           'project-pickup': pickupDeclaration,
         },
       }),
@@ -174,7 +171,7 @@ describe('github project pickup policy', () => {
         }),
         'repository-outside-workflow',
       );
-      f.policy.routing = undefined;
+      f.policy.routing = ['owner/*'];
       assert.equal(liveWorkflowPolicy(manifest, runtime, intake, 'implementation'), undefined);
       const record = {
         projectWork: work,
@@ -299,9 +296,6 @@ describe('github project pickup policy', () => {
         f.repository.archived = true;
       },
       (f) => {
-        f.policy.allowedRepositoryOwners = [];
-      },
-      (f) => {
         f.client.getItem = async () => ({ ...f.item, state: 'closed' });
       },
       (f) => {
@@ -335,6 +329,7 @@ describe('github project pickup policy', () => {
 
   it('should retain a verified assignment after pickup milestone and window changes', async () => {
     const f = pickupFixture();
+    f.policy.routing = [];
     const original = structuredClone(f.authority.enrollment);
     f.policy.projectPickup!.projects[0]!.milestone.number = 11;
     f.policy.projectPickup!.windowMinutes = 30;

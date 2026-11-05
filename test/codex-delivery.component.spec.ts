@@ -39,7 +39,7 @@ const manifest = {
     username: 'receiver',
     'schema-version': 3,
     runtimes: ['codex'],
-    'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+    routing: ['owner/*'],
     'issue-assignment': {
       mode: 'plan',
       allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],

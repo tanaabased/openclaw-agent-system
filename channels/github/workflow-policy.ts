@@ -30,8 +30,7 @@ export interface GitHubNotificationPolicy {
   runtimes: Array<'openclaw' | 'codex'>;
   intervalMinutes: number;
   maxConcurrentItems: number;
-  allowedRepositoryOwners: GitHubIdentityPin[];
-  routing?: RepositoryRoute[];
+  routing: RepositoryRoute[];
   issueAssignment?: AutomationModelSettings & {
     paused?: boolean;
     allowed: GitHubApprovedActor[];

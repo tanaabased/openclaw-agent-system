@@ -42,7 +42,7 @@ describe('project pickup native intake adapters', () => {
       github: {
         username: 'receiver',
         runtimes: [runtime],
-        'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+        routing: ['owner/*'],
         'issue-assignment': {
           mode: 'plan',
           allowed: [{ login: 'operator', 'node-id': 'U_operator' }],

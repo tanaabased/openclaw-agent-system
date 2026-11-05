@@ -204,7 +204,7 @@ describe('project pickup installation enrollment', () => {
         username: 'receiver',
         runtimes: ['codex', 'openclaw'],
         'interval-minutes': 5,
-        'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+        routing: ['owner/*'],
         'issue-assignment': { allowed: [{ login: 'operator', 'node-id': 'U_operator' }] },
         'project-pickup': {
           start: '10:00',

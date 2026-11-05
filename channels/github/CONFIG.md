@@ -100,24 +100,10 @@ or unresolved, preserve the comments and local state, inspect the original owner
 and use [managed task recovery](../../tools/dispatch/README.md) for stranded work.
 Do not delete claim comments or rotate an installation ID to retry admission.
 
-When `routing` is present, it replaces `allowed-repository-owners` completely,
-including its identity lookups. An invalid routing value is an error, not a request
-to use legacy owners. Remove the deprecated property after migrating: removing
-`routing` would otherwise restore the legacy fallback.
-
-### `allowed-repository-owners` (deprecated)
-
-| Type                                       | Required                      | Default |
-| ------------------------------------------ | ----------------------------- | ------- |
-| [Identity list](#identity-lists), nonempty | only when `routing` is absent | none    |
-
-Select the users or organizations whose repositories the workflow may use. These
-are repository owners, not the people allowed to assign work. For example,
-`['@tanaabased', '@pirog']` includes repositories owned by either account, subject
-to the agent's GitHub permissions. It does not grant access to private repositories.
-Existing immutable identity pins remain active only when `routing` is absent.
-To migrate owner-wide scope, replace `['@tanaabased', '@pirog']` with
-`routing: ['tanaabased/*', 'pirog/*']`, accepting the name-based behavior above.
+`routing` is required when declaring GitHub workflows; there is no implicit
+repository scope. The retired `allowed-repository-owners` property is rejected,
+even alongside `routing`. Replace owner-wide lists such as `['@tanaabased', '@pirog']`
+with `routing: ['tanaabased/*', 'pirog/*']`, accepting the name-based behavior above.
 
 ### `interval-minutes`
 
@@ -171,7 +157,7 @@ versions are rejected. GitHub CLI-only configuration does not require this field
 ## `github.project-pickup`
 
 Declares pickup policy for one or more repositories, each with one milestone. It requires `issue-assignment`
-and each repository must be included by `routing` (or legacy owners when routing is absent).
+and each repository must be included by `routing`.
 Pickup uses the existing GitHub access and approved assignment and feedback authors.
 
 > [!IMPORTANT]
@@ -346,21 +332,21 @@ review workflow; it does not block issue-assignment work.
 
 ### Identity Lists
 
-Use a list of GitHub identities for repository owners, assignment actors, or
-reviewers. Each entry can be a name, node ID, or pinned object:
+Use a list of GitHub user identities for assignment actors and reviewers. Each
+entry can be a name, node ID, or pinned object:
 
-| Entry type | Format                    | Meaning                                                                |
-| ---------- | ------------------------- | ---------------------------------------------------------------------- |
-| string     | `'@name'`                 | Resolve a user or organization by name. Quote the leading `@` in YAML. |
-| string     | GitHub node ID            | Select an identity by its immutable provider ID.                       |
-| object     | Name field plus `node-id` | Require both the name and ID to match.                                 |
+| Entry type | Format                    | Meaning                                                |
+| ---------- | ------------------------- | ------------------------------------------------------ |
+| string     | `'@name'`                 | Resolve a user by name. Quote the leading `@` in YAML. |
+| string     | GitHub node ID            | Select an identity by its immutable provider ID.       |
+| object     | Name field plus `node-id` | Require both the name and ID to match.                 |
 
 Object entries use these fields. Exactly one name field and `node-id` are required;
 names omit `@`. The four name fields are aliases, not different permission types.
 
 | Field     | Type   | Required       | Default | Description                                          |
 | --------- | ------ | -------------- | ------- | ---------------------------------------------------- |
-| `login`   | string | one name field | none    | GitHub user or organization login.                   |
+| `login`   | string | one name field | none    | GitHub user login.                                   |
 | `name`    | string | one name field | none    | Alias for `login`.                                   |
 | `node-id` | string | yes            | none    | Immutable GitHub node ID, not a numeric database ID. |
 | `org`     | string | one name field | none    | Alias for `login`.                                   |
@@ -370,7 +356,7 @@ Use names for a compact list, or block syntax when it is easier to read. These
 examples belong under `github`:
 
 ```yaml
-allowed-repository-owners: ['@tanaabased', '@pirog']
+routing: ['tanaabased/*', 'pirog/*']
 issue-assignment:
   allowed:
     - '@pirog'
@@ -380,8 +366,7 @@ Use node IDs directly when you already have them. The IDs in these examples are
 placeholders; replace them with the identities' actual GitHub node IDs:
 
 ```yaml
-allowed-repository-owners:
-  - O_kgDOExample
+routing: ['tanaabased/*']
 issue-assignment:
   allowed:
     - U_kgDOExample
@@ -390,18 +375,15 @@ issue-assignment:
 Pin both name and ID with an object. String and object entries can share a list:
 
 ```yaml
-allowed-repository-owners:
-  - org: tanaabased
-    node-id: O_kgDOExample
-  - '@pirog'
+routing: ['tanaabased/*', 'pirog/*']
 issue-assignment:
   allowed:
     - login: pirog
       node-id: U_kgDOExample
 ```
 
-Repository owners may be users or organizations; actors and reviewers must be
-users. Duplicate identities produce one effective grant or recipient. Bare names,
+Actors and reviewers must be users. Duplicate identities produce one effective
+grant or recipient. Bare names,
 numeric IDs, incomplete objects, and conflicting pins are rejected.
 
 Validate checks syntax offline. Connected operations verify identities before use.

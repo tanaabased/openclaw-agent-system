@@ -16,7 +16,7 @@ function parse(workflow: Record<string, unknown> = {}) {
       github: {
         'schema-version': 3,
         username: 'receiver',
-        'allowed-repository-owners': [{ owner: 'owner', 'node-id': 'O_owner' }],
+        routing: ['owner/*'],
         'issue-assignment': { allowed: [actor], reviewers: [reviewer], ...workflow },
       },
     }),

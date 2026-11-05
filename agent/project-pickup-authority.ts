@@ -11,7 +11,6 @@ import {
 } from '../channels/github/provider/work-item.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
-import repositoryScope from '../channels/github/repository-scope.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096 });
 const time = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
@@ -180,8 +179,6 @@ export function verifyProjectAssignment(
   if (
     repository.archived ||
     repository.disabled ||
-    (policy.routing === undefined &&
-      repositoryScope(policy, repository, 'project-pickup').decision === 'deny') ||
     item.itemType !== 'issue' ||
     item.state !== 'open' ||
     !item.assignees.some((assignee) => githubIdentityMatches(assignee, client.identity))

@@ -71,7 +71,7 @@ describe('agent/codex-feedback', () => {
           username: 'receiver',
           'schema-version': 3,
           runtimes: ['codex'],
-          'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+          routing: ['owner/*'],
           'issue-assignment': {
             mode: 'plan',
             allowed: [
@@ -797,9 +797,7 @@ describe('agent/codex-feedback', () => {
     const path = join(root, 'workspace', 'agent.yaml');
     const manifest = JSON.parse(await readFile(path, 'utf8'));
     manifest.github['issue-assignment'].paused = true;
-    manifest.github['allowed-repository-owners'] = [
-      { login: 'elsewhere', 'node-id': 'O_elsewhere' },
-    ];
+    manifest.github.routing = ['elsewhere/*'];
     await writeFile(path, JSON.stringify(manifest));
     const paused = await call('context', ref, true);
     assert.equal(paused.status, 'verified', JSON.stringify(paused));
@@ -1638,7 +1636,7 @@ describe('agent/codex-feedback', () => {
           username: 'receiver',
           'schema-version': 3,
           runtimes: ['codex'],
-          'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+          routing: ['owner/*'],
           'issue-assignment': { allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }] },
         },
       }),

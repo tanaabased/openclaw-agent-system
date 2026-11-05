@@ -7,6 +7,7 @@ conversation remains usable independently of the schedule.
 ## What Belongs Here
 
 - Active and paused declaration handling without silently activating intake or writing scheduler files.
+- Retired repository-owner configuration is rejected before binding, with direction to routing.
 - Installed runtime/caller/receipt boundaries before managed workflow effects, including rejection of unowned retained assessments.
 - Built-in assignment model/effort selection with real app-server chat readback, without activating its schedule or generating a model response.
 - A native schedule request using the installed runtime and bound plugin data, without global scanner rules; its saved launch block survives replacement of the host PATH Node executable.
@@ -245,6 +246,14 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/removed-feedback" \
   | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "manifest-unknown-key")'
+test ! -d "$CODEX_HOME/automations"
+
+# should reject retired repository scope before binding or activation
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-notifications/retired-repository-scope" \
+  | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "github-repository-owners-removed" and (.message | contains("github.routing")))'
 test ! -d "$CODEX_HOME/automations"
 
 # should validate routed multi-repository pickup and require explicit installation activation

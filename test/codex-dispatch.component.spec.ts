@@ -64,7 +64,7 @@ const manifest = {
     'schema-version': 3,
     'max-concurrent-items': 2,
     runtimes: ['codex'],
-    'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+    routing: ['owner/*'],
     'issue-assignment': {
       mode: 'plan',
       allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],

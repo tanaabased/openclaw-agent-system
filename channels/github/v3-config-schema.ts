@@ -73,23 +73,13 @@ export const githubV3Properties = {
   ),
 };
 
-export const githubLegacyScopeProperties = {
-  'allowed-repository-owners': Type.Array(githubIdentityReferenceSchema, { minItems: 1 }),
-};
 export const githubRoutingScopeProperties = {
   routing: Type.Array(repositoryRouteSchema),
-  'allowed-repository-owners': Type.Optional(Type.Unknown()),
 };
-export const externalGitHubV3Schema = Type.Union([
-  Type.Object(
-    { ...githubV3Properties, ...githubLegacyScopeProperties },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { ...githubV3Properties, ...githubRoutingScopeProperties },
-    { additionalProperties: false },
-  ),
-]);
+export const externalGitHubV3Schema = Type.Object(
+  { ...githubV3Properties, ...githubRoutingScopeProperties },
+  { additionalProperties: false },
+);
 export type ExternalGitHubV3 = Static<typeof externalGitHubV3Schema>;
 
 function identity(value: Static<typeof githubIdentityReferenceSchema>): GitHubIdentityPin {
@@ -121,9 +111,7 @@ export default function decodeGitHubV3(value: ExternalGitHubV3): GitHubNotificat
     ...(value['project-pickup']
       ? { projectPickup: decodeProjectPickup(value['project-pickup']) }
       : {}),
-    ...('routing' in value
-      ? { routing: [...value.routing], allowedRepositoryOwners: [] }
-      : { allowedRepositoryOwners: value['allowed-repository-owners'].map(identity) }),
+    routing: [...value.routing],
     ...(issue === undefined
       ? {}
       : {

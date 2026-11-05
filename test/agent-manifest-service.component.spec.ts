@@ -152,6 +152,38 @@ describe('manifest/service', () => {
     ]);
   });
 
+  it('should reject retired repository scope before openclaw runtime access', async () => {
+    const root = await temporaryRoot();
+    const { service } = createService({ tanaabot: root }, () => {
+      throw Error('invalid input must not access runtime resources');
+    });
+    for (const routing of [undefined, ['example/*'], []]) {
+      await writeFile(
+        join(root, 'agent.yaml'),
+        JSON.stringify({
+          'schema-version': 1,
+          agent: { id: 'tanaabot' },
+          github: {
+            username: 'tanaabot',
+            runtimes: ['openclaw'],
+            ...(routing === undefined ? {} : { routing }),
+            'allowed-repository-owners': ['@example'],
+            'issue-assignment': {},
+          },
+        }),
+      );
+      const result = await service.loadForAgentId('tanaabot', 'before_tool_call');
+      assert.equal(result.status, 'invalid');
+      if (result.status !== 'invalid') throw Error('retired configuration loaded');
+      assert.ok(
+        result.diagnostics.some(
+          ({ code, message }) =>
+            code === 'github-repository-owners-removed' && message.includes('github.routing'),
+        ),
+      );
+    }
+  });
+
   it('should load supported work and planning modes without runtime warnings', async () => {
     const root = await temporaryRoot();
     await writeFile(
@@ -164,7 +196,7 @@ describe('manifest/service', () => {
           username: 'tanaabot',
           'schema-version': 3,
           runtimes: ['openclaw'],
-          'allowed-repository-owners': [{ login: 'example', 'node-id': 'O_example' }],
+          routing: ['example/*'],
           'issue-assignment': {
             paused: false,
             mode: 'work',
@@ -195,7 +227,7 @@ describe('manifest/service', () => {
     assert.equal(result.manifest.git?.policy?.forcePush, 'deny');
     assert.deepEqual(
       result.diagnostics.map(({ code }) => code),
-      ['github-repository-owners-deprecated'],
+      [],
     );
     const path = join(root, 'agent.yaml');
     await writeFile(path, (await readFile(path, 'utf8')).replace('"mode":"work"', '"mode":"plan"'));
@@ -204,7 +236,7 @@ describe('manifest/service', () => {
     if (supported.status !== 'loaded') return;
     assert.deepEqual(
       supported.diagnostics.map(({ code }) => code),
-      ['github-repository-owners-deprecated'],
+      [],
     );
     assert.equal(supported.manifest.git?.policy?.forcePush, 'deny');
   });

@@ -28,7 +28,7 @@ describe('project pickup conversation selection', () => {
             github: {
               username: 'receiver',
               runtimes: [runtime],
-              'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+              routing: ['owner/*'],
               'issue-assignment': { allowed: [{ login: 'operator', 'node-id': 'U_operator' }] },
               'project-pickup': {
                 ...pickupDeclaration,

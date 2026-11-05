@@ -44,7 +44,7 @@ const manifest = {
     username: 'receiver',
     'schema-version': 3,
     runtimes: ['codex'],
-    'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+    routing: ['owner/*'],
     'issue-assignment': {
       mode: 'plan',
       allowed: [{ login: 'receiver', 'node-id': 'U_receiver' }],
@@ -67,6 +67,30 @@ describe('agent/codex-intake', () => {
   afterEach(async () => {
     await rm(root, { force: true, recursive: true });
   });
+  it('should reject retired repository scope before codex intake connects', async () => {
+    for (const routing of [undefined, ['owner/*'], []]) {
+      await writeFile(
+        join(workspace, 'agent.yaml'),
+        JSON.stringify({
+          ...manifest,
+          github: {
+            ...manifest.github,
+            routing,
+            'allowed-repository-owners': ['@owner'],
+          },
+        }),
+      );
+      await assert.rejects(
+        runCodexIntake(pluginData, true, {
+          codexHome,
+          assertActive: async () => {},
+          connect: async () => assert.fail('invalid configuration must not connect'),
+        }),
+        { code: 'intake-manifest-unavailable' },
+      );
+    }
+  });
+
   it('should apply routing precedence and live reorder without reinstalling or losing admitted work', async () => {
     const provider = intakeFixture();
     const assigned = provider.events.splice(0);
@@ -85,7 +109,6 @@ describe('agent/codex-intake', () => {
           github: {
             ...manifest.github,
             routing,
-            'allowed-repository-owners': 'ignored invalid value',
           },
         }),
       );

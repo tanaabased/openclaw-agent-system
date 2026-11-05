@@ -9,9 +9,7 @@ models:
 github:
   schema-version: 3
   username: example-agent
-  allowed-repository-owners:
-    - login: example-owner
-      node-id: O_example
+  routing: ['example-owner/*']
   issue-assignment:
     paused: true
     allowed:

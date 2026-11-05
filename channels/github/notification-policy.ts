@@ -8,24 +8,10 @@ import type { ManifestDiagnostic } from '../../manifest/types.ts';
 /** validate portable policy without consulting providers, credentials, or installed state. */
 export function validateGitHubNotificationPolicy(
   github: GitHubManifestConfiguration | undefined,
-  legacyOwnersDeclared = github?.notifications?.routing === undefined,
 ): ManifestDiagnostic[] {
   const policy = github?.notifications;
   if (!policy) return [];
-  const diagnostics = policy.routing ? repositoryRoutingDiagnostics(policy.routing) : [];
-  if (legacyOwnersDeclared)
-    diagnostics.push({
-      code:
-        policy.routing === undefined
-          ? 'github-repository-owners-deprecated'
-          : 'github-repository-owners-ignored',
-      fieldPath: '/github/allowed-repository-owners',
-      severity: 'warning',
-      message:
-        policy.routing === undefined
-          ? 'allowed-repository-owners is deprecated. Use ordered github.routing name patterns for new work; legacy identity pins remain active until you migrate.'
-          : 'github.routing takes precedence. allowed-repository-owners is ignored; remove the deprecated property after migration to avoid restoring it when routing is removed.',
-    });
+  const diagnostics = repositoryRoutingDiagnostics(policy.routing);
   if (policy.projectPickup) {
     if (!policy.issueAssignment)
       diagnostics.push({
@@ -63,7 +49,7 @@ export function validateGitHubNotificationPolicy(
           code: 'github-project-pickup-repository-outside-workflow',
           fieldPath,
           message:
-            'Choose a repository included by github.routing, or by legacy owners when routing is absent. Pickup does not expand repository access.',
+            'Choose a repository included by github.routing. Pickup does not expand repository access.',
           severity: 'error',
         });
     }
@@ -77,10 +63,6 @@ export function validateGitHubNotificationPolicy(
     });
   }
   const lists = [
-    {
-      path: 'allowed-repository-owners',
-      identities: policy.routing === undefined ? policy.allowedRepositoryOwners : [],
-    },
     { path: 'issue-assignment/allowed', identities: policy.issueAssignment?.allowed ?? [] },
     { path: 'review-request/allowed', identities: policy.reviewRequest?.allowed ?? [] },
   ];

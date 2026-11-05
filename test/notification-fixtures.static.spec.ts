@@ -31,7 +31,6 @@ for (const id of [
   describe(`examples/${id} fixture configuration`, () => {
     it('should accept the prepared fixture and route its supported workflow to the owning runtime', async () => {
       const source = (await readFile(`examples/${id}/tanaabot/agent.yaml`, 'utf8'))
-        .replaceAll('__OWNER_NODE_ID__', 'O_owner')
         .replaceAll('__ACTOR_NODE_ID__', 'U_actor')
         .replaceAll('__RECEIVER_NODE_ID__', 'U_receiver')
         .replaceAll('__MILESTONE_NUMBER__', '123');

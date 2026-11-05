@@ -22,6 +22,21 @@ const eventIdentity = Type.Object(
   { ...identity.properties, type: text },
   { additionalProperties: false },
 );
+// historical scope decisions are evidence only, never executable admission policy.
+const retainedRepositoryScopeSchema = Type.Union([
+  repositoryScopeDecisionSchema,
+  Type.Object(
+    {
+      ...repositoryScopeDecisionSchema.properties,
+      source: Type.Literal('allowed-repository-owners'),
+      reason: Type.Union([
+        ...repositoryScopeDecisionSchema.properties.reason.anyOf,
+        Type.Literal('identity-mismatch'),
+      ]),
+    },
+    { additionalProperties: false },
+  ),
+]);
 export const intakeRecordSchema = Type.Object(
   {
     version: Type.Literal(1),
@@ -58,7 +73,7 @@ export const intakeRecordSchema = Type.Object(
         assigned: Type.Literal(true),
         repositoryReadable: Type.Literal(true),
         ownerPinned: Type.Boolean(),
-        repositoryScope: Type.Optional(repositoryScopeDecisionSchema),
+        repositoryScope: Type.Optional(retainedRepositoryScopeSchema),
         actorPinned: Type.Literal(true),
         projectWork: Type.Optional(projectWorkSchema),
       },

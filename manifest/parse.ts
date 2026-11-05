@@ -408,6 +408,19 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
       ...fileDiagnostics,
     ]),
     ...legacyPolicyDiagnostics(value),
+    ...(isRecord(value) &&
+    isRecord(value.github) &&
+    Object.hasOwn(value.github, 'allowed-repository-owners')
+      ? [
+          {
+            code: 'github-repository-owners-removed',
+            fieldPath: '/github/allowed-repository-owners',
+            message:
+              'github.allowed-repository-owners is no longer supported. Replace it with github.routing repository name patterns (for example, routing: ["owner/*"]).',
+            severity: 'error' as const,
+          },
+        ]
+      : []),
     ...modelTierGroupDiagnostics(value),
   ];
   if (declarationDiagnostics.length > 0 || !Value.Check(externalAgentManifestSchema, value)) {
@@ -421,11 +434,7 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
         ...externalAgentManifestSchema.properties,
         github: Type.Optional(
           externalGitHubSectionSchema.anyOf[
-            isRecord(value) && hasGitHubWorkflowConfiguration(value.github)
-              ? Object.hasOwn(value.github, 'routing')
-                ? 2
-                : 1
-              : 0
+            isRecord(value) && hasGitHubWorkflowConfiguration(value.github) ? 1 : 0
           ]!,
         ),
       },
@@ -452,10 +461,7 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
   const host = declarations.find(({ key }) => key === 'setup-host');
   const agent = declarations.find(({ key }) => key === agentKey);
   const manifest = decodeManifest(value);
-  const notificationDiagnostics = validateGitHubNotificationPolicy(
-    manifest.github,
-    value.github !== undefined && Object.hasOwn(value.github, 'allowed-repository-owners'),
-  );
+  const notificationDiagnostics = validateGitHubNotificationPolicy(manifest.github);
   if (notificationDiagnostics.some(({ severity }) => severity === 'error')) {
     return { status: 'invalid', diagnostics: notificationDiagnostics };
   }

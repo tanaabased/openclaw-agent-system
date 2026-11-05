@@ -81,8 +81,7 @@ describe('project pickup selection through native journals', () => {
       github: {
         username: 'receiver',
         runtimes: [runtime],
-        ...(coordinated ? { routing: [{ 'owner/*': 'swarm' }] as RepositoryRoute[] } : {}),
-        'allowed-repository-owners': [{ login: 'owner', 'node-id': 'O_owner' }],
+        routing: (coordinated ? [{ 'owner/*': 'swarm' }] : ['owner/*']) as RepositoryRoute[],
         'max-concurrent-items': 1,
         'issue-assignment': {
           mode: 'plan',

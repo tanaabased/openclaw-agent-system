@@ -34,7 +34,7 @@ function builtinManifest(
       models: configuredModels,
       github: {
         username: 'receiver',
-        'allowed-repository-owners': ['@owner'],
+        routing: ['owner/*'],
         'issue-assignment': { allowed: ['@operator'], ...settings },
         'project-pickup': { ...pickupDeclaration, ...settings },
       },

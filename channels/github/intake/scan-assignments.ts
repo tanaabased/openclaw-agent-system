@@ -1,9 +1,6 @@
 import itemReadFailure from '../provider/item-read-failure.ts';
 import GitHubIdentityCache from '../identity-cache.ts';
-import repositoryScope, {
-  repositoryScopeCandidate,
-  type RepositoryScopeDecision,
-} from '../repository-scope.ts';
+import repositoryScope, { type RepositoryScopeDecision } from '../repository-scope.ts';
 import authorizeProjectAssignment, {
   type ProjectPickupAuthority,
 } from '../../../agent/project-pickup-authority.ts';
@@ -198,16 +195,6 @@ export default async function scanAssignments(
         const observe = async () => {
           if (candidate.itemType !== 'issue') return;
           const coordinates = githubRepositoryPath(candidate.repositoryPath);
-          if (
-            input.policy.routing === undefined &&
-            !repositoryScopeCandidate(
-              input.policy,
-              coordinates.owner,
-              coordinates.name,
-              'issue-assignment',
-            )
-          )
-            return;
           // search paths and saved observations may predate a rename or transfer.
           const repository = await client.getRepository(coordinates.owner, coordinates.name);
           const scope = repositoryScope(input.policy, repository, 'issue-assignment');
@@ -276,7 +263,7 @@ export default async function scanAssignments(
               open: true,
               assigned: true,
               repositoryReadable: true,
-              ownerPinned: scope.source === 'allowed-repository-owners',
+              ownerPinned: false,
               repositoryScope: scope,
               actorPinned: true,
             },

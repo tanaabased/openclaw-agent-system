@@ -119,7 +119,6 @@ describe('openclaw v2 intake slice', () => {
     const f = fixture();
     const policy: GitHubNotificationPolicy = f.value.github.notifications;
     policy.routing = ['!owner/repo', 'owner/*'];
-    policy.allowedRepositoryOwners = [{ login: 'ignored', nodeId: '', reference: '@ignored' }];
     await f.service.run(f.value, root, 'activate');
     f.provider.events.push(...intakeFixture().events);
     f.setNow(baseline + 120000);
