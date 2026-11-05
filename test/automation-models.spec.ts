@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 
+import parse from '../manifest/parse.ts';
+import { pickupDeclaration } from './project-pickup-fixture.ts';
 import automationModels from '../agent/automation-models.ts';
 import { codexIntakeJobs } from '../agent/codex-intake-policy.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
@@ -20,6 +22,24 @@ function jobs(settings: Record<string, unknown> = {}) {
   assert.equal(parsed.status, 'valid');
   if (parsed.status !== 'valid') throw Error('invalid fixture');
   return parsed.automations as ResolvedAutomation[];
+}
+function builtinManifest(
+  settings: Record<string, unknown> = {},
+  configuredModels: unknown = models,
+) {
+  return parse(
+    JSON.stringify({
+      'schema-version': 1,
+      agent: { id: 'receiver' },
+      models: configuredModels,
+      github: {
+        username: 'receiver',
+        'allowed-repository-owners': ['@owner'],
+        'issue-assignment': { allowed: ['@operator'], ...settings },
+        'project-pickup': { ...pickupDeclaration, ...settings },
+      },
+    }),
+  );
 }
 describe('agent/automation-models', () => {
   it('should resolve conversation settings for reporting commands without changing command-only consumers', () => {
@@ -139,6 +159,124 @@ describe('agent/automation-models', () => {
       assert.deepEqual(original[0]!.overrides, {});
     });
   }
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should resolve built-in defaults and explicit settings without changing issue routing in ${runtime}`, () => {
+      const cases = [
+        {
+          settings: {},
+          assignment: runtime === 'codex' ? 'openai/small' : 'openai/default',
+          pickup: 'openai/default',
+          assignmentEffort: runtime === 'codex' ? 'high' : 'medium',
+          pickupEffort: 'medium',
+        },
+        {
+          settings: { model: 'high' },
+          assignment: 'openai/large',
+          pickup: 'openai/large',
+          assignmentEffort: 'xhigh',
+          pickupEffort: 'xhigh',
+        },
+        {
+          settings: { model: 'low', effort: 'minimal' },
+          assignment: 'openai/small',
+          pickup: 'openai/small',
+          assignmentEffort: 'minimal',
+          pickupEffort: 'minimal',
+        },
+        {
+          settings: { model: 'openai/explicit' },
+          assignment: 'openai/explicit',
+          pickup: 'openai/explicit',
+          assignmentEffort: 'medium',
+          pickupEffort: 'medium',
+        },
+        {
+          settings: { model: 'openai/explicit', effort: 'low' },
+          assignment: 'openai/explicit',
+          pickup: 'openai/explicit',
+          assignmentEffort: 'low',
+          pickupEffort: 'low',
+        },
+        {
+          settings: { effort: 'low' },
+          assignment: runtime === 'codex' ? 'openai/small' : 'openai/default',
+          pickup: 'openai/default',
+          assignmentEffort: 'low',
+          pickupEffort: 'low',
+        },
+      ];
+      for (const c of cases) {
+        const result = builtinManifest(c.settings);
+        assert.equal(result.status, 'valid', JSON.stringify(result));
+        if (result.status !== 'valid') return;
+        const before = structuredClone(result.manifest);
+        const nativeJobs =
+          runtime === 'codex'
+            ? codexIntakeJobs(result.manifest)
+            : openclawIntakeJobs(result.manifest);
+        const native = (model: string) => (runtime === 'codex' ? model.slice(7) : model);
+        assert.deepEqual(nativeJobs[0]!.overrides[runtime], {
+          model: native(c.assignment),
+          effort: c.assignmentEffort,
+        });
+        assert.deepEqual(nativeJobs[1]!.overrides[runtime], {
+          model: native(c.pickup),
+          effort: c.pickupEffort,
+        });
+        assert.deepEqual(result.manifest, before);
+        assert.deepEqual(result.manifest.models, models);
+      }
+    });
+    it(`should allow an explicit built-in selection without the unused low profile in ${runtime}`, () => {
+      const parsed = builtinManifest(
+        { model: 'openai/explicit', effort: 'low' },
+        { default: models.default },
+      );
+      assert.equal(parsed.status, 'valid');
+      if (parsed.status !== 'valid') return;
+      const nativeJobs =
+        runtime === 'codex'
+          ? codexIntakeJobs(parsed.manifest)
+          : openclawIntakeJobs(parsed.manifest);
+      assert.equal(nativeJobs.length, 2);
+      for (const job of nativeJobs) assert.equal(job.overrides[runtime]!.effort, 'low');
+    });
+  }
+  it('should reject malformed built-in settings and missing selected profiles during manifest validation', () => {
+    for (const settings of [
+      { model: 'missing' },
+      { model: 'openai/ bad' },
+      { effort: 'unknown' },
+      { profile: 'low' },
+    ]) {
+      const result = builtinManifest(settings);
+      assert.equal(result.status, 'invalid', JSON.stringify(settings));
+    }
+    const missing = builtinManifest({ model: 'high' }, { default: models.default });
+    assert.equal(missing.status, 'invalid');
+    assert.deepEqual(
+      missing.diagnostics.map((d) => [d.code, d.fieldPath]),
+      [
+        ['manifest-automation-profile-missing', '/github/issue-assignment/model'],
+        ['manifest-automation-profile-missing', '/github/project-pickup/model'],
+      ],
+    );
+    const parsed = builtinManifest({ model: 'anthropic/unsupported' });
+    assert.equal(parsed.status, 'valid');
+    if (parsed.status !== 'valid') return;
+    assert.throws(() => codexIntakeJobs(parsed.manifest), {
+      code: 'codex-model-provider-unsupported',
+    });
+    parsed.manifest.github!.notifications!.issueAssignment!.model = 'default';
+    assert.throws(() => codexIntakeJobs(parsed.manifest), {
+      code: 'codex-model-provider-unsupported',
+    });
+    parsed.manifest.github!.notifications!.projectPickup!.model = 'default';
+    parsed.manifest.github!.notifications!.projectPickup!.effort = 'adaptive';
+    assert.throws(() => codexIntakeJobs(parsed.manifest), {
+      code: 'codex-model-effort-unsupported',
+    });
+  });
   it('should project shared intent through both runtime entrypoints', () => {
     const manifest = {
       agent: { id: 'test' },

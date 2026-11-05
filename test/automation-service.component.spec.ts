@@ -754,6 +754,16 @@ describe('agent/automation-service', () => {
     assert.equal([...sessions.values()][0]!.category, 'AGENT SYSTEM');
     const identity = native[0]!.id;
     const coordinator = native[0]!.sessionTarget;
+    const schedule = structuredClone(native[0]!.schedule);
+    assert.equal(native[0]!.payload.model, 'openai/gpt-6-luna');
+    policy.issueAssignment!.model = 'high';
+    policy.issueAssignment!.effort = 'low';
+    await service.reconcile(manifest, root);
+    assert.equal(native[0]!.id, identity);
+    assert.equal(native[0]!.sessionTarget, coordinator);
+    assert.deepEqual(native[0]!.schedule, schedule);
+    assert.equal(native[0]!.payload.model, 'openai/gpt-6-luna');
+    assert.equal(native[0]!.payload.thinking, 'low');
     const { store, context } = await service.scope(manifest, root);
     native[0]!.name = 'Agent System: github-issue-assignment';
     const legacy = await store.read();
@@ -927,6 +937,8 @@ describe('agent/automation-service', () => {
     const enrollments = new ProjectPickupEnrollmentStore(instanceRoot);
     policy.projectPickup = {
       ...fixture.policy.projectPickup!,
+      model: 'high',
+      effort: 'minimal',
     };
     service.dependencies.pickup = {
       prepare: async () =>
@@ -945,6 +957,8 @@ describe('agent/automation-service', () => {
     await service.reconcile(manifest, root);
     const pickup = native.find((job) => job.displayName === '📥 PROJECT PICKUP')!;
     assert.ok(pickup.enabled);
+    assert.equal(pickup.payload.model, 'openai/gpt-6-luna');
+    assert.equal(pickup.payload.thinking, 'minimal');
     const enrollment = (await enrollments.read()).records[0]!;
     assert.equal(enrollment.nativeId, pickup.id);
     const beforePickup = mutations().length;

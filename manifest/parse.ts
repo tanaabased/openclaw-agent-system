@@ -5,6 +5,7 @@ import { isAlias, parseDocument, visit } from 'yaml';
 import normalizeAutomations, {
   automationFileSchema,
   automationProfileDiagnostics,
+  automationModelProfileDiagnostics,
   externalAutomationsSchema,
 } from './automation-schema.ts';
 import {
@@ -393,6 +394,15 @@ export function normalizeAgentManifest(value: unknown): ParsedAgentManifest {
           isRecord(value) ? value.models : undefined,
         )
       : []),
+    ...(['issue-assignment', 'project-pickup'] as const).flatMap((workflow) => {
+      const github = isRecord(value) && isRecord(value.github) ? value.github : undefined;
+      const settings = github && isRecord(github[workflow]) ? github[workflow] : undefined;
+      return automationModelProfileDiagnostics(
+        settings?.model,
+        isRecord(value) ? value.models : undefined,
+        `/github/${workflow}/model`,
+      );
+    }),
     ...declarations.flatMap(({ setup, fileDiagnostics }) => [
       ...(setup?.status === 'invalid' ? setup.diagnostics : []),
       ...fileDiagnostics,

@@ -47,17 +47,24 @@ export function normalizeAutomationThread(value: string | Static<typeof automati
     ? { name: value.trim() }
     : Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, entry.trim()]));
 }
+export const automationModelProperties = {
+  model: Type.Optional(
+    Type.Union([
+      modelReferenceSchema,
+      ...['default', 'low', 'medium', 'high'].map((value) => Type.Literal(value)),
+    ]),
+  ),
+  effort: Type.Optional(Type.Union(explicitModelEfforts.map((value) => Type.Literal(value)))),
+};
+export interface AutomationModelSettings {
+  model?: string;
+  effort?: string;
+}
 const jobSchema = Type.Object(
   {
     id: Type.String({ pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*(?![\\s\\S])' }),
     'display-name': Type.Optional(displayNameSchema),
-    model: Type.Optional(
-      Type.Union([
-        modelReferenceSchema,
-        ...['default', 'low', 'medium', 'high'].map((value) => Type.Literal(value)),
-      ]),
-    ),
-    effort: Type.Optional(Type.Union(explicitModelEfforts.map((value) => Type.Literal(value)))),
+    ...automationModelProperties,
     enabled: Type.Optional(Type.Boolean()),
     thread: Type.Optional(Type.Union([Type.Null(), automationThreadValueSchema])),
     group: Type.Optional(Type.String()),
@@ -144,19 +151,25 @@ export function automationProfileDiagnostics(
   jobs: AgentAutomation[],
   models: unknown,
 ): ManifestDiagnostic[] {
-  return jobs.flatMap((job, index) => {
-    if (!['default', 'low', 'medium', 'high'].includes(job.model ?? '')) return [];
-    if (models && typeof models === 'object' && Object.hasOwn(models, job.model!)) return [];
-    return [
-      {
-        ...automationDiagnostic(
-          'manifest-automation-profile-missing',
-          `/automations/${index}/model`,
-        ),
-        message: `The requested automation model profile is not configured at /automations/${index}/model.`,
-      },
-    ];
-  });
+  return jobs.flatMap((job, index) =>
+    automationModelProfileDiagnostics(job.model, models, `/automations/${index}/model`),
+  );
+}
+
+export function automationModelProfileDiagnostics(
+  selector: unknown,
+  models: unknown,
+  fieldPath: string,
+): ManifestDiagnostic[] {
+  if (typeof selector !== 'string' || !['default', 'low', 'medium', 'high'].includes(selector))
+    return [];
+  if (models && typeof models === 'object' && Object.hasOwn(models, selector)) return [];
+  return [
+    {
+      ...automationDiagnostic('manifest-automation-profile-missing', fieldPath),
+      message: `The requested automation model profile is not configured at ${fieldPath}.`,
+    },
+  ];
 }
 
 /** normalize declarations without files, clocks, model calls, or runtime capability checks. */

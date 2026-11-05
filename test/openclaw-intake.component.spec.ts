@@ -38,6 +38,8 @@ function manifest() {
     models: {
       default: { model: 'openai/gpt-6-luna', effort: 'medium' },
       low: { model: 'openai/gpt-6-luna', effort: 'medium' },
+      medium: { model: 'openai/gpt-6.1-sol', effort: 'high' },
+      high: { model: 'openai/gpt-6-astra', effort: 'high' },
     },
     github: { username: 'receiver', notifications: { ...policy, runtimes: ['codex', 'openclaw'] } },
   } satisfies AgentManifest;
