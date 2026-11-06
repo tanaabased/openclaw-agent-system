@@ -28,8 +28,8 @@ then unbind without changing the workspace manifests.
 root="$TMPDIR/agent-system-codex-install"
 mkdir -p "$root/package"
 tar -xzf "$AGENT_SYSTEM_PACKAGE" -C "$root/package"
-codex-tools install "$root/package/package" --json | jq -e '.ok == true and .inspection.installed == true and .inspection.enabled == true'
-codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/cache.json" | jq -e '.ok == true and .status == "current"'
+codex-tools install "$root/package/package" --json | jq -e 'if .ok == true and .inspection.installed == true and .inspection.enabled == true then . else error("plugin install failed: " + ({ok, status, issue, inspection, remaining, nativeState} | tojson)) end'
+codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/cache.json" | jq -e 'if .ok == true and .status == "current" then . else error("plugin cache check failed: " + ({ok, status, issue} | tojson)) end'
 
 # should expose complete packaged skills to a fresh codex app server
 bun --cwd "$GITHUB_WORKSPACE" run test:codex-plugin

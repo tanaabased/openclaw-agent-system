@@ -59,6 +59,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@copilotkit/aimock@1.35.0": "patches/@copilotkit%2Faimock@1.35.0.patch",
+  },
   "overrides": {
     "hono": "4.13.4",
   },
