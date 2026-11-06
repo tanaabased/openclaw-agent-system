@@ -1,5 +1,4 @@
 import seedHistoricalAssessment from './legacy-assessment-fixture.ts';
-import assessmentHandoff from '../agent/assessment-handoff.ts';
 import assessmentPresentation from '../agent/dispatch-presentation.ts';
 import { dispatchAdmission } from '../agent/managed-issue.ts';
 import { feedbackRevision } from '../agent/feedback-source.ts';
@@ -131,7 +130,6 @@ describe('agent/codex-dispatch', () => {
           id: record.id,
           outcome: source.outcome,
           previousResultDigest: automationHash(source),
-          handoff: assessmentHandoff(record, record.issueMode ?? 'plan', 'codex'),
           presentation: assessmentPresentation(record.result!, record, intake, selected.workspace, {
             debug: selected.manifest.debug,
           }),
@@ -4728,11 +4726,7 @@ describe('agent/codex-dispatch', () => {
             JSON.stringify(entered),
           );
         if (entered && permitted && !broader) {
-          assert.ok(
-            'pendingPublicResponse' in entered &&
-              entered.pendingPublicResponse?.state === 'blocked',
-          );
-          assert.match(entered.pendingPublicResponse!.instruction, /Do not retry/);
+          assert.equal('pendingPublicResponse' in entered, false);
           await work.run(
             'result',
             {

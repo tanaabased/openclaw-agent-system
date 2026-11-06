@@ -1,5 +1,4 @@
 import seedHistoricalAssessment from './legacy-assessment-fixture.ts';
-import assessmentHandoff from '../agent/assessment-handoff.ts';
 import assessmentPresentation from '../agent/dispatch-presentation.ts';
 import { dispatchAdmission } from '../agent/managed-issue.ts';
 import {
@@ -3507,11 +3506,6 @@ describe('agent/openclaw issue dispatch', () => {
         id,
         outcome: result.outcome,
         previousResultDigest: automationHash(result),
-        handoff: assessmentHandoff(
-          record,
-          manifest.github?.notifications?.issueAssignment?.mode ?? 'plan',
-          'openclaw',
-        ),
         presentation: assessmentPresentation(record.result!, record, intake, root, {
           debug: manifest.debug,
         }),
@@ -3858,10 +3852,7 @@ describe('agent/openclaw issue dispatch', () => {
           ...(assessment.decision ? { decision: assessment.decision } : {}),
         });
         assert.equal(entered.status, 'verified', JSON.stringify(entered));
-        assert.ok(
-          'pendingPublicResponse' in entered && entered.pendingPublicResponse?.state === 'blocked',
-        );
-        assert.match(entered.pendingPublicResponse!.instruction, /Do not retry/);
+        assert.equal('pendingPublicResponse' in entered, false);
         assert.equal((await record()).work?.implementation?.runId, who.runId);
         await service.run(manifest, root, who, {
           action: 'implementation-result',
@@ -3919,8 +3910,6 @@ describe('agent/openclaw issue dispatch', () => {
       assert.ok(
         'presentation' in detailed && detailed.presentation?.includes(assessment.fullAssessment!),
       );
-      assert.ok('handoff' in result);
-      assert.equal(result.handoff?.next, mode === 'auto' ? 'planning' : 'implementation');
       inputReceipts = [];
       const who = assessor(input.id);
       const verified = await service.run(manifest, root, who, {
@@ -5933,11 +5922,10 @@ describe('agent/openclaw issue dispatch', () => {
     await prepare(input);
     await assess(input.id);
     await context(input.id);
-    const result = await historicalAssessment(input.id, {
+    await historicalAssessment(input.id, {
       ...plan,
       decision: { mode: 'work', reasons: ['Skill requested it.'] },
     });
-    assert.ok('handoff' in result && result.handoff?.next === 'planning');
     const attempted = await service.run(
       manifest,
       root,

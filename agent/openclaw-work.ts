@@ -1,7 +1,6 @@
 import nativeClarification from './native-clarification.ts';
 import nativeTaskInstructions from './native-task-instructions.ts';
 import implementationContext from './implementation-context.ts';
-import pendingPublicResponse from './pending-public-response.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import implementationHandoff from './implementation-handoff.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
@@ -182,7 +181,6 @@ export default async function openClawWorkAction(input: {
         record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
       routing: record.routing && JSON.parse(record.routing),
       effective: record.effective,
-      pendingPublicResponse: pendingPublicResponse(record),
       instructions: nativeTaskInstructions('openclaw'),
     };
   }

@@ -1,7 +1,6 @@
 import nativeTaskInstructions from './native-task-instructions.ts';
 import implementationContext from './implementation-context.ts';
 import codexIssueBranch from './codex-issue-branch.ts';
-import pendingPublicResponse from './pending-public-response.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
 import type { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
@@ -70,7 +69,6 @@ export default async function codexWorkContext(
     routing: record.routing && JSON.parse(record.routing),
     effective: record.effective,
     binding: work.binding,
-    pendingPublicResponse: pendingPublicResponse(record),
     instructions: nativeTaskInstructions('codex'),
   };
 }
