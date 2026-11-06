@@ -7,6 +7,26 @@ import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 const allowances = [{ repository: 'owner/repo', milestone: 10, used: 0, limit: 1 }];
 
 describe('agent/project-pickup-report', () => {
+  it('should explain contradictory and no-match criteria without hiding unreadable issues', () => {
+    for (const excluded of ['BUG', 'blocked']) {
+      const result = report({
+        outcome: {
+          status: 'empty',
+          allowances: [
+            { ...allowances[0]!, filters: { labels: ['bug'], excludeLabels: [excluded] } },
+          ],
+          summary: { eligible: 0, shortlist: [], skipped: 1, remaining: 0 },
+        },
+      });
+      assert.match(result.response, /require all.*bug/);
+      assert.match(result.response, /exclude any/);
+      assert.match(result.response, /No eligible issues matched/);
+      assert.match(result.response, /1 issues could not be read/);
+      assert.equal(result.response.includes('Contradictory'), excluded === 'BUG');
+      assert.doesNotMatch(result.response, /label does not exist/);
+    }
+  });
+
   it('should preserve safe diagnostics and recovery without loading private state', () => {
     const diagnostic = providerDiagnostic('github', 'client-create', 'permission', {
       httpStatus: 403,

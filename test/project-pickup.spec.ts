@@ -36,6 +36,47 @@ function parse(pickup: unknown, assignment: unknown = {}) {
 }
 
 describe('github project pickup policy', () => {
+  it('should decode label filters without transforming literal values', () => {
+    for (const filters of [
+      undefined,
+      {},
+      { labels: [], 'exclude-labels': [] },
+      {
+        labels: ['Priority: HIGH', 'ready-to-go'],
+        'exclude-labels': ['Blocked Work'],
+      },
+    ]) {
+      const parsed = parse({
+        ...pickupDeclaration,
+        projects: [{ ...pickupDeclaration.projects[0], filters }],
+      });
+      assert.equal(parsed.status, 'valid');
+      if (parsed.status !== 'valid') return;
+      assert.deepEqual(
+        parsed.manifest.github!.notifications!.projectPickup!.projects[0]!.filters,
+        filters === undefined
+          ? undefined
+          : {
+              ...(filters.labels ? { labels: filters.labels } : {}),
+              ...(filters['exclude-labels'] ? { excludeLabels: filters['exclude-labels'] } : {}),
+            },
+      );
+    }
+    for (const filters of [
+      { labels: 'bug' },
+      { labels: [''] },
+      { labels: ['   '] },
+      { 'exclude-labels': [3] },
+      { unsupported: [] },
+    ]) {
+      assert.equal(
+        parse({ ...pickupDeclaration, projects: [{ ...pickupDeclaration.projects[0], filters }] })
+          .status,
+        'invalid',
+      );
+    }
+  });
+
   it('should intersect pickup scope with ordered routing without consulting legacy pins', async () => {
     const f = pickupFixture();
     f.policy.routing = ['!owner/repo', '*/*'];
@@ -100,7 +141,6 @@ describe('github project pickup policy', () => {
       { projects: [{ repository: 'other/repo', milestone: { number: 1, policy: 'only' } }] },
       { projects: [{ repository: 'owner/repo', milestone: { number: 0, policy: 'only' } }] },
       { projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'prefer' } }] },
-      { projects: [{ ...pickupDeclaration.projects[0], filters: { labels: ['bug'] } }] },
       { 'window-minutes': 0 },
       { 'window-minutes': 1.5 },
       { paused: 'false' },
