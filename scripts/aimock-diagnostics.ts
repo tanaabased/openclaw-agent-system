@@ -12,6 +12,7 @@ interface OpenClawAIMockDiagnostics {
   failed: boolean;
   error?: string;
   requests?: Array<{
+    method: string;
     path: string;
     status: number;
     matched: boolean;
@@ -102,6 +103,7 @@ export default function openClawAIMockDiagnostics(
     failed: true,
     ...(error === undefined ? {} : { error }),
     requests: relevant.map((entry) => ({
+      method: entry.method,
       path: entry.path,
       status: entry.response.status,
       matched: entry.response.fixture !== null,

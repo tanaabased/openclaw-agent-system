@@ -75,6 +75,7 @@ describe('scripts/aimock-server diagnostics', () => {
           const report = JSON.parse(failure.stdout ?? '');
           assert.equal(report.failed, true);
           assert.equal(report.requests[0].matched, false);
+          assert.equal(report.requests[0].method, 'POST');
           assert.equal(report.requests[0].checks.model, true);
           assert.equal(report.requests[0].checks.systemPrompt, false);
           assert.doesNotMatch(failure.stdout ?? '', /private-/u);
