@@ -91,7 +91,11 @@ export default function contextMaterialExchange(request: ChatCompletionRequest):
       }
       assert.equal(text.length, field.length);
       const { parent, name } = locate(field.path);
-      parent[name] = JSON.parse(text);
+      const value = JSON.parse(text);
+      parent[name] =
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? { ...(parent[name] as Record<string, unknown>), ...value }
+          : value;
     }
     for (const alias of materials.aliases) {
       const source = locate(alias.from);

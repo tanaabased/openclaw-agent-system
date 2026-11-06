@@ -73,6 +73,7 @@ node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" manual-launch-first 600000
 node --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { setTimeout } from 'node:timers/promises';
 import { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
@@ -87,8 +88,7 @@ while (Date.now() < deadline) {
 }
 assert.equal(records().length, 1);
 assert.ok(record?.assessmentTurn?.runId);
-const terminal = await callGatewayFromCli('agent.wait', {json:true}, {runId:record.assessmentTurn.runId,timeoutMs:300000}, {scopes:['operator.admin'],progress:false,sharedStateMode:'read-only'});
-assert.equal(terminal.status, 'ok');
+execFileSync(process.execPath, ['--import', 'tsx', process.env.GITHUB_WORKSPACE + '/scripts/wait-for-agent-run.ts', record.assessmentTurn.runId, '600000'], {stdio:'inherit'});
 record = records()[0];
 assert.equal(record.result, undefined);
 assert.equal(record.stageReceipt, undefined);
@@ -102,8 +102,6 @@ assert.equal(described.session.sessionId, record.sessionCreation.sessionId);
 assert.equal(record.effective.status, 'verified');
 writeFileSync(process.env.TMPDIR + '/manual-launch-evidence.json', JSON.stringify(record));
 NODE
-child_run=$(jq -er .assessmentTurn.runId "$TMPDIR/manual-launch-evidence.json")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$child_run" 600000
 number=$(jq -er .number "$TMPDIR/manual-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/emori"
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number" | jq -e '(.assignees | length) == 0'

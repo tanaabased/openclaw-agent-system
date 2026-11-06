@@ -1,3 +1,9 @@
+import dispatchContext from '../agent/dispatch-context.ts';
+import resolveModelRoutingRequest from '../agent/model-routing-request.ts';
+import {
+  nativeRoutingMetadata,
+  routingMetadata,
+} from '../channels/github/provider/routing-metadata.ts';
 import { nativeAssessmentInstructions } from '../agent/assessment-instructions.ts';
 import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
 
@@ -39,5 +45,59 @@ export default function assessmentContextFixture(runtime: 'openclaw' | 'codex' =
       target: 'https://github.com/tanaabased/big-test-bucket/issues/123',
     },
     instructions: nativeAssessmentInstructions(runtime),
+  };
+}
+
+export function hostedAssessmentContextFixture() {
+  const base = assessmentContextFixture();
+  const body = 'A small documentation change. '.repeat(12);
+  const metadata = nativeRoutingMetadata([]);
+  const workspace =
+    '/home/runner/work/openclaw-agent-system/openclaw-agent-system/examples/openclaw-notifications-reset/tanaabot/.agent-system/worktrees/github-1329940218-5df4e82369/issue-6245477254-fbe20edef4';
+  return {
+    ...base,
+    project: { path: workspace },
+    routing: resolveModelRoutingRequest(
+      { default: { model: 'aimock/gpt-5.5', effort: 'medium' } },
+      'c'.repeat(64),
+      {
+        action: 'resolve',
+        manifestDigest: 'c'.repeat(64),
+        context: 'test',
+        fallback: 'default',
+        assessment: { complexity: 'low', reason: 'A bounded disposable documentation plan.' },
+      },
+      'openclaw',
+    ),
+    routingNote:
+      'Requested aimock/gpt-5.5 / medium; session settings are verified at creation, not model execution.',
+    effective: { model: 'aimock/gpt-5.5', thinkingLevel: 'medium', workspace },
+    executionEffort: 'unverified',
+    evidence: dispatchContext(
+      {
+        title: 'DOCUMENT DISPOSABLE TEST ISSUE CLEANUP',
+        body,
+        comments: [],
+        labels: [],
+        truncated: false,
+        nativeRoutingMetadata: metadata,
+        routingMetadata: routingMetadata(metadata, body),
+      },
+      'https://github.com/tanaabased/big-test-bucket/issues/15195',
+      1,
+      true,
+    ),
+    assessment: {
+      version: 1,
+      requestedSkill: 'agent-system:agent-system-task-assessment',
+      defaultSkill: true,
+      observedAt: 1,
+      skill: {
+        ...base.assessment.skill,
+        path: '/home/runner/work/_temp/openclaw-context.test/openclaw/extensions/agent-system/skills/task-assessment/SKILL.md',
+        scope: 'openclaw-bundled',
+        digest: 'b'.repeat(64),
+      },
+    },
   };
 }

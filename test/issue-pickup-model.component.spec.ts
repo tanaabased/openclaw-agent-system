@@ -1,12 +1,12 @@
 import assessmentMaterial from '../agent/assessment-material.ts';
 import type { ImplementationMaterialRead } from '../agent/implementation-material.ts';
 import { issuePickupScenario } from '../examples/openclaw-project-picker/model-fixture.ts';
-import assessmentContextFixture from './assessment-material-fixture.ts';
+import { hostedAssessmentContextFixture } from './assessment-material-fixture.ts';
 import nativeMaterialFixture from './native-material-fixture.ts';
 
 describe('issue pickup model transport', () => {
   it('should deliver the complete assessment through native codex without tool-output truncation', async () => {
-    const context = assessmentContextFixture();
+    const context = hostedAssessmentContextFixture();
     const request = { action: 'context', id: context.id };
     await nativeMaterialFixture({
       request,
