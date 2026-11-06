@@ -99,6 +99,10 @@ describe('agent/codex-dispatch', () => {
       string,
       unknown
     >;
+  const readDispatchState = async (): Promise<Record<string, unknown>> => {
+    const current = await selectCodexIntake(pluginData, deps);
+    return new CodexDispatchStore(current.store.location.root, current.store.location.scope).read();
+  };
   const historicalResult = async (
     _action: string,
     input: Record<string, unknown>,
@@ -592,7 +596,7 @@ describe('agent/codex-dispatch', () => {
     });
     assert.equal(prepared.status, 'prepared');
     assert.equal((prepared.request as { model: string }).model, 'gpt-6.1-sol');
-    const saved = ((await request('inspect')).records as Array<{ routingNote: string }>)[0]!;
+    const saved = ((await readDispatchState()).records as Array<{ routingNote: string }>)[0]!;
     assert.match(saved.routingNote, /Routing method.*company:route.*custom guidance/);
     assert.match(saved.routingNote, /Effective settings.*Not independently verified/);
     assert.ok(!saved.routingNote.includes('Prefer cheap work.'));
@@ -676,7 +680,7 @@ describe('agent/codex-dispatch', () => {
     const prepared = await prepare();
     created();
     const child = { threadId: 'issue-thread' };
-    const before = await request('inspect');
+    const before = await readDispatchState();
     await assert.rejects(
       request('context', { id: 'x'.repeat(100) }, child),
       /dispatch-receipt-id-invalid/,
@@ -694,7 +698,7 @@ describe('agent/codex-dispatch', () => {
       ),
       /dispatch-receipt-id-invalid/,
     );
-    assert.deepEqual(await request('inspect'), before);
+    assert.deepEqual(await readDispatchState(), before);
     await assert.rejects(
       request('context', { id: 'a'.repeat(64) }, child),
       /dispatch-receipt-missing/,
@@ -708,7 +712,7 @@ describe('agent/codex-dispatch', () => {
     const prepared = await prepare();
     created();
     await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
-    const records = (await request('inspect')).records as Array<{
+    const records = (await readDispatchState()).records as Array<{
       claimId?: number;
       effective?: unknown;
     }>;
@@ -778,7 +782,7 @@ describe('agent/codex-dispatch', () => {
     const prepared = await prepare();
     created();
     await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
-    const records = (await request('inspect')).records as Array<{
+    const records = (await readDispatchState()).records as Array<{
       effective?: unknown;
       feedback?: { admission?: { enabled: boolean } };
     }>;
@@ -789,7 +793,7 @@ describe('agent/codex-dispatch', () => {
   it('should uppercase the issue session title while preserving punctuation and unicode', async () => {
     const title = "Fix user's issue: café 東京 Straße 2026.10.6";
     const prepared = await prepare(title);
-    const records = (await request('inspect')).records as Array<{
+    const records = (await readDispatchState()).records as Array<{
       request?: { title?: string };
     }>;
     assert.equal(records[0]!.request?.title, "#3: FIX USER'S ISSUE: CAFÉ 東京 STRASSE 2026.10.6");
@@ -815,7 +819,7 @@ describe('agent/codex-dispatch', () => {
   ])
     it(`should prepare a native chat title with ${kind}`, async () => {
       const prepared = await prepare(title);
-      const records = (await request('inspect')).records as Array<{
+      const records = (await readDispatchState()).records as Array<{
         request?: { title?: string };
       }>;
       assert.equal(prepared.status, 'prepared');
@@ -851,7 +855,7 @@ describe('agent/codex-dispatch', () => {
     });
     assert.equal(held.code, 'claim-disabled-pending');
     assert.equal(await store.file.read(), before);
-    const records = (await request('inspect')).records as Array<{ request?: unknown }>;
+    const records = (await readDispatchState()).records as Array<{ request?: unknown }>;
     assert.equal(records[0]!.request, undefined);
   });
 
@@ -864,7 +868,7 @@ describe('agent/codex-dispatch', () => {
     const before = await store.file.read();
     delete deps.claims;
     await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
-    const records = (await request('inspect')).records as Array<{
+    const records = (await readDispatchState()).records as Array<{
       claimAccepted?: boolean;
       effective?: unknown;
     }>;
@@ -1028,7 +1032,7 @@ describe('agent/codex-dispatch', () => {
     created();
     await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
     assert.match(comments[0]!.body, /Assignment accepted/u);
-    const record = (await request('inspect')).records as Array<{ claimAccepted: boolean }>;
+    const record = (await readDispatchState()).records as Array<{ claimAccepted: boolean }>;
     assert.equal(record[0]!.claimAccepted, true);
     assert.equal(comments.length, 1);
   });
@@ -1101,7 +1105,7 @@ describe('agent/codex-dispatch', () => {
       assessment: { complexity: 'medium', reason: 'Contained change.' },
     });
     assert.equal(stopped.code, 'claim-winner-missing');
-    const records = (await request('inspect')).records as Array<{ request?: unknown }>;
+    const records = (await readDispatchState()).records as Array<{ request?: unknown }>;
     assert.equal(records[0]!.request, undefined);
   });
 
@@ -1383,7 +1387,7 @@ describe('agent/codex-dispatch', () => {
     const first = await launch(3);
     const second = await launch(4);
     assert.deepEqual(await next(), { status: 'at-capacity', changed: false });
-    assert.equal(((await request('inspect')).records as unknown[]).length, 2);
+    assert.equal(((await readDispatchState()).records as unknown[]).length, 2);
     const started = await report();
     assert.match(String(started.response), /2 issues started/);
     assert.ok(String(started.response).includes('[owner/repo#3](codex://threads/issue-thread-3)'));
@@ -1412,7 +1416,7 @@ describe('agent/codex-dispatch', () => {
     assert.doesNotMatch(String(completed.response), /#3|Plan ready/);
     assert.match(String(completed.response), /repo#5/);
     assert.equal((await report()).status, 'report');
-    assert.equal(((await request('inspect')).records as unknown[]).length, 3);
+    assert.equal(((await readDispatchState()).records as unknown[]).length, 3);
   });
 
   it('should end assessment monitoring after authorized continuation without rewriting the result or checkout', async () => {
@@ -1424,7 +1428,7 @@ describe('agent/codex-dispatch', () => {
     now += 300001;
     const missing = await next();
     assert.equal(missing.status, 'idle');
-    const before = (await request('inspect')).records as Record<string, unknown>[];
+    const before = (await readDispatchState()).records as Record<string, unknown>[];
     native!.turnId = 'authorized-follow-up';
     native!.followUpUserTurn = true;
     const current = await selectCodexIntake(pluginData, deps);
@@ -1465,7 +1469,7 @@ describe('agent/codex-dispatch', () => {
     );
     assert.equal(transitioned.status, 'handed-off');
     assert.equal(transitioned.outcome, undefined);
-    const after = (await request('inspect')).records as Record<string, unknown>[];
+    const after = (await readDispatchState()).records as Record<string, unknown>[];
     assert.deepEqual(after[0]!.result, before[0]!.result);
     assert.equal(after[0]!.worktree, worktree);
     assert.equal((await request('handoff', { id: prepared.id }, operator)).changed, false);
@@ -1492,13 +1496,13 @@ describe('agent/codex-dispatch', () => {
 
   it('should preserve issue state when native access needs host approval', async () => {
     const prepared = await prepare();
-    const before = await request('inspect');
+    const before = await readDispatchState();
     for (const code of ['EPERM', 'EACCES', 'automation-thread-host-access-required']) {
       deps.native!.find = async () => {
         throw Object.assign(new Error('denied'), { code });
       };
       await assert.rejects(request('reconcile', { id: prepared.id }), { code });
-      assert.deepEqual({ ...(await request('inspect')), run: before.run }, before);
+      assert.deepEqual({ ...(await readDispatchState()), run: before.run }, before);
     }
   });
 
@@ -1561,7 +1565,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(fresh.status, 'continue');
     assert.equal(fresh.remainingActions, 12);
     assert.equal((await next()).status, 'routing-required');
-    assert.equal(((await request('inspect')).records as unknown[]).length, 1);
+    assert.equal(((await readDispatchState()).records as unknown[]).length, 1);
   });
 
   it('should recover creation on the next occurrence when its receipt exceeds the action budget', async () => {
@@ -1598,7 +1602,7 @@ describe('agent/codex-dispatch', () => {
     );
     await next();
     assert.match(String((await report()).response), /1 issue started/);
-    assert.equal(((await request('inspect')).records as unknown[]).length, 1);
+    assert.equal(((await readDispatchState()).records as unknown[]).length, 1);
   });
 
   it('should require a later user turn and preserve native chat and repository checks for handoff', async () => {
@@ -1820,7 +1824,7 @@ describe('agent/codex-dispatch', () => {
       paused = false;
       await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
       await next();
-      const records = (await request('inspect')).records as { id: string }[];
+      const records = (await readDispatchState()).records as { id: string }[];
       assert.equal(records.length, 1);
       assert.equal(records[0]!.id, routed.id);
     });
@@ -1844,7 +1848,7 @@ describe('agent/codex-dispatch', () => {
       },
     );
     assert.equal(prepared.status, 'policy-held');
-    const retained = (await request('inspect')).records as { request?: unknown }[];
+    const retained = (await readDispatchState()).records as { request?: unknown }[];
     assert.equal(retained[0]!.request, undefined);
     await workflow(true);
     assert.equal((await next()).id, selected.id);
@@ -1865,7 +1869,7 @@ describe('agent/codex-dispatch', () => {
       (await historicalResult('result', { id: prepared.id, result }, child)).status,
       'recorded',
     );
-    const records = (await request('inspect')).records as { phase: string; result?: unknown }[];
+    const records = (await readDispatchState()).records as { phase: string; result?: unknown }[];
     assert.equal(records[0]!.phase, 'complete');
     assert.deepEqual(records[0]!.result, result);
   });
@@ -1925,7 +1929,7 @@ describe('agent/codex-dispatch', () => {
         String(intakeReport.response),
         /plan-ready|Repair the contained behavior|The user needs a reliable result/,
       );
-      const records = (await request('inspect')).records as {
+      const records = (await readDispatchState()).records as {
         id: string;
         result: unknown;
         threadId: string;
@@ -2120,7 +2124,7 @@ describe('agent/codex-dispatch', () => {
       assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
     });
     assert.equal(blocked.code, 'dispatch-assessment-skill-unavailable');
-    const records = (await request('inspect')).records as Array<{ request?: unknown }>;
+    const records = (await readDispatchState()).records as Array<{ request?: unknown }>;
     assert.equal(records[0]!.request, undefined);
     deps.native!.assessmentSkill = available;
     now += 300001;
@@ -2140,7 +2144,7 @@ describe('agent/codex-dispatch', () => {
       (context.assessment as { skill: { digest: string } }).skill.digest,
       'b'.repeat(64),
     );
-    const records = (await request('inspect')).records as Array<{ request: unknown }>;
+    const records = (await readDispatchState()).records as Array<{ request: unknown }>;
     assert.deepEqual(records[0]!.request, prepared.request);
   });
 
@@ -2169,7 +2173,7 @@ describe('agent/codex-dispatch', () => {
       assessment: { complexity: 'medium', reason: 'Verified native complexity.' },
     });
     assert.equal(blocked.code, 'dispatch-assessment-guidance-unreadable');
-    const records = (await request('inspect')).records as Array<{ request?: unknown }>;
+    const records = (await readDispatchState()).records as Array<{ request?: unknown }>;
     assert.equal(records[0]!.request, undefined);
     await writeFile(join(workspace, 'missing.md'), 'Prefer small fixes.');
     now += 300001;
@@ -2422,17 +2426,17 @@ describe('agent/codex-dispatch', () => {
       /reply-native-user-input-required/,
     );
     assert.equal(connected, false);
-    const before = (await request('inspect')).records as Record<string, unknown>[];
+    const before = (await readDispatchState()).records as Record<string, unknown>[];
     const preview = await request('retire', { id: first.id }, operator);
     assert.equal(preview.status, 'retire-available');
-    assert.deepEqual((await request('inspect')).records, before);
+    assert.deepEqual((await readDispatchState()).records, before);
     await assert.rejects(
       request('retire', { id: first.id, digest: 'stale' }, operator),
       /dispatch-recovery-stale/,
     );
     const applied = await request('retire', { id: first.id, digest: preview.digest }, operator);
     assert.equal(applied.status, 'retirement-pending');
-    const after = (await request('inspect')).records as Record<string, unknown>[];
+    const after = (await readDispatchState()).records as Record<string, unknown>[];
     assert.equal(after[0]!.retired, undefined);
     const disposition = after[0]!.retirement as {
       reason: string;
@@ -2443,17 +2447,20 @@ describe('agent/codex-dispatch', () => {
     assert.equal(disposition.eligibleAt, now);
     assert.equal(disposition.operatorRequest.caller, 'operator');
     assert.equal(disposition.operatorRequest.targetId, first.id);
-    assert.equal(after[0]!.workflowStatus, 'retirement-pending');
+    assert.equal(
+      ((await request('inspect')).records as { workflowStatus: string }[])[0]!.workflowStatus,
+      'retirement-pending',
+    );
     assert.equal(after[0]!.lifecycleCheckedAt, now);
     assert.equal(fixture.item.state, 'open');
     now += 60_001;
     const repeated = await request('retire', { id: first.id }, operator);
     await request('retire', { id: first.id, digest: repeated.digest }, operator);
-    const retirement = ((await request('inspect')).records as Record<string, unknown>[])[0]!
+    const retirement = ((await readDispatchState()).records as Record<string, unknown>[])[0]!
       .retirement as { eligibleAt: number };
     assert.equal(retirement.eligibleAt, (applied.retirement as { eligibleAt: number }).eligibleAt);
     await next();
-    const reconciled = ((await request('inspect')).records as Record<string, unknown>[])[0]!;
+    const reconciled = ((await readDispatchState()).records as Record<string, unknown>[])[0]!;
     assert.equal(reconciled.lifecycleCheckedAt, now);
     assert.equal(reconciled.retired, undefined);
     assert.equal(
@@ -2528,10 +2535,10 @@ describe('agent/codex-dispatch', () => {
     await reassign();
     assert.deepEqual(await next(), { status: 'idle', changed: false });
     const operator = { threadId: 'operator' };
-    const before = await request('inspect');
+    const before = await readDispatchState();
     const preview = await request('reset', { id: first.id }, operator);
     assert.equal(preview.status, 'reset-available');
-    assert.deepEqual(await request('inspect'), before);
+    assert.deepEqual(await readDispatchState(), before);
     assert.equal(
       (await request('reset', { id: first.id, digest: preview.digest }, operator)).status,
       'reset',
@@ -2548,7 +2555,7 @@ describe('agent/codex-dispatch', () => {
     await reassign();
     const second = await prepare();
     assert.notEqual(second.id, first.id);
-    const records = (await request('inspect')).records as {
+    const records = (await readDispatchState()).records as {
       id: string;
       result?: unknown;
       reset?: { by: string };
@@ -2563,7 +2570,7 @@ describe('agent/codex-dispatch', () => {
     // pending creation is reconciled, never emitted again as a fresh request.
     native = undefined;
     assert.notEqual((await next()).status, 'prepared');
-    assert.equal(((await request('inspect')).records as unknown[]).length, 2);
+    assert.equal(((await readDispatchState()).records as unknown[]).length, 2);
   });
 
   it('should reject reset from intake or child chats, unfinished work, stale previews, and active chats', async () => {
@@ -2608,7 +2615,7 @@ describe('agent/codex-dispatch', () => {
       request('reset', { id: first.id }, operator),
       /dispatch-native-readback-diverged/,
     );
-    const records = (await request('inspect')).records as { reset?: unknown; result: unknown }[];
+    const records = (await readDispatchState()).records as { reset?: unknown; result: unknown }[];
     assert.equal(records[0]!.reset, undefined);
     assert.deepEqual(records[0]!.result, result);
   });
@@ -2662,7 +2669,7 @@ describe('agent/codex-dispatch', () => {
     const second = await next();
     assert.equal(second.status, 'routing-required');
     assert.notEqual(second.id, first.id);
-    const records = (await request('inspect')).records as { id: string; denial?: unknown }[];
+    const records = (await readDispatchState()).records as { id: string; denial?: unknown }[];
     assert.ok(records.find((record) => record.id === first.id)!.denial);
     const prepared = await request('prepare', {
       id: second.id,
@@ -2739,7 +2746,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(held.status, 'blocked');
     assert.notEqual((await next()).id, first.id);
     const retained = (
-      (await request('inspect')).records as { request?: unknown; denial?: unknown }[]
+      (await readDispatchState()).records as { request?: unknown; denial?: unknown }[]
     )[0]!;
     assert.equal(retained.request, undefined);
     assert.ok(retained.denial);
@@ -2774,7 +2781,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(second.status, 'routing-required');
     assert.notEqual(second.id, first.id);
     const retained = (
-      (await request('inspect')).records as { request: unknown; denial?: { operation: string } }[]
+      (await readDispatchState()).records as { request: unknown; denial?: { operation: string } }[]
     )[0]!;
     assert.deepEqual(retained.request, first.request);
     assert.equal(retained.denial!.operation, 'create');
@@ -2786,7 +2793,7 @@ describe('agent/codex-dispatch', () => {
     );
   });
 
-  for (const code of ['dispatch-denial-scope-unresolved', 'dispatch-denial-execution-unresolved'])
+  for (const code of ['dispatch-denial-scope-unresolved'])
     it('should stop unrelated intake on ' + code, async () => {
       const first = await next();
       await addPendingSecondIssue();
@@ -2799,33 +2806,34 @@ describe('agent/codex-dispatch', () => {
       now += 300001;
       await runCodexIntake(pluginData, false, deps);
       assert.equal((await next()).nextAction, 'report');
-      const records = (await request('inspect')).records as { id: string; request?: unknown }[];
+      const records = (await readDispatchState()).records as { id: string; request?: unknown }[];
       assert.equal(records.length, 1);
       assert.equal(records[0]!.id, first.id);
       assert.equal(records[0]!.request, undefined);
     });
 
-  it('should hold only the task whose denial history is unavailable and keep its reservation', async () => {
-    const first = await prepare();
-    await addPendingSecondIssue();
-    deps.native!.intakeDenial = async (record) => {
-      if (record.id === first.id) throw new Error('dispatch-denial-history-unavailable');
-      return undefined;
-    };
-    assert.equal((await request('observe-denials')).status, 'ready');
-    const second = await next();
-    assert.equal(second.status, 'routing-required', JSON.stringify(second));
-    assert.notEqual(second.id, first.id);
-    const held = ((await request('inspect')).records as DispatchRecord[]).find(
-      (r) => r.id === first.id,
-    )!;
-    assert.equal(
-      held.result?.outcome === 'operator-setup-blocker' && held.result.code,
-      'dispatch-denial-history-unavailable',
-    );
-    assert.deepEqual(held.request, first.request);
-    assert.equal(held.denial, undefined);
-  });
+  for (const code of [
+    'dispatch-denial-history-unavailable',
+    'dispatch-denial-execution-unresolved',
+  ])
+    it('should hold only the task with ' + code + ' and keep its reservation', async () => {
+      const first = await prepare();
+      await addPendingSecondIssue();
+      deps.native!.intakeDenial = async (record) => {
+        if (record.id === first.id) throw new Error(code);
+        return undefined;
+      };
+      assert.equal((await request('observe-denials')).status, 'ready');
+      const second = await next();
+      assert.equal(second.status, 'routing-required', JSON.stringify(second));
+      assert.notEqual(second.id, first.id);
+      const held = ((await readDispatchState()).records as DispatchRecord[]).find(
+        (r) => r.id === first.id,
+      )!;
+      assert.equal(held.result?.outcome === 'operator-setup-blocker' && held.result.code, code);
+      assert.deepEqual(held.request, first.request);
+      assert.equal(held.denial, undefined);
+    });
 
   it('should stop on shared authentication but continue past a repository permission failure', async () => {
     await addPendingSecondIssue();
@@ -2857,7 +2865,7 @@ describe('agent/codex-dispatch', () => {
     });
     const blocked = await next();
     assert.notEqual(blocked.nextAction, 'report');
-    const held = ((await request('inspect')).records as DispatchRecord[]).find(
+    const held = ((await readDispatchState()).records as DispatchRecord[]).find(
       (r) => r.id === first.id,
     )!;
     assert.equal(
@@ -2950,7 +2958,7 @@ describe('agent/codex-dispatch', () => {
       (second.request as { prompt: string }).prompt,
       (first.request as { prompt: string }).prompt,
     );
-    const state = await request('inspect');
+    const state = await readDispatchState();
     assert.deepEqual((state.records as { deniedCreations: unknown[] }[])[0]!.deniedCreations[0], {
       request: first.request,
       createdAt: now,
@@ -2966,7 +2974,7 @@ describe('agent/codex-dispatch', () => {
       await request('retry-denied', { id: first.id, digest: retry.digest }, operator);
       await prepare();
     }
-    const retained = (await request('inspect')).records as { deniedCreations: unknown[] }[];
+    const retained = (await readDispatchState()).records as { deniedCreations: unknown[] }[];
     assert.equal(retained[0]!.deniedCreations.length, 10);
   });
 
@@ -3051,7 +3059,7 @@ describe('agent/codex-dispatch', () => {
       request('retry-denied', { id: first.id }, operator),
       /dispatch-denial-unverified/,
     );
-    const state = await request('inspect');
+    const state = await readDispatchState();
     assert.deepEqual((state.records as { request: unknown }[])[0]!.request, first.request);
   });
 
@@ -3081,7 +3089,7 @@ describe('agent/codex-dispatch', () => {
     deps.connect = async () => assert.fail('invalid input must not read assignments or claim work');
     for (const projects of [undefined, {}, Array(1001).fill(null)]) {
       await assert.rejects(request('next', { projects }), /dispatch-project-inventory-invalid/);
-      assert.deepEqual((await request('inspect')).records, []);
+      assert.deepEqual((await readDispatchState()).records, []);
       assert.equal(gitCalls.length, 0);
     }
   });
@@ -3273,7 +3281,7 @@ describe('agent/codex-dispatch', () => {
       (retained.evidence as { body: string }).body,
       'The acceptance criteria require a safe plan.',
     );
-    const records = (await request('inspect')).records as {
+    const records = (await readDispatchState()).records as {
       clientThreadId: string;
       threadId: string;
       effective: { status: string };
@@ -3298,7 +3306,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(expired.changed, true);
     now += 300001;
     assert.equal((await next()).changed, false);
-    const state = await request('inspect');
+    const state = await readDispatchState();
     assert.deepEqual((state.records as { request: unknown }[])[0]!.request, prepared.request);
   });
 
@@ -3332,7 +3340,7 @@ describe('agent/codex-dispatch', () => {
     assert.notEqual(replacement.prompt, original.prompt);
     assert.equal(replacement.model, original.model);
     assert.equal(replacement.thinking, original.thinking);
-    const record = ((await request('inspect')).records as Record<string, unknown>[])[0]!;
+    const record = ((await readDispatchState()).records as Record<string, unknown>[])[0]!;
     assert.deepEqual(record.unsubmittedCreations, [
       {
         request: prepared.request,
@@ -3361,7 +3369,7 @@ describe('agent/codex-dispatch', () => {
     await request('reconcile', { id: prepared.id });
     now += 300001;
     assert.equal((await next()).code, 'dispatch-creation-unresolved');
-    const record = ((await request('inspect')).records as Record<string, unknown>[])[0]!;
+    const record = ((await readDispatchState()).records as Record<string, unknown>[])[0]!;
     assert.deepEqual(record.request, prepared.request);
     assert.equal(record.unsubmittedCreations, undefined);
   });
@@ -3413,7 +3421,7 @@ describe('agent/codex-dispatch', () => {
     const successor = await prepare();
     assert.equal(successor.id, prepared.id);
     assert.notDeepEqual(successor.request, prepared.request);
-    const retained = ((await request('inspect')).records as Record<string, unknown>[])[0]!;
+    const retained = ((await readDispatchState()).records as Record<string, unknown>[])[0]!;
     assert.equal((retained.unsubmittedCreations as unknown[]).length, 1);
     assert.equal(retained.phase, 'creating');
   });
@@ -3421,7 +3429,7 @@ describe('agent/codex-dispatch', () => {
     const prepared = await prepare();
     await reassign();
     assert.equal((await next()).code, 'dispatch-assignment-superseded');
-    const retained = ((await request('inspect')).records as Record<string, unknown>[])[0]!;
+    const retained = ((await readDispatchState()).records as Record<string, unknown>[])[0]!;
     assert.deepEqual(retained.request, prepared.request);
     assert.equal(retained.unsubmittedCreations, undefined);
   });
@@ -3430,7 +3438,7 @@ describe('agent/codex-dispatch', () => {
     await reassign();
     const failed = await next();
     assert.equal(failed.nextAction, 'next');
-    const state = await request('inspect');
+    const state = await readDispatchState();
     assert.equal((state.run as { stopped?: string }).stopped, undefined);
     assert.equal((await next()).status, 'idle');
   });
@@ -3439,7 +3447,7 @@ describe('agent/codex-dispatch', () => {
     created();
     await reassign();
     assert.equal((await next()).status, 'blocked');
-    const retained = ((await request('inspect')).records as Record<string, unknown>[])[0]!;
+    const retained = ((await readDispatchState()).records as Record<string, unknown>[])[0]!;
     assert.deepEqual(retained.request, prepared.request);
     assert.equal(retained.threadId, 'issue-thread');
     assert.equal((retained.result as { code: string }).code, 'dispatch-assignment-superseded');
@@ -3494,7 +3502,7 @@ describe('agent/codex-dispatch', () => {
         native!.turnEnded = true;
         await request('reconcile', { id: first.id });
         native = undefined;
-        const before = ((await request('inspect')).records as Record<string, unknown>[])[0];
+        const before = ((await readDispatchState()).records as Record<string, unknown>[])[0];
         fixture.item.state = 'open';
         await reassign();
         const second = await prepare();
@@ -3504,7 +3512,7 @@ describe('agent/codex-dispatch', () => {
         });
         assert.equal(blocked.code, 'dispatch-native-receipt-reused');
         assert.equal(blocked.status, 'blocked');
-        const records = (await request('inspect')).records as Record<string, unknown>[];
+        const records = (await readDispatchState()).records as Record<string, unknown>[];
         assert.deepEqual(records[0], before);
         assert.equal(records[1]!.receiptThreadId, undefined);
         assert.equal(records[1]!.clientThreadId, undefined);
@@ -3539,7 +3547,7 @@ describe('agent/codex-dispatch', () => {
       assert.equal(formatted.retained, false);
       assert.equal((formatted.assessment as { plan: string }).plan, plan);
     }
-    const saved = ((await request('inspect')).records as DispatchRecord[])[0]!;
+    const saved = ((await readDispatchState()).records as DispatchRecord[])[0]!;
     assert.equal(saved.result, undefined);
     assert.equal(saved.stageReceipt, undefined);
     assert.equal(saved.resultTurnId, undefined);
@@ -3598,10 +3606,10 @@ describe('agent/codex-dispatch', () => {
     const prepared = await prepare();
     created();
     await historicalResult('result', { id: prepared.id, result }, { threadId: 'issue-thread' });
-    const completed = await request('inspect');
+    const completed = await readDispatchState();
     fixture.item.state = 'closed';
     await assert.rejects(request('reconcile', { id: prepared.id }), /dispatch-issue-closed/);
-    assert.deepEqual({ ...(await request('inspect')), run: completed.run }, completed);
+    assert.deepEqual({ ...(await readDispatchState()), run: completed.run }, completed);
     assert.deepEqual(await next(), { status: 'idle', changed: false });
   });
 
@@ -3742,7 +3750,7 @@ describe('agent/codex-dispatch', () => {
     const launch = prepared.request as { model: string; thinking: string };
     assert.equal(launch.model, 'gpt-6.1-sol');
     assert.equal(launch.thinking, 'high');
-    const routed = ((await request('inspect')).records as Array<{ routing: string }>)[0]!;
+    const routed = ((await readDispatchState()).records as Array<{ routing: string }>)[0]!;
     const decision = JSON.parse(routed.routing);
     assert.equal(decision.complexity, 'medium');
     assert.equal(decision.source, 'native');
@@ -3752,7 +3760,7 @@ describe('agent/codex-dispatch', () => {
     const revoked = await next();
     assert.equal(revoked.status, 'idle');
     const retired = (
-      (await request('inspect')).records as Array<{ retirement?: { reason: string } }>
+      (await readDispatchState()).records as Array<{ retirement?: { reason: string } }>
     )[0]!;
     assert.equal(retired.retirement?.reason, 'issue-closed');
     assert.equal(gitCalls.filter((argv) => argv[0] === 'fetch').length, 1);
@@ -3853,7 +3861,7 @@ describe('agent/codex-dispatch', () => {
     created();
     await request('reconcile', { id: prepared.id, receipt: { threadId: 'issue-thread' } });
     await next();
-    const before = await request('inspect');
+    const before = await readDispatchState();
     const lock = properLockfile.lock;
     properLockfile.lock = async (path, options) => {
       if (String(path).includes('codex-dispatch-'))
@@ -3864,7 +3872,7 @@ describe('agent/codex-dispatch', () => {
     };
     try {
       assert.deepEqual(await report(), { status: 'busy', changed: false });
-      assert.deepEqual(await request('inspect'), before);
+      assert.deepEqual(await readDispatchState(), before);
     } finally {
       properLockfile.lock = lock;
     }
@@ -3933,7 +3941,7 @@ describe('agent/codex-dispatch', () => {
         .status,
       'recorded',
     );
-    assert.equal(((await request('inspect')).records as unknown[]).length, 1);
+    assert.equal(((await readDispatchState()).records as unknown[]).length, 1);
   });
 
   it('should omit an oversized historical plan without changing implementation permission', async () => {
@@ -4096,7 +4104,10 @@ describe('agent/codex-dispatch', () => {
         native!.turnStatus = turnStatus;
         now += 300001;
         assert.equal((await next()).status, 'idle');
-        const records = (await request('inspect')).records as { phase: string; result?: unknown }[];
+        const records = (await readDispatchState()).records as {
+          phase: string;
+          result?: unknown;
+        }[];
         assert.equal(records.length, 1);
         assert.equal(records[0]!.phase, 'assessing');
         assert.equal(records[0]!.result, undefined);
@@ -4190,7 +4201,7 @@ describe('agent/codex-dispatch', () => {
     const response = String((await report()).response);
     assert.match(response, /\*\*Active:\*\* 1 issues · \*\*Pending:\*\* 0/);
     assert.doesNotMatch(response, /issues? pending/);
-    assert.equal(((await request('inspect')).records as unknown[]).length, 1);
+    assert.equal(((await readDispatchState()).records as unknown[]).length, 1);
   });
 
   it('should keep revised plans and questions inside the issue while releasing its slot', async () => {
@@ -4391,6 +4402,34 @@ describe('agent/codex-dispatch', () => {
     assert.equal(retained.feedback!.events[0]!.result, undefined);
     assert.equal(retained.continuation!.attempt, undefined);
     assert.equal(retained.continuation!.binding!.turnId, attempt.turnId);
+  });
+
+  it('should inspect operational facts without replaying retained plans or prompts', async () => {
+    const work = await workIssue(result, 'Historical implementation guidance.');
+    work.receive();
+    await work.run('context', {}, true);
+    const store = await workStore();
+    const before = await store.read();
+    const inspection = await request('inspect');
+    const record = (inspection.records as Array<Record<string, unknown>>)[0]!;
+    assert.equal(record.id, work.id);
+    assert.equal(record.threadId, native!.id);
+    assert.equal(record.worktree, before.records[0]!.worktree);
+    assert.equal(record.workflowStatus, workflowStatus(before.records[0]!));
+    assert.deepEqual(record.progression, before.records[0]!.progression);
+    for (const text of [
+      result.fullAssessment,
+      result.plan,
+      'Historical implementation guidance.',
+      before.records[0]!.request!.prompt,
+    ])
+      assert.equal(JSON.stringify(inspection).includes(text), false, text);
+    assert.equal('result' in record, false);
+    assert.equal('continuation' in record, false);
+    assert.equal('context' in record, false);
+    assert.deepEqual(await store.read(), before);
+    const history = await request('present', { id: work.id }, { threadId: native!.id });
+    assert.equal(JSON.stringify(history).includes(result.fullAssessment), true);
   });
 
   async function workStore() {

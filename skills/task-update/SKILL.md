@@ -64,9 +64,9 @@ shared reply owners. An update request never begins implementation or changes mo
    later delivery to the existing PR, report the new outcome. Coalesce related
    changes into one useful update. A push alone, routine chatter or an unchanged
    plan does not trigger publication. Never watch prose or infer events from it.
-   Initial assessment summaries and the single originating-issue PR announcement
-   retain their existing native entry points and receipts through this shared
-   operation; never create a second update for the same public facts.
+   Publish initial assessment summaries and questions from current-chat evidence
+   through Task Update. The single originating-issue PR announcement retains its
+   delivery entry point and receipt; never duplicate the same public facts.
    For admitted feedback, keep its exact owner and issue/PR/review-thread destination.
    Read its verified context and relevant public facts through the native provider
    route; answer in the owning chat and keep the source-bound reply receipt. Do not

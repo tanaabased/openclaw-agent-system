@@ -426,7 +426,6 @@ describe('scripts/aimock-tool-search', () => {
     await step('work-context', 'agent_system_dispatch', {
       status: 'verified',
       runtime: 'openclaw',
-      deliveryOnly: false,
       publicationAuthorized: true,
       project: { path: '/tmp/owned' },
       implementation: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },

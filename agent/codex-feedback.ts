@@ -566,7 +566,6 @@ export default async function runCodexFeedback(
                 eventId: event.id,
                 presentation: sourcePresentation,
                 project: { path: record.worktree },
-                implementation: record.continuation?.selection,
               };
             }
             if (input.action === 'context') {

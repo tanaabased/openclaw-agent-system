@@ -410,7 +410,6 @@ export default async function openClawFeedback(input: {
       eventId: event.id,
       presentation: sourcePresentation,
       project: { path: record.worktree },
-      implementation: record.work?.selection,
     };
   }
   if (event.phase === 'published')

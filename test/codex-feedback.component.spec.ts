@@ -3,7 +3,7 @@ import commentProviderFixture from './github-comment-provider-fixture.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import { scanCodexFeedback } from '../agent/codex-feedback-scan.ts';
 import reconcileCodexLifecycle from '../agent/codex-assignment-lifecycle.ts';
-import { type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
+import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex-dispatch.ts';
 import { parseCleanupConfiguration } from '../agent/cleanup-configuration.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
@@ -259,12 +259,41 @@ describe('agent/codex-feedback', () => {
       const ref = await prepare();
       sent = true;
       turn = 'feedback';
+      await store.exclusive(async (state, save) => {
+        state.records[0]!.continuation = {
+          phase: 'waiting',
+          policyDigest: 'c'.repeat(64),
+          selection: {
+            version: 1,
+            requestedSkill: 'old-implementation',
+            defaultSkill: false,
+            observedAt: baseline,
+            skill: {
+              name: 'old-implementation',
+              path: '/old/SKILL.md',
+              scope: 'user',
+              digest: 'a'.repeat(64),
+            },
+            guidance: {
+              source: 'inline',
+              content: 'Obsolete implementation instructions.',
+              digest: 'b'.repeat(64),
+            },
+          },
+        };
+        await save();
+      });
       const before = (await store.read()).records[0]!;
       for (const action of ['context', 'implementation-context', 'implementation-result']) {
         const context = await call(action, ref, true);
         assert.equal(context.status, 'verified');
         assert.equal('mode' in context && context.mode, mode);
         assert.equal('resultSchema' in context, false);
+        assert.equal('implementation' in context, false);
+        assert.equal(
+          JSON.stringify(context).includes('Obsolete implementation instructions.'),
+          false,
+        );
       }
       const after = (await store.read()).records[0]!;
       assert.equal(after.feedback!.events[0]!.work, undefined);
@@ -272,6 +301,55 @@ describe('agent/codex-feedback', () => {
       assert.deepEqual(after.result, before.result);
       assert.deepEqual(after.progression, before.progression);
     });
+  for (const code of ['dispatch-denial-execution-unresolved', 'dispatch-denial-scope-unresolved'])
+    it('should scope queued feedback correctly around ' + code, async () => {
+      await prepare();
+      await store.exclusive(async (state, save) => {
+        const unrelated = structuredClone(state.records[0]!);
+        unrelated.id = 'c'.repeat(64);
+        unrelated.issueKey = 'b'.repeat(64);
+        unrelated.issueBranch!.attemptId = unrelated.id;
+        delete unrelated.threadId;
+        delete unrelated.worktree;
+        delete unrelated.feedback;
+        unrelated.phase = 'creating';
+        unrelated.creationAfterItemId = 'exact-create-boundary';
+        state.records.push(unrelated);
+        // leave the comment admitted but not yet submitted to its chat.
+        const event = state.records[0]!.feedback!.events[0]!;
+        delete event.attempt;
+        event.phase = 'queued';
+        await save();
+      });
+      const provider = await deps.feedbackConnect!('', new AbortController().signal);
+      const dispatchDeps: CodexDispatchDependencies = {
+        ...deps,
+        threadId: 'intake',
+        connect: async () => provider.client,
+        readCleanupConfiguration: async () => {
+          throw new Error('unrelated retirement unavailable');
+        },
+      };
+      dispatchDeps.native = {
+        ...deps.native!,
+        intakeDenial: async () => {
+          throw new Error(code);
+        },
+      };
+      const response = await runCodexDispatch(pluginData, 'next', {}, dispatchDeps);
+      assert.ok(response && 'status' in response);
+      assert.equal(
+        response.status,
+        code === 'dispatch-denial-scope-unresolved' ? 'waiting' : 'feedback-prepared',
+        JSON.stringify(response),
+      );
+      const held = (await store.read()).records.find((record) => record.id === 'c'.repeat(64))!;
+      assert.equal(held.result?.outcome === 'operator-setup-blocker' && held.result.code, code);
+      assert.equal(held.phase, 'waiting');
+      assert.equal(held.retry, undefined);
+      assert.equal(held.threadId, undefined);
+    });
+
   it('should resume the retained feedback after provider access is repaired', async () => {
     const ref = await prepare();
     sent = true;

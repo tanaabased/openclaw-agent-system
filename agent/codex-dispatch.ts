@@ -144,10 +144,10 @@ export async function runCodexDispatch(
     const observation = await executeCodexDispatch(pluginData, 'observe-denials', {}, deps);
     if (!observation || !('status' in observation) || observation.status !== 'ready')
       return observation;
-    const retirement = await reconcileCodexLifecycle(pluginData, deps, input.threads);
-    if (retirement) return retirement;
     const feedback = await runCodexFeedback(pluginData, { action: 'next' }, deps);
     if (!['idle', 'disabled'].includes(feedback.status)) return feedback;
+    const retirement = await reconcileCodexLifecycle(pluginData, deps, input.threads);
+    if (retirement) return retirement;
   }
   return executeCodexDispatch(pluginData, action, input, deps);
 }
@@ -167,9 +167,44 @@ async function executeCodexDispatch(
   if (action === 'inspect') {
     const state = await store.read();
     return {
-      ...state,
+      version: state.version,
+      scope: state.scope,
+      resetGeneration: state.resetGeneration,
+      run: state.run && {
+        id: state.run.id,
+        actions: state.run.actions,
+        stopped: state.run.stopped,
+      },
       records: state.records.map((record) => ({
-        ...record,
+        id: record.id,
+        intakeId: record.intakeId,
+        phase: record.phase,
+        threadId: record.threadId,
+        clientThreadId: record.clientThreadId,
+        worktree: record.worktree,
+        effective: record.effective,
+        progression: record.progression,
+        pullRequestLink: record.pullRequestLink,
+        branch: record.issueBranch?.name,
+        supersededBy: record.supersededBy,
+        reset: record.reset,
+        retired: record.retired,
+        retirement: record.retirement && {
+          reason: record.retirement.reason,
+          code: record.retirement.code,
+          archivedAt: record.retirement.archivedAt,
+          worktreeRemovedAt: record.retirement.worktreeRemovedAt,
+        },
+        denial: record.denial && {
+          operation: record.denial.operation,
+          callId: record.denial.callId,
+          turnId: record.denial.turnId,
+        },
+        code: record.result?.outcome === 'operator-setup-blocker' ? record.result.code : undefined,
+        implementationPreparationError: record.implementationPreparationError,
+        feedback: record.feedback && {
+          events: record.feedback.events.map(({ id, phase, code }) => ({ id, phase, code })),
+        },
         workflowStatus: workflowStatus(record),
         assignmentObservation: record.assignmentObservation,
         assignmentWarning:
@@ -287,10 +322,12 @@ async function executeCodexDispatch(
             await reconcileIntakeDenial(record, tx);
           } catch (error) {
             const result = await fail(record, error);
-            // Missing evidence holds this retained operation; it does not establish a shared refusal.
+            // An exact task's missing or conflicting evidence does not establish a shared refusal.
             if (
-              workflowFailure(error, 'dispatch-operation-failed').code ===
-              'dispatch-denial-history-unavailable'
+              [
+                'dispatch-denial-history-unavailable',
+                'dispatch-denial-execution-unresolved',
+              ].includes(workflowFailure(error, 'dispatch-operation-failed').code)
             )
               continue;
             if (state.run) state.run.stopped = 'blocked';

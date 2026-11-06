@@ -6743,6 +6743,21 @@ describe('agent/openclaw issue dispatch', () => {
         'recorded',
       );
       const afterWork = await record();
+      assert.ok(afterWork.work?.selection);
+      const feedbackContext = await service.run(
+        manifest,
+        root,
+        who,
+        {
+          action: 'feedback',
+          operation: 'context',
+          id,
+          eventId: event.id,
+        },
+        false,
+      );
+      assert.equal(feedbackContext.status, 'verified');
+      assert.equal('implementation' in feedbackContext, false);
       assert.deepEqual(afterWork.work?.result, result);
       assert.equal(afterWork.feedback!.events[0]!.work, undefined);
       assert.equal(afterWork.feedback!.events[0]!.result, undefined);
