@@ -54,5 +54,4 @@ github:
     projects:
       - repository: tanaabased/big-test-bucket
         milestone:
-          number: __MILESTONE_NUMBER__
-          policy: only
+          number: [__MILESTONE_NUMBER__]

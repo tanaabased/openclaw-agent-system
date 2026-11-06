@@ -43,7 +43,13 @@ export const pickupOperationSchema = Type.Object(
     page: Type.Integer({ minimum: 1 }),
     scan: Type.Optional(
       Type.Object(
-        { digest: text, projectIndex: time, skipped: Type.Optional(Type.Record(text, text)) },
+        {
+          digest: text,
+          projectIndex: time,
+          skipped: Type.Optional(Type.Record(text, text)),
+          diagnostics: Type.Optional(Type.Record(text, providerDiagnosticSchema)),
+          readFailures: Type.Optional(Type.Record(text, Type.Boolean())),
+        },
         { additionalProperties: false },
       ),
     ),
@@ -54,6 +60,14 @@ export const pickupOperationSchema = Type.Object(
           repository: Type.Optional(text),
           repositoryNodeId: Type.Optional(text),
           milestoneNodeId: Type.Optional(text),
+          pickupScope: Type.Optional(
+            Type.Union([
+              Type.Literal('all'),
+              Type.Literal('only'),
+              Type.Literal('preferred'),
+              Type.Literal('fallback'),
+            ]),
+          ),
         },
         { additionalProperties: false },
       ),
@@ -95,6 +109,14 @@ export const pickupOperationSchema = Type.Object(
     ),
     shortlist: Type.Optional(Type.Array(text, { maxItems: 5 })),
     rationale: Type.Optional(text),
+    pickupScope: Type.Optional(
+      Type.Union([
+        Type.Literal('all'),
+        Type.Literal('only'),
+        Type.Literal('preferred'),
+        Type.Literal('fallback'),
+      ]),
+    ),
     beforeEvents: Type.Optional(Type.Array(text, { maxItems: 300 })),
     attemptedAt: Type.Optional(time),
     receipt: Type.Optional(projectPickupReceiptSchema),

@@ -74,6 +74,35 @@ describe('agent/project-pickup-report', () => {
     });
   }
 
+  for (const scope of ['preferred', 'fallback'] as const) {
+    it(`should name the selected repository and ${scope} milestone choice`, () => {
+      const result = report({
+        outcome: {
+          status: 'assigned',
+          repository: 'owner/repo',
+          issue: 3,
+          allowances: [{ repository: 'owner/repo', milestone: [10, 11], limit: 1 }],
+          summary: { eligible: 2, shortlist: [], skipped: 0, remaining: 1, pickupScope: scope },
+        },
+      });
+      assert.match(result.response, /owner\/repo\/issues\/3/);
+      assert.match(
+        result.response,
+        scope === 'preferred' ? /Preferred milestone/ : /Fallback within the selected repository/,
+      );
+      assert.match(result.response, /milestones 10, 11/);
+      assert.doesNotMatch(result.response, /milestone\/10,11/);
+    });
+  }
+
+  it('should link repo-wide allowances to issues', () => {
+    assert.match(
+      report({ outcome: { status: 'empty', allowances: [{ repository: 'owner/repo', limit: 1 }] } })
+        .response,
+      /owner\/repo\/issues/,
+    );
+  });
+
   it('should keep intermediate material private', () => {
     for (const status of ['discovering', 'selection-required', 'material'])
       assert.deepEqual(report({ outcome: { status } }), {

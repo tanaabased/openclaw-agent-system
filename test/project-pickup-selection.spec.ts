@@ -31,6 +31,288 @@ describe('agent/project-pickup', () => {
         assert.equal('selectionGuidance' in next, false);
       });
     }
+
+    for (const mode of ['all', 'multiple', 'prefer'] as const) {
+      it(`should select ${mode} scope with fresh eligibility in ${runtime}`, async () => {
+        const f = fixture(runtime);
+        if (mode === 'all') {
+          delete f.policy.projectPickup!.projects[0]!.milestone;
+          f.item.milestone = null;
+          f.client.getMilestone = async () => {
+            throw new Error('repo-wide scope must not read milestones');
+          };
+        } else if (mode === 'multiple') {
+          f.policy.projectPickup!.projects[0]!.milestone = { number: [9, 10] };
+          f.client.getMilestone = async (_owner, _name, number) => ({
+            ...f.milestone,
+            number,
+            nodeId: number === 10 ? f.milestone.nodeId : 'M_other',
+          });
+        } else {
+          f.policy.projectPickup!.projects[0]!.milestone = { number: 10, policy: 'prefer' };
+        }
+        const result = await f.run({ selection: await f.select() });
+        assert.equal(result.status, 'assigned');
+        assert.ok('summary' in result);
+        assert.equal(
+          result.summary?.pickupScope,
+          mode === 'multiple' ? 'only' : mode === 'prefer' ? 'preferred' : 'all',
+        );
+        assert.equal(f.effects.writes, 1);
+      });
+    }
+
+    for (const judgment of ['missing', 'wrong-repository', 'confirmed'] as const) {
+      it(`should require a ${judgment} fallback judgment in ${runtime}`, async () => {
+        const f = fixture(runtime);
+        f.policy.projectPickup!.projects[0]!.milestone = { number: 10, policy: 'prefer' };
+        f.item.milestone = null;
+        const selection = await f.select();
+        const fallback =
+          judgment === 'missing'
+            ? undefined
+            : {
+                repository: judgment === 'confirmed' ? 'owner/repo' : 'owner/elsewhere',
+                reason: 'no preferred work is suitable under the current guidance',
+              };
+        const result = await f.run({
+          selection: { ...selection, ...(fallback ? { fallback } : {}) },
+        });
+        assert.equal(result.status, judgment === 'confirmed' ? 'assigned' : 'failed');
+        assert.equal(f.effects.writes, judgment === 'confirmed' ? 1 : 0);
+        if (judgment === 'confirmed') {
+          assert.ok('summary' in result);
+          assert.equal(result.summary?.pickupScope, 'fallback');
+        }
+      });
+    }
+
+    it(`should compare preferred suitability before selecting eligible fallback in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.policy.projectPickup!.projects[0]!.milestone = { number: [10], policy: 'prefer' };
+      const number = f.item.number + 1;
+      f.items.set(number, { ...f.item, number, nodeId: 'I_fallback', milestone: null });
+      f.candidates.set(number, {
+        ...f.candidates.get(f.item.number)!,
+        number,
+        nodeId: 'I_fallback',
+      });
+      f.client.projectBlocked = async (_owner, _name, issue) => issue === f.item.number;
+      const context = await f.run();
+      assert.ok('candidates' in context);
+      assert.deepEqual(
+        context.candidates?.map((candidate) => [
+          candidate.nodeId,
+          candidate.pickupScope,
+          candidate.blockedByOpenIssues,
+        ]),
+        [
+          [f.item.nodeId, 'preferred', true],
+          ['I_fallback', 'fallback', false],
+        ],
+      );
+      const result = await f.run({
+        selection: {
+          ...(await f.select()),
+          issueNodeId: 'I_fallback',
+          fallback: {
+            repository: 'owner/repo',
+            reason: 'the preferred task is blocked; the fallback is ready',
+          },
+        },
+      });
+      assert.equal(result.status, 'assigned');
+      assert.equal(f.items.get(number)!.assignees.length, 1);
+      assert.equal(f.item.assignees.length, 0);
+    });
+
+    it(`should not rank preferred work above other repositories in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.policy.projectPickup!.projects[0]!.milestone = { number: 10, policy: 'prefer' };
+      const second = f.addRepository('second');
+      f.policy.projectPickup!.projects.push({
+        repository: 'owner/second',
+        milestone: { number: 10, policy: 'prefer' },
+        limit: 1,
+      });
+      const secondItem = second.items.get(f.item.number)!;
+      assert.equal(secondItem.itemType, 'issue');
+      if (secondItem.itemType === 'issue') secondItem.milestone = null;
+      const selection = await f.select();
+      const result = await f.run({
+        selection: {
+          ...selection,
+          issueNodeId: second.items.get(f.item.number)!.nodeId,
+          fallback: {
+            repository: 'owner/second',
+            reason: 'no preferred work in second; this task has the highest impact',
+          },
+        },
+      });
+      assert.equal(result.status, 'assigned');
+      assert.ok('repository' in result);
+      assert.equal(result.repository, 'owner/second');
+    });
+
+    it(`should withhold fallback when a preferred candidate cannot be read in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.policy.projectPickup!.projects[0]!.milestone = { number: 10, policy: 'prefer' };
+      const number = f.item.number + 1;
+      f.items.set(number, { ...f.item, number, nodeId: 'I_fallback', milestone: null });
+      f.candidates.set(number, {
+        ...f.candidates.get(f.item.number)!,
+        number,
+        nodeId: 'I_fallback',
+      });
+      const read = f.client.projectCandidate;
+      f.client.projectCandidate = async (...args) => {
+        if (args[2] === f.item.number)
+          throw new GitHubWorkEventClientError(
+            'github-notification-resource-missing',
+            'candidate unavailable',
+          );
+        return read(...args);
+      };
+      const context = await f.run();
+      assert.ok('fallbackUnavailable' in context);
+      assert.deepEqual(context.fallbackUnavailable, ['owner/repo']);
+      assert.equal(
+        (
+          await f.run({
+            selection: {
+              ...(await f.select()),
+              issueNodeId: 'I_fallback',
+              fallback: { repository: 'owner/repo', reason: 'no readable preferred task' },
+            },
+          })
+        ).status,
+        'failed',
+      );
+      assert.equal(f.effects.writes, 0);
+    });
+
+    for (const boundary of ['milestone', 'discovery'] as const) {
+      it(`should retain ${boundary} provider failure without fallback in ${runtime}`, async () => {
+        const f = fixture(runtime);
+        f.policy.projectPickup!.projects[0]!.milestone = { number: [10], policy: 'prefer' };
+        const diagnostic = providerDiagnostic('github', 'api-request', 'permission', {
+          httpStatus: 403,
+          providerMessage: 'scope read denied',
+        });
+        const fail = async () => {
+          throw new GitHubWorkEventClientError(
+            'github-notification-request-failed',
+            'scope read denied',
+            {},
+            undefined,
+            diagnostic,
+          );
+        };
+        if (boundary === 'milestone') f.client.getMilestone = fail;
+        else f.client.discoverProject = fail;
+        const result = await f.run();
+        assert.equal(result.status, 'failed');
+        assert.ok('providerDiagnostic' in result);
+        assert.deepEqual(result.providerDiagnostic, diagnostic);
+        assert.equal(f.effects.writes, 0);
+      });
+    }
+
+    it(`should reject changed preference membership before assignment in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.policy.projectPickup!.projects[0]!.milestone = { number: 10, policy: 'prefer' };
+      const selection = await f.select();
+      f.item.milestone = null;
+      assert.equal((await f.run({ selection })).status, 'failed');
+      assert.equal(f.effects.writes, 0);
+    });
+
+    it(`should apply omitted and preferred scope edits on the next scan in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const stale = await f.select();
+      delete f.policy.projectPickup!.projects[0]!.milestone;
+      f.item.milestone = null;
+      assert.equal((await f.run({ selection: stale })).status, 'failed');
+      assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
+      f.policy.projectPickup!.projects[0]!.milestone = { number: [10], policy: 'prefer' };
+      assert.ok(pickupAuthority(f.state.projectPickup)!.retained?.length);
+      assert.equal(f.effects.writes, 1);
+    });
+
+    it(`should union listed milestones and exclude outsiders in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.policy.projectPickup!.projects[0]!.milestone = { number: [9, 10] };
+      f.client.getMilestone = async (_owner, _name, number) => ({
+        number,
+        nodeId: number === 10 ? f.milestone.nodeId : 'M_second',
+        state: 'open',
+      });
+      for (const [offset, milestone] of [
+        [1, { number: 9, nodeId: 'M_second', state: 'open' as const }],
+        [2, { number: 11, nodeId: 'M_outside', state: 'open' as const }],
+      ] as const) {
+        const number = f.item.number + offset;
+        const nodeId = `I_${number}`;
+        f.items.set(number, { ...f.item, number, nodeId, milestone });
+        f.candidates.set(number, { ...f.candidates.get(f.item.number)!, number, nodeId });
+      }
+      const context = await f.run();
+      assert.ok('candidates' in context);
+      assert.deepEqual(
+        context.candidates?.map((candidate) => candidate.number),
+        [f.item.number, f.item.number + 1],
+      );
+      const result = await f.run({
+        selection: { ...(await f.select()), issueNodeId: `I_${f.item.number + 1}` },
+      });
+      assert.equal(result.status, 'assigned');
+    });
+
+    it(`should not rank an incomplete preferred discovery in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.policy.projectPickup!.projects[0]!.milestone = { number: 10, policy: 'prefer' };
+      f.item.milestone = null;
+      f.client.discoverProject = async (_owner, _name, _milestone, page) => {
+        if (page === 1) return { candidates: [...f.candidates.values()], nextPage: 2 };
+        throw new GitHubWorkEventClientError(
+          'github-notification-resource-missing',
+          'second page failed',
+        );
+      };
+      assert.equal((await f.run()).status, 'discovering');
+      assert.equal((await f.run()).status, 'failed');
+      assert.equal(f.effects.writes, 0);
+    });
+
+    it(`should retain a failed preferred repository diagnostic while selecting elsewhere in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      f.policy.projectPickup!.projects[0]!.milestone = { number: 10, policy: 'prefer' };
+      const second = f.addRepository('second');
+      f.policy.projectPickup!.projects.push({ repository: 'owner/second', limit: 1 });
+      const diagnostic = providerDiagnostic('github', 'api-request', 'permission', {
+        httpStatus: 403,
+        providerMessage: 'first repository milestone denied',
+      });
+      f.client.getMilestone = async () => {
+        throw new GitHubWorkEventClientError(
+          'github-notification-request-failed',
+          'milestone denied',
+          {},
+          undefined,
+          diagnostic,
+        );
+      };
+      const result = await f.run({
+        selection: { ...(await f.select()), issueNodeId: second.items.get(f.item.number)!.nodeId },
+      });
+      assert.equal(result.status, 'assigned');
+      assert.ok('allowances' in result);
+      assert.equal(result.allowances?.[0]?.code, 'github-notification-request-failed');
+      assert.deepEqual(result.allowances?.[0]?.providerDiagnostic, diagnostic);
+      assert.equal(f.item.assignees.length, 0);
+      assert.equal(f.effects.writes, 1);
+    });
+
     it(`should pass complete candidates and guidance to the model without selecting in ${runtime}`, async () => {
       const f = fixture(runtime);
       const result = await f.run();
@@ -233,7 +515,7 @@ describe('agent/project-pickup', () => {
     it(`should preserve the used allowance across live target changes in ${runtime}`, async () => {
       const f = fixture(runtime);
       await f.run({ selection: await f.select() });
-      f.policy.projectPickup!.projects[0]!.milestone.number = 11;
+      f.policy.projectPickup!.projects[0]!.milestone!.number = 11;
       f.milestone.number = 11;
       f.milestone.nodeId = 'M_next';
       f.item.milestone = { ...f.item.milestone!, number: 11, nodeId: 'M_next' };
@@ -245,7 +527,7 @@ describe('agent/project-pickup', () => {
     it(`should change an unused milestone without install in ${runtime}`, async () => {
       const f = fixture(runtime);
       const old = await f.select();
-      f.policy.projectPickup!.projects[0]!.milestone.number = 11;
+      f.policy.projectPickup!.projects[0]!.milestone!.number = 11;
       f.milestone.number = 11;
       f.milestone.nodeId = 'M_next';
       f.item.milestone = { ...f.item.milestone!, number: 11, nodeId: 'M_next' };
@@ -343,7 +625,7 @@ describe('agent/project-pickup', () => {
       };
       await f.run({ selection: await f.select() });
       const old = structuredClone(f.tx.enrollment);
-      f.policy.projectPickup!.projects[0]!.milestone.number = 11;
+      f.policy.projectPickup!.projects[0]!.milestone!.number = 11;
       const enrollment = {
         ...old,
         milestoneNodeId: 'M_next',
