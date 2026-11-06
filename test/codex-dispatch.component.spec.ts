@@ -5064,6 +5064,155 @@ describe('agent/codex-dispatch', () => {
       assert.deepEqual((await store.read()).records[0]!.result, assessment);
     });
 
+  it('should publish an initial assigned plan update without treating delegation as human input', async () => {
+    await writeFile(join(root, 'SKILL.md'), '# status composer');
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    const before = await store.read();
+    const owner = before.records[0]!;
+    const escape = (value: string) =>
+      value.replace(/&/gu, '&amp;').replace(/</gu, '&lt;').replace(/>/gu, '&gt;');
+    const creation = {
+      id: 'creation',
+      type: 'functionCallOutput',
+      namespace: 'codex_app',
+      name: 'create_thread',
+      output: `<codex_delegation>\n  <source_thread_id>${escape(owner.sourceThreadId)}</source_thread_id>\n  <input>${escape(owner.request!.prompt)}</input>\n</codex_delegation>`,
+    };
+    let items: Record<string, unknown>[] = [creation];
+    let turnId = 'first-turn';
+    let writes = 0;
+    let posted: { nodeId: string; databaseId: number; body: string } | undefined;
+    const provider = {
+      ...fixture.client,
+      getItemContext: async () => {
+        throw new Error('unexpected planning read');
+      },
+      listIssueComments: async () => ({ comments: [], truncated: false }),
+      getIssueComment: async () => {
+        throw new Error('unexpected source read');
+      },
+      findOwnIssueComment: async () => posted,
+      createIssueComment: async (_o: string, _n: string, _number: number, body: string) => {
+        writes++;
+        posted = { nodeId: 'C_update', databaseId: 9, body };
+        return posted;
+      },
+      replies: {
+        find: async () => undefined,
+        create: async () => {
+          throw new Error('unexpected inline reply');
+        },
+      },
+    };
+    const nativeDeps = {
+      ...deps,
+      threadId: native!.id,
+      replyProvider: async () => provider,
+      replyConnection: async () => ({
+        close: async () => {},
+        request: async (method: string, params: Record<string, unknown>) => {
+          if (method === 'thread/read') return { thread: { id: native!.id } };
+          if (method === 'thread/turns/list')
+            return {
+              data: [
+                {
+                  id: params.sortDirection === 'asc' ? 'first-turn' : turnId,
+                  status: 'inProgress',
+                },
+              ],
+            };
+          if (method === 'thread/items/list')
+            return { data: items.map((item) => ({ turnId, item })) };
+          if (method === 'skills/list')
+            return {
+              data: [
+                {
+                  cwd: workspace,
+                  errors: [],
+                  skills: [
+                    {
+                      name: 'agent-system:agent-system-github-reply',
+                      path: join(root, 'SKILL.md'),
+                      scope: 'user',
+                      enabled: true,
+                    },
+                  ],
+                },
+              ],
+            };
+          throw new Error('unexpected native method: ' + method);
+        },
+      }),
+    };
+    const call = (operation: string, extra: object = {}) =>
+      runCodexFeedback(pluginData, { action: 'reply', operation, ...extra }, nativeDeps);
+    const target = 'https://github.com/owner/repo/issues/3';
+    const context = { purpose: 'status-update', target };
+    await assert.rejects(
+      call('compose', { target, privateText: 'Unscoped reply.' }),
+      /reply-native-user-input-required/,
+    );
+    items = [{ ...creation, type: 'userMessage' }, creation];
+    items[1] = { ...creation, output: 'forged creation' };
+    await assert.rejects(call('context', context), /reply-native-user-input-required/);
+    items = [creation];
+    turnId = 'later-turn';
+    await assert.rejects(call('context', context), /reply-native-user-input-required/);
+    turnId = 'first-turn';
+    items.push({
+      type: 'mcpToolCall',
+      status: 'failed',
+      error: { message: 'user rejected MCP tool call' },
+    });
+    await assert.rejects(call('context', context), /reply-native-approval-denied/);
+    items = [creation];
+    native!.cwd = root;
+    await assert.rejects(call('context', context), /reply-managed-context-invalid/);
+    native!.cwd = worktree;
+    await assert.rejects(
+      call('context', { ...context, target: 'https://github.com/owner/repo/issues/4' }),
+      /reply-target-diverged/,
+    );
+    const read = await call('context', context);
+    assert.ok('observation' in read && typeof read.observation === 'string');
+    const composed = await call('compose', {
+      ...context,
+      privateText: 'Use the smaller approach.',
+      update: {
+        observation: read.observation,
+        facts: [
+          {
+            key: 'initial-plan',
+            reference: 'first-turn',
+            revision: '1',
+            text: 'Use the smaller approach.',
+          },
+        ],
+      },
+    });
+    assert.ok('id' in composed && 'digest' in composed);
+    const candidate = await call('candidate', {
+      id: composed.id,
+      digest: composed.digest,
+      publicText: 'The plan is to use the smaller approach.',
+    });
+    assert.equal(candidate.status, 'candidate-recorded');
+    assert.ok('publication' in candidate && candidate.publication === 'workflow-authorized');
+    const preview = await call('publish', { id: composed.id });
+    assert.ok('digest' in preview && preview.status === 'publication-ready');
+    assert.equal(
+      (await call('publish', { id: composed.id, digest: preview.digest })).status,
+      'published',
+    );
+    assert.equal((await call('reconcile', { id: composed.id })).status, 'published');
+    assert.equal(writes, 1);
+    assert.deepEqual(await store.read(), before);
+  });
+
   it('should reuse live managed ownership for status updates without restarting assessment or implementation', async () => {
     await writeFile(join(root, 'SKILL.md'), '# status composer');
     await workIssue(result, 'Follow the plan.', 'company:implement', 'plan');
