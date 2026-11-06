@@ -52,7 +52,25 @@ OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 set -euo pipefail
 runtime=setup
 stage=verify-fixture-actor
-trap 'status=$?; if test "$status" -ne 0; then printf "pickup failure: runtime=%s stage=%s exit=%s\n" "$runtime" "$stage" "$status" >&2; fi; exit "$status"' EXIT
+pickup_failure() {
+  status=$?
+  if test "$status" -ne 0; then
+    set +e
+    printf 'pickup failure: runtime=%s stage=%s exit=%s\n' "$runtime" "$stage" "$status" >&2
+    redactor="$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
+    printf 'pickup mock server errors:\n' >&2
+    tail -n 120 "$TMPDIR/openclaw-aimock.log" | node "$redactor" | tail -c 16384 >&2
+    printf '\npickup mock request diagnostics:\n' >&2
+    curl --max-time 10 --silent --show-error http://127.0.0.1:4010/proof/diagnostics | node "$redactor" >&2
+    if test -s "$TMPDIR/pickup-$runtime-before.json"; then
+      conversation=$(jq -er .threadId "$TMPDIR/pickup-$runtime-before.json")
+      printf '\npickup assessment tool results:\n' >&2
+      openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:40}')" --timeout 10000 --json | jq '[.messages[] | select(.role == "toolResult" or .role == "tool") | {role,toolName,toolCallId,isError,content:(.content | tostring | .[0:8192])}] | .[-4:]' | node "$redactor" >&2
+    fi
+  fi
+  exit "$status"
+}
+trap pickup_failure EXIT
 actor_node=$(GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id')
 for runtime in codex openclaw; do
   cd "$GITHUB_WORKSPACE/examples/openclaw-project-picker/$runtime"
