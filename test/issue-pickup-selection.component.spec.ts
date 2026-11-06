@@ -1,10 +1,11 @@
+import { omit } from 'lodash-es';
 import type { RepositoryRoute } from '../channels/github/repository-scope.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import assert from 'node:assert/strict';
 import IssuePickupFailure from '../agent/issue-pickup-failure.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -385,7 +386,8 @@ describe('issue pickup selection through native journals', () => {
       const fresh = await f.pickup();
       assert.equal(fresh.status, 'selection-required');
       assert.ok('guidance' in fresh && 'digest' in fresh);
-      assert.equal(fresh.guidance, 'prefer release blockers');
+      assert.equal((fresh.guidance as { path: string }).path, path);
+      assert.equal(await readFile(path, 'utf8'), 'prefer release blockers');
       assert.notEqual(fresh.digest, selection.digest);
       assert.equal(f.effects.writes, 0);
       const assign = f.client.assignProjectIssue;
@@ -400,16 +402,18 @@ describe('issue pickup selection through native journals', () => {
       assert.equal(f.effects.writes, 1);
     });
 
-    it(`should invalidate material from the old guidance snapshot in ${runtime}`, async () => {
+    it(`should reject selection from the old guidance snapshot in ${runtime}`, async () => {
       const f = await fixture(runtime);
-      f.candidates.get(f.item.number)!.body = 'candidate details '.repeat(2000);
+      await writeFile(join(root, 'workspace', 'selection.md'), 'Selection guidance. '.repeat(800));
       const first = await f.pickup();
-      assert.ok('contextMaterials' in first && first.contextMaterials);
-      const { action, ...input } = first.contextMaterials.fields[0]!.request;
-      assert.equal(action, 'pickup');
+      assert.ok('digest' in first);
+      assert.equal('contextMaterials' in first, false);
+      const input = { selection: { ...(await f.select()), digest: first.digest } };
       await writeFile(join(root, 'workspace', 'selection.md'), 'changed selection priorities');
       f.tick.id = 'new-scan';
-      await assert.rejects(f.pickup(input as PickupInput), /selection-stale/);
+      const stale = await f.pickup(input as PickupInput);
+      assert.ok('code' in stale);
+      assert.equal(stale.code, 'issue-pickup-selection-stale');
       const fresh = await f.pickup();
       assert.equal(fresh.status, 'selection-required');
       assert.ok('digest' in fresh && 'digest' in first);
@@ -462,7 +466,7 @@ describe('issue pickup selection through native journals', () => {
       await assert.rejects(f.pickup(), /native-caller-required/);
     });
 
-    it(`should deliver complete large candidate material through authorized pages in ${runtime}`, async () => {
+    it(`should deliver candidate references without retaining large descriptions in ${runtime}`, async () => {
       const f = await fixture(runtime);
       const original = structuredClone(f.item);
       f.items.clear();
@@ -491,34 +495,21 @@ describe('issue pickup selection through native journals', () => {
       assert.deepEqual(
         restored.candidates,
         [...f.candidates.values()].map((candidate) => ({
-          ...candidate,
+          ...omit(candidate, ['body']),
+          url: `https://github.com/owner/repo/issues/${candidate.number}`,
           repository: 'owner/repo',
           blockedByOpenIssues: false,
         })),
       );
       assert.equal(f.effects.writes, 0);
-      assert.ok('contextMaterials' in response && response.contextMaterials);
-      const request = response.contextMaterials.fields[0]!.request;
-      const { action, ...input } = request;
-      assert.equal(action, 'pickup');
-      const materialInput = input as PickupInput;
-      await assert.rejects(
-        f.pickup({
-          ...materialInput,
-          context: { id: 'other-operation', digest: String(restored.digest) },
-        }),
-        /selection-stale/,
+      assert.equal('contextMaterials' in response, false);
+      assert.ok(
+        (await f.journal.read()).projectPickup!.operations[0]!.candidates.every(
+          (candidate) => candidate.body === undefined,
+        ),
       );
-      await assert.rejects(
-        f.pickup({
-          ...materialInput,
-          material: { ...materialInput.material!, digest: 'a'.repeat(64) },
-        }),
-        /material-stale/,
-      );
-      assert.equal((await f.journal.read()).projectPickup!.operations[0]!.phase, 'selecting');
       f.caller.current = false;
-      await assert.rejects(f.pickup(input as PickupInput), /native-caller-required/);
+      await assert.rejects(f.pickup(), /native-caller-required/);
       f.caller.current = true;
       const selection = {
         id: String(restored.id),
@@ -529,10 +520,10 @@ describe('issue pickup selection through native journals', () => {
       assert.equal((await f.pickup({ selection })).status, 'assigned');
       assert.equal(f.effects.writes, 1);
       assert.equal((await f.journal.read()).projectPickup!.operations[0]!.candidates.length, 0);
-      assert.equal((await f.pickup(input as PickupInput)).status, 'allowance-reached');
+      assert.equal((await f.pickup()).status, 'allowance-reached');
     });
 
-    it(`should page temporary guidance accepted at the shared limit in ${runtime}`, async () => {
+    it(`should reference file guidance accepted at the shared limit in ${runtime}`, async () => {
       const f = await fixture(runtime);
       const content = 'x'.repeat(32768);
       await writeFile(join(root, 'workspace', 'selection.md'), content);
@@ -542,7 +533,10 @@ describe('issue pickup selection through native journals', () => {
         assert.equal(action, 'pickup');
         return f.pickup(input as PickupInput);
       });
-      assert.equal(restored.guidance, content);
+      assert.equal('contextMaterials' in response, false);
+      const guidance = restored.guidance as { path: string; content?: string };
+      assert.equal(guidance.content, undefined);
+      assert.equal(await readFile(guidance.path, 'utf8'), content);
       assert.equal((await f.journal.read()).projectPickup!.operations[0]!.guidance, content);
     });
 
@@ -577,7 +571,7 @@ describe('issue pickup selection through native journals', () => {
         f.client.projectCandidate = provider.projectCandidate.bind(provider);
         const selection = await f.select();
         const before = (await f.journal.read()).projectPickup!.operations[0]!.candidates[0]!;
-        assert.equal(before.body, body);
+        assert.equal(before.body, undefined);
         assert.equal(Object.hasOwn(before, 'bodyTruncated'), false);
         if (editTail) body += 'changed requirements';
         assert.equal((await f.pickup({ selection })).status, 'assigned');

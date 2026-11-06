@@ -524,14 +524,9 @@ export default async function openClawFeedback(input: {
       issueStage: retainedIssueProgression(record)?.stage ?? 'planning',
       decisionSchema: feedbackDecisionSchema,
       work: event.work,
-      discussion: await provider.getItemContext(
-        owner,
-        name,
-        event.number,
-        event.itemType,
-        false,
-        true,
-      ),
+      discussion: {
+        source: `https://github.com/${owner}/${name}/${event.itemType === 'pull-request' ? 'pull' : 'issues'}/${event.number}`,
+      },
       workInstructions: feedbackWorkInstructions,
       workAuthorized: feedbackConversationMode(record, await livePolicy()) === 'work',
       acceptsImplementationDirection: true,

@@ -316,14 +316,18 @@ export default async function openClawDelivery(input: {
       'authorId',
     ]);
   if (bindingChange) throw new Error(bindingChange);
-  const title =
-    action.title ??
-    previous?.title ??
-    (adoptedPullRequest ? JSON.parse(record.context!).title : undefined);
-  const body =
-    action.body ??
-    previous?.body ??
-    (adoptedPullRequest ? JSON.parse(record.context!).body : undefined);
+  const existingContent =
+    adoptedPullRequest &&
+    ((action.title ?? previous?.title) === undefined ||
+      (action.body ?? previous?.body) === undefined)
+      ? await new IssueDeliveryProvider(connection.account).content({
+          repository,
+          number: intake.issue.number,
+          nodeId: intake.issue.nodeId,
+        })
+      : undefined;
+  const title = action.title ?? previous?.title ?? existingContent?.title;
+  const body = action.body ?? previous?.body ?? existingContent?.body;
   if (
     !title?.trim() ||
     body === undefined ||

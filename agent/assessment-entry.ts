@@ -23,7 +23,6 @@ import AssessmentEntryStore, { type AssessmentEntryBinding } from './assessment-
 import { automationHash } from './automation-hash.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import type { DispatchGit } from './codex-dispatch-project.ts';
-import dispatchContext from './dispatch-context.ts';
 import type { ImplementationResult } from './implementation-result.ts';
 import type { nativeIssueContext } from './implementation-delivery.ts';
 import type { OpenClawDeliveryConnection } from './openclaw-delivery.ts';
@@ -256,17 +255,10 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
       presentationRequest: assessmentPresentationRequest(canonical, true),
       instructions:
         assessmentInstructions +
-        '\n\nDirect execution: use these verified inputs and the selected assessment body once. Preserve the current chat/model. Use presentationRequest plus result matching resultSchema through dispatch assessment render. This pure formatter saves no assessment or summary. Show its presentation; keep the full result in native tool context. Historical assessment present remains an explicit read. No assignment, setup, implementation, publication, or new chat is authorized.',
+        '\n\nDirect execution: use these verified inputs and the selected assessment body once. Preserve the current chat/model. Use presentationRequest plus result matching resultFormat through dispatch assessment render. This pure formatter saves no assessment or summary. Show its presentation; keep the full result in native tool context. Historical assessment present remains an explicit read. No assignment, setup, implementation, publication, or new chat is authorized.',
     });
     if (input.operation === 'context') {
-      const currentEvidence = await provider.getItemContext(
-        locator.owner,
-        locator.name,
-        locator.number,
-        'issue',
-        true,
-        true,
-      );
+      const currentEvidence = { source: canonical };
       if (!entry) {
         const selected = (
           await selectWorkflowStage({
@@ -277,7 +269,7 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
             resolveSkill: deps.resolveSkill,
           })
         ).selection;
-        const evidence = JSON.stringify(dispatchContext(currentEvidence, canonical, deps.now));
+        const evidence = JSON.stringify(currentEvidence);
         entry = {
           id: automationHash({ binding, canonical, owner: managed?.digest }),
           binding,
@@ -305,14 +297,14 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
             resolveSkill: deps.resolveSkill,
           })
         ).selection;
-        entry.evidence = JSON.stringify(dispatchContext(currentEvidence, canonical, deps.now));
+        entry.evidence = JSON.stringify(currentEvidence);
       }
       await deps.assertCurrent();
       await save();
       return assessmentMaterial(
         {
           ...response(entry),
-          evidence: dispatchContext(currentEvidence, canonical, deps.now, true),
+          evidence: currentEvidence,
         },
         {
           action: 'assessment',

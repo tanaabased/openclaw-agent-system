@@ -1,3 +1,4 @@
+import assessmentSource from '../../scripts/aimock-assessment-source.ts';
 import { nativePlanResponse } from '../openclaw-pr-journey/model-fixture.ts';
 import assert from 'node:assert/strict';
 
@@ -8,7 +9,7 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
-import { type TSchema } from 'typebox';
+import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
 import { Value } from 'typebox/value';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
@@ -51,7 +52,7 @@ const dispatchStages = [
 ];
 
 function assessmentRequest(context: Record<string, unknown>, payload: object) {
-  assert.ok(Value.Check(context.resultSchema as TSchema, payload));
+  assert.ok(Value.Check(assessmentSubmissionSchema, payload));
   return {
     action: 'assessment',
     operation: 'render',
@@ -161,6 +162,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     }
     assert.equal(context.status, 'verified');
     assert.equal(context.entry, 'direct');
+    const sourceRead = assessmentSource(context, result, call);
+    if (sourceRead) return sourceRead;
     const selected = context.assessment as { skill: { path: string } };
     if (openClawAIMockToolResultText(messages, prefix + 'direct-assessment-skill') === undefined)
       return call('direct-assessment-skill', 'read', { path: selected.skill.path });
@@ -355,10 +358,11 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
           typeof next.digest !== 'string' ||
           !/^https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/[1-9][0-9]*$/u.test(
             String(context?.source),
-          ) ||
-          !String(context?.body).includes('disposable Agent System notification-flow fixture')
+          )
         )
           return;
+        const read = assessmentSource({ evidence: context }, result, call, stage('routing-source'));
+        if (read) return read;
         const prepared = result(stage('prepare'));
         if (!prepared)
           return dispatch(stage('prepare'), {
@@ -562,6 +566,11 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
   ],
   dynamicFinalResponseFixtures: [final],
   toolCalls: [
+    { id: prefix + 'assessment-source', name: 'agent_system_github' },
+    ...Array.from({ length: 8 }, (_, index) => ({
+      id: prefix + `routing-source-${index}`,
+      name: 'agent_system_github',
+    })),
     { id: prefix + 'scan', name: 'agent_system_intake' },
     { id: prefix + 'assessment-skill', name: 'read' },
     { id: prefix + 'direct-assessment-skill', name: 'read' },

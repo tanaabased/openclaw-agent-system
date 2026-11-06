@@ -1,7 +1,7 @@
 import { nativeIssueContext } from '../agent/implementation-delivery.ts';
 import hydrateImplementation from './implementation-material-fixture.ts';
 import assert from 'node:assert/strict';
-import { mkdtemp, realpath, rm, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile, mkdir, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -125,7 +125,7 @@ describe('agent/implementation-entry', () => {
         (complete.implementation as { requestedSkill: string }).requestedSkill,
         'current-implementation',
       );
-      assert.equal((complete.evidence as { body: string }).body, 'Requested handler.');
+      assert.deepEqual(complete.evidence, { source: target });
       assert.doesNotMatch(JSON.stringify(complete), /old-assessment|OLD SNAPSHOT/);
       assert.equal('resultSubmission' in complete, false);
       assert.equal('plan' in complete, false);
@@ -205,7 +205,8 @@ describe('agent/implementation-entry', () => {
       const resumed = await call('context', { id: first.id, plan: undefined });
       assert.equal(resumed.status, 'verified');
       assert.doesNotMatch(JSON.stringify(resumed), /HISTORICAL-PLAN|HISTORICAL-ISSUE-SNAPSHOT/);
-      assert.match(JSON.stringify(resumed), /Requested handler/);
+      assert.ok('evidence' in resumed);
+      assert.deepEqual(resumed.evidence, { source: target });
       assert.doesNotMatch(
         JSON.stringify(await store.exclusive(async (entries) => entries)),
         /NATIVE-PLAN-ONLY|Current revised plan/,
@@ -409,11 +410,11 @@ describe('agent/implementation-entry', () => {
     undefined,
     { skill: 'custom' },
     { guidance: 'Inline rule.' },
-    { guidance: { file: 'guide.md' } },
+    { guidance: { file: 'custom guidance.md' } },
     { skill: 'agent-system:agent-system-task-implementation', guidance: 'Combined rule.' },
   ]) {
     it(`should use existing selector semantics for ${configuration ? JSON.stringify(configuration).toLowerCase() : 'defaults'}`, async () => {
-      await writeFile(join(root, 'guide.md'), 'Contained rule.');
+      await writeFile(join(root, 'custom guidance.md'), 'Contained rule.');
       deps.manifest.github = {
         notifications: { issueAssignment: { implementation: configuration } },
       } as AgentManifest['github'];
@@ -423,7 +424,16 @@ describe('agent/implementation-entry', () => {
         first.implementation.requestedSkill,
         configuration?.skill ?? 'agent-system:agent-system-task-implementation',
       );
-      if (configuration?.guidance) assert.ok(first.implementation.guidance?.content);
+      if (typeof configuration?.guidance === 'string')
+        assert.ok(first.implementation.guidance?.content);
+      else if (configuration?.guidance) {
+        assert.equal(first.implementation.guidance?.path, join(root, 'custom guidance.md'));
+        assert.equal(first.implementation.guidance?.content, undefined);
+        assert.equal(
+          await readFile(first.implementation.guidance!.path!, 'utf8'),
+          'Contained rule.',
+        );
+      }
       await call('context', { id: first.id });
       assert.equal(selections.length, 2);
     });

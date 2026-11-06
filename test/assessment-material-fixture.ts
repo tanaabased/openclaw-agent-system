@@ -44,7 +44,7 @@ export default function assessmentContextFixture(runtime: 'openclaw' | 'codex' =
       operation: 'render',
       target: 'https://github.com/tanaabased/big-test-bucket/issues/123',
     },
-    instructions: nativeAssessmentInstructions(runtime),
+    instructions: nativeAssessmentInstructions(),
   };
 }
 
@@ -85,7 +85,6 @@ export function hostedAssessmentContextFixture() {
       },
       'https://github.com/tanaabased/big-test-bucket/issues/15195',
       1,
-      true,
     ),
     assessment: {
       version: 1,

@@ -28,6 +28,7 @@ export interface GitHubNotificationItemContextFile {
 
 export interface GitHubNotificationItemContext {
   nativeRoutingMetadata?: RoutingMetadata;
+  fallbackRoutingMetadata?: RoutingMetadata;
   routingMetadata?: RoutingMetadata;
   body: string;
   comments: GitHubNotificationItemContextComment[];
@@ -86,6 +87,7 @@ export interface GitHubNotificationItemContextClient {
     itemType?: 'issue' | 'pull-request',
     includeRoutingMetadata?: boolean,
     complete?: boolean,
+    referencesOnly?: boolean,
   ): Promise<GitHubNotificationItemContext>;
 }
 

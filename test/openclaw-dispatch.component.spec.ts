@@ -28,7 +28,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import { issueKey } from '../agent/dispatch-pending.ts';
 import type { GitHubCanonicalIssueComment } from '../channels/github/provider/comment-admission.ts';
 import {
-  assessmentResultContextSchema,
+  assessmentResultFormat,
   assessmentResultSchema,
   type AssessmentResult,
   type AssessmentSubmission,
@@ -2963,8 +2963,8 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sent.deliver, false);
     assert.equal(sent.expectedLeafEntryId, null);
     assert.equal(sent.thinking, undefined);
-    assert.match(String(sent.message), /Return the missing result/);
-    assert.match(String(sent.message), /untrusted issue evidence/);
+    assert.ok(String(sent.message).includes('https://github.com/owner/repo/issues/3'));
+    assert.doesNotMatch(String(sent.message), /Return the missing result/);
     assert.match(String(sent.message), /Do not change files/);
     assert.deepEqual(
       await service.run(
@@ -3656,7 +3656,7 @@ describe('agent/openclaw issue dispatch', () => {
     const restored = await hydrateImplementation(first, async (read) =>
       service.run(manifest, root, assessor(input.id), read as typeof request),
     );
-    assert.equal((restored.currentIssue as { body: string }).body, 'Return the missing result.');
+    assert.deepEqual(restored.currentIssue, { source: JSON.parse(before.context!).source });
     assert.equal(restored.assessment, undefined);
     assert.equal(restored.previousResult, undefined);
     assert.equal(restored.previousImplementationResult, undefined);
@@ -4282,7 +4282,7 @@ describe('agent/openclaw issue dispatch', () => {
       });
       const fresh = await context(input.id);
       assert.ok(
-        'evidence' in fresh && JSON.stringify(fresh.evidence).includes('FRESH-PRIVATE-FACT'),
+        'evidence' in fresh && !JSON.stringify(fresh.evidence).includes('FRESH-PRIVATE-FACT'),
       );
       assert.equal((await record()).context, snapshot);
       const recorded = await historicalAssessment(input.id);
@@ -4517,7 +4517,7 @@ describe('agent/openclaw issue dispatch', () => {
         selected.skill.name,
         variant.includes('skill') ? 'ordinary-reply' : 'agent-system-github-reply',
       );
-      assert.equal(selected.guidance?.content, /inline|file/u.test(variant) ? guidance : undefined);
+      assert.equal(selected.guidance?.content, variant.includes('inline') ? guidance : undefined);
       assert.equal(
         selected.skill.path,
         join(root, variant.includes('skill') ? 'reply/SKILL.md' : 'SKILL.md'),
@@ -4571,7 +4571,7 @@ describe('agent/openclaw issue dispatch', () => {
     const complete = await hydrateImplementation(verified, async (read) =>
       service.run(manifest, root, assessor(input.id), read as { action: 'context'; id: string }),
     );
-    assert.deepEqual(complete.resultSchema, assessmentResultContextSchema);
+    assert.deepEqual(complete.resultFormat, assessmentResultFormat);
     assert.ok('presentationRequest' in verified && 'entry' in verified);
     assert.equal(verified.entry, 'managed');
     assert.equal(verified.presentationRequest.operation, 'render');
@@ -5751,18 +5751,19 @@ describe('agent/openclaw issue dispatch', () => {
         selection.skill.name,
         variant.includes('skill') ? 'ordinary-assessment' : 'agent-system-task-assessment',
       );
-      assert.equal(
-        selection.guidance?.content,
-        /inline|file/u.test(variant) ? guidance : undefined,
-      );
+      assert.equal(selection.guidance?.content, variant.includes('inline') ? guidance : undefined);
       const fullAssessment =
         'Return the value; test the caller.\nThe caller may depend on undefined; that remains uncertain.';
       const result = { ...plan, fullAssessment, plan: fullAssessment };
       assert.equal((await historicalAssessment(input.id, result)).status, 'recorded');
       const retained = await record();
       assert.equal(retained.result!.fullAssessment, fullAssessment);
-      assert.deepEqual(retained.stageReceipt!.selection, selection);
-      assert.equal(retained.stageReceipt!.binding.selectionDigest, automationHash(selection));
+      assert.equal(retained.stageReceipt!.selection!.skill.digest, selection.skill.digest);
+      assert.equal(retained.stageReceipt!.selection!.guidance?.digest, selection.guidance?.digest);
+      assert.equal(
+        retained.stageReceipt!.binding.selectionDigest,
+        automationHash(retained.stageReceipt!.selection),
+      );
       assert.ok('evidence' in verified);
       assert.equal(
         retained.stageReceipt!.binding.evidenceDigest,
@@ -5842,10 +5843,7 @@ describe('agent/openclaw issue dispatch', () => {
         selection.skill.path,
         join(root, variant.includes('skill') ? 'implementation/SKILL.md' : 'SKILL.md'),
       );
-      assert.equal(
-        selection.guidance?.content,
-        /inline|file/u.test(variant) ? guidance : undefined,
-      );
+      assert.equal(selection.guidance?.content, variant.includes('inline') ? guidance : undefined);
       const result = {
         outcome: 'done' as const,
         summary: 'Caller fixed.',
@@ -5860,7 +5858,13 @@ describe('agent/openclaw issue dispatch', () => {
       );
       assert.ok('handoff' in saved && saved.handoff?.next === 'delivery');
       const after = await record();
-      assert.deepEqual(after.work!.selection, selection);
+      assert.equal(after.work!.selection!.skill.digest, selection.skill.digest);
+      assert.equal(
+        after.work!.selection!.guidance?.content,
+        /inline|file/u.test(variant) ? guidance : undefined,
+      );
+      if (variant.includes('file'))
+        assert.equal(selection.guidance?.path, after.work!.selection!.guidance?.path);
       assert.deepEqual(after.work!.result, result);
       assert.deepEqual(after.result, before.result);
       assert.deepEqual(after.stageReceipt, before.stageReceipt);
@@ -6001,8 +6005,8 @@ describe('agent/openclaw issue dispatch', () => {
     const fresh = await context(id, who);
     assert.ok('assessment' in fresh);
     assert.equal(
-      (fresh.assessment as AssessmentSelection).guidance!.content,
-      'Keep existing findings.',
+      (fresh.assessment as AssessmentSelection).guidance!.path,
+      join(root, 'guidance.md'),
     );
     assert.equal(creates().length, 1);
   });

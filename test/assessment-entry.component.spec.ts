@@ -13,7 +13,7 @@ import assessmentSkillSource from '../agent/assessment-skill-source.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import type { AssessmentEntry } from '../agent/assessment-entry-state.ts';
 import {
-  assessmentResultContextSchema,
+  assessmentResultFormat,
   type AssessmentResult,
   type AssessmentSubmission,
 } from '../agent/assessment-result.ts';
@@ -107,29 +107,25 @@ describe('agent/assessment-entry', () => {
       assert.equal((await call('result', { id: context.id, result: ready })).status, 'formatted');
     });
   for (const runtime of ['codex', 'openclaw'] as const)
-    it(`should deliver complete direct assessment material in ${runtime}`, async () => {
+    it(`should deliver direct assessment references without prefetching issue content in ${runtime}`, async () => {
       deps.binding.runtime = runtime;
-      const issue =
-        'Important requirement: preserve every detail.\n'.repeat(600) + 'FINAL REQUIREMENT';
       const connect = deps.connectProvider;
       deps.connectProvider = async () => ({
         ...(await connect()),
-        getItemContext: async () => ({
-          title: 'Issue',
-          body: issue,
-          comments: [],
-          labels: [],
-          truncated: false,
-        }),
+        getItemContext: async () => {
+          throw new Error('assessment must read GitHub natively');
+        },
       });
       const request = { action: 'assessment', operation: 'context', target, path: root };
       const run = (read: Record<string, unknown>) => assessmentEntry(read, deps);
       const verify = (complete: Record<string, unknown>) => {
-        assert.equal((complete.evidence as { body: string }).body, issue);
-        assert.deepEqual(complete.resultSchema, assessmentResultContextSchema);
+        assert.deepEqual(complete.evidence, { source: target });
+        assert.equal('contextMaterials' in complete, false);
+        assert.deepEqual(complete.resultFormat, assessmentResultFormat);
         assert.equal(typeof complete.instructions, 'string');
       };
-      if (runtime === 'openclaw') await nativeMaterialFixture({ request, run, verify });
+      if (runtime === 'openclaw')
+        await nativeMaterialFixture({ request, run, verify, minimumPages: 0 });
       else verify(await hydrateImplementation(await run(request), run));
       const entries = await new AssessmentEntryStore(deps.root, deps.binding).exclusive(
         async (entries) => entries,
@@ -177,7 +173,7 @@ describe('agent/assessment-entry', () => {
     const complete = await hydrateImplementation(context, (request) =>
       assessmentEntry(request, deps),
     );
-    assert.deepEqual(complete.resultSchema, assessmentResultContextSchema);
+    assert.deepEqual(complete.resultFormat, assessmentResultFormat);
     assert.deepEqual(context.presentationRequest, {
       action: 'assessment',
       operation: 'render',
@@ -357,7 +353,8 @@ describe('agent/assessment-entry', () => {
     assert.equal(entries[0]!.result, undefined);
     assert.equal(selections.length, 2);
     assert.ok(
-      'evidence' in revision && JSON.stringify(revision.evidence).includes('Complete issue.'),
+      'evidence' in revision &&
+        JSON.stringify(revision.evidence) === JSON.stringify({ source: target }),
     );
   });
   for (const runtime of ['codex', 'openclaw'] as const)
@@ -417,7 +414,7 @@ describe('agent/assessment-entry', () => {
             assessmentEntry(read, deps),
           );
           assert.equal(complete.status, 'native');
-          assert.equal((complete.evidence as { body: string }).body, 'CURRENT REQUIREMENT');
+          assert.deepEqual(complete.evidence, { source: target });
           assert.equal(
             (complete.assessment as { requestedSkill: string }).requestedSkill,
             'current-override',
@@ -500,12 +497,11 @@ describe('agent/assessment-entry', () => {
       );
       assert.equal(
         selected.assessment!.guidance?.content,
-        typeof configuration?.guidance === 'string'
-          ? 'Inline guidance.'
-          : configuration?.guidance
-            ? 'File guidance.'
-            : undefined,
+        typeof configuration?.guidance === 'string' ? 'Inline guidance.' : undefined,
       );
+      if (configuration?.guidance && typeof configuration.guidance !== 'string') {
+        assert.equal(selected.assessment!.guidance?.path, join(root, 'guidance.md'));
+      }
       assert.equal(selected.mode, 'plan');
       await call('context');
       assert.equal(selections.length, (index + 1) * 2);

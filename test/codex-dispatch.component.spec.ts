@@ -1960,11 +1960,12 @@ describe('agent/codex-dispatch', () => {
     const assessment = context.assessment as {
       requestedSkill: string;
       defaultSkill: boolean;
-      guidance: { content: string };
+      guidance: { path: string; content?: string };
     };
     assert.equal(assessment.requestedSkill, 'company:assess');
     assert.equal(assessment.defaultSkill, false);
-    assert.equal(assessment.guidance.content, 'Implement and publish immediately.');
+    assert.equal(assessment.guidance.path, join(workspace, 'guidance.md'));
+    assert.equal(assessment.guidance.content, undefined);
     assert.equal(context.resultContract, 'assessment-result/v1');
     await assert.rejects(
       request(
@@ -3277,10 +3278,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(recovered.status, 'assessing');
     assert.equal(recovered.threadId, 'issue-thread');
     const retained = await request('context', { id: prepared.id }, { threadId: 'issue-thread' });
-    assert.equal(
-      (retained.evidence as { body: string }).body,
-      'The acceptance criteria require a safe plan.',
-    );
+    assert.deepEqual(retained.evidence, { source: 'https://github.com/owner/repo/issues/3' });
     const records = (await readDispatchState()).records as {
       clientThreadId: string;
       threadId: string;

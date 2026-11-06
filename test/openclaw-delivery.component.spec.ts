@@ -165,6 +165,11 @@ describe('agent/openclaw-delivery', () => {
               const endpoint = argv.find((arg) => arg.startsWith('repos/'));
               if (
                 endpoint === 'repos/owner/repo/pulls/7' &&
+                argv.includes('{nodeId:.node_id,title,body}')
+              )
+                return response({ nodeId: pr?.itemNodeId, title: pr?.title, body: pr?.body });
+              if (
+                endpoint === 'repos/owner/repo/pulls/7' &&
                 argv.some((arg) => arg.includes('branch:.head.ref'))
               )
                 return response({
@@ -383,7 +388,7 @@ describe('agent/openclaw-delivery', () => {
       pullRequest: manualPullRequest(f.repository, f.item),
     });
     input.base = 'release';
-    record.context = JSON.stringify({ title: 'Original title', body: 'Original body' });
+    record.context = JSON.stringify({ source: 'https://github.com/owner/repo/pull/7' });
     pr = {
       itemNodeId: 'PR_7',
       number: 7,
@@ -401,7 +406,9 @@ describe('agent/openclaw-delivery', () => {
   it('should update an adopted non-agent-authored draft without creating or changing metadata', async () => {
     adoptTarget();
     const original = structuredClone(pr);
-    assert.equal((await publish()).status, 'published');
+    const prepared = await request('prepare');
+    assert.ok('digest' in prepared);
+    assert.equal((await request('publish', { digest: prepared.digest })).status, 'published');
     assert.equal(creates, 0);
     assert.equal(patches, 0);
     assert.deepEqual(pr, original);
@@ -573,7 +580,7 @@ describe('agent/openclaw-delivery', () => {
       );
       assert.equal(
         composed.selection.guidance?.content,
-        /inline|file/u.test(variant) ? guidance : undefined,
+        variant.includes('inline') ? guidance : undefined,
       );
       const candidate = await request('candidate', {
         digest: composed.digest,
@@ -581,7 +588,14 @@ describe('agent/openclaw-delivery', () => {
       });
       assert.ok('digest' in candidate);
       assert.equal((await request('announce', { digest: candidate.digest })).status, 'announced');
-      assert.deepEqual(record.work!.delivery!.announcement!.composition, composed.selection);
+      const retainedSelection = record.work!.delivery!.announcement!.composition!;
+      assert.equal(retainedSelection.skill.digest, composed.selection.skill.digest);
+      assert.equal(
+        retainedSelection.guidance?.content,
+        /inline|file/u.test(variant) ? guidance : undefined,
+      );
+      if (variant.includes('file'))
+        assert.equal(composed.selection.guidance?.path, retainedSelection.guidance?.path);
       assert.ok(announcement.comments[0]!.body.includes('Live transport remains untested.'));
       assert.equal(record.result!.fullAssessment, 'Complete plan');
       await request('announce', { digest: candidate.digest });

@@ -28,7 +28,6 @@ import type { AgentManifest } from '../manifest/types.ts';
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import assessmentSummary from './assessment-summary.ts';
 import { automationHash } from './automation-hash.ts';
-import dispatchContext from './dispatch-context.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
 import {
   dispatchFailurePhase,
@@ -635,19 +634,7 @@ export default class OpenClawDispatchIssue {
             return {
               ...response,
               implementation: selected,
-              currentIssue: dispatchContext(
-                await client.getItemContext(
-                  repo.owner.login,
-                  repo.name,
-                  intake.issue.number,
-                  managedPullRequest(intake) ? 'pull-request' : 'issue',
-                  true,
-                  true,
-                ),
-                managedTargetUrl(intake),
-                now,
-                true,
-              ),
+              currentIssue: { source: managedTargetUrl(intake) },
               ...(record.predecessorId
                 ? {
                     predecessor: (() => {
@@ -867,21 +854,8 @@ export default class OpenClawDispatchIssue {
                 now,
               })
             : undefined;
-        const completeEvidence =
-          input.action === 'context'
-            ? await client.getItemContext(
-                repo.owner.login,
-                repo.name,
-                intake.issue.number,
-                managedPullRequest(intake) ? 'pull-request' : 'issue',
-                true,
-                true,
-              )
-            : undefined;
         const evidence =
-          input.action === 'context'
-            ? JSON.stringify(dispatchContext(completeEvidence!, source(intake), now))
-            : undefined;
+          input.action === 'context' ? JSON.stringify({ source: source(intake) }) : undefined;
         await childAuthority.assertCurrent();
         const outcome = await issueAssessmentAction({
           selection,
@@ -900,9 +874,6 @@ export default class OpenClawDispatchIssue {
         });
         return {
           ...outcome,
-          ...(completeEvidence
-            ? { evidence: dispatchContext(completeEvidence, source(intake), now, true) }
-            : {}),
           ...(record.predecessorId
             ? {
                 predecessor: (() => {

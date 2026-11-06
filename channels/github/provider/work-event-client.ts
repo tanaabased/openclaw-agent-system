@@ -128,6 +128,7 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
     itemType: 'issue' | 'pull-request' = 'issue',
     includeRoutingMetadata = false,
     complete = false,
+    referencesOnly = false,
   ): Promise<GitHubNotificationItemContext> {
     return readItemContext(
       this.#api,
@@ -137,6 +138,7 @@ export default class GitHubWorkEventClient implements GitHubNotificationProvider
       itemType,
       includeRoutingMetadata,
       complete,
+      referencesOnly,
     );
   }
 

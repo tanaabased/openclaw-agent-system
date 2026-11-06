@@ -20,8 +20,18 @@ describe('manual launch model fixture', () => {
           tool_call_id: 'call_manual_launch_context_0',
           content: JSON.stringify({
             status: 'routing-required',
+            context: { source: 'https://github.com/tanaabased/big-test-bucket/issues/42' },
             id: 'a'.repeat(64),
             digest: 'd'.repeat(64),
+          }),
+        },
+        {
+          role: 'tool',
+          tool_call_id: 'call_manual_launch_routing-source_0',
+          content: JSON.stringify({
+            exitCode: 0,
+            truncated: false,
+            stdout: JSON.stringify({ body: 'Disposable cleanup.', comments: [] }),
           }),
         },
         {

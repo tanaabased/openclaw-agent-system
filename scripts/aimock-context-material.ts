@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 import {
   getTextContent,
@@ -53,7 +54,10 @@ export default function contextMaterialExchange(request: ChatCompletionRequest):
       let next: Record<string, unknown> | undefined = field.request;
       let text = '';
       while (next) {
-        const id = `${message.tool_call_id}_material_${fieldIndex}_${text.length}`;
+        const id = `call_material_${createHash('sha256')
+          .update(JSON.stringify([message.tool_call_id, fieldIndex, text.length]))
+          .digest('hex')
+          .slice(0, 16)}`;
         const observed = openClawAIMockToolResultText(messages, id);
         if (observed === undefined)
           return {

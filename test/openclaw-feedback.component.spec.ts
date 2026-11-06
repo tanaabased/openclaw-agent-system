@@ -766,11 +766,17 @@ describe('agent/openclaw-feedback', () => {
       );
       assert.equal(
         composed.selection.guidance?.content,
-        /inline|file/u.test(variant) ? guidance : undefined,
+        variant.includes('inline') ? guidance : undefined,
       );
       assert.ok('privateResponse' in composed);
       assert.equal(composed.privateResponse, privateText);
-      assert.deepEqual(event.composition, composed.selection);
+      assert.equal(event.composition?.skill.digest, composed.selection.skill.digest);
+      assert.equal(
+        event.composition?.guidance?.content,
+        /inline|file/u.test(variant) ? guidance : undefined,
+      );
+      if (variant.includes('file'))
+        assert.equal(composed.selection.guidance?.path, event.composition?.guidance?.path);
       const publicText = 'Result: caller fixed. Transport remains untested.';
       await action('candidate', { digest: composed.digest, publicText });
       const preview = await action('publish');

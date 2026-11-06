@@ -1,3 +1,4 @@
+import assessmentSource from '../../scripts/aimock-assessment-source.ts';
 import assert from 'node:assert/strict';
 import {
   getTextContent,
@@ -61,6 +62,15 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     return dispatch('context', { action: 'launch', operation: 'context', target, mode: 'plan' });
   if (context.status === 'existing') return { content: 'manual-launch-existing' };
   if (context.status !== 'routing-required') return stopped(context);
+  const sourceRead = assessmentSource(
+    { evidence: context.context },
+    result,
+    (stage, name, args) => ({
+      toolCalls: [{ id: prefix + stage + '_0', name, arguments: JSON.stringify(args) }],
+    }),
+    'routing-source',
+  );
+  if (sourceRead) return sourceRead;
   const prepared = result('prepare');
   if (!prepared)
     return dispatch('prepare', {
@@ -115,6 +125,7 @@ export const issueLaunchExampleScenario: OpenClawAIMockScenario = {
   ],
   toolCalls: [
     ...issueExampleScenario.toolCalls,
+    { id: prefix + 'routing-source_0', name: 'agent_system_github' },
     ...stages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({
         id: prefix + stage + '_' + attempt,

@@ -1,3 +1,4 @@
+import assessmentSource from '../../scripts/aimock-assessment-source.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -147,10 +148,10 @@ interface PRFixtureOptions {
 function publicText(composed: Record<string, unknown>, text: string) {
   const selected = composed.selection as {
     defaultSkill: boolean;
-    guidance?: { content: string };
+    guidance?: { content?: string; path?: string };
   };
   if (selected.defaultSkill) return text;
-  assert.match(selected.guidance!.content, /Evidence first/u);
+  assert.match(selected.guidance!.content!, /Evidence first/u);
   return `Evidence first: ${text} Live interpretation remains untested.`;
 }
 
@@ -166,6 +167,8 @@ export function nativePlanResponse(
 ): FixtureResponse | undefined {
   const target = (context.evidence as { source?: string })?.source;
   assert.ok(target);
+  const sourceRead = assessmentSource(context, result, call);
+  if (sourceRead) return sourceRead;
   const plan =
     typeof source.reviewSummary === 'string'
       ? source.reviewSummary
@@ -418,10 +421,11 @@ function respond(
           typeof next.digest !== 'string' ||
           !/^https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/[1-9][0-9]*$/u.test(
             String(context?.source),
-          ) ||
-          !String(context?.body).includes('disposable Agent System notification-flow fixture')
+          )
         )
           return;
+        const read = assessmentSource({ evidence: context }, result, call, stage('routing-source'));
+        if (read) return read;
         const prepared = result(stage('prepare'));
         if (!prepared)
           return dispatch(stage('prepare'), {
@@ -754,12 +758,12 @@ function respond(
     const selection = context.assessment as {
       defaultSkill: boolean;
       skill: { path: string };
-      guidance?: { content: string };
+      guidance?: { content?: string; path?: string };
     };
     if (openClawAIMockToolResultText(messages, prefix + 'assessment-skill') === undefined)
       return call('assessment-skill', 'read', { path: selection.skill.path });
     if (!selection.defaultSkill) {
-      assert.match(selection.guidance!.content, /Preserve the evidence limit/u);
+      assert.match(selection.guidance!.content!, /Preserve the evidence limit/u);
       assert.match(
         openClawAIMockToolResultText(messages, prefix + 'assessment-skill')!,
         /cleanup sequence/u,
@@ -848,13 +852,24 @@ function respond(
         const selected = context.implementation as {
           defaultSkill: boolean;
           skill: { path: string };
-          guidance?: { content: string };
+          guidance?: { content?: string; path?: string };
         };
         if (openClawAIMockToolResultText(messages, prefix + 'implementation-skill') === undefined)
           return call('implementation-skill', 'read', { path: selected.skill.path });
         customized = !selected.defaultSkill;
         if (customized) {
-          assert.match(selected.guidance!.content, /Retain sanitized evidence/u);
+          const guidance = selected.guidance!;
+          if (
+            guidance.path &&
+            openClawAIMockToolResultText(messages, prefix + 'implementation-guidance') === undefined
+          )
+            return call('implementation-guidance', 'read', { path: guidance.path });
+          assert.match(
+            guidance.path
+              ? openClawAIMockToolResultText(messages, prefix + 'implementation-guidance')!
+              : guidance.content!,
+            /Retain sanitized evidence/u,
+          );
           assert.match(
             openClawAIMockToolResultText(messages, prefix + 'implementation-skill')!,
             /cleanup sequence/u,
@@ -1068,6 +1083,11 @@ export function createPRExampleScenario(
     finalResponses: [],
     dynamicFinalResponseFixtures: [final],
     toolCalls: [
+      { id: prefix + 'assessment-source', name: 'agent_system_github' },
+      ...Array.from({ length: 8 }, (_, index) => ({
+        id: prefix + `routing-source-${index}`,
+        name: 'agent_system_github',
+      })),
       { id: prefix + 'scan', name: 'agent_system_intake' },
       { id: prefix + 'feedback-skill', name: 'read' },
       { id: prefix + 'feedback-implementation-skill', name: 'read' },
@@ -1075,6 +1095,7 @@ export function createPRExampleScenario(
       { id: prefix + 'summary-skill', name: 'read' },
       { id: prefix + 'assessment-skill', name: 'read' },
       { id: prefix + 'implementation-skill', name: 'read' },
+      { id: prefix + 'implementation-guidance', name: 'read' },
       ...dispatchStages.flatMap((stage) =>
         [0, 1, 2, 3].map((attempt) => ({
           id: prefix + retryStage(stage, attempt),

@@ -31,11 +31,12 @@ describe('agent/issue-pickup', () => {
         assert.equal('selectionGuidance' in next, false);
       });
     }
-    it(`should pass complete candidates and guidance to the model without selecting in ${runtime}`, async () => {
+    it(`should pass candidate references and guidance to the model without selecting in ${runtime}`, async () => {
       const f = fixture(runtime);
       const result = await f.run();
       assert.equal(result.status, 'selection-required');
-      assert.ok('candidates' in result && result.candidates?.[0]?.body);
+      assert.ok('candidates' in result && result.candidates?.[0]?.url);
+      assert.equal('body' in result.candidates[0], false);
       assert.ok('guidance' in result && result.guidance);
       assert.equal(f.effects.writes, 0);
     });

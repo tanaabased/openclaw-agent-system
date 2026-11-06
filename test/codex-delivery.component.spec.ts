@@ -597,6 +597,11 @@ describe('agent/codex-delivery', () => {
             const endpoint = argv.find(
               (arg) => arg.startsWith('repos/') || arg.startsWith('users/'),
             );
+            if (
+              endpoint === 'repos/owner/repo/pulls/7' &&
+              argv.includes('{nodeId:.node_id,title,body}')
+            )
+              return result({ nodeId: pr?.itemNodeId, title: pr?.title, body: pr?.body });
             if (endpoint === 'repos/owner/repo/issues/3')
               return result({ databaseId: 20, nodeId: 'I_issue', number: 3, title: 'Issue title' });
             if (endpoint === 'repos/owner/repo/pulls' && argv.includes('GET'))
@@ -730,7 +735,7 @@ describe('agent/codex-delivery', () => {
         selections: { mode: 'work' },
       };
       delete record.intakeId;
-      record.context = JSON.stringify({ title: 'Original title', body: 'Original body' });
+      record.context = JSON.stringify({ source: 'https://github.com/owner/repo/pull/7' });
       record.issueKey = issueKey(record.manualIssue);
       await save();
     });
@@ -758,7 +763,9 @@ describe('agent/codex-delivery', () => {
   it('should update an adopted pr through its original remote branch without replacing or normalizing it', async () => {
     await adoptTarget();
     const original = structuredClone(pr);
-    assert.equal((await publish()).status, 'published');
+    const prepared = await request('prepare');
+    assert.ok('digest' in prepared);
+    assert.equal((await request('publish', { digest: prepared.digest })).status, 'published');
     assert.equal(creates, 0);
     assert.equal(bodyWrites, 0);
     assert.deepEqual(pr, original);

@@ -11,7 +11,11 @@ import {
   type ManagedIssue as IntakeRecord,
 } from './managed-issue.ts';
 import openClawRoutingInstructions from './openclaw-routing-instructions.ts';
-import { routingInstructionsGuidance, routingInstructionsDigest } from './routing-instructions.ts';
+import {
+  routingInstructionsReference,
+  routingInstructionsGuidance,
+  routingInstructionsDigest,
+} from './routing-instructions.ts';
 
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import { openClawResponseEligible } from './openclaw-response-continuation.ts';
@@ -702,6 +706,8 @@ export default class OpenClawDispatchCoordinator {
         intake.issue.number,
         'issue',
         true,
+        false,
+        true,
       );
       record.context = JSON.stringify(dispatchContext(evidence, source(intake), now));
       record.routingInstructions = await openClawRoutingInstructions(this.context, tx);
@@ -719,7 +725,7 @@ export default class OpenClawDispatchCoordinator {
             { action: 'inspect' },
             'openclaw',
           ),
-          instructions: record.routingInstructions,
+          instructions: routingInstructionsReference(record.routingInstructions),
           instructionsDigest: routingInstructionsDigest(record.routingInstructions),
           instructionsGuidance: routingInstructionsGuidance,
         },

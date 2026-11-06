@@ -30,6 +30,7 @@ export default async function readItemContext(
   itemType: 'issue' | 'pull-request' = 'issue',
   includeRoutingMetadata = false,
   complete = false,
+  referencesOnly = false,
 ): Promise<GitHubNotificationItemContext> {
   const endpoint = githubWorkItemEndpoint(owner, name, number);
   const response = await api.request(
@@ -46,7 +47,7 @@ export default async function readItemContext(
   const body = githubResponseBoundedProse(
     value.body,
     'item-context body',
-    complete ? Infinity : 24_000,
+    complete || referencesOnly ? Infinity : 24_000,
   );
   const commentCount = githubResponseInteger(value.commentCount, 'item-context comment count');
   if (!Array.isArray(value.labels)) throw new Error('GitHub returned invalid issue labels.');
@@ -57,6 +58,39 @@ export default async function readItemContext(
     }
     return parsed;
   });
+  let metadata;
+  let nativeMetadata;
+  if (includeRoutingMetadata && itemType === 'issue') {
+    let native = nativeRoutingMetadata(undefined);
+    try {
+      const fields = await api.request(
+        [
+          '--method',
+          'GET',
+          `${endpoint}/issue-field-values?per_page=100`,
+          '-H',
+          'X-GitHub-Api-Version: 2026-03-10',
+        ],
+        'issue routing metadata',
+      );
+      native = nativeRoutingMetadata(fields.value, fields.hasNextPage);
+    } catch {
+      // Optional metadata failure remains distinct from a missing field.
+    }
+    nativeMetadata = native;
+    metadata = routingMetadata(native, body.text);
+  }
+  if (referencesOnly)
+    return {
+      title: title.text,
+      labels,
+      body: '',
+      comments: [],
+      truncated: title.truncated || value.labels.length > labels.length,
+      ...(metadata ? { routingMetadata: metadata } : {}),
+      ...(nativeMetadata ? { nativeRoutingMetadata: nativeMetadata } : {}),
+      fallbackRoutingMetadata: routingMetadata(nativeRoutingMetadata([]), body.text),
+    };
   const comments: GitHubNotificationItemContextComment[] = [];
   let commentsTruncated = !complete && commentCount > maximumItemContextComments;
   if (commentCount > 0) {
@@ -185,28 +219,6 @@ export default async function readItemContext(
       }
       page += 1;
     } while (complete && hasNextFilePage);
-  }
-  let metadata;
-  let nativeMetadata;
-  if (includeRoutingMetadata && itemType === 'issue') {
-    let native = nativeRoutingMetadata(undefined);
-    try {
-      const fields = await api.request(
-        [
-          '--method',
-          'GET',
-          `${endpoint}/issue-field-values?per_page=100`,
-          '-H',
-          'X-GitHub-Api-Version: 2026-03-10',
-        ],
-        'issue routing metadata',
-      );
-      native = nativeRoutingMetadata(fields.value, fields.hasNextPage);
-    } catch {
-      // Optional metadata failure remains distinct from a missing field.
-    }
-    nativeMetadata = native;
-    metadata = routingMetadata(native, body.text);
   }
   return {
     ...(metadata === undefined ? {} : { routingMetadata: metadata }),

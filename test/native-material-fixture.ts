@@ -16,11 +16,12 @@ import type { OpenClawAIMockScenario } from '../scripts/aimock-scenario.ts';
 /** Exercise real native output limits with synthetic credentials and isolated chat state. */
 export default async function nativeMaterialFixture(input: {
   request: Record<string, unknown>;
-  run(request: Record<string, unknown>): unknown | Promise<unknown>;
+  run(request: Record<string, unknown>, tool?: string): unknown | Promise<unknown>;
   verify?(context: Record<string, unknown>): void;
   scenario?: OpenClawAIMockScenario;
   prompt?: string;
   finalText?: string;
+  minimumPages?: number;
 }) {
   const materialScenario: OpenClawAIMockScenario = {
     id: 'native-material',
@@ -131,21 +132,26 @@ export default async function nativeMaterialFixture(input: {
         let result: unknown;
         if (message.params.tool === 'tool_search') {
           result = {
-            results: ['agent_system_intake', 'agent_system_dispatch'].map((name) => ({
-              query: name,
-              candidates: [{ id: `openclaw:${name}`, name, source: 'openclaw', input: '{ args }' }],
-            })),
+            results: ['agent_system_intake', 'agent_system_dispatch', 'agent_system_github'].map(
+              (name) => ({
+                query: name,
+                candidates: [
+                  { id: `openclaw:${name}`, name, source: 'openclaw', input: '{ args }' },
+                ],
+              }),
+            ),
           };
         } else {
           assert.equal(message.params.tool, 'tool_call');
-          assert.equal(message.params.arguments.id, 'openclaw:agent_system_dispatch');
+          const name = String(message.params.arguments.id).replace(/^openclaw:/u, '');
+          assert.ok(['agent_system_dispatch', 'agent_system_github'].includes(name));
           const args = message.params.arguments.args;
           if (args.material) pages += 1;
-          const output = await input.run(args);
+          const output = await input.run(args, name);
           result = {
             tool: {
-              id: 'openclaw:agent_system_dispatch',
-              name: 'agent_system_dispatch',
+              id: `openclaw:${name}`,
+              name,
               source: 'openclaw',
             },
             result: {
@@ -207,7 +213,10 @@ export default async function nativeMaterialFixture(input: {
         (item: { text?: string }) => item.text === (input.finalText ?? 'native-material-complete'),
       ),
     );
-    assert.ok(pages > 0, 'the native exchange must read real assessment material');
+    assert.ok(
+      pages >= (input.minimumPages ?? 1),
+      'the native exchange must read required material pages',
+    );
     assert.deepEqual(errors, []);
     assert.ok(
       mock.getRequests().every((entry) => entry.response.status === 200 && entry.response.fixture),

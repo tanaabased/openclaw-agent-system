@@ -6,7 +6,6 @@ import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 // Only the model-facing projection is under test; checkout and provider boundaries are injected.
 describe('agent/codex-work-context', () => {
   it('should use current issue evidence and implementation guidance without replaying assessment guidance', async () => {
-    const body = 'Current requirement. '.repeat(1400) + 'FINAL REQUIREMENT';
     const implementation = {
       version: 1 as const,
       requestedSkill: 'implementation',
@@ -44,15 +43,14 @@ describe('agent/codex-work-context', () => {
         admitted: { issue: { number: 3 } },
         selection: implementation,
         client: {
-          getItemContext: async (...args: unknown[]) => {
-            assert.deepEqual(args, ['owner', 'repo', 3, 'issue', true, true]);
-            return { title: 'Current issue', body, labels: [], comments: [], truncated: false };
+          getItemContext: async () => {
+            throw new Error('unexpected issue prefetch');
           },
         },
       } as never,
       true,
     );
-    assert.equal(output.currentIssue.body, body);
+    assert.deepEqual(output.currentIssue, { source: 'https://github.com/owner/repo/issues/3' });
     assert.deepEqual(output.implementation, implementation);
     assert.equal('assessmentSelection' in output, false);
     assert.doesNotMatch(JSON.stringify(output), /OLD GUIDANCE/);

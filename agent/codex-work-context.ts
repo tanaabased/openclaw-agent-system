@@ -5,7 +5,6 @@ import type { AssessmentSelection } from './assessment-selection.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
 import type { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
-import dispatchContext from './dispatch-context.ts';
 import type { ManagedIssue } from './managed-issue.ts';
 import workflowRecovery from './workflow-recovery.ts';
 
@@ -23,7 +22,7 @@ export default async function codexWorkContext(
   readOnly = false,
 ) {
   const { current, git, signal, save, deps } = context;
-  const { client, repo, admitted, selection } = verified;
+  const { admitted, selection } = verified;
   const work = record.continuation!;
   if (!readOnly)
     await codexIssueBranch({
@@ -54,19 +53,7 @@ export default async function codexWorkContext(
     assignmentObservation: record.assignmentObservation,
     assignmentWarning:
       record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
-    currentIssue: dispatchContext(
-      await client.getItemContext(
-        repo.owner.login,
-        repo.name,
-        admitted.issue.number,
-        record.adoptedPullRequest ? 'pull-request' : 'issue',
-        true,
-        true,
-      ),
-      JSON.parse(record.context!).source,
-      (deps.now ?? Date.now)(),
-      true,
-    ),
+    currentIssue: { source: JSON.parse(record.context!).source },
     routing: record.routing && JSON.parse(record.routing),
     effective: record.effective,
     binding: work.binding,

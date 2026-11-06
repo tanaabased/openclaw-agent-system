@@ -275,6 +275,43 @@ describe('channels/github/provider/work-event-client', () => {
     });
   });
 
+  it('should return routing references without reading discussion or files', async () => {
+    for (const kind of ['issue', 'pull-request'] as const) {
+      const requests: string[][] = [];
+      const client = new GitHubWorkEventClient({
+        identity: { login: 'tanaabot', nodeId: 'U_agent' },
+        async execute(argv) {
+          requests.push(argv);
+          if (argv.some((part) => part.includes('/issue-field-values')))
+            return response([{ issue_field_name: 'Complexity', value: 'Low' }]);
+          assert.equal(
+            argv.some((part) => /\/(comments|files)(?:[?]|$)/u.test(part)),
+            false,
+          );
+          return response({
+            title: 'Long issue',
+            body:
+              'Requirement. '.repeat(3000) +
+              '\n```yaml\nschema: tanaab/task-metadata/v2\nmode: fallback\nfallback:\n  complexity: high\n```\n',
+            labels: [],
+            commentCount: 100,
+          });
+        },
+      });
+      const evidence = await client.getItemContext('owner', 'repo', 3, kind, true, false, true);
+      assert.equal(evidence.body, '');
+      assert.deepEqual(evidence.comments, []);
+      assert.equal(evidence.files, undefined);
+      const routing = dispatchContext(evidence, 'https://github.com/owner/repo/issues/3', 1);
+      assert.equal(routing.fallbackMetadata.complexity.value, 'high');
+      if (kind === 'issue') {
+        assert.equal(routing.metadata?.complexity.value, 'low');
+        assert.deepEqual(routing.conflicts, ['complexity']);
+      }
+      assert.equal(requests.length, kind === 'issue' ? 2 : 1);
+    }
+  });
+
   it('should read bounded native routing metadata only for opted-in issue assessments', async () => {
     const requests: string[][] = [];
     let unavailable = false;
@@ -647,24 +684,18 @@ describe('channels/github/provider/work-event-client', () => {
     });
     for (const kind of ['issue', 'pull-request'] as const) {
       const evidence = await client.getItemContext('owner', 'repo', 3, kind, false, true);
-      const projected = dispatchContext(
-        evidence,
-        'https://github.com/owner/repo/issues/3',
-        1,
-        true,
-      );
-      assert.equal(projected.body, body);
-      assert.equal(projected.comments.length, 51);
-      assert.ok(projected.comments.every((item) => item.body === comment));
-      assert.equal(projected.truncated, false);
+      assert.equal(evidence.body, body);
+      assert.equal(evidence.comments.length, 51);
+      assert.ok(evidence.comments.every((item) => item.body === comment));
+      assert.equal(evidence.truncated, false);
       if (kind === 'pull-request') {
-        assert.equal(projected.files?.length, 101);
-        assert.equal(projected.files.at(-1)?.filename, 'file-100.ts');
+        assert.equal(evidence.files?.length, 101);
+        assert.equal(evidence.files.at(-1)?.filename, 'file-100.ts');
       }
       const routing = dispatchContext(evidence, 'source', 1);
-      assert.equal(routing.body.length, 18000);
-      assert.equal(routing.comments.length, 10);
-      assert.equal(routing.truncated, true);
+      assert.equal('body' in routing, false);
+      assert.equal('comments' in routing, false);
+      assert.equal('files' in routing, false);
     }
   });
 

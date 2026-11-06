@@ -1,5 +1,3 @@
-import dispatchContext from './dispatch-context.ts';
-import { connectCodexGitHub } from './codex-intake.ts';
 import { observeCodexActivity } from './codex-capacity-reconcile.ts';
 import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 import assessmentMaterial from './assessment-material.ts';
@@ -8,7 +6,6 @@ import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   dispatchAdmission,
   managedTargetUrl,
-  managedPullRequest,
   type ManagedIssue as IntakeRecord,
 } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
@@ -354,20 +351,7 @@ export async function assessDispatch(
     });
   }
   if (action === 'context') {
-    const provider = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
-    const evidence = dispatchContext(
-      await provider.getItemContext(
-        intake.repository.owner.login,
-        intake.repository.name,
-        intake.issue.number,
-        managedPullRequest(intake) ? 'pull-request' : 'issue',
-        true,
-        true,
-      ),
-      managedTargetUrl(intake),
-      now,
-      true,
-    );
+    const evidence = { source: managedTargetUrl(intake) };
     await fresh();
     const assessment = (
       await selectWorkflowStage({

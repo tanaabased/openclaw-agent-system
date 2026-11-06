@@ -207,7 +207,7 @@ describe('scripts/aimock-tool-search', () => {
     append(
       input,
       (await reply(scenario, input)).response,
-      searchResult(['agent_system_dispatch', 'read']),
+      searchResult(['agent_system_dispatch', 'agent_system_github', 'read']),
     );
     const context = (await reply(scenario, input)).response;
     append(input, context, {
@@ -222,9 +222,30 @@ describe('scripts/aimock-tool-search', () => {
               runtime: 'openclaw',
               id,
               target,
+              evidence: { source: target },
               resultSchema: assessmentResultContextSchema,
 
               assessment: { skill: { path: '/fixture/SKILL.md' } },
+            }),
+          },
+        ],
+      },
+    });
+    const sourceRead = (await reply(scenario, input)).response;
+    append(input, sourceRead, {
+      tool: { id: 'openclaw:agent_system_github', name: 'agent_system_github' },
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              exitCode: 0,
+              truncated: false,
+              stdout: JSON.stringify({
+                title: 'Cleanup',
+                body: 'Close disposable issues.',
+                comments: [],
+              }),
             }),
           },
         ],
@@ -341,7 +362,13 @@ describe('scripts/aimock-tool-search', () => {
       append(
         input,
         (await reply(scenario, input)).response,
-        searchResult(['agent_system_intake', 'agent_system_dispatch', 'agent_system_git', 'read']),
+        searchResult([
+          'agent_system_intake',
+          'agent_system_dispatch',
+          'agent_system_git',
+          'agent_system_github',
+          'read',
+        ]),
       );
     };
     const step = async (stage: string, name: string, result: unknown) => {
@@ -384,6 +411,11 @@ describe('scripts/aimock-tool-search', () => {
       truncated: false,
     });
     await step('assessment-skill', 'read', 'Default assessment.');
+    await step('assessment-source', 'agent_system_github', {
+      exitCode: 0,
+      truncated: false,
+      stdout: JSON.stringify({ title: 'Cleanup', body: 'Close disposable issues.', comments: [] }),
+    });
     await step('native-plan-render', 'agent_system_dispatch', {
       status: 'formatted',
       retained: false,

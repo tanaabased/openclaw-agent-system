@@ -1,3 +1,4 @@
+import assessmentSource from '../../scripts/aimock-assessment-source.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -84,12 +85,21 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
       }
       if (observed.status === 'selection-required') {
         assert.equal(observed.contextMaterials, undefined, 'two small candidates must fit inline');
-        const candidates = observed.candidates as Array<{ nodeId: string; body: string }>;
+        const candidates = observed.candidates as Array<{ nodeId: string; url: string }>;
         assert.equal(candidates.length, 2);
         assert.match(String(observed.guidance), /bounded cleanup clarification/u);
-        const chosen = candidates.filter(({ body }) =>
-          body.includes('pickup-cleanup-clarification'),
-        );
+        const chosen = [];
+        for (const [index, candidate] of candidates.entries()) {
+          const read = result(`selection-source-${index}`);
+          if (!read)
+            return call(`selection-source-${index}`, 'agent_system_github', {
+              argv: ['issue', 'view', candidate.url, '--json', 'body,comments'],
+            });
+          assert.equal(read.exitCode, 0);
+          assert.equal(read.truncated, false);
+          const source = JSON.parse(String(read.stdout));
+          if (String(source.body).includes('pickup-cleanup-clarification')) chosen.push(candidate);
+        }
         assert.equal(chosen.length, 1);
         args = {
           action: 'pickup',
@@ -124,12 +134,13 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
       assert.equal(typeof next.id, 'string');
       let advanced = next;
       if (next.status === 'routing-required') {
-        const context = next.context as { source: string; body: string };
+        const context = next.context as { source: string };
         assert.match(
           context.source,
           /^https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/\d+$/u,
         );
-        assert.match(context.body, /pickup-cleanup-clarification/u);
+        const read = assessmentSource({ evidence: context }, result, call, stage('routing-source'));
+        if (read) return read;
         const prepared = result(stage('prepare'));
         if (!prepared)
           return dispatch(stage('prepare'), {
@@ -184,6 +195,8 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
   assert.equal(context.mode, 'work', 'pickup must override ordinary plan mode');
   const project = context.project as { path: string };
   assert.equal(typeof project.path, 'string');
+  const sourceRead = assessmentSource(context, result, call);
+  if (sourceRead) return sourceRead;
   return { content: 'Should disposable issues close after evidence capture?' };
 }
 
@@ -203,6 +216,14 @@ export const issuePickupScenario: OpenClawAIMockScenario = {
   finalResponses: [],
   dynamicFinalResponseFixtures: [final],
   toolCalls: [
+    ...Array.from({ length: 8 }, (_, index) => ({
+      stage: `routing-source-${index}`,
+      name: 'agent_system_github',
+    })),
+    ...['assessment-source', 'selection-source-0', 'selection-source-1'].map((stage) => ({
+      stage,
+      name: 'agent_system_github',
+    })),
     ...pickupStages.map((stage) => ({ stage, name: 'agent_system_intake' })),
     ...dispatchStages.map((stage) => ({ stage, name: 'agent_system_dispatch' })),
   ].flatMap(({ stage, name }) =>

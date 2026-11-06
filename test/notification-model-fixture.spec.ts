@@ -82,12 +82,16 @@ for (const scenario of [
             ]
           : []),
       ],
-      tools: ['agent_system_intake', 'agent_system_dispatch', 'agent_system_git', 'read'].map(
-        (name) => ({
-          type: 'function',
-          function: { name },
-        }),
-      ),
+      tools: [
+        'agent_system_intake',
+        'agent_system_dispatch',
+        'agent_system_git',
+        'agent_system_github',
+        'read',
+      ].map((name) => ({
+        type: 'function',
+        function: { name },
+      })),
     };
   }
 
@@ -105,6 +109,26 @@ for (const scenario of [
     return typeof fixture.response === 'function'
       ? await fixture.response(input)
       : fixture.response;
+  }
+
+  async function readRoutingSource(input: ChatCompletionRequest, index = 0) {
+    const next = await response(input);
+    assert.ok('toolCalls' in next && next.toolCalls?.[0]?.name === 'agent_system_github');
+    assert.deepEqual(JSON.parse(next.toolCalls[0].arguments).argv, [
+      'issue',
+      'view',
+      source,
+      '--json',
+      'title,body,comments',
+    ]);
+    append(input, `routing-source-${index}`, {
+      exitCode: 0,
+      truncated: false,
+      stdout: JSON.stringify({
+        body: 'disposable Agent System notification-flow fixture',
+        comments: [],
+      }),
+    });
   }
 
   async function appendPagedContext(input: ChatCompletionRequest, value: Record<string, unknown>) {
@@ -211,12 +235,29 @@ for (const scenario of [
     });
   }
 
+  async function readAssessmentSource(input: ChatCompletionRequest, selectedScenario = scenario) {
+    const next = await response(input, selectedScenario);
+    assert.ok('toolCalls' in next && next.toolCalls?.[0]?.name === 'agent_system_github');
+    const call = next.toolCalls[0];
+    assert.deepEqual(JSON.parse(call.arguments).argv.slice(-2), ['--json', 'title,body,comments']);
+    append(input, 'assessment-source', {
+      exitCode: 0,
+      truncated: false,
+      stdout: JSON.stringify({
+        title: 'Cleanup',
+        body: 'Close disposable issues after evidence capture.',
+        comments: [],
+      }),
+    });
+  }
+
   async function publishNativePlan(
     input: ChatCompletionRequest,
     selectedScenario = scenario,
     continues = false,
   ) {
     const target = 'https://github.com/owner/repo/issues/3';
+    await readAssessmentSource(input, selectedScenario);
     const formatting = await action(input, 'assessment', selectedScenario);
     assert.equal(formatting.operation, 'render');
     const formatted = renderNativeAssessment(formatting);
@@ -283,10 +324,12 @@ for (const scenario of [
           entry: 'direct',
           id,
           target: source,
+          evidence: { source },
           resultSchema: assessmentResultContextSchema,
 
           assessment: { skill: { path: '/fixture/SKILL.md' } },
         });
+        await readAssessmentSource(input);
         const read = await response(input);
         assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
         append(input, 'direct-assessment-skill', 'Complete selected method.');
@@ -394,6 +437,7 @@ for (const scenario of [
             context: { source, body: 'disposable Agent System notification-flow fixture' },
           }),
         );
+        await readRoutingSource(input, index);
         assert.equal((await action(input, 'prepare')).id, receipt);
         append(input, `prepare-${index}`, { status: 'session-created', id: receipt });
         assert.equal((await action(input, 'assess')).id, receipt);
@@ -461,6 +505,7 @@ for (const scenario of [
         digest,
         context: { source, body: 'disposable Agent System notification-flow fixture' },
       });
+      await readRoutingSource(input);
       const prepared = await action(input, 'prepare');
       assert.equal(prepared.id, id);
       assert.equal(prepared.digest, digest);
@@ -547,6 +592,7 @@ for (const scenario of [
         );
         append(input, 'scan', { status: 'ready' });
         for (const [stage, result] of path) append(input, stage, result);
+        if (path.some(([, value]) => value === routing)) await readRoutingSource(input);
         const pending = await response(input);
         assert.ok('toolCalls' in pending && pending.toolCalls?.length === 1);
         const stage = pending.toolCalls[0]!.id!.replace('call_notifications_', '');
@@ -959,14 +1005,22 @@ for (const scenario of [
               defaultSkill: mode !== 'custom',
               skill: { path: '/fixture/SKILL.md' },
               guidance: {
-                content:
-                  'Retain sanitized evidence before cleanup.\nKeep the original instruction.',
+                path: '/fixture/custom guidance.md',
               },
             },
           });
           const selected = await response(input, workScenario);
           assert.ok('toolCalls' in selected && selected.toolCalls?.[0]?.name === 'read');
           append(input, 'implementation-skill', 'Implement the cleanup sequence.');
+          if (mode === 'custom') {
+            const guidance = await response(input, workScenario);
+            assert.ok('toolCalls' in guidance && guidance.toolCalls?.[0]?.name === 'read');
+            assert.equal(
+              JSON.parse(guidance.toolCalls[0].arguments).path,
+              '/fixture/custom guidance.md',
+            );
+            append(input, 'implementation-guidance', 'Retain sanitized evidence before cleanup.');
+          }
           for (const stage of ['apply', 'check', 'add', 'commit']) {
             const next = await response(input, workScenario);
             assert.ok('toolCalls' in next && next.toolCalls?.length === 1);

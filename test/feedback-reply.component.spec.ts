@@ -131,13 +131,11 @@ describe('agent/feedback-reply', () => {
       assert.equal(writes, 0);
     });
 
-    it(`should deliver all status evidence in ${runtime} and reject changed observations between pages`, async () => {
+    it(`should deliver status discussion references in ${runtime} without prefetching comments`, async () => {
       deps.binding.runtime = runtime;
-      let body = 'Important current progress. '.repeat(300);
-      provider.listIssueComments = async () => ({
-        comments: [{ ...(await provider.getIssueComment('owner', 'repo', 3, 9)), body }],
-        truncated: false,
-      });
+      provider.listIssueComments = async () => {
+        throw new Error('unexpected discussion prefetch');
+      };
       const request = {
         action: 'reply',
         operation: 'context',
@@ -145,19 +143,15 @@ describe('agent/feedback-reply', () => {
         target: url,
       };
       const run = (read: Record<string, unknown>) => feedbackReply(read, deps);
-      const verify = (complete: Record<string, unknown>) =>
-        assert.equal(
-          (complete.publicContext as { discussion: { comments: Array<{ body: string }> } })
-            .discussion.comments[0]!.body,
-          body,
-        );
-      if (runtime === 'openclaw') await nativeMaterialFixture({ request, run, verify });
-      else verify(await hydrateImplementation(await run(request), run));
-      const before = await run(request);
-      assert.ok('contextMaterials' in before && before.contextMaterials);
-      const read = before.contextMaterials.fields[0]!.request;
-      body += 'New information.';
-      await assert.rejects(run(read), /status-update-observation-changed/);
+      const verify = (complete: Record<string, unknown>) => {
+        assert.deepEqual((complete.publicContext as { discussion: unknown }).discussion, {
+          source: url,
+        });
+        assert.equal('contextMaterials' in complete, false);
+      };
+      if (runtime === 'openclaw')
+        await nativeMaterialFixture({ request, run, verify, minimumPages: 0 });
+      else verify(await run(request));
       assert.deepEqual(await new ReplyStore(deps.root, deps.binding).read(), []);
       assert.equal(writes, 0);
     });
@@ -358,34 +352,18 @@ describe('agent/feedback-reply', () => {
     assert.equal(postedNumber, 3);
     assert.equal(writes, 2);
   });
-  it('should publish current progress with partial discussion without loading planning context', async () => {
+  it('should publish current progress with discussion links without loading planning context', async () => {
     const pr = linkedPullRequest();
-    const reads = new Set<number>();
-    provider.listIssueComments = async (_owner, _name, number) => {
-      reads.add(number);
-      return {
-        comments: [
-          {
-            ...(await provider.getIssueComment('owner', 'repo', number, 9)),
-            body: 'Earlier discussion. '.repeat(150),
-            bodyTruncated: true,
-          },
-        ],
-        truncated: true,
-      };
+    provider.listIssueComments = async () => {
+      throw new Error('unexpected discussion prefetch');
     };
     for (const target of [url, pr.url]) {
       const context = await call('context', { purpose: 'status-update', target });
-      const complete = await hydrateImplementation(context, (read) => feedbackReply(read, deps));
-      const publicContext = complete.publicContext as {
-        discussion: { truncated: boolean; comments: Array<{ bodyTruncated?: boolean }> };
-      };
-      assert.equal(publicContext.discussion.truncated, true);
-      assert.equal(publicContext.discussion.comments[0]!.bodyTruncated, true);
+      assert.ok('publicContext' in context && context.publicContext);
+      assert.deepEqual(context.publicContext.discussion, { source: target });
       const id = await updateCandidate(target);
       assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
     }
-    assert.deepEqual([...reads], [3, 4]);
     assert.equal(writes, 2);
   });
   it('should reconcile an uncertain pr update at its original destination after the pr closes', async () => {
@@ -644,48 +622,14 @@ describe('agent/feedback-reply', () => {
     assert.deepEqual(next.source.facts, [fresh]);
     assert.equal(writes, 1);
   });
-  it('should refresh an unattempted update after public facts change without changing its identity', async () => {
-    const old = await updateContext();
-    provider.listIssueComments = async () => ({
-      comments: [
-        {
-          ...(await provider.getIssueComment('owner', 'repo', 3, 9)),
-          body: 'The checks are now public.',
-        },
-      ],
-      truncated: false,
-    });
-    await assert.rejects(
-      call('compose', {
-        purpose: 'status-update',
-        target: url,
-        privateText: 'Progress.',
-        update: { observation: old, facts: [progressFact] },
-      }),
-      /status-update-observation-changed/,
-    );
+  it('should leave discussion comparison to native reads without blocking an authorized update', async () => {
     const id = await updateCandidate();
     const digest = await preview(id);
-    const read = provider.listIssueComments;
-    provider.listIssueComments = async (...args) => {
-      const discussion = await read(...args);
-      return {
-        ...discussion,
-        comments: discussion.comments.map((comment) => ({
-          ...comment,
-          body: 'Newer public facts.',
-        })),
-      };
+    provider.listIssueComments = async () => {
+      throw new Error('discussion belongs to native reads');
     };
-    const changed = await call('publish', { id, digest });
-    assert.equal(changed.status, 'blocked');
-    assert.ok('code' in changed && changed.code === 'status-update-observation-changed');
-    assert.equal(writes, 0);
-    assert.equal(await updateCandidate(), id);
-    await assert.rejects(call('publish', { id, digest }), /reply-publication-stale/);
-    assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
+    assert.equal((await call('publish', { id, digest })).status, 'published');
     assert.equal(writes, 1);
-    assert.equal(selections, 2);
   });
   it('should refresh a changed pr snapshot while retaining the unattempted fact identity', async () => {
     const pr = linkedPullRequest();
@@ -774,7 +718,7 @@ describe('agent/feedback-reply', () => {
     assert.equal((await stored()).publicText, attempted.publicText);
     assert.equal(writes, 1);
   });
-  it('should reject invalid fact identities and surface failed discussion reads before composition', async () => {
+  it('should reject invalid fact identities without fetching discussion', async () => {
     const observation = await updateContext();
     for (const facts of [[{ ...progressFact, key: ' ' }], [progressFact, progressFact]])
       await assert.rejects(
@@ -789,7 +733,7 @@ describe('agent/feedback-reply', () => {
     provider.listIssueComments = async () => {
       throw new Error('provider unavailable');
     };
-    await assert.rejects(updateContext(), /provider unavailable/);
+    assert.equal(typeof (await updateContext()), 'string');
     assert.equal(selections, 0);
     assert.equal(writes, 0);
   });
@@ -1192,14 +1136,13 @@ describe('agent/feedback-reply', () => {
           result.selection.requestedSkill,
           configuration.skill ?? 'agent-system:agent-system-github-reply',
         );
-        assert.equal(
-          result.selection.guidance?.content,
-          typeof configuration.guidance === 'string'
-            ? configuration.guidance
-            : configuration.guidance
-              ? 'Preserve caveats.\nExplain the outcome.'
-              : undefined,
-        );
+        if (configuration.guidance && typeof configuration.guidance !== 'string') {
+          assert.equal(result.selection.guidance?.content, undefined);
+          assert.equal(
+            await readFile(result.selection.guidance!.path!, 'utf8'),
+            'Preserve caveats.\nExplain the outcome.',
+          );
+        } else assert.equal(result.selection.guidance?.content, configuration.guidance);
       }
     }
     assert.equal(selections, 12);

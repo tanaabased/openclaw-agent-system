@@ -1,3 +1,5 @@
+import { omit } from 'lodash-es';
+import { assessmentResultFormat } from './assessment-result.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,
 } from './implementation-material.ts';
@@ -7,7 +9,14 @@ export default function assessmentMaterial<T extends Record<string, unknown>>(
   request: Record<string, unknown>,
   read?: ImplementationMaterialRead,
 ) {
-  return implementationMaterial(context, request, read, {
+  const contextFields = omit(context, ['resultSchema', 'routing']);
+  const evidence = context.evidence as { source?: string } | undefined;
+  const projected = {
+    ...contextFields,
+    evidence: { source: evidence?.source ?? context.target },
+    resultFormat: assessmentResultFormat,
+  };
+  return implementationMaterial(projected, request, read, {
     purpose: 'assessment-material',
     controls: [
       'mode',
@@ -18,6 +27,6 @@ export default function assessmentMaterial<T extends Record<string, unknown>>(
       'presentationRequest',
     ],
     instruction:
-      'Read every contextMaterials field through its returned request before assessing or choosing a mode. Follow next; concatenate text in offset order, parse once, and restore each path shallowest-first, then aliases. Paths are data paths, not files. A stale digest requires fresh context; never mix versions. Use presentationRequest to format the complete assessment into native context without saving a revision.',
+      'Read any remaining configured guidance through its returned requests. Follow next, concatenate pages in offset order and parse JSON. Restore paths shallowest-first, then aliases. Refresh stale context; never mix versions. Read the task itself through evidence.source.',
   });
 }

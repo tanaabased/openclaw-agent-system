@@ -1,3 +1,4 @@
+import { omit } from 'lodash-es';
 import launchPending from './launch-pending.ts';
 import { assertDispatchStorage } from './dispatch-storage.ts';
 import { issueChatTitleGuidance } from './issue-chat-title.ts';
@@ -6,7 +7,7 @@ import IssueDeliveryProvider, {
 } from '../channels/github/publication/issue-delivery.ts';
 import manualPullRequest from './manual-pull-request.ts';
 import initialModelRouting from './initial-model-routing.ts';
-import { routingInstructionsDigest } from './routing-instructions.ts';
+import { routingInstructionsReference, routingInstructionsDigest } from './routing-instructions.ts';
 import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
 import { githubOrigin } from './codex-dispatch-project.ts';
 import type { LaunchRequest } from '../tools/dispatch/launch-schema.ts';
@@ -111,7 +112,15 @@ export default async function issueLaunch<
     throw new Error('launch-target-identity-mismatch');
   const evidence = {
     ...dispatchContext(
-      await client.getItemContext(repo.owner.login, repo.name, item.number, item.itemType, true),
+      await client.getItemContext(
+        repo.owner.login,
+        repo.name,
+        item.number,
+        item.itemType,
+        true,
+        false,
+        true,
+      ),
       canonical,
       context.now,
     ),
@@ -325,7 +334,7 @@ export default async function issueLaunch<
     return {
       status: 'routing-required' as const,
       id: record.id,
-      context: JSON.parse(record.context!),
+      context: omit(JSON.parse(record.context!), ['body', 'comments', 'files', 'truncated']),
       digest: automationHash({
         context: record.context,
         ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),
@@ -334,10 +343,13 @@ export default async function issueLaunch<
           record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
       }),
       issue: canonical,
-      routing,
+      routing: {
+        ...routing,
+        instructions: routingInstructionsReference(record.routingInstructions),
+      },
       origin: record.manualIssue!.initiation,
       instruction:
-        'Use the current model-routing profiles to assess this bounded issue, then call launch prepare with the same target/id, digest, assessment, and title. Preserve the original attempt on retry. ' +
+        'Use the current model-routing profiles to read context.source and assess the issue using the verified routing metadata, then call launch prepare with the same target/id, digest, assessment, and title. Preserve the original attempt on retry. ' +
         issueChatTitleGuidance,
     };
   }, true);

@@ -2,8 +2,7 @@ import type { AssessmentConfiguration } from '../manifest/assessment-schema.ts';
 import type { AssessmentEntryDependencies } from './assessment-entry.ts';
 import type { nativeIssueContext } from './implementation-delivery.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
-import dispatchContext from './dispatch-context.ts';
-import { replyLocator } from './reply-target.ts';
+import assessmentMaterial from './assessment-material.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,
 } from './implementation-material.ts';
@@ -22,21 +21,7 @@ export default async function nativeTaskContext(
   configuration?: AssessmentConfiguration,
 ) {
   await deps.assertCurrent();
-  const locator = replyLocator(target);
-  const provider = await deps.connectProvider();
-  const evidence = dispatchContext(
-    await provider.getItemContext(
-      locator.owner,
-      locator.name,
-      locator.number,
-      locator.itemType,
-      true,
-      true,
-    ),
-    target,
-    deps.now,
-    true,
-  );
+  const evidence = { source: target };
   const { selection } = await selectWorkflowStage({
     stage,
     configuration: {
@@ -48,7 +33,8 @@ export default async function nativeTaskContext(
     resolveSkill: deps.resolveSkill,
   });
   await deps.assertCurrent();
-  return implementationMaterial(
+  const materialContext = stage === 'assessment' ? assessmentMaterial : implementationMaterial;
+  return materialContext(
     {
       ...native,
       runtime: deps.binding.runtime,
@@ -62,7 +48,7 @@ export default async function nativeTaskContext(
         : { implementation: selection }),
       instructions:
         stage === 'assessment'
-          ? nativeAssessmentInstructions(deps.binding.runtime)
+          ? nativeAssessmentInstructions()
           : nativeTaskInstructions(deps.binding.runtime),
     },
     { action: stage, operation: 'context', target },

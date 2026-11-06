@@ -1,3 +1,5 @@
+import guidanceReference from './guidance-reference.ts';
+import type { AssessmentSelection } from './assessment-selection.ts';
 import { createHash } from 'node:crypto';
 
 import type { Static } from 'typebox';
@@ -104,6 +106,14 @@ export default function implementationMaterial<T extends Record<string, unknown>
     return value;
   };
   const source = { ...context };
+  for (const name of ['assessment', 'implementation', 'selection']) {
+    const selection = source[name] as AssessmentSelection | undefined;
+    if (selection?.guidance)
+      (source as Record<string, unknown>)[name] = {
+        ...selection,
+        guidance: guidanceReference(selection.guidance),
+      };
+  }
   const resultAlias =
     context.previousImplementationResult !== undefined &&
     context.previousResult !== undefined &&

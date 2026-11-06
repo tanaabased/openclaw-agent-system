@@ -5,6 +5,7 @@ import codexAssessmentSkill from './codex-assessment-skill.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import { RoutingError } from './model-routing.ts';
+import { routingInstructionsReference } from './routing-instructions.ts';
 import initialModelRouting from './initial-model-routing.ts';
 
 /** use portable binding, guidance, and native skill discovery without OpenClaw credentials. */
@@ -27,7 +28,7 @@ export default async function codexModelRouting(
     return { status: 'unavailable' as const, code: 'manifest-missing' };
   if (loaded.status !== 'loaded')
     throw new RoutingError('manifest-invalid', 'The bound workspace manifest is invalid.');
-  return initialModelRouting({
+  const output = await initialModelRouting({
     models: loaded.manifest.models,
     manifestDigest: loaded.digest,
     request,
@@ -45,4 +46,5 @@ export default async function codexModelRouting(
       }
     },
   });
+  return { ...output, instructions: routingInstructionsReference(output.instructions) };
 }

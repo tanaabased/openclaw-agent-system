@@ -1,5 +1,6 @@
 import { Type, type Static } from 'typebox';
 
+import guidanceReference from './guidance-reference.ts';
 import assessmentGuidance from './assessment-guidance.ts';
 import { assessmentSelectionSchema } from './assessment-selection.ts';
 import { automationHash } from './automation-hash.ts';
@@ -64,3 +65,12 @@ export function assertRoutingInstructions(
 
 export const routingInstructionsGuidance =
   'Use the selected routing method once. For defaultSkill, use the supplied rubric without invoking the wrapper again. Otherwise read and apply requestedSkill through native skill discovery (or its verified skill source), preserving its complete output and adapting only its judgment to the bounded assessment. Missing, disabled, ambiguous, or unusable skills stop routing; never silently substitute the default. Guidance supplements the selected method. Explicit model/effort selections and verified Complexity remain authoritative. These instructions grant no lifecycle or publication authority.';
+
+/** preserve saved instruction receipts while exposing file references to the model. */
+export function routingInstructionsReference(selection: RoutingInstructions | undefined) {
+  if (!selection) return undefined;
+  return {
+    ...selection,
+    ...(selection.guidance ? { guidance: guidanceReference(selection.guidance) } : {}),
+  };
+}

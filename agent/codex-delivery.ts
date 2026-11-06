@@ -677,17 +677,22 @@ export default async function runCodexDelivery(
           'authorId',
         ]);
       if (bindingChange) throw new Error(bindingChange);
+      const existingContent =
+        adoptedPullRequest &&
+        ((input.title ?? previous?.title) === undefined ||
+          (input.body ?? previous?.body) === undefined)
+          ? await new IssueDeliveryProvider(connected.account, deps.delay).content({
+              repository,
+              number: intake.issue.number,
+              nodeId: intake.issue.nodeId,
+              signal,
+            })
+          : undefined;
       const delivery: CodexDeliveryState = {
         id: previous?.id ?? automationHash({ admission: intake.id, threadId: record.threadId }),
         binding,
-        title:
-          input.title ??
-          previous?.title ??
-          (adoptedPullRequest ? JSON.parse(record.context!).title : undefined),
-        body:
-          input.body ??
-          previous?.body ??
-          (adoptedPullRequest ? JSON.parse(record.context!).body : undefined),
+        title: input.title ?? previous?.title ?? existingContent?.title,
+        body: input.body ?? previous?.body ?? existingContent?.body,
         creationAttempted: previous?.creationAttempted ?? false,
         ...(adopted
           ? {

@@ -1,3 +1,4 @@
+import assessmentSource from '../../scripts/aimock-assessment-source.ts';
 import { nativePlanResponse } from '../openclaw-pr-journey/model-fixture.ts';
 import assert from 'node:assert/strict';
 
@@ -206,10 +207,11 @@ function respond(
           typeof next.digest !== 'string' ||
           !/^https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/[1-9][0-9]*$/u.test(
             String(context?.source),
-          ) ||
-          !String(context?.body).includes('disposable Agent System notification-flow fixture')
+          )
         )
           return;
+        const read = assessmentSource({ evidence: context }, result, call, stage('routing-source'));
+        if (read) return read;
         const prepared = result(stage('prepare'));
         if (!prepared)
           return dispatch(stage('prepare'), {
@@ -417,6 +419,10 @@ export function createProgressionScenario(
     finalResponses: [],
     dynamicFinalResponseFixtures: [final],
     toolCalls: [
+      ...Array.from({ length: 8 }, (_, index) => ({
+        id: prefix + `routing-source-${index}`,
+        name: 'agent_system_github',
+      })),
       { id: prefix + 'summary-skill', name: 'read' },
       { id: prefix + 'scan', name: 'agent_system_intake' },
       ...dispatchStages.flatMap((stage) =>

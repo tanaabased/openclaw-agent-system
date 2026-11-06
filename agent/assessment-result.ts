@@ -112,6 +112,17 @@ export const assessmentResultContextSchema = {
 export type AssessmentSubmission = Static<typeof assessmentSubmissionSchema>;
 export type AssessmentResult = Static<typeof assessmentResultSchema>;
 
+export const assessmentResultFormat = {
+  common:
+    'version:1; summary, fullAssessment, reviewSummary:string; evidence:[{source:string,status:observed|absent|unavailable|conflicting|assumed,detail:string}]; progress:{completed:string[],remaining:string[]}',
+  outcomes: {
+    'plan-ready': 'outcome:plan-ready; assessment:string; plan:string',
+    'clarification-needed': 'outcome:clarification-needed; assessment:string; questions:string[]',
+    'operator-setup-blocker': 'outcome:operator-setup-blocker; code:string; remediation:string',
+  },
+  optional: 'decision:{mode:plan|work,reasons:string[]}; a work decision requires plan-ready',
+};
+
 export function parseAssessmentResult(value: unknown): AssessmentResult {
   if (!Value.Check(assessmentResultSchema, value) || JSON.stringify(value).length > 96000)
     throw new Error('assessment-result-invalid');
