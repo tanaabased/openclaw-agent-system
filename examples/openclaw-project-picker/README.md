@@ -50,18 +50,25 @@ OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 ```bash
 # should hand one pickup assignment to ordinary work intake through each runtime
 set -euo pipefail
+runtime=setup
+stage=verify-fixture-actor
+trap 'status=$?; if test "$status" -ne 0; then printf "pickup failure: runtime=%s stage=%s exit=%s\n" "$runtime" "$stage" "$status" >&2; fi; exit "$status"' EXIT
 actor_node=$(GH_TOKEN="$GH_TOKEN_EMORI" gh api user --jq 'select(.login == "emoriwan") | .node_id')
 for runtime in codex openclaw; do
   cd "$GITHUB_WORKSPACE/examples/openclaw-project-picker/$runtime"
+  stage=create-milestone
   milestone=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method POST repos/tanaabased/big-test-bucket/milestones -f title="agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-pickup-$runtime" --jq .number)
   printf '%s\n' "$milestone" > "$TMPDIR/pickup-$runtime-milestone"
+  stage=prepare-workspace
   sed -e "s|__ACTOR_NODE_ID__|$actor_node|g" -e "s|__MILESTONE_NUMBER__|$milestone|g" -e "s|__GITHUB_REPOSITORY_ID__|$GITHUB_REPOSITORY_ID|g" -e "s|__GITHUB_RUN_ID__|$GITHUB_RUN_ID|g" -e "s|__GITHUB_RUN_ATTEMPT__|$GITHUB_RUN_ATTEMPT|g" agent.yaml > "$TMPDIR/pickup-agent.yaml"
   mv "$TMPDIR/pickup-agent.yaml" agent.yaml
   mkdir -p keys
   cp "$HOME/.ssh/big-test-bucket-ssh" keys/id_ed25519
   cp "$HOME/.ssh/big-test-bucket-ssh.pub" keys/id_ed25519.pub
+  stage=install-pickup
   openclaw agent-system install --yes --json > "$TMPDIR/pickup-$runtime-install.json"
   jq -e 'any(.outcomes[]; .stepId == "github-issue-pickup" and .status == "created")' "$TMPDIR/pickup-$runtime-install.json"
+  stage=verify-pickup-install
   openclaw agent-system notifications wait --for baseline-ready --timeout 30 --json | jq -e '.status == "completed"'
   openclaw agent-system automations list --json > "$TMPDIR/pickup-$runtime-jobs.json"
   native=$(jq -er '.jobs[] | select(.id == "github-issue-pickup" and .nativeEnabled == true) | .nativeId' "$TMPDIR/pickup-$runtime-jobs.json")
@@ -75,10 +82,12 @@ for runtime in codex openclaw; do
   if test "$runtime" = codex; then
     openclaw gateway call models.list --params '{"agentId":"pickup-codex-tanaabot","provider":"openai","view":"all","refresh":true}' --json | jq -e 'any(.models[]; .id == "gpt-5.4-nano" and .available == true and .agentRuntime.id == "codex")'
   fi
+  stage=run-pickup
   run_id=$(openclaw agent-system automations run github-issue-pickup --json | jq -er 'select(.status == "queued") | .runId | strings')
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-pickup "$run_id"
   openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json > "$TMPDIR/pickup-$runtime-empty.json"
   jq -e --arg run "$run_id" 'any(.entries[]; .runId == $run and (.summary | contains("no eligible issues")))' "$TMPDIR/pickup-$runtime-empty.json"
+  stage=pause-and-resume-pickup
   if test "$runtime" = openclaw; then
     cp agent.yaml "$TMPDIR/pickup-$runtime-active.yaml"
     sed 's/  issue-pickup:/  issue-pickup:\n    paused: true/' "$TMPDIR/pickup-$runtime-active.yaml" > agent.yaml
@@ -88,17 +97,24 @@ for runtime in codex openclaw; do
     openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .stepId == "github-issue-pickup" and .status == "updated")'
     openclaw agent-system automations list --json | jq -e --arg id "$native" --arg chat "$chat" '[.jobs[] | select(.id == "github-issue-pickup")] | length == 1 and .[0].nativeId == $id and .[0].routing == $chat and .[0].nativeEnabled == true'
   fi
+  stage=create-redesign-fixture
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-pickup-$runtime-redesign" -f 'body=Disposable pickup fixture: redesign the entire cleanup system.' -F milestone="$milestone" > "$TMPDIR/pickup-$runtime-other.json"
+  stage=create-cleanup-fixture
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-pickup-$runtime-cleanup" -f 'body=Disposable pickup-cleanup-clarification fixture: document closing test issues, but first clarify whether cleanup happens after evidence capture.' -F milestone="$milestone" > "$TMPDIR/pickup-$runtime-selected.json"
+  stage=prepare-pickup-schedule
   due=$(node -e 'process.stdout.write(String(Math.ceil((Date.now() + 120000) / 60000) * 60000))')
   start=$(node -e 'process.stdout.write(new Date(Number(process.argv[1])).toTimeString().slice(0, 5))' "$due")
   sed "s/start: '00:00'/start: '$start'/" agent.yaml > "$TMPDIR/pickup-$runtime-scheduled.yaml"
   mv "$TMPDIR/pickup-$runtime-scheduled.yaml" agent.yaml
+  stage=install-pickup-schedule
   openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .stepId == "github-issue-pickup" and .status == "updated")'
+  stage=verify-pickup-schedule
   openclaw agent-system automations list --json | jq -e --arg id "$native" --arg chat "$chat" 'any(.jobs[]; .id == "github-issue-pickup" and .nativeId == $id and .routing == $chat and .nativeEnabled == true)'
+  stage=await-scheduled-pickup
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" --scheduled-after github-issue-pickup "$native" "$due" > "$TMPDIR/pickup-$runtime-scheduled.json"
   jq -e '(.summary | contains("Guidance source")) and (.summary | contains("inline")) and (.summary | contains("bounded cleanup clarification"))' "$TMPDIR/pickup-$runtime-scheduled.json"
   grep -F 'code=automation-lifecycle-' "$(openclaw-gateway log-path)" | tail -n 80 | node "$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
+  stage=verify-assignment-and-native-assessment
   number=$(jq -er .number "$TMPDIR/pickup-$runtime-selected.json")
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api "repos/tanaabased/big-test-bucket/issues/$number" | jq -e '.assignees | length == 1 and .[0].login == "tanaabot"'
   run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
@@ -115,6 +131,7 @@ for runtime in codex openclaw; do
   run_id=$(openclaw agent-system automations run github-issue-pickup --json | jq -er 'select(.status == "queued") | .runId | strings')
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-pickup "$run_id"
   openclaw gateway call cron.runs --params "$(jq -nc --arg id "$native" --arg run "$run_id" '{id:$id,runId:$run,limit:1,offset:0}')" --json | jq -e --arg run "$run_id" 'any(.entries[]; .runId == $run and (.summary | contains("finished for this window")) and (.summary | contains("1 of 1 assigned")))'
+  stage=verify-pickup-budget-and-evidence
   other=$(jq -er .number "$TMPDIR/pickup-$runtime-other.json")
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api "repos/tanaabased/big-test-bucket/issues/$other" | jq -e '.assignees | length == 0'
   jq -es --slurpfile before "$TMPDIR/pickup-$runtime-before.json" '[.[].records[] | select(.projectWork.pickup.issueNodeId == $before[0].projectWork.pickup.issueNodeId)] | length == 1 and .[0].threadId == $before[0].threadId and .[0].worktree == $before[0].worktree and .[0].assessmentTurn.runId == $before[0].assessmentTurn.runId and .[0].result == $before[0].result and .[0].work.delivery == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
