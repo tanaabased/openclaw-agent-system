@@ -20,6 +20,9 @@ github:
     projects:
       - repository: tanaabased/big-test-bucket
         limit: 3
+        filters:
+          labels: [ready]
+          exclude-labels: [blocked]
         milestone:
           number: 10
           policy: only

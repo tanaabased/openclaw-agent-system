@@ -25,6 +25,8 @@ import projectPickupCapacity, {
   type PickupManagedRecord,
 } from './project-pickup-capacity.ts';
 import projectPickupScope from './project-pickup-scope.ts';
+import projectPickupLabels from './project-pickup-labels.ts';
+import type { ProjectPickupFilters } from '../channels/github/project-pickup-schema.ts';
 import { type PickupOperation, type ProjectPickupState } from './project-pickup-state.ts';
 import projectPickupWindow from './project-pickup-window.ts';
 import { maximumPickupWindowMs } from '../channels/github/project-pickup-timing.ts';
@@ -82,6 +84,7 @@ export interface PickupAllowance {
   used?: number;
   limit: number;
   code?: string;
+  filters?: ProjectPickupFilters;
 }
 
 type ManagedRecord = PickupManagedRecord;
@@ -189,6 +192,10 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     automationHash({
       policyDigest: projectPickupPolicyDigest(live),
       selection: live.projectPickup?.selection,
+      filters: live.projectPickup?.projects.map(({ repository, filters }) => ({
+        repository,
+        filters,
+      })),
     });
   const window = projectPickupWindow({
     schedule: pickup.schedule,
@@ -235,6 +242,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     repository: project.repository,
     milestone: project.milestone.number,
     limit: project.limit,
+    ...(project.filters ? { filters: project.filters } : {}),
     ...(window
       ? {
           used: charges.filter(
@@ -415,9 +423,13 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
     readContent = true,
   ) => {
     const { owner, name } = repository;
-    const observation = readContent
-      ? await client.projectCandidate(owner.login, name, number)
-      : undefined;
+    const filters = policy.projectPickup?.projects.find(
+      (project) => project.repository.toLowerCase() === `${owner.login}/${name}`.toLowerCase(),
+    )?.filters;
+    const observation =
+      readContent || filters?.labels?.length || filters?.excludeLabels?.length
+        ? await client.projectCandidate(owner.login, name, number)
+        : undefined;
     const item = observation ? observation.item : await client.getItem(owner.login, name, number);
     if (
       item.nodeId !== nodeId ||
@@ -437,6 +449,7 @@ export default async function projectPickup<R extends ManagedRecord>(tx: {
       return;
     const evidence = observation?.candidate;
     if (evidence && evidence.nodeId !== nodeId) return;
+    if (evidence && !projectPickupLabels(evidence.labels, filters)) return;
     return { item, evidence };
   };
   try {

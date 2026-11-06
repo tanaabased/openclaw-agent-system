@@ -1,4 +1,6 @@
 import type { RepositoryRoute } from '../channels/github/repository-scope.ts';
+import type { Static } from 'typebox';
+import type { projectPickupSchema } from '../channels/github/project-pickup-schema.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import ProjectPickupEnrollmentStore from '../agent/project-pickup-enrollment.ts';
 import assert from 'node:assert/strict';
@@ -97,7 +99,7 @@ describe('project pickup selection through native journals', () => {
           selection: { guidance: { file: 'selection.md' } },
           projects: [
             { repository: 'owner/repo', milestone: { number: 10, policy: 'only' }, limit: 1 },
-          ],
+          ] as Static<typeof projectPickupSchema>['projects'],
         },
       },
     };
@@ -219,6 +221,80 @@ describe('project pickup selection through native journals', () => {
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should reload label criteria and report empty scans without installation changes in ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const enrollment = await f.enrollmentStore.read();
+      const blocked = { ...f.item, number: f.item.number + 1, nodeId: 'I_blocked' };
+      f.items.set(blocked.number, blocked);
+      f.candidates.set(blocked.number, {
+        ...f.candidates.get(f.item.number)!,
+        nodeId: blocked.nodeId,
+        number: blocked.number,
+        labels: ['priority: high', 'blocked'],
+      });
+      await f.configure((source) => {
+        source.github['project-pickup'].projects[0]!.filters = {
+          labels: ['priority: high', 'unknown required'],
+          'exclude-labels': ['blocked'],
+        };
+      });
+      const empty = await f.pickup();
+      assert.equal(empty.status, 'empty');
+      assert.match(empty.response, /unknown required/);
+      assert.match(empty.response, /No eligible issues matched/);
+      assert.equal(f.effects.writes, 0);
+      f.tick.id = 'edited-filters';
+      await f.configure((source) => {
+        source.github['project-pickup'].projects[0]!.filters = {
+          labels: ['PRIORITY: HIGH'],
+          'exclude-labels': ['unknown excluded', 'blocked'],
+        };
+      });
+      const options = await f.pickup();
+      assert.ok('candidates' in options && options.candidates);
+      assert.deepEqual(
+        options.candidates.map((candidate) => candidate.nodeId),
+        [f.item.nodeId],
+      );
+      const selection = await f.select();
+      const current = f.candidates.get(f.item.number)!;
+      current.title = 'edited title';
+      current.body = 'edited body';
+      current.labels.push('unrelated');
+      const assign = f.client.assignProjectIssue;
+      f.client.assignProjectIssue = async (...args) => {
+        await assign(...args);
+        throw new Error('response lost');
+      };
+      assert.equal((await f.pickup({ selection })).status, 'attempted');
+      await f.configure((source) => {
+        source.github['project-pickup'].projects[0]!.filters = { labels: ['not present anymore'] };
+      });
+      f.tick.id = 'recover-after-edit';
+      assert.equal((await f.pickup()).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
+      assert.deepEqual(await f.enrollmentStore.read(), enrollment);
+    });
+
+    for (const change of ['required', 'excluded'] as const) {
+      it(`should refuse a newly disqualifying ${change} label before assignment in ${runtime}`, async () => {
+        const f = await fixture(runtime);
+        await f.configure((source) => {
+          source.github['project-pickup'].projects[0]!.filters = {
+            labels: ['priority: high'],
+            'exclude-labels': ['blocked'],
+          };
+        });
+        const selection = await f.select();
+        f.candidates.get(f.item.number)!.labels =
+          change === 'required' ? [] : ['priority: high', 'blocked'];
+        const result = await f.pickup({ selection });
+        assert.equal(result.status, 'failed');
+        assert.match(result.response, /project-pickup-candidate-ineligible/);
+        assert.equal(f.effects.writes, 0);
+      });
+    }
+
     it(`should report missing guidance before selection without discarding its diagnostic through ${runtime}`, async () => {
       const f = await fixture(runtime);
       await rm(join(root, 'workspace', 'selection.md'));
@@ -296,7 +372,7 @@ describe('project pickup selection through native journals', () => {
       const other = f.addRepository('other', 2);
       const project = {
         repository: 'owner/other',
-        milestone: { number: 10, policy: 'only' },
+        milestone: { number: 10, policy: 'only' as const },
         limit: 2,
       };
       const before = await f.enrollmentStore.read();

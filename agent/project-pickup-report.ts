@@ -4,6 +4,7 @@ import type {
   PickupSelectionGuidance,
 } from './project-pickup.ts';
 import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
+import projectPickupLabels from './project-pickup-labels.ts';
 import card, {
   githubNotificationMarkdownCode as code,
   githubNotificationMarkdownText as text,
@@ -70,6 +71,40 @@ export default function projectPickupReport(input: {
           .filter(Boolean)
           .join(' · '),
       })),
+      ...allowances.flatMap((entry) => {
+        const filters = entry.filters;
+        if (!filters?.labels?.length && !filters?.excludeLabels?.length) return [];
+        return [
+          {
+            label: 'Label filters',
+            value: [
+              text(entry.repository),
+              filters.labels?.length ? `require all: ${filters.labels.map(code).join(', ')}` : '',
+              filters.excludeLabels?.length
+                ? `exclude any: ${filters.excludeLabels.map(code).join(', ')}`
+                : '',
+              !projectPickupLabels(filters.labels ?? [], filters)
+                ? 'Contradictory criteria: a required label is also excluded. No issue can match.'
+                : '',
+            ]
+              .filter(Boolean)
+              .join(' · '),
+          },
+        ];
+      }),
+      ...(outcome.status === 'empty' &&
+      summary?.eligible === 0 &&
+      allowances.some(
+        (entry) => entry.filters?.labels?.length || entry.filters?.excludeLabels?.length,
+      )
+        ? [
+            {
+              label: 'Filters',
+              value:
+                'No eligible issues matched within the configured scope. Review the label criteria for a later scan; the search was not widened. Unreadable issues or scopes remain reported separately.',
+            },
+          ]
+        : []),
       ...(summary
         ? [
             {
