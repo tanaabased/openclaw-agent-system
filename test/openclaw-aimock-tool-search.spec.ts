@@ -201,7 +201,6 @@ describe('scripts/aimock-tool-search', () => {
   it('should correct one native wrapped rejection on the same direct assessment entry', async () => {
     const scenario = withToolSearch(resolveScenario('openclaw-issue-assessment'));
     const target = 'https://github.com/owner/repo/issues/3';
-    const id = 'a'.repeat(64);
     const input = request(`Direct issue assessment target: ${target} checkout: /tmp/owned`);
     input.messages.unshift({ role: 'system', content: 'Name: Notification Tanaabot' });
     append(
@@ -220,7 +219,6 @@ describe('scripts/aimock-tool-search', () => {
               status: 'verified',
               entry: 'direct',
               runtime: 'openclaw',
-              id,
               target,
               evidence: { source: target },
               resultSchema: assessmentResultContextSchema,

@@ -327,7 +327,6 @@ for (const scenario of [
           status: 'verified',
           runtime: 'openclaw',
           entry: 'direct',
-          id,
           target: source,
           evidence: { source },
           resultSchema: assessmentResultContextSchema,

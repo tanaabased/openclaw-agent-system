@@ -163,6 +163,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     }
     assert.equal(context.status, 'verified');
     assert.equal(context.entry, 'direct');
+    assert.equal('id' in context, false);
     const sourceRead = assessmentSource(context, result, call);
     if (sourceRead) return sourceRead;
     const selected = context.assessment as { skill: { path: string } };

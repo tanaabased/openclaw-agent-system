@@ -85,10 +85,11 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     throw new Error('assessment-request-invalid');
   if (input.operation !== 'context' && !input.id) throw new Error('assessment-entry-id-required');
   await deps.assertCurrent();
+  const fresh = input.operation === 'context' && !input.id && Boolean(input.target && input.path);
   const store = new AssessmentEntryStore(deps.root, deps.binding);
   // find the retained destination without consulting provider prose or changing ownership.
   const retained =
-    input.id || input.target
+    input.id || (!fresh && input.target)
       ? await store.exclusive(async (entries) =>
           entries.find((entry) =>
             input.id
@@ -119,15 +120,16 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
           managed.selections?.assessment,
         )
       : managed.nativeContext;
-  const managedEntry = managed
-    ? await managed.entries(async (entries) =>
-        entries.find(
-          (entry) =>
-            entry.binding === automationHash(deps.binding) &&
-            entry.target.toLowerCase() === targetUrl.toLowerCase(),
-        ),
-      )
-    : undefined;
+  const managedEntry =
+    managed && !fresh
+      ? await managed.entries(async (entries) =>
+          entries.find(
+            (entry) =>
+              entry.binding === automationHash(deps.binding) &&
+              entry.target.toLowerCase() === targetUrl.toLowerCase(),
+          ),
+        )
+      : undefined;
   const saved = managedEntry ?? retained;
   if (saved?.result && input.operation === 'present') {
     if (
@@ -213,6 +215,55 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
   const handoff = { next: 'assessment-only' as const };
   const instruction =
     'Show this complete assessment. This direct request authorizes neither implementation nor publication. Preserve existing managed stage and receipts; do not invoke summary, handoff, or another workflow.';
+  const response = (
+    record: Pick<AssessmentEntry, 'checkout' | 'evidence' | 'selection'> &
+      Partial<Pick<AssessmentEntry, 'id' | 'result'>>,
+  ) => ({
+    status: 'verified',
+    runtime: deps.binding.runtime,
+    entry: 'direct',
+    ...(record.id ? { id: record.id } : {}),
+    target: canonical,
+    project: record.checkout,
+    evidence: JSON.parse(record.evidence),
+    assessment: record.selection,
+    currentTurnId: deps.turnId,
+    mode: 'plan',
+    handoff,
+    resultContract: 'assessment-result/v1',
+    resultSchema: assessmentResultContextSchema,
+    previousResultDigest:
+      (record.result ?? managed?.result)
+        ? automationHash(record.result ?? managed!.result)
+        : undefined,
+    recording: 'native-context' as const,
+    presentationRequest: assessmentPresentationRequest(canonical, true, {
+      assessment: record.selection,
+      workspace: deps.binding.workspace,
+      debug: deps.manifest.debug,
+    }),
+    instructions:
+      assessmentInstructions +
+      '\n\nDirect execution: use these verified inputs and the selected assessment body once. Preserve the current chat/model. Use presentationRequest plus result matching resultFormat through dispatch assessment render. This pure formatter saves no assessment or summary. Show its presentation; keep the full result in native tool context. Historical assessment present remains an explicit read. No assignment, setup, implementation, publication, or new chat is authorized.',
+  });
+  if (fresh) {
+    const { selection } = await selectWorkflowStage({
+      stage: 'assessment',
+      configuration: deps.manifest.github?.notifications?.issueAssignment?.assessment,
+      workspace: deps.binding.workspace,
+      observedAt: deps.now,
+      resolveSkill: deps.resolveSkill,
+    });
+    const currentOwner = await deps.managed({ repository, number: locator.number });
+    if (currentOwner?.digest !== managed?.digest)
+      throw new Error('assessment-managed-context-changed');
+    await deps.assertCurrent();
+    return assessmentMaterial(
+      response({ checkout, evidence: JSON.stringify({ source: canonical }), selection }),
+      { action: 'assessment', operation: 'context', target: canonical, path: checkout.path },
+      input.material,
+    );
+  }
   const entries: AssessmentEntries = managed?.entries ?? store.exclusive.bind(store);
   return entries(async (records, save) => {
     const binding = automationHash(deps.binding);
@@ -233,34 +284,6 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     if (currentOwner?.digest !== managed?.digest)
       throw new Error('assessment-managed-context-changed');
     await deps.assertCurrent();
-    const response = (record: AssessmentEntry) => ({
-      status: 'verified',
-      runtime: deps.binding.runtime,
-      entry: 'direct',
-      id: record.id,
-      target: canonical,
-      project: record.checkout,
-      evidence: JSON.parse(record.evidence),
-      assessment: record.selection,
-      currentTurnId: deps.turnId,
-      mode: 'plan',
-      handoff,
-      resultContract: 'assessment-result/v1',
-      resultSchema: assessmentResultContextSchema,
-      previousResultDigest:
-        (record.result ?? managed?.result)
-          ? automationHash(record.result ?? managed!.result)
-          : undefined,
-      recording: 'native-context' as const,
-      presentationRequest: assessmentPresentationRequest(canonical, true, {
-        assessment: entry?.selection,
-        workspace: deps.binding.workspace,
-        debug: deps.manifest.debug,
-      }),
-      instructions:
-        assessmentInstructions +
-        '\n\nDirect execution: use these verified inputs and the selected assessment body once. Preserve the current chat/model. Use presentationRequest plus result matching resultFormat through dispatch assessment render. This pure formatter saves no assessment or summary. Show its presentation; keep the full result in native tool context. Historical assessment present remains an explicit read. No assignment, setup, implementation, publication, or new chat is authorized.',
-    });
     if (input.operation === 'context') {
       const currentEvidence = { source: canonical };
       if (!entry) {
