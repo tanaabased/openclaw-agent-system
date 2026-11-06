@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 
-import { implementationContextBudget } from '../agent/implementation-material.ts';
+import {
+  implementationContextBudget,
+  implementationMaterialSize,
+} from '../agent/implementation-material.ts';
 
 export type Field = {
   path: string[];
@@ -15,7 +18,9 @@ export default async function hydrateImplementation(
   response: object,
   run: (request: Record<string, unknown>) => Promise<object>,
 ) {
-  assert.ok(JSON.stringify(response).length <= implementationContextBudget);
+  assert.ok(
+    implementationMaterialSize(response as Record<string, unknown>) <= implementationContextBudget,
+  );
   const output = JSON.parse(JSON.stringify(response)) as Record<string, unknown>;
   const materials = output.contextMaterials as Materials | undefined;
   if (!materials) return output;
@@ -33,7 +38,7 @@ export default async function hydrateImplementation(
     while (request) {
       const page = (await run(request)) as Record<string, unknown>;
       assert.equal(page.status, 'material', JSON.stringify(page));
-      assert.ok(JSON.stringify(page).length <= implementationContextBudget);
+      assert.ok(implementationMaterialSize(page) <= implementationContextBudget);
       const value = page.materialPage as { offset: number; digest: string; text: string };
       assert.equal(value.digest, field.digest);
       assert.equal(value.offset, text.length);

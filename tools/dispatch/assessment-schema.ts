@@ -1,4 +1,5 @@
 import { Type } from 'typebox';
+import { implementationMaterialSchema } from './implementation-material-schema.ts';
 
 import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
 
@@ -12,6 +13,7 @@ export const directAssessmentRequestSchema = Type.Object(
       Type.Literal('result'),
       Type.Literal('present'),
     ]),
+    material: Type.Optional(implementationMaterialSchema),
     id: Type.Optional(id),
     target: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
     path: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),

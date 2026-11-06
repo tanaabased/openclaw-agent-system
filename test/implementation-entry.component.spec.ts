@@ -223,7 +223,7 @@ describe('agent/implementation-entry', () => {
       { action: 'assessment', operation: 'context', target, path: root },
       deps,
     );
-    assert.ok('id' in context);
+    assert.ok('id' in context && typeof context.id === 'string');
     await assessmentEntry(
       {
         action: 'assessment',
@@ -377,7 +377,7 @@ describe('agent/implementation-entry', () => {
   }
   it('should retain original implementation authorization when a later operator explicitly requests publication', async () => {
     const context = await call();
-    assert.ok('id' in context);
+    assert.ok('id' in context && typeof context.id === 'string');
     await call('result', { id: context.id, result: ready });
     deps.turnId = 'publication-request';
     deps.inputId = 'publication-input';
@@ -402,7 +402,7 @@ describe('agent/implementation-entry', () => {
   });
   it('should recover lost push and pr responses through the same persisted publication without repeated effects', async () => {
     const context = await call('context', { scope: 'pull-request' });
-    assert.ok('id' in context);
+    assert.ok('id' in context && typeof context.id === 'string');
     const result = await call('result', { id: context.id, result: ready });
     assert.equal('handoff' in result && result.handoff?.next, 'delivery');
     let remote = '',
@@ -617,7 +617,7 @@ describe('agent/native-implementation-entry', () => {
       { action: 'implementation', operation: 'context', target, path: workspace, plan },
       deps,
     );
-    assert.ok('id' in context);
+    assert.ok('id' in context && typeof context.id === 'string');
     const result = await codexImplementationEntry(
       data,
       { action: 'implementation', operation: 'result', id: context.id, target, result: ready },
@@ -746,7 +746,7 @@ describe('agent/native-implementation-entry', () => {
       { action: 'implementation', operation: 'context', target, path: workspace, plan },
       true,
     );
-    assert.ok('id' in context);
+    assert.ok('id' in context && typeof context.id === 'string');
     const result = await service.run(
       manifest,
       workspace,

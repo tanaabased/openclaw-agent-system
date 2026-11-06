@@ -3545,7 +3545,7 @@ describe('agent/codex-dispatch', () => {
       );
       assert.equal(formatted.status, 'formatted');
       assert.equal(formatted.retained, false);
-      assert.equal((formatted.assessment as { plan: string }).plan, plan);
+      assert.equal('assessment' in formatted, false);
     }
     const saved = ((await readDispatchState()).records as DispatchRecord[])[0]!;
     assert.equal(saved.result, undefined);
@@ -3952,7 +3952,6 @@ describe('agent/codex-dispatch', () => {
     work.receive();
     const first = await work.run('context', {}, true);
     assert.equal(first.status, 'verified');
-    assert.equal('contextMaterials' in first, false);
     const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
     configured.github['issue-assignment'].mode = 'plan';
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));

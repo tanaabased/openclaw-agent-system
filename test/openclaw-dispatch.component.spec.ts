@@ -4567,10 +4567,10 @@ describe('agent/openclaw issue dispatch', () => {
     const verified = await context(input.id);
     assert.ok('runtime' in verified && verified.runtime === 'openclaw');
     assert.ok('evidence' in verified && 'resultContract' in verified && 'assessment' in verified);
-    assert.deepEqual(
-      'resultSchema' in verified && verified.resultSchema,
-      assessmentResultContextSchema,
+    const complete = await hydrateImplementation(verified, async (read) =>
+      service.run(manifest, root, assessor(input.id), read as { action: 'context'; id: string }),
     );
+    assert.deepEqual(complete.resultSchema, assessmentResultContextSchema);
     assert.ok('presentationRequest' in verified && 'entry' in verified);
     assert.equal(verified.entry, 'managed');
     assert.equal(verified.presentationRequest.operation, 'render');
@@ -4578,13 +4578,9 @@ describe('agent/openclaw issue dispatch', () => {
     assert.ok(Value.Check(dispatchParameters, candidate));
     const formatted = await service.run(manifest, root, assessor(input.id), candidate);
     assert.equal(formatted.status, 'formatted');
+    assert.equal('assessment' in formatted, false);
     assert.ok(
-      'assessment' in formatted &&
-        'fullAssessment' in formatted.assessment &&
-        formatted.assessment.fullAssessment === plan.fullAssessment,
-    );
-    assert.ok(
-      'presentation' in formatted && !formatted.presentation.includes(plan.fullAssessment!),
+      'presentation' in formatted && !formatted.presentation?.includes(plan.fullAssessment!),
     );
     const saved = await record();
     assert.equal(saved.result, undefined);
@@ -6893,7 +6889,6 @@ describe('agent/openclaw issue dispatch', () => {
     );
     assert.equal(resumed.status, 'verified');
     assert.equal('previousResult' in resumed, false);
-    assert.ok('implementation' in resumed);
     const hydrated = await hydrateImplementation(resumed, async (request) =>
       service.run(
         manifest,

@@ -1,3 +1,5 @@
+import replyMaterial from './reply-material.ts';
+import type { ImplementationMaterialRead } from './implementation-material.ts';
 import taskUpdateInstructions from './task-update-instructions.ts';
 import isFilesystemAccessError from '../utils/is-filesystem-access-error.ts';
 
@@ -276,6 +278,9 @@ export function deliveryCompletionInstructions(
 /** the native delivery owner supplies authority and serializes state with the PR receipt. */
 export default async function deliveryAnnouncement(input: {
   operation: 'compose' | 'candidate' | 'announce';
+  runtime: 'codex' | 'openclaw';
+  request: Record<string, unknown>;
+  material?: ImplementationMaterialRead;
   now?: number;
   digest?: string;
   publicText?: string;
@@ -303,6 +308,13 @@ export default async function deliveryAnnouncement(input: {
   let prerequisite = true;
   try {
     await input.authorize();
+    if (
+      input.material &&
+      (input.operation !== 'compose' ||
+        delivery.announcement?.attempted ||
+        delivery.announcement?.receipt)
+    )
+      throw new Error('delivery-announcement-material-unavailable');
     if (delivery.announcement?.attempted || delivery.announcement?.receipt) {
       const state = delivery.announcement;
       state.receipt = await reconcileAnnouncement({
@@ -343,24 +355,34 @@ export default async function deliveryAnnouncement(input: {
     const digest = automationHash(current);
     if (input.operation === 'compose') {
       // a fresh provider snapshot replaces only an unattempted candidate.
-      delivery.announcement = current;
-      delete delivery.announcementRecovery;
-      await input.save();
-      return {
-        status: 'composition-ready',
-        digest,
-        selection: composition,
-        event: {
-          kind: 'pull-request-delivery',
-          title: snapshot.title,
-          body: snapshot.body,
-          draft: snapshot.draft,
-          url: `https://github.com/${repository}/pull/${snapshot.pullRequestNumber}`,
+      if (input.material) {
+        if (!delivery.announcement || input.digest !== digest)
+          throw new Error('delivery-announcement-material-stale');
+      } else {
+        delivery.announcement = current;
+        delete delivery.announcementRecovery;
+        await input.save();
+      }
+      return replyMaterial(
+        {
+          runtime: input.runtime,
+          status: 'composition-ready' as const,
+          digest,
+          selection: composition,
+          event: {
+            kind: 'pull-request-delivery',
+            title: snapshot.title,
+            body: snapshot.body,
+            draft: snapshot.draft,
+            url: `https://github.com/${repository}/pull/${snapshot.pullRequestNumber}`,
+          },
+          maximumPublicCharacters: 500,
+          instruction:
+            'Invoke the selected reply skill with this public delivery event and applicable voice guidance. Return only a short description of what the PR delivers; the host adds its verified link and draft/ready state. Do not claim tests, approval or merge or expose private context. Submit delivery candidate with this digest and publicText, then inspect its exact preview and call announce with the returned digest through native approval. Missing skills stop composition. If skill content or guidance changes before publication is attempted, call compose again and replace the candidate; an uncertain write must be reconciled without reposting. Keep the full private PR card even if announcing fails.',
         },
-        maximumPublicCharacters: 500,
-        instruction:
-          'Invoke the selected reply skill with this public delivery event and applicable voice guidance. Return only a short description of what the PR delivers; the host adds its verified link and draft/ready state. Do not claim tests, approval or merge or expose private context. Submit delivery candidate with this digest and publicText, then inspect its exact preview and call announce with the returned digest through native approval. Missing skills stop composition. If skill content or guidance changes before publication is attempted, call compose again and replace the candidate; an uncertain write must be reconciled without reposting. Keep the full private PR card even if announcing fails.',
-      };
+        { ...input.request, digest },
+        input.material,
+      );
     }
     const state = delivery.announcement;
     if (
@@ -463,6 +485,7 @@ export default async function deliveryAnnouncement(input: {
       ),
     };
   } catch (error) {
+    if (input.material) throw error;
     if (
       error instanceof WorkflowPolicyHeld ||
       isFilesystemAccessError(error) ||

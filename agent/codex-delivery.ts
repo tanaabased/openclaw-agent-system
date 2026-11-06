@@ -1,3 +1,4 @@
+import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import taskPullRequest, { setTaskPullRequestLink } from './task-pull-request.ts';
 import { retainImplementationDelivery } from './implementation-delivery.ts';
 import codexCommit from './codex-commit.ts';
@@ -77,6 +78,7 @@ const requestSchema = Type.Object(
     pullRequest: Type.Optional(
       Type.Union([Type.String({ minLength: 1, maxLength: 4096 }), Type.Null()]),
     ),
+    material: Type.Optional(implementationMaterialSchema),
     publicText: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
     title: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: '\\S' })),
     body: Type.Optional(Type.String({ maxLength: 65536 })),
@@ -162,6 +164,15 @@ export default async function runCodexDelivery(
 ) {
   if (!Value.Check(requestSchema, request)) throw new Error('delivery-request-invalid');
   const input: DeliveryRequest = request;
+  if (
+    input.material &&
+    (input.action !== 'compose' ||
+      input.publicText ||
+      input.title ||
+      input.body ||
+      input.pullRequest !== undefined)
+  )
+    throw new Error('delivery-request-invalid');
   if (input.pullRequest !== undefined && !['bind', 'link'].includes(input.action))
     throw new Error('delivery-request-invalid');
   if (input.title?.includes('\0') || input.body?.includes('\0'))
@@ -763,6 +774,13 @@ export default async function runCodexDelivery(
           signal,
         };
         const announce = await deliveryAnnouncement({
+          runtime: 'codex',
+          request: {
+            action: 'compose',
+            id: input.id,
+            ...(input.eventId ? { eventId: input.eventId } : {}),
+          },
+          material: input.material,
           now: (deps.now ?? Date.now)(),
           operation: input.action,
           digest: input.digest,

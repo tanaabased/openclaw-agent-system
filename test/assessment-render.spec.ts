@@ -28,14 +28,32 @@ const result: AssessmentSubmission = {
 };
 
 describe('agent/assessment-render', () => {
-  it('should return complete native tool context and only the concise visible review', () => {
+  it('should validate complete native input and return only the concise visible review', () => {
     const response = renderNativeAssessment({ ...assessmentPresentationRequest(target), result });
     assert.equal(response.status, 'formatted');
     assert.equal(response.retained, false);
-    assert.deepEqual(response.assessment, result);
+    assert.equal('assessment' in response, false);
+    assert.doesNotMatch(JSON.stringify(response), /ENGINEERING-/);
     assert.ok(response.presentation.includes(result.reviewSummary!));
     assert.doesNotMatch(response.presentation, /ENGINEERING-|saved for implementation/);
     assert.match(response.presentation, /> ## 🧭/);
+  });
+
+  it('should keep a large complete plan in native input without echoing it into tool output', () => {
+    const source = {
+      ...result,
+      fullAssessment: 'engineering details '.repeat(1500),
+      plan: 'implementation step '.repeat(1500),
+    };
+    const snapshot = JSON.stringify(source);
+    const response = renderNativeAssessment({
+      ...assessmentPresentationRequest(target),
+      result: source,
+    });
+    assert.equal(JSON.stringify(source), snapshot);
+    assert.ok(JSON.stringify(response).length < 2000);
+    assert.ok(response.presentation.includes(source.reviewSummary!));
+    assert.doesNotMatch(JSON.stringify(response), /engineering details|implementation step/);
   });
 
   it('should keep direct assessment presentation separate from implementation permission', () => {

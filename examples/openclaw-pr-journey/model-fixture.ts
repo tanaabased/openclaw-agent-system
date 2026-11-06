@@ -201,7 +201,7 @@ export function nativePlanResponse(
     });
   assert.equal(rendered.status, 'formatted');
   assert.equal(rendered.retained, false);
-  assert.ok((rendered.assessment as { fullAssessment: string }).fullAssessment);
+  assert.equal(typeof rendered.presentation, 'string');
   const observed = result('native-plan-context');
   if (!observed)
     return {

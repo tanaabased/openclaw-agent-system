@@ -22,6 +22,8 @@ import {
   reviewFixture,
 } from './github-review-fixtures.ts';
 
+import hydrateImplementation from './implementation-material-fixture.ts';
+import nativeMaterialFixture from './native-material-fixture.ts';
 const url = 'https://github.com/owner/repo/issues/3';
 describe('agent/feedback-reply', () => {
   let root: string, deps: FeedbackReplyDependencies, provider: OpenClawFeedbackProvider;
@@ -98,6 +100,69 @@ describe('agent/feedback-reply', () => {
   });
   const call = async (operation: string, extra: object = {}) =>
     feedbackReply({ action: 'reply', operation, ...extra }, deps);
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should deliver a complete reply source in ${runtime} without recreating or publishing a draft`, async () => {
+      deps.binding.runtime = runtime;
+      const privateText = 'Verified progress: preserve the complete response.\n'.repeat(250);
+      const request = { action: 'reply', operation: 'compose', target: url, privateText };
+      const run = (read: Record<string, unknown>) => feedbackReply(read, deps);
+      const verify = (complete: Record<string, unknown>) =>
+        assert.equal(complete.privateResponse, privateText);
+      if (runtime === 'openclaw') await nativeMaterialFixture({ request, run, verify });
+      else verify(await hydrateImplementation(await run(request), run));
+      const drafts = await new ReplyStore(deps.root, deps.binding).read();
+      assert.equal(drafts.length, 1);
+      assert.equal(drafts[0]!.privateText, privateText);
+      assert.equal(drafts[0]!.publicText, undefined);
+      const composed = await call('compose', { id: drafts[0]!.id });
+      assert.ok('contextMaterials' in composed && composed.contextMaterials);
+      assert.ok('id' in composed && 'digest' in composed);
+      const page = composed.contextMaterials.fields[0]!.request;
+      await assert.rejects(run({ ...page, operation: 'publish' }), /reply-request-invalid/);
+      await assert.rejects(run({ ...page, digest: '0'.repeat(64) }), /reply-material-stale/);
+      await call('candidate', {
+        id: composed.id,
+        digest: composed.digest,
+        publicText: 'Verified progress.',
+      });
+      const saved = await new ReplyStore(deps.root, deps.binding).read();
+      await assert.rejects(run(page), /reply-material-stale/);
+      assert.deepEqual(await new ReplyStore(deps.root, deps.binding).read(), saved);
+      assert.equal(writes, 0);
+    });
+
+    it(`should deliver all status evidence in ${runtime} and reject changed observations between pages`, async () => {
+      deps.binding.runtime = runtime;
+      let body = 'Important current progress. '.repeat(300);
+      provider.listIssueComments = async () => ({
+        comments: [{ ...(await provider.getIssueComment('owner', 'repo', 3, 9)), body }],
+        truncated: false,
+      });
+      const request = {
+        action: 'reply',
+        operation: 'context',
+        purpose: 'status-update',
+        target: url,
+      };
+      const run = (read: Record<string, unknown>) => feedbackReply(read, deps);
+      const verify = (complete: Record<string, unknown>) =>
+        assert.equal(
+          (complete.publicContext as { discussion: { comments: Array<{ body: string }> } })
+            .discussion.comments[0]!.body,
+          body,
+        );
+      if (runtime === 'openclaw') await nativeMaterialFixture({ request, run, verify });
+      else verify(await hydrateImplementation(await run(request), run));
+      const before = await run(request);
+      assert.ok('contextMaterials' in before && before.contextMaterials);
+      const read = before.contextMaterials.fields[0]!.request;
+      body += 'New information.';
+      await assert.rejects(run(read), /status-update-observation-changed/);
+      assert.deepEqual(await new ReplyStore(deps.root, deps.binding).read(), []);
+      assert.equal(writes, 0);
+    });
+  }
+
   async function candidate(target = url) {
     const composed = await call('compose', {
       target,
@@ -311,9 +376,12 @@ describe('agent/feedback-reply', () => {
     };
     for (const target of [url, pr.url]) {
       const context = await call('context', { purpose: 'status-update', target });
-      assert.ok('publicContext' in context && context.publicContext);
-      assert.equal(context.publicContext.discussion.truncated, true);
-      assert.equal(context.publicContext.discussion.comments[0]!.bodyTruncated, true);
+      const complete = await hydrateImplementation(context, (read) => feedbackReply(read, deps));
+      const publicContext = complete.publicContext as {
+        discussion: { truncated: boolean; comments: Array<{ bodyTruncated?: boolean }> };
+      };
+      assert.equal(publicContext.discussion.truncated, true);
+      assert.equal(publicContext.discussion.comments[0]!.bodyTruncated, true);
       const id = await updateCandidate(target);
       assert.equal((await call('publish', { id, digest: await preview(id) })).status, 'published');
     }

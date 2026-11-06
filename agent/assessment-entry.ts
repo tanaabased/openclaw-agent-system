@@ -8,6 +8,7 @@ import renderAssessmentResult from '../channels/github/presentation/assessment-r
 import assessmentSkillSource from './assessment-skill-source.ts';
 import renderNativeAssessment, { assessmentPresentationRequest } from './assessment-render.ts';
 import assessmentCheckout from './assessment-checkout.ts';
+import assessmentMaterial from './assessment-material.ts';
 import { assessmentInstructions } from './assessment-instructions.ts';
 import {
   assessmentResultContextSchema,
@@ -73,7 +74,8 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
   if (!Value.Check(assessmentRequestSchema, input)) throw new Error('assessment-request-invalid');
   if (
     (input.result !== undefined && input.operation !== 'result') ||
-    (input.revise && input.operation !== 'context')
+    (input.revise && input.operation !== 'context') ||
+    (input.material && input.operation !== 'context')
   )
     throw new Error('assessment-request-invalid');
   if (input.operation !== 'context' && !input.id) throw new Error('assessment-entry-id-required');
@@ -295,7 +297,17 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
       }
       await deps.assertCurrent();
       await save();
-      return response(entry);
+      return assessmentMaterial(
+        response(entry),
+        {
+          action: 'assessment',
+          operation: 'context',
+          id: entry.id,
+          target: canonical,
+          path: checkout.path,
+        },
+        input.material,
+      );
     }
     if (!entry) throw new Error('assessment-context-required');
     if (input.operation === 'present') {

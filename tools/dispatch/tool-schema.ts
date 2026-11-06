@@ -93,6 +93,7 @@ const dispatchRequestVariants = Type.Union([
   object({
     action: Type.Literal('delivery'),
     id,
+    material: Type.Optional(implementationMaterialSchema),
     operation: Type.Union([
       Type.Literal('link'),
       Type.Literal('bind'),

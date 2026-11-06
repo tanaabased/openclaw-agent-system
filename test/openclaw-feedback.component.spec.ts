@@ -956,10 +956,8 @@ describe('agent/openclaw-feedback', () => {
     const { feedbackRevision } = await import('../agent/feedback-source.ts');
     event.revision = feedbackRevision(source);
     await start();
-    assert.equal(
-      (await action('result', { privateText: 'Private answer.' })).publication,
-      'private-only',
-    );
+    const result = await action('result', { privateText: 'Private answer.' });
+    assert.equal('publication' in result && result.publication, 'private-only');
     assert.equal(writes, 0);
   });
   it('should reject disclosure before marking any public attempt', async () => {

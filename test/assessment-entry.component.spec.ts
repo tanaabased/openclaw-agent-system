@@ -19,6 +19,8 @@ import {
 import type { AgentManifest } from '../manifest/types.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
+import hydrateImplementation from './implementation-material-fixture.ts';
+import nativeMaterialFixture from './native-material-fixture.ts';
 const target = 'https://github.com/owner/repo/issues/3';
 const ready = {
   version: 1,
@@ -90,7 +92,7 @@ describe('agent/assessment-entry', () => {
     it(`should reject incomplete direct ${runtime} results before recording`, async () => {
       deps.binding.runtime = runtime;
       const context = await call('context');
-      assert.ok('id' in context);
+      assert.ok('id' in context && typeof context.id === 'string');
       await assert.rejects(
         call('result', { id: context.id, result: { ...ready, fullAssessment: undefined } }),
         /assessment-result-incomplete/,
@@ -103,10 +105,45 @@ describe('agent/assessment-entry', () => {
       assert.equal('previousResult' in unchanged, false);
       assert.equal((await call('result', { id: context.id, result: ready })).status, 'formatted');
     });
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should deliver complete direct assessment material in ${runtime}`, async () => {
+      deps.binding.runtime = runtime;
+      const issue = 'Important requirement: preserve every detail.\n'.repeat(200);
+      const connect = deps.connectProvider;
+      deps.connectProvider = async () => ({
+        ...(await connect()),
+        getItemContext: async () => ({
+          title: 'Issue',
+          body: issue,
+          comments: [],
+          labels: [],
+          truncated: false,
+        }),
+      });
+      const request = { action: 'assessment', operation: 'context', target, path: root };
+      const run = (read: Record<string, unknown>) => assessmentEntry(read, deps);
+      const verify = (complete: Record<string, unknown>) => {
+        assert.equal((complete.evidence as { body: string }).body, issue);
+        assert.deepEqual(complete.resultSchema, assessmentResultContextSchema);
+        assert.equal(typeof complete.instructions, 'string');
+      };
+      if (runtime === 'openclaw') await nativeMaterialFixture({ request, run, verify });
+      else verify(await hydrateImplementation(await run(request), run));
+      const entries = await new AssessmentEntryStore(deps.root, deps.binding).exclusive(
+        async (entries) => entries,
+      );
+      assert.equal(entries.length, 1);
+      assert.equal(entries[0]!.result, undefined);
+      assert.equal(entries[0]!.history, undefined);
+    });
+
   it('should refresh context and format complete output without saving a plan or granting authority', async () => {
     const context = await call('context');
     assert.ok('id' in context && 'assessment' in context && 'presentationRequest' in context);
-    assert.deepEqual(context.resultSchema, assessmentResultContextSchema);
+    const complete = await hydrateImplementation(context, (request) =>
+      assessmentEntry(request, deps),
+    );
+    assert.deepEqual(complete.resultSchema, assessmentResultContextSchema);
     assert.deepEqual(context.presentationRequest, {
       action: 'assessment',
       operation: 'render',
@@ -114,8 +151,9 @@ describe('agent/assessment-entry', () => {
       assessmentOnly: true,
     });
     assert.equal(context.assessment!.requestedSkill, 'agent-system:agent-system-task-assessment');
+    const beforeRefresh = selections.length;
     assert.equal((await call('context')).status, 'verified');
-    assert.equal(selections.length, 2);
+    assert.equal(selections.length, beforeRefresh + 1);
     const result = await assessmentEntry(
       {
         action: 'assessment',
@@ -138,7 +176,7 @@ describe('agent/assessment-entry', () => {
     );
     assert.equal(entries[0]!.result, undefined);
     assert.equal(entries[0]!.history, undefined);
-    assert.ok('assessment' in result && result.assessment.fullAssessment === ready.fullAssessment);
+    assert.equal('assessment' in result, false);
     assert.ok(
       !(await readdir(deps.root)).some(
         (name) => name.includes('dispatch') || name.includes('intake'),
@@ -147,7 +185,7 @@ describe('agent/assessment-entry', () => {
   });
   it('should present retained source without provider access or another checkout inspection', async () => {
     const context = await call('context');
-    assert.ok('id' in context);
+    assert.ok('id' in context && typeof context.id === 'string');
     await new AssessmentEntryStore(deps.root, deps.binding).exclusive(async (entries, save) => {
       entries[0]!.result = ready;
       entries[0]!.resultTurnId = deps.turnId;
@@ -553,7 +591,7 @@ describe('agent/native-assessment-entry', () => {
       { action: 'assessment', operation: 'context', target, path: workspace },
       deps,
     );
-    assert.ok('id' in context);
+    assert.ok('id' in context && typeof context.id === 'string');
     const result = await codexAssessmentEntry(
       data,
       { action: 'assessment', operation: 'result', id: context.id, target, result: ready },
@@ -681,7 +719,7 @@ describe('agent/native-assessment-entry', () => {
       { action: 'assessment', operation: 'context', target, path: workspace },
       true,
     );
-    assert.ok('id' in context);
+    assert.ok('id' in context && typeof context.id === 'string');
     const result = await service.run(
       manifest,
       workspace,

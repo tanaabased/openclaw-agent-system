@@ -447,6 +447,9 @@ export default async function openClawDelivery(input: {
     if (!previous?.pullRequest || !previous.reconciled)
       throw new Error('delivery-reconciliation-required');
     const announcement = await deliveryAnnouncement({
+      runtime: 'openclaw',
+      request: { action: 'delivery', operation: 'compose', id: record.id },
+      material: action.material,
       now: input.now,
       operation: action.operation,
       digest: action.digest,

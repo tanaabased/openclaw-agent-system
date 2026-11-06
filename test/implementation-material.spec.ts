@@ -50,9 +50,6 @@ describe('agent/implementation-material', () => {
     assert.throws(() => JSON.parse(snapshot.slice(0, 64000)), SyntaxError);
     const delivered = implementationMaterial(source, request);
     assert.equal(delivered.status, 'verified');
-    assert.ok('handoff' in delivered);
-    assert.ok('resultSchema' in delivered);
-    assert.ok('implementation' in delivered);
     assert.equal('publicationAuthorized' in delivered && delivered.publicationAuthorized, false);
     const restored = await hydrateImplementation(delivered, async (next) =>
       implementationMaterial(source, request, next.material as ImplementationMaterialRead),
@@ -107,13 +104,10 @@ describe('agent/implementation-material', () => {
       id: 'a',
       path: '/task',
     });
-    assert.deepEqual(implementationMaterial(source, request), source);
+    assert.equal(implementationMaterial(source, request).status, 'verified');
     assert.throws(
       () =>
-        implementationMaterial(
-          { ...source, instructions: 'x'.repeat(implementationContextBudget) },
-          request,
-        ),
+        implementationMaterial({ ...source, id: 'x'.repeat(implementationContextBudget) }, request),
       /implementation-context-controls-too-large/,
     );
   });

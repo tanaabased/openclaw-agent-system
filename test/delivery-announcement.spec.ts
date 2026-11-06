@@ -1,3 +1,5 @@
+import hydrateImplementation from './implementation-material-fixture.ts';
+import type { ImplementationMaterialRead } from '../agent/implementation-material.ts';
 import assert from 'node:assert/strict';
 
 import { Value } from 'typebox/value';
@@ -31,6 +33,8 @@ describe('agent/delivery-announcement', () => {
     lost = missing = rejected = revoked = draft = false;
     skillDigest = 'a'.repeat(64);
     input = {
+      runtime: 'codex',
+      request: { action: 'compose', id: 'a'.repeat(64) },
       operation: 'compose',
       delivery,
       publication: {
@@ -128,6 +132,30 @@ describe('agent/delivery-announcement', () => {
     assert.ok('digest' in prepared);
     return prepared;
   }
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should page complete announcement inputs in ${runtime} without resetting a candidate`, async () => {
+      input.runtime = runtime;
+      const provider = input.provider.announcement;
+      const body = 'Complete delivery details 🦕.\n'.repeat(1000);
+      input.provider.announcement = async (request) => ({ ...(await provider(request)), body });
+      const context = await run('compose');
+      assert.ok('contextMaterials' in context && context.contextMaterials);
+      const read = context.contextMaterials.fields[0]!.request;
+      const complete = await hydrateImplementation(context, (request) => run('compose', request));
+      assert.equal((complete.event as { body: string }).body, body);
+      await run('candidate', { digest: complete.digest, publicText: 'The complete change.' });
+      const before = JSON.stringify(delivery);
+      await run('compose', read);
+      assert.equal(JSON.stringify(delivery), before);
+      skillDigest = 'b'.repeat(64);
+      await assert.rejects(run('compose', read), /delivery-announcement-material-stale/);
+      assert.equal(JSON.stringify(delivery), before);
+      revoked = true;
+      await assert.rejects(run('compose', read), /delivery-authority-revoked/);
+      assert.equal(posts, 0);
+      const material = read.material as ImplementationMaterialRead;
+      await assert.rejects(run('announce', { material }), /delivery-authority-revoked/);
+    });
   it('should persist the first failed prerequisite before composing an announcement', async () => {
     let saves = 0;
     input.provider.announcement = async () => {

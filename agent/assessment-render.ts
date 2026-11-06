@@ -21,7 +21,6 @@ export default function renderNativeAssessment(input: unknown) {
   return {
     status: 'formatted' as const,
     retained: false as const,
-    assessment,
     presentation: renderAssessmentResult(assessment, {
       issue: {
         label: `${target.owner}/${target.name}#${target.number}`,
@@ -32,7 +31,7 @@ export default function renderNativeAssessment(input: unknown) {
       assessmentOnly: input.assessmentOnly,
     }),
     instructions:
-      'The full assessment is model-facing material in this native tool exchange; Agent System has not saved it. Show only presentation as the visible assessment reply. Continue from native conversation and current user direction; do not record or reinject this assessment. Formatting grants no implementation or publication authority. Publish the concise review through Task Update only within its existing authorization.',
+      'The complete assessment was submitted in this native tool call and is not repeated in the response; Agent System has not saved it. Show only presentation as the visible assessment reply. Continue from native conversation and current user direction; do not record or reinject this assessment. Formatting grants no implementation or publication authority. Publish the concise review through Task Update only within its existing authorization.',
   };
 }
 

@@ -1,4 +1,5 @@
 import { Type, type Static } from 'typebox';
+import { implementationMaterialSchema } from './implementation-material-schema.ts';
 
 import { maximumGitHubNotificationReplyLength } from '../../channels/github/publication/limits.ts';
 
@@ -34,6 +35,7 @@ export const replyRequestSchema = Type.Object(
     ]),
     purpose: Type.Optional(Type.Literal('status-update')),
     update: Type.Optional(statusUpdateSchema),
+    material: Type.Optional(implementationMaterialSchema),
     id: Type.Optional(hash),
     target: Type.Optional(Type.String({ minLength: 1, maxLength: 2048 })),
     privateText: Type.Optional(Type.String({ minLength: 1, maxLength: 32000 })),

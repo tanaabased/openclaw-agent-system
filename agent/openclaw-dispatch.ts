@@ -129,8 +129,16 @@ export default class OpenClawDispatch {
           !input.publicText &&
           !input.diagnostic) ||
         (input.action === 'feedback' &&
-          ['context', 'implementation-context'].includes(input.operation) &&
+          ['context', 'implementation-context', 'compose'].includes(input.operation) &&
           !input.decision) ||
+        (input.action === 'assessment' && input.operation === 'context') ||
+        (input.action === 'delivery' &&
+          input.operation === 'compose' &&
+          !input.publicText &&
+          !input.title &&
+          !input.body &&
+          input.pullRequest === undefined) ||
+        (input.action === 'reply' && ['context', 'compose'].includes(input.operation)) ||
         (input.action === 'implementation' &&
           input.operation === 'context' &&
           !input.scope &&
