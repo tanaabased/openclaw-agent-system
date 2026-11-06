@@ -35,7 +35,7 @@ openclaw-aimock prepare --scenario openclaw-runtimes
 openclaw config set models.mode merge
 openclaw config set memory.search.enabled false --strict-json
 openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
-openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","app-server","--listen","stdio://"]' --strict-json
+openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","-c","model_providers.openai.supports_websockets=false","app-server","--listen","stdio://"]' --strict-json
 
 # should install one owned execution workspace per runtime without applying setup
 mkdir -p "$GITHUB_WORKSPACE/examples/openclaw-runtimes/codex/tools/bin" "$GITHUB_WORKSPACE/examples/openclaw-runtimes/openclaw/tools/bin"
