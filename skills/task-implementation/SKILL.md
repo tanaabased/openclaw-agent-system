@@ -102,15 +102,15 @@ For an explicit Agent System implementation request without verified execution c
    implementation. For `verified` context invoke the returned implementation skill
    exactly once with the complete payload and guidance. If it is this wrapper, continue
    below, not at this bootstrap. Custom skills return ordinary substantive output;
-   the runtime retains it without requiring notification calls inside the custom body.
+   keep it in native chat unless an explicit history or publication operation needs it.
 5. Keep questions, answers, and partial-work discussion in native chat. Do not
    submit clarification results; continue from the next native answer within the
-   existing permission. For manual context (`entry: direct`), retain completed or
+   existing permission. For manual context (`entry: direct`), optionally retain completed or
    blocked output using `action:
 implementation`, `operation: result`, `id`, and `result` matching the returned
    `implementation-result/v1` schema. In Codex use `implementation result`. Readback is
    `implementation present`. Managed context uses its returned native result route.
-6. Follow the recorded scope-aware handoff. Manual PR delivery uses `action:
+6. Within the authorized scope, manual PR delivery uses `action:
 implementation`, `operation: delivery`, `deliveryOperation: prepare|publish|reconcile|present`
    with the same `id`; prepare also accepts `title` and `body`, publish its returned
    `digest`. Codex exposes these as `implementation prepare|publish|reconcile|delivery-present`.
@@ -149,7 +149,7 @@ the configured reply skill. A presentation or announcement failure does not bloc
 conversation. Later substantial PR updates may repeat the card and use Task Update;
 reuse the current association and do not repeat the initial announcement.
 
-1. Read the complete plan and any retained assessment, then inspect the existing files, branch, and relevant
+1. Use the current plan and direction in native conversation, then inspect the existing files, branch, and relevant
    repository behavior. Preserve prior work; reconcile an interrupted attempt before
    making changes. Keep the host-selected model and effort.
 2. Consult the available skill catalog and read and apply relevant skills for the
@@ -185,8 +185,8 @@ reuse the current association and do not repeat the initial announcement.
 6. Report implemented behavior, validation, commit identity, and remaining blockers or
    limitations. For native work, report directly in the conversation. Managed publication
    uses its existing delivery owner only for the requested effect. Saved results are
-   optional history for admitted conversations; explicit tracked implementation uses
-   its supplied collector. Ask questions directly in chat and through the authorized update.
+   optional history for admitted conversations; explicit tracked implementation may
+   use its supplied collector. Ask questions directly in chat and through the authorized update.
    Never replay completed work or create a replacement PR after uncertain publication.
 
 ## Checkpoints
@@ -202,7 +202,7 @@ reuse the current association and do not repeat the initial announcement.
 ## Completion Criteria
 
 The requested change is implemented and checked, or a concrete blocker is reported
-with retained progress. Explicit tracked execution uses its supplied result contract;
+with retained progress. Explicit tracked execution may retain history through its supplied result contract;
 native work needs no Agent System lifecycle transition.
 
 ## Bundled Resources

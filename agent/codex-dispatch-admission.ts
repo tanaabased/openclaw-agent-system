@@ -256,7 +256,7 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
           }
         : undefined,
     },
-    'Assess the requested outcome and prepare a plan. After recording and presenting it, handle its host-verified summary and follow the returned handoff in this same turn.',
+    'Assess the requested outcome and prepare a plan. Keep the full standardized assessment in native conversation context, show its concise presentation, and publish its summary through Task Update within the authorized scope. Continue according to current native direction and implementation permission.',
   );
   return [
     card,
@@ -265,7 +265,7 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
       '.',
     'Before investigation, execute dispatchRuntime.argvPrefix from the newest trusted Agent System context followed by context --plugin-data and dispatchRuntime.pluginData. Send ' +
       JSON.stringify({ action: 'context', id: record.id }) +
-      ' as JSON on stdin. Investigate only after status verified, following its instructions and selected assessment skill. Preserve the saved model and effort. Use the following transport and recovery rules for context and result submission.',
+      ' as JSON on stdin. Investigate only after status verified, following its instructions and selected assessment skill. Preserve the saved model and effort. Use the following transport and recovery rules for context and presentation.',
     codexRuntimeInstructions,
   ].join('\n\n');
 }

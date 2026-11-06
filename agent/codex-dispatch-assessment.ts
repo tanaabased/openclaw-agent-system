@@ -1,4 +1,5 @@
-import nativeClarification from './native-clarification.ts';
+import dispatchContext from './dispatch-context.ts';
+import { connectCodexGitHub } from './codex-intake.ts';
 import { observeCodexActivity } from './codex-capacity-reconcile.ts';
 import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 import assessmentMaterial from './assessment-material.ts';
@@ -7,23 +8,15 @@ import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   dispatchAdmission,
   managedTargetUrl,
+  managedPullRequest,
   type ManagedIssue as IntakeRecord,
 } from './managed-issue.ts';
 import { realpath } from 'node:fs/promises';
 import readRetainedHistory from './read-retained-history.ts';
 
-import assessmentHandoff from './assessment-handoff.ts';
-import { assessmentPresentationRequest } from './assessment-render.ts';
-import {
-  assessmentDecisionMode,
-  assessmentResultContextSchema,
-  parseAssessmentSubmission,
-  type AssessmentResult,
-} from './assessment-result.ts';
-import {
-  assessmentSummaryInstructions,
-  type AssessmentSummaryRequest,
-} from './assessment-summary-state.ts';
+import renderNativeAssessment, { assessmentPresentationRequest } from './assessment-render.ts';
+import { assessmentResultContextSchema, parseAssessmentSubmission } from './assessment-result.ts';
+import { type AssessmentSummaryRequest } from './assessment-summary-state.ts';
 import assessmentSummary from './assessment-summary.ts';
 import { automationHash } from './automation-hash.ts';
 import codexAssessmentInstructions, {
@@ -32,7 +25,6 @@ import codexAssessmentInstructions, {
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import {
   type CodexDispatchNative,
-  code,
   repository,
   revalidateDispatchAssignment,
   withNative,
@@ -52,7 +44,6 @@ import codexSummaryAuthority from './codex-summary-authority.ts';
 import codexSessionSettings from './codex-session-settings.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
-import recordDispatchResult from './dispatch-result.ts';
 import selectFeedbackStage from './feedback-stage.ts';
 import issueProgression from './issue-progression.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
@@ -363,6 +354,19 @@ export async function assessDispatch(
     });
   }
   if (action === 'context') {
+    const provider = await (deps.connect ?? connectCodexGitHub)(current.workspace, signal);
+    const evidence = dispatchContext(
+      await provider.getItemContext(
+        intake.repository.owner.login,
+        intake.repository.name,
+        intake.issue.number,
+        managedPullRequest(intake) ? 'pull-request' : 'issue',
+        true,
+      ),
+      managedTargetUrl(intake),
+      now,
+    );
+    await fresh();
     const assessment = (
       await selectWorkflowStage({
         stage: 'assessment',
@@ -391,7 +395,7 @@ export async function assessDispatch(
       routing: JSON.parse(record.routing!),
       routingNote: record.routingNote,
       effective: record.effective,
-      evidence: JSON.parse(record.context!),
+      evidence,
       adoptedPullRequest: record.adoptedPullRequest,
       ...(record.predecessorId
         ? {
@@ -426,88 +430,25 @@ export async function assessDispatch(
     );
   }
   if (action === 'result') {
-    const continuation = record.issueMode === 'auto' ? record.continuation : undefined;
-    let result: AssessmentResult;
-    try {
-      result = parseAssessmentSubmission(input.result);
-      if (result.outcome === 'clarification-needed')
-        return nativeClarification(
-          record.id,
-          assessmentPresentation(result, record, intake, current.workspace, {
-            debug: current.manifest.debug,
-            routingManifestPath:
-              current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
-            manifestPath:
-              current.manifestSources?.['/github/issue-assignment/assessment/guidance']?.path ??
-              current.manifestPath,
-          }),
-        );
-      if (record.issueMode === 'auto' && !result.decision)
-        throw new Error('assessment-decision-required');
-      if (
-        record.continuation?.assessmentDigest &&
-        record.continuation.assessmentDigest !== automationHash(result)
-      )
-        throw new Error('continuation-assessment-changed');
-    } catch (error) {
-      if (continuation && !['blocked', 'cancelled', 'complete'].includes(continuation.phase)) {
-        continuation.phase = 'blocked';
-        continuation.code = code(error);
-        await save();
-      }
-      throw error;
-    }
-    if (!native.turnId) throw new Error('dispatch-native-turn-unavailable');
-    recordDispatchResult({
-      record,
-      intake,
-      threadId: native.id,
-      turnId: native.turnId,
-      worktree: native.cwd,
-      policy: current.manifest.github?.notifications,
-      result,
-      previousResultDigest: input.previousResultDigest as string | undefined,
-    });
-    if (
-      continuation?.phase === 'blocked' &&
-      !continuation.assessmentDigest &&
-      !continuation.attempt &&
-      !continuation.binding &&
-      [
-        'assessment-result-invalid',
-        'assessment-result-incomplete',
-        'assessment-decision-required',
-        'assessment-decision-conflict',
-      ].includes(continuation.code ?? '')
-    ) {
-      continuation.phase = 'waiting';
-      delete continuation.code;
-    }
-    if (continuation?.phase === 'waiting' && assessmentDecisionMode(result.decision) === 'plan') {
-      continuation.phase = 'blocked';
-      continuation.code = 'continuation-auto-wait';
-    }
-    const presentation = assessmentPresentation(result, record, intake, current.workspace, {
-      debug: current.manifest.debug,
-      routingManifestPath:
-        current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
-      manifestPath:
-        current.manifestSources?.['/github/issue-assignment/assessment/guidance']?.path ??
-        current.manifestPath,
-    });
-    await save();
+    const result = parseAssessmentSubmission(input.result);
     return {
-      status: 'recorded' as const,
       id: record.id,
-      outcome: result.outcome,
-      previousResultDigest: automationHash(result),
-      handoff: assessmentHandoff(
-        record,
-        issueWorkflowMode(current.manifest.github?.notifications, record),
-        'codex',
-      ),
-      presentation,
-      instruction: assessmentSummaryInstructions('codex'),
+      ...renderNativeAssessment({
+        ...assessmentPresentationRequest(managedTargetUrl(intake)),
+        result: {
+          ...result,
+          reviewSummary:
+            result.reviewSummary ??
+            [
+              result.summary,
+              ...(result.outcome === 'clarification-needed'
+                ? result.questions
+                : result.outcome === 'operator-setup-blocker'
+                  ? [result.remediation]
+                  : []),
+            ].join('\n\n'),
+        },
+      }),
     };
   }
   throw new Error('dispatch-action-invalid');

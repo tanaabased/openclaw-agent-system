@@ -1,7 +1,6 @@
 import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
-import type { ImplementationResult } from './implementation-result.ts';
 import type { ReplyOwner } from './reply-owner.ts';
 
 /** project common reply obligations; native adapters supply only custody and lifecycle evidence. */
@@ -22,7 +21,6 @@ export default function replyOwnerContext(input: {
     pushedHead?: string;
     pullRequest?: { pullRequestNodeId: string; pullRequestNumber: number };
   };
-  implementation?: ImplementationResult;
 }): ReplyOwner {
   const { record, intake, delivery } = input;
   const observationOnly = Boolean(delivery?.adopted && !delivery.pushedHead);
@@ -54,7 +52,6 @@ export default function replyOwnerContext(input: {
       ...(record.feedback.completed ?? []),
       ...record.feedback.events,
     ],
-    implementation: input.implementation,
     deliveredPullRequest: observationOnly ? undefined : delivery?.pullRequest,
     publisherLogin: intake?.receiving.login,
   };

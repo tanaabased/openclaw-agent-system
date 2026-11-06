@@ -91,7 +91,7 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-issue-conversation/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
-openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for plan-ready --refresh --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1 and .observation.items[0].assessmentOutcome == "plan-ready"'
+openclaw agent-system notifications wait --repository tanaabased/big-test-bucket --kind issue --number "$number" --for worktree-ready --refresh --timeout 600 --json | tee "$TMPDIR/notification-plan.json" | jq -e '.status == "completed" and (.observation.items | length) == 1'
 conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notification-plan.json")
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
 run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-dispatch-before.json")
@@ -180,23 +180,18 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const read = name => JSON.parse(readFileSync(process.env.TMPDIR + '/notification-' + name + '.json', 'utf8'));
 const initial = read('dispatch-before'), question = read('ordinary-Clarify'), answer = read('ordinary-Answer');
-assert.deepEqual(question.result, initial.result);
-assert.deepEqual(question.assessmentHistory, initial.assessmentHistory);
-assert.equal(answer.result.outcome, 'plan-ready');
 for (const record of [question, answer]) {
   assert.equal(record.threadId, initial.threadId);
   assert.equal(record.worktree, initial.worktree);
   assert.equal(record.work, undefined);
-  assert.deepEqual(record.assessmentHistory[0].result, initial.result);
-  assert.equal(record.stageReceipt.selection.skill.name, 'generic-assessment');
+  assert.equal(record.result, undefined);
+  assert.equal(record.stageReceipt, undefined);
+  assert.equal(record.assessmentHistory, undefined);
+  assert.equal(record.assessment.requestedSkill, 'generic-assessment');
 }
-assert.equal(answer.assessmentHistory.length, 2);
-assert.ok(answer.result.fullAssessment.startsWith(question.result.fullAssessment));
-assert.equal(answer.resultTurnId, 'notification-ordinary-Answer');
-assert.equal(answer.stageReceipt.binding.turnId, answer.resultTurnId);
 NODE
 
-# should reuse a managed assessment without resubmission or changing its receipts
+# should format a fresh assessment in the existing managed chat without saving a revision
 conversation=$(jq -er .threadId "$TMPDIR/notification-ordinary-Answer.json")
 checkout=$(jq -er .worktree "$TMPDIR/notification-ordinary-Answer.json")
 target=$(jq -er .html_url "$TMPDIR/notification-issue.json")

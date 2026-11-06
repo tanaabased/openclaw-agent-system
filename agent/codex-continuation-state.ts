@@ -71,7 +71,7 @@ export const codexContinuationStateSchema = Type.Object(
         {
           turnId: text,
           afterItemId: text,
-          assessmentDigest: hash,
+          assessmentDigest: Type.Optional(hash),
           receiptId: Type.Optional(text),
         },
         { additionalProperties: false },

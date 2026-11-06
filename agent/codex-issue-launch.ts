@@ -1,3 +1,4 @@
+import launchPending from './launch-pending.ts';
 import { routingInstructionsDigest } from './routing-instructions.ts';
 import { Value } from 'typebox/value';
 
@@ -80,7 +81,7 @@ export default async function codexIssueLaunch(
         !record?.manualIssue ||
         record.sourceThreadId !== context.binding.session ||
         (admitted.status === 'existing' &&
-          (record.result || record.handoff || input.operation !== 'reconcile'))
+          (!launchPending(record) || input.operation !== 'reconcile'))
       )
         return admitted;
       const admissions = managedIssueState(await current.store.read(), state.records)!;

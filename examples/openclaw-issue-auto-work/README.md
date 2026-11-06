@@ -6,7 +6,7 @@ initial assessment turn without another operator handoff.
 ## What Belongs Here
 
 - Initial assignment-to-delivery in the same native chat, worktree, and assessment run.
-- Retained private results, exact linked PR and public receipts, and duplicate prevention.
+- Native plan context, exact linked PR and public receipts, and duplicate prevention.
 
 ## What Does Not Belong Here
 
@@ -16,7 +16,7 @@ initial assessment turn without another operator handoff.
 
 ## Notes
 
-- Strict AIMock supplies the decisions and tool choices. GitHub requests, native execution, stage changes, publication, and saved results remain real. Model interpretation and desktop rendering need separate verification.
+- Strict AIMock supplies the decisions and tool choices. GitHub requests, native execution, stage changes, publication, and native receipts remain real. Model interpretation and desktop rendering need separate verification.
 - Adapted from the automatic-delivery fixtures in #434 (`a17b4f7`, authored by `emoriwan`), with one disposable issue and PR per job.
 - Account checks use the live provider. Only Tanaabot is assigned. Refreshes target this test issue, and cleanup stops the Gateway before closing external resources.
 
@@ -96,7 +96,7 @@ conversation=$(jq -er .observation.items[0].workflow.conversation "$TMPDIR/notif
 run_id=$(jq -ers --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then .[0].assessmentTurn.runId else error("one conversation required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es --arg key "$conversation" '[.[].records[] | select(.threadId == $key)] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-delivery.json"
-jq -e --arg run "$run_id" '.progression.stage == "implementation" and .progression.via == "auto" and .work.turn.runId == $run and .work.turn.origin == "assessment" and .work.result.outcome == "done" and .work.delivery.reconciled and .work.delivery.pullRequest.pullRequestNodeId != null and .work.delivery.announcement.receipt.nodeId != null and .stageReceipt.binding.worktree == .worktree and .stageReceipt.binding.threadId == .threadId and (.result.fullAssessment | length > 0) and .assessmentSummaries[0].receipt.nodeId != null and (.feedback.events | length) == 0' "$TMPDIR/notification-delivery.json"
+jq -e --arg run "$run_id" '.progression.stage == "implementation" and .progression.via == "auto" and .work.implementation.runId == $run and .work.turn == null and .result == null and .stageReceipt == null and .work.result == null and .work.delivery.reconciled and .work.delivery.pullRequest.pullRequestNodeId != null and .work.delivery.announcement.receipt.nodeId != null and .pullRequestLink == .work.delivery.pullRequest and .assessmentSummaries == null and (.feedback.events | length) == 0' "$TMPDIR/notification-delivery.json"
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$run_id" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-history.json"
 jq -e --arg run "$run_id" --slurpfile saved "$TMPDIR/notification-delivery.json" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | startswith("> ") and contains("https://github.com/tanaabased/big-test-bucket/pull/" + ($saved[0].work.delivery.pullRequest.pullRequestNumber | tostring)) and (gsub("(?m)^> ?"; "") | contains($saved[0].work.delivery.announcement.publicText))))' "$TMPDIR/notification-history.json"
 openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" '.session.sessionId == $saved[0].sessionCreation.sessionId and .session.spawnedCwd == $saved[0].worktree and .session.thinkingLevel == $saved[0].request.thinkingLevel'
@@ -111,10 +111,11 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 60
 branch=$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$branch" --state all --json number | jq -e --argjson pr "$pr" 'length == 1 and .[0].number == $pr'
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-comments.json"
-jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" '[.[] | select(.user.login == "tanaabot")] | length == 2 and any(.[]; .node_id == $saved[0].assessmentSummaries[0].receipt.nodeId) and any(.[]; .node_id == $saved[0].work.delivery.announcement.receipt.nodeId)' "$TMPDIR/notification-comments.json"
+jq -s '[.[] | (.drafts // [.])[] | select(.update != null and .receipt != null)]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-summary-drafts.json"
+jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" --slurpfile summaries "$TMPDIR/notification-summary-drafts.json" '[.[] | select(.user.login == "tanaabot")] | length == 2 and any(.[]; .node_id == $summaries[0][0].receipt.nodeId) and any(.[]; .node_id == $saved[0].work.delivery.announcement.receipt.nodeId)' "$TMPDIR/notification-comments.json"
 
 # should retain the structured auto work decision and its rationale
-jq -e ' .result.decision.mode == "work" and (.result.decision.reasons | length > 0)' "$TMPDIR/notification-delivery.json"
+jq -e ' .implementationDecision.mode == "work" and (.implementationDecision.reasons | length > 0)' "$TMPDIR/notification-delivery.json"
 ```
 
 ## Cleanup

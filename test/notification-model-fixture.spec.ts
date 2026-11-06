@@ -211,42 +211,47 @@ for (const scenario of [
     });
   }
 
-  async function publishNativeQuestion(input: ChatCompletionRequest) {
+  async function publishNativePlan(
+    input: ChatCompletionRequest,
+    selectedScenario = scenario,
+    continues = false,
+  ) {
     const target = 'https://github.com/owner/repo/issues/3';
-    const formatting = await action(input, 'assessment');
+    const formatting = await action(input, 'assessment', selectedScenario);
     assert.equal(formatting.operation, 'render');
     const formatted = renderNativeAssessment(formatting);
     assert.equal(formatted.retained, false);
     append(input, 'native-plan-render', formatted);
-    const observed = await action(input, 'reply');
+    const observed = await action(input, 'reply', selectedScenario);
     assert.equal(observed.operation, 'context');
     assert.equal(observed.target, target);
     append(input, 'native-plan-context', { status: 'status-update-context', observation: digest });
-    const composed = await action(input, 'reply');
+    const composed = await action(input, 'reply', selectedScenario);
     assert.equal(composed.operation, 'compose');
-    assert.match(composed.privateText!, /Should disposable test issues/);
+    assert.match(composed.privateText!, /disposable (?:test )?issues/);
     append(input, 'native-plan-compose', {
       status: 'composition-ready',
       id,
       digest,
       selection: { defaultSkill: true, skill: { path: '/fixture/reply/SKILL.md' } },
     });
-    const read = await response(input);
+    const read = await response(input, selectedScenario);
     assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
     append(input, 'summary-skill', 'Reply guidance');
-    assert.equal((await action(input, 'reply')).operation, 'candidate');
+    assert.equal((await action(input, 'reply', selectedScenario)).operation, 'candidate');
     append(input, 'native-plan-candidate', {
       status: 'candidate-recorded',
       publication: 'workflow-authorized',
     });
-    assert.equal((await action(input, 'reply')).operation, 'publish');
+    assert.equal((await action(input, 'reply', selectedScenario)).operation, 'publish');
     append(input, 'native-plan-preview', { status: 'publication-ready', digest });
-    assert.equal((await action(input, 'reply')).digest, digest);
+    assert.equal((await action(input, 'reply', selectedScenario)).digest, digest);
     append(input, 'native-plan-publish', {
       status: 'published',
       presentation: 'Question published.',
     });
-    assert.deepEqual(await response(input), { content: 'Question published.' });
+    if (!continues)
+      assert.deepEqual(await response(input, selectedScenario), { content: 'Question published.' });
   }
 
   describe(`examples/${scenario.id} model fixture`, () => {
@@ -309,45 +314,19 @@ for (const scenario of [
         );
         append(input, 'direct-assessment-invalid', diagnostic);
         const corrected = await action(input, 'assessment');
-        assert.equal(corrected.operation, 'result');
+        assert.equal(corrected.operation, 'render');
         assert.deepEqual(corrected, {
           ...malformed,
           result: { ...malformed.result, plan: malformed.result.fullAssessment },
         });
         append(input, 'direct-assessment-result', {
-          status: 'recorded',
-          presentation: 'Retained complete assessment.',
-          handoff: { next: 'assessment-only' },
+          status: 'formatted',
+          retained: false,
+          presentation: 'Formatted complete assessment.',
         });
-        assert.deepEqual(await response(input), { content: 'Retained complete assessment.' });
+        assert.deepEqual(await response(input), { content: 'Formatted complete assessment.' });
       });
 
-    if (scenario.id === 'openclaw-issue-journey')
-      it('should preserve a failed recovery candidate without retrying or claiming publication', async () => {
-        const input = request(`recover only the pending public assessment summary with id ${id}`);
-        append(input, 'recovery-present', {
-          status: 'presented',
-          presentation: 'Retained assessment.',
-        });
-        append(input, 'detail-readback', {
-          status: 'presented',
-          presentation: 'Managed Git confirmed this worktree. Verified the managed worktree.',
-        });
-        append(input, 'summary-compose', {
-          status: 'composition-ready',
-          digest,
-          selection: { defaultSkill: true, skill: { path: '/tmp/SUMMARY.md' } },
-        });
-        append(input, 'summary-skill', { text: 'Selected reply guidance' });
-        assert.equal((await action(input, 'summary')).operation, 'candidate');
-        append(input, 'summary-candidate', {
-          status: 'waiting',
-          code: 'dispatch-operation-failed',
-        });
-        assert.deepEqual(await response(input), {
-          content: 'Assessment summary candidate was not recorded: dispatch-operation-failed.',
-        });
-      });
     if (scenario.id === 'openclaw-pr-journey')
       it('should report a retained provider obstacle without retrying it or losing the diagnostic to strict matching', async () => {
         const input = request(intakePrompt);
@@ -609,7 +588,7 @@ for (const scenario of [
 
     if (!['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id))
       it('should consume fresh later evidence after recovery', async () => {
-        const later = request(`Refresh retained assessment for managed issue ${id}`);
+        const later = request(`Refresh native assessment for managed issue ${id}`);
         assert.equal(matchFixture([...scenario.fixtures], later), null);
         later.messages.push({
           role: 'user',
@@ -633,40 +612,13 @@ for (const scenario of [
             evidence: [],
             progress: { completed: [], remaining: [] },
           },
-          evidence: { body: 'notification-hidden-later-fact' },
-        });
-        assert.equal((await action(later, 'present')).includeDetails, true);
-        append(later, 'refresh-history', {
-          status: 'presented',
-          previousResult: {
-            version: 1,
-            outcome: 'plan-ready',
-            summary: 'Retained.',
-            assessment: 'Observed.',
-            plan: 'Complete retained plan.',
-            fullAssessment: 'Complete retained plan.',
-            evidence: [],
-            progress: { completed: [], remaining: [] },
+          currentTurnId: 'native-refresh',
+          evidence: {
+            source: 'https://github.com/owner/repo/issues/3',
+            body: 'notification-hidden-later-fact',
           },
         });
-        const revised = await action(later, 'result');
-        assert.equal(revised.previousResultDigest, digest);
-        assert.ok(!JSON.stringify(revised.result).includes('notification-hidden-later-fact'));
-        append(later, 'refresh-result', { status: 'recorded', presentation: '> ## 🧭 Plan ready' });
-        const nextResponse = await response(later);
-        assert.equal('content' in nextResponse && nextResponse.content, '> ## 🧭 Plan ready');
-        assert.deepEqual(await action(later, 'present'), {
-          action: 'present',
-          id,
-          includeDetails: true,
-        });
-        append(later, 'detail-readback', {
-          status: 'presented',
-          presentation:
-            revised.result.fullAssessment +
-            ' Managed Git confirmed this worktree. Verified the managed worktree.',
-        });
-        assert.equal((await action(later, 'summary')).operation, 'compose');
+        await publishNativePlan(later);
       });
 
     it('should recover blocked child context without changing its identity or accepting other blockers', async () => {
@@ -706,7 +658,7 @@ for (const scenario of [
       }
     });
 
-    it('should retain a plan only after native context and git verify its worktree', async () => {
+    it('should format a native plan only after context and git verify its worktree', async () => {
       const input = request(
         `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
       );
@@ -746,37 +698,10 @@ for (const scenario of [
         const read = await response(input);
         assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
         append(input, 'assessment-skill', 'Default assessment.');
-        await publishNativeQuestion(input);
+        await publishNativePlan(input);
         return;
       }
-      const saved = await action(input, 'result');
-      assert.equal(saved.id, id);
-      assert.equal(saved.result.outcome, 'plan-ready');
-      const presentation = saved.result.reviewSummary ?? 'The complete retained presentation.';
-      append(input, 'result', { status: 'recorded', presentation });
-      const nextResponse = await response(input);
-      assert.equal('content' in nextResponse && nextResponse.content, presentation);
-      if (['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id)) {
-        const held = scenario.id === 'openclaw-issue-progression';
-        await publishProgressionSummary(input, scenario, held);
-        assert.deepEqual(await response(input), {
-          content: held ? 'Summary held; no publication.' : 'Published retained plan.',
-        });
-      }
-      if (!['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id)) {
-        assert.deepEqual(await action(input, 'present'), {
-          action: 'present',
-          id,
-          includeDetails: true,
-        });
-        append(input, 'detail-readback', {
-          status: 'presented',
-          presentation:
-            saved.result.fullAssessment +
-            ' Managed Git confirmed this worktree. Verified the managed worktree.',
-        });
-        assert.equal((await action(input, 'summary')).operation, 'compose');
-      }
+      await publishNativePlan(input);
       for (const value of [
         { ...context, runtime: 'codex' },
         { ...context, id: 'c'.repeat(64) },
@@ -826,7 +751,7 @@ for (const scenario of [
       append(invalid, 'git', { exitCode: 0, stdout: '/tmp/other', truncated: false });
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
     });
-    if (['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id))
+    if (scenario.id === 'openclaw-pr-journey')
       it('should finish response-only recovery without repeating assessment or implementation', async () => {
         const input = request(`recover only the pending public assessment summary with id ${id}`);
         await action(input, 'present');
@@ -893,14 +818,6 @@ for (const scenario of [
             },
             project: { path: '/tmp/owned' },
           });
-          if (!direct) {
-            await action(automatic, 'present');
-            append(automatic, 'recovery-present', {
-              status: 'presented',
-              presentation: 'The retained plan.',
-            });
-            await publishProgressionSummary(automatic);
-          }
           const question = await response(automatic);
           assert.deepEqual(question, {
             content: 'Should cleanup happen after evidence is captured?',
@@ -1007,6 +924,8 @@ for (const scenario of [
               runtime: 'openclaw',
               id,
               mode: mode === 'auto' ? 'auto' : 'work',
+              evidence: { source: 'https://github.com/owner/repo/issues/3' },
+              currentTurnId: 'native-turn',
               project: { path: '/tmp/owned' },
               resultContract: 'assessment-result/v1',
               assessment: {
@@ -1021,21 +940,7 @@ for (const scenario of [
             const read = await response(input, workScenario);
             assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
             append(input, 'assessment-skill', 'Explain the cleanup sequence.');
-            const assessment = await action(input, 'result', workScenario);
-            if (mode === 'auto') {
-              const decision = assessment.result.decision;
-              assert.ok(decision && 'mode' in decision);
-              assert.equal(decision.mode, 'work');
-              assert.ok(decision.reasons.length > 0);
-            } else assert.equal(assessment.result.decision, undefined);
-            if (mode === 'custom')
-              assert.match(assessment.result.fullAssessment!, /sanitized evidence/u);
-            append(input, 'result', {
-              status: 'recorded',
-              presentation: 'Retained plan.',
-              handoff: { next: 'implementation' },
-            });
-            await publishProgressionSummary(input, workScenario);
+            await publishNativePlan(input, workScenario, true);
           }
           if (mode === 'operator')
             assert.equal(
@@ -1073,14 +978,6 @@ for (const scenario of [
               );
             append(input, stage, { exitCode: 0, truncated: false, stdout: '' });
           }
-          await action(input, 'implementation-result', workScenario);
-          append(input, 'work-result', {
-            status: 'recorded',
-            handoff: {
-              next: 'delivery',
-              request: { action: 'delivery', id, operation: 'prepare' },
-            },
-          });
           assert.equal((await action(input, 'delivery', workScenario)).operation, 'prepare');
           append(input, 'delivery-prepare', { status: 'prepared', digest });
           assert.equal((await action(input, 'delivery', workScenario)).digest, digest);
@@ -1143,15 +1040,10 @@ for (const scenario of [
           const retry = request(
             `Operator request for managed issue ${id}: Show the saved plan and existing PR card again.`,
           );
-          await action(retry, 'present', workScenario);
-          append(retry, 'assessment-present', {
-            status: 'presented',
-            presentation: '> Saved plan',
-          });
           assert.equal((await action(retry, 'delivery', workScenario)).operation, 'present');
           append(retry, 'delivery-present', { status: 'presented', presentation: '> PR card' });
           assert.deepEqual(await response(retry, workScenario), {
-            content: '> Saved plan\n\n> PR card',
+            content: '> PR card',
           });
         });
 
@@ -1336,10 +1228,7 @@ for (const scenario of [
         });
       });
     if (scenario.id === 'openclaw-issue-journey')
-      it('should adapt ordinary clarification and an answer using retained full output', async () => {
-        let previous: Record<string, unknown> = {
-          fullAssessment: 'Original findings and uncertainty.',
-        };
+      it('should answer ordinary clarification using native context without saved revisions', async () => {
         for (const stage of ['Clarify', 'Answer']) {
           const input = request(
             `[Wed 2026-10-21 17:32 UTC] ${stage} ordinary assessment for managed issue ${id}`,
@@ -1357,8 +1246,8 @@ for (const scenario of [
             id,
             project: { path: '/tmp/managed-worktree' },
             assessment: { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } },
-            previousResult: previous,
-            previousResultDigest: digest,
+            currentTurnId: 'native-answer',
+            evidence: { source: 'https://github.com/owner/repo/issues/3' },
             resultContract: 'assessment-result/v1',
           });
           const read = await response(input);
@@ -1372,15 +1261,7 @@ for (const scenario of [
             });
             continue;
           }
-          assert.equal((await action(input, 'present')).includeDetails, true);
-          append(input, 'revision-history', { status: 'presented', previousResult: previous });
-          const submission = await action(input, 'result');
-          assert.equal(submission.previousResultDigest, digest);
-          assert.equal(submission.result.outcome, 'plan-ready');
-          assert.ok(submission.result.fullAssessment!.startsWith(String(previous.fullAssessment)));
-          append(input, 'result', { status: 'recorded', presentation: 'Retained native review.' });
-          assert.deepEqual(await response(input), { content: 'Retained native review.' });
-          previous = submission.result;
+          await publishNativePlan(input);
         }
       });
     if (scenario.id !== 'openclaw-issue-progression')

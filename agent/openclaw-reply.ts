@@ -193,7 +193,6 @@ export default async function openClawReply(input: {
                 record.request.key !== record.threadId ||
                 record.request.agentId !== manifest.agent.id,
               delivery: record.work?.delivery,
-              implementation: record.work?.result,
             }),
           ),
           caller.sessionKey,

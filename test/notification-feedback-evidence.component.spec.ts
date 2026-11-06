@@ -98,7 +98,6 @@ for (const [scenario, itemType] of [
               ]
             : [];
         await write('feedback', {
-          assessmentSummaries: summaries.map((nodeId) => ({ receipt: { nodeId } })),
           feedback: {
             events: [
               ...(scenario === 'openclaw-pr-journey'
@@ -116,6 +115,7 @@ for (const [scenario, itemType] of [
           },
         });
         await write('reply-drafts', [
+          ...summaries.map((nodeId) => ({ update: { facts: [] }, receipt: { nodeId } })),
           {
             feedback: { eventId: 'event' },
             receipt: { nodeId: 'reply' },

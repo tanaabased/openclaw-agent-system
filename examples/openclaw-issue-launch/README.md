@@ -82,12 +82,16 @@ let record;
 const deadline = Date.now() + 300000;
 while (Date.now() < deadline) {
   record = records()[0];
-  if (record?.result?.outcome === 'plan-ready') break;
+  if (record?.assessmentTurn?.runId) break;
   await setTimeout(1000);
 }
 assert.equal(records().length, 1);
-assert.equal(record?.result?.outcome, 'plan-ready');
-assert.ok(record.result.fullAssessment);
+assert.ok(record?.assessmentTurn?.runId);
+const terminal = await callGatewayFromCli('agent.wait', {json:true}, {runId:record.assessmentTurn.runId,timeoutMs:300000}, {scopes:['operator.admin'],progress:false,sharedStateMode:'read-only'});
+assert.equal(terminal.status, 'ok');
+record = records()[0];
+assert.equal(record.result, undefined);
+assert.equal(record.stageReceipt, undefined);
 assert.equal(record.intakeId, undefined);
 assert.equal(record.manualIssue.initiation.kind, 'operator');
 assert.equal(record.manualIssue.selections.mode, 'plan');
@@ -157,11 +161,15 @@ let record;
 const deadline = Date.now() + 300000;
 while (Date.now() < deadline) {
   record = records()[0];
-  if (record?.result?.outcome === 'plan-ready') break;
+  if (record?.assessmentTurn?.runId) break;
   await setTimeout(1000);
 }
 assert.equal(records().length, 1);
-assert.equal(record?.result?.outcome, 'plan-ready');
+assert.ok(record?.assessmentTurn?.runId);
+execFileSync(process.execPath, ['--import', 'tsx', process.env.GITHUB_WORKSPACE + '/scripts/wait-for-agent-run.ts', record.assessmentTurn.runId, '600000'], {stdio:'inherit'});
+record = records()[0];
+assert.equal(record.result, undefined);
+assert.equal(record.stageReceipt, undefined);
 assert.equal(record.manualIssue.pullRequest.headSha, pr.head.sha);
 assert.equal(record.manualIssue.pullRequest.authorId, pr.user.node_id);
 assert.equal(execFileSync('git', ['-C', record.worktree, 'rev-parse', 'HEAD'], {encoding:'utf8'}).trim(), pr.head.sha);

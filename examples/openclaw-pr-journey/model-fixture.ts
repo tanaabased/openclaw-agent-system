@@ -139,10 +139,128 @@ function call(stage: string, name: string, args: unknown): FixtureResponse {
 }
 
 interface PRFixtureOptions {
-  withoutSavedResults?: boolean;
   initialQuestion?: boolean;
   incorporateCollaborator?: boolean;
   interruptFeedbackReply?: boolean;
+}
+
+function publicText(composed: Record<string, unknown>, text: string) {
+  const selected = composed.selection as {
+    defaultSkill: boolean;
+    guidance?: { content: string };
+  };
+  if (selected.defaultSkill) return text;
+  assert.match(selected.guidance!.content, /Evidence first/u);
+  return `Evidence first: ${text} Live interpretation remains untested.`;
+}
+
+export function nativePlanResponse(
+  context: Record<string, unknown>,
+  result: (stage: string) => Record<string, unknown> | undefined,
+  dispatch: (stage: string, input: Record<string, unknown>) => FixtureResponse,
+  call: (stage: string, name: string, input: Record<string, unknown>) => FixtureResponse,
+  skillRead: boolean,
+  initialQuestion = false,
+  source: Record<string, unknown> = {},
+  leavePending = false,
+): FixtureResponse | undefined {
+  const target = (context.evidence as { source?: string })?.source;
+  assert.ok(target);
+  const plan =
+    typeof source.reviewSummary === 'string'
+      ? source.reviewSummary
+      : initialQuestion
+        ? 'Should disposable test issues be closed after capturing evidence?'
+        : 'Add a short cleanup rule for disposable test issues, then check and commit the diff before creating the PR.';
+  const rendered = result('native-plan-render');
+  if (!rendered)
+    return dispatch('native-plan-render', {
+      action: 'assessment',
+      operation: 'render',
+      target,
+      result: {
+        version: 1,
+        outcome: initialQuestion ? 'clarification-needed' : 'plan-ready',
+        summary: plan,
+        assessment: 'Disposable test issues need an explicit cleanup rule.',
+        fullAssessment:
+          'Inspected the existing test guidance. Add a cleanup rule after evidence capture, preserve evidence limits, review the diff and verify both runtimes. No deployment is needed.',
+        reviewSummary: plan,
+        ...(initialQuestion
+          ? { questions: [plan] }
+          : {
+              plan: 'Update the disposable issue cleanup guidance, inspect the diff, commit it and create the authorized PR.',
+            }),
+        evidence: [],
+        progress: {
+          completed: ['Inspected test guidance.'],
+          remaining: ['Apply the agreed cleanup rule.'],
+        },
+        ...source,
+      },
+    });
+  assert.equal(rendered.status, 'formatted');
+  assert.equal(rendered.retained, false);
+  assert.ok((rendered.assessment as { fullAssessment: string }).fullAssessment);
+  const observed = result('native-plan-context');
+  if (!observed)
+    return {
+      ...dispatch('native-plan-context', {
+        action: 'reply',
+        operation: 'context',
+        purpose: 'status-update',
+        target,
+      }),
+      content: String(rendered.presentation),
+    };
+  assert.equal(observed.status, 'status-update-context');
+  const composed = result('native-plan-compose');
+  if (!composed)
+    return dispatch('native-plan-compose', {
+      action: 'reply',
+      operation: 'compose',
+      purpose: 'status-update',
+      target,
+      privateText: plan,
+      update: {
+        observation: observed.observation,
+        facts: [
+          { key: 'initial-plan', reference: context.currentTurnId, revision: '1', text: plan },
+        ],
+      },
+    });
+  assert.equal(composed.status, 'composition-ready');
+  const skill = (composed.selection as { skill: { path: string } }).skill;
+  if (!skillRead) return call('summary-skill', 'read', { path: skill.path });
+  const candidate = result('native-plan-candidate');
+  if (!candidate)
+    return dispatch('native-plan-candidate', {
+      action: 'reply',
+      operation: 'candidate',
+      id: composed.id,
+      digest: composed.digest,
+      publicText: publicText(composed, plan),
+    });
+  assert.equal(candidate.publication, 'workflow-authorized');
+  if (leavePending) return { content: String(rendered.presentation) };
+  const preview = result('native-plan-preview');
+  if (!preview)
+    return dispatch('native-plan-preview', {
+      action: 'reply',
+      operation: 'publish',
+      id: composed.id,
+    });
+  assert.equal(preview.status, 'publication-ready');
+  const published = result('native-plan-publish');
+  if (!published)
+    return dispatch('native-plan-publish', {
+      action: 'reply',
+      operation: 'publish',
+      id: composed.id,
+      digest: preview.digest,
+    });
+  assert.equal(published.status, 'published');
+  return { content: String(published.presentation) };
 }
 
 /** fixture judgment follows native structured results; it never manufactures their identities. */
@@ -189,15 +307,6 @@ function respond(
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
   };
-  const publicText = (composed: Record<string, unknown>, text: string) => {
-    const selected = composed.selection as {
-      defaultSkill: boolean;
-      guidance?: { content: string };
-    };
-    if (selected.defaultSkill) return text;
-    assert.match(selected.guidance!.content, /Evidence first/u);
-    return `Evidence first: ${text} Live interpretation remains untested.`;
-  };
   const summary = (id: string, presentation?: string): FixtureResponse | undefined => {
     if (!presentation) {
       const shown = result('recovery-present');
@@ -242,101 +351,15 @@ function respond(
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   };
-  const nativePlan = (context: Record<string, unknown>): FixtureResponse | undefined => {
-    const target = (context.evidence as { source?: string })?.source;
-    assert.ok(target);
-    const plan = options.initialQuestion
-      ? 'Should disposable test issues be closed after capturing evidence?'
-      : 'Add a short cleanup rule for disposable test issues, then check and commit the diff before creating the PR.';
-    const rendered = result('native-plan-render');
-    if (!rendered)
-      return dispatch('native-plan-render', {
-        action: 'assessment',
-        operation: 'render',
-        target,
-        result: {
-          version: 1,
-          outcome: options.initialQuestion ? 'clarification-needed' : 'plan-ready',
-          summary: plan,
-          assessment: 'Disposable test issues need an explicit cleanup rule.',
-          fullAssessment:
-            'Inspected the existing test guidance. Add a cleanup rule after evidence capture, preserve evidence limits, review the diff and verify both runtimes. No deployment is needed.',
-          reviewSummary: plan,
-          ...(options.initialQuestion
-            ? { questions: [plan] }
-            : {
-                plan: 'Update the disposable issue cleanup guidance, inspect the diff, commit it and create the authorized PR.',
-              }),
-          evidence: [],
-          progress: {
-            completed: ['Inspected test guidance.'],
-            remaining: ['Apply the agreed cleanup rule.'],
-          },
-        },
-      });
-    assert.equal(rendered.status, 'formatted');
-    assert.equal(rendered.retained, false);
-    assert.ok((rendered.assessment as { fullAssessment: string }).fullAssessment);
-    const observed = result('native-plan-context');
-    if (!observed)
-      return {
-        ...dispatch('native-plan-context', {
-          action: 'reply',
-          operation: 'context',
-          purpose: 'status-update',
-          target,
-        }),
-        content: String(rendered.presentation),
-      };
-    assert.equal(observed.status, 'status-update-context');
-    const composed = result('native-plan-compose');
-    if (!composed)
-      return dispatch('native-plan-compose', {
-        action: 'reply',
-        operation: 'compose',
-        purpose: 'status-update',
-        target,
-        privateText: plan,
-        update: {
-          observation: observed.observation,
-          facts: [
-            { key: 'initial-plan', reference: context.currentTurnId, revision: '1', text: plan },
-          ],
-        },
-      });
-    assert.equal(composed.status, 'composition-ready');
-    const skill = (composed.selection as { skill: { path: string } }).skill;
-    if (!openClawAIMockToolResultText(messages, prefix + 'summary-skill'))
-      return call('summary-skill', 'read', { path: skill.path });
-    const candidate = result('native-plan-candidate');
-    if (!candidate)
-      return dispatch('native-plan-candidate', {
-        action: 'reply',
-        operation: 'candidate',
-        id: composed.id,
-        digest: composed.digest,
-        publicText: publicText(composed, plan),
-      });
-    assert.equal(candidate.publication, 'workflow-authorized');
-    const preview = result('native-plan-preview');
-    if (!preview)
-      return dispatch('native-plan-preview', {
-        action: 'reply',
-        operation: 'publish',
-        id: composed.id,
-      });
-    assert.equal(preview.status, 'publication-ready');
-    const published = result('native-plan-publish');
-    if (!published)
-      return dispatch('native-plan-publish', {
-        action: 'reply',
-        operation: 'publish',
-        id: composed.id,
-        digest: preview.digest,
-      });
-    assert.equal(published.status, 'published');
-    return { content: String(published.presentation) };
-  };
+  const nativePlan = (context: Record<string, unknown>) =>
+    nativePlanResponse(
+      context,
+      result,
+      dispatch,
+      call,
+      Boolean(openClawAIMockToolResultText(messages, prefix + 'summary-skill')),
+      options.initialQuestion,
+    );
   const recoveryId =
     /recover only the pending public assessment summary[\s\S]*?id ([a-f0-9]{64})/u.exec(
       prompt,
@@ -739,53 +762,14 @@ function respond(
         /cleanup sequence/u,
       );
     }
-    if (options.withoutSavedResults || options.initialQuestion) {
-      const published = nativePlan(context);
-      if (!published || 'toolCalls' in published || options.initialQuestion) return published;
-    } else {
-      const saved = result('result');
-      if (!saved)
-        return dispatch('result', {
-          action: 'result',
-          id,
-          result: {
-            version: 1,
-            ...(context.mode === 'auto'
-              ? {
-                  decision: {
-                    mode: 'work',
-                    reasons: ['A bounded disposable documentation change with explicit cleanup.'],
-                  },
-                }
-              : {}),
-            outcome: 'plan-ready',
-            summary: 'Document disposable issue cleanup.',
-            assessment: 'The admitted issue requests a small documentation change.',
-            planSummary: 'Describe closing disposable test issues after capturing evidence.',
-            plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
-            fullAssessment:
-              'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation or publication was performed.' +
-              (!selection.defaultSkill
-                ? ' Retain sanitized evidence before cleanup; live interpretation remains untested.'
-                : ''),
-            evidence: [
-              {
-                source: project.path,
-                status: 'observed',
-                detail: 'Managed Git confirmed this worktree.',
-              },
-            ],
-            progress: {
-              completed: ['Verified the managed worktree.'],
-              remaining: ['Implement after approval.'],
-            },
-          },
-        });
-      if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-      const summarized = summary(id, saved.presentation);
-      if (!summarized || 'toolCalls' in summarized) return summarized;
-      if (context.mode !== 'work' && context.mode !== 'auto') return summarized;
-    }
+    const published = nativePlan(context);
+    if (
+      !published ||
+      'toolCalls' in published ||
+      options.initialQuestion ||
+      !['work', 'auto'].includes(String(context.mode))
+    )
+      return published;
     automaticId = id;
   }
   const operatorId =
@@ -900,27 +884,6 @@ function respond(
           });
         if (executed.exitCode !== 0 || executed.truncated !== false) return;
       }
-      if (!nativeWork && !options.withoutSavedResults) {
-        const saved = result('work-result');
-        if (!saved)
-          return dispatch('work-result', {
-            action: 'implementation-result',
-            id: operatorId,
-            implementationResult: {
-              outcome: 'done',
-              summary: 'Committed the disposable cleanup note.',
-              fullResult:
-                'Committed and diff-checked the cleanup note in the verified worktree.' +
-                (customized ? ' Retained sanitized evidence before cleanup.' : ''),
-            },
-          });
-        const handoff = saved.handoff as { next?: string; request?: Record<string, unknown> };
-        if (saved.status !== 'recorded' || handoff?.next !== 'delivery') return;
-        if (!result('delivery-prepare'))
-          return dispatch('delivery-prepare', { ...handoff.request, title, body });
-      }
-    }
-    if (!retry) {
       const prepared = result('delivery-prepare');
       if (!prepared)
         return dispatch('delivery-prepare', {
@@ -1038,11 +1001,7 @@ function respond(
             'Publication retained. Presentation intentionally deferred for recovery coverage.',
         };
     }
-    if (retry) {
-      const plan = result('assessment-present');
-      if (!plan) return dispatch('assessment-present', { action: 'present', id: operatorId });
-      if (plan.status !== 'presented' || typeof plan.presentation !== 'string') return;
-    } else {
+    if (!retry) {
       const repeated = result('delivery-repeat');
       if (!repeated)
         return dispatch('delivery-repeat', {
@@ -1061,12 +1020,7 @@ function respond(
       });
     if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
     return {
-      content: [
-        retry ? result('assessment-present')?.presentation : undefined,
-        presented.presentation,
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
+      content: presented.presentation,
     };
   }
 }

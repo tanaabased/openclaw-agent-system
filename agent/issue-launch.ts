@@ -1,3 +1,4 @@
+import launchPending from './launch-pending.ts';
 import { assertDispatchStorage } from './dispatch-storage.ts';
 import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import IssueDeliveryProvider, {
@@ -30,6 +31,8 @@ export default async function issueLaunch<
   R extends SharedDispatchRecord & {
     delivery?: ExistingDelivery;
     work?: { delivery?: ExistingDelivery };
+    sessionCreation?: { verified?: true };
+    assessmentTurn?: { runId: string; status: string };
   },
 >(input: {
   action: LaunchRequest;
@@ -261,7 +264,7 @@ export default async function issueLaunch<
         destination: record.threadId,
         sameConversation: record.threadId === context.binding.session,
         phase: record.phase,
-        pending: !record.result && !record.handoff,
+        pending: launchPending(record),
         instruction:
           'Reuse this managed issue destination and its current stage. Do not create another session or repeat completed setup. If creation or assessment dispatch is pending, call launch reconcile with this target/id from the original launching conversation.',
       };

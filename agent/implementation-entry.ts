@@ -86,33 +86,9 @@ export default async function implementationEntry(
       if (!entry) throw new Error('implementation-entry-unavailable');
       return implementationEntryDelivery({ entry, action: input, deps, save });
     });
-  if (
-    retained?.result &&
-    (input.operation === 'present' || (retained.result.outcome === 'done' && !input.scope))
-  ) {
-    if (input.result && automationHash(input.result) !== automationHash(retained.result))
-      throw new Error('implementation-result-conflict');
+  if (retained && input.operation === 'present') {
     await deps.assertCurrent();
-    if (input.operation === 'present') return implementationReadback(retained.id, retained.result);
-    return implementationMaterial(
-      {
-        status: 'presented',
-        runtime: deps.binding.runtime,
-        project: { path: checkout.path },
-        id: retained.id,
-        retained: true,
-        deliveryOnly: retained.result.outcome === 'done',
-        previousResult: retained.result,
-        presentation: implementationPresentation(retained.result),
-        handoff: implementationHandoff(retained.id, retained.result.outcome, deps.binding.runtime, {
-          publication: retained.scope === 'pull-request',
-        }),
-        instruction:
-          'Show the retained result. Do not repeat completed edits or commits. Follow the retained scope-aware handoff and original publication receipts; never infer publication authority from the plan.',
-      },
-      { action: 'implementation', operation: 'context', id: retained.id },
-      input.material,
-    );
+    return implementationReadback(retained.id, retained.result);
   }
   const provider = await deps.connectProvider();
   const repo = await provider.getRepository(locator.owner, locator.name);
@@ -186,7 +162,7 @@ export default async function implementationEntry(
         });
         if (transition.status !== 'ready') throw new Error(transition.reason);
         await save();
-        entry.selection ??= (
+        entry.selection = (
           await selectWorkflowStage({
             stage: 'implementation',
             configuration: deps.manifest.github?.notifications?.issueAssignment?.implementation,
@@ -206,7 +182,6 @@ export default async function implementationEntry(
           id: entry.id,
           path: checkout.path,
           implementation: entry.selection,
-          previousResult: entry.result,
           scope: entry.scope,
           direct: true,
         }),
@@ -218,7 +193,7 @@ export default async function implementationEntry(
           deps.now,
         ),
         instructions:
-          'Execute the selected implementation body once using this verified context; never invoke its bootstrap again. Preserve partial files and follow the latest native plan and user direction. The plan supplied to this tool stays in native conversation; Agent System does not save or reload it. Do not assess, create another chat/worktree, activate notifications or change session settings. Respect the retained publicationAuthorized scope. Local scope forbids push and PR publication. A plan and skill composition grant no publication authority; pull-request scope is collected only from an explicit operator publication request, not inferred from the plan. For requested publication use the host-owned delivery handoff, never publish independently. Built-in and custom skills return their ordinary complete substantive output without Agent System fields or commands. You, the calling agent, preserve that output unchanged inside fullResult and construct result matching resultSchema: outcome done|blocked, summary and fullResult. Ask questions directly in native chat without submitting a clarification result. Submit dispatch implementation operation result with the returned id and that result object; do not submit the prose itself as result. Only the runtime acknowledgment proves recording. After an uncertain submission, refresh this same context and reconcile its retained previousResult before retrying; never repeat completed implementation. Keep partial files and questions in the native conversation; an answer is ordinary input and needs no clarification checkpoint. Existing publication effects must resume through their original owner and receipts, never a substitute publication.',
+          'Execute the selected implementation body once using this verified context; never invoke its bootstrap again. Preserve partial files and follow the latest native plan and user direction. The plan supplied to this tool stays in native conversation; Agent System does not save or reload it. Do not assess, create another chat/worktree, activate notifications or change session settings. Respect the retained publicationAuthorized scope. Local scope forbids push and PR publication. A plan and skill composition grant no publication authority; pull-request scope is collected only from an explicit operator publication request, not inferred from the plan. When the authorized work is complete and verified, use dispatch implementation delivery prepare with this id, title and body. Result recording is optional history and never a delivery prerequisite. Report ordinary substantive output and ask questions directly in native chat. Read historical results only on explicit request or to reconcile a particular attempted operation; they do not replace current direction. Keep partial files and questions in the native conversation; an answer is ordinary input and needs no clarification checkpoint. Existing publication effects must resume through their original owner and receipts, never a substitute publication.',
       };
       return implementationMaterial(
         response,

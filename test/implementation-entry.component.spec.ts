@@ -116,7 +116,7 @@ describe('agent/implementation-entry', () => {
     deps.connectProvider = async () => {
       throw new Error('completed work must recover without provider access');
     };
-    const recovered = await call('context', { id: first.id });
+    const recovered = await call('present', { id: first.id });
     assert.equal(recovered.status, 'presented');
     assert.ok('previousResult' in recovered);
     assert.deepEqual(recovered.previousResult, ready);
@@ -165,8 +165,8 @@ describe('agent/implementation-entry', () => {
       deps.binding.runtime = runtime;
       const first = await call();
       assert.ok('implementation' in first && first.implementation);
-      assert.equal(first.plan, undefined);
-      assert.equal(first.assessment, undefined);
+      assert.equal('plan' in first, false);
+      assert.equal('assessment' in first, false);
       assert.equal(first.issueStage, 'implementation');
       assert.equal(first.resultContract, 'implementation-result/v1');
       assert.ok('publicationAuthorized' in first);
@@ -175,25 +175,19 @@ describe('agent/implementation-entry', () => {
       const resumed = await call('context', { id: first.id });
       assert.ok('implementation' in resumed);
       assert.deepEqual(resumed.implementation, first.implementation);
-      assert.equal(selections.length, 1);
+      assert.equal(selections.length, 2);
       const saved = await call('result', { id: first.id, result: ready });
       assert.ok('presentation' in saved);
       assert.equal(saved.presentation, ready.fullResult);
       assert.deepEqual('handoff' in saved && saved.handoff, { next: 'complete' });
-      deps.resolveSkill = async () => {
-        throw new Error('unexpected selection');
-      };
-      deps.connectProvider = async () => {
-        throw new Error('unexpected provider');
-      };
+      deps.turnId = 'followup';
+      deps.inputId = 'new-direction';
       const completed = await call('context', { id: first.id });
-      assert.equal(completed.status, 'presented');
-      assert.ok('previousResult' in completed);
-      assert.deepEqual(completed.previousResult, ready);
-      await assert.rejects(
-        call('result', { id: first.id, result: { ...ready, summary: 'Changed' } }),
-        /implementation-result-conflict/,
-      );
+      assert.equal(completed.status, 'verified');
+      assert.equal('previousResult' in completed, false);
+      const readback = await call('present', { id: first.id });
+      assert.ok('previousResult' in readback);
+      assert.deepEqual(readback.previousResult, ready);
     });
   }
   it('should reject malformed execution and delivery requests before native or provider access', async () => {
@@ -222,8 +216,7 @@ describe('agent/implementation-entry', () => {
     deps.inputId = 'answer-input';
     const answered = await call('context', { id: missing.id });
     assert.equal(answered.status, 'verified');
-    assert.ok('assessment' in answered);
-    assert.equal(answered.assessment, undefined);
+    assert.equal('assessment' in answered, false);
   });
   it('should not implicitly load an old assessment when the native plan is missing', async () => {
     const context = await assessmentEntry(
@@ -274,9 +267,8 @@ describe('agent/implementation-entry', () => {
       /implementation-context-required/,
     );
     const resumed = await call('context', { id: first.id });
-    assert.ok('previousResult' in resumed);
-    assert.equal(resumed.previousResult, undefined);
-    assert.equal(selections.length, 1);
+    assert.equal('previousResult' in resumed, false);
+    assert.equal(selections.length, 3);
     assert.equal((await call('result', { id: first.id, result: ready })).status, 'recorded');
   });
   it('should keep ownership failures ahead of provider access and never fall back to manual work', async () => {
@@ -380,7 +372,7 @@ describe('agent/implementation-entry', () => {
       );
       if (configuration?.guidance) assert.ok(first.implementation.guidance?.content);
       await call('context', { id: first.id });
-      assert.equal(selections.length, 1);
+      assert.equal(selections.length, 2);
     });
   }
   it('should retain original implementation authorization when a later operator explicitly requests publication', async () => {
@@ -391,7 +383,7 @@ describe('agent/implementation-entry', () => {
     deps.inputId = 'publication-input';
     deps.message = 'Now open a pull request for the completed work.';
     const resumed = await call('context', { id: context.id, scope: 'pull-request' });
-    assert.ok('deliveryOnly' in resumed && resumed.deliveryOnly);
+    assert.equal('deliveryOnly' in resumed && resumed.deliveryOnly, false);
     assert.equal('publicationAuthorized' in resumed && resumed.publicationAuthorized, true);
     const store = new DirectEntryStore(
       deps.root,

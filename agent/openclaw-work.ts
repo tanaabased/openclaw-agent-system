@@ -121,13 +121,11 @@ export default async function openClawWorkAction(input: {
   save(): Promise<void>;
 }) {
   const { record, source, action } = input;
-  const assessmentDigest = automationHash(record.result ?? null);
   await input.assertCurrent();
   if (action.action === 'handoff') {
     const digest = automationHash({
       id: record.id,
       source,
-      assessmentDigest,
       permission: action.permission,
       work: record.work ?? null,
     });
@@ -141,7 +139,7 @@ export default async function openClawWorkAction(input: {
           'Apply this digest to record the single implementation transition. Work includes ordinary branch, commit, push, and PR delivery. Honor explicit user restrictions; this preview does not override cancellation or native denial.',
       };
     if (action.digest !== digest) throw new Error('dispatch-handoff-stale');
-    record.work ??= { assessmentDigest };
+    record.work ??= {};
     if (action.permission !== 'publication')
       record.progression = { ...input.progression, workOwner: 'issue' };
     // publication-only input retains its own scope without entering implementation.
@@ -162,21 +160,11 @@ export default async function openClawWorkAction(input: {
       throw new Error('implementation-material-context-required');
     if (!action.material) {
       record.progression = { ...input.progression, workOwner: 'issue' };
-      record.work ??= { assessmentDigest };
+      record.work ??= {};
       if (action.scope) record.work.scope = action.scope;
       record.handoff ??= { at: input.now, by: input.caller.sessionKey, turnId: source.runId };
       record.work.implementation ??= source;
       record.work.caller = source;
-      if (!record.work.turn && input.message) {
-        record.work.implementation = source;
-        record.work.turn = {
-          origin: record.resultTurnId === source.runId ? 'assessment' : 'input',
-          runId: source.runId,
-          message: input.message,
-          status: 'consumed',
-          consumedByEventId: source.inputEventId,
-        };
-      }
       await input.save();
     }
     if (!record.work) throw new Error('implementation-material-context-required');

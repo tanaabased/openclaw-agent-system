@@ -258,16 +258,16 @@ describe('scripts/aimock-tool-search', () => {
           {
             type: 'text',
             text: JSON.stringify({
-              status: 'recorded',
-              presentation: 'Retained full assessment.',
-              handoff: { next: 'assessment-only' },
+              status: 'formatted',
+              retained: false,
+              presentation: 'Formatted assessment.',
             }),
           },
         ],
       },
     });
     assert.deepEqual((await reply(scenario, input)).response, {
-      content: 'Retained full assessment.',
+      content: 'Formatted assessment.',
     });
   });
 
@@ -438,13 +438,6 @@ describe('scripts/aimock-tool-search', () => {
         '/tmp/owned',
       );
     }
-    await step('work-result', 'agent_system_dispatch', {
-      status: 'recorded',
-      handoff: {
-        next: 'delivery',
-        request: { action: 'delivery', id, operation: 'prepare' },
-      },
-    });
     await step('delivery-prepare', 'agent_system_dispatch', { status: 'prepared', digest });
     assert.equal(
       (
@@ -481,10 +474,6 @@ describe('scripts/aimock-tool-search', () => {
       },
     );
     await discover();
-    await step('assessment-present', 'agent_system_dispatch', {
-      status: 'presented',
-      presentation: '> Saved plan',
-    });
     assert.equal(
       (
         await step('delivery-present', 'agent_system_dispatch', {
@@ -495,7 +484,7 @@ describe('scripts/aimock-tool-search', () => {
       'present',
     );
     assert.deepEqual((await reply(scenario, input)).response, {
-      content: '> Saved plan\n\n> PR card',
+      content: '> PR card',
     });
   });
 

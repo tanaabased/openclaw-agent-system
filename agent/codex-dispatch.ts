@@ -338,7 +338,11 @@ async function executeCodexDispatch(
           : { status: 'retired', id: record.id, retirement: record.retirement };
       if (record.retired || (record.retirement && !operatorRetire))
         throw new Error('dispatch-assessment-retired');
-      if (record.handoff && !operatorRetire && action !== 'summary' && action !== 'recover')
+      if (
+        record.handoff &&
+        !operatorRetire &&
+        !['context', 'result', 'summary', 'recover'].includes(action)
+      )
         throw new Error('dispatch-assessment-handed-off');
       if (
         action === 'recover' ||
@@ -471,7 +475,7 @@ async function executeCodexDispatch(
             deps,
             save,
             childAction ? caller : (record.threadId ?? record.receiptThreadId),
-            action === 'summary' ? 'handoff' : 'assessment',
+            action === 'summary' || record.handoff ? 'handoff' : 'assessment',
             true,
             state.records,
           );

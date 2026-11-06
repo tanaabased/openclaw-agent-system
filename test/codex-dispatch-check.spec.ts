@@ -1,9 +1,26 @@
 import assert from 'node:assert/strict';
 import requireDispatchCheck, { dispatchCheckDigest } from '../agent/codex-dispatch-check.ts';
-import type { DispatchState } from '../agent/codex-dispatch-state.ts';
+import type { DispatchState, DispatchRecord } from '../agent/codex-dispatch-state.ts';
 import type { IntakeState } from '../channels/github/intake/record-store.ts';
 
 describe('agent/codex-dispatch-check', () => {
+  it('should ignore conversation and delivery changes but invalidate changed native capacity', () => {
+    const record = {
+      id: 'issue',
+      threadId: 'chat',
+      request: { prompt: 'launch' },
+    } as DispatchRecord;
+    const state: DispatchState = { version: 1, scope: 'scope', records: [record] };
+    const intake = { records: [], policyDigest: 'policy' } as unknown as IntakeState;
+    state.checked = { at: 100, digest: dispatchCheckDigest(state, intake) };
+    record.result = { summary: 'Historical assessment' } as DispatchRecord['result'];
+    record.feedback = { baseline: {}, events: [] } as DispatchRecord['feedback'];
+    record.delivery = { reconciled: false } as DispatchRecord['delivery'];
+    record.handoff = { at: 101, by: 'chat', turnId: 'work' };
+    requireDispatchCheck(state, intake, 100);
+    record.nativeInactive = true;
+    assert.throws(() => requireDispatchCheck(state, intake, 100), /dispatch-check-required/);
+  });
   it('should require a current terminal check and invalidate it when work changes', () => {
     const state: DispatchState = { version: 1, scope: 'scope', records: [] };
     const intake = { records: [], policyDigest: 'policy' } as unknown as IntakeState;

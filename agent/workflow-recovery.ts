@@ -77,7 +77,7 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
     ],
     'assessment-result-incomplete': [
       'The new assessment is missing its complete source; the result was not recorded.',
-      'Include the complete assessment, evidence, plan or questions in `fullAssessment` and resubmit the result in this chat. Keep the previous saved result; do not substitute a summary for the source.',
+      'Include the complete assessment, evidence, plan or questions in `fullAssessment` and use assessment render in this chat. The full source stays in native context; show its concise presentation without saving or reinjecting it.',
     ],
     'dispatch-receipt-id-invalid': [
       'The supplied receipt ID is malformed, so it was not looked up or used to change workflow state.',

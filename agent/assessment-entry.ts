@@ -1,4 +1,3 @@
-import nativeClarification from './native-clarification.ts';
 import { realpath } from 'node:fs/promises';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -7,7 +6,7 @@ import { directAssessmentRequestSchema } from '../tools/dispatch/assessment-sche
 import type { AgentManifest } from '../manifest/types.ts';
 import renderAssessmentResult from '../channels/github/presentation/assessment-result.ts';
 import assessmentSkillSource from './assessment-skill-source.ts';
-import { assessmentPresentationRequest } from './assessment-render.ts';
+import renderNativeAssessment, { assessmentPresentationRequest } from './assessment-render.ts';
 import assessmentCheckout from './assessment-checkout.ts';
 import { assessmentInstructions } from './assessment-instructions.ts';
 import {
@@ -243,26 +242,22 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     });
     if (input.operation === 'context') {
       if (!entry) {
-        const selected =
-          managed?.selection ??
-          (
-            await selectWorkflowStage({
-              stage: 'assessment',
-              configuration: deps.manifest.github?.notifications?.issueAssignment?.assessment,
-              workspace: deps.binding.workspace,
-              observedAt: deps.now,
-              resolveSkill: deps.resolveSkill,
-            })
-          ).selection;
-        const evidence =
-          managed?.evidence ??
-          JSON.stringify(
-            dispatchContext(
-              await provider.getItemContext(locator.owner, locator.name, locator.number),
-              canonical,
-              deps.now,
-            ),
-          );
+        const selected = (
+          await selectWorkflowStage({
+            stage: 'assessment',
+            configuration: deps.manifest.github?.notifications?.issueAssignment?.assessment,
+            workspace: deps.binding.workspace,
+            observedAt: deps.now,
+            resolveSkill: deps.resolveSkill,
+          })
+        ).selection;
+        const evidence = JSON.stringify(
+          dispatchContext(
+            await provider.getItemContext(locator.owner, locator.name, locator.number),
+            canonical,
+            deps.now,
+          ),
+        );
         entry = {
           id: automationHash({ binding, canonical, owner: managed?.digest }),
           binding,
@@ -277,28 +272,26 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
           ...(managed ? { ownerDigest: managed.digest } : {}),
         };
         records.push(entry);
-      } else if (entry.turnId !== deps.turnId || entry.inputId !== deps.inputId) {
+      } else {
         entry.turnId = deps.turnId;
         entry.inputId = deps.inputId;
         entry.checkout = checkout;
-        if (!managed) {
-          entry.selection = (
-            await selectWorkflowStage({
-              stage: 'assessment',
-              configuration: deps.manifest.github?.notifications?.issueAssignment?.assessment,
-              workspace: deps.binding.workspace,
-              observedAt: deps.now,
-              resolveSkill: deps.resolveSkill,
-            })
-          ).selection;
-          entry.evidence = JSON.stringify(
-            dispatchContext(
-              await provider.getItemContext(locator.owner, locator.name, locator.number),
-              canonical,
-              deps.now,
-            ),
-          );
-        }
+        entry.selection = (
+          await selectWorkflowStage({
+            stage: 'assessment',
+            configuration: deps.manifest.github?.notifications?.issueAssignment?.assessment,
+            workspace: deps.binding.workspace,
+            observedAt: deps.now,
+            resolveSkill: deps.resolveSkill,
+          })
+        ).selection;
+        entry.evidence = JSON.stringify(
+          dispatchContext(
+            await provider.getItemContext(locator.owner, locator.name, locator.number),
+            canonical,
+            deps.now,
+          ),
+        );
       }
       await deps.assertCurrent();
       await save();
@@ -326,36 +319,26 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     )
       throw new Error('assessment-selection-changed');
     const result = parseAssessmentSubmission(input.result);
-    if (result.outcome === 'clarification-needed')
-      return nativeClarification(entry.id, presentation(result, entry.selection));
-    const previous = entry.result ?? managed?.result;
-    if (
-      previous &&
-      automationHash(previous) !== automationHash(result) &&
-      input.previousResultDigest !== automationHash(previous)
-    )
-      throw new Error('assessment-result-conflict');
-    // this record has no workflow permissions; a model-authored auto decision cannot grant them.
-    if (
-      entry.result &&
-      entry.result.outcome !== 'clarification-needed' &&
-      automationHash(entry.result) !== automationHash(result)
-    ) {
-      entry.history ??= [];
-      entry.history.push(entry.result);
-    }
-    entry.result = result;
-    entry.resultTurnId = deps.turnId;
     await deps.assertCurrent();
-    await save();
     return {
-      status: 'recorded',
       id: entry.id,
-      outcome: result.outcome,
-      previousResultDigest: automationHash(result),
-      presentation: presentation(result, entry.selection),
+      ...renderNativeAssessment({
+        ...assessmentPresentationRequest(canonical, true),
+        result: {
+          ...result,
+          reviewSummary:
+            result.reviewSummary ??
+            [
+              result.summary,
+              ...(result.outcome === 'clarification-needed'
+                ? result.questions
+                : result.outcome === 'operator-setup-blocker'
+                  ? [result.remediation]
+                  : []),
+            ].join('\n\n'),
+        },
+      }),
       handoff,
-      instruction,
     };
   });
 }

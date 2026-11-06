@@ -1,4 +1,3 @@
-import nativeClarification from './native-clarification.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   managedTargetUrl,
@@ -6,19 +5,14 @@ import {
   type ManagedIssue as IntakeRecord,
 } from './managed-issue.ts';
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
-import assessmentHandoff from './assessment-handoff.ts';
-import { assessmentSummaryInstructions } from './assessment-summary-state.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 import assignmentCard from '../channels/github/presentation/assignment-card.ts';
 import { nativeAssessmentInstructions } from './assessment-instructions.ts';
 import { assessmentResultContextSchema, parseAssessmentSubmission } from './assessment-result.ts';
-import { assessmentPresentationRequest } from './assessment-render.ts';
+import renderNativeAssessment, { assessmentPresentationRequest } from './assessment-render.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 import openClawSkill from './openclaw-skill.ts';
-import { automationHash } from './automation-hash.ts';
-import assessmentPresentation from './dispatch-presentation.ts';
-import recordDispatchResult from './dispatch-result.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import issueInputEvent, { issueInputEventId } from './openclaw-session-input.ts';
 import { completeOpenClawMessage, openClawHistoryPages } from './openclaw-history.ts';
@@ -105,7 +99,7 @@ export async function issueAssessmentAction(input: {
   assertCurrent(): Promise<void>;
   save(): Promise<void>;
 }) {
-  const { request, record, caller, intake, workspace } = input;
+  const { request, record, caller, intake } = input;
   if (
     record.feedback?.events.some((event) => event.turn?.runId === caller.runId) ||
     !record.assessmentTurn ||
@@ -169,14 +163,13 @@ export async function issueAssessmentAction(input: {
       if (record.assessmentTurn.status !== 'completed') record.assessmentTurn.status = 'consumed';
     }
     record.assessmentCaller = { runId: caller.runId, inputEventId };
-    // once submitted, recovery returns the consumed inputs rather than today's selection.
-    if (record.resultTurnId !== caller.runId || !record.turnEvidence?.selection)
-      record.turnEvidence = {
-        runId: caller.runId,
-        inputEventId,
-        evidence: input.evidence ?? record.context!,
-        selection: input.selection ?? record.assessment,
-      };
+    // current context uses fresh inputs; exact historical publication owns its saved source.
+    record.turnEvidence = {
+      runId: caller.runId,
+      inputEventId,
+      evidence: input.evidence ?? record.context!,
+      selection: input.selection ?? record.assessment,
+    };
     await input.save();
     return {
       status: 'verified',
@@ -192,7 +185,6 @@ export async function issueAssessmentAction(input: {
       assessment: record.turnEvidence?.selection ?? record.assessment,
       currentTurnId: caller.runId,
       mode: issueWorkflowMode(input.policy, record),
-      previousResultDigest: record.result ? automationHash(record.result) : undefined,
       recording: 'native-context' as const,
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
@@ -206,70 +198,23 @@ export async function issueAssessmentAction(input: {
   )
     throw new Error('dispatch-assessment-context-required');
   const candidate = parseAssessmentSubmission(input.result);
-  if (candidate.outcome === 'clarification-needed')
-    return nativeClarification(
-      record.id,
-      assessmentPresentation(candidate, record, intake, workspace, { debug: input.debug }),
-    );
-  if (
-    record.resultTurnId === caller.runId &&
-    automationHash(record.result) !== automationHash(input.result)
-  )
-    throw new Error('assessment-result-conflict');
-  if (issueWorkflowMode(input.policy, record) === 'auto' && !candidate.decision)
-    throw new Error('assessment-decision-required');
-  const previous =
-    record.result && record.stageReceipt && record.resultTurnId
-      ? {
-          runId: record.resultTurnId,
-          result: record.result,
-          receipt: record.stageReceipt,
-        }
-      : undefined;
-  const consumed = record.turnEvidence;
-  const result =
-    record.resultTurnId === caller.runId && record.result
-      ? record.result
-      : recordDispatchResult({
-          record,
-          intake,
-          threadId: caller.sessionKey,
-          turnId: caller.runId,
-          worktree: record.worktree!,
-          policy: input.policy,
-          result: input.result,
-          previousResultDigest: input.previousResultDigest,
-          ...(consumed?.selection &&
-          consumed.runId === caller.runId &&
-          consumed.inputEventId === inputEventId
-            ? { assessmentInputs: { selection: consumed.selection, evidence: consumed.evidence } }
-            : {}),
-        });
-  record.assessmentHistory ??= [];
-  if (previous && !record.assessmentHistory.some((entry) => entry.runId === previous.runId))
-    record.assessmentHistory.push(previous);
-  if (!record.assessmentHistory.some((entry) => entry.runId === caller.runId))
-    record.assessmentHistory.push({
-      runId: caller.runId,
-      inputEventId,
-      result,
-      receipt: record.stageReceipt!,
-      ...(consumed?.runId === caller.runId ? { evidence: consumed.evidence } : {}),
-    });
-  const presentation = assessmentPresentation(result, record, intake, workspace, {
-    debug: input.debug,
-  });
-  delete record.blocker;
-  delete record.failureStage;
-  await input.assertCurrent();
-  await input.save();
   return {
-    status: 'recorded',
     id: record.id,
-    outcome: result.outcome,
-    previousResultDigest: automationHash(result),
-    handoff: assessmentHandoff(record, issueWorkflowMode(input.policy, record), 'openclaw'),
-    presentation,
-    instruction: assessmentSummaryInstructions('openclaw'),
+    ...renderNativeAssessment({
+      ...assessmentPresentationRequest(managedTargetUrl(intake)),
+      result: {
+        ...candidate,
+        reviewSummary:
+          candidate.reviewSummary ??
+          [
+            candidate.summary,
+            ...(candidate.outcome === 'clarification-needed'
+              ? candidate.questions
+              : candidate.outcome === 'operator-setup-blocker'
+                ? [candidate.remediation]
+                : []),
+          ].join('\n\n'),
+      },
+    }),
   };
 }

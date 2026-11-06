@@ -190,7 +190,6 @@ export default async function codexReply(
               caller,
               custodyInvalid: !record.request,
               delivery: record.delivery,
-              implementation: record.continuation?.result,
             }),
           ),
           caller,

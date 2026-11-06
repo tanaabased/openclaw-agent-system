@@ -1,3 +1,4 @@
+import { nativePlanResponse } from '../openclaw-pr-journey/model-fixture.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -20,18 +21,16 @@ const dispatchStages = [
     ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
   ).flat(),
   'context',
-  'result',
+  'native-plan-render',
+  'native-plan-context',
+  'native-plan-compose',
+  'native-plan-candidate',
+  'native-plan-preview',
+  'native-plan-publish',
   'report',
   'work-context',
   'work-result',
   ...Array.from({ length: 64 }, (_, i) => `work-material-${i}`),
-  ...Array.from({ length: 64 }, (_, i) => `summary-material-${i}`),
-  ...Array.from({ length: 64 }, (_, i) => `assessment-material-${i}`),
-  'recovery-present',
-  'summary-compose',
-  'summary-candidate',
-  'summary-preview',
-  'summary-publish',
   'summary-hold',
 ];
 
@@ -73,7 +72,6 @@ function respond(
   request: ChatCompletionRequest,
   interruptDecision: boolean,
   autoDecision: 'plan' | 'work',
-  holdSummary: boolean,
 ): FixtureResponse | undefined {
   const messages = currentTurn(request);
   const prompt = messages
@@ -157,82 +155,6 @@ function respond(
     }
     delete context.contextMaterials;
   };
-  const summary = (
-    id: string,
-    presentation?: string,
-    hold = false,
-  ): FixtureResponse | undefined => {
-    if (!presentation) {
-      const shown = result('recovery-present');
-      if (!shown) return dispatch('recovery-present', { action: 'present', id });
-      if (shown.status !== 'presented' || typeof shown.presentation !== 'string') return;
-      presentation = shown.presentation;
-    }
-    const args = { action: 'summary', id };
-    const composed = result('summary-compose');
-    if (!composed)
-      return {
-        ...dispatch('summary-compose', { ...args, operation: 'compose' }),
-        content: presentation,
-      };
-    const skill = (composed.selection as { skill?: { path?: string } } | undefined)?.skill;
-    if (
-      composed.status !== 'composition-ready' ||
-      typeof composed.digest !== 'string' ||
-      !skill?.path
-    )
-      return;
-    const paged = Boolean(composed.contextMaterials);
-    const pendingMaterial = hydrate(composed, 'summary');
-    if (pendingMaterial) return pendingMaterial;
-    if (holdSummary && paged) {
-      assert.equal(composed.privateResponse, retainedPlan);
-      const assessment = (
-        composed.verifiedOutcome as { assessment: { fullAssessment: string; plan: string } }
-      ).assessment;
-      assert.equal(assessment.fullAssessment, retainedPlan);
-      assert.equal(assessment.plan, retainedPlan);
-    }
-    if (openClawAIMockToolResultText(messages, prefix + 'summary-skill') === undefined)
-      return call('summary-skill', 'read', { path: skill.path });
-    const candidate = result('summary-candidate');
-    if (!candidate)
-      return dispatch('summary-candidate', {
-        ...args,
-        operation: 'candidate',
-        digest: composed.digest,
-        publicText:
-          'The plan is to document closing disposable test issues after capturing their evidence. The retained plan is ready for the configured workflow to continue.',
-      });
-    if (candidate.status !== 'candidate-recorded') return;
-    const preview = result('summary-preview');
-    if (!preview) return dispatch('summary-preview', { ...args, operation: 'publish' });
-    if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
-    if (hold) {
-      const held = result('summary-hold');
-      if (!held)
-        return dispatch('summary-hold', {
-          ...args,
-          operation: 'hold',
-          digest: preview.digest,
-          diagnostic:
-            'Controlled reported summary denial; native refusal is covered by component tests.',
-        });
-      if (held.status !== 'blocked' || held.code !== 'assessment-summary-native-approval-denied')
-        return;
-      return { content: String(held.presentation) };
-    }
-    const published = result('summary-publish');
-    if (!published)
-      return dispatch('summary-publish', { ...args, operation: 'publish', digest: preview.digest });
-    if (published.status !== 'published' || typeof published.presentation !== 'string') return;
-    return { content: published.presentation };
-  };
-  const recoveryId =
-    /recover only the pending public assessment summary[\s\S]*?id ([a-f0-9]{64})/u.exec(
-      prompt,
-    )?.[1];
-  if (recoveryId) return summary(recoveryId);
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     if (!manual && !prompt.includes('Consume saved discoveries')) {
@@ -372,14 +294,6 @@ function respond(
       return;
     const pendingMaterial = hydrate(context, 'work');
     if (pendingMaterial) return pendingMaterial;
-    if (holdSummary) assert.equal(context.plan, retainedPlan);
-    if (
-      context.pendingPublicResponse &&
-      (context.pendingPublicResponse as { state?: string }).state !== 'blocked'
-    ) {
-      const pending = summary(operatorId);
-      if (!pending || 'toolCalls' in pending) return pending;
-    }
     if (automaticId) return { content: 'Should cleanup happen after evidence is captured?' };
     if (
       answerId &&
@@ -448,50 +362,22 @@ function respond(
   if (!git) return call('git', 'agent_system_git', { argv: ['rev-parse', '--show-toplevel'] });
   if (git.exitCode !== 0 || String(git.stdout).trim() !== project.path || git.truncated !== false)
     return;
-  const saved = result('result');
-  if (!saved)
-    return dispatch('result', {
-      action: 'result',
-      id,
-      result: {
-        version: 1,
-        outcome: 'plan-ready',
-        summary: 'Document disposable issue cleanup.',
-        assessment: 'The admitted issue requests a small documentation change.',
-        planSummary: 'Describe closing disposable test issues after capturing evidence.',
-        reviewSummary:
-          'Document closing disposable test issues after evidence is captured; preserve the complete retained implementation plan.',
-        plan: holdSummary
-          ? retainedPlan
-          : 'Add the cleanup rule to the repository documentation and review the resulting diff.',
-        fullAssessment: holdSummary
-          ? retainedPlan
-          : 'Verified the assigned repository in its managed worktree. Add a short documentation rule to close disposable test issues after capturing evidence, then review the diff. No implementation or publication was performed.',
-        evidence: [
-          {
-            source: project.path,
-            status: 'observed',
-            detail: 'Managed Git confirmed this worktree.',
-          },
-        ],
-        progress: {
-          completed: ['Verified the managed worktree.'],
-          remaining: ['Implement after approval.'],
-        },
-      },
-    });
-  if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-  return summary(id, saved.presentation, holdSummary);
+  return nativePlanResponse(
+    context,
+    result,
+    dispatch,
+    call,
+    Boolean(openClawAIMockToolResultText(messages, prefix + 'summary-skill')),
+  );
 }
 
 function response(
   request: ChatCompletionRequest,
   interruptDecision: boolean,
   autoDecision: 'plan' | 'work',
-  holdSummary: boolean,
 ) {
   try {
-    return respond(request, interruptDecision, autoDecision, holdSummary);
+    return respond(request, interruptDecision, autoDecision);
   } catch (error) {
     if (
       error instanceof Error &&
@@ -510,7 +396,7 @@ export function createProgressionScenario(
   autoDecision: 'plan' | 'work' = 'work',
 ): OpenClawAIMockScenario {
   const respond = (request: ChatCompletionRequest) =>
-    response(request, interruptDecision, autoDecision, id === 'openclaw-issue-progression');
+    response(request, interruptDecision, autoDecision);
   const final: Fixture = {
     match: {
       model: /^(?:aimock\/)?gpt-5\.5$/u,

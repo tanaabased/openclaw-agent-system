@@ -64,7 +64,6 @@ export default async function advanceCodexWorkTurn(
       work.observation = {
         turnId: found.turnId,
         afterItemId: await context.native.intakeBoundary(record.threadId!, found.turnId),
-        assessmentDigest: automationHash(record.result ?? null),
       };
       await context.save();
     }
@@ -114,7 +113,7 @@ export default async function advanceCodexWorkTurn(
       policyDigest: work.policyDigest,
       selectionDigest: automationHash(selection),
       routingDigest: automationHash(record.request),
-      evidenceDigest: automationHash(record.result ?? null),
+      evidenceDigest: automationHash(revisionInput),
     };
     await context.save();
   }

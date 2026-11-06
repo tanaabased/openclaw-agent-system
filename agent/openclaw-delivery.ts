@@ -164,7 +164,7 @@ export default async function openClawDelivery(input: {
       assertCurrent,
     });
     if (result.status !== 'bound' || result.retained) return result;
-    record.work ??= { assessmentDigest: automationHash(record.result ?? null) };
+    record.work ??= {};
     if (record.work.delivery) (record.deliveryHistory ??= []).push(record.work.delivery);
     record.adoptedPullRequest = adopted;
     record.pullRequestLink = {
@@ -207,7 +207,7 @@ export default async function openClawDelivery(input: {
     !record.work?.publication
   )
     throw new Error('delivery-implementation-not-authorized');
-  const work = (record.work ??= { assessmentDigest: automationHash(record.result ?? null) });
+  const work = (record.work ??= {});
   await assertCurrent();
   const connection = await input.connect();
   const git = async (argv: string[]) => {

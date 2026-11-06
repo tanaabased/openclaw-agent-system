@@ -173,7 +173,6 @@ export default class OpenClawDispatchContext {
     )
       throw new Error('dispatch-issue-inactive');
     if (record.reset) throw new Error('dispatch-reset-pending');
-    if (record.handoff && !work && !feedback) throw new Error('dispatch-assessment-handed-off');
     const intake = dispatchAdmission(record, current.admitted.records ?? []);
     if (!intake) throw new Error('dispatch-admission-missing');
     if (

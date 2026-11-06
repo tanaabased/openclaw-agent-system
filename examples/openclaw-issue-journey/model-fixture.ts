@@ -1,3 +1,4 @@
+import { nativePlanResponse } from '../openclaw-pr-journey/model-fixture.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -24,26 +25,19 @@ const dispatchStages = [
     ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
   ).flat(),
   'context',
-  'result',
-  'detail-readback',
+  'native-plan-render',
+  'native-plan-context',
+  'native-plan-compose',
+  'native-plan-candidate',
+  'native-plan-preview',
+  'native-plan-publish',
   'report',
   'refresh-context',
-  'refresh-history',
-  'revision-history',
-  'refresh-result',
-  'recovery-present',
-  'summary-compose',
-  'summary-candidate',
-  'summary-preview',
-  'summary-publish',
-  'summary-duplicate',
   'feedback-context',
-  'feedback-result',
   'feedback-compose',
   'feedback-candidate',
   'feedback-preview',
   'feedback-publish',
-  'direct-question-context',
   'direct-assessment-context',
   'direct-assessment-result',
   'manual-compose',
@@ -59,10 +53,10 @@ const dispatchStages = [
 function assessmentRequest(context: Record<string, unknown>, payload: object) {
   assert.ok(Value.Check(context.resultSchema as TSchema, payload));
   return {
-    action: context.entry === 'direct' ? 'assessment' : 'result',
-    ...(context.entry === 'direct' ? { operation: 'result', target: context.target } : {}),
-    id: context.id,
-    ...(context.previousResultDigest ? { previousResultDigest: context.previousResultDigest } : {}),
+    action: 'assessment',
+    operation: 'render',
+    target: context.target ?? (context.evidence as { source?: string })?.source,
+    ...(context.entry === 'direct' ? { assessmentOnly: true } : {}),
     result: payload,
   };
 }
@@ -131,72 +125,23 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (retained.status !== 'reported' || typeof retained.response !== 'string') return;
     return { content: retained.response || 'notification-intake-unchanged' };
   };
-  const summary = (
-    id: string,
-    saved: Record<string, unknown>,
-    source: Record<string, unknown>,
-  ): FixtureResponse | undefined => {
-    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    const details = result('detail-readback');
-    if (!details)
-      return {
-        ...dispatch('detail-readback', { action: 'present', id, includeDetails: true }),
-        content: saved.presentation,
-      };
-    assert.equal(details.status, 'presented');
-    assert.ok(String(details.presentation).includes('Managed Git confirmed this worktree.'));
-    assert.ok(String(details.presentation).includes('Verified the managed worktree.'));
-    if (typeof source.fullAssessment === 'string') {
-      assert.ok(String(details.presentation).includes(source.fullAssessment));
-      if (typeof source.reviewSummary === 'string') {
-        assert.ok(saved.presentation.includes(source.reviewSummary));
-        assert.ok(!saved.presentation.includes(source.fullAssessment));
-      }
-    }
-    assert.ok(!saved.presentation.includes('Managed Git confirmed this worktree.'));
-    assert.ok(!saved.presentation.includes('Verified the managed worktree.'));
-    const args = { action: 'summary', id };
-    const composed = result('summary-compose');
-    if (!composed) return dispatch('summary-compose', { ...args, operation: 'compose' });
-    const skill = (composed.selection as { skill?: { path?: string } } | undefined)?.skill;
-    if (
-      composed.status !== 'composition-ready' ||
-      typeof composed.digest !== 'string' ||
-      !skill?.path
-    )
-      return;
-    if (openClawAIMockToolResultText(messages, prefix + 'summary-skill') === undefined)
-      return call('summary-skill', 'read', { path: skill.path });
-    const candidate = result('summary-candidate');
-    if (!candidate)
-      return dispatch('summary-candidate', {
-        ...args,
-        operation: 'candidate',
-        digest: composed.digest,
-        publicText:
-          'Today disposable test issues can hang around after a run. The plan is to explain when to close them, so you can keep the results you need without leaving a cluttered issue list. This is proposed documentation work; implementation has not started.',
-      });
-    if (candidate.status === 'waiting' && typeof candidate.code === 'string')
-      return { content: `Assessment summary candidate was not recorded: ${candidate.code}.` };
-    if (candidate.status !== 'candidate-recorded') return;
-    if (prompt.includes('leave summary pending')) return { content: saved.presentation };
-    const preview = result('summary-preview');
-    if (!preview) return dispatch('summary-preview', { ...args, operation: 'publish' });
-    if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
-    const published = result('summary-publish');
-    if (!published)
-      return dispatch('summary-publish', { ...args, operation: 'publish', digest: preview.digest });
-    if (published.status !== 'published' || typeof published.presentation !== 'string') return;
-    const duplicate = result('summary-duplicate');
-    if (!duplicate)
-      return dispatch('summary-duplicate', {
-        ...args,
-        operation: 'publish',
-        digest: preview.digest,
-      });
-    if (duplicate.status !== 'published') return;
-    return { content: published.presentation };
-  };
+  const nativePlan = (context: Record<string, unknown>, revised = false) =>
+    nativePlanResponse(
+      context,
+      result,
+      dispatch,
+      call,
+      Boolean(openClawAIMockToolResultText(messages, prefix + 'summary-skill')),
+      false,
+      {
+        fullAssessment:
+          fullAssessment + (revised ? '\nFresh issue context verified after restart.' : ''),
+        reviewSummary:
+          reviewSummary + (revised ? ' Fresh issue facts confirm the cleanup approach.' : ''),
+        plan: fullAssessment,
+      },
+      prompt.includes('leave summary pending'),
+    );
   const assessmentTarget =
     /Direct issue assessment target: (https:\/\/github\.com\/[^\s]+) checkout: ([^\n]+)/u.exec(
       prompt,
@@ -245,8 +190,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     assert.doesNotMatch(diagnostic, /result\.questions|result\.remediation/u);
     const saved = result('direct-assessment-result');
     if (!saved) return dispatch('direct-assessment-result', assessmentRequest(context, payload));
-    assert.equal(saved.status, 'recorded');
-    assert.equal((saved.handoff as { next: string }).next, 'assessment-only');
+    assert.equal(saved.status, 'formatted');
+    assert.equal(saved.retained, false);
     return { content: String(saved.presentation) };
   }
   const updateTarget =
@@ -463,19 +408,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         'The retained plan proposes documenting disposable issue cleanup after evidence is captured. Implementation remains unstarted.',
     };
   }
-  const recoveryId =
-    /recover only the pending public assessment summary[\s\S]*?id ([a-f0-9]{64})/u.exec(
-      prompt,
-    )?.[1];
-  if (recoveryId) {
-    const shown = result('recovery-present');
-    if (!shown) return dispatch('recovery-present', { action: 'present', id: recoveryId });
-    if (shown.status !== 'presented') return;
-    return summary(recoveryId, { ...shown, status: 'recorded' }, {});
-  }
-  const refreshId = /Refresh retained assessment for managed issue ([a-f0-9]{64})/u.exec(
-    prompt,
-  )?.[1];
+  const refreshId = /Refresh native assessment for managed issue ([a-f0-9]{64})/u.exec(prompt)?.[1];
   if (refreshId) {
     const privateContext = request.messages
       .map(({ content }) => getTextContent(content) ?? '')
@@ -484,33 +417,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     const fresh = result('refresh-context');
     if (!fresh) return dispatch('refresh-context', { action: 'context', id: refreshId });
     const evidence = fresh.evidence as { body?: string } | undefined;
-    if (
-      fresh.status !== 'verified' ||
-      typeof fresh.previousResultDigest !== 'string' ||
-      !evidence?.body?.includes('notification-hidden-later-fact')
-    )
+    if (fresh.status !== 'verified' || !evidence?.body?.includes('notification-hidden-later-fact'))
       return;
-    const history = result('refresh-history');
-    if (!history)
-      return dispatch('refresh-history', {
-        action: 'present',
-        id: refreshId,
-        includeDetails: true,
-      });
-    assert.ok(history.previousResult);
-    const saved = result('refresh-result');
-    if (!saved)
-      return dispatch(
-        'refresh-result',
-        assessmentRequest(fresh, {
-          ...(history.previousResult as Record<string, unknown>),
-          fullAssessment:
-            String((history.previousResult as Record<string, unknown>).fullAssessment) +
-            '\n\nFresh issue context verified after restart.',
-        }),
-      );
-    if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-    return summary(refreshId, saved, history.previousResult as Record<string, unknown>);
+    return nativePlan(fresh, true);
   }
   const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
   if (feedback) {
@@ -609,40 +518,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     return;
   if (revision?.[1] === 'Clarify')
     return { content: 'Should cleanup close the issue only after evidence capture?' };
-  const history = revision ? result('revision-history') : undefined;
-  if (revision && !history)
-    return dispatch('revision-history', { action: 'present', id, includeDetails: true });
-  const saved = result('result');
-  if (!saved)
-    return dispatch(
-      'result',
-      assessmentRequest(context, {
-        version: 1,
-        outcome: 'plan-ready',
-        summary: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
-        assessment: 'Document disposable issue cleanup so test runs leave no abandoned issues.',
-        plan: 'Add the cleanup rule to the repository documentation and review the resulting diff.',
-        fullAssessment: revision
-          ? String((history!.previousResult as Record<string, unknown>).fullAssessment) +
-            '\n\nThe operator confirmed cleanup only after evidence capture; retain the original findings.'
-          : fullAssessment,
-        reviewSummary,
-        evidence: [
-          {
-            source: project.path,
-            status: 'observed',
-            detail: 'Managed Git confirmed this worktree.',
-          },
-        ],
-        progress: {
-          completed: ['Verified the managed worktree.'],
-          remaining: ['Implement after approval.'],
-        },
-      }),
-    );
-  if (saved.status !== 'recorded' || typeof saved.presentation !== 'string') return;
-  if (revision) return { content: saved.presentation };
-  return summary(id, saved, { fullAssessment, reviewSummary });
+  return nativePlan(context, Boolean(revision));
 }
 
 function response(request: ChatCompletionRequest) {

@@ -281,7 +281,7 @@ export default async function assessmentSummary(input: {
         return {
           status: 'candidate-recorded',
           instruction:
-            'Call summary operation publish without a digest to inspect the exact destination and draft, then with its digest through native approval. This bounded summary is covered by the freshly activated assessment workflow; a native denial stops publication. Preserve the recorded private review presentation in the final answer; keep the full assessment saved for implementation.',
+            'Call summary operation publish without a digest to inspect the exact destination and draft, then with its digest through native approval. This bounded summary is covered by the freshly activated assessment workflow; a native denial stops publication. Preserve the recorded private review presentation in the final answer; treat this saved assessment only as the source of this historical publication; continue implementation from current native context.',
         };
       }
       if (!summary.publicText) throw new Error('assessment-summary-candidate-required');

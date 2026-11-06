@@ -3,7 +3,7 @@ import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
 import assessmentSummary, {
   assessmentSummaryOwnPublications,
 } from '../agent/assessment-summary.ts';
-import recordDispatchResult from '../agent/dispatch-result.ts';
+import recordDispatchResult from './legacy-assessment-fixture.ts';
 import { automationHash } from '../agent/automation-hash.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import type { AssessmentSummaryRequest } from '../agent/assessment-summary-state.ts';

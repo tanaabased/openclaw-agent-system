@@ -1,14 +1,14 @@
 import type { GitHubNotificationPolicy } from '../channels/github/workflow-policy.ts';
-import { parseAssessmentSubmission } from './assessment-result.ts';
-import { notificationAuthorityDigest } from './notification-authority.ts';
-import { automationHash } from './automation-hash.ts';
-import type { AssessmentSelection } from './assessment-selection.ts';
-import type { SharedDispatchRecord } from './dispatch-state.ts';
-import { validateWorkflowResult } from './workflow-result.ts';
+import { parseAssessmentSubmission } from '../agent/assessment-result.ts';
+import { notificationAuthorityDigest } from '../agent/notification-authority.ts';
+import { automationHash } from '../agent/automation-hash.ts';
+import type { AssessmentSelection } from '../agent/assessment-selection.ts';
+import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+import { validateWorkflowResult } from '../agent/workflow-result.ts';
 import { defaultAssessmentSkill } from '../manifest/assessment-schema.ts';
-import type { ManagedIssue as IntakeRecord } from './managed-issue.ts';
+import type { ManagedIssue as IntakeRecord } from '../agent/managed-issue.ts';
 
-/** Both runtimes bind the same result contract after verifying their native caller. */
+/** construct historical records for recovery tests; production no longer writes assessments. */
 export default function recordDispatchResult(input: {
   record: SharedDispatchRecord;
   intake: IntakeRecord;

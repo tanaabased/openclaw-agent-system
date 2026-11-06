@@ -1,25 +1,25 @@
 # OpenClaw Issue Intake Example
 
-Activate notification intake, exclude fixture assignments through repository routing, then target this installation to claim three assignments and start their assessments on a second native pass before any result completes. Retain all three plans and verify that narrowing routing preserves the same chats, worktrees, and assessment turns.
+Activate notification intake, exclude fixture assignments through repository routing, then target this installation to claim three assignments and start their assessments on a second native pass before any result completes. Complete all three native assessments and verify that narrowing routing preserves the same chats, worktrees, and assessment turns.
 
 ## What Belongs Here
 
 - Native channel readiness and a safe intake baseline before fixture assignment.
 - First-match repository routing, with singleton-to-pool two-pass admission and live rule changes preserving admitted work.
-- Custom routing skill/guidance selection during concurrent admission with distinct verified native owners, complete retained assessments, and private routing-method readback.
+- Custom routing skill/guidance selection during concurrent admission with distinct verified native owners and assessments kept in native chat.
 - One repeat scan proving that admission does not duplicate chats, checkouts, or turns.
 
 ## What Does Not Belong Here
 
 - Other assessment presentation and ordinary issue feedback: [issue planning](../openclaw-issue-journey/README.md). Implementation and PR feedback: [PR delivery](../openclaw-pr-journey/README.md).
 - Restart recovery: [assessment recovery](../openclaw-issue-assessment-recovery/README.md). Unassigned-issue feedback: [reactivation](../openclaw-issue-reactivation/README.md). Coordinator/tracking reset: [reset](../openclaw-notifications-reset/README.md). Resource reconciliation: [retirement](../openclaw-notifications-retirement/README.md).
-- Scheduler controls: [scheduling](../openclaw-notifications-scheduling/README.md). Unavailable-assignment recovery: [assignment policy](../openclaw-issue-assignment-policy/README.md). Debug-card presentation: [assessment recovery](../openclaw-issue-assessment-recovery/README.md).
+- Scheduler controls: [scheduling](../openclaw-notifications-scheduling/README.md). Unavailable-assignment recovery: [assignment policy](../openclaw-issue-assignment-policy/README.md).
 
 ## Notes
 
 - Native skill discovery and retained guidance are asserted during admission; the fixed mock judgment does not prove interpretation of the custom skill. No additional live-model turn is required.
-- One completed assessment checks that the retained custom method reaches the private routing card. Formatting and debug variants stay in owning renderer tests.
-- Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases one after verifying three native starts, requires its result while two responses remain held, then releases the others; model judgment is not under test.
+- One completed assessment checks the concise native presentation; formatting and debug variants stay in owning renderer tests.
+- Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases one after verifying three native starts, requires its native completion while two responses remain held, then releases the others; model judgment is not under test.
 - Swarm adds one coordinator turn to verify that claims precede native creation. This single-installation journey does not prove cross-installation exclusion; the comment-only POC can overlap under incomplete provider views.
 - V3 object identities pin assignment actors; repository routing selects repository scope and placement. Only Tanaabot receives the three disposable assignments.
 - Scoped refreshes and a 24-hour schedule bound discovery. The job owns its workspaces, issues, native state, and SSH registration; cleanup stops the Gateway before changing external fixtures.
@@ -148,14 +148,15 @@ for conversation in $(jq -r '.[].threadId' "$TMPDIR/notification-started.json");
   openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$conversation" '{key:$key}')" --json | jq -e '.session.parentSessionKey == "agent:intake-tanaabot:main" and .session.spawnDepth == 0 and .session.spawnedBy == null'
 done
 
-# should commit one result while two unrelated native responses remain held
+# should finish one native assessment while two unrelated responses remain held
 receipt=$(jq -er '.[0].id' "$TMPDIR/notification-started.json")
 assessment_run=$(jq -er '.[0].assessmentTurn.runId' "$TMPDIR/notification-started.json")
 touch "$TMPDIR/notification-assessment-released-$receipt"
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$assessment_run" 600000
-jq -es --arg receipt "$receipt" '[.[].records[]] | length == 3 and any(.[]; .id == $receipt and .result.outcome == "plan-ready") and all(.[] | select(.id != $receipt); .result == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es '[.[].records[]] | length == 3 and all(.[]; .result == null and .stageReceipt == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --arg run "$assessment_run" '[.[] | (.drafts // [.])[] | select(.update != null and .receipt != null)] | length == 1 and any(.[0].update.facts[]; .reference == $run)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json
 
-# should release the remaining responses and retain every plan
+# should release the remaining responses and complete every native assessment
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
 for receipt in $(jq -r '.[].id' "$TMPDIR/notification-started.json"); do
   touch "$TMPDIR/notification-assessment-released-$receipt"
@@ -167,19 +168,18 @@ for slot in 1 2 3; do
 done
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es '[.[].records[]] | length == 3 and all(.[]; .assessmentTurn.status == "completed" and .result.outcome == "plan-ready")' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es '[.[].records[]] | length == 3 and all(.[]; .assessmentTurn.status == "completed" and .result == null and .stageReceipt == null)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
 # should show the retained custom routing method in the native private assessment
 conversation=$(jq -er '.[0].threadId' "$TMPDIR/notification-started.json")
 run_id=$(jq -er '.[0].assessmentTurn.runId' "$TMPDIR/notification-started.json")
-openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --arg run "$run_id" '([.messages[] | select(.role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop")] | if length == 1 then .[0].content | (if type == "string" then . else map(.text // "") | join("") end) | contains("Model routing") and contains("Routing method") and contains("intake-routing") and contains("+ custom guidance") and (contains("Keep disposable cleanup plans bounded.") | not) else error("one stopped assessment response required") end)'
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --arg run "$run_id" '[.messages[] | select(.role == "assistant" and .__openclaw.runId == $run) | (.content | if type == "string" then . else map(.text // "") | join("") end)] | any(.[]; contains("Proposed change")) and all(.[]; (contains("Keep disposable cleanup plans bounded.") | not))'
 
-# should retain complete results and native bindings for all three owners
+# should preserve all three native bindings without saving plans
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"
 for slot in 1 2 3; do
-  issue=$(jq -er .node_id "$TMPDIR/notification-issue-$slot.json")
-  repository=$(jq -er .node_id "$TMPDIR/notification-repository.json")
-  jq -es --arg issue "$issue" --arg repository "$repository" '[.[].records[] | select(.stageReceipt.binding.subjectId == $issue)] | if length == 1 then .[0] else error("one issue owner required") end | .result.outcome == "plan-ready" and (.result.fullAssessment | length > 0) and (.result.plan | length > 0) and .stageReceipt.binding.threadId == .threadId and .stageReceipt.binding.repositoryId == $repository and .stageReceipt.binding.worktree == .worktree and .stageReceipt.binding.turnId == .assessmentTurn.runId and .resultTurnId == .assessmentTurn.runId and .sessionCreation.verified == true' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+  source=$(jq -er .html_url "$TMPDIR/notification-issue-$slot.json")
+  jq -es --arg source "$source" '[.[].records[] | select((.context | fromjson).source == $source)] | if length == 1 then .[0] else error("one issue owner required") end | .result == null and .stageReceipt == null and (.threadId | length > 0) and (.worktree | length > 0) and (.assessmentTurn.runId | length > 0) and .sessionCreation.verified == true' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 done
 openclaw agent-system tool worktree -- list | tee "$TMPDIR/notification-worktrees-before.json" | jq -e 'length == 3'
 
@@ -189,7 +189,7 @@ node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs";
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 jq -es '[.[].records[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-all-after.json"
-jq -e --slurp '.[0] as $before | .[1] as $after | ($after | length) == 3 and all($after[]; .assessmentTurn.status == "completed" and .result.outcome == "plan-ready") and ([$before[] | {id,intakeId,threadId,worktree,run:.assessmentTurn.runId}] | sort_by(.id)) == ([$after[] | {id,intakeId,threadId,worktree,run:.assessmentTurn.runId}] | sort_by(.id))' "$TMPDIR/notification-started.json" "$TMPDIR/notification-all-after.json"
+jq -e --slurp '.[0] as $before | .[1] as $after | ($after | length) == 3 and all($after[]; .assessmentTurn.status == "completed" and .result == null and .stageReceipt == null) and ([$before[] | {id,intakeId,threadId,worktree,run:.assessmentTurn.runId}] | sort_by(.id)) == ([$after[] | {id,intakeId,threadId,worktree,run:.assessmentTurn.runId}] | sort_by(.id))' "$TMPDIR/notification-started.json" "$TMPDIR/notification-all-after.json"
 for conversation in $(jq -r '.[].threadId' "$TMPDIR/notification-all-after.json"); do
   run_id=$(jq -er --arg key "$conversation" '.[] | select(.threadId == $key) | .assessmentTurn.runId' "$TMPDIR/notification-all-after.json")
   openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --arg run "$run_id" '([.messages[] | select(.role == "user" and .idempotencyKey == ($run + ":user"))] | length) == 1'

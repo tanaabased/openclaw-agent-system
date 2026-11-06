@@ -1,3 +1,4 @@
+import launchPending from './launch-pending.ts';
 import renderNativeAssessment from './assessment-render.ts';
 import feedbackContextMaterial from './feedback-context-material.ts';
 import { isDeepStrictEqual } from 'node:util';
@@ -224,7 +225,7 @@ export default class OpenClawDispatch {
       !record?.manualIssue ||
       record.sourceThreadId !== caller.sessionKey ||
       (admitted.status === 'existing' &&
-        (record.result || record.handoff || action.operation !== 'reconcile'))
+        (!launchPending(record) || action.operation !== 'reconcile'))
     )
       return admitted;
     if (action.operation === 'prepare') {

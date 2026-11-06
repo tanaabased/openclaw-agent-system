@@ -72,7 +72,6 @@ describe('agent/reply-owner-context', () => {
     const input = fixture();
     const owner = replyOwnerContext({
       ...input,
-      implementation: { outcome: 'done', summary: 'OLD-WORK', fullResult: 'OLD-PLAN' },
       delivery: { pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 } },
     });
     owner.events = [

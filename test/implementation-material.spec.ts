@@ -14,14 +14,19 @@ const original = () => {
       runtime: 'openclaw',
       id: 'a'.repeat(64),
       path: '/task/worktree',
-      plan: text,
-      previousResult: {
-        outcome: 'blocked',
-        summary: 'Interrupted.',
-        fullResult: 'Distinct retained blocker.\n'.repeat(1500),
-      },
       scope: 'local',
     }),
+    previousResult: {
+      outcome: 'blocked',
+      summary: 'Interrupted.',
+      fullResult: 'Distinct retained blocker.\n'.repeat(1500),
+    },
+    currentRequirements: text,
+    previousImplementationResult: {
+      outcome: 'blocked',
+      summary: 'Interrupted.',
+      fullResult: 'Distinct retained blocker.\n'.repeat(1500),
+    },
     implementation: {
       skill: { name: 'implement', path: '/skills/implement/SKILL.md' },
       guidance: { content: 'Distinct selected guidance.\n'.repeat(1500) },
@@ -55,7 +60,7 @@ describe('agent/implementation-material', () => {
     assert.deepEqual(restored, JSON.parse(snapshot));
     assert.equal(JSON.stringify(source), snapshot);
     const fields = 'contextMaterials' in delivered ? delivered.contextMaterials?.fields : [];
-    assert.ok(fields?.some(({ path }) => path.join('.') === 'plan'));
+    assert.ok(fields?.some(({ path }) => path.join('.') === 'currentRequirements'));
     assert.ok(
       !fields?.some(
         ({ path }) =>
@@ -101,7 +106,6 @@ describe('agent/implementation-material', () => {
       runtime: 'codex',
       id: 'a',
       path: '/task',
-      plan: 'Implement.',
     });
     assert.deepEqual(implementationMaterial(source, request), source);
     assert.throws(
