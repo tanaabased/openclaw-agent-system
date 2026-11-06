@@ -235,7 +235,11 @@ for (const scenario of [
     });
   }
 
-  async function readAssessmentSource(input: ChatCompletionRequest, selectedScenario = scenario) {
+  async function readAssessmentSource(
+    input: ChatCompletionRequest,
+    selectedScenario = scenario,
+    body = 'Close disposable issues after evidence capture.',
+  ) {
     const next = await response(input, selectedScenario);
     assert.ok('toolCalls' in next && next.toolCalls?.[0]?.name === 'agent_system_github');
     const call = next.toolCalls[0];
@@ -245,7 +249,7 @@ for (const scenario of [
       truncated: false,
       stdout: JSON.stringify({
         title: 'Cleanup',
-        body: 'Close disposable issues after evidence capture.',
+        body,
         comments: [],
       }),
     });
@@ -255,9 +259,10 @@ for (const scenario of [
     input: ChatCompletionRequest,
     selectedScenario = scenario,
     continues = false,
+    sourceBody?: string,
   ) {
     const target = 'https://github.com/owner/repo/issues/3';
-    await readAssessmentSource(input, selectedScenario);
+    await readAssessmentSource(input, selectedScenario, sourceBody);
     const formatting = await action(input, 'assessment', selectedScenario);
     assert.equal(formatting.operation, 'render');
     const formatted = renderNativeAssessment(formatting);
@@ -635,7 +640,16 @@ for (const scenario of [
 
     if (!['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id))
       it('should consume fresh later evidence after recovery', async () => {
-        const later = request(`Refresh native assessment for managed issue ${id}`);
+        const later = request('Initial assessment.');
+        append(later, 'assessment-source', {
+          exitCode: 0,
+          truncated: false,
+          stdout: JSON.stringify({ body: 'notification-hidden-initial-fact', comments: [] }),
+        });
+        later.messages.push({
+          role: 'user',
+          content: `Refresh native assessment for managed issue ${id}`,
+        });
         assert.equal(matchFixture([...scenario.fixtures], later), null);
         later.messages.push({
           role: 'user',
@@ -662,10 +676,12 @@ for (const scenario of [
           currentTurnId: 'native-refresh',
           evidence: {
             source: 'https://github.com/owner/repo/issues/3',
-            body: 'notification-hidden-later-fact',
           },
         });
-        await publishNativePlan(later);
+        const unchanged = structuredClone(later);
+        await readAssessmentSource(unchanged, scenario, 'notification-hidden-initial-fact');
+        assert.equal(matchFixture([...scenario.fixtures], unchanged), null);
+        await publishNativePlan(later, scenario, false, 'notification-hidden-later-fact');
       });
 
     it('should recover blocked child context without changing its identity or accepting other blockers', async () => {

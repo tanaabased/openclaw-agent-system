@@ -420,9 +420,11 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (!privateContext.includes('Agent System model-only current-turn facts')) return;
     const fresh = result('refresh-context');
     if (!fresh) return dispatch('refresh-context', { action: 'context', id: refreshId });
-    const evidence = fresh.evidence as { body?: string } | undefined;
-    if (fresh.status !== 'verified' || !evidence?.body?.includes('notification-hidden-later-fact'))
-      return;
+    if (fresh.status !== 'verified') return;
+    const sourceRead = assessmentSource(fresh, result, call);
+    if (sourceRead) return sourceRead;
+    const evidence = JSON.parse(String(result('assessment-source')!.stdout));
+    if (!evidence.body.includes('notification-hidden-later-fact')) return;
     return nativePlan(fresh, true);
   }
   const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
