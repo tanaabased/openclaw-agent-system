@@ -33,4 +33,25 @@ describe('agent/feedback-context-material', () => {
       assert.deepEqual(restored, JSON.parse(snapshot));
       assert.equal(JSON.stringify(source), snapshot);
     });
+  it('should reconstruct a large grouped review without duplicating shared findings', async () => {
+    const findings = Array.from({ length: 12 }, (_, index) => ({
+      id: `finding-${index}`,
+      body: `requirement ${index} `.repeat(400),
+      diffHunk: `context ${index} `.repeat(800),
+    }));
+    const source = {
+      runtime: 'openclaw' as const,
+      id: 'review',
+      eventId: 'event',
+      status: 'verified',
+      source: { findings },
+      review: { findings },
+    };
+    const request = { action: 'feedback-context', id: source.id, eventId: source.eventId };
+    const response = feedbackContextMaterial(source, request);
+    const restored = await hydrateImplementation(response, async (next) =>
+      feedbackContextMaterial(source, request, next.material as ImplementationMaterialRead),
+    );
+    assert.deepEqual(restored, source);
+  });
 });

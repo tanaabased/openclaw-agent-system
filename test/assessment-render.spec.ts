@@ -10,6 +10,7 @@ import { runCodexDispatch } from '../agent/codex-dispatch.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
 import type { AssessmentSubmission } from '../agent/assessment-result.ts';
+import hydrateImplementation from './implementation-material-fixture.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 
 const target = 'https://github.com/owner/repo/issues/3';
@@ -31,6 +32,7 @@ describe('agent/assessment-render', () => {
   it('should validate complete native input and return only the concise visible review', () => {
     const response = renderNativeAssessment({ ...assessmentPresentationRequest(target), result });
     assert.equal(response.status, 'formatted');
+    assert.equal(response.status, 'formatted');
     assert.equal(response.retained, false);
     assert.equal('assessment' in response, false);
     assert.doesNotMatch(JSON.stringify(response), /ENGINEERING-/);
@@ -51,6 +53,7 @@ describe('agent/assessment-render', () => {
       result: source,
     });
     assert.equal(JSON.stringify(source), snapshot);
+    assert.equal(response.status, 'formatted');
     assert.ok(JSON.stringify(response).length < 2000);
     assert.ok(response.presentation.includes(source.reviewSummary!));
     assert.doesNotMatch(JSON.stringify(response), /engineering details|implementation step/);
@@ -61,6 +64,7 @@ describe('agent/assessment-render', () => {
       ...assessmentPresentationRequest(target, true),
       result: { ...result, decision: { mode: 'work', reasons: ['Technically ready.'] } },
     });
+    assert.equal(response.status, 'formatted');
     assert.match(response.presentation, /Assessment only/);
     assert.doesNotMatch(response.presentation, /Continue automatically/);
   });
@@ -80,8 +84,50 @@ describe('agent/assessment-render', () => {
         progress: { completed: [], remaining: [] },
       },
     });
+    assert.equal(response.status, 'formatted');
     assert.equal(response.retained, false);
     assert.match(response.presentation, /Should existing tasks keep their current settings/);
+  });
+
+  it('should page long clarification text without saving or echoing the engineering plan', async () => {
+    const partial = {
+      version: result.version,
+      summary: result.summary,
+      assessment: result.assessment,
+      fullAssessment: result.fullAssessment,
+      reviewSummary: result.reviewSummary,
+      evidence: result.evidence,
+      progress: result.progress,
+    };
+    const source = {
+      ...partial,
+      outcome: 'clarification-needed',
+      questions: Array.from({ length: 5 }, (_, i) => `Question ${i}: ` + 'detail '.repeat(180)),
+    };
+    const request = { ...assessmentPresentationRequest(target), result: source };
+    const first = renderNativeAssessment(request, 'openclaw');
+    assert.equal(first.status, 'formatted');
+    assert.ok(first.contextMaterials);
+    assert.doesNotMatch(JSON.stringify(first), /ENGINEERING-/);
+    const restored = await hydrateImplementation(first, async (read) =>
+      renderNativeAssessment({ ...request, ...read }, 'openclaw'),
+    );
+    for (const question of source.questions)
+      assert.ok(String(restored.presentation).includes(question));
+    assert.equal(restored.retained, false);
+    const read = first.contextMaterials.fields[0]!.request;
+    assert.throws(
+      () =>
+        renderNativeAssessment(
+          {
+            ...request,
+            ...read,
+            result: { ...source, questions: ['Changed question'] },
+          },
+          'openclaw',
+        ),
+      /stale/,
+    );
   });
 
   it('should reject missing source, missing review and comment destinations', () => {

@@ -44,6 +44,7 @@ export default function implementationMaterial<T extends Record<string, unknown>
     controls?: string[];
     purpose?: string;
     pagedFields?: string[];
+    inputFields?: string[];
   } = {},
 ) {
   const limit = implementationContextBudget;
@@ -146,6 +147,7 @@ export default function implementationMaterial<T extends Record<string, unknown>
   scan(projected, []);
   const material = () => ({
     version: 1,
+    ...(delivery.inputFields ? { inputFields: delivery.inputFields } : {}),
     fields,
     aliases,
     instruction: delivery.instruction ?? instruction,
@@ -182,9 +184,13 @@ export default function implementationMaterial<T extends Record<string, unknown>
             candidates.push({ parent: value as Record<string, unknown>, name, path: at, size });
           continue;
         }
-        if (typeof item === 'string' || Array.isArray(item)) {
+        if (
+          typeof item === 'string' ||
+          Array.isArray(item) ||
+          (item && typeof item === 'object' && !('observedAt' in item))
+        ) {
           const size = JSON.stringify(item).length;
-          if (size > 512)
+          if (size > 256)
             candidates.push({ parent: value as Record<string, unknown>, name, path: at, size });
         }
         if (!Array.isArray(item)) collect(item, at);

@@ -85,6 +85,7 @@ export interface GitHubNotificationItemContextClient {
     number: number,
     itemType?: 'issue' | 'pull-request',
     includeRoutingMetadata?: boolean,
+    complete?: boolean,
   ): Promise<GitHubNotificationItemContext>;
 }
 

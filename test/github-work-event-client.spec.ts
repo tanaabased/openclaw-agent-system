@@ -9,6 +9,7 @@ import {
   githubNotificationPublicationTarget,
 } from '../channels/github/publication/publication-contract.ts';
 import { githubCommentPageSize } from '../channels/github/provider/issue-comment-client.ts';
+import dispatchContext from '../agent/dispatch-context.ts';
 import retryGitHubRead from '../core/github-read-retry.ts';
 
 function response(body: unknown, link?: string): AgentSystemCliResult {
@@ -606,6 +607,65 @@ describe('channels/github/provider/work-event-client', () => {
     assert.equal(context.comments.at(-1)?.body, 'The latest requirement.');
     assert.ok(requests[1]?.includes('page=1'));
     assert.ok(requests[2]?.includes('page=2'));
+  });
+
+  it('should deliver complete issue and pr evidence beyond routing limits', async () => {
+    const body = 'issue requirements '.repeat(1500) + 'FINAL REQUIREMENT';
+    const comment = 'clarification '.repeat(200) + 'FINAL CORRECTION';
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'reader', nodeId: 'U_reader' },
+      async execute(argv) {
+        if (argv.includes('/repos/owner/repo/issues/3'))
+          return response({ title: 'Complete source', body, commentCount: 51, labels: [] });
+        const second = argv.includes('page=2');
+        if (argv.includes('/repos/owner/repo/issues/3/comments'))
+          return response(
+            Array.from({ length: second ? 1 : 50 }, (_, i) => ({
+              databaseId: second ? 51 : i + 1,
+              authorLogin: 'author',
+              body: comment,
+              createdAt: '2026-08-11T12:04:00Z',
+            })),
+            second
+              ? undefined
+              : '<https://api.github.com/repos/owner/repo/issues/3/comments?page=2>; rel="next"',
+          );
+        assert.ok(argv.includes('/repos/owner/repo/pulls/3/files'));
+        return response(
+          Array.from({ length: second ? 1 : 100 }, (_, i) => ({
+            filename: `file-${second ? 100 : i}.ts`,
+            status: 'modified',
+            additions: 1,
+            deletions: 0,
+            changes: 1,
+          })),
+          second
+            ? undefined
+            : '<https://api.github.com/repos/owner/repo/pulls/3/files?page=2>; rel="next"',
+        );
+      },
+    });
+    for (const kind of ['issue', 'pull-request'] as const) {
+      const evidence = await client.getItemContext('owner', 'repo', 3, kind, false, true);
+      const projected = dispatchContext(
+        evidence,
+        'https://github.com/owner/repo/issues/3',
+        1,
+        true,
+      );
+      assert.equal(projected.body, body);
+      assert.equal(projected.comments.length, 51);
+      assert.ok(projected.comments.every((item) => item.body === comment));
+      assert.equal(projected.truncated, false);
+      if (kind === 'pull-request') {
+        assert.equal(projected.files?.length, 101);
+        assert.equal(projected.files.at(-1)?.filename, 'file-100.ts');
+      }
+      const routing = dispatchContext(evidence, 'source', 1);
+      assert.equal(routing.body.length, 18000);
+      assert.equal(routing.comments.length, 10);
+      assert.equal(routing.truncated, true);
+    }
   });
 
   it('should include bounded pull-request file summaries without patches', async () => {

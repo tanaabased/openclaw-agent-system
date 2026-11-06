@@ -29,6 +29,7 @@ export default async function readItemContext(
   number: number,
   itemType: 'issue' | 'pull-request' = 'issue',
   includeRoutingMetadata = false,
+  complete = false,
 ): Promise<GitHubNotificationItemContext> {
   const endpoint = githubWorkItemEndpoint(owner, name, number);
   const response = await api.request(
@@ -42,7 +43,11 @@ export default async function readItemContext(
   const value = githubResponseRecord(response.value, 'item context');
   const title = githubResponseBoundedProse(value.title, 'item-context title', 512);
   if (!title.text.trim()) throw new Error('GitHub returned an invalid item-context title.');
-  const body = githubResponseBoundedProse(value.body, 'item-context body', 24_000);
+  const body = githubResponseBoundedProse(
+    value.body,
+    'item-context body',
+    complete ? Infinity : 24_000,
+  );
   const commentCount = githubResponseInteger(value.commentCount, 'item-context comment count');
   if (!Array.isArray(value.labels)) throw new Error('GitHub returned invalid issue labels.');
   const labels = value.labels.slice(0, 100).map((label) => {
@@ -53,10 +58,12 @@ export default async function readItemContext(
     return parsed;
   });
   const comments: GitHubNotificationItemContextComment[] = [];
-  let commentsTruncated = commentCount > maximumItemContextComments;
+  let commentsTruncated = !complete && commentCount > maximumItemContextComments;
   if (commentCount > 0) {
     const commentValues: unknown[] = [];
-    const firstPage = Math.max(1, Math.ceil(commentCount / maximumItemContextComments) - 1);
+    const firstPage = complete
+      ? 1
+      : Math.max(1, Math.ceil(commentCount / maximumItemContextComments) - 1);
     let page = firstPage;
     let hasNextPage: boolean;
     do {
@@ -80,10 +87,14 @@ export default async function readItemContext(
       commentValues.push(...commentsResponse.value);
       hasNextPage = commentsResponse.hasNextPage;
       page += 1;
-    } while (hasNextPage && page < firstPage + 2);
+    } while (hasNextPage && (complete || page < firstPage + 2));
     commentsTruncated ||=
-      firstPage > 1 || hasNextPage || commentValues.length > maximumItemContextComments;
-    for (const item of commentValues.slice(-maximumItemContextComments)) {
+      firstPage > 1 ||
+      hasNextPage ||
+      (!complete && commentValues.length > maximumItemContextComments);
+    for (const item of complete
+      ? commentValues
+      : commentValues.slice(-maximumItemContextComments)) {
       const comment = githubResponseRecord(item, 'item-context comment');
       const authorLogin = githubResponseBoundedProse(
         comment.authorLogin,
@@ -96,7 +107,7 @@ export default async function readItemContext(
       const commentBody = githubResponseBoundedProse(
         comment.body,
         'item-context comment body',
-        2_000,
+        complete ? Infinity : 2_000,
       );
       commentsTruncated ||= authorLogin.truncated || commentBody.truncated;
       comments.push({
@@ -124,50 +135,56 @@ export default async function readItemContext(
   const files: GitHubNotificationItemContextFile[] = [];
   let filesTruncated = false;
   if (itemType === 'pull-request') {
-    const filesResponse = await api.request(
-      [
-        '--method',
-        'GET',
-        `${githubRepositoryEndpoint(owner, name)}/pulls/${number}/files`,
-        '-F',
-        `per_page=${maximumItemContextFiles}`,
-        '-F',
-        'page=1',
-        '--jq',
-        '[.[]|{additions,changes,deletions,filename,previousFilename:.previous_filename,status}]',
-      ],
-      'pull-request files',
-    );
-    if (!Array.isArray(filesResponse.value)) {
-      throw new Error('GitHub returned invalid pull-request files.');
-    }
-    filesTruncated = filesResponse.hasNextPage;
-    for (const entry of filesResponse.value.slice(0, maximumItemContextFiles)) {
-      const file = githubResponseRecord(entry, 'pull-request file');
-      const filename = githubResponseBoundedProse(file.filename, 'pull-request filename', 1_024);
-      const previousFilename =
-        file.previousFilename === null || file.previousFilename === undefined
-          ? undefined
-          : githubResponseBoundedProse(
-              file.previousFilename,
-              'pull-request previous filename',
-              1_024,
-            );
-      const status = githubResponseBoundedProse(file.status, 'pull-request file status', 32);
-      if (!filename.text || !status.text) {
-        throw new Error('GitHub returned an invalid pull-request file.');
+    let page = 1;
+    let hasNextFilePage: boolean;
+    do {
+      const filesResponse = await api.request(
+        [
+          '--method',
+          'GET',
+          `${githubRepositoryEndpoint(owner, name)}/pulls/${number}/files`,
+          '-F',
+          `per_page=${maximumItemContextFiles}`,
+          '-F',
+          `page=${page}`,
+          '--jq',
+          '[.[]|{additions,changes,deletions,filename,previousFilename:.previous_filename,status}]',
+        ],
+        'pull-request files',
+      );
+      if (!Array.isArray(filesResponse.value)) {
+        throw new Error('GitHub returned invalid pull-request files.');
       }
-      filesTruncated ||=
-        filename.truncated || previousFilename?.truncated === true || status.truncated;
-      files.push({
-        additions: githubResponseInteger(file.additions, 'pull-request file additions'),
-        changes: githubResponseInteger(file.changes, 'pull-request file changes'),
-        deletions: githubResponseInteger(file.deletions, 'pull-request file deletions'),
-        filename: filename.text,
-        ...(previousFilename === undefined ? {} : { previousFilename: previousFilename.text }),
-        status: status.text,
-      });
-    }
+      hasNextFilePage = filesResponse.hasNextPage;
+      filesTruncated ||= !complete && hasNextFilePage;
+      for (const entry of filesResponse.value.slice(0, maximumItemContextFiles)) {
+        const file = githubResponseRecord(entry, 'pull-request file');
+        const filename = githubResponseBoundedProse(file.filename, 'pull-request filename', 1_024);
+        const previousFilename =
+          file.previousFilename === null || file.previousFilename === undefined
+            ? undefined
+            : githubResponseBoundedProse(
+                file.previousFilename,
+                'pull-request previous filename',
+                1_024,
+              );
+        const status = githubResponseBoundedProse(file.status, 'pull-request file status', 32);
+        if (!filename.text || !status.text) {
+          throw new Error('GitHub returned an invalid pull-request file.');
+        }
+        filesTruncated ||=
+          filename.truncated || previousFilename?.truncated === true || status.truncated;
+        files.push({
+          additions: githubResponseInteger(file.additions, 'pull-request file additions'),
+          changes: githubResponseInteger(file.changes, 'pull-request file changes'),
+          deletions: githubResponseInteger(file.deletions, 'pull-request file deletions'),
+          filename: filename.text,
+          ...(previousFilename === undefined ? {} : { previousFilename: previousFilename.text }),
+          status: status.text,
+        });
+      }
+      page += 1;
+    } while (complete && hasNextFilePage);
   }
   let metadata;
   let nativeMetadata;

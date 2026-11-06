@@ -1,3 +1,4 @@
+import nativeTaskContext from './native-task-context.ts';
 import { realpath } from 'node:fs/promises';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -15,6 +16,7 @@ import {
   parseAssessmentSubmission,
   type AssessmentResult,
 } from './assessment-result.ts';
+import type { AssessmentConfiguration } from '../manifest/assessment-schema.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
 import { type AssessmentEntry, type AssessmentEntries } from './assessment-entry-state.ts';
 import AssessmentEntryStore, { type AssessmentEntryBinding } from './assessment-entry-store.ts';
@@ -52,6 +54,10 @@ export interface AssessmentEntryDependencies {
         owner?: { id: string; eventId?: string };
         implementationResult?: ImplementationResult;
         nativeContext?: ReturnType<typeof nativeIssueContext>;
+        selections?: {
+          assessment?: AssessmentConfiguration;
+          implementation?: AssessmentConfiguration;
+        };
         path: string;
         selection: AssessmentSelection;
         evidence: string;
@@ -103,7 +109,17 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     throw new Error('assessment-issue-url-required');
   const repository = `${locator.owner}/${locator.name}`;
   const managed = await deps.managed({ repository, number: locator.number });
-  if (managed?.nativeContext && input.operation !== 'present') return managed.nativeContext;
+  if (managed?.nativeContext && input.operation !== 'present')
+    return input.operation === 'context'
+      ? nativeTaskContext(
+          'assessment',
+          targetUrl,
+          managed.nativeContext,
+          deps,
+          input.material,
+          managed.selections?.assessment,
+        )
+      : managed.nativeContext;
   const managedEntry = managed
     ? await managed.entries(async (entries) =>
         entries.find(
@@ -243,6 +259,14 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
         '\n\nDirect execution: use these verified inputs and the selected assessment body once. Preserve the current chat/model. Use presentationRequest plus result matching resultSchema through dispatch assessment render. This pure formatter saves no assessment or summary. Show its presentation; keep the full result in native tool context. Historical assessment present remains an explicit read. No assignment, setup, implementation, publication, or new chat is authorized.',
     });
     if (input.operation === 'context') {
+      const currentEvidence = await provider.getItemContext(
+        locator.owner,
+        locator.name,
+        locator.number,
+        'issue',
+        true,
+        true,
+      );
       if (!entry) {
         const selected = (
           await selectWorkflowStage({
@@ -253,13 +277,7 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
             resolveSkill: deps.resolveSkill,
           })
         ).selection;
-        const evidence = JSON.stringify(
-          dispatchContext(
-            await provider.getItemContext(locator.owner, locator.name, locator.number),
-            canonical,
-            deps.now,
-          ),
-        );
+        const evidence = JSON.stringify(dispatchContext(currentEvidence, canonical, deps.now));
         entry = {
           id: automationHash({ binding, canonical, owner: managed?.digest }),
           binding,
@@ -287,18 +305,15 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
             resolveSkill: deps.resolveSkill,
           })
         ).selection;
-        entry.evidence = JSON.stringify(
-          dispatchContext(
-            await provider.getItemContext(locator.owner, locator.name, locator.number),
-            canonical,
-            deps.now,
-          ),
-        );
+        entry.evidence = JSON.stringify(dispatchContext(currentEvidence, canonical, deps.now));
       }
       await deps.assertCurrent();
       await save();
       return assessmentMaterial(
-        response(entry),
+        {
+          ...response(entry),
+          evidence: dispatchContext(currentEvidence, canonical, deps.now, true),
+        },
         {
           action: 'assessment',
           operation: 'context',
@@ -334,22 +349,25 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     await deps.assertCurrent();
     return {
       id: entry.id,
-      ...renderNativeAssessment({
-        ...assessmentPresentationRequest(canonical, true),
-        result: {
-          ...result,
-          reviewSummary:
-            result.reviewSummary ??
-            [
-              result.summary,
-              ...(result.outcome === 'clarification-needed'
-                ? result.questions
-                : result.outcome === 'operator-setup-blocker'
-                  ? [result.remediation]
-                  : []),
-            ].join('\n\n'),
+      ...renderNativeAssessment(
+        {
+          ...assessmentPresentationRequest(canonical, true),
+          result: {
+            ...result,
+            reviewSummary:
+              result.reviewSummary ??
+              [
+                result.summary,
+                ...(result.outcome === 'clarification-needed'
+                  ? result.questions
+                  : result.outcome === 'operator-setup-blocker'
+                    ? [result.remediation]
+                    : []),
+              ].join('\n\n'),
+          },
         },
-      }),
+        deps.binding.runtime,
+      ),
       handoff,
     };
   });

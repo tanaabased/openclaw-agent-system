@@ -362,7 +362,12 @@ describe('agent/codex-delivery', () => {
           close: async () => {},
         }),
       },
-      async () => assert.fail('must retain the existing issue context'),
+      async (context) => {
+        await context.assertCurrent();
+        const owner = await context.managed({ repository: 'owner/repo', number: 3 });
+        assert.ok(owner?.nativeContext);
+        return owner.nativeContext;
+      },
       async () => assert.fail('continuation must not own delivered work'),
     );
     assert.equal(context.status, 'native');

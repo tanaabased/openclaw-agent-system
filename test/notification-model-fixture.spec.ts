@@ -220,6 +220,7 @@ for (const scenario of [
     const formatting = await action(input, 'assessment', selectedScenario);
     assert.equal(formatting.operation, 'render');
     const formatted = renderNativeAssessment(formatting);
+    assert.equal(formatted.status, 'formatted');
     assert.equal(formatted.retained, false);
     append(input, 'native-plan-render', formatted);
     const observed = await action(input, 'reply', selectedScenario);
@@ -905,7 +906,10 @@ for (const scenario of [
         });
         input.messages[1]!.content += '\n' + context.appendContext;
         question.content = prompt;
-        assert.equal(matchFixture([...scenario.fixtures], input), null);
+        assert.throws(
+          () => matchFixture([...scenario.fixtures], input),
+          /native hook must retain task facts/,
+        );
       });
       for (const mode of ['operator', 'work', 'auto', 'custom'])
         it(`should carry ${mode} through implementation and the same delivery on retry`, async () => {

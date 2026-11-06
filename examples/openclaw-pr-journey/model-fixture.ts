@@ -1038,7 +1038,7 @@ function response(request: ChatCompletionRequest, options: PRFixtureOptions) {
       )
     )
       return { content: error.message };
-    return undefined;
+    throw error;
   }
 }
 

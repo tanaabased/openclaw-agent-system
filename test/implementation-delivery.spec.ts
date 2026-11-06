@@ -134,7 +134,7 @@ describe('agent/implementation-delivery', () => {
     assert.equal(hasDeliveredImplementation(record), true);
   });
 
-  it('should return native facts without routing a delivered task into an implementation owner', async () => {
+  it('should refresh native facts without routing a delivered task into an implementation owner', async () => {
     const previous = { outcome: 'done', summary: 'OLD-WORK', fullResult: 'OLD-PLAN' };
     const nativeContext = nativeIssueContext({
       id: 'issue',
@@ -161,7 +161,7 @@ describe('agent/implementation-delivery', () => {
       managed: async () => owner,
       route: async () => assert.fail('continuation must not own delivered work'),
     });
-    assert.deepEqual(result?.result, nativeContext);
-    assert.equal('resultContract' in result!.result, false);
+    assert.equal(result, undefined, 'context refresh belongs to the readonly collector');
+    assert.equal('resultContract' in nativeContext, false);
   });
 });

@@ -1,3 +1,4 @@
+import nativeTaskContext from './native-task-context.ts';
 import nativeClarification from './native-clarification.ts';
 import implementationMaterial from './implementation-material.ts';
 import { realpath } from 'node:fs/promises';
@@ -35,7 +36,6 @@ export default async function implementationEntry(
       input.id ? entry.id === input.id : entry.target.toLowerCase() === input.target?.toLowerCase(),
     ),
   );
-  if (input.material && !retained) throw new Error('implementation-entry-unavailable');
   const target = input.target ?? retained?.target ?? deps.currentTarget;
   if (!target)
     return {
@@ -54,6 +54,15 @@ export default async function implementationEntry(
     if (input.id && input.id !== managed.owner.id)
       throw new Error('implementation-managed-owner-mismatch');
     await deps.assertCurrent();
+    if (managed.nativeContext && input.operation === 'context')
+      return nativeTaskContext(
+        'implementation',
+        target,
+        managed.nativeContext,
+        deps,
+        input.material,
+        managed.selections?.implementation,
+      );
     if (input.operation === 'present')
       return implementationReadback(managed.owner.id, managed.implementationResult);
     return {
@@ -64,6 +73,7 @@ export default async function implementationEntry(
         'Use the existing implementation owner with current native direction and its source and publication receipts. Do not bootstrap manual work.',
     };
   }
+  if (input.material && !retained) throw new Error('implementation-entry-unavailable');
   if (deps.operator === false) throw new Error('implementation-operator-required');
   if (input.id && !retained) throw new Error('implementation-entry-unavailable');
   const path = input.path ?? retained?.checkout.path;
@@ -188,9 +198,17 @@ export default async function implementationEntry(
         entry: 'direct',
         target: canonical,
         evidence: dispatchContext(
-          await provider.getItemContext(locator.owner, locator.name, locator.number),
+          await provider.getItemContext(
+            locator.owner,
+            locator.name,
+            locator.number,
+            'issue',
+            true,
+            true,
+          ),
           canonical,
           deps.now,
+          true,
         ),
         instructions:
           'Execute the selected implementation body once using this verified context; never invoke its bootstrap again. Preserve partial files and follow the latest native plan and user direction. The plan supplied to this tool stays in native conversation; Agent System does not save or reload it. Do not assess, create another chat/worktree, activate notifications or change session settings. Respect the retained publicationAuthorized scope. Local scope forbids push and PR publication. A plan and skill composition grant no publication authority; pull-request scope is collected only from an explicit operator publication request, not inferred from the plan. When the authorized work is complete and verified, use dispatch implementation delivery prepare with this id, title and body. Result recording is optional history and never a delivery prerequisite. Report ordinary substantive output and ask questions directly in native chat. Read historical results only on explicit request or to reconcile a particular attempted operation; they do not replace current direction. Keep partial files and questions in the native conversation; an answer is ordinary input and needs no clarification checkpoint. Existing publication effects must resume through their original owner and receipts, never a substitute publication.',

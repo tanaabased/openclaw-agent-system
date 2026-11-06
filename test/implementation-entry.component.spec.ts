@@ -1,3 +1,5 @@
+import { nativeIssueContext } from '../agent/implementation-delivery.ts';
+import hydrateImplementation from './implementation-material-fixture.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -88,6 +90,56 @@ describe('agent/implementation-entry', () => {
       deps,
     );
 
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should refresh delivered ${runtime} context without another managed implementation round`, async () => {
+      deps.binding.runtime = runtime;
+      const skill = await deps.resolveSkill('old-assessment');
+      const nativeContext = nativeIssueContext({
+        id: 'delivered',
+        worktree: root,
+        phase: 'complete',
+      });
+      deps.managed = async () => ({
+        digest: 'c'.repeat(64),
+        owner: { id: 'delivered' },
+        path: root,
+        nativeContext,
+        selections: { implementation: { skill: 'current-implementation' } },
+        selection: {
+          version: 1,
+          requestedSkill: 'old-assessment',
+          defaultSkill: false,
+          skill,
+          observedAt: 0,
+        },
+        evidence: 'OLD SNAPSHOT',
+        entries: async () => {
+          throw new Error('must not reopen historical entries');
+        },
+      });
+      const complete = await hydrateImplementation(await call(), (read) =>
+        implementationEntry(read, deps),
+      );
+      assert.equal(complete.status, 'native');
+      assert.equal(
+        (complete.implementation as { requestedSkill: string }).requestedSkill,
+        'current-implementation',
+      );
+      assert.equal((complete.evidence as { body: string }).body, 'Requested handler.');
+      assert.doesNotMatch(JSON.stringify(complete), /old-assessment|OLD SNAPSHOT/);
+      assert.equal('resultSubmission' in complete, false);
+      assert.equal('plan' in complete, false);
+      assert.deepEqual(
+        await new DirectEntryStore(
+          deps.root,
+          deps.binding,
+          implementationEntriesSchema,
+          'implementation',
+        ).exclusive(async (entries) => entries),
+        [],
+      );
+    });
+
   it('should retain completed implementation after more than twenty direct entries', async () => {
     const connect = deps.connectProvider;
     deps.connectProvider = async () => {
@@ -167,6 +219,7 @@ describe('agent/implementation-entry', () => {
       assert.ok('implementation' in first && first.implementation);
       assert.equal('plan' in first, false);
       assert.equal('assessment' in first, false);
+      assert.ok('issueStage' in first && 'resultContract' in first);
       assert.equal(first.issueStage, 'implementation');
       assert.equal(first.resultContract, 'implementation-result/v1');
       assert.ok('publicationAuthorized' in first);

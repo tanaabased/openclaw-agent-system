@@ -200,21 +200,24 @@ export async function issueAssessmentAction(input: {
   const candidate = parseAssessmentSubmission(input.result);
   return {
     id: record.id,
-    ...renderNativeAssessment({
-      ...assessmentPresentationRequest(managedTargetUrl(intake)),
-      result: {
-        ...candidate,
-        reviewSummary:
-          candidate.reviewSummary ??
-          [
-            candidate.summary,
-            ...(candidate.outcome === 'clarification-needed'
-              ? candidate.questions
-              : candidate.outcome === 'operator-setup-blocker'
-                ? [candidate.remediation]
-                : []),
-          ].join('\n\n'),
+    ...renderNativeAssessment(
+      {
+        ...assessmentPresentationRequest(managedTargetUrl(intake)),
+        result: {
+          ...candidate,
+          reviewSummary:
+            candidate.reviewSummary ??
+            [
+              candidate.summary,
+              ...(candidate.outcome === 'clarification-needed'
+                ? candidate.questions
+                : candidate.outcome === 'operator-setup-blocker'
+                  ? [candidate.remediation]
+                  : []),
+            ].join('\n\n'),
+        },
       },
-    }),
+      'openclaw',
+    ),
   };
 }

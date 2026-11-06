@@ -1,3 +1,4 @@
+import renderNativeAssessment from '../agent/assessment-render.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -108,7 +109,8 @@ describe('agent/assessment-entry', () => {
   for (const runtime of ['codex', 'openclaw'] as const)
     it(`should deliver complete direct assessment material in ${runtime}`, async () => {
       deps.binding.runtime = runtime;
-      const issue = 'Important requirement: preserve every detail.\n'.repeat(200);
+      const issue =
+        'Important requirement: preserve every detail.\n'.repeat(600) + 'FINAL REQUIREMENT';
       const connect = deps.connectProvider;
       deps.connectProvider = async () => ({
         ...(await connect()),
@@ -136,6 +138,38 @@ describe('agent/assessment-entry', () => {
       assert.equal(entries[0]!.result, undefined);
       assert.equal(entries[0]!.history, undefined);
     });
+
+  it('should deliver every clarification through the real native tool output limit', async () => {
+    const partial = {
+      version: ready.version,
+      summary: ready.summary,
+      assessment: ready.assessment,
+      fullAssessment: ready.fullAssessment,
+      reviewSummary: ready.reviewSummary,
+      evidence: ready.evidence,
+      progress: ready.progress,
+    };
+    const source = {
+      ...partial,
+      outcome: 'clarification-needed',
+      reviewSummary: 'Choose the intended experience.',
+      questions: Array.from(
+        { length: 5 },
+        (_, i) => `Question ${i}: ` + 'important detail '.repeat(70),
+      ),
+    };
+    const request = { action: 'assessment', operation: 'render', target, result: source };
+    await nativeMaterialFixture({
+      request,
+      run: (input) => renderNativeAssessment(input, 'openclaw'),
+      verify: (output) => {
+        assert.equal(output.retained, false);
+        for (const question of source.questions)
+          assert.ok(String(output.presentation).includes(question));
+      },
+    });
+    await assert.rejects(readdir(deps.root), { code: 'ENOENT' });
+  });
 
   it('should refresh context and format complete output without saving a plan or granting authority', async () => {
     const context = await call('context');
@@ -354,6 +388,7 @@ describe('agent/assessment-entry', () => {
           observedAt: 1,
         },
         nativeContext,
+        selections: { assessment: { skill: 'current-override' } },
         entries: async () => {
           throw new Error('assessment history must remain untouched');
         },
@@ -361,19 +396,38 @@ describe('agent/assessment-entry', () => {
       deps.git = async () => {
         throw new Error('native planning must not inspect managed checkout');
       };
-      deps.connectProvider = async () => {
-        throw new Error('native planning must not load provider context');
-      };
+      const provider = intakeFixture().client;
+      deps.connectProvider = async () => ({
+        ...provider,
+        getItemContext: async () => ({
+          title: 'Current issue',
+          body: 'CURRENT REQUIREMENT',
+          comments: [],
+          labels: [],
+          truncated: false,
+        }),
+      });
       for (const request of [
         { operation: 'context', revise: true },
         { operation: 'result', id: 'a'.repeat(64), result: { ...ready, plan: 'Revised plan.' } },
       ]) {
         const response = await call(request.operation, request);
-        assert.deepEqual(response, before);
+        if (request.operation === 'context') {
+          const complete = await hydrateImplementation(response, (read) =>
+            assessmentEntry(read, deps),
+          );
+          assert.equal(complete.status, 'native');
+          assert.equal((complete.evidence as { body: string }).body, 'CURRENT REQUIREMENT');
+          assert.equal(
+            (complete.assessment as { requestedSkill: string }).requestedSkill,
+            'current-override',
+          );
+          assert.equal('previousResult' in complete, false);
+        } else assert.deepEqual(response, before);
         assert.equal('resultSubmission' in response, false);
       }
       assert.deepEqual(history, [{ result: ready }]);
-      assert.equal(selections.length, 0);
+      assert.ok(selections.length > 0);
       assert.deepEqual(await readdir(deps.root), []);
     });
   it('should fail explicitly on invalid managed context without selecting a manual method', async () => {
@@ -399,7 +453,12 @@ describe('agent/assessment-entry', () => {
   it('should preserve dirty checkout evidence and reject an invalid configured skill without fallback', async () => {
     dirty = true;
     const context = await call('context');
-    assert.ok('project' in context && 'dirty' in context.project);
+    assert.ok(
+      'project' in context &&
+        context.project &&
+        typeof context.project === 'object' &&
+        'dirty' in context.project,
+    );
     assert.equal(context.project.dirty, true);
     deps.turnId = 'later';
     deps.inputId = 'later-input';

@@ -635,6 +635,19 @@ export default class OpenClawDispatchIssue {
             return {
               ...response,
               implementation: selected,
+              currentIssue: dispatchContext(
+                await client.getItemContext(
+                  repo.owner.login,
+                  repo.name,
+                  intake.issue.number,
+                  managedPullRequest(intake) ? 'pull-request' : 'issue',
+                  true,
+                  true,
+                ),
+                managedTargetUrl(intake),
+                now,
+                true,
+              ),
               ...(record.predecessorId
                 ? {
                     predecessor: (() => {
@@ -854,21 +867,20 @@ export default class OpenClawDispatchIssue {
                 now,
               })
             : undefined;
+        const completeEvidence =
+          input.action === 'context'
+            ? await client.getItemContext(
+                repo.owner.login,
+                repo.name,
+                intake.issue.number,
+                managedPullRequest(intake) ? 'pull-request' : 'issue',
+                true,
+                true,
+              )
+            : undefined;
         const evidence =
           input.action === 'context'
-            ? JSON.stringify(
-                dispatchContext(
-                  await client.getItemContext(
-                    repo.owner.login,
-                    repo.name,
-                    intake.issue.number,
-                    managedPullRequest(intake) ? 'pull-request' : 'issue',
-                    true,
-                  ),
-                  source(intake),
-                  now,
-                ),
-              )
+            ? JSON.stringify(dispatchContext(completeEvidence!, source(intake), now))
             : undefined;
         await childAuthority.assertCurrent();
         const outcome = await issueAssessmentAction({
@@ -888,6 +900,9 @@ export default class OpenClawDispatchIssue {
         });
         return {
           ...outcome,
+          ...(completeEvidence
+            ? { evidence: dispatchContext(completeEvidence, source(intake), now, true) }
+            : {}),
           ...(record.predecessorId
             ? {
                 predecessor: (() => {

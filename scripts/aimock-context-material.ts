@@ -28,11 +28,12 @@ export default function contextMaterialExchange(request: ChatCompletionRequest):
       continue;
     }
     if (!context?.contextMaterials) continue;
-    const owner =
-      messages
-        .flatMap((item) => item.tool_calls ?? [])
-        .find((call) => call.id === message.tool_call_id)?.function.name ?? 'agent_system_dispatch';
+    const original = messages
+      .flatMap((item) => item.tool_calls ?? [])
+      .find((call) => call.id === message.tool_call_id)?.function;
+    const owner = original?.name ?? 'agent_system_dispatch';
     const materials = context.contextMaterials as {
+      inputFields?: string[];
       fields: Array<{
         path: string[];
         digest: string;
@@ -58,7 +59,25 @@ export default function contextMaterialExchange(request: ChatCompletionRequest):
           return {
             request,
             pending: {
-              toolCalls: [{ id, name: owner, arguments: JSON.stringify(next) }],
+              toolCalls: [
+                {
+                  id,
+                  name: owner,
+                  arguments: JSON.stringify(
+                    materials.inputFields
+                      ? {
+                          ...Object.fromEntries(
+                            materials.inputFields.map((field) => [
+                              field,
+                              JSON.parse(original?.arguments ?? '{}')[field],
+                            ]),
+                          ),
+                          ...next,
+                        }
+                      : next,
+                  ),
+                },
+              ],
             },
           };
         const result = JSON.parse(observed);

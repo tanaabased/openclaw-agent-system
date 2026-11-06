@@ -532,7 +532,7 @@ function response(request: ChatCompletionRequest) {
       )
     )
       return { content: error.message };
-    return undefined;
+    throw error;
   }
 }
 

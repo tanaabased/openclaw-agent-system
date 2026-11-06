@@ -3656,6 +3656,7 @@ describe('agent/openclaw issue dispatch', () => {
     const restored = await hydrateImplementation(first, async (read) =>
       service.run(manifest, root, assessor(input.id), read as typeof request),
     );
+    assert.equal((restored.currentIssue as { body: string }).body, 'Return the missing result.');
     assert.equal(restored.assessment, undefined);
     assert.equal(restored.previousResult, undefined);
     assert.equal(restored.previousImplementationResult, undefined);
@@ -7277,7 +7278,7 @@ describe('agent/openclaw issue dispatch', () => {
       allowed: [author],
     };
     const review = reviewFixture({ author, body: '@receiver address every finding' });
-    const findings = Array.from({ length: 12 }, (_, i) =>
+    const findings = Array.from({ length: 3 }, (_, i) =>
       reviewCommentFixture({
         author,
         nodeId: `finding-${i}`,

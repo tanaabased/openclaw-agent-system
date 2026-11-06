@@ -131,7 +131,7 @@ export default class OpenClawDispatch {
         (input.action === 'feedback' &&
           ['context', 'implementation-context', 'compose'].includes(input.operation) &&
           !input.decision) ||
-        (input.action === 'assessment' && input.operation === 'context') ||
+        (input.action === 'assessment' && ['context', 'render'].includes(input.operation)) ||
         (input.action === 'delivery' &&
           input.operation === 'compose' &&
           !input.publicText &&
@@ -321,7 +321,7 @@ export default class OpenClawDispatch {
               : { action: 'implementation-context', id };
     }
     if (input.action === 'assessment' && input.operation === 'render')
-      return renderNativeAssessment(input);
+      return renderNativeAssessment(input, 'openclaw');
     if (input.action === 'assessment')
       return openClawAssessmentEntry({
         manifest,

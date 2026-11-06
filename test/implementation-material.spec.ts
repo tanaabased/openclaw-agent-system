@@ -67,6 +67,26 @@ describe('agent/implementation-material', () => {
     );
   });
 
+  it('should page medium-sized evidence alongside warnings without exceeding the native envelope', async () => {
+    const source = {
+      ...implementationContext({ runtime: 'openclaw', id: 'a'.repeat(64), path: '/checkout' }),
+      instructions: 'Current instructions. '.repeat(250),
+      currentIssue: { body: 'Current issue.', comments: [], observedAt: 1 },
+      routing: JSON.stringify({ guidance: 'routing information '.repeat(24) }),
+      assignmentObservation: { missing: true, detail: 'observation '.repeat(18) },
+      assignmentWarning: { summary: 'current warning '.repeat(20) },
+      implementation: {
+        skill: { name: 'selected', path: '/skills/selected', digest: 'b'.repeat(64) },
+        observedAt: 1,
+      },
+    };
+    const first = implementationMaterial(source, request);
+    const restored = await hydrateImplementation(first, async (next) =>
+      implementationMaterial(source, request, next.material as ImplementationMaterialRead),
+    );
+    assert.deepEqual(restored, source);
+  });
+
   it('should preserve result aliases regardless of object property order', async () => {
     const { previousImplementationResult, ...current } = original();
     const source = { previousImplementationResult, ...current };

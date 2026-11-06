@@ -9,6 +9,7 @@ export default function dispatchContext(
   context: GitHubNotificationItemContext,
   source: string,
   observedAt: number,
+  complete = false,
 ) {
   const fallbackMetadata = routingMetadata(nativeRoutingMetadata([]), context.body);
   const conflicts = (['complexity', 'workSize'] as const).filter(
@@ -20,11 +21,14 @@ export default function dispatchContext(
   return {
     source,
     observedAt,
-    title: context.title.slice(0, 512),
-    body: context.body.slice(0, 18000),
-    comments: context.comments
-      .slice(-10)
-      .map((comment) => ({ ...comment, body: comment.body.slice(0, 1200) })),
+    title: complete ? context.title : context.title.slice(0, 512),
+    body: complete ? context.body : context.body.slice(0, 18000),
+    comments: complete
+      ? context.comments
+      : context.comments
+          .slice(-10)
+          .map((comment) => ({ ...comment, body: comment.body.slice(0, 1200) })),
+    ...(complete && context.files ? { files: context.files } : {}),
     metadata: context.routingMetadata ?? null,
     nativeMetadata: context.nativeRoutingMetadata ?? null,
     fallbackMetadata,
@@ -32,8 +36,9 @@ export default function dispatchContext(
     labels: context.labels,
     truncated:
       context.truncated ||
-      context.body.length > 18000 ||
-      context.comments.length > 10 ||
-      context.comments.some((comment) => comment.body.length > 1200),
+      (!complete &&
+        (context.body.length > 18000 ||
+          context.comments.length > 10 ||
+          context.comments.some((comment) => comment.body.length > 1200))),
   };
 }

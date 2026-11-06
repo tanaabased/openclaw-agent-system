@@ -66,6 +66,7 @@ export default async function codexEntryContext<T>(
       )?.id;
       const feedback = eventId && record.feedback?.events.find((event) => event.id === eventId);
       return {
+        selections: record.manualIssue?.selections,
         nativeContext:
           !feedback && hasDeliveredImplementation(record) ? nativeIssueContext(record) : undefined,
         implementationResult: feedback ? feedback.work?.result : record.continuation?.result,
@@ -97,6 +98,25 @@ export default async function codexEntryContext<T>(
       records[0] && dispatchAdmission(records[0], (await current.store.read())?.records ?? []);
     if (records.length && !admission) throw new Error('assessment-managed-admission-missing');
     const currentTarget = admission ? managedTargetUrl(admission) : undefined;
+    const nativeContextRequest =
+      !!records[0] &&
+      hasDeliveredImplementation(records[0]) &&
+      !!input &&
+      typeof input === 'object' &&
+      'operation' in input &&
+      input.operation === 'context' &&
+      (!('target' in input) || input.target === undefined || input.target === currentTarget);
+    const readOnlyNative =
+      nativeContextRequest &&
+      admission &&
+      Boolean(
+        (
+          await managed({
+            repository: `${admission.repository.owner.login}/${admission.repository.name}`,
+            number: admission.issue.number,
+          })
+        )?.nativeContext,
+      );
     if (routeManaged) {
       const routed = await managedImplementationRoute({
         action: input,
@@ -106,7 +126,7 @@ export default async function codexEntryContext<T>(
       });
       if (routed) return routed.result;
     }
-    const turn = await codexDirectInput(connection.request, caller);
+    const turn = readOnlyNative ? undefined : await codexDirectInput(connection.request, caller);
     const assertCurrent = async () => {
       const fresh = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
       if (
@@ -114,8 +134,8 @@ export default async function codexEntryContext<T>(
         automationHash(fresh.manifest) !== automationHash(current.manifest)
       )
         throw new Error('assessment-binding-changed');
-      const next = await codexDirectInput(connection.request, caller);
-      if (next.turnId !== turn.turnId || next.inputId !== turn.inputId)
+      const next = turn && (await codexDirectInput(connection.request, caller));
+      if (turn && next && (next.turnId !== turn.turnId || next.inputId !== turn.inputId))
         throw new Error('assessment-native-input-changed');
     };
     return await collect({
@@ -130,7 +150,9 @@ export default async function codexEntryContext<T>(
         session: caller,
         incarnation: caller,
       },
-      ...turn,
+      turnId: turn?.turnId ?? '',
+      inputId: turn?.inputId ?? '',
+      message: turn?.message,
       manifest: current.manifest,
       now: (deps.now ?? Date.now)(),
       assertCurrent,

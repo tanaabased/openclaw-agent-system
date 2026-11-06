@@ -362,9 +362,11 @@ export async function assessDispatch(
         intake.issue.number,
         managedPullRequest(intake) ? 'pull-request' : 'issue',
         true,
+        true,
       ),
       managedTargetUrl(intake),
       now,
+      true,
     );
     await fresh();
     const assessment = (
