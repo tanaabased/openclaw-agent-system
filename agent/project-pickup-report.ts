@@ -4,6 +4,7 @@ import type {
   PickupSelectionGuidance,
 } from './project-pickup.ts';
 import type { ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
+import type { PickupCandidateScope } from './project-pickup-scope.ts';
 import card, {
   githubNotificationMarkdownCode as code,
   githubNotificationMarkdownText as text,
@@ -16,6 +17,7 @@ export default function projectPickupReport(input: {
     status: string;
     repository?: string;
     issue?: number;
+    pickupScope?: PickupCandidateScope;
     code?: string;
     summary?: PickupScanSummary;
     allowances?: PickupAllowance[];
@@ -31,9 +33,13 @@ export default function projectPickupReport(input: {
   const repository = outcome.repository;
   const allowances = outcome.allowances ?? [];
   const summary = outcome.summary;
+  const pickupScope = outcome.pickupScope ?? summary?.pickupScope;
   const uncertain = outcome.status === 'attempted';
   const failed = outcome.status === 'failed';
-  const warning = uncertain || Boolean(outcome.code) || allowances.some((entry) => entry.code);
+  const warning =
+    uncertain ||
+    Boolean(outcome.code) ||
+    allowances.some((entry) => entry.code || entry.providerDiagnostic);
   const selected = outcome.status === 'assigned';
   const exhausted = outcome.status === 'allowance-reached';
   const titles: Record<string, string> = {
@@ -61,11 +67,15 @@ export default function projectPickupReport(input: {
       ...allowances.map((entry) => ({
         label: 'Window allowance',
         value: [
-          `[${text(entry.repository)}](https://github.com/${entry.repository}/milestone/${entry.milestone})`,
+          `[${text(entry.repository)}](https://github.com/${entry.repository}${typeof entry.milestone === 'number' ? `/milestone/${entry.milestone}` : '/issues'})`,
+          Array.isArray(entry.milestone) ? `milestones ${entry.milestone.join(', ')}` : '',
           entry.used === undefined
             ? `limit ${entry.limit}`
             : `${entry.used} of ${entry.limit} assigned`,
           entry.code ? code(entry.code) : '',
+          entry.providerDiagnostic
+            ? text(entry.providerDiagnostic.providerMessage ?? entry.providerDiagnostic.explanation)
+            : '',
         ]
           .filter(Boolean)
           .join(' · '),
@@ -98,6 +108,17 @@ export default function projectPickupReport(input: {
             {
               label: selected ? 'Assigned' : 'Selected',
               value: issueLink(repository, outcome.issue ?? summary!.selected!.number),
+            },
+          ]
+        : []),
+      ...(pickupScope === 'preferred' || pickupScope === 'fallback'
+        ? [
+            {
+              label: 'Milestone choice',
+              value:
+                pickupScope === 'preferred'
+                  ? 'Preferred milestone'
+                  : 'Fallback within the selected repository',
             },
           ]
         : []),

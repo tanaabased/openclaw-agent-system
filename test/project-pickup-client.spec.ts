@@ -100,6 +100,22 @@ describe('github project pickup provider', () => {
     await assert.rejects(f.client.discoverProject('owner', 'repo', 4, 3), /candidates-invalid/);
   });
 
+  it('should discover repository-wide issues without a milestone parameter', async () => {
+    const f = fixture();
+    f.reply.value = [{ nodeId: 'I_one', number: 1 }];
+    f.reply.next = true;
+    assert.deepEqual(await f.client.discoverProject('owner', 'repo', undefined, 1), {
+      candidates: [{ nodeId: 'I_one', number: 1 }],
+      nextPage: 2,
+    });
+    assert.equal(
+      f.calls[0]!.argv.some((part) => part.startsWith('milestone=')),
+      false,
+    );
+    assert.ok(f.calls[0]!.argv.includes('state=open'));
+    await assert.rejects(f.client.discoverProject('owner', 'repo', 0, 1), /page-invalid/);
+  });
+
   it('should require complete closed dependencies to establish readiness', async () => {
     const f = fixture();
     f.reply.value = ['closed'];

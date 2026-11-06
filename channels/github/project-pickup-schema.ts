@@ -35,12 +35,20 @@ export const projectPickupSchema = Type.Object(
             pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9_.-]+$',
           }),
           limit: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
-          milestone: Type.Object(
-            {
-              number: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
-              policy: Type.Literal('only'),
-            },
-            { additionalProperties: false },
+          milestone: Type.Optional(
+            Type.Object(
+              {
+                number: Type.Union([
+                  Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+                  Type.Array(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }), {
+                    minItems: 1,
+                    uniqueItems: true,
+                  }),
+                ]),
+                policy: Type.Optional(Type.Union([Type.Literal('only'), Type.Literal('prefer')])),
+              },
+              { additionalProperties: false },
+            ),
           ),
         },
         { additionalProperties: false },

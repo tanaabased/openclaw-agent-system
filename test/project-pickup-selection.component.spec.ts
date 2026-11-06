@@ -1,3 +1,4 @@
+import type { ProjectPickupPolicy } from '../channels/github/project-pickup-schema.ts';
 import type { RepositoryRoute } from '../channels/github/repository-scope.ts';
 import AssignmentClaimStore from '../agent/assignment-claim-store.ts';
 import ProjectPickupEnrollmentStore from '../agent/project-pickup-enrollment.ts';
@@ -45,7 +46,11 @@ describe('project pickup selection through native journals', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  async function fixture(runtime: 'codex' | 'openclaw', coordinated = false) {
+  async function fixture(
+    runtime: 'codex' | 'openclaw',
+    coordinated = false,
+    initialScope?: 'all' | 'multiple' | 'prefer',
+  ) {
     const f = selectionFixture(runtime);
     const workspace = join(root, 'workspace');
     const data = join(root, 'data');
@@ -96,11 +101,32 @@ describe('project pickup selection through native journals', () => {
           window: '1 hour',
           selection: { guidance: { file: 'selection.md' } },
           projects: [
-            { repository: 'owner/repo', milestone: { number: 10, policy: 'only' }, limit: 1 },
-          ],
+            {
+              repository: 'owner/repo',
+              milestone: { number: 10, policy: 'only' as const },
+              limit: 1,
+            },
+          ] as ProjectPickupPolicy['projects'],
         },
       },
     };
+    if (initialScope === 'all') {
+      delete declaration.github['project-pickup'].projects[0]!.milestone;
+      f.item.milestone = null;
+    } else if (initialScope === 'multiple') {
+      declaration.github['project-pickup'].projects[0]!.milestone = { number: [9, 10] };
+      const readMilestone = f.client.getMilestone!;
+      f.client.getMilestone = async (owner, name, number) =>
+        number === 9
+          ? { number: 9, nodeId: 'M_second', state: 'open' }
+          : readMilestone(owner, name, number);
+    } else if (initialScope === 'prefer') {
+      declaration.github['project-pickup'].projects[0]!.milestone = {
+        number: 10,
+        policy: 'prefer',
+      };
+      f.item.milestone = null;
+    }
     const source = JSON.stringify(declaration);
     await writeFile(join(workspace, 'agent.yaml'), source);
     await writeFile(join(workspace, 'selection.md'), 'prefer high impact ready work');
@@ -219,6 +245,104 @@ describe('project pickup selection through native journals', () => {
   }
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    for (const scope of ['all', 'multiple', 'prefer'] as const) {
+      it(`should activate ${scope} scope and retain its assignment through ${runtime}`, async () => {
+        const f = await fixture(runtime, false, scope);
+        const result = await f.pickup({
+          selection: {
+            ...(await f.select()),
+            ...(scope === 'prefer'
+              ? { fallback: { repository: 'owner/repo', reason: 'no suitable preferred work' } }
+              : {}),
+          },
+        });
+        assert.equal(result.status, 'assigned');
+        assert.equal(f.effects.writes, 1);
+        if (scope === 'prefer') assert.match(result.response, /Fallback.*selected repository/);
+        assert.match(result.response, /owner\/repo/);
+        await f.configure((source) => {
+          delete source.github['project-pickup'].projects[0]!.milestone;
+        });
+        await f.scan();
+        const records = await f.read();
+        assert.equal(records.length, 1);
+        assert.equal(records[0]!.evidence.mode, 'work');
+        assert.equal(
+          records[0]!.evidence.projectWork!.pickup!.assignmentNodeId,
+          f.events[0]!.nodeId,
+        );
+      });
+    }
+
+    it(`should apply live preferred edits without replacing activation through ${runtime}`, async () => {
+      const f = await fixture(runtime);
+      const stale = await f.select();
+      await f.configure((source) => {
+        source.github['project-pickup'].projects[0]!.milestone = { number: [10], policy: 'prefer' };
+      });
+      f.item.milestone = null;
+      assert.equal((await f.pickup({ selection: stale })).status, 'failed');
+      assert.equal(f.effects.writes, 0);
+      const result = await f.pickup({
+        selection: {
+          ...(await f.select()),
+          fallback: { repository: 'owner/repo', reason: 'no preferred candidate is suitable' },
+        },
+      });
+      assert.equal(result.status, 'assigned');
+      assert.match(result.response, /Fallback/);
+    });
+
+    for (const boundary of ['milestone', 'discovery'] as const) {
+      it(`should preserve ${boundary} failure instead of falling back through ${runtime}`, async () => {
+        const f = await fixture(runtime, false, 'prefer');
+        const diagnostic = providerDiagnostic('github', 'api-request', 'permission', {
+          httpStatus: 403,
+          providerMessage: 'preferred read denied',
+        });
+        const fail = async () => {
+          throw new GitHubWorkEventClientError(
+            'github-notification-request-failed',
+            'preferred read denied',
+            {},
+            undefined,
+            diagnostic,
+          );
+        };
+        if (boundary === 'milestone') f.client.getMilestone = fail;
+        else f.client.discoverProject = fail;
+        const result = await f.pickup();
+        assert.equal(result.status, 'failed');
+        assert.match(result.response, /preferred read denied/);
+        assert.equal(f.effects.writes, 0);
+      });
+    }
+
+    it(`should recover an uncertain fallback after scope removal through ${runtime}`, async () => {
+      const f = await fixture(runtime, false, 'prefer');
+      const assign = f.client.assignProjectIssue;
+      f.client.assignProjectIssue = async (...args) => {
+        await assign(...args);
+        throw new Error('response lost');
+      };
+      const result = await f.pickup({
+        selection: {
+          ...(await f.select()),
+          fallback: { repository: 'owner/repo', reason: 'no preferred work is suitable' },
+        },
+      });
+      assert.equal(result.status, 'attempted');
+      await f.configure((source) => {
+        delete source.github['project-pickup'].projects[0]!.milestone;
+      });
+      const recovered = await f.pickup();
+      assert.equal(recovered.status, 'assigned');
+      assert.match(recovered.response, /Fallback within the selected repository/);
+      assert.equal(f.effects.writes, 1);
+      await f.scan();
+      assert.equal((await f.read())[0]!.evidence.mode, 'work');
+    });
+
     it(`should report missing guidance before selection without discarding its diagnostic through ${runtime}`, async () => {
       const f = await fixture(runtime);
       await rm(join(root, 'workspace', 'selection.md'));
@@ -296,7 +420,7 @@ describe('project pickup selection through native journals', () => {
       const other = f.addRepository('other', 2);
       const project = {
         repository: 'owner/other',
-        milestone: { number: 10, policy: 'only' },
+        milestone: { number: 10, policy: 'only' as const },
         limit: 2,
       };
       const before = await f.enrollmentStore.read();
@@ -442,7 +566,7 @@ describe('project pickup selection through native journals', () => {
       const before = await f.select();
       const enrollment = await f.enrollmentStore.read();
       await f.configure((source) => {
-        source.github['project-pickup'].projects[0]!.milestone.number = 11;
+        source.github['project-pickup'].projects[0]!.milestone!.number = 11;
         source.github['project-pickup'].window = '90 minutes';
       });
       f.milestone.number = 11;
@@ -494,6 +618,7 @@ describe('project pickup selection through native journals', () => {
         [...f.candidates.values()].map((candidate) => ({
           ...candidate,
           repository: 'owner/repo',
+          pickupScope: 'only',
           blockedByOpenIssues: false,
         })),
       );

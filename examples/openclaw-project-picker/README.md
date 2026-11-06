@@ -8,7 +8,7 @@ native OpenClaw and OpenClaw-hosted Codex, then verify the window allows no seco
 
 - Native pickup enrollment, unchanged Install, and pause/resume retaining the job and chat.
 - Empty, selected, and exhausted-window outcome cards through the real automation/tool boundary, with selection triggered by a due-time occurrence.
-- Model selection from a small milestone, GitHub self-assignment despite the ordinary assigner policy, and ordinary intake receiving the pickup exception and Work mode.
+- Model selection from a small milestone configured as a list with the default `only` policy, GitHub self-assignment despite the ordinary assigner policy, and ordinary intake receiving the pickup exception and Work mode.
 - A repeat scan preserving the single assignment, chat, and checkout.
 
 ## What Does Not Belong Here
