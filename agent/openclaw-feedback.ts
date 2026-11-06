@@ -5,7 +5,7 @@ import { recordFeedbackResponse, recordFeedbackCandidate } from './feedback-resu
 import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
 import { retainImplementationDelivery } from './implementation-delivery.ts';
 import workflowRecovery from './workflow-recovery.ts';
-import feedbackComposition from './feedback-composition.ts';
+import feedbackComposition, { feedbackOutcome } from './feedback-composition.ts';
 import replyMaterial from './reply-material.ts';
 import issueProgression, { retainedIssueProgression } from './issue-progression.ts';
 import {
@@ -609,11 +609,11 @@ export default async function openClawFeedback(input: {
             selection,
             source,
             privateResponse: event.result.privateText,
-            verifiedOutcome: {
+            verifiedOutcome: feedbackOutcome({
               implementation: event.work?.result ?? record.work?.result,
-              feedbackWork: event.work,
-              delivery: record.work?.delivery?.pullRequest,
-            },
+              head: event.work?.head,
+              delivery: event.work?.pullRequest ?? record.work?.delivery?.pullRequest,
+            }),
           }),
           id: record.id,
           eventId: event.id,

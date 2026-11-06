@@ -8,7 +8,7 @@ import { dispatchAdmission } from './managed-issue.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import codexReply from './codex-reply.ts';
-import feedbackComposition from './feedback-composition.ts';
+import feedbackComposition, { feedbackOutcome } from './feedback-composition.ts';
 import replyMaterial from './reply-material.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
@@ -698,11 +698,11 @@ export default async function runCodexFeedback(
                       selection,
                       source,
                       privateResponse: event.result.privateText,
-                      verifiedOutcome: {
+                      verifiedOutcome: feedbackOutcome({
                         implementation: event.work?.result ?? record.continuation?.result,
-                        feedbackWork: event.work,
-                        delivery: record.delivery?.pullRequest,
-                      },
+                        head: event.work?.head,
+                        delivery: event.work?.pullRequest ?? record.delivery?.pullRequest,
+                      }),
                     }),
                     id: record.id,
                     eventId: event.id,

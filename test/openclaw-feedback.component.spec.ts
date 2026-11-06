@@ -584,6 +584,33 @@ describe('agent/openclaw-feedback', () => {
     assert.ok('digest' in preview);
     return preview.digest;
   }
+  it('should project legacy reply facts without forwarding saved work machinery', async () => {
+    await start();
+    await action('result', { privateText: 'The fix is ready; hosted checks remain pending.' });
+    const selected = await action('compose');
+    assert.ok('selection' in selected);
+    event.work = {
+      selection: selected.selection,
+      result: {
+        outcome: 'done',
+        summary: 'Fixed the handler.',
+        fullResult: 'Saved transcript. '.repeat(2000),
+      },
+      head: 'b'.repeat(40),
+      pullRequest: { pullRequestNodeId: 'PR_update', pullRequestNumber: 7 },
+    };
+    const before = structuredClone(event.work);
+    const composed = await action('compose');
+    assert.ok('verifiedOutcome' in composed && 'privateResponse' in composed);
+    assert.deepEqual(composed.verifiedOutcome, {
+      implementation: { outcome: 'done', summary: 'Fixed the handler.' },
+      head: before.head,
+      delivery: before.pullRequest,
+    });
+    assert.equal(composed.privateResponse, 'The fix is ready; hosted checks remain pending.');
+    assert.deepEqual(event.work, before);
+    assert.equal(writes, 0);
+  });
   it('should retain a completed legacy input without replaying work for its missing reply', async () => {
     await start();
     await action('result', { privateText: 'Retained answer.' });

@@ -1111,6 +1111,50 @@ describe('agent/codex-feedback', () => {
     deps.native!.find = find;
     assert.equal((await call('next')).status, 'feedback-prepared');
   });
+  it('should project legacy reply facts without forwarding saved work machinery', async () => {
+    const ref = await prepare();
+    const { default: assessmentSkillSource } = await import('../agent/assessment-skill-source.ts');
+    await writeFile(join(root, 'SKILL.md'), '# retained reply composer');
+    deps.native!.assessmentSkill = async (_cwd, name) =>
+      assessmentSkillSource({ name, path: join(root, 'SKILL.md'), scope: 'user' });
+    sent = true;
+    turn = 'feedback';
+    await call('context', ref, true);
+    await store.exclusive(async (state, save) => {
+      const event = state.records[0]!.feedback!.events[0]!;
+      delete event.native;
+      event.result = { privateText: 'The fix is ready; hosted checks remain pending.' };
+      event.replyRequested = true;
+      event.publicationAttempted = true;
+      await save();
+    });
+    const selected = await call('compose', ref, true);
+    assert.ok('selection' in selected && selected.selection, JSON.stringify(selected));
+    const work = {
+      selection: selected.selection,
+      result: {
+        outcome: 'done' as const,
+        summary: 'Fixed the handler.',
+        fullResult: 'Saved transcript. '.repeat(2000),
+      },
+      head: 'b'.repeat(40),
+      pullRequest: { pullRequestNodeId: 'PR_update', pullRequestNumber: 7 },
+    };
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.feedback!.events[0]!.work = work;
+      await save();
+    });
+    const composed = await call('compose', ref, true);
+    assert.ok('verifiedOutcome' in composed && 'privateResponse' in composed);
+    assert.deepEqual(composed.verifiedOutcome, {
+      implementation: { outcome: 'done', summary: 'Fixed the handler.' },
+      head: work.head,
+      delivery: work.pullRequest,
+    });
+    assert.equal(composed.privateResponse, 'The fix is ready; hosted checks remain pending.');
+    assert.deepEqual((await store.read()).records[0]!.feedback!.events[0]!.work, work);
+    assert.equal(creates, 0);
+  });
   it('should retain a completed legacy input without replaying it for an unfinished reply', async () => {
     const ref = await prepare();
     sent = true;
