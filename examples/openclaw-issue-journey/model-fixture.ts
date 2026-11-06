@@ -58,6 +58,7 @@ function assessmentRequest(context: Record<string, unknown>, payload: object) {
     operation: 'render',
     target: context.target ?? (context.evidence as { source?: string })?.source,
     ...(context.entry === 'direct' ? { assessmentOnly: true } : {}),
+    ...(context.presentationRequest as object),
     result: payload,
   };
 }

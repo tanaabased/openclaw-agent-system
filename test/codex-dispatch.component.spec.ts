@@ -2051,6 +2051,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(context.previousResultTurnId, undefined);
     assert.equal(context.entry, 'managed');
     assert.equal((context.presentationRequest as { operation: string }).operation, 'render');
+    assert.match(JSON.stringify(context.presentationRequest), /Model routing/);
     const original =
       'Keep records until the retention decision is answered.\n\nPartial plan: inspect the store, then remove eligible records only after approval.\n\nWhich retention period applies?\n\nThe failure cause is unverified.';
     const question = {

@@ -252,7 +252,11 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
           ? automationHash(record.result ?? managed!.result)
           : undefined,
       recording: 'native-context' as const,
-      presentationRequest: assessmentPresentationRequest(canonical, true),
+      presentationRequest: assessmentPresentationRequest(canonical, true, {
+        assessment: entry?.selection,
+        workspace: deps.binding.workspace,
+        debug: deps.manifest.debug,
+      }),
       instructions:
         assessmentInstructions +
         '\n\nDirect execution: use these verified inputs and the selected assessment body once. Preserve the current chat/model. Use presentationRequest plus result matching resultFormat through dispatch assessment render. This pure formatter saves no assessment or summary. Show its presentation; keep the full result in native tool context. Historical assessment present remains an explicit read. No assignment, setup, implementation, publication, or new chat is authorized.',
@@ -343,7 +347,11 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
       id: entry.id,
       ...renderNativeAssessment(
         {
-          ...assessmentPresentationRequest(canonical, true),
+          ...assessmentPresentationRequest(canonical, true, {
+            assessment: entry?.selection,
+            workspace: deps.binding.workspace,
+            debug: deps.manifest.debug,
+          }),
           result: {
             ...result,
             reviewSummary:

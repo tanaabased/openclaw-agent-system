@@ -1,3 +1,4 @@
+import { dispatchAssessmentContext } from './dispatch-presentation.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   managedTargetUrl,
@@ -188,7 +189,19 @@ export async function issueAssessmentAction(input: {
       recording: 'native-context' as const,
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
-      presentationRequest: assessmentPresentationRequest(managedTargetUrl(intake)),
+      presentationRequest: assessmentPresentationRequest(
+        managedTargetUrl(intake),
+        false,
+        dispatchAssessmentContext(
+          {
+            ...record,
+            assessment: record.turnEvidence?.selection ?? record.assessment,
+            stageReceipt: undefined,
+          },
+          input.workspace,
+          { debug: input.debug },
+        ),
+      ),
       instructions: nativeAssessmentInstructions(),
     };
   }
@@ -202,7 +215,19 @@ export async function issueAssessmentAction(input: {
     id: record.id,
     ...renderNativeAssessment(
       {
-        ...assessmentPresentationRequest(managedTargetUrl(intake)),
+        ...assessmentPresentationRequest(
+          managedTargetUrl(intake),
+          false,
+          dispatchAssessmentContext(
+            {
+              ...record,
+              assessment: record.turnEvidence?.selection ?? record.assessment,
+              stageReceipt: undefined,
+            },
+            input.workspace,
+            { debug: input.debug },
+          ),
+        ),
         result: {
           ...candidate,
           reviewSummary:

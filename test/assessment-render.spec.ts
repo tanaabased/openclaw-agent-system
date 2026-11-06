@@ -29,6 +29,45 @@ const result: AssessmentSubmission = {
 };
 
 describe('agent/assessment-render', () => {
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should retain selected routing and debug cards through native ${runtime} presentation`, async () => {
+      const metadata = {
+        routing: {
+          model: 'provider/model',
+          effort: 'high',
+          complexity: 'medium' as const,
+          profile: 'medium' as const,
+          source: 'assessed' as const,
+          reason: 'Shared behavior needs investigation.',
+        },
+        effective: { status: 'unverified' as const },
+        assessment: { defaultSkill: false, skill: { name: 'company:assessment' } },
+        debug: true,
+      };
+      const request = {
+        ...assessmentPresentationRequest(target, false, metadata),
+        result: { ...result, reviewSummary: 'Review detail. '.repeat(900) },
+      };
+      const first = renderNativeAssessment(request, runtime);
+      const restored = await hydrateImplementation(first, async (read) =>
+        renderNativeAssessment({ ...request, ...read }, runtime),
+      );
+      assert.match(String(restored.presentation), /provider\/model/);
+      assert.match(String(restored.presentation), /Shared behavior needs investigation/);
+      assert.match(String(restored.presentation), /Not independently verified/);
+      assert.match(String(restored.presentation), /company:assessment/);
+      const quiet = renderNativeAssessment(
+        {
+          ...assessmentPresentationRequest(target, false, { ...metadata, debug: false }),
+          result,
+        },
+        runtime,
+      );
+      assert.equal(quiet.status, 'formatted');
+      assert.match(quiet.presentation, /Model routing/);
+      assert.doesNotMatch(quiet.presentation, /company:assessment|Debug/);
+    });
+
   it('should validate complete native input and return only the concise visible review', () => {
     const response = renderNativeAssessment({ ...assessmentPresentationRequest(target), result });
     assert.equal(response.status, 'formatted');

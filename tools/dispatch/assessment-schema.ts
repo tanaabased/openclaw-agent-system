@@ -20,6 +20,7 @@ export const directAssessmentRequestSchema = Type.Object(
     revise: Type.Optional(Type.Boolean()),
     includeDetails: Type.Optional(Type.Boolean()),
     assessmentOnly: Type.Optional(Type.Boolean()),
+    cards: Type.Optional(Type.Array(Type.String())),
     previousResultDigest: Type.Optional(id),
     result: Type.Optional(assessmentSubmissionSchema),
   },

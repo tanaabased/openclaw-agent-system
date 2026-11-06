@@ -40,7 +40,7 @@ import redactCodexFeedback from './codex-feedback-redaction.ts';
 import codexSummaryAuthority from './codex-summary-authority.ts';
 import codexSessionSettings from './codex-session-settings.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
-import assessmentPresentation from './dispatch-presentation.ts';
+import assessmentPresentation, { dispatchAssessmentContext } from './dispatch-presentation.ts';
 import selectFeedbackStage from './feedback-stage.ts';
 import issueProgression from './issue-progression.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
@@ -403,7 +403,20 @@ export async function assessDispatch(
       recording: 'native-context' as const,
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
-      presentationRequest: assessmentPresentationRequest(managedTargetUrl(intake)),
+      presentationRequest: assessmentPresentationRequest(
+        managedTargetUrl(intake),
+        false,
+        dispatchAssessmentContext(
+          { ...record, assessment, stageReceipt: undefined },
+          current.workspace,
+          {
+            debug: current.manifest.debug,
+            manifestPath: current.manifestPath,
+            routingManifestPath:
+              current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
+          },
+        ),
+      ),
       mode: issueWorkflowMode(current.manifest.github?.notifications, record),
       instructions:
         codexAssessmentInstructions +
@@ -420,7 +433,14 @@ export async function assessDispatch(
     return {
       id: record.id,
       ...renderNativeAssessment({
-        ...assessmentPresentationRequest(managedTargetUrl(intake)),
+        ...assessmentPresentationRequest(
+          managedTargetUrl(intake),
+          false,
+          dispatchAssessmentContext(record, current.workspace, {
+            debug: current.manifest.debug,
+            manifestPath: current.manifestPath,
+          }),
+        ),
         result: {
           ...result,
           reviewSummary:

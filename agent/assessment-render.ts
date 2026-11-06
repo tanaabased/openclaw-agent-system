@@ -1,7 +1,10 @@
 import implementationMaterial from './implementation-material.ts';
 import { Value } from 'typebox/value';
 
-import renderAssessmentResult from '../channels/github/presentation/assessment-result.ts';
+import renderAssessmentResult, {
+  assessmentContextCards,
+  type AssessmentPresentationContext,
+} from '../channels/github/presentation/assessment-result.ts';
 import { directAssessmentRequestSchema } from '../tools/dispatch/assessment-schema.ts';
 import { parseAssessmentSubmission } from './assessment-result.ts';
 import { replyLocator } from './reply-target.ts';
@@ -50,6 +53,7 @@ export default function renderNativeAssessment(
           kind: target.itemType === 'pull-request' ? 'Pull request' : 'Issue',
         },
         retained: false,
+        cards: input.cards,
         assessmentOnly: input.assessmentOnly,
       }),
       instructions:
@@ -60,18 +64,24 @@ export default function renderNativeAssessment(
     {
       purpose: 'assessment-presentation',
       pagedFields: ['presentation'],
-      inputFields: ['result'],
+      inputFields: ['result', 'cards'],
       instruction:
         'Read every presentation page before displaying the result. Copy only the listed inputFields from the original native tool call into each returned page request. This pure formatter retains no source or plan. Follow next, concatenate text in offset order, parse JSON and restore each path. Show the complete presentation. Page reads do not save a plan or authorize any effect.',
     },
   );
 }
 
-export function assessmentPresentationRequest(target: string, assessmentOnly = false) {
+export function assessmentPresentationRequest(
+  target: string,
+  assessmentOnly = false,
+  context?: Omit<AssessmentPresentationContext, 'issue'>,
+) {
+  const cards = context ? assessmentContextCards(context) : [];
   return {
     action: 'assessment' as const,
     operation: 'render' as const,
     target,
     ...(assessmentOnly ? { assessmentOnly } : {}),
+    ...(cards.length ? { cards } : {}),
   };
 }

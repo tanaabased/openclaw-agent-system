@@ -4575,6 +4575,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.ok('presentationRequest' in verified && 'entry' in verified);
     assert.equal(verified.entry, 'managed');
     assert.equal(verified.presentationRequest.operation, 'render');
+    assert.match(JSON.stringify(verified.presentationRequest), /Model routing/);
     const candidate = { action: 'result', id: input.id, result: plan };
     assert.ok(Value.Check(dispatchParameters, candidate));
     const formatted = await service.run(manifest, root, assessor(input.id), candidate);

@@ -26,22 +26,31 @@ export default function assessmentPresentation(
     routingManifestPath?: string;
   } = {},
 ) {
-  const decision = JSON.parse(record.routing!) as RoutingDecision;
   return renderAssessmentResult(result, {
-    ...presentation,
+    ...dispatchAssessmentContext(record, workspace, presentation),
     issue: {
       label: repository(intake) + '#' + intake.issue.number,
       url: issueUrl(intake),
       kind: managedPullRequest(intake) ? 'Pull request' : 'Issue',
     },
-    routing: {
-      ...decision,
-      model: decision.selection!.model,
-      effort: decision.selection!.effort,
-    },
+  });
+}
+
+export function dispatchAssessmentContext(
+  record: Pick<
+    SharedDispatchRecord,
+    'routing' | 'effective' | 'routingInstructions' | 'stageReceipt' | 'assessment'
+  >,
+  workspace: string,
+  presentation: WorkflowInstructionsPresentation & { routingManifestPath?: string } = {},
+) {
+  const decision = record.routing ? (JSON.parse(record.routing) as RoutingDecision) : undefined;
+  return {
+    ...presentation,
+    routing: decision?.selection ? { ...decision, ...decision.selection } : undefined,
     effective: record.effective,
     routingInstructions: record.routingInstructions,
     workspace,
     assessment: record.stageReceipt?.selection ?? record.assessment,
-  });
+  };
 }

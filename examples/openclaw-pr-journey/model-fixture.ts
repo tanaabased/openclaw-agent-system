@@ -181,6 +181,7 @@ export function nativePlanResponse(
       action: 'assessment',
       operation: 'render',
       target,
+      ...(context.presentationRequest as object),
       result: {
         version: 1,
         outcome: initialQuestion ? 'clarification-needed' : 'plan-ready',
@@ -204,7 +205,9 @@ export function nativePlanResponse(
     });
   assert.equal(rendered.status, 'formatted');
   assert.equal(rendered.retained, false);
-  assert.equal(typeof rendered.presentation, 'string');
+  assert.ok(typeof rendered.presentation === 'string');
+  for (const card of (context.presentationRequest as { cards?: string[] })?.cards ?? [])
+    assert.ok(rendered.presentation.includes(card));
   const observed = result('native-plan-context');
   if (!observed)
     return {
