@@ -2,7 +2,6 @@ import codexFeedbackInput from './codex-feedback-input.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import ReplyStore, { type ReplyDraft } from './reply-store.ts';
-import { matchesDispatchCreation } from './codex-dispatch-native.ts';
 import { dispatchAdmission } from './managed-issue.ts';
 import { resolve } from 'node:path';
 
@@ -73,29 +72,14 @@ export default async function codexReply(
           if (!record?.request || !record.worktree) return;
           if (record.reset || record.supersededBy || record.retired || record.retirement)
             throw new Error('reply-managed-context-invalid');
-          const first = await connection.request('thread/turns/list', {
-            threadId: caller,
-            itemsView: 'notLoaded',
-            sortDirection: 'asc',
-            limit: 1,
-          });
-          if (
-            !Array.isArray(first.data) ||
-            first.data[0]?.id !== turnId ||
-            !matchesDispatchCreation(
-              { turns: [{ items }] },
-              record.sourceThreadId,
-              record.request.prompt,
-            )
-          )
-            return;
-          const creation = items.find(
+          const inputItem = items.findLast(
             (item) =>
-              item.type === 'functionCallOutput' &&
-              item.namespace === 'codex_app' &&
-              item.name === 'create_thread',
+              item.type === 'userMessage' ||
+              (item.type === 'functionCallOutput' &&
+                item.namespace === 'codex_app' &&
+                ['create_thread', 'send_message_to_thread'].includes(String(item.name))),
           );
-          if (typeof creation?.id !== 'string') return;
+          if (typeof inputItem?.id !== 'string') return;
           const native = await withNative(current, deps, (host) =>
             host.find({
               sourceThreadId: record.sourceThreadId,
@@ -106,7 +90,7 @@ export default async function codexReply(
           );
           if (!native || native.id !== caller || resolve(native.cwd) !== resolve(record.worktree))
             throw new Error('reply-managed-context-invalid');
-          return { inputId: creation.id };
+          return { inputId: inputItem.id };
         }
         feedback = {
           ownerId: match.record.id,

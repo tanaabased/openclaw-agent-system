@@ -179,8 +179,20 @@ export default async function runCodexContinuation(
             createdAfter: record.createdAt,
             threadId: caller,
           }));
-        if (deps.directOperator || found?.followUpUserTurn)
-          context.operatorInput = await native.operatorInput(caller);
+        if (deps.directOperator || found?.followUpUserTurn) {
+          try {
+            context.operatorInput = await native.operatorInput(caller);
+          } catch (error) {
+            // Existing task permission does not depend on a new human message.
+            if (!(error instanceof Error) || error.message !== 'reply-native-user-input-required')
+              throw error;
+            if (
+              deps.directScope &&
+              deps.directScope !== (record?.continuation?.scope ?? 'pull-request')
+            )
+              throw error;
+          }
+        }
       }
       if (input.action === 'next' || input.action === 'reconcile') {
         const receipts = await reconcileCodexRequests(context);

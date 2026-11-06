@@ -42,13 +42,21 @@ export default function replyOwner(
   purpose?: 'status-update',
 ) {
   const repository = `${target.owner}/${target.name}`.toLowerCase();
+  const callers = owners.filter((owner) => owner.threadId === session);
+  const callerIssue =
+    callers.length === 1 &&
+    callers[0]!.repository?.toLowerCase() === repository &&
+    callers[0]!.pullRequestNumber === target.number
+      ? callers[0]!.number
+      : undefined;
   const ownership = managedOwner(
     owners,
     session,
     (owner) =>
       owner.repository?.toLowerCase() === repository &&
       (target.number === owner.number ||
-        target.number === owner.pullRequestNumber ||
+        (target.number === owner.pullRequestNumber &&
+          (callerIssue === undefined || owner.number === callerIssue)) ||
         Boolean(
           target.source &&
           (owner.sourceReceipts ?? owner.events)?.some(
