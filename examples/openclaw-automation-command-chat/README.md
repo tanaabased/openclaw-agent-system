@@ -21,7 +21,7 @@ reports through the real Gateway response path.
 
 ## Notes
 
-- Strict AIMock supplies both runtimes' provider responses with synthetic credentials and no live fallback. Hosted Codex uses HTTP Responses because AIMock does not retain incremental WebSocket response history. Commands, chat creation, report delivery, and history remain real; no live-model credential is required.
+- Strict AIMock supplies both runtimes' provider responses with synthetic credentials and no live fallback. AIMock declines Responses WebSocket upgrades so hosted Codex falls back to HTTP with full request history. Commands, chat creation, report delivery, and history remain real; no live-model credential is required.
 - Hosted Codex uses `gpt-5.5` from its native catalog. After install, capture the agent's catalog before and after provider refresh and require that model to be available through Codex; inference routing to AIMock alone does not establish runtime support.
 - The fixture accepts only the expected captured streams and process outcome. Assertions verify the returned message in native history, not prose quality or browser rendering.
 - The success mode emits four structured source cards, including an application warning on exit zero; failure mode keeps arbitrary output. Both runtimes call one script with a mode flag. Each command runs once per runtime. The mock first merges the cards and appends an escaped copy, then returns the literal body only after the replacement instruction. This adds one synthetic correction response per runtime, without another command run or restart. Mixed authored Markdown, empty-output, and timeout permutations remain in source tests.
@@ -42,7 +42,7 @@ openclaw-aimock prepare --scenario openclaw-automation-command-chat
 openclaw config set models.mode merge
 openclaw config set memory.search.enabled false --strict-json
 openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
-openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","-c","model_providers.openai.supports_websockets=false","app-server","--listen","stdio://"]' --strict-json
+openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","app-server","--listen","stdio://"]' --strict-json
 openclaw config set plugins.entries.agent-system.hooks.allowConversationAccess true --strict-json
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
 for runtime in openclaw codex; do

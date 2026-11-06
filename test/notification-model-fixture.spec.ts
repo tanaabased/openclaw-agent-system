@@ -1267,6 +1267,7 @@ for (const scenario of [
             [true, 'openclaw-pr-journey'],
             [false, 'openclaw-pr-journey'],
             [false, 'openclaw-pr-collaboration'],
+            [false, 'openclaw-pr-discovery'],
             [false, 'openclaw-pr-reply-recovery'],
           ] as const)
         : ([[false, undefined]] as const))
@@ -1301,7 +1302,6 @@ for (const scenario of [
               issueStage: initial ? 'planning' : 'implementation',
               replyTarget: source,
               project: { path: '/tmp/worktree' },
-              implementation: { skill: { path: '/tmp/IMPLEMENT.md' } },
             });
             if (initial) {
               assert.deepEqual(await runAction(input, 'implementation-context'), {
@@ -1315,10 +1315,12 @@ for (const scenario of [
                 implementation: { skill: { path: '/tmp/IMPLEMENT.md' } },
               });
             }
-            const selected = await runResponse(input);
-            assert.ok('toolCalls' in selected);
-            assert.equal(selected.toolCalls?.[0]?.name, 'read');
-            append(input, 'feedback-implementation-skill', { text: 'Implementation method' });
+            if (initial) {
+              const selected = await runResponse(input);
+              assert.ok('toolCalls' in selected);
+              assert.equal(selected.toolCalls?.[0]?.name, 'read');
+              append(input, 'feedback-implementation-skill', { text: 'Implementation method' });
+            }
             if (!initial) {
               const branch = await runResponse(input);
               assert.ok('toolCalls' in branch);

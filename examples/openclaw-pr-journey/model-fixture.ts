@@ -499,14 +499,17 @@ function respond(
       assert.equal(context.mode, initial ? 'plan' : 'work');
       const work = initial ? result('feedback-work-context') : context;
       if (!work) return dispatch('feedback-work-context', { action: 'implementation-context', id });
-      const implementation = work.implementation as { skill?: { path?: string } } | undefined;
       const worktree = (work.project as { path?: string } | undefined)?.path;
-      if (work.status !== 'verified' || !worktree || !implementation?.skill?.path) return;
-      if (
-        openClawAIMockToolResultText(messages, prefix + 'feedback-implementation-skill') ===
-        undefined
-      )
-        return call('feedback-implementation-skill', 'read', { path: implementation.skill.path });
+      if (work.status !== 'verified' || !worktree) return;
+      if (initial) {
+        const implementation = work.implementation as { skill?: { path?: string } } | undefined;
+        if (!implementation?.skill?.path) return;
+        if (
+          openClawAIMockToolResultText(messages, prefix + 'feedback-implementation-skill') ===
+          undefined
+        )
+          return call('feedback-implementation-skill', 'read', { path: implementation.skill.path });
+      }
       const branch = result('feedback-branch');
       if (!initial) {
         if (!branch)

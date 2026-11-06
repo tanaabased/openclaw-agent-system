@@ -20,7 +20,7 @@ native OpenClaw and OpenClaw-hosted Codex, then verify the window allows no seco
 
 ## Notes
 
-- Strict AIMock supplies the selection and assessment. Scheduler authority, GitHub reads/writes, intake, chat creation, and checkout creation remain real. Hosted Codex keeps its native searchable-tool default and uses HTTP Responses for AIMock, whose WebSocket adapter does not retain incremental response history. This does not prove model judgment, long-running unattended reliability, or desktop rendering.
+- Strict AIMock supplies the selection and assessment. Scheduler authority, GitHub reads/writes, intake, chat creation, and checkout creation remain real. Hosted Codex keeps its native searchable-tool default. AIMock declines Responses WebSocket upgrades so Codex falls back to HTTP with full request history. This does not prove model judgment, long-running unattended reliability, or desktop rendering.
 - Each execution path gets its own disposable milestone, two issues, agent workspace, and native job. Empty and exhausted-window checks run on demand. Selection waits for the installed daily schedule, moved through the manifest to a slot two to three minutes ahead; it never substitutes a forced run if that occurrence fails. This adds up to three minutes of scheduler waiting per runtime.
 - Debug logs correlate native cron initialization, pickup lookup, and cleanup with hashed identities.
 - Ordinary assignments permit EMORI, not Tanaabot, and default to Plan. The selected issue asks a clarification question: the assessment asserts Work mode, retains the question, and stops before implementation or publication.
@@ -39,7 +39,7 @@ openclaw config set models.mode merge
 openclaw config set memory.search.enabled false --strict-json
 openclaw config set skills.workshop.autonomous.mode off
 openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
-openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","-c","model_providers.openai.supports_websockets=false","app-server","--listen","stdio://"]' --strict-json
+openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","app-server","--listen","stdio://"]' --strict-json
 mkdir -p "$HOME/.ssh"
 cp "$GITHUB_WORKSPACE/fixtures/github.com.known_hosts" "$HOME/.ssh/known_hosts"
 OPENCLAW_LOG_LEVEL=debug openclaw-gateway start
@@ -70,7 +70,8 @@ for runtime in codex openclaw; do
   jq -e 'any(.outcomes[]; .stepId == "github-issue-pickup" and .status == "created")' "$TMPDIR/pickup-$runtime-install.json"
   stage=verify-pickup-install
   openclaw agent-system notifications wait --for baseline-ready --timeout 30 --json | jq -e '.status == "completed"'
-  openclaw agent-system automations list --json > "$TMPDIR/pickup-$runtime-jobs.json"
+  openclaw agent-system automations list --json | tee "$TMPDIR/pickup-$runtime-jobs.json"
+  jq -e '.jobs | type == "array"' "$TMPDIR/pickup-$runtime-jobs.json"
   native=$(jq -er '.jobs[] | select(.id == "github-issue-pickup" and .nativeEnabled == true) | .nativeId' "$TMPDIR/pickup-$runtime-jobs.json")
   chat=$(jq -er '.jobs[] | select(.id == "github-issue-pickup") | .routing | select(startswith("session:"))' "$TMPDIR/pickup-$runtime-jobs.json")
   openclaw gateway call cron.get --params "$(jq -nc --arg id "$native" '{id:$id}')" --json | jq -e '.displayName == "📥 ISSUE PICKUP" and .name == "AGENT SYSTEM: github-issue-pickup" and .payload.thinking == "high" and (.payload.model | length > 0)'

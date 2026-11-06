@@ -5,6 +5,7 @@ import { LLMock, type Mountable } from '@copilotkit/aimock';
 
 import openClawAIMockDiagnostics from './aimock-diagnostics.ts';
 import openClawAIMockEvidence from './aimock-evidence.ts';
+import httpResponses from './aimock-http-responses.ts';
 import resolveExampleModelScenario from './example-model-scenarios.ts';
 import withToolSearch from './aimock-tool-search.ts';
 
@@ -41,6 +42,8 @@ const mock = new LLMock({
   strict: true,
 });
 mock.addFixtures([...scenario.fixtures]);
+mock.mount('/responses', httpResponses);
+mock.mount('/v1/responses', httpResponses);
 
 let authenticatedEmbeddings = 0;
 let rejectedEmbeddings = 0;
