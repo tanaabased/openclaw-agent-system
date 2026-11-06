@@ -5,6 +5,7 @@ import { mkdtemp, realpath, rm, writeFile, mkdir, readdir, readFile } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import renderNativeAssessment from '../agent/assessment-render.ts';
 import assessmentEntry, { type AssessmentEntryDependencies } from '../agent/assessment-entry.ts';
 import assessmentSkillSource from '../agent/assessment-skill-source.ts';
 import implementationEntry from '../agent/implementation-entry.ts';
@@ -220,9 +221,9 @@ describe('agent/implementation-entry', () => {
       assert.ok('implementation' in first && first.implementation);
       assert.equal('plan' in first, false);
       assert.equal('assessment' in first, false);
-      assert.ok('issueStage' in first && 'resultContract' in first);
+      assert.ok('issueStage' in first);
       assert.equal(first.issueStage, 'implementation');
-      assert.equal(first.resultContract, 'implementation-result/v1');
+      assert.equal('resultContract' in first, false);
       assert.ok('publicationAuthorized' in first);
       assert.equal(first.publicationAuthorized, false);
       assert.equal(first.entry, 'direct');
@@ -272,31 +273,26 @@ describe('agent/implementation-entry', () => {
     assert.equal(answered.status, 'verified');
     assert.equal('assessment' in answered, false);
   });
-  it('should not implicitly load an old assessment when the native plan is missing', async () => {
+  it('should not treat a native assessment as an explicitly supplied implementation plan', async () => {
     const context = await assessmentEntry(
       { action: 'assessment', operation: 'context', target, path: root },
       deps,
     );
-    assert.ok('id' in context && typeof context.id === 'string');
-    await assessmentEntry(
-      {
-        action: 'assessment',
-        operation: 'result',
-        id: context.id,
-        target,
-        result: {
-          version: 1,
-          outcome: 'plan-ready',
-          summary: 'Ready',
-          assessment: 'Inspected',
-          fullAssessment: 'Complete assessment',
-          plan,
-          evidence: [],
-          progress: { completed: [], remaining: [] },
-        },
+    assert.ok('presentationRequest' in context);
+    renderNativeAssessment({
+      ...context.presentationRequest,
+      result: {
+        version: 1,
+        outcome: 'plan-ready',
+        summary: 'Ready',
+        assessment: 'Inspected',
+        fullAssessment: 'Complete assessment',
+        plan,
+        reviewSummary: 'Ready for discussion.',
+        evidence: [],
+        progress: { completed: [], remaining: [] },
       },
-      deps,
-    );
+    });
     selections = [];
     const direct = await call('context', { plan: undefined });
     assert.equal(direct.status, 'clarification-needed');

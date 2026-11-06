@@ -8,16 +8,15 @@ describe('agent/implementation-context', () => {
         runtime,
         id: 'issue',
         path: '/checkout',
-        direct: true,
         scope: 'local',
       });
       assert.equal(context.publicationAuthorized, false);
-      assert.equal(context.recording, 'optional-history');
+      for (const key of ['resultContract', 'resultSchema', 'recording', 'handoff'])
+        assert.equal(key in context, false);
       assert.equal('plan' in context, false);
       assert.equal('assessment' in context, false);
       assert.equal('previousResult' in context, false);
       assert.equal('deliveryOnly' in context, false);
-      assert.equal(context.handoff.next, 'implementation');
       assert.equal(
         implementationContext({ runtime, id: 'issue', path: '/checkout', scope: 'pull-request' })
           .publicationAuthorized,

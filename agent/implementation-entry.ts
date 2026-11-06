@@ -192,7 +192,6 @@ export default async function implementationEntry(
           path: checkout.path,
           implementation: entry.selection,
           scope: entry.scope,
-          direct: true,
         }),
         entry: 'direct',
         target: canonical,

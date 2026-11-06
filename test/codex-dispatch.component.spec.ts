@@ -3946,11 +3946,13 @@ describe('agent/codex-dispatch', () => {
   it('should omit an oversized historical plan without changing implementation permission', async () => {
     const large = 'Retained engineering plan and evidence.\n'.repeat(750);
     const assessment = { ...result, plan: large, fullAssessment: large };
-    const work = await workIssue(assessment);
+    const guidance = 'Current implementation guidance.\n'.repeat(400);
+    const work = await workIssue(assessment, guidance);
     assert.equal((await work.run('next')).status, 'reconciled');
     work.receive();
     const first = await work.run('context', {}, true);
     assert.equal(first.status, 'verified');
+    assert.ok('contextMaterials' in first && first.contextMaterials);
     const configured = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
     configured.github['issue-assignment'].mode = 'plan';
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(configured));
@@ -3963,6 +3965,10 @@ describe('agent/codex-dispatch', () => {
     assert.equal(restored.assessment, undefined);
     assert.equal(restored.plan, undefined);
     assert.equal(restored.publicationAuthorized, true);
+    assert.equal(
+      (restored.implementation as { guidance: { content: string } }).guidance.content,
+      guidance,
+    );
     const after = (await store.read()).records[0]!;
     assert.deepEqual(after.result, before.result);
     assert.deepEqual(after.stageReceipt, before.stageReceipt);

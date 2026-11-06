@@ -202,8 +202,8 @@ export default async function runCodexContinuation(
     }, commitOptions);
     if (
       input.action === 'context' &&
-      'resultContract' in response &&
-      response.resultContract === 'implementation-result/v1'
+      response.status === 'verified' &&
+      'implementation' in response
     )
       return implementationMaterial(response, { action: 'context', id: input.id }, input.material);
     if (response.status !== 'deliver') return response;

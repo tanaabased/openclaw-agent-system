@@ -45,7 +45,6 @@ export default async function codexWorkContext(
       path: record.worktree!,
       implementation: selection,
       scope: work.scope,
-      existingPullRequest: Boolean(record.adoptedPullRequest),
     }),
     issueStage: record.progression?.stage ?? 'planning',
     issueBranch: record.issueBranch?.name,

@@ -5832,8 +5832,7 @@ describe('agent/openclaw issue dispatch', () => {
         false,
       );
       assert.equal(verified.status, 'verified');
-      assert.ok('handoff' in verified && verified.handoff && 'instruction' in verified.handoff);
-      assert.match(verified.handoff.instruction ?? '', /prerequisites/);
+      assert.equal('handoff' in verified, false);
       assert.ok('implementation' in verified);
       const selection = verified.implementation as AssessmentSelection;
       assert.equal(
@@ -6392,10 +6391,7 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(context.status, 'verified');
       assert.equal('deliveryOnly' in context, false);
       assert.equal('previousResult' in context, false);
-      assert.ok('handoff' in context && context.handoff);
-      assert.equal(context.handoff.next, 'implementation');
-      assert.ok('instruction' in context.handoff);
-      assert.match(context.handoff.instruction, /prerequisites/);
+      assert.equal('handoff' in context, false);
     }
     assert.deepEqual((await record()).work?.result, done);
     const revised = { ...done, summary: 'Revised.', fullResult: 'Revision checked.' };
@@ -6894,6 +6890,8 @@ describe('agent/openclaw issue dispatch', () => {
       false,
     );
     assert.equal(resumed.status, 'verified');
+    assert.ok('contextMaterials' in resumed && resumed.contextMaterials);
+    assert.ok(JSON.stringify(resumed).length <= implementationContextBudget);
     assert.equal('previousResult' in resumed, false);
     const hydrated = await hydrateImplementation(resumed, async (request) =>
       service.run(

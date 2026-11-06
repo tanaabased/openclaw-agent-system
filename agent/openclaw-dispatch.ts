@@ -153,7 +153,7 @@ export default class OpenClawDispatch {
       input.action === 'implementation-context' ||
       (input.action === 'feedback' && input.operation === 'implementation-context')
     ) {
-      if ('resultContract' in response && response.resultContract === 'implementation-result/v1') {
+      if (response.status === 'verified' && 'implementation' in response) {
         const request =
           input.action === 'feedback'
             ? {

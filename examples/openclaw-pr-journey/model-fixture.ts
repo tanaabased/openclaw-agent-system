@@ -852,6 +852,8 @@ function respond(
           context.publicationAuthorized !== true
         )
           return;
+        for (const key of ['resultContract', 'resultSchema', 'recording', 'handoff'])
+          assert.equal(key in context, false);
         const selected = context.implementation as {
           defaultSkill: boolean;
           skill: { path: string };
