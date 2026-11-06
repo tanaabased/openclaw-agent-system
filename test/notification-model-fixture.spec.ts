@@ -809,7 +809,6 @@ for (const scenario of [
             plan: retainedPlan,
             status: 'verified',
             runtime: 'openclaw',
-            deliveryOnly: false,
             publicationAuthorized: true,
             pendingPublicResponse: {
               kind: 'assessment-summary',
@@ -831,7 +830,6 @@ for (const scenario of [
             plan: retainedPlan,
             status: 'verified',
             runtime: 'openclaw',
-            deliveryOnly: false,
             publicationAuthorized: false,
             project: { path: '/tmp/owned' },
           });
@@ -951,7 +949,6 @@ for (const scenario of [
           append(input, 'work-context', {
             status: 'verified',
             runtime: 'openclaw',
-            deliveryOnly: false,
             publicationAuthorized: true,
             project: { path: '/tmp/owned' },
             implementation: {

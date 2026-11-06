@@ -842,7 +842,6 @@ function respond(
           context.publicationAuthorized !== true
         )
           return;
-        assert.equal(context.deliveryOnly, false);
         const selected = context.implementation as {
           defaultSkill: boolean;
           skill: { path: string };

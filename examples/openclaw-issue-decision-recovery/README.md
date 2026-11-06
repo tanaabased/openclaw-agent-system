@@ -133,13 +133,13 @@ jq -es --slurpfile before "$TMPDIR/notification-dispatch-before.json" '[.[].reco
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-clarification.json"
 conversation=$(jq -er .threadId "$TMPDIR/notification-clarification.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e 'any(.messages[]; .role == "assistant" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains("Should cleanup happen after evidence is captured?")))'
-jq -e --arg run "notification-resume-discussion" '.progression.stage == "implementation" and .progression.via == "auto" and .work.turn.runId == $run and .work.turn.origin == "input" and .work.result == null and .work.clarificationInput == null' "$TMPDIR/notification-clarification.json"
+jq -e --arg run "notification-resume-discussion" '.progression.stage == "implementation" and .progression.via == "auto" and .work.implementation.runId == $run and .work.caller.runId == $run and .work.turn == null and .work.result == null and .work.clarificationInput == null' "$TMPDIR/notification-clarification.json"
 
 # should leave native clarification waiting without a coordinator nudge
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-decision-recovery/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
-jq -es --slurpfile before "$TMPDIR/notification-clarification.json" '[.[].records[]] | length == 1 and .[0].decisionTurn == null and .[0].work.turn.status == "completed" and .[0].work.turn.runId == $before[0].work.turn.runId and .[0].work.result == $before[0].work.result and .[0].routing == $before[0].routing and .[0].effective == $before[0].effective and .[0].request.model == $before[0].request.model and .[0].request.thinkingLevel == $before[0].request.thinkingLevel and .[0].work.deliveryTurn == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --slurpfile before "$TMPDIR/notification-clarification.json" '[.[].records[]] | length == 1 and .[0].decisionTurn == null and .[0].work.turn == null and .[0].work.implementation == $before[0].work.implementation and .[0].work.caller == $before[0].work.caller and .[0].work.result == $before[0].work.result and .[0].routing == $before[0].routing and .[0].effective == $before[0].effective and .[0].request.model == $before[0].request.model and .[0].request.thinkingLevel == $before[0].request.thinkingLevel and .[0].work.deliveryTurn == null' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 ```
 
 ## Cleanup
