@@ -110,6 +110,24 @@ describe('agent/codex-runtime', () => {
     }
   });
 
+  it('should diagnose missing or malformed workflow stdin before accessing state without echoing input', () => {
+    for (const input of ['', '{"private-value":']) {
+      const result = spawnSync(
+        process.execPath,
+        ['dist/codex/codex-runtime.js', 'dispatch', 'context', '--plugin-data', '/unused'],
+        { input, encoding: 'utf8', timeout: 10000 },
+      );
+      assert.ifError(result.error);
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      const failure = JSON.parse(result.stderr);
+      assert.equal(failure.code, 'workflow-request-invalid');
+      assert.match(failure.message, /JSON on stdin/);
+      assert.match(failure.message, /no workflow operation was attempted/);
+      assert.doesNotMatch(result.stderr, /private-value/);
+    }
+  });
+
   it('should reject a hidden publish request passed to the preparation command', async () => {
     const result = spawnSync(
       process.execPath,

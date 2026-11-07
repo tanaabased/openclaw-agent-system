@@ -244,7 +244,19 @@ async function readWorkflowCommand(route: string, args: string[]) {
     throw new Error(
       'expected <action> [<operation>] --plugin-data <path>; send JSON on stdin without --input',
     );
-  const result = codexRuntimeRequest(route, args, JSON.parse(await readStandardInput()));
+  const source = await readStandardInput();
+  let input: unknown;
+  try {
+    input = JSON.parse(source);
+  } catch {
+    throw Object.assign(
+      new Error(
+        'workflow-request-invalid: send the complete request as valid JSON on stdin using native stdin or a quoted heredoc. no workflow operation was attempted.',
+      ),
+      { code: 'workflow-request-invalid' },
+    );
+  }
+  const result = codexRuntimeRequest(route, args, input);
   failureScope = workflowFailureScope('codex', route, result.request);
   return result;
 }

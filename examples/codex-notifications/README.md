@@ -103,6 +103,17 @@ codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/
 ## Testing
 
 ```bash
+# should diagnose missing workflow input before accessing private state
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+status=0
+node "$runtime" dispatch context --plugin-data "$root/uncreated-input-data" < /dev/null > "$root/input-stdout.txt" 2> "$root/input-result.json" || status=$?
+test "$status" -ne 0
+test ! -s "$root/input-stdout.txt"
+jq -e '.code == "workflow-request-invalid" and (.message | contains("JSON on stdin"))' "$root/input-result.json"
+test ! -e "$root/uncreated-input-data"
+
 # should reject an unattended reset without an explicit target before accessing private state
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
