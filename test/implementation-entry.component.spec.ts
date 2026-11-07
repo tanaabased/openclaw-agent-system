@@ -10,6 +10,8 @@ import assessmentEntry, { type AssessmentEntryDependencies } from '../agent/asse
 import assessmentSkillSource from '../agent/assessment-skill-source.ts';
 import implementationEntry from '../agent/implementation-entry.ts';
 import implementationEntryDelivery from '../agent/implementation-entry-delivery.ts';
+import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
+import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import { DirectEntryStore } from '../agent/assessment-entry-store.ts';
 import { implementationEntriesSchema } from '../agent/implementation-entry-state.ts';
 import type { AgentManifest } from '../manifest/types.ts';
@@ -571,13 +573,29 @@ describe('agent/implementation-entry', () => {
       );
     const prepared = await perform('prepare');
     assert.ok('digest' in prepared);
-    await assert.rejects(perform('publish', prepared.digest), /lost-push-response/);
-    await assert.rejects(perform('publish', prepared.digest), /lost-create-response/);
+    const publishPrepared = () =>
+      store().exclusive(async (entries, save) =>
+        implementationEntryDelivery({
+          entry: entries[0]!,
+          action: parseDirectImplementationRequest(
+            codexRuntimeRequest(
+              'dispatch',
+              ['implementation', 'publish', '--plugin-data', '/private/plugin'],
+              JSON.parse(JSON.stringify(prepared)),
+            ).request,
+          ),
+          deps,
+          save,
+          provider,
+        }),
+      );
+    await assert.rejects(publishPrepared(), /lost-push-response/);
+    await assert.rejects(publishPrepared(), /lost-create-response/);
     const delivered = await perform('reconcile');
     assert.equal(delivered.status, 'delivered');
     assert.equal(pushes, 1);
     assert.equal(creates, 1);
-    await perform('publish', prepared.digest);
+    await publishPrepared();
     assert.equal(pushes, 1);
     assert.equal(creates, 1);
     assert.equal(
@@ -595,10 +613,7 @@ describe('agent/implementation-entry', () => {
       await store().exclusive(async (entries) => entries[0]!.delivery),
       receiptBeforeRestriction,
     );
-    await assert.rejects(
-      perform('publish', prepared.digest),
-      /implementation-publication-not-authorized/,
-    );
+    await assert.rejects(publishPrepared(), /implementation-publication-not-authorized/);
     assert.equal(pushes, 1);
     assert.equal(creates, 1);
   });

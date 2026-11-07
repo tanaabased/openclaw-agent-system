@@ -886,7 +886,8 @@ export default async function runCodexDelivery(
               : '') +
             (deps.schedule
               ? 'The activated workflow and verified continuation authorize publication. Publish through the owning continuationRuntime with this digest and the same title/body; no additional stage approval is required. Native execution review still applies.'
-              : 'The verified implementation stage or current user direction authorizes ordinary PR delivery and appropriate follow-up commits. Do not ask for a separate publication grant; honor explicit user restrictions. Execute delivery publish with the complete publishRequest as JSON on stdin through native approval. Keep its digest, title and body together. Preparation does not grant permission and a native denial stops the operation.'),
+              : 'The verified implementation stage or current user direction authorizes ordinary PR delivery and appropriate follow-up commits. Do not ask for a separate publication grant; honor explicit user restrictions. Execute delivery publish through native approval. Preparation does not grant permission and a native denial stops the operation.') +
+            ' Save preparation stdout to a private temporary JSON file outside the checkout, inspect it, then pass that entire saved response unchanged on stdin to the owning publish command. It extracts publishRequest without retyping the digest, title or body. If this response was not saved, repeat prepare with output capture first. Keep prepare and publish as separate operations; never pipe preparation directly into publication. A stale response requires inspection before using its refreshed request; an uncertain or denied publication requires reconciliation, not replay.',
         };
       if (input.action === 'publish') {
         await authorizePublication();

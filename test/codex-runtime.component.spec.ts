@@ -109,6 +109,26 @@ describe('agent/codex-runtime', () => {
       assert.match(failure.message, /--plugin-data.*stdin.*--input/);
     }
   });
+  it('should unwrap prepared publication input only under the visible publish command', () => {
+    const input = JSON.stringify({
+      status: 'prepared',
+      publishRequest: { action: 'publish', id: 'invalid' },
+    });
+    for (const [action, code] of [
+      ['publish', 'delivery-request-invalid'],
+      ['prepare', 'workflow-prepared-publication-invalid'],
+    ]) {
+      const result = spawnSync(
+        process.execPath,
+        ['dist/codex/codex-runtime.js', 'delivery', action!, '--plugin-data', '/unused'],
+        { input, encoding: 'utf8', timeout: 10000 },
+      );
+      assert.ifError(result.error);
+      assert.equal(result.status, 1);
+      const failure = JSON.parse(result.stderr);
+      assert.equal(failure.code, code);
+    }
+  });
 
   it('should diagnose missing or malformed workflow stdin before accessing state without echoing input', () => {
     for (const input of ['', '{"private-value":']) {

@@ -3,6 +3,94 @@ import assert from 'node:assert/strict';
 import parse from '../agent/codex-runtime-request.ts';
 
 describe('agent/codex-runtime-request', () => {
+  it('should carry saved preparation requests unchanged through each pr publication route', () => {
+    const content = {
+      digest: '67b745ba5d309191b215bc5c99c398434aa1a71fff8116e841a0a90deb3c49ce',
+      title: 'A poem: "simple"',
+      body: "one\n\ntwo `literal` $(literal) 'quoted' 🐓",
+    };
+    for (const [route, args, publishRequest] of [
+      [
+        'delivery',
+        ['publish'],
+        { action: 'publish', id: 'receipt', eventId: 'source', ...content },
+      ],
+      [
+        'continuation',
+        ['delivery', 'publish'],
+        { action: 'delivery', id: 'receipt', delivery: { action: 'publish', ...content } },
+      ],
+      [
+        'dispatch',
+        ['implementation', 'publish'],
+        {
+          action: 'implementation',
+          operation: 'delivery',
+          deliveryOperation: 'publish',
+          id: 'receipt',
+          ...content,
+        },
+      ],
+    ] as const) {
+      const saved = JSON.stringify({
+        status: 'prepared',
+        operation: { head: 'observed-head' },
+        instruction: 'inspect before publishing',
+        publishRequest,
+      });
+      const parsed = parse(route, [...args, '--plugin-data', '/private/plugin'], JSON.parse(saved));
+      assert.deepEqual(parsed.request, publishRequest);
+      assert.deepEqual(JSON.parse(saved).publishRequest, publishRequest);
+    }
+  });
+
+  it('should reject preparation envelopes that hide effects or do not contain a prepared publication', () => {
+    const envelope = { status: 'prepared', publishRequest: { action: 'publish', id: 'receipt' } };
+    for (const [route, args] of [
+      ['delivery', []],
+      ['delivery', ['prepare']],
+      ['delivery', ['reconcile']],
+      ['feedback', ['publish']],
+      ['dispatch', ['summary', 'publish']],
+    ] as const)
+      assert.throws(
+        () => parse(route, [...args, '--plugin-data', '/private/plugin'], envelope),
+        /workflow-prepared-publication-invalid/,
+      );
+    for (const bad of [
+      { ...envelope, status: 'error' },
+      { ...envelope, publishRequest: null },
+      { ...envelope, publishRequest: [] },
+      { ...envelope, publishRequest: 'unparsed' },
+    ])
+      assert.throws(
+        () => parse('delivery', ['publish', '--plugin-data', '/private/plugin'], bad),
+        /workflow-prepared-publication-invalid/,
+      );
+    for (const [route, args, publishRequest] of [
+      ['delivery', ['publish'], { action: 'prepare' }],
+      ['delivery', ['publish'], {}],
+      [
+        'continuation',
+        ['delivery', 'publish'],
+        { action: 'delivery', delivery: { action: 'prepare' } },
+      ],
+      [
+        'dispatch',
+        ['implementation', 'publish'],
+        { action: 'implementation', operation: 'context' },
+      ],
+    ] as const)
+      assert.throws(
+        () =>
+          parse(route, [...args, '--plugin-data', '/private/plugin'], {
+            ...envelope,
+            publishRequest,
+          }),
+        /workflow-command-action-mismatch/,
+      );
+  });
+
   it('should expose each workflow effect without moving request data into argv', () => {
     for (const [route, action] of [
       ['dispatch', 'context'],

@@ -353,8 +353,11 @@ root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 node "$runtime" delivery --help | grep -F 'present renders the card and notices even when attachment is pending'
-if output=$(printf '%s\n' '{"action":"publish","id":"missing"}' | node "$runtime" delivery --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
+printf '%s\n' '{"status":"prepared","publishRequest":{"action":"publish","id":"missing"}}' > "$root/prepared-delivery.json"
+if output=$(node "$runtime" delivery publish --plugin-data "$root/notification-data" < "$root/prepared-delivery.json" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "delivery-request-invalid" and .notices[0].severity == "error"'
+if output=$(node "$runtime" delivery prepare --plugin-data "$root/notification-data" < "$root/prepared-delivery.json" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "workflow-prepared-publication-invalid"'
 if output=$(printf '%s\n' '{"action":"announce","id":"missing"}' | node "$runtime" delivery --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "delivery-request-invalid"'
 

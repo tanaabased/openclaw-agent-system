@@ -1,4 +1,5 @@
 import manualPullRequest from '../agent/manual-pull-request.ts';
+import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import codexEntryContext from '../agent/codex-entry-context.ts';
 import { codexDispatchNative } from '../agent/codex-dispatch-native.ts';
 import {
@@ -1375,6 +1376,32 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 1);
     assert.equal(pr!.title, content.title);
     assert.ok(String(pr!.body).startsWith('Revised poem.'));
+  });
+  it('should publish the saved preparation response without copying its digest and refuse changed previews', async () => {
+    const content = { title: 'A small poem', body: "line one\n\n`literal` $(literal) 'quoted' 🐓" };
+    const saved = join(root, 'prepared-publication.json');
+    const prepare = await request('prepare', content);
+    await writeFile(saved, JSON.stringify(prepare));
+    const input = () =>
+      readFile(saved, 'utf8').then(
+        (text) =>
+          codexRuntimeRequest(
+            'delivery',
+            ['publish', '--plugin-data', pluginData],
+            JSON.parse(text),
+          ).request,
+      );
+    head = 'b'.repeat(40);
+    const stale = await runCodexDelivery(pluginData, await input(), deps);
+    assert.equal(stale.status, 'prepared');
+    assert.ok('code' in stale && stale.code === 'delivery-preview-stale');
+    assert.equal(creates, 0);
+    assert.ok(!gitCalls.some((argv) => argv.includes('push')));
+    await writeFile(saved, JSON.stringify(stale));
+    assert.equal((await runCodexDelivery(pluginData, await input(), deps)).status, 'published');
+    assert.equal(creates, 1);
+    assert.equal(pr!.title, content.title);
+    assert.ok(String(pr!.body).startsWith(content.body));
   });
   it('should resume a failed linkage or recipient phase on the checkpointed pr', async () => {
     failLink = true;
