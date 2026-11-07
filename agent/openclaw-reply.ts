@@ -75,8 +75,16 @@ export default async function openClawReply(input: {
           record?.work?.turn,
           record?.work?.deliveryTurn,
         ].find((entry) => entry?.runId === caller.runId);
-        if (!update || !record || !turn || turn.cancelled || turn.status === 'completed')
-          throw new Error('reply-operator-required');
+        if (!update || !record) throw new Error('reply-operator-required');
+        if (
+          record.reset ||
+          record.supersededBy ||
+          record.retired ||
+          record.retirement ||
+          record.sessionCreation?.sessionId !== caller.sessionId ||
+          turn?.cancelled
+        )
+          throw new Error('reply-managed-context-invalid');
         await describeIssueSession(request, record, deps.config(), 'feedback');
         return nativeInputEvent({
           request,

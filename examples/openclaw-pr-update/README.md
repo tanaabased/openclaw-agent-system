@@ -29,6 +29,15 @@ After one delivered PR, accept an explicit operator request to add a follow-up c
 
 In an isolated disposable installation, retain an idle managed issue task and its open same-repository PR but no local delivery receipt. From a separate native operator chat, preview and apply `recover` with the exact predecessor and PR; retry the same receipt after an interrupted creation. Verify one successor at the fetched head on a distinct local branch/checkout, unchanged predecessor work and assessment, exact local claim transfer, and refusal of old-chat execution. Complete one small successor commit and non-force update to the same PR without replaying the predecessor announcement. A changed head, active predecessor, denied creation, or external claim must stop the attempt. This costs one operator turn, one successor assessment/implementation journey, and one small PR update; it remains separate from the executable retained-binding check below. Component fakes do not establish installed acceptance.
 
+## Native continuation acceptance
+
+Resume the admitted chat through an authorized native handoff after its earlier workflow
+turn has completed. Publish a material Task Update from that new run without a fresh
+human message or a recorded assessment/work turn. Verify the exact issue/PR destination
+and one publication receipt; cancelled input, another session incarnation, and reset or
+retired ownership must remain rejected. Component coverage exercises these boundaries;
+the installed handoff and publication remain separate acceptance work.
+
 ## Setup
 
 ```bash

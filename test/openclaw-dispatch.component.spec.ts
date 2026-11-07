@@ -6231,84 +6231,128 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 1);
   });
 
-  it('should reuse the managed issue for later status composition without changing its stage or receipts', async () => {
-    const { who } = await operatorFollowup();
-    messages.at(-1)!.content = 'Draft a public status update; do not implement.';
-    const { journal } = await service.scope(manifest, root);
-    await journal.exclusive(async (state, save) => {
-      const record = state.records[0]!;
-      record.assessmentRevision ??= 1;
-      record.assessmentSummaries = [
-        {
-          revision: record.assessmentRevision,
-          resultDigest: automationHash(record.result),
-          binding: record.stageReceipt!.binding,
-          turnId: record.resultTurnId!,
-          authorityDigest: 'a'.repeat(64),
-          selection: record.assessment!,
-          publicText: 'Delivered assessment.',
-          receipt: { nodeId: 'SUMMARY', databaseId: 7 },
-        },
-      ];
-      await save();
-    });
-    const before = await record();
-    const read = await service.run(
-      manifest,
-      root,
-      who,
-      {
-        action: 'reply',
-        operation: 'context',
-        purpose: 'status-update',
-        target: 'https://github.com/owner/repo/issues/3',
-      },
-      true,
-    );
-    assert.ok('observation' in read && typeof read.observation === 'string');
-    assert.ok('entry' in read && read.entry === 'managed');
-    const composed = await service.run(
-      manifest,
-      root,
-      who,
-      {
-        action: 'reply',
-        operation: 'compose',
-        purpose: 'status-update',
-        target: 'https://github.com/owner/repo/issues/3',
-        privateText: 'New verified progress.',
-        update: {
-          observation: read.observation,
-          facts: [
-            {
-              key: 'decision',
-              reference: 'operator',
-              revision: '1',
-              text: 'Use the smaller approach.',
-            },
-          ],
-        },
-      },
-      true,
-    );
-    assert.equal(composed.status, 'composition-ready');
-    assert.deepEqual(await record(), before);
-    await assert.rejects(
-      service.run(
+  for (const operator of [true, false])
+    it(`should reuse the managed issue for later status composition with operator ${operator}`, async () => {
+      const { who } = await operatorFollowup(operator);
+      messages.at(-1)!.content = 'Draft a public status update; do not implement.';
+      const { journal } = await service.scope(manifest, root);
+      await journal.exclusive(async (state, save) => {
+        const record = state.records[0]!;
+        record.assessmentRevision ??= 1;
+        record.assessmentSummaries = [
+          {
+            revision: record.assessmentRevision,
+            resultDigest: automationHash(record.result),
+            binding: record.stageReceipt!.binding,
+            turnId: record.resultTurnId!,
+            authorityDigest: 'a'.repeat(64),
+            selection: record.assessment!,
+            publicText: 'Delivered assessment.',
+            receipt: { nodeId: 'SUMMARY', databaseId: 7 },
+          },
+        ];
+        await save();
+      });
+      const before = await record();
+      const read = await service.run(
         manifest,
         root,
-        { ...who, sessionId: 'foreign-incarnation' },
+        who,
         {
           action: 'reply',
           operation: 'context',
           purpose: 'status-update',
           target: 'https://github.com/owner/repo/issues/3',
         },
-        true,
-      ),
-    );
-    assert.deepEqual(await record(), before);
-  });
+        operator,
+      );
+      assert.ok('observation' in read && typeof read.observation === 'string');
+      assert.ok('entry' in read && read.entry === 'managed');
+      const composed = await service.run(
+        manifest,
+        root,
+        who,
+        {
+          action: 'reply',
+          operation: 'compose',
+          purpose: 'status-update',
+          target: 'https://github.com/owner/repo/issues/3',
+          privateText: 'New verified progress.',
+          update: {
+            observation: read.observation,
+            facts: [
+              {
+                key: 'decision',
+                reference: 'operator',
+                revision: '1',
+                text: 'Use the smaller approach.',
+              },
+            ],
+          },
+        },
+        operator,
+      );
+      assert.equal(composed.status, 'composition-ready');
+      assert.deepEqual(await record(), before);
+      if (!operator) {
+        assert.ok('id' in composed && 'digest' in composed);
+        const candidate = await service.run(manifest, root, who, {
+          action: 'reply',
+          operation: 'candidate',
+          id: composed.id,
+          digest: composed.digest,
+          publicText: 'The smaller approach is ready for review.',
+        });
+        assert.equal(candidate.status, 'candidate-recorded');
+        assert.ok('publication' in candidate && candidate.publication === 'workflow-authorized');
+        const readUpdate = () =>
+          service.run(manifest, root, who, {
+            action: 'reply',
+            operation: 'context',
+            purpose: 'status-update',
+            target: 'https://github.com/owner/repo/issues/3',
+          });
+        inputReceipts = [
+          {
+            runId: who.runId,
+            state: 'consumed',
+            consumedByEventId: 'operator-event',
+            cancelled: true,
+          },
+        ];
+        await assert.rejects(readUpdate(), /dispatch-input-unverified/);
+        inputReceipts = [];
+        for (const mutation of ['reset', 'retired'] as const) {
+          await journal.exclusive(async (state, save) => {
+            const entry = state.records[0]!;
+            entry.phase = 'complete';
+            entry[mutation] = { at: baseline, by: 'operator' };
+            await save();
+          });
+          await assert.rejects(readUpdate(), /reply-managed-context-invalid/);
+          await journal.exclusive(async (state, save) => {
+            delete state.records[0]![mutation];
+            state.records[0]!.phase = before.phase;
+            await save();
+          });
+        }
+      }
+      await assert.rejects(
+        service.run(
+          manifest,
+          root,
+          { ...who, sessionId: 'foreign-incarnation' },
+          {
+            action: 'reply',
+            operation: 'context',
+            purpose: 'status-update',
+            target: 'https://github.com/owner/repo/issues/3',
+          },
+          operator,
+        ),
+      );
+      assert.deepEqual(await record(), before);
+    });
 
   it('should route direct implementation through the original managed owner and preserve local scope', async () => {
     const { id, who } = await operatorFollowup();
