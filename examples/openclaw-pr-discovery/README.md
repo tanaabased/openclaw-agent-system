@@ -166,7 +166,6 @@ feedback_diagnostics() {
   exit "$feedback_status"
 }
 trap feedback_diagnostics EXIT
-worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/emori"
 number=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
 openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bucket/issues/$number/comments" -f 'body=@tanaabot add a note that feedback changes stay on the original PR, check it, and push the change.' > "$TMPDIR/notification-feedback-source.json"
@@ -195,6 +194,8 @@ cmp "$TMPDIR/pr-provider/reads.jsonl" "$TMPDIR/notification-inspection-reads.jso
 
 # should resume feedback discovery after restoring the provider
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/tanaabot"
+number=$(jq -er .work.delivery.pullRequest.pullRequestNumber "$TMPDIR/notification-delivery.json")
+worktree=$(jq -er .worktree "$TMPDIR/notification-delivery.json")
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const p=process.env.TMPDIR+"/pr-provider/control.json"; const control=JSON.parse(readFileSync(p,"utf8")); control.paused=false; writeFileSync(p,JSON.stringify(control));'
 run_id=$(openclaw agent-system automations run github-issue-assignment --json | jq -er 'select(.status == "queued") | .runId')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"
@@ -230,7 +231,6 @@ git -C "$worktree" show HEAD | grep -F 'Keep feedback changes on the original PR
 openclaw agent-system tool gh -- pr list --repo tanaabased/big-test-bucket --head "$(jq -er .work.delivery.binding.branch "$TMPDIR/notification-feedback.json")" --state all --json number | jq -e --argjson pr "$number" 'length == 1 and .[0].number == $pr'
 
 # should verify the exact response and suppress another reply on a repeat scan
-cd "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/tanaabot"
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/tanaabot"
 number=$(jq -er .feedback.events[1].number "$TMPDIR/notification-feedback.json")
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-feedback-replies.json"
