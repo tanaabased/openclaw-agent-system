@@ -87,15 +87,16 @@ export async function reconcileOpenClawTurn(input: {
     if (receipts.length > 1) throw new Error('dispatch-turn-receipt-invalid');
     const receipt = receipts[0];
     const info = sessionObject(history.sessionInfo);
-    const pending = sessionObject(history.pendingInputs).total;
-    if (
-      input.record &&
-      typeof info.hasActiveRun === 'boolean' &&
-      typeof pending === 'number' &&
-      Number.isSafeInteger(pending) &&
-      pending >= 0
-    )
-      input.record.nativeInactive = !info.hasActiveRun && pending === 0;
+    const pending = sessionObject(history.pendingInputs ?? {}).total;
+    if (input.record) {
+      delete input.record.nativeInactive;
+      if (
+        info.hasActiveRun === true ||
+        (typeof pending === 'number' && Number.isSafeInteger(pending) && pending > 0)
+      )
+        input.record.nativeInactive = false;
+      else if (info.hasActiveRun === false && pending === 0) input.record.nativeInactive = true;
+    }
     delete turn.inactive;
     if (receipt?.cancelled === true || turn.cancelled) {
       turn.cancelled = true;
