@@ -267,6 +267,35 @@ describe('agent/implementation-entry', () => {
       );
     assert.equal(reads, 0);
   });
+  it('should explain incorrect context fields in both runtimes without echoing their values', async () => {
+    deps.assertCurrent = async () => {
+      throw new Error('native-must-not-run');
+    };
+    for (const runtime of ['codex', 'openclaw'] as const) {
+      deps.binding.runtime = runtime;
+      await assert.rejects(
+        implementationEntry(
+          {
+            action: 'implementation',
+            operation: 'context',
+            id: 'a'.repeat(64),
+            issue: 'private-target',
+            checkout: 'private-checkout',
+          },
+          deps,
+        ),
+        (error: unknown) => {
+          assert.ok(error instanceof Error);
+          assert.equal('code' in error && error.code, 'implementation-request-invalid');
+          assert.match(error.message, /target and path/);
+          assert.match(error.message, /without bootstrapping again/);
+          assert.doesNotMatch(error.message, /private-/);
+          return true;
+        },
+      );
+    }
+    assert.equal(reads, 0);
+  });
   it('should retain a missing-plan question and use the later answer without inventing an assessment', async () => {
     const missing = await call('context', { plan: undefined });
     assert.equal(missing.status, 'clarification-needed');

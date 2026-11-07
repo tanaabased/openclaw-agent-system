@@ -39,8 +39,14 @@ export const directImplementationRequestSchema = Type.Object(
 
 /** validate the same envelope before either manual collection or managed routing. */
 export function parseDirectImplementationRequest(input: unknown) {
+  if (!Value.Check(directImplementationRequestSchema, input))
+    throw Object.assign(
+      new Error(
+        'implementation-request-invalid: use target and path for an explicit implementation context request, or id for an existing task. issue and checkout are not request fields. if verified implementation context is already supplied, use its implementation body without bootstrapping again.',
+      ),
+      { code: 'implementation-request-invalid' },
+    );
   if (
-    !Value.Check(directImplementationRequestSchema, input) ||
     (input.material !== undefined &&
       (input.operation !== 'context' ||
         !input.id ||
