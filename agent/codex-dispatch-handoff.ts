@@ -27,6 +27,11 @@ if (runtimeRoute === 'dispatch' && input.action === 'reconcile' && input.id === 
   if (!observation?.id) throw new Error('dispatch-operation-evidence-unavailable');
   input = {...input, id: observation.id};
 }
+if (runtimeRoute === 'feedback' && input.action === 'reconcile' && input.id === undefined && input.eventId === undefined) {
+  const observation = load(key + ':observation');
+  if (!observation?.id || !observation.eventId) throw new Error('feedback-operation-evidence-unavailable');
+  input = {...input, id: observation.id, eventId: observation.eventId};
+}
 if (runtimeRoute === 'dispatch' && input.action === 'prepare') {
   store(key + ':observation', {id: input.id, digest: input.digest, operation: 'prepare'});
 }
@@ -84,12 +89,17 @@ while (true) {
 /** consume the exact request once, separately from host-access preparation. */
 export function codexNativeHandoff(
   pluginData: string,
-  route: 'dispatch' | 'continuation' | 'retirement',
+  route: 'dispatch' | 'continuation' | 'retirement' | 'feedback',
 ) {
   const key = JSON.stringify(
-    `agent-system:${route === 'retirement' ? 'dispatch' : route}:${pluginData}`,
+    `agent-system:${['retirement', 'feedback'].includes(route) ? 'dispatch' : route}:${pluginData}`,
   );
-  const status = route === 'retirement' ? 'retirement-prepared' : 'prepared';
+  const status =
+    route === 'retirement'
+      ? 'retirement-prepared'
+      : route === 'feedback'
+        ? 'feedback-prepared'
+        : 'prepared';
   const tool =
     route === 'retirement'
       ? 'set_thread_archived'
@@ -100,5 +110,6 @@ export function codexNativeHandoff(
 if (!prepared || prepared.status !== '${status}') throw new Error('${route}-prepared-request-unavailable');
 store(${key}, null);
 ${route === 'dispatch' ? `store(${key} + ':observation', {id: prepared.id, operation: 'create'});` : ''}
-text({id: prepared.id, native: await tools.mcp__codex_app__${tool}(prepared.request)});`;
+${route === 'feedback' ? `store(${JSON.stringify(`agent-system:feedback:${pluginData}:observation`)}, {id: prepared.id, eventId: prepared.eventId});` : ''}
+text({id: prepared.id, ${route === 'feedback' ? 'eventId: prepared.eventId, ' : ''}native: await tools.mcp__codex_app__${tool}(prepared.request)});`;
 }

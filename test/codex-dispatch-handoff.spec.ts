@@ -70,7 +70,7 @@ function fixture(results: (Record<string, unknown> | Error)[], failCreation = fa
     context.runtimeInput = input;
     return runInNewContext('(async () => {' + codexDispatchHandoff(runtime) + '})()', context);
   };
-  const send = (route: 'dispatch' | 'continuation' | 'retirement' = 'dispatch') =>
+  const send = (route: 'dispatch' | 'continuation' | 'retirement' | 'feedback' = 'dispatch') =>
     runInNewContext(
       '(async () => {' + codexNativeHandoff(runtime.pluginData, route) + '})()',
       context,
@@ -79,6 +79,42 @@ function fixture(results: (Record<string, unknown> | Error)[], failCreation = fa
 }
 
 describe('agent/codex-dispatch-handoff', () => {
+  it('should send complete issue and pr feedback once and reconcile its retained source', async () => {
+    for (const item of ['issues', 'pull']) {
+      for (const fail of [false, true]) {
+        const feedback = {
+          status: 'feedback-prepared',
+          id: 'issue-owner',
+          eventId: 'comment-event',
+          request: {
+            threadId: 'existing-issue-chat',
+            prompt:
+              `> @pirog plan only; do not push.\n[Comment ↗](https://github.com/org/repo/${item}/42#issuecomment-1)` +
+              '\n\nCall feedback context with the retained eventId. Receipt: exact-source',
+          },
+        };
+        const test = fixture([success(feedback), success({ status: 'delivered' })], fail);
+        await test.execute();
+        if (fail) await assert.rejects(test.send('feedback'), /native rejection/);
+        else await test.send('feedback');
+        assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [feedback.request]);
+        await assert.rejects(test.send('feedback'), /feedback-prepared-request-unavailable/);
+        await test.execute({ action: 'reconcile' }, 'feedback');
+        const input = JSON.parse(String(test.commands.at(-1)!.cmd).split('\n')[1]!);
+        assert.deepEqual(input, {
+          action: 'reconcile',
+          id: feedback.id,
+          eventId: feedback.eventId,
+        });
+        await assert.rejects(
+          test.execute({ action: 'reconcile' }, 'feedback'),
+          /feedback-operation-evidence-unavailable/,
+        );
+        assert.equal(test.commands.length, 2);
+      }
+    }
+  });
+
   it('should explain missing node in supported host shell diagnostics without retrying', async () => {
     for (const output of [
       '/bin/sh: node: not found',
