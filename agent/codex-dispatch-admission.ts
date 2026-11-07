@@ -257,7 +257,7 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
           }
         : undefined,
     },
-    'Assess the requested outcome and prepare a plan. Keep the full standardized assessment in native conversation context, show its concise presentation, and publish its summary through Task Update within the authorized scope. Continue according to current native direction and implementation permission.',
+    'Handle the requested outcome within the verified issue mode and current native direction. Begin with assessment and an actionable plan; keep the full standardized assessment in native conversation context, show its concise presentation, and publish its summary through Task Update within the authorized scope. Then follow the verified mode and implementation permission in this same turn; assessment is not a separate approval checkpoint.',
   );
   return [
     card,

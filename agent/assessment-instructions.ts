@@ -1,7 +1,7 @@
 export function nativeAssessmentInstructions() {
   return (
     assessmentInstructions +
-    ' Publish the initial assessment and consequential questions through authorized Task Update. Continue within the verified mode and current user direction; formatting grants no implementation or publication permission.'
+    ' Publish the assessment and questions through authorized Task Update. In Auto, finish routine checks, then choose Work for clear, bounded, authorized tasks; wait for consequential missing requirements, actual blockers or explicit user restrictions, not the generated assessment startup wording. Continue within verified mode and current user direction; formatting grants no permission.'
   );
 }
 
