@@ -84,7 +84,6 @@ describe('assignment feedback reactivation', () => {
     assert.equal(await h.run(), false);
     assert.equal(h.record.feedbackReactivation, undefined);
     h.input.policy.policy.routing.reverse();
-    h.input.policy.policy.allowedRepositoryOwners = [{ login: 'other', nodeId: 'O_other' }];
     assert.equal(await h.run(), true);
     assert.equal(h.record.feedback!.events.length, 1);
     h.input.policy.policy.routing = [];

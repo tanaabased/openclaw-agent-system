@@ -9,6 +9,7 @@ import {
   githubNotificationPublicationTarget,
 } from '../channels/github/publication/publication-contract.ts';
 import { githubCommentPageSize } from '../channels/github/provider/issue-comment-client.ts';
+import dispatchContext from '../agent/dispatch-context.ts';
 import retryGitHubRead from '../core/github-read-retry.ts';
 
 function response(body: unknown, link?: string): AgentSystemCliResult {
@@ -272,6 +273,43 @@ describe('channels/github/provider/work-event-client', () => {
       assert.equal(error.rateLimit.remaining, 4500);
       return true;
     });
+  });
+
+  it('should return routing references without reading discussion or files', async () => {
+    for (const kind of ['issue', 'pull-request'] as const) {
+      const requests: string[][] = [];
+      const client = new GitHubWorkEventClient({
+        identity: { login: 'tanaabot', nodeId: 'U_agent' },
+        async execute(argv) {
+          requests.push(argv);
+          if (argv.some((part) => part.includes('/issue-field-values')))
+            return response([{ issue_field_name: 'Complexity', value: 'Low' }]);
+          assert.equal(
+            argv.some((part) => /\/(comments|files)(?:[?]|$)/u.test(part)),
+            false,
+          );
+          return response({
+            title: 'Long issue',
+            body:
+              'Requirement. '.repeat(3000) +
+              '\n```yaml\nschema: tanaab/task-metadata/v2\nmode: fallback\nfallback:\n  complexity: high\n```\n',
+            labels: [],
+            commentCount: 100,
+          });
+        },
+      });
+      const evidence = await client.getItemContext('owner', 'repo', 3, kind, true, false, true);
+      assert.equal(evidence.body, '');
+      assert.deepEqual(evidence.comments, []);
+      assert.equal(evidence.files, undefined);
+      const routing = dispatchContext(evidence, 'https://github.com/owner/repo/issues/3', 1);
+      assert.equal(routing.fallbackMetadata.complexity.value, 'high');
+      if (kind === 'issue') {
+        assert.equal(routing.metadata?.complexity.value, 'low');
+        assert.deepEqual(routing.conflicts, ['complexity']);
+      }
+      assert.equal(requests.length, kind === 'issue' ? 2 : 1);
+    }
   });
 
   it('should read bounded native routing metadata only for opted-in issue assessments', async () => {
@@ -606,6 +644,59 @@ describe('channels/github/provider/work-event-client', () => {
     assert.equal(context.comments.at(-1)?.body, 'The latest requirement.');
     assert.ok(requests[1]?.includes('page=1'));
     assert.ok(requests[2]?.includes('page=2'));
+  });
+
+  it('should deliver complete issue and pr evidence beyond routing limits', async () => {
+    const body = 'issue requirements '.repeat(1500) + 'FINAL REQUIREMENT';
+    const comment = 'clarification '.repeat(200) + 'FINAL CORRECTION';
+    const client = new GitHubWorkEventClient({
+      identity: { login: 'reader', nodeId: 'U_reader' },
+      async execute(argv) {
+        if (argv.includes('/repos/owner/repo/issues/3'))
+          return response({ title: 'Complete source', body, commentCount: 51, labels: [] });
+        const second = argv.includes('page=2');
+        if (argv.includes('/repos/owner/repo/issues/3/comments'))
+          return response(
+            Array.from({ length: second ? 1 : 50 }, (_, i) => ({
+              databaseId: second ? 51 : i + 1,
+              authorLogin: 'author',
+              body: comment,
+              createdAt: '2026-08-11T12:04:00Z',
+            })),
+            second
+              ? undefined
+              : '<https://api.github.com/repos/owner/repo/issues/3/comments?page=2>; rel="next"',
+          );
+        assert.ok(argv.includes('/repos/owner/repo/pulls/3/files'));
+        return response(
+          Array.from({ length: second ? 1 : 100 }, (_, i) => ({
+            filename: `file-${second ? 100 : i}.ts`,
+            status: 'modified',
+            additions: 1,
+            deletions: 0,
+            changes: 1,
+          })),
+          second
+            ? undefined
+            : '<https://api.github.com/repos/owner/repo/pulls/3/files?page=2>; rel="next"',
+        );
+      },
+    });
+    for (const kind of ['issue', 'pull-request'] as const) {
+      const evidence = await client.getItemContext('owner', 'repo', 3, kind, false, true);
+      assert.equal(evidence.body, body);
+      assert.equal(evidence.comments.length, 51);
+      assert.ok(evidence.comments.every((item) => item.body === comment));
+      assert.equal(evidence.truncated, false);
+      if (kind === 'pull-request') {
+        assert.equal(evidence.files?.length, 101);
+        assert.equal(evidence.files.at(-1)?.filename, 'file-100.ts');
+      }
+      const routing = dispatchContext(evidence, 'source', 1);
+      assert.equal('body' in routing, false);
+      assert.equal('comments' in routing, false);
+      assert.equal('files' in routing, false);
+    }
   });
 
   it('should include bounded pull-request file summaries without patches', async () => {

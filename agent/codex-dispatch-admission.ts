@@ -9,6 +9,7 @@ import {
 } from './managed-issue.ts';
 import routingInstructions, {
   assertRoutingInstructions,
+  routingInstructionsReference,
   routingInstructionsGuidance,
   routingInstructionsDigest,
 } from './routing-instructions.ts';
@@ -256,7 +257,7 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
           }
         : undefined,
     },
-    'Assess the requested outcome and prepare a plan. After recording and presenting it, handle its host-verified summary and follow the returned handoff in this same turn.',
+    'Handle the requested outcome within the verified issue mode and current native direction. Begin with assessment and an actionable plan; keep the full standardized assessment in native conversation context, show its concise presentation, and publish its summary through Task Update within the authorized scope. Then follow the verified mode and implementation permission in this same turn; assessment is not a separate approval checkpoint.',
   );
   return [
     card,
@@ -265,7 +266,7 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
       '.',
     'Before investigation, execute dispatchRuntime.argvPrefix from the newest trusted Agent System context followed by context --plugin-data and dispatchRuntime.pluginData. Send ' +
       JSON.stringify({ action: 'context', id: record.id }) +
-      ' as JSON on stdin. Investigate only after status verified, following its instructions and selected assessment skill. Preserve the saved model and effort. Use the following transport and recovery rules for context and result submission.',
+      ' as JSON on stdin. Investigate only after status verified, following its instructions and selected assessment skill. Preserve the saved model and effort. Use the following transport and recovery rules for context and presentation.',
     codexRuntimeInstructions,
   ].join('\n\n');
 }
@@ -606,6 +607,8 @@ export async function prepareIssueProject(
       intake.issue.number,
       managedPullRequest(intake) ? 'pull-request' : 'issue',
       true,
+      false,
+      true,
     );
     const snapshot = dispatchContext(context, issueUrl(intake), now);
     record.project = project;
@@ -672,7 +675,7 @@ export async function prepareIssueProject(
           { action: 'inspect' },
           'codex',
         ),
-        instructions: record.routingInstructions,
+        instructions: routingInstructionsReference(record.routingInstructions),
         instructionsDigest: routingInstructionsDigest(record.routingInstructions),
         instructionsGuidance: routingInstructionsGuidance,
       },
@@ -738,8 +741,7 @@ export async function prepareDispatch(
       {
         action: 'resolve',
         manifestDigest: current.digest,
-        context:
-          record.context.slice(0, 17950) + '\n[Bounded routing snapshot; full evidence retained.]',
+        context: JSON.stringify({ source: snapshot.source, metadata: snapshot.metadata }),
         assessment: dispatchRoutingAssessment(input.assessment, metadata),
         ...(record.manualIssue?.selections?.routing
           ? { overrides: record.manualIssue.selections.routing }

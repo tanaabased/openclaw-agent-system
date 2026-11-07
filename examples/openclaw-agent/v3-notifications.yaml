@@ -3,12 +3,10 @@ github:
   schema-version: 3
   runtimes:
     - openclaw
-  allowed-repository-owners:
-    - login: example
-      node-id: O_example
+  routing: ['example/*']
   issue-assignment:
     paused: true
-  project-pickup:
+  issue-pickup:
     paused: true
     start: '10 pm'
     window: '1 hour'

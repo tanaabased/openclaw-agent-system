@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+import replyOwner from '../agent/reply-owner.ts';
+import type { ReplyTarget } from '../agent/reply-target.ts';
 import replyOwnerContext from '../agent/reply-owner-context.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
@@ -65,5 +67,51 @@ describe('agent/reply-owner-context', () => {
       { ...input.record, reset: { at: 1, by: 'operator' } },
     ])
       assert.equal(replyOwnerContext({ ...input, record }).inactive, true);
+  });
+  it('should exclude saved writeups from fresh replies and progress updates', () => {
+    const input = fixture();
+    const owner = replyOwnerContext({
+      ...input,
+      delivery: { pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 } },
+    });
+    owner.events = [
+      {
+        id: 'old-event',
+        result: { privateText: 'OLD-FEEDBACK' },
+      },
+    ] as typeof owner.events;
+    const target = { owner: 'owner', name: 'repo', number: 3 } as ReplyTarget;
+    for (const purpose of [undefined, 'status-update'] as const) {
+      const response = replyOwner([owner], 'chat', 'chat', target, purpose);
+      assert.ok(response && 'verifiedOutcome' in response);
+      assert.deepEqual(response.verifiedOutcome, { delivery: owner.deliveredPullRequest });
+      assert.doesNotMatch(JSON.stringify(response), /OLD-WORK|OLD-PLAN|OLD-FEEDBACK/);
+    }
+  });
+  it('should keep source-bound reply ownership after clearing the current pr association', () => {
+    const input = fixture();
+    const owner = replyOwnerContext({
+      ...input,
+      conversation: true,
+      record: {
+        ...input.record,
+        pullRequestLink: null,
+        feedback: {
+          events: [],
+          completed: [{ sourceId: 'comment', nodeId: 'old-pr', native: true }],
+        },
+      },
+    });
+    const target = {
+      owner: 'owner',
+      name: 'repo',
+      number: 7,
+      nodeId: 'old-pr',
+      source: { nodeId: 'comment' },
+    } as ReplyTarget;
+    const reply = replyOwner([owner], 'chat', 'chat', target, 'status-update');
+    assert.equal(reply?.status, 'status-update-context');
+    assert.equal(reply && 'ownerId' in reply && reply.ownerId, input.record.id);
+    assert.equal(owner.pullRequestNumber, undefined);
   });
 });

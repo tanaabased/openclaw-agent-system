@@ -1,6 +1,6 @@
-import { automationHash } from './automation-hash.ts';
+import feedbackDiscoveryOwner from './feedback-discovery-owner.ts';
 
-/** unchanged active owners may accept discovery; concurrent results and lifecycle changes win. */
+/** unchanged active owners may accept discovery; concurrent feedback and lifecycle changes win. */
 export default function applyFeedbackScans<
   F,
   R extends {
@@ -8,6 +8,7 @@ export default function applyFeedbackScans<
     retired?: unknown;
     retirement?: unknown;
     reset?: unknown;
+    supersededBy?: unknown;
     feedback?: F;
   },
 >(records: R[], scans: readonly { id: string; before: string; feedback: F }[]) {
@@ -19,7 +20,8 @@ export default function applyFeedbackScans<
       record.retired ||
       record.retirement ||
       record.reset ||
-      automationHash(record) !== scan.before
+      record.supersededBy ||
+      feedbackDiscoveryOwner(record) !== scan.before
     )
       continue;
     record.feedback = scan.feedback;

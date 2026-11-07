@@ -678,12 +678,12 @@ describe('agent/automation-threads', () => {
     assert.equal(f.creates(), 1);
   });
   for (const runtime of ['openclaw', 'codex'] as const) {
-    for (const jobId of ['github-issue-assignment', 'github-project-pickup'])
+    for (const jobId of ['github-issue-assignment', 'github-issue-pickup'])
       for (const unavailable of ['archived', 'missing'] as const) {
         it(`should report ${unavailable} ${runtime} ${jobId} read-only and replace it once on install`, async () => {
           const f = fixture(runtime);
           const declarations = jobs(
-            jobId === 'github-project-pickup' ? 'PROJECT PICKUP' : 'Issue assignments',
+            jobId === 'github-issue-pickup' ? 'ISSUE PICKUP' : 'Issue assignments',
             [jobId],
           );
           const old = (await f.store.resolve(declarations, true)).get(jobId)!.id;

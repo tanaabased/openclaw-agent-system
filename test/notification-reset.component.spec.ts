@@ -1,5 +1,5 @@
 import notificationResetPickup from '../agent/notification-reset-pickup.ts';
-import selectionFixture from './project-pickup-selection-fixture.ts';
+import selectionFixture from './issue-pickup-selection-fixture.ts';
 import { notificationResetDiagnostic } from '../agent/notification-reset-diagnostic.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';

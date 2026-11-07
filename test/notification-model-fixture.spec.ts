@@ -1,4 +1,3 @@
-import assessmentMaterial from '../agent/assessment-material.ts';
 import summaryFixture from './assessment-summary-fixture.ts';
 import type { AssessmentSummaryRequest } from '../agent/assessment-summary-state.ts';
 import assert from 'node:assert/strict';
@@ -16,7 +15,7 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
-import assessmentSubmission from '../agent/assessment-submission.ts';
+import renderNativeAssessment from '../agent/assessment-render.ts';
 import { issueExampleScenario } from '../examples/openclaw-issue-journey/model-fixture.ts';
 import { intakeExampleScenario } from '../examples/openclaw-issue-intake/model-fixture.ts';
 import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
@@ -24,7 +23,10 @@ import {
   progressionExampleScenario,
   retainedPlan,
 } from '../examples/openclaw-issue-progression/model-fixture.ts';
-import { prExampleScenario } from '../examples/openclaw-pr-journey/model-fixture.ts';
+import {
+  createPRExampleScenario,
+  prExampleScenario,
+} from '../examples/openclaw-pr-journey/model-fixture.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
 import resolveExampleModelScenario from '../scripts/example-model-scenarios.ts';
@@ -57,8 +59,8 @@ for (const scenario of [
   function assessmentContract(previousResultDigest?: string) {
     return {
       entry: 'managed',
+      previousResultDigest,
       resultSchema: assessmentResultContextSchema,
-      resultSubmission: assessmentSubmission({ entry: 'managed', id, previousResultDigest }),
     };
   }
 
@@ -75,17 +77,21 @@ for (const scenario of [
               {
                 role: 'user' as const,
                 content:
-                  'OpenClaw runtime context:\nAgent System model-only current-turn facts notification-hidden-initial-fact\nEnd OpenClaw runtime context.',
+                  'OpenClaw runtime context:\nAgent System model-only current-turn facts\nEnd OpenClaw runtime context.',
               },
             ]
           : []),
       ],
-      tools: ['agent_system_intake', 'agent_system_dispatch', 'agent_system_git', 'read'].map(
-        (name) => ({
-          type: 'function',
-          function: { name },
-        }),
-      ),
+      tools: [
+        'agent_system_intake',
+        'agent_system_dispatch',
+        'agent_system_git',
+        'agent_system_github',
+        'read',
+      ].map((name) => ({
+        type: 'function',
+        function: { name },
+      })),
     };
   }
 
@@ -105,12 +111,33 @@ for (const scenario of [
       : fixture.response;
   }
 
+  async function readRoutingSource(input: ChatCompletionRequest, index = 0) {
+    const next = await response(input);
+    assert.ok('toolCalls' in next && next.toolCalls?.[0]?.name === 'agent_system_github');
+    assert.deepEqual(JSON.parse(next.toolCalls[0].arguments).argv, [
+      'issue',
+      'view',
+      source,
+      '--json',
+      'title,body,comments',
+    ]);
+    append(input, `routing-source-${index}`, {
+      exitCode: 0,
+      truncated: false,
+      stdout: JSON.stringify({
+        body: 'disposable Agent System notification-flow fixture',
+        comments: [],
+      }),
+    });
+  }
+
   async function appendPagedContext(input: ChatCompletionRequest, value: Record<string, unknown>) {
     const request = { action: 'implementation-context', id };
     append(input, 'work-context', implementationMaterial(value, request));
     let pages = 0;
     for (; pages < 64; pages++) {
       const next = await response(input);
+      if ('content' in next) break;
       assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
       const args = JSON.parse(next.toolCalls[0]!.arguments);
       if (!args.material) break;
@@ -208,6 +235,72 @@ for (const scenario of [
     });
   }
 
+  async function readAssessmentSource(
+    input: ChatCompletionRequest,
+    selectedScenario = scenario,
+    body = 'Close disposable issues after evidence capture.',
+  ) {
+    const next = await response(input, selectedScenario);
+    assert.ok('toolCalls' in next && next.toolCalls?.[0]?.name === 'agent_system_github');
+    const call = next.toolCalls[0];
+    assert.deepEqual(JSON.parse(call.arguments).argv.slice(-2), ['--json', 'title,body,comments']);
+    append(input, 'assessment-source', {
+      exitCode: 0,
+      truncated: false,
+      stdout: JSON.stringify({
+        title: 'Cleanup',
+        body,
+        comments: [],
+      }),
+    });
+  }
+
+  async function publishNativePlan(
+    input: ChatCompletionRequest,
+    selectedScenario = scenario,
+    continues = false,
+    sourceBody?: string,
+  ) {
+    const target = 'https://github.com/owner/repo/issues/3';
+    await readAssessmentSource(input, selectedScenario, sourceBody);
+    const formatting = await action(input, 'assessment', selectedScenario);
+    assert.equal(formatting.operation, 'render');
+    const formatted = renderNativeAssessment(formatting);
+    assert.equal(formatted.status, 'formatted');
+    assert.equal(formatted.retained, false);
+    append(input, 'native-plan-render', formatted);
+    const observed = await action(input, 'reply', selectedScenario);
+    assert.equal(observed.operation, 'context');
+    assert.equal(observed.target, target);
+    append(input, 'native-plan-context', { status: 'status-update-context', observation: digest });
+    const composed = await action(input, 'reply', selectedScenario);
+    assert.equal(composed.operation, 'compose');
+    assert.match(composed.privateText!, /disposable (?:test )?issues/);
+    append(input, 'native-plan-compose', {
+      status: 'composition-ready',
+      id,
+      digest,
+      selection: { defaultSkill: true, skill: { path: '/fixture/reply/SKILL.md' } },
+    });
+    const read = await response(input, selectedScenario);
+    assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
+    append(input, 'summary-skill', 'Reply guidance');
+    assert.equal((await action(input, 'reply', selectedScenario)).operation, 'candidate');
+    append(input, 'native-plan-candidate', {
+      status: 'candidate-recorded',
+      publication: 'workflow-authorized',
+    });
+    assert.equal((await action(input, 'reply', selectedScenario)).operation, 'publish');
+    append(input, 'native-plan-preview', { status: 'publication-ready', digest });
+    assert.equal((await action(input, 'reply', selectedScenario)).digest, digest);
+    append(input, 'native-plan-publish', {
+      status: 'published',
+      presentation: 'Question published.',
+    });
+    if (!continues)
+      assert.deepEqual(await response(input, selectedScenario), { content: 'Question published.' });
+  }
+
   describe(`examples/${scenario.id} model fixture`, () => {
     if (scenario.id === 'openclaw-notifications-retirement')
       it('should retire the current task across native runtime context', async () => {
@@ -234,12 +327,13 @@ for (const scenario of [
           status: 'verified',
           runtime: 'openclaw',
           entry: 'direct',
-          id,
           target: source,
+          evidence: { source },
           resultSchema: assessmentResultContextSchema,
-          resultSubmission: assessmentSubmission({ entry: 'direct', id, target: source }),
+
           assessment: { skill: { path: '/fixture/SKILL.md' } },
         });
+        await readAssessmentSource(input);
         const read = await response(input);
         assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
         append(input, 'direct-assessment-skill', 'Complete selected method.');
@@ -268,45 +362,19 @@ for (const scenario of [
         );
         append(input, 'direct-assessment-invalid', diagnostic);
         const corrected = await action(input, 'assessment');
-        assert.equal(corrected.operation, 'result');
+        assert.equal(corrected.operation, 'render');
         assert.deepEqual(corrected, {
           ...malformed,
           result: { ...malformed.result, plan: malformed.result.fullAssessment },
         });
         append(input, 'direct-assessment-result', {
-          status: 'recorded',
-          presentation: 'Retained complete assessment.',
-          handoff: { next: 'assessment-only' },
+          status: 'formatted',
+          retained: false,
+          presentation: 'Formatted complete assessment.',
         });
-        assert.deepEqual(await response(input), { content: 'Retained complete assessment.' });
+        assert.deepEqual(await response(input), { content: 'Formatted complete assessment.' });
       });
 
-    if (scenario.id === 'openclaw-issue-journey')
-      it('should preserve a failed recovery candidate without retrying or claiming publication', async () => {
-        const input = request(`recover only the pending public assessment summary with id ${id}`);
-        append(input, 'recovery-present', {
-          status: 'presented',
-          presentation: 'Retained assessment.',
-        });
-        append(input, 'detail-readback', {
-          status: 'presented',
-          presentation: 'Managed Git confirmed this worktree. Verified the managed worktree.',
-        });
-        append(input, 'summary-compose', {
-          status: 'composition-ready',
-          digest,
-          selection: { defaultSkill: true, skill: { path: '/tmp/SUMMARY.md' } },
-        });
-        append(input, 'summary-skill', { text: 'Selected reply guidance' });
-        assert.equal((await action(input, 'summary')).operation, 'candidate');
-        append(input, 'summary-candidate', {
-          status: 'waiting',
-          code: 'dispatch-operation-failed',
-        });
-        assert.deepEqual(await response(input), {
-          content: 'Assessment summary candidate was not recorded: dispatch-operation-failed.',
-        });
-      });
     if (scenario.id === 'openclaw-pr-journey')
       it('should report a retained provider obstacle without retrying it or losing the diagnostic to strict matching', async () => {
         const input = request(intakePrompt);
@@ -373,6 +441,7 @@ for (const scenario of [
             context: { source, body: 'disposable Agent System notification-flow fixture' },
           }),
         );
+        await readRoutingSource(input, index);
         assert.equal((await action(input, 'prepare')).id, receipt);
         append(input, `prepare-${index}`, { status: 'session-created', id: receipt });
         assert.equal((await action(input, 'assess')).id, receipt);
@@ -440,6 +509,7 @@ for (const scenario of [
         digest,
         context: { source, body: 'disposable Agent System notification-flow fixture' },
       });
+      await readRoutingSource(input);
       const prepared = await action(input, 'prepare');
       assert.equal(prepared.id, id);
       assert.equal(prepared.digest, digest);
@@ -526,6 +596,7 @@ for (const scenario of [
         );
         append(input, 'scan', { status: 'ready' });
         for (const [stage, result] of path) append(input, stage, result);
+        if (path.some(([, value]) => value === routing)) await readRoutingSource(input);
         const pending = await response(input);
         assert.ok('toolCalls' in pending && pending.toolCalls?.length === 1);
         const stage = pending.toolCalls[0]!.id!.replace('call_notifications_', '');
@@ -568,7 +639,16 @@ for (const scenario of [
 
     if (!['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id))
       it('should consume fresh later evidence after recovery', async () => {
-        const later = request(`Refresh retained assessment for managed issue ${id}`);
+        const later = request('Initial assessment.');
+        append(later, 'assessment-source', {
+          exitCode: 0,
+          truncated: false,
+          stdout: JSON.stringify({ body: 'notification-hidden-initial-fact', comments: [] }),
+        });
+        later.messages.push({
+          role: 'user',
+          content: `Refresh native assessment for managed issue ${id}`,
+        });
         assert.equal(matchFixture([...scenario.fixtures], later), null);
         later.messages.push({
           role: 'user',
@@ -592,26 +672,15 @@ for (const scenario of [
             evidence: [],
             progress: { completed: [], remaining: [] },
           },
-          evidence: { body: 'notification-hidden-later-fact' },
+          currentTurnId: 'native-refresh',
+          evidence: {
+            source: 'https://github.com/owner/repo/issues/3',
+          },
         });
-        const revised = await action(later, 'result');
-        assert.equal(revised.previousResultDigest, digest);
-        assert.ok(!JSON.stringify(revised.result).includes('notification-hidden-later-fact'));
-        append(later, 'refresh-result', { status: 'recorded', presentation: '> ## 🧭 Plan ready' });
-        const nextResponse = await response(later);
-        assert.equal('content' in nextResponse && nextResponse.content, '> ## 🧭 Plan ready');
-        assert.deepEqual(await action(later, 'present'), {
-          action: 'present',
-          id,
-          includeDetails: true,
-        });
-        append(later, 'detail-readback', {
-          status: 'presented',
-          presentation:
-            revised.result.fullAssessment +
-            ' Managed Git confirmed this worktree. Verified the managed worktree.',
-        });
-        assert.equal((await action(later, 'summary')).operation, 'compose');
+        const unchanged = structuredClone(later);
+        await readAssessmentSource(unchanged, scenario, 'notification-hidden-initial-fact');
+        assert.equal(matchFixture([...scenario.fixtures], unchanged), null);
+        await publishNativePlan(later, scenario, false, 'notification-hidden-later-fact');
       });
 
     it('should recover blocked child context without changing its identity or accepting other blockers', async () => {
@@ -651,7 +720,7 @@ for (const scenario of [
       }
     });
 
-    it('should retain a plan only after native context and git verify its worktree', async () => {
+    it('should format a native plan only after context and git verify its worktree', async () => {
       const input = request(
         `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
       );
@@ -661,6 +730,8 @@ for (const scenario of [
         runtime: 'openclaw',
         ...assessmentContract(),
         id,
+        currentTurnId: 'initial',
+        evidence: { source: 'https://github.com/owner/repo/issues/3' },
         project: { path: '/tmp/managed-worktree' },
         assessment: {
           defaultSkill: scenario.id !== 'openclaw-issue-journey',
@@ -689,32 +760,10 @@ for (const scenario of [
         const read = await response(input);
         assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
         append(input, 'assessment-skill', 'Default assessment.');
+        await publishNativePlan(input);
+        return;
       }
-      const saved = await action(input, 'result');
-      assert.equal(saved.id, id);
-      assert.equal(saved.result.outcome, 'plan-ready');
-      const presentation = saved.result.reviewSummary ?? 'The complete retained presentation.';
-      append(input, 'result', { status: 'recorded', presentation });
-      const nextResponse = await response(input);
-      assert.equal('content' in nextResponse && nextResponse.content, presentation);
-      if (['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id)) {
-        await publishProgressionSummary(input);
-        assert.deepEqual(await response(input), { content: 'Published retained plan.' });
-      }
-      if (!['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id)) {
-        assert.deepEqual(await action(input, 'present'), {
-          action: 'present',
-          id,
-          includeDetails: true,
-        });
-        append(input, 'detail-readback', {
-          status: 'presented',
-          presentation:
-            saved.result.fullAssessment +
-            ' Managed Git confirmed this worktree. Verified the managed worktree.',
-        });
-        assert.equal((await action(input, 'summary')).operation, 'compose');
-      }
+      await publishNativePlan(input);
       for (const value of [
         { ...context, runtime: 'codex' },
         { ...context, id: 'c'.repeat(64) },
@@ -764,7 +813,7 @@ for (const scenario of [
       append(invalid, 'git', { exitCode: 0, stdout: '/tmp/other', truncated: false });
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
     });
-    if (['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id))
+    if (scenario.id === 'openclaw-pr-journey')
       it('should finish response-only recovery without repeating assessment or implementation', async () => {
         const input = request(`recover only the pending public assessment summary with id ${id}`);
         await action(input, 'present');
@@ -775,185 +824,53 @@ for (const scenario of [
         await publishProgressionSummary(input);
         assert.deepEqual(await response(input), { content: 'Published retained plan.' });
       });
-    if (scenario.id === 'openclaw-issue-progression')
-      it('should hold an auto plan and accept only the later operator continuation', async () => {
+    if (scenario.id === 'openclaw-issue-progression') {
+      it('should ask an auto clarification in native chat without recording another assessment', async () => {
         const selected = resolveExampleModelScenario('openclaw-issue-auto-plan');
-        const input = request(`Refresh agent_system_dispatch action context with id ${id}.`);
-        await action(input, 'context', selected);
-        append(input, 'refresh-context', {
-          status: 'verified',
-          mode: 'auto',
-          previousResult: {
-            version: 1,
-            outcome: 'plan-ready',
-            summary: 'Ready.',
-            assessment: 'Bounded documentation.',
-            fullAssessment: 'Complete retained assessment, evidence and plan.',
-            plan: 'Retained plan.',
-            evidence: [],
-            progress: { completed: [], remaining: [] },
-          },
-          previousResultDigest: digest,
-        });
-        const decision = await action(input, 'result', selected);
-        assert.equal(decision.result.decision?.mode, 'plan');
-        assert.ok(decision.result.decision?.reasons.length);
-        append(input, 'refresh-result', {
-          status: 'recorded',
-          presentation: 'Retained plan.',
-          handoff: { next: 'planning' },
-        });
-        await publishProgressionSummary(input, selected);
-        assert.deepEqual(await response(input, selected), { content: 'Published retained plan.' });
+        const input = request(
+          `Consider current plan for managed issue ${id}: decide whether to implement.`,
+        );
+        const question = await response(input, selected);
+        assert.ok('content' in question && !('toolCalls' in question));
+        assert.match(question.content!, /cleanup.*evidence/i);
         const followup = request(
           `Continue plan for managed issue ${id}: Implement the retained plan; ask about cleanup timing if needed. Do not push or publish a PR.`,
         );
-        await action(followup, 'implementation-context', selected);
-        append(followup, 'work-context', {
-          status: 'verified',
-          runtime: 'openclaw',
-          deliveryOnly: false,
-          publicationAuthorized: true,
-          project: { path: '/tmp/owned' },
-        });
-        const work = await action(followup, 'implementation-result', selected);
-        assert.equal(work.implementationResult?.outcome, 'clarification-needed');
+        const context = await action(followup, 'implementation-context', selected);
+        assert.equal(context.id, id);
+        assert.equal(context.scope, 'local');
       });
-    if (scenario.id === 'openclaw-issue-progression') {
       for (const interrupted of [false, true])
-        it(`should record an auto decision only after verified context with interruption ${interrupted}`, async () => {
+        it(`should select auto work in native context with interruption ${interrupted}`, async () => {
           const selected = interrupted
             ? resolveExampleModelScenario('openclaw-issue-decision-recovery')
             : scenario;
-          const input = request(`Refresh agent_system_dispatch action context with id ${id}.`);
+          const input = request(
+            `Consider current plan for managed issue ${id}: decide whether to implement.`,
+          );
           if (interrupted) {
             const first = await response(input, selected);
             assert.ok('content' in first && !('toolCalls' in first));
-            input.messages[1]!.content = `Resume the unfinished Auto decision. Refresh agent_system_dispatch action context with id ${id}.`;
+            input.messages[1]!.content += ' Resume the discussion.';
           }
-          assert.equal((await action(input, 'context', selected)).id, id);
-          append(input, 'refresh-context', {
-            status: 'verified',
-            mode: 'plan',
-            previousResult: { outcome: 'plan-ready', plan: 'Retained plan.' },
-          });
-          assert.equal(matchFixture([...selected.fixtures], input), null);
-          input.messages.at(-1)!.content = JSON.stringify({
-            status: 'verified',
-            mode: 'auto',
-            previousResult: {
-              version: 1,
-              outcome: 'plan-ready',
-              summary: 'Ready.',
-              assessment: 'Bounded documentation.',
-              fullAssessment: 'Complete retained assessment, evidence and plan.',
-              plan: 'Retained plan.',
-              evidence: [],
-              progress: { completed: [], remaining: [] },
-            },
-            previousResultDigest: digest,
-          });
-          const result = await action(input, 'result', selected);
-          assert.equal(result.previousResultDigest, digest);
-          assert.ok(result.result.outcome === 'plan-ready');
-          assert.equal(result.result.plan, 'Retained plan.');
-          assert.equal(result.result.decision?.mode, 'work');
-          append(input, 'refresh-result', {
-            status: 'recorded',
-            presentation: 'Verified decision.',
-            handoff: { next: 'implementation' },
-          });
-          if (!interrupted) await publishProgressionSummary(input, selected, true);
-          assert.equal((await action(input, 'implementation-context', selected)).id, id);
+          const context = await action(input, 'implementation-context', selected);
+          assert.equal(context.id, id);
+          assert.equal(context.decision?.mode, 'work');
+          assert.ok(context.decision?.reasons.length);
         });
-      it('should reconstruct an oversized assessment before submitting the auto decision', async () => {
-        const input = request(`Refresh agent_system_dispatch action context with id ${id}.`);
-        await action(input, 'context');
-        const retained = {
-          version: 1,
-          outcome: 'plan-ready',
-          summary: 'Ready.',
-          assessment: retainedPlan,
-          fullAssessment: retainedPlan,
-          plan: retainedPlan,
-          evidence: [],
-          progress: { completed: [], remaining: [] },
-        };
-        assert.ok(JSON.stringify(retained).length > 64000);
-        const source = {
-          status: 'verified',
-          runtime: 'openclaw',
-          id,
-          mode: 'auto',
-          previousResult: retained,
-          previousResultDigest: digest,
-        };
-        const ownerRequest = { action: 'context', id };
-        append(input, 'refresh-context', assessmentMaterial(source, ownerRequest));
-        let pages = 0;
-        for (; pages < 64; pages++) {
-          const next = await response(input);
-          assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
-          const args = JSON.parse(next.toolCalls[0]!.arguments);
-          if (!args.material) break;
-          assert.ok(Value.Check(dispatchParameters, args));
-          assert.equal(args.action, 'context');
-          append(
-            input,
-            `assessment-material-${pages}`,
-            assessmentMaterial(source, ownerRequest, args.material),
-          );
-        }
-        assert.ok(pages > 0 && pages < 64);
-        const submitted = await action(input, 'result');
-        assert.equal(submitted.previousResultDigest, digest);
-        assert.deepEqual(submitted.result, {
-          ...retained,
-          decision: {
-            mode: 'work',
-            reasons: ['The retained documentation plan is bounded and actionable.'],
-          },
-        });
-      });
       for (const direct of [false, true])
         it(`should ask clarification during automatic work and resume an answer with direct handoff ${direct}`, async () => {
           const automatic = request(
             direct
-              ? `Resume the unfinished Auto decision. Refresh agent_system_dispatch action context with id ${id}.`
+              ? `Consider current plan for managed issue ${id}: proceed with the bounded plan.`
               : `Continue this issue through implementation. Call agent_system_dispatch action implementation-context with id ${id}.`,
           );
-          if (direct) {
-            await action(automatic, 'context');
-            append(automatic, 'refresh-context', {
-              status: 'verified',
-              mode: 'auto',
-              previousResult: {
-                version: 1,
-                outcome: 'plan-ready',
-                summary: 'Ready.',
-                assessment: 'Bounded documentation.',
-                fullAssessment: 'Complete retained assessment, evidence and plan.',
-                plan: 'Document cleanup.',
-                evidence: [],
-                progress: { completed: [], remaining: [] },
-              },
-              previousResultDigest: digest,
-            });
-            await action(automatic, 'result');
-            append(automatic, 'refresh-result', {
-              status: 'recorded',
-              presentation: 'The retained plan.',
-              handoff: { next: 'implementation' },
-            });
-            await publishProgressionSummary(automatic, scenario, true);
-          }
           assert.equal((await action(automatic, 'implementation-context')).scope, undefined);
           await appendPagedContext(automatic, {
             id,
             plan: retainedPlan,
             status: 'verified',
             runtime: 'openclaw',
-            deliveryOnly: false,
             publicationAuthorized: true,
             pendingPublicResponse: {
               kind: 'assessment-summary',
@@ -962,24 +879,9 @@ for (const scenario of [
             },
             project: { path: '/tmp/owned' },
           });
-          if (!direct) {
-            await action(automatic, 'present');
-            append(automatic, 'recovery-present', {
-              status: 'presented',
-              presentation: 'The retained plan.',
-            });
-            await publishProgressionSummary(automatic);
-          }
-          const question = await action(automatic, 'implementation-result');
-          assert.equal(question.implementationResult.outcome, 'clarification-needed');
-          append(automatic, 'work-result', {
-            status: 'recorded',
-            presentation: 'Which cleanup timing?',
-          });
-          assert.deepEqual(await response(automatic), {
-            content: direct
-              ? 'The retained plan.\n\nWhich cleanup timing?'
-              : 'Which cleanup timing?',
+          const question = await response(automatic);
+          assert.deepEqual(question, {
+            content: 'Should cleanup happen after evidence is captured?',
           });
           const answer = request(
             `Answer for managed issue ${id}: Yes, after evidence is captured. Do not push or publish a PR.`,
@@ -990,10 +892,8 @@ for (const scenario of [
             plan: retainedPlan,
             status: 'verified',
             runtime: 'openclaw',
-            deliveryOnly: false,
             publicationAuthorized: false,
             project: { path: '/tmp/owned' },
-            previousImplementationResult: question.implementationResult,
           });
           for (const stage of ['apply', 'add', 'commit']) {
             const resumed = await response(answer);
@@ -1067,22 +967,28 @@ for (const scenario of [
         });
         input.messages[1]!.content += '\n' + context.appendContext;
         question.content = prompt;
-        assert.equal(matchFixture([...scenario.fixtures], input), null);
+        assert.throws(
+          () => matchFixture([...scenario.fixtures], input),
+          /native hook must retain task facts/,
+        );
       });
       for (const mode of ['operator', 'work', 'auto', 'custom'])
         it(`should carry ${mode} through implementation and the same delivery on retry`, async () => {
+          const workScenario = createPRExampleScenario(scenario.id);
           const input = request(
             mode === 'operator'
               ? `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`
               : `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
           );
           if (mode !== 'operator') {
-            await action(input, 'context');
+            await action(input, 'context', workScenario);
             append(input, 'context', {
               status: 'verified',
               runtime: 'openclaw',
               id,
               mode: mode === 'auto' ? 'auto' : 'work',
+              evidence: { source: 'https://github.com/owner/repo/issues/3' },
+              currentTurnId: 'native-turn',
               project: { path: '/tmp/owned' },
               resultContract: 'assessment-result/v1',
               assessment: {
@@ -1091,51 +997,47 @@ for (const scenario of [
                 guidance: { content: 'Preserve the evidence limit.\nExplain cleanup ordering.' },
               },
             });
-            const git = await response(input);
+            const git = await response(input, workScenario);
             assert.ok('toolCalls' in git && git.toolCalls?.[0]?.name === 'agent_system_git');
             append(input, 'git', { exitCode: 0, stdout: '/tmp/owned', truncated: false });
-            const read = await response(input);
+            const read = await response(input, workScenario);
             assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
             append(input, 'assessment-skill', 'Explain the cleanup sequence.');
-            const assessment = await action(input, 'result');
-            if (mode === 'auto') {
-              const decision = assessment.result.decision;
-              assert.ok(decision && 'mode' in decision);
-              assert.equal(decision.mode, 'work');
-              assert.ok(decision.reasons.length > 0);
-            } else assert.equal(assessment.result.decision, undefined);
-            if (mode === 'custom')
-              assert.match(assessment.result.fullAssessment!, /sanitized evidence/u);
-            append(input, 'result', {
-              status: 'recorded',
-              presentation: 'Retained plan.',
-              handoff: { next: 'implementation' },
-            });
-            await publishProgressionSummary(input);
+            await publishNativePlan(input, workScenario, true);
           }
           if (mode === 'operator')
-            assert.equal((await action(input, 'implementation')).operation, 'context');
-          else await action(input, 'implementation-context');
+            assert.equal(
+              (await action(input, 'implementation', workScenario)).operation,
+              'context',
+            );
+          else await action(input, 'implementation-context', workScenario);
           append(input, 'work-context', {
             status: 'verified',
             runtime: 'openclaw',
-            deliveryOnly: false,
             publicationAuthorized: true,
             project: { path: '/tmp/owned' },
             implementation: {
               defaultSkill: mode !== 'custom',
               skill: { path: '/fixture/SKILL.md' },
               guidance: {
-                content:
-                  'Retain sanitized evidence before cleanup.\nKeep the original instruction.',
+                path: '/fixture/custom guidance.md',
               },
             },
           });
-          const selected = await response(input);
+          const selected = await response(input, workScenario);
           assert.ok('toolCalls' in selected && selected.toolCalls?.[0]?.name === 'read');
           append(input, 'implementation-skill', 'Implement the cleanup sequence.');
+          if (mode === 'custom') {
+            const guidance = await response(input, workScenario);
+            assert.ok('toolCalls' in guidance && guidance.toolCalls?.[0]?.name === 'read');
+            assert.equal(
+              JSON.parse(guidance.toolCalls[0].arguments).path,
+              '/fixture/custom guidance.md',
+            );
+            append(input, 'implementation-guidance', 'Retain sanitized evidence before cleanup.');
+          }
           for (const stage of ['apply', 'check', 'add', 'commit']) {
-            const next = await response(input);
+            const next = await response(input, workScenario);
             assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
             assert.equal(next.toolCalls[0]!.name, 'agent_system_git');
             assert.equal(JSON.parse(next.toolCalls[0]!.arguments).cwd, '/tmp/owned');
@@ -1146,66 +1048,73 @@ for (const scenario of [
               );
             append(input, stage, { exitCode: 0, truncated: false, stdout: '' });
           }
-          await action(input, 'implementation-result');
-          append(input, 'work-result', {
-            status: 'recorded',
-            handoff: {
-              next: 'delivery',
-              request: { action: 'delivery', id, operation: 'prepare' },
+          assert.equal((await action(input, 'delivery', workScenario)).operation, 'prepare');
+          append(input, 'delivery-prepare', { status: 'prepared', digest });
+          assert.equal((await action(input, 'delivery', workScenario)).digest, digest);
+          const failedGit = structuredClone(input);
+          append(failedGit, 'delivery-publish', {
+            status: 'needs-attention',
+            code: 'delivery-git-operation-failed',
+            providerDiagnostic: {
+              classification: 'authentication',
+              providerMessage: 'Permission denied (publickey).',
             },
           });
-          assert.equal((await action(input, 'delivery')).operation, 'prepare');
-          append(input, 'delivery-prepare', { status: 'prepared', digest });
-          assert.equal((await action(input, 'delivery')).digest, digest);
+          const stopped = await response(failedGit, workScenario);
+          assert.ok('content' in stopped);
+          assert.match(String(stopped.content), /delivery-git-operation-failed/u);
+          assert.match(String(stopped.content), /authentication/u);
           append(input, 'delivery-publish', {
             status: 'waiting',
             code: 'github-delivery-linkage-unverified',
             pullRequest: { pullRequestNodeId: 'PR_owned', pullRequestNumber: 456 },
           });
-          const reconciliation = await action(input, 'delivery');
+          const reconciliation = await action(input, 'delivery', workScenario);
           assert.equal(reconciliation.operation, 'prepare');
           assert.equal(reconciliation.id, id);
           append(input, 'delivery-link-prepare-0', { status: 'prepared', digest });
-          const linkageRetry = await action(input, 'delivery');
+          const linkageRetry = await action(input, 'delivery', workScenario);
           assert.equal(linkageRetry.operation, 'publish');
           assert.equal(linkageRetry.id, id);
           append(input, 'delivery-link-publish-0', {
             status: 'published',
-            workflowStatus: 'delivered',
+            workflowStatus: 'native-unobserved',
           });
-          assert.equal((await action(input, 'delivery')).operation, 'compose');
+          assert.equal((await action(input, 'delivery', workScenario)).operation, 'link');
+          append(input, 'delivery-association', {
+            status: 'linked',
+            pullRequest: { pullRequestNumber: 456 },
+          });
+          assert.equal((await action(input, 'delivery', workScenario)).operation, 'compose');
           append(input, 'delivery-compose', {
             status: 'composition-ready',
             digest,
             selection: { defaultSkill: true, skill: { path: '/skills/reply/SKILL.md' } },
           });
-          const skill = await response(input);
+          const skill = await response(input, workScenario);
           assert.ok('toolCalls' in skill && skill.toolCalls?.[0]?.name === 'read');
           append(input, 'delivery-skill', { content: 'Reply skill instructions.' });
-          assert.equal((await action(input, 'delivery')).operation, 'candidate');
+          assert.equal((await action(input, 'delivery', workScenario)).operation, 'candidate');
           append(input, 'delivery-candidate', { status: 'announcement-prepared', digest });
-          assert.equal((await action(input, 'delivery')).operation, 'announce');
+          assert.equal((await action(input, 'delivery', workScenario)).operation, 'announce');
           append(input, 'delivery-announce', { status: 'announced' });
           if (mode === 'operator') {
-            assert.ok('content' in (await response(input)));
+            assert.ok('content' in (await response(input, workScenario)));
           } else {
-            assert.equal((await action(input, 'delivery')).operation, 'announce');
+            assert.equal((await action(input, 'delivery', workScenario)).operation, 'announce');
             append(input, 'delivery-repeat', { status: 'announced' });
-            assert.equal((await action(input, 'delivery')).operation, 'present');
+            assert.equal((await action(input, 'delivery', workScenario)).operation, 'present');
             append(input, 'delivery-present', { status: 'presented', presentation: '> PR card' });
-            assert.deepEqual(await response(input), { content: '> PR card' });
+            assert.deepEqual(await response(input, workScenario), { content: '> PR card' });
           }
           const retry = request(
             `Operator request for managed issue ${id}: Show the saved plan and existing PR card again.`,
           );
-          await action(retry, 'present');
-          append(retry, 'assessment-present', {
-            status: 'presented',
-            presentation: '> Saved plan',
-          });
-          assert.equal((await action(retry, 'delivery')).operation, 'present');
+          assert.equal((await action(retry, 'delivery', workScenario)).operation, 'present');
           append(retry, 'delivery-present', { status: 'presented', presentation: '> PR card' });
-          assert.deepEqual(await response(retry), { content: '> Saved plan\n\n> PR card' });
+          assert.deepEqual(await response(retry, workScenario), {
+            content: '> PR card',
+          });
         });
 
       it('should commit a follow-up and reuse the existing announcement after updating the pr', async () => {
@@ -1262,7 +1171,12 @@ for (const scenario of [
         ]) {
           const invalid = structuredClone(input);
           append(invalid, 'delivery-publish-refreshed', rejected);
-          assert.equal(matchFixture([...scenario.fixtures], invalid), null);
+          if (rejected.status === 'blocked' || rejected.code !== waiting.code) {
+            const stopped = await response(invalid);
+            assert.ok('content' in stopped);
+            assert.match(String(stopped.content), /notification-delivery-stopped/u);
+            assert.match(String(stopped.content), new RegExp(rejected.code, 'u'));
+          } else assert.equal(matchFixture([...scenario.fixtures], invalid), null);
         }
         append(input, 'delivery-publish-refreshed', waiting);
         const exhausted = structuredClone(input);
@@ -1288,7 +1202,7 @@ for (const scenario of [
         assert.equal((await action(input, 'delivery')).digest, refreshedDigest);
         append(input, 'delivery-link-publish-0', {
           status: 'published',
-          workflowStatus: 'delivered',
+          workflowStatus: 'native-unobserved',
         });
         assert.equal((await action(input, 'delivery')).operation, 'announce');
         append(input, 'delivery-repeat', { status: 'announced' });
@@ -1355,8 +1269,7 @@ for (const scenario of [
         assert.deepEqual(await response(current), { content: 'Already current.' });
       });
     if (scenario.id === 'openclaw-issue-journey')
-      it('should answer paired github and direct questions using retained responses without work', async () => {
-        const privateText = 'The retained plan documents disposable issue cleanup after evidence.';
+      it('should answer github and direct questions from native conversation without a result checkpoint', async () => {
         const github = request(
           `Call agent_system_dispatch with action feedback, operation context, id ${id}, eventId ${'e'.repeat(64)}`,
         );
@@ -1365,29 +1278,27 @@ for (const scenario of [
           status: 'verified',
           runtime: 'openclaw',
           publication: 'allowed',
+          replyTarget: source,
           source: { body: '@tanaabot explain the plan using the earlier explanation.' },
-          previousFeedbackWork: [{ eventId: 'd'.repeat(64), privateText }],
         });
-        assert.equal((await action(github, 'feedback')).operation, 'result');
+        const composed = await action(github, 'reply');
+        assert.equal(composed.operation, 'compose');
+        assert.equal(composed.target, source);
+        assert.match(composed.privateText!, /implementation remains unstarted/);
         const direct = request(
           `Explain retained plan for managed issue ${id}: explain the plan using the earlier explanation.`,
         );
-        assert.equal((await action(direct, 'context')).id, id);
-        append(direct, 'direct-question-context', {
-          status: 'verified',
-          mode: 'plan',
-          feedbackWork: [
-            { eventId: 'd'.repeat(64), privateText },
-            { eventId: 'e'.repeat(64), privateText },
-          ],
+        direct.messages.unshift({
+          role: 'assistant',
+          content: 'The plan documents disposable issue cleanup after evidence.',
         });
-        assert.deepEqual(await response(direct), { content: privateText });
+        assert.deepEqual(await response(direct), {
+          content:
+            'The retained plan proposes documenting disposable issue cleanup after evidence is captured. Implementation remains unstarted.',
+        });
       });
     if (scenario.id === 'openclaw-issue-journey')
-      it('should adapt ordinary clarification and an answer using retained full output', async () => {
-        let previous: Record<string, unknown> = {
-          fullAssessment: 'Original findings and uncertainty.',
-        };
+      it('should answer ordinary clarification using native context without saved revisions', async () => {
         for (const stage of ['Clarify', 'Answer']) {
           const input = request(
             `[Wed 2026-10-21 17:32 UTC] ${stage} ordinary assessment for managed issue ${id}`,
@@ -1395,7 +1306,7 @@ for (const scenario of [
           input.messages.push({
             role: 'user',
             content:
-              '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts notification-hidden-initial-fact',
+              '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts',
           });
           assert.equal((await action(input, 'context')).id, id);
           append(input, 'context', {
@@ -1405,8 +1316,8 @@ for (const scenario of [
             id,
             project: { path: '/tmp/managed-worktree' },
             assessment: { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } },
-            previousResult: previous,
-            previousResultDigest: digest,
+            currentTurnId: 'native-answer',
+            evidence: { source: 'https://github.com/owner/repo/issues/3' },
             resultContract: 'assessment-result/v1',
           });
           const read = await response(input);
@@ -1414,23 +1325,13 @@ for (const scenario of [
           append(input, 'assessment-skill', 'Generic Assessment');
           await response(input);
           append(input, 'git', { exitCode: 0, stdout: '/tmp/managed-worktree', truncated: false });
-          const submission = await action(input, 'result');
-          assert.equal(submission.previousResultDigest, digest);
-          assert.equal(
-            submission.result.outcome,
-            stage === 'Clarify' ? 'clarification-needed' : 'plan-ready',
-          );
-          assert.ok(submission.result.fullAssessment!.startsWith(String(previous.fullAssessment)));
           if (stage === 'Clarify') {
-            assert.equal(submission.result.outcome, 'clarification-needed');
-            assert.ok('questions' in submission.result);
-            assert.deepEqual(submission.result.questions, [
-              'Should cleanup close the issue only after evidence capture?',
-            ]);
+            assert.deepEqual(await response(input), {
+              content: 'Should cleanup close the issue only after evidence capture?',
+            });
+            continue;
           }
-          append(input, 'result', { status: 'recorded', presentation: 'Retained native review.' });
-          assert.deepEqual(await response(input), { content: 'Retained native review.' });
-          previous = submission.result;
+          await publishNativePlan(input);
         }
       });
     if (scenario.id !== 'openclaw-issue-progression')
@@ -1439,10 +1340,11 @@ for (const scenario of [
             [true, 'openclaw-pr-journey'],
             [false, 'openclaw-pr-journey'],
             [false, 'openclaw-pr-collaboration'],
+            [false, 'openclaw-pr-discovery'],
             [false, 'openclaw-pr-reply-recovery'],
           ] as const)
         : ([[false, undefined]] as const))
-        it(`should keep feedback ${initial ? 'initial implementation' : (driver ?? scenario.id) + ' continuation'} private retention skill selection candidate and publication as distinct stages`, async () => {
+        it(`should keep feedback ${initial ? 'initial implementation' : (driver ?? scenario.id) + ' continuation'} native work and independent reply publication as distinct stages`, async () => {
           const selectedScenario = driver ? resolveExampleModelScenario(driver) : scenario;
           const collaboration = driver === 'openclaw-pr-collaboration';
           const replyRecovery = driver === 'openclaw-pr-reply-recovery';
@@ -1460,7 +1362,7 @@ for (const scenario of [
             status: 'verified',
             runtime: 'openclaw',
             publication: 'allowed',
-            previousFeedbackWork: [],
+            replyTarget: source,
             source: { body: '@tanaabot explain the plan.' },
           });
           if (scenario.id === 'openclaw-pr-journey') {
@@ -1471,31 +1373,27 @@ for (const scenario of [
               publication: 'allowed',
               mode: initial ? 'plan' : 'work',
               issueStage: initial ? 'planning' : 'implementation',
-              previousFeedbackWork: initial
-                ? []
-                : [{ eventId: 'd'.repeat(64), result: { outcome: 'done' } }],
+              replyTarget: source,
+              project: { path: '/tmp/worktree' },
             });
-            const entry = await runAction(input, 'implementation');
-            assert.deepEqual(entry, {
-              action: 'implementation',
-              operation: 'context',
-              id,
-              scope: 'local',
-            });
-            append(input, 'feedback-work-context', {
-              status: 'verified',
-              worktree: '/tmp/worktree',
-              issueStage: 'implementation',
-              work: {},
-              implementation: { skill: { path: '/tmp/IMPLEMENT.md' } },
-              previousFeedbackWork: initial
-                ? []
-                : [{ eventId: 'd'.repeat(64), result: { outcome: 'done' } }],
-            });
-            const selected = await runResponse(input);
-            assert.ok('toolCalls' in selected);
-            assert.equal(selected.toolCalls?.[0]?.name, 'read');
-            append(input, 'feedback-implementation-skill', { text: 'Implementation method' });
+            if (initial) {
+              assert.deepEqual(await runAction(input, 'implementation-context'), {
+                action: 'implementation-context',
+                id,
+              });
+              append(input, 'feedback-work-context', {
+                status: 'verified',
+                project: { path: '/tmp/worktree' },
+                issueStage: 'implementation',
+                implementation: { skill: { path: '/tmp/IMPLEMENT.md' } },
+              });
+            }
+            if (initial) {
+              const selected = await runResponse(input);
+              assert.ok('toolCalls' in selected);
+              assert.equal(selected.toolCalls?.[0]?.name, 'read');
+              append(input, 'feedback-implementation-skill', { text: 'Implementation method' });
+            }
             if (!initial) {
               const branch = await runResponse(input);
               assert.ok('toolCalls' in branch);
@@ -1539,23 +1437,85 @@ for (const scenario of [
                 ]);
               append(input, stage, { exitCode: 0, truncated: false });
             }
-            assert.equal((await runAction(input, 'feedback')).operation, 'implementation-result');
-            append(input, 'feedback-work-result', { status: 'recorded' });
-            assert.equal((await runAction(input, 'feedback')).deliveryOperation, 'prepare');
+            if (initial) {
+              assert.equal((await runAction(input, 'implementation-result')).id, id);
+              append(input, 'feedback-work-result', { status: 'recorded' });
+            }
+            assert.equal((await runAction(input, 'delivery')).operation, 'prepare');
             append(input, 'feedback-delivery-prepare', { status: 'prepared', digest });
-            const delivered = await runAction(input, 'feedback');
-            assert.equal(delivered.deliveryOperation, 'publish');
+            const delivered = await runAction(input, 'delivery');
+            assert.equal(delivered.operation, 'publish');
             assert.equal(delivered.digest, digest);
+            if (initial) {
+              const transient = {
+                status: 'retrying',
+                code: 'github-delivery-github-request',
+                providerDiagnostic: {
+                  provider: 'github',
+                  classification: 'transport',
+                  httpStatus: 500,
+                },
+              };
+              const recovery = structuredClone(input);
+              append(recovery, 'feedback-delivery-publish', transient);
+              const prepare = await runAction(recovery, 'delivery');
+              assert.equal(prepare.operation, 'prepare');
+              assert.equal(prepare.id, id);
+              assert.equal('eventId' in prepare, false);
+              append(recovery, 'feedback-link-prepare-0', {
+                status: 'prepared',
+                digest,
+                operation: { id: 'original-operation', creationAttempted: true },
+              });
+              const publish = await runAction(recovery, 'delivery');
+              assert.equal(publish.operation, 'publish');
+              assert.equal(publish.digest, digest);
+              append(recovery, 'feedback-link-publish-0', { status: 'published' });
+              assert.equal((await runAction(recovery, 'delivery')).operation, 'link');
+              append(recovery, 'feedback-delivery-association', {
+                status: 'linked',
+                pullRequest: { pullRequestNumber: 456 },
+              });
+              assert.equal((await runAction(recovery, 'delivery')).operation, 'compose');
+              for (const classification of [
+                'authentication',
+                'permission',
+                'rate-limit',
+                'unknown',
+              ]) {
+                const denied = structuredClone(input);
+                append(denied, 'feedback-delivery-publish', {
+                  ...transient,
+                  providerDiagnostic: { ...transient.providerDiagnostic, classification },
+                });
+                const stopped = await runResponse(denied);
+                assert.ok('content' in stopped);
+                assert.match(String(stopped.content), /notification-delivery-stopped/u);
+                assert.match(String(stopped.content), new RegExp(classification, 'u'));
+              }
+              const exhausted = structuredClone(input);
+              append(exhausted, 'feedback-delivery-publish', transient);
+              for (let index = 0; index < 3; index++) {
+                assert.equal((await runAction(exhausted, 'delivery')).operation, 'prepare');
+                append(exhausted, `feedback-link-prepare-${index}`, { status: 'prepared', digest });
+                assert.equal((await runAction(exhausted, 'delivery')).operation, 'publish');
+                append(exhausted, `feedback-link-publish-${index}`, transient);
+              }
+              assert.deepEqual(await runResponse(exhausted), {
+                content:
+                  'notification-delivery-reconciliation-exhausted: github-delivery-github-request',
+              });
+            }
             if (initial) {
               append(input, 'feedback-delivery-publish', {
                 status: 'waiting',
                 code: 'github-delivery-linkage-unverified',
                 nextAction: 'next',
               });
-              const recovery = await runAction(input, 'feedback');
-              assert.equal(recovery.deliveryOperation, 'prepare');
+              const recovery = await runAction(input, 'delivery');
+              assert.equal(recovery.operation, 'prepare');
               assert.equal(recovery.id, id);
-              assert.equal(recovery.eventId, eventId);
+              assert.equal('eventId' in recovery, false);
               const missingReceipt = structuredClone(input);
               append(missingReceipt, 'feedback-link-prepare-0', { status: 'prepared', digest });
               assert.equal(matchFixture([...scenario.fixtures], missingReceipt), null);
@@ -1566,15 +1526,20 @@ for (const scenario of [
                   pullRequest: { pullRequestNodeId: 'PR_owned', pullRequestNumber: 456 },
                 },
               });
-              const retry = await runAction(input, 'feedback');
-              assert.equal(retry.deliveryOperation, 'publish');
+              const retry = await runAction(input, 'delivery');
+              assert.equal(retry.operation, 'publish');
               assert.equal(retry.digest, digest);
               assert.equal(retry.id, id);
-              assert.equal(retry.eventId, eventId);
+              assert.equal('eventId' in retry, false);
               append(input, 'feedback-link-publish-0', { status: 'published' });
             } else append(input, 'feedback-delivery-publish', { status: 'published' });
             if (initial) {
-              assert.equal((await runAction(input, 'feedback')).deliveryOperation, 'compose');
+              assert.equal((await runAction(input, 'delivery')).operation, 'link');
+              append(input, 'feedback-delivery-association', {
+                status: 'linked',
+                pullRequest: { pullRequestNumber: 456 },
+              });
+              assert.equal((await runAction(input, 'delivery')).operation, 'compose');
               append(input, 'feedback-delivery-compose', {
                 status: 'composition-ready',
                 digest,
@@ -1583,41 +1548,23 @@ for (const scenario of [
               const selected = await runResponse(input);
               assert.ok('toolCalls' in selected && selected.toolCalls?.[0]?.name === 'read');
               append(input, 'delivery-skill', { content: 'Reply skill instructions.' });
-              assert.equal((await runAction(input, 'feedback')).deliveryOperation, 'candidate');
+              assert.equal((await runAction(input, 'delivery')).operation, 'candidate');
               append(input, 'feedback-delivery-candidate', {
                 status: 'announcement-prepared',
                 digest,
               });
-              assert.equal((await runAction(input, 'feedback')).deliveryOperation, 'announce');
+              assert.equal((await runAction(input, 'delivery')).operation, 'announce');
               append(input, 'feedback-delivery-announce', { status: 'announced' });
             }
           }
-          const retained = await runAction(input, 'feedback');
-          assert.equal(retained.operation, 'result');
+          const composition = await runAction(input, 'reply');
+          assert.equal(composition.operation, 'compose');
+          assert.equal(composition.target, source);
           if (scenario.id !== 'openclaw-pr-journey')
-            assert.match(retained.privateText!, /implementation remains unstarted/);
-          append(input, 'feedback-result', {
-            status: 'recorded',
-            presentation: 'Full private response',
-          });
-          if (replyRecovery) {
-            assert.ok('content' in (await runResponse(input)));
-            input = request(
-              `Resume the retained feedback reply only. Use operation context, id ${id}, eventId ${eventId}.`,
-            );
-            const resumed = await runAction(input, 'feedback');
-            assert.equal(resumed.operation, 'context');
-            assert.equal(resumed.resume, true);
-            append(input, 'feedback-context', {
-              status: 'verified',
-              runtime: 'openclaw',
-              publication: 'allowed',
-              mode: 'work',
-            });
-          }
-          assert.equal((await runAction(input, 'feedback')).operation, 'compose');
+            assert.match(composition.privateText!, /implementation remains unstarted/);
           append(input, 'feedback-compose', {
             status: 'composition-ready',
+            id,
             digest,
             selection: { defaultSkill: true, skill: { path: '/tmp/SKILL.md' } },
           });
@@ -1625,20 +1572,28 @@ for (const scenario of [
           assert.ok('toolCalls' in read);
           assert.equal(read.toolCalls?.[0]?.name, 'read');
           append(input, 'feedback-skill', { text: 'Selected reply method' });
-          const candidate = await runAction(input, 'feedback');
+          const candidate = await runAction(input, 'reply');
           assert.equal(candidate.operation, 'candidate');
           if (scenario.id !== 'openclaw-pr-journey')
             assert.match(candidate.publicText!, /Implementation has not started/);
           append(input, 'feedback-candidate', { status: 'candidate-recorded' });
-          assert.equal((await runAction(input, 'feedback')).digest, undefined);
+          if (replyRecovery) {
+            assert.deepEqual(await runResponse(input), {
+              content: composition.privateText + '\n\nReply draft retained: ' + id,
+            });
+            input = request(`Publish retained reply draft: ${id}`);
+          }
+          assert.equal((await runAction(input, 'reply')).digest, undefined);
           append(input, 'feedback-preview', { status: 'publication-ready', digest });
-          assert.equal((await runAction(input, 'feedback')).digest, digest);
+          assert.equal((await runAction(input, 'reply')).digest, digest);
           append(input, 'feedback-publish', {
             status: 'published',
             presentation: 'Complete private and public presentation',
           });
           assert.deepEqual(await runResponse(input), {
-            content: 'Complete private and public presentation',
+            content:
+              (replyRecovery ? '' : composition.privateText + '\n\n') +
+              'Complete private and public presentation',
           });
         });
   });

@@ -1,6 +1,5 @@
-import { hasDeliveredImplementation } from './implementation-delivery.ts';
 import { dispatchGit, type DispatchGit } from './codex-dispatch-project.ts';
-import recoverIssueTask from './issue-task-recovery.ts';
+import recoverIssueTask, { pendingRecoveryFeedback } from './issue-task-recovery.ts';
 import { type CleanupConfiguration } from './cleanup-configuration.ts';
 import { automationHash } from './automation-hash.ts';
 import assignmentRetirement from './assignment-retirement.ts';
@@ -57,7 +56,7 @@ export default async function recoverDispatch(
     if (state.records.some((entry) => [entry.threadId, entry.receiptThreadId].includes(caller)))
       throw new Error('dispatch-operator-caller-required');
     const operatorInput = () => withNative((host) => host.operatorInput(caller));
-    const execution = hasDeliveredImplementation(record) ? undefined : record;
+    const execution = record;
     return recoverIssueTask({
       ...context,
       operator: await operatorInput(),
@@ -77,11 +76,11 @@ export default async function recoverDispatch(
         pendingSummaryTurn: Boolean(execution?.summaryRecovery && !execution.summaryRecovery.ended),
         pendingAutoDecision: Boolean(execution?.autoDecision && !execution.autoDecision.ended),
         unfinishedImplementation: Boolean(
-          execution?.continuation && execution.continuation.phase !== 'complete',
+          (execution?.continuation?.attempt && !execution.continuation.attempt.ended) ||
+          (execution?.continuation?.publicationAttempt &&
+            !execution.continuation.publicationAttempt.ended),
         ),
-        pendingFeedback: record.feedback?.events.some(
-          (event) => !['complete', 'cancelled', 'held'].includes(event.phase),
-        ),
+        pendingFeedback: record.feedback?.events.some(pendingRecoveryFeedback),
         assignmentClaim: Boolean((record.claimId || record.claimAccepted) && !context.claim),
       },
       observe: async () => {
@@ -138,15 +137,6 @@ export default async function recoverDispatch(
     });
   }
   if (action === 'retire') {
-    if (
-      state.records.some(
-        (entry) =>
-          !entry.handoff &&
-          entry.id !== record.id &&
-          (entry.threadId === caller || entry.receiptThreadId === caller),
-      )
-    )
-      throw new Error('dispatch-operator-caller-required');
     const nativeCaller = await withNative((host) => host.operatorInput(caller));
     const client = await connect();
     const item = await client.getItem(

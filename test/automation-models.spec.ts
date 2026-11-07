@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import parse from '../manifest/parse.ts';
-import { pickupDeclaration } from './project-pickup-fixture.ts';
+import { pickupDeclaration } from './issue-pickup-fixture.ts';
 import automationModels from '../agent/automation-models.ts';
 import { codexIntakeJobs } from '../agent/codex-intake-policy.ts';
 import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
@@ -34,9 +34,9 @@ function builtinManifest(
       models: configuredModels,
       github: {
         username: 'receiver',
-        'allowed-repository-owners': ['@owner'],
+        routing: ['owner/*'],
         'issue-assignment': { allowed: ['@operator'], ...settings },
-        'project-pickup': { ...pickupDeclaration, ...settings },
+        'issue-pickup': { ...pickupDeclaration, ...settings },
       },
     }),
   );
@@ -258,7 +258,7 @@ describe('agent/automation-models', () => {
       missing.diagnostics.map((d) => [d.code, d.fieldPath]),
       [
         ['manifest-automation-profile-missing', '/github/issue-assignment/model'],
-        ['manifest-automation-profile-missing', '/github/project-pickup/model'],
+        ['manifest-automation-profile-missing', '/github/issue-pickup/model'],
       ],
     );
     const parsed = builtinManifest({ model: 'anthropic/unsupported' });
@@ -271,8 +271,8 @@ describe('agent/automation-models', () => {
     assert.throws(() => codexIntakeJobs(parsed.manifest), {
       code: 'codex-model-provider-unsupported',
     });
-    parsed.manifest.github!.notifications!.projectPickup!.model = 'default';
-    parsed.manifest.github!.notifications!.projectPickup!.effort = 'adaptive';
+    parsed.manifest.github!.notifications!.issuePickup!.model = 'default';
+    parsed.manifest.github!.notifications!.issuePickup!.effort = 'adaptive';
     assert.throws(() => codexIntakeJobs(parsed.manifest), {
       code: 'codex-model-effort-unsupported',
     });

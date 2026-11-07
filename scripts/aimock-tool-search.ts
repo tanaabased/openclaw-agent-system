@@ -10,6 +10,7 @@ import {
 
 import type { OpenClawAIMockScenario, OpenClawAIMockToolCall } from './aimock-scenario.ts';
 import { matchesOpenClawAIMockToolCallId } from './aimock-tool-result.ts';
+import contextMaterialExchange from './aimock-context-material.ts';
 
 const discoveryPrefix = 'call_aimock_discover_';
 const preExecutionDenial = /^(?:Error: )?Denied by user\. The tool call did not run\.(?:\n|$)/u;
@@ -237,6 +238,26 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
     }),
   };
   const adapted = new Map<Fixture, Fixture>();
+  const exchange = (request: ChatCompletionRequest) =>
+    contextMaterialExchange(
+      normalizeToolSearchRequest(
+        request,
+        scenario.expectedDeniedToolCalls,
+        scenario.expectedInvalidToolCalls,
+      ),
+    );
+  const materials: Fixture = {
+    match: {
+      model: scenario.model.match,
+      predicate: (request) =>
+        (!needsDiscovery(request) || !!discoveryResult(request)) && !!exchange(request).pending,
+    },
+    response: (request) => {
+      const pending = exchange(request).pending;
+      assert.ok(pending);
+      return wrapResponse(request, pending);
+    },
+  };
   for (const fixture of scenario.fixtures) {
     const response = fixture.response;
     adapted.set(fixture, {
@@ -244,14 +265,7 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
       match: {
         predicate: (request) =>
           (!needsDiscovery(request) || !!discoveryResult(request)) &&
-          matchFixture(
-            [fixture],
-            normalizeToolSearchRequest(
-              request,
-              scenario.expectedDeniedToolCalls,
-              scenario.expectedInvalidToolCalls,
-            ),
-          ) !== null,
+          matchFixture([fixture], exchange(request).request) !== null,
       },
       response:
         typeof response !== 'function' && !('toolCalls' in response)
@@ -260,13 +274,7 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
               wrapResponse(
                 request,
                 typeof response === 'function'
-                  ? await response(
-                      normalizeToolSearchRequest(
-                        request,
-                        scenario.expectedDeniedToolCalls,
-                        scenario.expectedInvalidToolCalls,
-                      ),
-                    )
+                  ? await response(exchange(request).request)
                   : response,
               ),
     });
@@ -274,7 +282,7 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
   return {
     ...scenario,
     toolSearchDiscoveryFixture: discovery,
-    fixtures: [discovery, ...adapted.values()],
+    fixtures: [discovery, materials, ...adapted.values()],
     dynamicFinalResponseFixtures: scenario.dynamicFinalResponseFixtures?.map((fixture) =>
       adapted.get(fixture)!,
     ),

@@ -1,8 +1,5 @@
-import { hasDeliveredImplementation } from './implementation-delivery.ts';
-import projectPickupCapacity from './project-pickup-capacity.ts';
-import type { ProjectPickupState } from './project-pickup-state.ts';
-import issueWorkflowProgress from './issue-workflow-progress.ts';
-import { feedbackWorkStarted } from './feedback-work.ts';
+import issuePickupCapacity from './issue-pickup-capacity.ts';
+import type { IssuePickupState } from './issue-pickup-state.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 
 /** unresolved native custody reserves capacity until current native evidence releases it. */
@@ -11,41 +8,9 @@ function reserved(record: DispatchRecord): boolean {
   if (record.denial) return false;
   if (record.supersededBy || record.reset || !record.request) return false;
   if (record.nativeInactive) return false;
-  // native activity and unresolved custody reserve a slot regardless of workflow progress.
-  if (record.capacityObservation) return true;
-  const feedbackActive = Boolean(
-    record.feedback?.events.some(
-      (event) =>
-        ['prepared', 'running', 'responded'].includes(event.phase) ||
-        (event.phase === 'blocked' && Boolean(event.attempt) && !record.nativeInactive),
-    ),
-  );
-  if (hasDeliveredImplementation(record)) return feedbackActive;
-  const progress = issueWorkflowProgress(record);
-  const { action } = progress;
-  return (
-    Boolean(record.handoff) ||
-    Boolean(record.summaryRecovery && !record.summaryRecovery.ended && !record.nativeInactive) ||
-    Boolean(record.autoDecision && !record.autoDecision.ended && !record.nativeInactive) ||
-    record.phase === 'creating' ||
-    record.phase === 'assessing' ||
-    (['blocked', 'waiting', 'retrying'].includes(record.phase) && !record.nativeInactive) ||
-    Boolean(
-      record.continuation &&
-      (!feedbackWorkStarted(record) ||
-        record.continuation.attempt ||
-        record.continuation.binding) &&
-      (!record.continuation.policyHeld ||
-        record.continuation.attempt ||
-        record.continuation.binding) &&
-      (action === 'implementation' ||
-        (['stopped', 'wait-input'].includes(action) &&
-          Boolean(record.continuation.attempt) &&
-          !record.nativeInactive) ||
-        (action === 'delivery' && progress.publicationPending)),
-    ) ||
-    feedbackActive
-  );
+  // An admitted native request reserves a slot until native evidence proves inactivity.
+  // Missing plans, replies, cards, and publication receipts do not determine capacity.
+  return true;
 }
 
 export function codexUnresolvedRetirement(record: DispatchRecord) {
@@ -60,11 +25,11 @@ export function codexItemOccupied(record: DispatchRecord): boolean {
 export default function codexCapacity(
   records: DispatchRecord[],
   limit: number,
-  pickup?: ProjectPickupState,
+  pickup?: IssuePickupState,
   excludeIssue?: string,
 ) {
   if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('dispatch-capacity-invalid');
   const occupied =
-    records.filter(codexItemOccupied).length + projectPickupCapacity(pickup, excludeIssue);
+    records.filter(codexItemOccupied).length + issuePickupCapacity(pickup, excludeIssue);
   return { occupied, available: Math.max(0, limit - occupied) };
 }

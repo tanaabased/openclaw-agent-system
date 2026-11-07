@@ -1,6 +1,7 @@
 import type { dispatchStorageNotice } from '../../../agent/dispatch-storage.ts';
 import type { GitHubNotificationRuntimeDiagnostic } from '../notification-policy.ts';
 import type { RepositoryScopeDecision } from '../repository-scope.ts';
+import type { IntakeRecord } from '../intake/record-store.ts';
 import {
   githubNotificationItemMatchesSelector,
   type GitHubNotificationItemSelector,
@@ -30,8 +31,9 @@ export const githubNotificationWaitTargets = new Set<GitHubNotificationWaitTarge
 ]);
 
 export interface GitHubNotificationStatusItem {
-  repositoryScope?: RepositoryScopeDecision;
+  repositoryScope?: IntakeRecord['evidence']['repositoryScope'];
   workflow?: { phase: string; conversation?: string };
+  assessmentOutcome?: string;
   feedback?: { queued: number; active: number; blocked: number };
   disposition: GitHubNotificationItemDisposition;
   failureCode?: string;
@@ -94,7 +96,6 @@ export function evaluateGitHubNotificationWait(
     ? result.items.find((candidate) => matchesSelector(candidate, selector))
     : undefined;
   if (!item) return { code: 'github-notification-wait-pending', status: 'pending' };
-  if (item.failureCode) return { code: item.failureCode, status: 'failed' };
 
   const reached =
     target === 'assignment-rejected'
@@ -102,13 +103,16 @@ export function evaluateGitHubNotificationWait(
       : target === 'retired'
         ? item.stage === 'retired'
         : target === 'plan-ready'
-          ? item.workflow?.phase === 'plan-ready'
+          ? item.assessmentOutcome === 'plan-ready'
           : target === 'prepared'
             ? item.stage === 'prepared'
             : item.worktree === 'ready' && ['prepared', 'retired'].includes(item.stage ?? '');
-  return reached
-    ? { code: `github-notification-${target}`, status: 'reached' }
-    : { code: 'github-notification-wait-pending', status: 'pending' };
+  if (reached) return { code: `github-notification-${target}`, status: 'reached' };
+  // Only a failure before native creation can block an intake wait. Later effects
+  // and optional historical assessments do not control chat or worktree readiness.
+  if (item.stage === 'admitted' && item.failureCode)
+    return { code: item.failureCode, status: 'failed' };
+  return { code: 'github-notification-wait-pending', status: 'pending' };
 }
 
 export interface GitHubNotificationRefreshResult {

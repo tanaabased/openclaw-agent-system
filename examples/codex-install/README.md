@@ -28,8 +28,8 @@ then unbind without changing the workspace manifests.
 root="$TMPDIR/agent-system-codex-install"
 mkdir -p "$root/package"
 tar -xzf "$AGENT_SYSTEM_PACKAGE" -C "$root/package"
-codex-tools install "$root/package/package" --json | jq -e '.ok == true and .inspection.installed == true and .inspection.enabled == true'
-codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/cache.json" | jq -e '.ok == true and .status == "current"'
+codex-tools install "$root/package/package" --json | jq -e 'if .ok == true and .inspection.installed == true and .inspection.enabled == true then . else error("plugin install failed: " + ({ok, status, issue, inspection, remaining, nativeState} | tojson)) end'
+codex-tools cache check --repo-root "$root/package/package" --json | tee "$root/cache.json" | jq -e 'if .ok == true and .status == "current" then . else error("plugin cache check failed: " + ({ok, status, issue} | tojson)) end'
 
 # should expose complete packaged skills to a fresh codex app server
 bun --cwd "$GITHUB_WORKSPACE" run test:codex-plugin
@@ -189,7 +189,6 @@ printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
 printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
   | jq -e '.feedbackRuntime.argvPrefix[-1] == "feedback"'
 printf '%s\n' "$context" | grep -F 'For new routed work, use'
-printf '%s\n' "$context" | grep -F 'Reproduce the complete returned presentation Markdown in the final reply'
 
 # should approve installed runtime calls and leave unrelated commands to normal approval
 root="$TMPDIR/agent-system-codex-install"

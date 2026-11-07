@@ -162,7 +162,7 @@ function remediation(value: string) {
   if (value.includes('authority') || value.includes('policy') || value.includes('binding'))
     return 'Restore current issue assignment, repository access, and configured authority before retrying. Retain the existing chat and evidence.';
   if (value.includes('result'))
-    return 'Inspect the retained issue chat and its failure or interruption. Resume that same chat to finish the assessment and submit its structured result; do not launch a replacement.';
+    return 'Inspect the retained issue chat and its failure or interruption. Resume that same chat from current direction and use the native assessment formatter if a presentation is needed; do not save a new assessment or launch a replacement.';
   return 'Inspect this operation and the retained native creation receipt, chat, and worktree. Resolve the reported condition, then reconcile the existing creation; never repeat an uncertain create or change credentials without evidence of an authentication failure.';
 }
 function blocker(

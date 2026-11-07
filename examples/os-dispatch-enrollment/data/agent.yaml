@@ -22,7 +22,7 @@ github:
   token: GH_TOKEN_FIXTURE
   schema-version: 3
   runtimes: [openclaw]
-  allowed-repository-owners: ['@fixture']
+  routing: ['fixture/*']
   issue-assignment:
     paused: true
     allowed: []

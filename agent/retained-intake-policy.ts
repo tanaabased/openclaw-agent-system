@@ -34,11 +34,7 @@ export default function retainedIntakePolicy(
                   )
                 : [state.account]),
           },
-          allowedRepositoryOwners:
-            manifest.github?.notifications?.routing !== undefined
-              ? []
-              : (manifest.github?.notifications?.allowedRepositoryOwners ??
-                state.records.map((record) => record.repository.owner)),
+          routing: manifest.github?.notifications?.routing ?? [],
         },
       },
     },

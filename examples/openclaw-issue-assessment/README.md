@@ -17,7 +17,7 @@ implementing changes, or publishing to GitHub.
 
 ## Notes
 
-- Strict AIMock reuses the issue protocol for model text and tool selection. Provider reads, native chat execution, and retained results remain real; this does not prove genuine model judgment.
+- Strict AIMock reuses the issue protocol for model text and tool selection. Provider reads, native chat execution, and pure assessment formatting remain real; this does not prove genuine model judgment.
 - Install enrolls the native Gateway device credential with both notification schedules paused. Only one unassigned disposable issue is created; no production agent receives an assignment or review request.
 - Both workflow schedules are paused and the default assessment wrapper is configured before installation. The explicit operation remains assessment-only under Work mode.
 - The fixture omits `plan` once, requires a native `result.plan` diagnostic without unrelated outcome requirements, then corrects that shape on the same entry with the complete source unchanged. This proves bounded protocol recovery, not genuine model adaptation.
@@ -90,15 +90,17 @@ checkout=$(jq -er .path "$TMPDIR/direct-assessment-worktree.json")
 params=$(jq -nc --arg target "$target" --arg checkout "$checkout" '{sessionKey:"agent:issue-assessment-tanaabot:manual-assessment",agentId:"issue-assessment-tanaabot",message:("Direct issue assessment target: " + $target + " checkout: " + $checkout),deliver:false,idempotencyKey:"notification-manual-assessment"}')
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; console.log(JSON.stringify(await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"})));' "$params" | jq -e '.runId == "notification-manual-assessment"'
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" notification-manual-assessment 600000
-jq -es '[.[].entries[]] | length == 1 and .[0].result.outcome == "plan-ready" and (.[0].result.fullAssessment | type == "string" and test("\\S")) and .[0].selection.skill.name == "agent-system-task-assessment" and .[0].resultTurnId == "notification-manual-assessment"' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-assessment-*.json
+openclaw gateway call chat.history --params '{"sessionKey":"agent:issue-assessment-tanaabot:manual-assessment","limit":200}' --json | jq -e 'any(.messages[]; .role == "assistant" and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains("Proposed change") and (contains("Documentation-only change:") | not)))'
 number=$(jq -er .number "$TMPDIR/notification-manual-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-assessment/emori"
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e 'length == 0'
 node --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 const root = process.env.XDG_CONFIG_HOME + '/tanaab/agent-system/agent-system-dispatch-v2';
-const records = readdirSync(root).filter(name => name.startsWith('openclaw-dispatch-') && name.endsWith('.json')).flatMap(name => JSON.parse(readFileSync(root + '/' + name, 'utf8')).records);
+const names = existsSync(root) ? readdirSync(root) : [];
+assert.equal(names.some(name => name.startsWith('github-assessment-')), false);
+const records = names.filter(name => name.startsWith('openclaw-dispatch-') && name.endsWith('.json')).flatMap(name => JSON.parse(readFileSync(root + '/' + name, 'utf8')).records);
 assert.equal(records.length, 0);
 NODE
 ```

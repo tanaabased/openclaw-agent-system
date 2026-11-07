@@ -30,6 +30,7 @@ const actions: Record<string, readonly string[]> = {
     'retry-denied',
   ],
   delivery: [
+    'link',
     'bind',
     'prepare',
     'publish',
@@ -113,7 +114,9 @@ export default function codexRuntimeRequest(route: string, args: string[], input
         ['assessment', 'implementation', 'launch'].includes(action)
           ? action === 'launch'
             ? ['context', 'prepare', 'reconcile']
-            : ['context', 'result', 'present']
+            : action === 'assessment'
+              ? ['context', 'render', 'result', 'present']
+              : ['context', 'result', 'present']
           : action === 'reply'
             ? ['context', 'compose', 'candidate', 'publish', 'reconcile']
             : ['compose', 'candidate', 'publish', 'reconcile']

@@ -1,32 +1,19 @@
-import type { IssueWorkflowState } from './issue-workflow-progress.ts';
+import type { IssueWorkflowState } from './workflow-status.ts';
 
-/** Initial PR delivery ends execution ownership; later publication receipts may change. */
+/** Compatibility presentation fact derived from the external operation, never from a saved result. */
 export function hasDeliveredImplementation(record: IssueWorkflowState): boolean {
   if (record.implementationDelivered) return true;
-  const work = record.continuation?.phase ? record.continuation : record.work;
-  const delivery = record.delivery ?? record.work?.delivery;
-  return Boolean(
-    (work?.scope !== 'local' &&
-      delivery?.pullRequest &&
-      delivery.reconciled &&
-      (work?.result?.outcome === 'done' ||
-        (work?.resultHistory?.some(({ result }) => result.outcome === 'done') &&
-          (!record.continuation?.phase || record.continuation.head))) &&
-      (!record.continuation?.head || delivery.pushedHead === record.continuation.head)) ||
-    record.feedback?.events.some((event) => {
-      const linked = event.workDelivery ?? delivery;
-      return (
-        event.work?.result?.outcome === 'done' &&
-        event.work.head &&
-        linked?.pullRequest &&
-        linked.reconciled &&
-        linked.pushedHead === event.work.head
-      );
-    }),
+  const delivered = (delivery: IssueWorkflowState['delivery']) =>
+    Boolean(
+      delivery?.pullRequest && delivery.reconciled && (!delivery.adopted || delivery.pushedHead),
+    );
+  return (
+    delivered(record.delivery ?? record.work?.delivery) ||
+    Boolean(record.feedback?.events.some((event) => delivered(event.workDelivery)))
   );
 }
 
-/** Retain the terminal fact before a later push changes its effect receipts. */
+/** Preserve the first publication fact while later operations retain their own receipts. */
 export function retainImplementationDelivery(record: IssueWorkflowState): void {
   if (hasDeliveredImplementation(record)) record.implementationDelivered = true;
 }
@@ -37,6 +24,7 @@ export function nativeIssueContext(
     worktree?: string;
     issueBranch?: { name: string };
     directAssessments?: unknown;
+    pullRequestLink?: { pullRequestNodeId: string; pullRequestNumber: number } | null;
   },
 ) {
   return {
@@ -44,10 +32,10 @@ export function nativeIssueContext(
     id: record.id,
     project: { path: record.worktree },
     branch: record.issueBranch?.name ?? (record.delivery ?? record.work?.delivery)?.binding?.branch,
-    pullRequest: (record.delivery ?? record.work?.delivery)?.pullRequest,
-    assessment: record.result,
-    reassessments: record.directAssessments,
-    implementationResult: record.continuation?.result ?? record.work?.result,
+    pullRequest:
+      record.pullRequestLink !== undefined
+        ? (record.pullRequestLink ?? undefined)
+        : (record.delivery ?? record.work?.delivery)?.pullRequest,
     instructions:
       'The initial implementation and linked PR are delivered. Continue the ordinary native conversation under current authorized direction in this checkout and PR. This is retained context, not a new execution grant or implementation round. Do not enter assessment context/result, continuation, handoff, or implementation-result tracking. Replan in chat without saving another managed assessment. Use the configured assessment or implementation skill directly when useful. Preserve historical results. Use the existing delivery operation only for requested PR publication, attachment or card presentation, and explicitly invoke Task Update within authorized publication scope after a material plan revision, a clarification decision that changes the approach, or a later delivery to this PR. Coalesce changes and skip per-push or already-public updates. Show its exact rendered reply and publication outcome in this chat; publication failure does not block work. General updates target the linked open PR or otherwise the issue; their external-effect receipts remain authoritative. No scheduler activation or old automatic-send receipt governs this conversation.',
   };

@@ -122,6 +122,59 @@ describe('agent/managed-owner', () => {
     assert.throws(() => reply([current], 'another-chat'), /reply-managed-owner-required/);
   });
 
+  it('should keep different issues contributing to one pr with their own reply owner', () => {
+    const owners = [
+      {
+        id: 'first',
+        threadId: 'first-chat',
+        repository: 'owner/repo',
+        number: 3,
+        pullRequestNumber: 10,
+        inactive: false,
+      },
+      {
+        id: 'second',
+        threadId: 'second-chat',
+        repository: 'owner/repo',
+        number: 4,
+        pullRequestNumber: 10,
+        inactive: false,
+      },
+    ];
+    const target = { owner: 'owner', name: 'repo', number: 10 } as never;
+    for (const owner of owners) {
+      const result = replyOwner(owners, owner.threadId, owner.threadId, target, 'status-update');
+      assert.ok(result && 'ownerId' in result);
+      assert.equal(result.ownerId, owner.id);
+    }
+    assert.throws(
+      () => replyOwner(owners, 'unrelated', 'unrelated', target, 'status-update'),
+      /reply-managed-owner-ambiguous/,
+    );
+    assert.throws(
+      () =>
+        replyOwner(
+          [...owners, { ...owners[0]!, id: 'duplicate', threadId: 'duplicate-chat' }],
+          'first-chat',
+          'first-chat',
+          target,
+          'status-update',
+        ),
+      /reply-managed-owner-ambiguous/,
+    );
+    assert.throws(
+      () =>
+        replyOwner(
+          [{ ...owners[0]!, inactive: true }, owners[1]!],
+          'first-chat',
+          'first-chat',
+          target,
+          'status-update',
+        ),
+      /reply-managed-context-invalid/,
+    );
+  });
+
   it('should not select a current record by guessing from a reused caller identity', () => {
     const reused = { ...retired, threadId: current.threadId };
     assert.equal(managedOwner([reused, current], 'current-chat', () => true).status, 'ambiguous');

@@ -1,18 +1,21 @@
+import observeIssueActivity from './openclaw-session-activity.ts';
 import { hasDeliveredImplementation } from './implementation-delivery.ts';
 import recoverOpenClawAnnouncement from './openclaw-announcement-recovery.ts';
 import { announcementRecoveryAction } from './delivery-announcement-recovery.ts';
-import issueWorkflowProgress from './issue-workflow-progress.ts';
 import { assignmentClaimRoute } from './assignment-claim-source.ts';
-import projectPickupCapacity from './project-pickup-capacity.ts';
+import issuePickupCapacity from './issue-pickup-capacity.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
-import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   managedTargetUrl,
   dispatchAdmission,
   type ManagedIssue as IntakeRecord,
 } from './managed-issue.ts';
 import openClawRoutingInstructions from './openclaw-routing-instructions.ts';
-import { routingInstructionsGuidance, routingInstructionsDigest } from './routing-instructions.ts';
+import {
+  routingInstructionsReference,
+  routingInstructionsGuidance,
+  routingInstructionsDigest,
+} from './routing-instructions.ts';
 
 import assertDormantAssignmentUnclaimed from './dormant-assignment-claim.ts';
 import { openClawResponseEligible } from './openclaw-response-continuation.ts';
@@ -38,7 +41,7 @@ import resolveModelRoutingRequest from './model-routing-request.ts';
 import { assessmentSchema } from './model-routing.ts';
 import reconcileOpenClawLifecycle from './openclaw-assignment-lifecycle.ts';
 import { openClawDecisionPending } from './openclaw-auto-decision.ts';
-import dispatchCapacity, { openClawItemOccupied } from './openclaw-capacity.ts';
+import dispatchCapacity from './openclaw-capacity.ts';
 import { openClawWorkSlot } from './openclaw-continuation.ts';
 import {
   type default as OpenClawDispatchContext,
@@ -105,6 +108,7 @@ export default class OpenClawDispatchCoordinator {
         undefined,
         new DiscoveryBudget(7000, budget.signal),
       ));
+    let lifecycleFailure: string | undefined;
     if (intake.status === 'ready') {
       if (selector) {
         const admitted = (await reporting.store.read())?.records ?? [];
@@ -135,12 +139,17 @@ export default class OpenClawDispatchCoordinator {
           if (changed) await save();
         });
       }
-      await reconcileOpenClawLifecycle({
-        service: this.context,
-        manifest,
-        workspace,
-        authority: { signal: budget.signal },
-      });
+      try {
+        await reconcileOpenClawLifecycle({
+          service: this.context,
+          manifest,
+          workspace,
+          authority: { signal: budget.signal },
+        });
+      } catch (error) {
+        signal?.throwIfAborted();
+        lifecycleFailure = workflowFailure(error, 'dispatch-lifecycle-observation-failed').code;
+      }
     }
     const state = await reporting.journal.read();
     const report = openclawIntakeReport({
@@ -150,13 +159,7 @@ export default class OpenClawDispatchCoordinator {
       observation: intake,
       debug: manifest.debug,
     });
-    if (intake.status !== 'ready' && intake.code !== 'intake-search-incomplete')
-      return {
-        status: 'ready' as const,
-        changed: report.changed,
-        outcome: 'failed',
-        code: intake.code,
-      };
+    const intakeFailure = intake.status !== 'ready' ? intake.code : undefined;
     const current = await this.context.scope(manifest, workspace);
     const sourceThreadId = await this.context.dependencies.coordinator(manifest, current.workspace);
     const cycleAt = state.discoveryCycleAt ?? (this.context.dependencies.now ?? Date.now)();
@@ -206,31 +209,21 @@ export default class OpenClawDispatchCoordinator {
       state.discoveryProgress = fresh.discoveryProgress;
       await save();
     });
-    const available = (issueNodeId?: string) =>
-      dispatchCapacity(
-        state.records,
-        current.policy.policy.maxConcurrentItems,
-        state.projectPickup,
-        issueNodeId,
-      ).available;
     const feedbackPending = state.records.some(
       (record) =>
-        !record.retired &&
-        !record.retirement &&
         !record.reset &&
+        !record.supersededBy &&
         record.feedback?.events.some(
           (event) =>
-            ((!event.retry ||
-              dispatchRetryDue(event, (this.context.dependencies.now ?? Date.now)())) &&
-              event.phase !== 'blocked' &&
-              ((event.turn && (event.phase !== 'published' || event.turn.status !== 'completed')) ||
-                (event.publicationAttempted && !event.receipt))) ||
-            (event.phase === 'queued' &&
-              !event.policyHeld &&
+            (event.native &&
+              event.turn &&
+              event.turn.status !== 'completed' &&
+              !event.turn.inactive) ||
+            (((!record.retired && !record.retirement) || event.native) &&
               (!event.retry ||
                 dispatchRetryDue(event, (this.context.dependencies.now ?? Date.now)())) &&
-              !openClawItemOccupied(record) &&
-              available(record.projectWork?.pickup?.issueNodeId) > 0),
+              ((event.publicationAttempted && !event.receipt) ||
+                (event.phase === 'queued' && !event.policyHeld))),
         ),
     );
     const recoverable = state.records.some(
@@ -258,7 +251,6 @@ export default class OpenClawDispatchCoordinator {
       );
     const announcementPending = state.records.some(
       (record) =>
-        issueWorkflowProgress(record).status === 'delivered' &&
         announcementRecoveryAction(
           record.work?.delivery,
           (this.context.dependencies.now ?? Date.now)(),
@@ -266,13 +258,9 @@ export default class OpenClawDispatchCoordinator {
     );
     const workPending = state.records.some(
       (record) =>
-        !hasDeliveredImplementation(record) &&
-        (openClawDecisionPending(
-          record,
-          issueWorkflowMode(manifest.github?.notifications, record),
-        ) ||
-          openClawWorkSlot(record, issueWorkflowMode(manifest.github?.notifications, record))) &&
-        (openClawItemOccupied(record) || available(record.projectWork?.pickup?.issueNodeId) > 0),
+        !record.reset &&
+        !record.supersededBy &&
+        (openClawDecisionPending(record) || openClawWorkSlot(record)),
     );
     const responsePending = state.records.some((record) => openClawResponseEligible(record));
     const actionable =
@@ -282,13 +270,16 @@ export default class OpenClawDispatchCoordinator {
       recoverable ||
       workPending ||
       pending;
-    const code = state.records.find(
-      (record) => !record.retired && !record.retirement && !record.reset && record.feedback?.code,
-    )?.feedback?.code;
+    const code =
+      state.records.find(
+        (record) => !record.retired && !record.retirement && !record.reset && record.feedback?.code,
+      )?.feedback?.code ??
+      lifecycleFailure ??
+      intakeFailure;
     return {
       status: 'ready' as const,
       more,
-      outcome: code ? 'failed' : actionable ? 'actionable' : more ? 'paused' : 'unchanged',
+      outcome: actionable ? 'actionable' : code ? 'failed' : more ? 'paused' : 'unchanged',
       ...(code ? { code } : {}),
       changed:
         report.changed ||
@@ -452,9 +443,11 @@ export default class OpenClawDispatchCoordinator {
       (record.feedback?.events ?? [])
         .filter(
           (event) =>
-            event.phase !== 'blocked' &&
             event.turn &&
-            (event.phase !== 'published' || event.turn.status !== 'completed'),
+            !event.turn.inactive &&
+            (event.native || event.phase !== 'blocked') &&
+            (!['published', 'delivered'].includes(event.phase) ||
+              event.turn.status !== 'completed'),
         )
         .map((event) => ({ record, event })),
     );
@@ -485,12 +478,41 @@ export default class OpenClawDispatchCoordinator {
         }
     }
     await save();
-    for (const record of state.records
-      .filter(
-        (entry) =>
-          issueWorkflowProgress(entry).status === 'delivered' &&
-          announcementRecoveryAction(entry.work?.delivery, now) === 'check',
+    const queued = state.records
+      .filter((record) => !record.reset && !record.supersededBy)
+      .flatMap((record) =>
+        (record.feedback?.events ?? [])
+          .filter(
+            (event) =>
+              event.phase === 'queued' &&
+              (event.native || (!record.retired && !record.retirement)) &&
+              !event.policyHeld &&
+              (!event.retry || dispatchRetryDue(event, now)),
+          )
+          .sort((a, b) => a.createdAt - b.createdAt)
+          .slice(0, 1)
+          .map((event) => ({
+            record,
+            event,
+            at: Math.max(event.createdAt, record.feedback?.lastServedAt ?? 0),
+          })),
       )
+      .sort((a, b) => a.at - b.at || a.event.id.localeCompare(b.event.id));
+    // conversation delivery is independent of assignment admission and work recovery.
+    for (const { record, event } of queued.slice(0, 12)) {
+      await this.issue.feedback(
+        manifest,
+        current.workspace,
+        record,
+        event,
+        caller,
+        undefined,
+        save,
+        { ...authority, signal },
+      );
+    }
+    for (const record of state.records
+      .filter((entry) => announcementRecoveryAction(entry.work?.delivery, now) === 'check')
       .slice(0, 12))
       await recoverOpenClawAnnouncement(this.context, manifest, current.workspace, record, save, {
         ...authority,
@@ -501,11 +523,8 @@ export default class OpenClawDispatchCoordinator {
     for (const record of state.records
       .filter(
         (entry) =>
-          !hasDeliveredImplementation(entry) &&
-          !entry.retired &&
-          !entry.retirement &&
           !entry.reset &&
-          (!entry.work?.code || entry.work.code === 'dispatch-turn-failed') &&
+          !entry.supersededBy &&
           [
             entry.decisionTurn?.inactive ? undefined : entry.decisionTurn,
             entry.work?.turn,
@@ -514,37 +533,35 @@ export default class OpenClawDispatchCoordinator {
           ].some((turn) => turn && turn.status !== 'completed'),
       )
       .slice(0, 12)) {
-      const reconciled = await this.issue.continueWork(
-        manifest,
-        current.workspace,
-        record,
-        save,
-        { ...authority, signal, caller },
-        true,
-      );
-      if (
-        record.decisionTurn?.inactive ||
-        (record.work?.code &&
-          ![
-            'implementation-result-missing',
-            'implementation-delivery-incomplete',
-            'dispatch-turn-failed',
-          ].includes(record.work.code))
-      )
-        return reconciled;
+      await this.issue.continueWork(manifest, current.workspace, record, save, {
+        ...authority,
+        signal,
+        caller,
+      });
     }
+    // Capacity follows native activity even when feedback scanning is disabled or unavailable.
+    for (const record of state.records.filter(
+      (entry) =>
+        entry.sessionCreation?.verified && entry.threadId && !entry.reset && !entry.supersededBy,
+    )) {
+      try {
+        const activity = await this.context.dependencies.credential.use(
+          { ...authority, signal },
+          (request) => observeIssueActivity(request, record, this.context.dependencies.config()),
+        );
+        record.nativeInactive = !activity.busy;
+      } catch {
+        signal.throwIfAborted();
+        // Unknown native custody conservatively retains its existing admission slot.
+        record.nativeInactive = false;
+      }
+    }
+    await save();
     const capacity = dispatchCapacity(
       state.records,
       current.policy.policy.maxConcurrentItems,
       state.projectPickup,
     );
-    const available = (issueNodeId?: string) =>
-      dispatchCapacity(
-        state.records,
-        current.policy.policy.maxConcurrentItems,
-        state.projectPickup,
-        issueNodeId,
-      ).available;
     const assignments = pendingAssignments(state, current.admitted)
       .filter(({ intake }) => !liveWorkflowPolicy(manifest, 'openclaw', intake))
       .filter(pendingAssignment)
@@ -552,58 +569,6 @@ export default class OpenClawDispatchCoordinator {
         (a, b) =>
           Date.parse(a.intake.assignment.createdAt) - Date.parse(b.intake.assignment.createdAt) ||
           issueKey(a.intake).localeCompare(issueKey(b.intake)),
-      );
-    const queued = state.records
-      .filter(
-        (record) =>
-          !record.retired &&
-          !record.retirement &&
-          !record.reset &&
-          !record.feedback?.code &&
-          !openClawItemOccupied(record),
-      )
-      .flatMap((record) =>
-        (record.feedback?.events ?? [])
-          .filter((event) => event.phase === 'queued' && !event.policyHeld)
-          .sort((a, b) => a.createdAt - b.createdAt)
-          .slice(0, 1)
-          .map((event) => ({
-            record,
-            event,
-            at: Math.max(event.createdAt, record.feedback?.lastServedAt ?? 0),
-          })),
-      )
-      .sort((a, b) => a.at - b.at || a.event.id.localeCompare(b.event.id));
-    const workItems = state.records
-      .flatMap((record) => {
-        const slot = openClawWorkSlot(
-          record,
-          issueWorkflowMode(manifest.github?.notifications, record),
-        );
-        const decision = openClawDecisionPending(
-          record,
-          issueWorkflowMode(manifest.github?.notifications, record),
-        );
-        if (hasDeliveredImplementation(record)) return [];
-        return slot || decision || openClawResponseEligible(record)
-          ? [
-              {
-                record,
-                slot,
-                candidateId: automationHash({ implementation: record.id }),
-                recovering: Boolean(
-                  (record.summaryRecovery && record.summaryRecovery.turn.status !== 'completed') ||
-                  (decision
-                    ? record.decisionTurn
-                    : slot && record.work?.[slot] && record.work[slot].status !== 'completed'),
-                ),
-              },
-            ]
-          : [];
-      })
-      .sort(
-        (a, b) =>
-          a.record.createdAt - b.record.createdAt || a.candidateId.localeCompare(b.candidateId),
       );
     let pass = state.openclawPasses?.find((entry) => sameIntakeRun(entry, caller));
     if (pass?.completed) return { status: 'pass-completed' as const };
@@ -613,29 +578,18 @@ export default class OpenClawDispatchCoordinator {
         sessionId: caller.sessionId,
         runId: caller.runId,
         limit: current.policy.policy.maxConcurrentItems,
-        allowance: capacity.available + projectPickupCapacity(state.projectPickup),
+        allowance: capacity.available + issuePickupCapacity(state.projectPickup),
         candidates: [
           ...assignments.map(({ intake }) => ({
             id: intake.id,
             at: Date.parse(intake.assignment.createdAt),
           })),
-          ...queued.map(({ event, at }) => ({ id: event.id, at })),
-          ...workItems
-            .filter((item) => !item.recovering)
-            .map(({ record, candidateId }) => ({
-              id: candidateId,
-              at: record.createdAt,
-            })),
         ]
           .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
           .slice(0, 12)
           .map(({ id }) => id),
         recovery: state.records
-          .filter(
-            (record) =>
-              continuationStatus(record) ||
-              workItems.some((item) => item.record.id === record.id && item.recovering),
-          )
+          .filter((record) => continuationStatus(record))
           .slice(0, current.policy.policy.maxConcurrentItems)
           .map((record) => record.id),
         selected: [],
@@ -649,18 +603,11 @@ export default class OpenClawDispatchCoordinator {
       (record) =>
         pass.recovery.includes(record.id) &&
         !pass.selected.includes(record.id) &&
-        (continuationStatus(record) ||
-          workItems.some((item) => item.record.id === record.id && item.recovering)),
+        continuationStatus(record),
     );
     if (continuing) {
       pass.selected.push(continuing.id);
       await save();
-      if (workItems.some((item) => item.record.id === continuing.id && item.recovering))
-        return this.issue.continueWork(manifest, current.workspace, continuing, save, {
-          caller,
-          ...authority,
-          signal,
-        });
       return { status: continuationStatus(continuing)!, id: continuing.id };
     }
     const storagePaused = ['paused', 'emergency'].includes(dispatchStoragePressure(state).level);
@@ -684,53 +631,6 @@ export default class OpenClawDispatchCoordinator {
     const started = intakePassStarted(pass, state.records).length;
     if (started >= pass.allowance)
       return { status: pass.selected.length ? 'pass-completed' : 'at-capacity' };
-    const feedback = queued.find(
-      ({ record, event }) =>
-        pass.candidates.includes(event.id) &&
-        !pass.selected.includes(record.id) &&
-        available(record.projectWork?.pickup?.issueNodeId) > 0,
-    );
-    const workItem = workItems.find(
-      (item) =>
-        !item.recovering &&
-        pass.candidates.includes(item.candidateId) &&
-        !pass.selected.includes(item.record.id) &&
-        available(item.record.projectWork?.pickup?.issueNodeId) > 0,
-    );
-    if (
-      workItem &&
-      (!pending ||
-        pass.candidates.indexOf(workItem.candidateId) <
-          pass.candidates.indexOf(pending.intake.id)) &&
-      (!feedback ||
-        pass.candidates.indexOf(workItem.candidateId) < pass.candidates.indexOf(feedback.event.id))
-    ) {
-      pass.selected.push(workItem.record.id);
-      await save();
-      return this.issue.continueWork(manifest, current.workspace, workItem.record, save, {
-        caller,
-        ...authority,
-        signal,
-      });
-    }
-    if (
-      feedback &&
-      (!pending ||
-        pass.candidates.indexOf(feedback.event.id) < pass.candidates.indexOf(pending.intake.id))
-    ) {
-      pass.selected.push(feedback.record.id);
-      await save();
-      return this.issue.feedback(
-        manifest,
-        current.workspace,
-        feedback.record,
-        feedback.event,
-        caller,
-        undefined,
-        save,
-        { ...authority, signal },
-      );
-    }
     if (!pending && !capacity.available && !pass.selected.length)
       return { status: 'at-capacity' as const };
     if (!pending)
@@ -806,6 +706,8 @@ export default class OpenClawDispatchCoordinator {
         intake.issue.number,
         'issue',
         true,
+        false,
+        true,
       );
       record.context = JSON.stringify(dispatchContext(evidence, source(intake), now));
       record.routingInstructions = await openClawRoutingInstructions(this.context, tx);
@@ -823,7 +725,7 @@ export default class OpenClawDispatchCoordinator {
             { action: 'inspect' },
             'openclaw',
           ),
-          instructions: record.routingInstructions,
+          instructions: routingInstructionsReference(record.routingInstructions),
           instructionsDigest: routingInstructionsDigest(record.routingInstructions),
           instructionsGuidance: routingInstructionsGuidance,
         },

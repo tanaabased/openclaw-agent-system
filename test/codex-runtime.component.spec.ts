@@ -22,7 +22,7 @@ describe('agent/codex-runtime', () => {
       const failure = JSON.parse(result.stderr);
       assert.equal(failure.status, 'error');
       assert.match(failure.response, /<decision>NOTIFY<\/decision>/);
-      assert.match(failure.response, /❌.*Project pickup/);
+      assert.match(failure.response, /❌.*Issue pickup/);
       assert.ok(failure.response.includes(failure.code));
       assert.match(failure.response, /Next/);
       assert.equal(failure.notice, undefined);

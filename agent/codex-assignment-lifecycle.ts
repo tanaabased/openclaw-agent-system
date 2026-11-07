@@ -1,3 +1,5 @@
+import taskPullRequest from './task-pull-request.ts';
+import replyOwnPublications from './reply-own-publications.ts';
 import { managedIssueState } from './managed-issue.ts';
 import cleanupConfiguration from './cleanup-configuration.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
@@ -161,7 +163,7 @@ export default async function reconcileCodexLifecycle(
           };
         },
         reactivate: async (record, intake) => {
-          const pr = record.delivery?.pullRequest;
+          const pr = taskPullRequest(record);
           return reactivateAssignmentFeedback({
             record,
             intake,
@@ -174,6 +176,25 @@ export default async function reconcileCodexLifecycle(
               (await (deps.feedbackConnect ?? connectCodexFeedback)(current.workspace, signal))
                 .comments,
             announcement: record.delivery?.announcement,
+            ownReplies: async () => {
+              const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
+                current.workspace,
+                signal,
+              );
+              return replyOwnPublications({
+                root: current.store.location.root,
+                binding: {
+                  runtime: 'codex',
+                  agentId: current.agentId,
+                  workspace: current.workspace,
+                  namespace: current.codexHome,
+                  session: record.threadId!,
+                  incarnation: record.threadId!,
+                },
+                client: provider.comments,
+                replies: provider.replies,
+              });
+            },
             pullRequest: pr
               ? { number: pr.pullRequestNumber, nodeId: pr.pullRequestNodeId }
               : undefined,

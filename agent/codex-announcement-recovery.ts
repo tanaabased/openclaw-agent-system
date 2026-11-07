@@ -5,7 +5,7 @@ import {
 } from './delivery-announcement-recovery.ts';
 import { recoverRetainedAnnouncement } from './delivery-announcement.ts';
 import { dispatchAdmission } from './managed-issue.ts';
-import { revalidateDispatchAssignment } from './codex-dispatch-context.ts';
+import { inspectIssueIdentity } from './dispatch-assignment.ts';
 import connectCodexGitHubAccount from './codex-github-client.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
@@ -24,9 +24,15 @@ export default async function recoverCodexAnnouncement(
   try {
     const intake = dispatchAdmission(record, context.admissions?.records ?? []);
     if (!intake) throw new Error('delivery-admission-missing');
+    let connected: Awaited<ReturnType<typeof connectCodexGitHubAccount>> | undefined;
+    const connect = async () =>
+      (connected ??= await (deps.deliveryDependencies?.connect ?? connectCodexGitHubAccount)(
+        current.workspace,
+        signal,
+      ));
     const authorize = async () => {
       signal.throwIfAborted();
-      await revalidateDispatchAssignment(current, intake, deps, signal, true, record);
+      await inspectIssueIdentity(intake, (await connect()).client);
     };
     await recoverRetainedAnnouncement({
       delivery,
@@ -36,19 +42,9 @@ export default async function recoverCodexAnnouncement(
       now: (deps.now ?? Date.now)(),
       authorize,
       connect: async () => {
-        const connected = await (deps.deliveryDependencies?.connect ?? connectCodexGitHubAccount)(
-          current.workspace,
-          signal,
-        );
-        await revalidateDispatchAssignment(
-          current,
-          intake,
-          { connect: async () => connected.client },
-          signal,
-          true,
-          record,
-        );
-        return connected;
+        const connection = await connect();
+        await inspectIssueIdentity(intake, connection.client);
+        return connection;
       },
     });
   } catch (error) {

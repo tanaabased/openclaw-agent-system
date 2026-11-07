@@ -53,7 +53,7 @@ describe('core/register-hooks', () => {
         appendContext: string;
         appendSystemContext: string;
       };
-      assert.match(output.appendContext, /PRIVATE-GITHUB-FACT/);
+      assert.doesNotMatch(output.appendContext, /PRIVATE-GITHUB-FACT/);
       assert.match(output.appendContext, /"runId":"assessment"/);
       assert.doesNotMatch(output.appendSystemContext, /PRIVATE-GITHUB-FACT/);
       if (currentUserMessageId) assert.match(output.appendContext, /native-input/);
@@ -63,7 +63,7 @@ describe('core/register-hooks', () => {
     const later = (await hook(event, { ...binding, runId: 'later' })) as {
       appendContext: string;
     };
-    assert.match(later.appendContext, /RETAINED-PLAN/);
+    assert.doesNotMatch(later.appendContext, /RETAINED-PLAN/);
     assert.match(later.appendContext, /"runId":"later"/);
     for (const change of [
       { runId: undefined },

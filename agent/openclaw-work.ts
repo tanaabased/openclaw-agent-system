@@ -1,18 +1,14 @@
-import implementationRevision from './implementation-revision.ts';
+import nativeClarification from './native-clarification.ts';
+import nativeTaskInstructions from './native-task-instructions.ts';
 import implementationContext from './implementation-context.ts';
-import pendingPublicResponse from './pending-public-response.ts';
 import workflowRecovery from './workflow-recovery.ts';
 import implementationHandoff from './implementation-handoff.ts';
-import { feedbackWorkContext } from './feedback-work.ts';
 import type { OpenClawConfig } from 'openclaw/plugin-sdk/config-contracts';
 import type { Static } from 'typebox';
 
 import { implementationPresentation } from './implementation-result.ts';
 import { automationHash } from './automation-hash.ts';
-import issueProgression, {
-  retainedIssueProgression,
-  type IssueProgression,
-} from './issue-progression.ts';
+import issueProgression, { type IssueProgression } from './issue-progression.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import { operatorInputEvent, nativeInputEvent } from './openclaw-session-input.ts';
@@ -32,7 +28,10 @@ export async function verifyOpenClawWork(input: {
   record: OpenClawDispatchRecord;
   caller: DispatchCaller;
   operator: boolean;
+  feedback?: { inputId: string; message: string };
   mode: 'plan' | 'work' | 'auto';
+  decision?: Parameters<typeof issueProgression>[1]['decision'];
+  save?(): Promise<void>;
   now: number;
   request: DispatchRequest;
   config: OpenClawConfig;
@@ -40,10 +39,7 @@ export async function verifyOpenClawWork(input: {
   const { record, caller } = input;
   if (
     caller.sessionKey !== record.threadId ||
-    caller.sessionId !== record.sessionCreation?.sessionId ||
-    !record.result ||
-    !record.stageReceipt ||
-    (record.result.outcome !== 'plan-ready' && !retainedIssueProgression(record))
+    caller.sessionId !== record.sessionCreation?.sessionId
   )
     throw new Error('dispatch-work-context-mismatch');
   await describeIssueSession(input.request, record, input.config);
@@ -60,11 +56,20 @@ export async function verifyOpenClawWork(input: {
     caller.runId !== record.work?.deliveryTurn?.runId &&
     !record.work?.previousTurns?.some(({ turn }) => turn.runId === caller.runId) &&
     !record.feedback?.events.some((event) => event.turn?.runId === caller.runId);
-  const automatic = issueProgression(record, { mode: input.mode, now: input.now });
+  const automatic = issueProgression(record, {
+    mode: input.mode,
+    now: input.now,
+    decision: input.decision,
+  });
   const transition =
     automatic.status === 'ready'
       ? automatic
-      : issueProgression(record, { mode: input.mode, now: input.now, operator });
+      : issueProgression(record, {
+          mode: input.mode,
+          now: input.now,
+          operator: operator || Boolean(input.feedback),
+          decision: input.decision,
+        });
   if (transition.status !== 'ready') throw new WorkflowPolicyHeld(transition.reason);
   const retained = [
     record.work?.operatorInput,
@@ -80,11 +85,16 @@ export async function verifyOpenClawWork(input: {
     runId: caller.runId,
     retained,
   };
-  const verifiedInput =
-    automatic.status !== 'ready' || (operator && record.work?.result?.outcome === 'done')
+  const verifiedInput = input.feedback
+    ? { runId: caller.runId, inputEventId: input.feedback.inputId, message: input.feedback.message }
+    : automatic.status !== 'ready' || (operator && record.work?.result?.outcome === 'done')
       ? await operatorInputEvent({ ...context, senderIsOwner: operator })
       : await nativeInputEvent(context);
   const { runId, inputEventId } = verifiedInput;
+  if (input.decision) {
+    record.implementationDecision = input.decision;
+    await input.save?.();
+  }
   const message =
     'message' in verifiedInput && typeof verifiedInput.message === 'string'
       ? verifiedInput.message
@@ -92,8 +102,9 @@ export async function verifyOpenClawWork(input: {
   return {
     source: { runId, inputEventId },
     message,
-    progression: transition.progression,
-    revisionAuthorized: operator,
+    progression: input.feedback
+      ? { ...transition.progression, workOwner: 'issue' }
+      : transition.progression,
   };
 }
 
@@ -102,7 +113,6 @@ export default async function openClawWorkAction(input: {
   caller: DispatchCaller;
   source: { runId: string; inputEventId: string };
   message?: string;
-  revisionAuthorized?: boolean;
   progression: IssueProgression;
   action: Exclude<OpenClawWorkAction, { action: 'delivery' }>;
   now: number;
@@ -110,15 +120,11 @@ export default async function openClawWorkAction(input: {
   save(): Promise<void>;
 }) {
   const { record, source, action } = input;
-  const assessmentDigest = automationHash(record.result);
-  if (record.work && record.work.assessmentDigest !== assessmentDigest)
-    throw new Error('dispatch-work-assessment-changed');
   await input.assertCurrent();
   if (action.action === 'handoff') {
     const digest = automationHash({
       id: record.id,
       source,
-      assessmentDigest,
       permission: action.permission,
       work: record.work ?? null,
     });
@@ -128,12 +134,11 @@ export default async function openClawWorkAction(input: {
         id: record.id,
         digest,
         permission: action.permission,
-        assessment: record.result,
         instructions:
           'Apply this digest to record the single implementation transition. Work includes ordinary branch, commit, push, and PR delivery. Honor explicit user restrictions; this preview does not override cancellation or native denial.',
       };
     if (action.digest !== digest) throw new Error('dispatch-handoff-stale');
-    record.work ??= { assessmentDigest };
+    record.work ??= {};
     if (action.permission !== 'publication')
       record.progression = { ...input.progression, workOwner: 'issue' };
     // publication-only input retains its own scope without entering implementation.
@@ -145,57 +150,20 @@ export default async function openClawWorkAction(input: {
       status: 'handed-off',
       id: record.id,
       instructions:
-        'Call implementation-context before changing files, or delivery prepare for already implemented work. Preserve the complete assessment, worktree, and selected model/effort. Continue within the verified task scope; implementation includes ordinary PR delivery. Honor explicit user restrictions without requiring another stage approval.',
+        'Call implementation-context before changing files, or delivery prepare for already implemented work. Use the current native conversation and preserve the worktree and selected model/effort. Continue within the verified task scope; implementation includes ordinary PR delivery. Honor explicit user restrictions without requiring another stage approval.',
     };
   }
-  const completedTurnId = record.work?.resultSource?.turnId ?? record.work?.caller?.runId;
   const resultSource = { turnId: source.runId, inputId: source.inputEventId };
   if (action.action === 'implementation-context') {
     if (action.material && (!record.work?.implementation || !record.work.caller))
       throw new Error('implementation-material-context-required');
-    const revision =
-      !action.material &&
-      record.work &&
-      implementationRevision(
-        record.work,
-        resultSource,
-        input.revisionAuthorized === true,
-        completedTurnId,
-      );
-    if (revision) {
-      const work = record.work!;
-      (work.resultHistory ??= []).push({ source: work.resultSource, result: work.result! });
-      work.revisionSource = resultSource;
-      delete work.result;
-      delete work.resultSource;
-    }
-    if (
-      !action.material &&
-      record.work?.result?.outcome === 'clarification-needed' &&
-      record.work.clarificationInput?.runId === source.runId &&
-      record.work.clarificationInput.inputEventId === source.inputEventId
-    )
-      return {
-        status: 'clarification-needed',
-        id: record.id,
-        presentation: implementationPresentation(record.work.result),
-      };
     if (!action.material) {
       record.progression = { ...input.progression, workOwner: 'issue' };
-      record.work ??= { assessmentDigest };
+      record.work ??= {};
       if (action.scope) record.work.scope = action.scope;
       record.handoff ??= { at: input.now, by: input.caller.sessionKey, turnId: source.runId };
       record.work.implementation ??= source;
       record.work.caller = source;
-      if (!record.work.turn && input.message) {
-        record.work.turn = {
-          origin: record.resultTurnId === source.runId ? 'assessment' : 'input',
-          runId: source.runId,
-          message: input.message,
-          status: 'consumed',
-          consumedByEventId: source.inputEventId,
-        };
-      }
       await input.save();
     }
     if (!record.work) throw new Error('implementation-material-context-required');
@@ -204,14 +172,8 @@ export default async function openClawWorkAction(input: {
         runtime: 'openclaw',
         id: record.id,
         path: record.worktree!,
-        assessment: record.result,
-        reassessments: record.directAssessments,
         implementation: record.work.selection,
-        previousResult:
-          record.work.result ??
-          (record.work.revisionSource ? record.work.resultHistory?.at(-1)?.result : undefined),
         scope: record.work.scope,
-        revision: Boolean(record.work.revisionSource),
       }),
       issueStage: record.progression?.stage ?? 'planning',
       assignmentObservation: record.assignmentObservation,
@@ -219,43 +181,27 @@ export default async function openClawWorkAction(input: {
         record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
       routing: record.routing && JSON.parse(record.routing),
       effective: record.effective,
-      feedbackWork: feedbackWorkContext(record),
-      pendingPublicResponse: pendingPublicResponse(record),
-      instructions:
-        'pendingPublicResponse records a separate unfinished publication. Preserve its receipt and any denial; recover it only when requested, without making current work depend on it. Keep this implementation stage and do not repeat assessment. ' +
-        'Historical feedbackWork responses supply context, not fresh authorization. Honor publicationAuthorized; local scope forbids push and PR publication. ' +
-        'When deliveryOnly is true, follow the recorded scope-aware handoff without repeating implementation. A complete handoff is local completion, not a PR request. Otherwise reconcile the current authorized request with the historical previousResult and use the returned implementation skill and guidance in the existing worktree. Editable context permits scoped changes; it does not require them. Answer informational or review-only requests without modifying files. Read feedbackWork for later resolved plans and partial implementation; it supplements the preserved original assessment. Preserve routing and prior work. Follow the current conversation and authorized plan; stop on cancellation or a denial affecting implementation. A retained summary-only publication hold is not an implementation grant or denial; preserve it without retrying publication. Commit validated work and retain the complete outcome with implementation-result. For unanswered consequential requirements, submit clarification-needed with questions and fullResult, show its returned presentation, and wait for an answer. On a new input refresh this context, reconcile partial work, and resume without renewed approval. Follow the recorded result’s host-owned handoff immediately; it owns PR delivery for built-in and custom implementation skills without a separate publication grant. Honor explicit user restrictions. Do not use Codex runtime commands.',
+      instructions: nativeTaskInstructions('openclaw'),
     };
   }
   if (!record.work?.caller || automationHash(record.work.caller) !== automationHash(source))
     throw new Error('implementation-context-missing');
-  if (
-    record.work.result?.outcome === 'clarification-needed' &&
-    record.work.clarificationInput?.runId === source.runId &&
-    record.work.clarificationInput.inputEventId === source.inputEventId &&
-    automationHash(record.work.result) !== automationHash(action.implementationResult)
-  )
-    throw new Error('implementation-answer-required');
+  if (action.implementationResult.outcome === 'clarification-needed')
+    return nativeClarification(record.id, implementationPresentation(action.implementationResult));
   const changed =
     record.work.result &&
+    record.work.result.outcome !== 'clarification-needed' &&
     automationHash(record.work.result) !== automationHash(action.implementationResult);
-  if (changed && record.work.result?.outcome === 'done')
-    throw new Error('implementation-answer-required');
-  if (record.work.result?.outcome !== 'done' || changed)
-    record.work.resultSource = record.work.revisionSource ?? resultSource;
-  const firstResult = !record.work.result;
+  if (changed)
+    (record.work.resultHistory ??= []).push({
+      source: record.work.resultSource,
+      result: record.work.result!,
+    });
+  record.work.resultSource = resultSource;
   record.work.result = action.implementationResult;
   delete record.work.revisionSource;
-  if (
-    action.implementationResult.outcome === 'done' &&
-    record.work.delivery &&
-    (firstResult || changed)
-  )
-    record.work.delivery.reconciled = false;
   if (record.work.code === 'implementation-result-missing') delete record.work.code;
-  if (action.implementationResult.outcome === 'clarification-needed')
-    record.work.clarificationInput = source;
-  else delete record.work.clarificationInput;
+  delete record.work.clarificationInput;
   await input.save();
   return {
     status: 'recorded',

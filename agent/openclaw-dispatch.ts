@@ -1,3 +1,5 @@
+import launchPending from './launch-pending.ts';
+import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
 import feedbackContextMaterial from './feedback-context-material.ts';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -127,8 +129,16 @@ export default class OpenClawDispatch {
           !input.publicText &&
           !input.diagnostic) ||
         (input.action === 'feedback' &&
-          ['context', 'implementation-context'].includes(input.operation) &&
+          ['context', 'implementation-context', 'compose'].includes(input.operation) &&
           !input.decision) ||
+        (input.action === 'assessment' && ['context', 'render'].includes(input.operation)) ||
+        (input.action === 'delivery' &&
+          input.operation === 'compose' &&
+          !input.publicText &&
+          !input.title &&
+          !input.body &&
+          input.pullRequest === undefined) ||
+        (input.action === 'reply' && ['context', 'compose'].includes(input.operation)) ||
         (input.action === 'implementation' &&
           input.operation === 'context' &&
           !input.scope &&
@@ -143,7 +153,7 @@ export default class OpenClawDispatch {
       input.action === 'implementation-context' ||
       (input.action === 'feedback' && input.operation === 'implementation-context')
     ) {
-      if ('resultContract' in response && response.resultContract === 'implementation-result/v1') {
+      if (response.status === 'verified' && 'implementation' in response) {
         const request =
           input.action === 'feedback'
             ? {
@@ -207,7 +217,7 @@ export default class OpenClawDispatch {
           create: (record) => record,
           verifyExisting: async (record) => {
             await this.dependencies.credential.use(authority, (request) =>
-              describeIssueSession(request, record, this.dependencies.config(), true),
+              describeIssueSession(request, record, this.dependencies.config(), 'retained'),
             );
           },
         });
@@ -223,7 +233,7 @@ export default class OpenClawDispatch {
       !record?.manualIssue ||
       record.sourceThreadId !== caller.sessionKey ||
       (admitted.status === 'existing' &&
-        (record.result || record.handoff || action.operation !== 'reconcile'))
+        (!launchPending(record) || action.operation !== 'reconcile'))
     )
       return admitted;
     if (action.operation === 'prepare') {
@@ -309,6 +319,26 @@ export default class OpenClawDispatch {
             : input.operation === 'result' && input.result
               ? { action: 'implementation-result', id, implementationResult: input.result }
               : { action: 'implementation-context', id };
+    }
+    if (input.action === 'assessment' && input.operation === 'render') {
+      if (input.id) {
+        const current = await this.dependencies.intake.select(manifest, workspace, {
+          resolvePolicy: false,
+        });
+        const journal = new OpenClawDispatchStore(
+          this.dependencies.root,
+          current.store.location.scope,
+        );
+        return renderBoundAssessment(input, {
+          runtime: 'openclaw',
+          records: (await journal.read()).records,
+          admitted: (await current.store.read())?.records ?? [],
+          session: caller.sessionKey,
+          workspace,
+          debug: manifest.debug,
+        });
+      }
+      return renderNativeAssessment(input, 'openclaw');
     }
     if (input.action === 'assessment')
       return openClawAssessmentEntry({

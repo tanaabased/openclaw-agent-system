@@ -1,3 +1,4 @@
+import assessmentSource from '../../scripts/aimock-assessment-source.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -6,8 +7,6 @@ import {
   type Fixture,
   type FixtureResponse,
 } from '@copilotkit/aimock';
-import { Value } from 'typebox/value';
-import type { TSchema } from 'typebox';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 import { openClawAIMockToolResultText } from '../../scripts/aimock-tool-result.ts';
@@ -20,7 +19,6 @@ const dispatchStages = [
     ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
   ).flat(),
   'context',
-  'result',
   'report',
 ];
 const attemptStage = (stage: string, attempt: number) => `${stage}-${attempt}`;
@@ -76,7 +74,7 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
   });
   const dispatch = (stage: string, args: unknown) => call(stage, 'agent_system_dispatch', args);
 
-  if (prompt.includes('Run the activated project pickup once.')) {
+  if (prompt.includes('Run the activated issue pickup once.')) {
     let args: Record<string, unknown> = { action: 'pickup' };
     for (const stage of pickupStages) {
       const observed = result(stage);
@@ -87,12 +85,21 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
       }
       if (observed.status === 'selection-required') {
         assert.equal(observed.contextMaterials, undefined, 'two small candidates must fit inline');
-        const candidates = observed.candidates as Array<{ nodeId: string; body: string }>;
+        const candidates = observed.candidates as Array<{ nodeId: string; url: string }>;
         assert.equal(candidates.length, 2);
         assert.match(String(observed.guidance), /bounded cleanup clarification/u);
-        const chosen = candidates.filter(({ body }) =>
-          body.includes('pickup-cleanup-clarification'),
-        );
+        const chosen = [];
+        for (const [index, candidate] of candidates.entries()) {
+          const read = result(`selection-source-${index}`);
+          if (!read)
+            return call(`selection-source-${index}`, 'agent_system_github', {
+              argv: ['issue', 'view', candidate.url, '--json', 'body,comments'],
+            });
+          assert.equal(read.exitCode, 0);
+          assert.equal(read.truncated, false);
+          const source = JSON.parse(String(read.stdout));
+          if (String(source.body).includes('pickup-cleanup-clarification')) chosen.push(candidate);
+        }
         assert.equal(chosen.length, 1);
         args = {
           action: 'pickup',
@@ -127,12 +134,13 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
       assert.equal(typeof next.id, 'string');
       let advanced = next;
       if (next.status === 'routing-required') {
-        const context = next.context as { source: string; body: string };
+        const context = next.context as { source: string };
         assert.match(
           context.source,
           /^https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/\d+$/u,
         );
-        assert.match(context.body, /pickup-cleanup-clarification/u);
+        const read = assessmentSource({ evidence: context }, result, call, stage('routing-source'));
+        if (read) return read;
         const prepared = result(stage('prepare'));
         if (!prepared)
           return dispatch(stage('prepare'), {
@@ -187,38 +195,9 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
   assert.equal(context.mode, 'work', 'pickup must override ordinary plan mode');
   const project = context.project as { path: string };
   assert.equal(typeof project.path, 'string');
-  const saved = result('result');
-  if (!saved) {
-    const payload = {
-      version: 1,
-      outcome: 'clarification-needed',
-      summary: 'Confirm the cleanup timing before changing documentation.',
-      assessment: 'The selected cleanup issue needs its timing clarified.',
-      fullAssessment:
-        'Verified the ordinary issue chat and Work-mode context. Cleanup timing needs confirmation before implementation.',
-      questions: ['Should disposable issues close after evidence capture?'],
-      evidence: [
-        {
-          source: project.path,
-          status: 'observed',
-          detail: 'Ordinary intake supplied the managed checkout and Work mode.',
-        },
-      ],
-      progress: {
-        completed: ['Assessed the selected cleanup issue.'],
-        remaining: ['Confirm cleanup timing.'],
-      },
-    };
-    assert.ok(Value.Check(context.resultSchema as TSchema, payload));
-    const submission = context.resultSubmission as {
-      request: Record<string, unknown>;
-      resultField: string;
-    };
-    return dispatch('result', { ...submission.request, [submission.resultField]: payload });
-  }
-  assert.equal(saved.status, 'recorded');
-  assert.equal(typeof saved.presentation, 'string');
-  return { content: String(saved.presentation) };
+  const sourceRead = assessmentSource(context, result, call);
+  if (sourceRead) return sourceRead;
+  return { content: 'Should disposable issues close after evidence capture?' };
 }
 
 const final: Fixture = {
@@ -230,13 +209,21 @@ const final: Fixture = {
   },
 };
 
-export const projectPickupScenario: OpenClawAIMockScenario = {
+export const issuePickupScenario: OpenClawAIMockScenario = {
   id: 'openclaw-project-picker',
   model: { match: model, reference: 'aimock/gpt-5.5' },
   systemPromptSignals: [],
   finalResponses: [],
   dynamicFinalResponseFixtures: [final],
   toolCalls: [
+    ...Array.from({ length: 8 }, (_, index) => ({
+      stage: `routing-source-${index}`,
+      name: 'agent_system_github',
+    })),
+    ...['assessment-source', 'selection-source-0', 'selection-source-1'].map((stage) => ({
+      stage,
+      name: 'agent_system_github',
+    })),
     ...pickupStages.map((stage) => ({ stage, name: 'agent_system_intake' })),
     ...dispatchStages.map((stage) => ({ stage, name: 'agent_system_dispatch' })),
   ].flatMap(({ stage, name }) =>

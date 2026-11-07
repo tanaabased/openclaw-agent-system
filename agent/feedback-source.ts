@@ -179,12 +179,25 @@ export async function discoverFeedback(input: {
       sources.push(reviewReplyFeedback(review, reply, parent));
     }
   }
-  const ownCommentIds =
-    typeof input.ownCommentIds === 'function' ? await input.ownCommentIds() : input.ownCommentIds;
+  let ownCommentIds = typeof input.ownCommentIds === 'function' ? undefined : input.ownCommentIds;
+  let observedOwn = typeof input.ownCommentIds !== 'function';
+  let ownLookupFailed = false;
   const revisions = new Map<string, string>();
   const next = { ...baseline };
   const pending: FeedbackSourceEvent[] = [];
   for (const source of sources) {
+    if (source.author?.nodeId === client.identity.nodeId) {
+      if (!observedOwn) {
+        observedOwn = true;
+        try {
+          ownCommentIds = await (input.ownCommentIds as () => Promise<readonly string[]>)();
+        } catch {
+          // an outgoing lookup cannot block unrelated incoming authors. retry this window later.
+          ownLookupFailed = true;
+        }
+      }
+      if (ownLookupFailed) continue;
+    }
     const previous = baseline?.[source.nodeId];
     const revision = feedbackRevision(source);
     if (revisions.has(source.nodeId) && revisions.get(source.nodeId) !== revision)
@@ -211,7 +224,7 @@ export async function discoverFeedback(input: {
     if (
       ownCommentIds?.includes(source.nodeId) ||
       state.events.some((event) => event.receipt?.nodeId === source.nodeId) ||
-      state.completed?.some((event) => event.receipt.nodeId === source.nodeId)
+      state.completed?.some((event) => event.receipt?.nodeId === source.nodeId)
     )
       continue;
     if (!accepting) continue;
@@ -230,6 +243,7 @@ export async function discoverFeedback(input: {
     )
       continue;
     pending.push({
+      native: true,
       id,
       sourceId: source.nodeId,
       number,
@@ -247,10 +261,10 @@ export async function discoverFeedback(input: {
   }
   if (state.events.length + pending.length > 400 || Object.keys(next).length > 1000)
     throw new Error('feedback-queue-full');
-  if (discovery) state.reviewMarkers = reviewMarkers;
+  if (discovery && !ownLookupFailed) state.reviewMarkers = reviewMarkers;
   (state.evaluatedPolicyDigests ??= {})[input.nodeId] = policyDigest;
   state.baseline[input.nodeId] = next;
   state.events.push(...pending);
-  await discovery?.complete();
+  await discovery?.complete(!ownLookupFailed);
   return revisions;
 }

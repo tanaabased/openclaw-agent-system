@@ -11,9 +11,7 @@ github:
   username: install-data
   schema-version: 3
   runtimes: [openclaw]
-  allowed-repository-owners:
-    - login: example
-      node-id: O_example
+  routing: ['example/*']
   review-request:
     paused: false
     allowed:

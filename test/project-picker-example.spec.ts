@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 
 import { type ChatCompletionRequest, type FixtureResponse } from '@copilotkit/aimock';
 
-import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
 import { pickupResponse } from '../examples/openclaw-project-picker/model-fixture.ts';
 
 function request(prompt: string, results: Array<[string, unknown]> = []): ChatCompletionRequest {
@@ -27,30 +26,47 @@ function argumentsOf(response: FixtureResponse | undefined) {
   return JSON.parse(response.toolCalls[0]!.arguments);
 }
 
-const prompt = 'Run the activated project pickup once.';
+const prompt = 'Run the activated issue pickup once.';
 
 describe('examples/openclaw-project-picker model fixture', () => {
-  it('should select the supplied candidate through intake using the native snapshot identifiers', () => {
-    const selection = argumentsOf(
-      pickupResponse(
-        request(prompt, [
-          [
-            'scan-0',
-            {
-              status: 'selection-required',
-              id: 'native-scan',
-              digest: 'native-digest',
-              guidance: 'Prefer the bounded cleanup clarification.',
-              candidates: [
-                { nodeId: 'larger-issue', body: 'Redesign everything.' },
-                { nodeId: 'small-issue', body: 'pickup-cleanup-clarification' },
-              ],
-            },
-          ],
-        ]),
-      ),
-    );
-    assert.deepEqual(selection, {
+  it('should read candidate links before selecting through native snapshot identifiers', () => {
+    const candidates = [
+      { nodeId: 'larger-issue', url: 'https://github.com/owner/repo/issues/1' },
+      { nodeId: 'small-issue', url: 'https://github.com/owner/repo/issues/2' },
+    ];
+    const input = request(prompt, [
+      [
+        'scan-0',
+        {
+          status: 'selection-required',
+          id: 'native-scan',
+          digest: 'native-digest',
+          guidance: 'Prefer the bounded cleanup clarification.',
+          candidates,
+        },
+      ],
+    ]);
+    for (const [index, candidate] of candidates.entries()) {
+      const response = pickupResponse(input);
+      assert.ok(response && 'toolCalls' in response);
+      assert.equal(response.toolCalls![0]!.name, 'agent_system_github');
+      assert.deepEqual(argumentsOf(response), {
+        argv: ['issue', 'view', candidate.url, '--json', 'body,comments'],
+      });
+      input.messages.push({
+        role: 'tool',
+        tool_call_id: response.toolCalls![0]!.id,
+        content: JSON.stringify({
+          exitCode: 0,
+          truncated: false,
+          stdout: JSON.stringify({
+            body: index === 1 ? 'pickup-cleanup-clarification' : 'Redesign everything.',
+            comments: [],
+          }),
+        }),
+      });
+    }
+    assert.deepEqual(argumentsOf(pickupResponse(input)), {
       action: 'pickup',
       selection: {
         id: 'native-scan',
@@ -99,23 +115,32 @@ describe('examples/openclaw-project-picker model fixture', () => {
     assert.throws(() => pickupResponse(input), /contention exhausted/u);
   });
 
-  it('should require ordinary intake to supply work mode before retaining clarification', () => {
+  it('should require ordinary intake to supply work mode before asking a native question', () => {
     const id = 'a'.repeat(64);
     const context = {
       status: 'verified',
       mode: 'work',
       project: { path: '/fixture/issue' },
-      resultSchema: assessmentResultContextSchema,
-      resultSubmission: { request: { action: 'result', id }, resultField: 'result' },
+      evidence: { source: 'https://github.com/owner/repo/issues/2' },
     };
     const input = request(`Call agent_system_dispatch with action context and id ${id}`, [
       ['context', context],
     ]);
-    const saved = argumentsOf(pickupResponse(input));
-    assert.equal(saved.id, id);
-    assert.equal(saved.action, 'result');
-    assert.equal(saved.result.outcome, 'clarification-needed');
-    assert.ok(saved.result.questions.length > 0);
+    const read = pickupResponse(input);
+    assert.ok(read && 'toolCalls' in read);
+    assert.equal(read.toolCalls![0]!.name, 'agent_system_github');
+    input.messages.push({
+      role: 'tool',
+      tool_call_id: read.toolCalls![0]!.id,
+      content: JSON.stringify({
+        exitCode: 0,
+        truncated: false,
+        stdout: JSON.stringify({ title: 'Cleanup', body: 'Clarify cleanup.', comments: [] }),
+      }),
+    });
+    assert.deepEqual(pickupResponse(input), {
+      content: 'Should disposable issues close after evidence capture?',
+    });
     assert.throws(
       () =>
         pickupResponse(

@@ -1,7 +1,6 @@
-import {
-  hasDeliveredImplementation,
-  retainImplementationDelivery,
-} from './implementation-delivery.ts';
+import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
+import taskPullRequest, { setTaskPullRequestLink } from './task-pull-request.ts';
+import { retainImplementationDelivery } from './implementation-delivery.ts';
 import codexCommit from './codex-commit.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import { managedPullRequest, managedTargetUrl, dispatchAdmission } from './managed-issue.ts';
@@ -10,7 +9,6 @@ import bindIssuePullRequest from './issue-pr-binding.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import connectCodexFeedback from './codex-feedback-client.ts';
-import { feedbackMode } from './feedback-work.ts';
 import issueProgression from './issue-progression.ts';
 import { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import { notificationAuthorityDigest } from './notification-authority.ts';
@@ -63,6 +61,7 @@ const requestSchema = Type.Object(
   {
     action: Type.Union(
       [
+        'link',
         'bind',
         'prepare',
         'publish',
@@ -76,7 +75,10 @@ const requestSchema = Type.Object(
     id: Type.String({ pattern: '^[a-f0-9]{64}$' }),
     eventId: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
     digest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
-    pullRequest: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+    pullRequest: Type.Optional(
+      Type.Union([Type.String({ minLength: 1, maxLength: 4096 }), Type.Null()]),
+    ),
+    material: Type.Optional(implementationMaterialSchema),
     publicText: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
     title: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: '\\S' })),
     body: Type.Optional(Type.String({ maxLength: 65536 })),
@@ -160,9 +162,37 @@ export default async function runCodexDelivery(
   request: unknown,
   deps: CodexDeliveryDependencies = {},
 ) {
-  if (!Value.Check(requestSchema, request)) throw new Error('delivery-request-invalid');
+  if (!Value.Check(requestSchema, request)) {
+    const fields = nativeObject(request) ? request : {};
+    const invalid = Object.entries(requestSchema.properties)
+      .filter(
+        ([key, schema]) =>
+          (fields[key] !== undefined ||
+            requestSchema.required?.some((required) => required === key)) &&
+          !Value.Check(schema, fields[key]),
+      )
+      .map(([key]) => key);
+    const unsupported = Object.keys(fields).some(
+      (key) => !Object.hasOwn(requestSchema.properties, key),
+    );
+    throw Object.assign(
+      new Error(
+        `invalid delivery request${invalid.length ? `; missing or invalid fields: ${invalid.join(', ')}` : ''}${unsupported ? '; unsupported fields supplied' : ''}. use the managed context deliveryPrepareRequest with title and body for prepare, or the complete returned publishRequest for publish.`,
+      ),
+      { code: 'delivery-request-invalid' },
+    );
+  }
   const input: DeliveryRequest = request;
-  if (input.pullRequest !== undefined && input.action !== 'bind')
+  if (
+    input.material &&
+    (input.action !== 'compose' ||
+      input.publicText ||
+      input.title ||
+      input.body ||
+      input.pullRequest !== undefined)
+  )
+    throw new Error('delivery-request-invalid');
+  if (input.pullRequest !== undefined && !['bind', 'link'].includes(input.action))
     throw new Error('delivery-request-invalid');
   if (input.title?.includes('\0') || input.body?.includes('\0'))
     throw new Error('delivery-request-invalid');
@@ -178,7 +208,7 @@ export default async function runCodexDelivery(
     : await connectCodexThreads(current.workspace, current.codexHome);
   const native = deps.native ?? codexDispatchNative(connection!.request);
   const commitOptions = {
-    ...codexCommit(current.policy?.policy.maxConcurrentItems, input.id),
+    ...codexCommit(current.policy?.policy.maxConcurrentItems, input.id, 'delivery'),
     operation: 'delivery-checkpoint' as const,
   };
   try {
@@ -196,7 +226,6 @@ export default async function runCodexDelivery(
       )
         throw new Error('delivery-managed-issue-required');
       retainImplementationDelivery(record);
-      const delivered = hasDeliveredImplementation(record);
       const save = async () => {
         retainImplementationDelivery(record);
         await checkpoint();
@@ -219,6 +248,64 @@ export default async function runCodexDelivery(
       const adoptedPullRequest = managedPullRequest(intake);
       const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
       const previous = record.delivery;
+      if (input.action === 'link') {
+        if (input.eventId || deps.schedule) throw new Error('delivery-link-operator-required');
+        const currentLink = taskPullRequest(record);
+        const unchanged =
+          currentLink &&
+          input.pullRequest ===
+            `https://github.com/${repository}/pull/${currentLink.pullRequestNumber}`;
+        if (input.pullRequest !== undefined && !unchanged) {
+          if (!native.operatorInput) throw new Error('delivery-link-operator-required');
+          await native.operatorInput(caller!);
+          if (input.pullRequest === null) record.pullRequestLink = null;
+          else {
+            const connected = await (deps.connect ?? connectCodexGitHubAccount)(
+              current.workspace,
+              signal,
+            );
+            if (connected.account.identity.nodeId !== intake.receiving.nodeId)
+              throw new Error('delivery-adoption-account-changed');
+            await setTaskPullRequestLink(record, intake, input.pullRequest, connected.client);
+          }
+        } else if (record.pullRequestLink === undefined && previous?.pullRequest) {
+          record.pullRequestLink = previous.pullRequest;
+        }
+        await save();
+        const linked = taskPullRequest(record);
+        if (!linked) return { status: 'unlinked' as const, attachment: 'unchanged' as const };
+        const pullRequestUrl = `https://github.com/${repository}/pull/${linked.pullRequestNumber}`;
+        let attached: boolean | undefined;
+        try {
+          attached = deps.attachment
+            ? await deps.attachment(record.threadId, found.turnId, pullRequestUrl)
+            : await codexDeliveryAttachment(
+                connection!.request,
+                record.threadId,
+                found.turnId,
+                pullRequestUrl,
+              );
+        } catch {
+          signal.throwIfAborted();
+        }
+        if (
+          previous?.pullRequest?.pullRequestNodeId === linked.pullRequestNodeId &&
+          attached !== undefined &&
+          previous.attached !== attached
+        ) {
+          previous.attached = attached;
+          await save();
+        }
+        return {
+          status: 'linked' as const,
+          pullRequest: linked,
+          attached,
+          url: pullRequestUrl,
+          instructions: attached
+            ? 'Native attachment is confirmed.'
+            : 'Call native attach_artifact with this pull_request URL, then list_artifacts and delivery link to reconcile attachment. Card and announcement operations are independent.',
+        };
+      }
       if (input.action === 'bind') {
         if (!input.pullRequest || input.eventId || deps.schedule || !native.operatorInput)
           throw new Error('delivery-binding-operator-required');
@@ -305,6 +392,10 @@ export default async function runCodexDelivery(
         if (previous) (record.deliveryHistory ??= []).push(previous);
         record.issueBranch = { attemptId: record.id, name: localBranch, phase: 'ready' };
         record.adoptedPullRequest = adopted;
+        record.pullRequestLink = {
+          pullRequestNodeId: adopted.pullRequestNodeId,
+          pullRequestNumber: adopted.pullRequestNumber,
+        };
         record.delivery = adoptedCodexDelivery({
           id: record.id,
           repositoryId: intake.repository.nodeId,
@@ -323,19 +414,59 @@ export default async function runCodexDelivery(
         [
           ...new Set([
             ...(record.delivery?.notices ?? []),
+            ...(record.delivery?.pullRequest && !record.delivery.reconciled
+              ? ['delivery-publication-incomplete']
+              : []),
             ...(!attached ? ['delivery-attachment-pending'] : []),
           ]),
         ]
           .filter(
             (code) =>
               code !== 'delivery-ssh-transport' &&
-              (code !== 'delivery-linkage-retried' || current.manifest.debug),
+              (code !== 'delivery-linkage-retried' ||
+                (current.manifest.debug && record.delivery?.reconciled)),
           )
           .map((code) => codexIssueNotice({ event: 'failure', changed: true, code }));
       const url = (number: number) => `https://github.com/${repository}/pull/${number}`;
       if (input.action === 'present' || input.action === 'reconcile') {
-        if (!previous?.pullRequest) throw new Error('delivery-reconciliation-required');
-        const pullRequestUrl = url(previous.pullRequest.pullRequestNumber);
+        const linked = taskPullRequest(record);
+        if (!linked) throw new Error('delivery-reconciliation-required');
+        const pullRequestUrl = url(linked.pullRequestNumber);
+        if (
+          !previous?.pullRequest ||
+          linked.pullRequestNodeId !== previous.pullRequest.pullRequestNodeId
+        ) {
+          if (input.action === 'reconcile') {
+            const attached = deps.attachment
+              ? await deps.attachment(record.threadId, found.turnId, pullRequestUrl)
+              : await codexDeliveryAttachment(
+                  connection!.request,
+                  record.threadId,
+                  found.turnId,
+                  pullRequestUrl,
+                );
+            return {
+              status: 'linked' as const,
+              pullRequest: linked,
+              attached,
+              url: pullRequestUrl,
+              instructions: attached
+                ? 'Native attachment is confirmed.'
+                : 'Call native attach_artifact with this pull_request URL, then list_artifacts and delivery link to reconcile attachment. Card and announcement operations are independent.',
+            };
+          }
+          return {
+            status: 'presented' as const,
+            pullRequest: linked,
+            presentation: githubNotificationPullRequestOpenedCard({
+              issueNumber: intake.issue.number,
+              pullRequestNumber: linked.pullRequestNumber,
+              repositoryOwner: intake.repository.owner.login,
+              repositoryName: intake.repository.name,
+              commentFlow: 'unverified',
+            }),
+          };
+        }
         if (input.action === 'reconcile') {
           let attached = previous.attached;
           try {
@@ -399,7 +530,7 @@ export default async function runCodexDelivery(
         previous.cardAttempts++;
         await save();
         return {
-          status: 'linked',
+          status: previous.reconciled ? 'linked' : 'publication-incomplete',
           retained: true,
           workflowStatus: workflowStatus(record),
           instruction:
@@ -430,73 +561,31 @@ export default async function runCodexDelivery(
       const feedbackEvent = record.feedback?.events.find(
         (event) => event.attempt?.turnId === found.turnId,
       );
-      if (feedbackEvent && input.eventId !== feedbackEvent.id)
+      if (feedbackEvent && !feedbackEvent.native && input.eventId !== feedbackEvent.id)
         throw new Error('feedback-event-required');
       if (input.eventId && feedbackEvent?.id !== input.eventId)
         throw new Error('feedback-owner-caller-required');
       const announcementOnly = ['compose', 'candidate', 'announce'].includes(input.action);
       const authorizePublication = async () => {
         await deps.authorizeSchedule?.();
-        if (!input.eventId) return;
-        const event = feedbackEvent!;
-        if (
-          !event.work ||
-          event.work.result?.outcome !== 'done' ||
-          !event.work.head ||
-          ['blocked', 'published'].includes(event.phase)
-        )
-          throw new Error('feedback-implementation-result-required');
-        if (
-          event.work.pullRequest &&
-          automationHash(record.delivery?.pullRequest) !== automationHash(event.work.pullRequest)
-        )
-          throw new Error('feedback-delivery-owner-changed');
+        if (!feedbackEvent) return;
         const live = await selectCodexIntake(pluginData, { ...deps, connect: undefined });
-        feedbackMode(record, live.manifest.github!.notifications!);
-        const activated = await (deps.activation ?? inspectCodexDispatchActivation)(
-          pluginData,
-          { codexHome: current.codexHome, inspectBinding: deps.inspectBinding },
-          false,
-          true,
-          'feedback',
-        );
-        if (!activated.schedule) throw new Error('feedback-schedule-owner-changed');
-        requireWorkflowSchedule(activated.schedule.saved, activated.schedule.current, 'feedback');
         await authorizeCodexFeedback({
+          conversation: true,
           current: live,
           record,
-          event,
+          event: feedbackEvent,
           intake,
           provider: await (deps.feedbackConnect ?? connectCodexFeedback)(current.workspace, signal),
         });
-        if (
-          (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim() !==
-          event.work.head
-        )
-          throw new Error('feedback-implementation-head-changed');
       };
-      if (input.eventId) await authorizePublication();
-      else if (deps.schedule) {
-        await authorizePublication();
-        if (
-          record.continuation &&
-          (record.continuation.phase !== 'delivery' ||
-            record.continuation.result?.outcome !== 'done')
-        )
-          throw new Error('delivery-continuation-stopped');
+      await authorizePublication();
+      if (deps.schedule) {
         if (deps.schedule.current.workflow !== 'issue-assignment')
           throw new Error('delivery-schedule-binding-mismatch');
         requireWorkflowSchedule(deps.schedule.saved, deps.schedule.current, 'publication');
-      } else if (delivered) {
-        await authorizePublication();
-      } else {
-        if (
-          !record.handoff &&
-          record.continuation &&
-          (record.continuation.phase !== 'delivery' ||
-            record.continuation.result?.outcome !== 'done')
-        )
-          throw new Error('delivery-continuation-stopped');
+      }
+      if (!announcementOnly) {
         const transition = issueProgression(record, {
           mode: issueWorkflowMode(current.manifest.github?.notifications, record),
           now: (deps.now ?? Date.now)(),
@@ -624,17 +713,22 @@ export default async function runCodexDelivery(
           'authorId',
         ]);
       if (bindingChange) throw new Error(bindingChange);
+      const existingContent =
+        adoptedPullRequest &&
+        ((input.title ?? previous?.title) === undefined ||
+          (input.body ?? previous?.body) === undefined)
+          ? await new IssueDeliveryProvider(connected.account, deps.delay).content({
+              repository,
+              number: intake.issue.number,
+              nodeId: intake.issue.nodeId,
+              signal,
+            })
+          : undefined;
       const delivery: CodexDeliveryState = {
         id: previous?.id ?? automationHash({ admission: intake.id, threadId: record.threadId }),
         binding,
-        title:
-          input.title ??
-          previous?.title ??
-          (adoptedPullRequest ? JSON.parse(record.context!).title : undefined),
-        body:
-          input.body ??
-          previous?.body ??
-          (adoptedPullRequest ? JSON.parse(record.context!).body : undefined),
+        title: input.title ?? previous?.title ?? existingContent?.title,
+        body: input.body ?? previous?.body ?? existingContent?.body,
         creationAttempted: previous?.creationAttempted ?? false,
         ...(adopted
           ? {
@@ -721,6 +815,13 @@ export default async function runCodexDelivery(
           signal,
         };
         const announce = await deliveryAnnouncement({
+          runtime: 'codex',
+          request: {
+            action: 'compose',
+            id: input.id,
+            ...(input.eventId ? { eventId: input.eventId } : {}),
+          },
+          material: input.material,
           now: (deps.now ?? Date.now)(),
           operation: input.action,
           digest: input.digest,
@@ -770,13 +871,22 @@ export default async function runCodexDelivery(
           id: input.id,
           digest,
           operation: delivery,
+          publishRequest: {
+            action: 'publish' as const,
+            id: input.id,
+            ...(input.eventId ? { eventId: input.eventId } : {}),
+            digest,
+            title: delivery.title,
+            body: delivery.body,
+          },
+          currentPullRequest: taskPullRequest(record),
           instruction:
             (input.action === 'publish'
-              ? 'This stale preview made no publication write. Inspect the refreshed operation and retry once with its digest only within the existing authorization; investigate repeated staleness. '
+              ? 'This stale preview made no publication write. Inspect the refreshed operation and use its complete publishRequest once within the existing authorization; investigate repeated staleness. '
               : '') +
             (deps.schedule
               ? 'The activated workflow and verified continuation authorize publication. Publish through the owning continuationRuntime with this digest and the same title/body; no additional stage approval is required. Native execution review still applies.'
-              : 'The verified implementation stage or current user direction authorizes ordinary PR delivery and appropriate follow-up commits. Do not ask for a separate publication grant; honor explicit user restrictions. Execute delivery publish with this id and digest through native approval, retaining title/body if supplied. Preparation does not grant permission and a native denial stops the operation.'),
+              : 'The verified implementation stage or current user direction authorizes ordinary PR delivery and appropriate follow-up commits. Do not ask for a separate publication grant; honor explicit user restrictions. Execute delivery publish with the complete publishRequest as JSON on stdin through native approval. Keep its digest, title and body together. Preparation does not grant permission and a native denial stops the operation.'),
         };
       if (input.action === 'publish') {
         await authorizePublication();
@@ -864,7 +974,11 @@ export default async function runCodexDelivery(
             pullRequest: delivery.pullRequest,
             workflowStatus: workflowStatus(record),
             url: url(delivery.pullRequest!.pullRequestNumber),
-            instruction: deliveryCompletionInstructions('codex', delivery),
+            instruction: deliveryCompletionInstructions(
+              'codex',
+              delivery,
+              Boolean(previous?.reconciled && previous.pullRequest),
+            ),
           };
         } catch (error) {
           signal.throwIfAborted();

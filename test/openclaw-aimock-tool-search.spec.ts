@@ -10,7 +10,6 @@ import resolveScenario from '../scripts/example-model-scenarios.ts';
 import withToolSearch, { normalizeToolSearchRequest } from '../scripts/aimock-tool-search.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
-import assessmentSubmission from '../agent/assessment-submission.ts';
 
 function request(prompt = githubExampleTanaabotPrompt): ChatCompletionRequest {
   return {
@@ -202,13 +201,12 @@ describe('scripts/aimock-tool-search', () => {
   it('should correct one native wrapped rejection on the same direct assessment entry', async () => {
     const scenario = withToolSearch(resolveScenario('openclaw-issue-assessment'));
     const target = 'https://github.com/owner/repo/issues/3';
-    const id = 'a'.repeat(64);
     const input = request(`Direct issue assessment target: ${target} checkout: /tmp/owned`);
     input.messages.unshift({ role: 'system', content: 'Name: Notification Tanaabot' });
     append(
       input,
       (await reply(scenario, input)).response,
-      searchResult(['agent_system_dispatch', 'read']),
+      searchResult(['agent_system_dispatch', 'agent_system_github', 'read']),
     );
     const context = (await reply(scenario, input)).response;
     append(input, context, {
@@ -221,11 +219,31 @@ describe('scripts/aimock-tool-search', () => {
               status: 'verified',
               entry: 'direct',
               runtime: 'openclaw',
-              id,
               target,
+              evidence: { source: target },
               resultSchema: assessmentResultContextSchema,
-              resultSubmission: assessmentSubmission({ entry: 'direct', id, target }),
+
               assessment: { skill: { path: '/fixture/SKILL.md' } },
+            }),
+          },
+        ],
+      },
+    });
+    const sourceRead = (await reply(scenario, input)).response;
+    append(input, sourceRead, {
+      tool: { id: 'openclaw:agent_system_github', name: 'agent_system_github' },
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              exitCode: 0,
+              truncated: false,
+              stdout: JSON.stringify({
+                title: 'Cleanup',
+                body: 'Close disposable issues.',
+                comments: [],
+              }),
             }),
           },
         ],
@@ -259,16 +277,16 @@ describe('scripts/aimock-tool-search', () => {
           {
             type: 'text',
             text: JSON.stringify({
-              status: 'recorded',
-              presentation: 'Retained full assessment.',
-              handoff: { next: 'assessment-only' },
+              status: 'formatted',
+              retained: false,
+              presentation: 'Formatted assessment.',
             }),
           },
         ],
       },
     });
     assert.deepEqual((await reply(scenario, input)).response, {
-      content: 'Retained full assessment.',
+      content: 'Formatted assessment.',
     });
   });
 
@@ -342,7 +360,13 @@ describe('scripts/aimock-tool-search', () => {
       append(
         input,
         (await reply(scenario, input)).response,
-        searchResult(['agent_system_intake', 'agent_system_dispatch', 'agent_system_git', 'read']),
+        searchResult([
+          'agent_system_intake',
+          'agent_system_dispatch',
+          'agent_system_git',
+          'agent_system_github',
+          'read',
+        ]),
       );
     };
     const step = async (stage: string, name: string, result: unknown) => {
@@ -370,6 +394,8 @@ describe('scripts/aimock-tool-search', () => {
           status: 'verified',
           runtime: 'openclaw',
           id,
+          currentTurnId: 'initial',
+          evidence: { source: 'https://github.com/owner/repo/issues/3' },
           project: { path: '/tmp/owned' },
           assessment: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
           resultContract: 'assessment-result/v1',
@@ -383,49 +409,53 @@ describe('scripts/aimock-tool-search', () => {
       truncated: false,
     });
     await step('assessment-skill', 'read', 'Default assessment.');
-    const saved = await step('result', 'agent_system_dispatch', {
-      status: 'recorded',
-      presentation: '> Retained plan',
+    await step('assessment-source', 'agent_system_github', {
+      exitCode: 0,
+      truncated: false,
+      stdout: JSON.stringify({ title: 'Cleanup', body: 'Close disposable issues.', comments: [] }),
     });
-    assert.equal(saved.result.outcome, 'plan-ready');
-    const summaryResponse = (await reply(scenario, input)).response;
-    assert.equal('content' in summaryResponse && summaryResponse.content, '> Retained plan');
-    await step('summary-compose', 'agent_system_dispatch', {
+    await step('native-plan-render', 'agent_system_dispatch', {
+      status: 'formatted',
+      retained: false,
+      assessment: { fullAssessment: 'Complete engineering source.' },
+      presentation: 'Choose cleanup behavior.',
+    });
+    await step('native-plan-context', 'agent_system_dispatch', {
+      status: 'status-update-context',
+      observation: digest,
+    });
+    const composed = await step('native-plan-compose', 'agent_system_dispatch', {
       status: 'composition-ready',
+      id,
       digest,
       selection: { defaultSkill: true, skill: { path: '/tmp/reply/SKILL.md' } },
     });
-    await step('summary-skill', 'read', { content: 'Compose a concise public summary.' });
-    assert.equal(
-      (await step('summary-candidate', 'agent_system_dispatch', { status: 'candidate-recorded' }))
-        .digest,
-      digest,
-    );
-    await step('summary-preview', 'agent_system_dispatch', { status: 'publication-ready', digest });
-    assert.equal(
-      (
-        await step('summary-publish', 'agent_system_dispatch', {
-          status: 'published',
-          presentation: '> Published plan summary',
-        })
-      ).digest,
-      digest,
-    );
-    assert.deepEqual((await reply(scenario, input)).response, {
-      content: '> Published plan summary',
+    assert.match(composed.privateText, /Should disposable test issues/);
+    await step('summary-skill', 'read', { content: 'Compose a concise public question.' });
+    await step('native-plan-candidate', 'agent_system_dispatch', {
+      status: 'candidate-recorded',
+      publication: 'workflow-authorized',
     });
+    await step('native-plan-preview', 'agent_system_dispatch', {
+      status: 'publication-ready',
+      digest,
+    });
+    await step('native-plan-publish', 'agent_system_dispatch', {
+      status: 'published',
+      presentation: '> Published question',
+    });
+    assert.deepEqual((await reply(scenario, input)).response, { content: '> Published question' });
     input.messages.push(
       { role: 'assistant', content: '> Retained plan' },
       {
         role: 'user',
-        content: `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`,
+        content: `Operator request for managed issue ${id}: Yes, close disposable issues after capturing evidence. Implement the retained plan and open a linked pull request.`,
       },
     );
     await discover();
     await step('work-context', 'agent_system_dispatch', {
       status: 'verified',
       runtime: 'openclaw',
-      deliveryOnly: false,
       publicationAuthorized: true,
       project: { path: '/tmp/owned' },
       implementation: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
@@ -437,23 +467,21 @@ describe('scripts/aimock-tool-search', () => {
         '/tmp/owned',
       );
     }
-    await step('work-result', 'agent_system_dispatch', {
-      status: 'recorded',
-      handoff: {
-        next: 'delivery',
-        request: { action: 'delivery', id, operation: 'prepare' },
-      },
-    });
     await step('delivery-prepare', 'agent_system_dispatch', { status: 'prepared', digest });
     assert.equal(
       (
         await step('delivery-publish', 'agent_system_dispatch', {
           status: 'published',
-          workflowStatus: 'delivered',
+          workflowStatus: 'native-unobserved',
         })
       ).digest,
       digest,
     );
+    const linked = await step('delivery-association', 'agent_system_dispatch', {
+      status: 'linked',
+      pullRequest: { pullRequestNumber: 456 },
+    });
+    assert.equal(linked.operation, 'link');
     await step('delivery-compose', 'agent_system_dispatch', {
       status: 'composition-ready',
       digest,
@@ -475,10 +503,6 @@ describe('scripts/aimock-tool-search', () => {
       },
     );
     await discover();
-    await step('assessment-present', 'agent_system_dispatch', {
-      status: 'presented',
-      presentation: '> Saved plan',
-    });
     assert.equal(
       (
         await step('delivery-present', 'agent_system_dispatch', {
@@ -489,7 +513,7 @@ describe('scripts/aimock-tool-search', () => {
       'present',
     );
     assert.deepEqual((await reply(scenario, input)).response, {
-      content: '> Saved plan\n\n> PR card',
+      content: '> PR card',
     });
   });
 

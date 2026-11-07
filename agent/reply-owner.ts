@@ -26,6 +26,7 @@ export interface ReplyOwner {
   number?: number;
   pullRequestNumber?: number;
   events?: FeedbackSourceEvent[];
+  sourceReceipts?: Array<Pick<FeedbackSourceEvent, 'sourceId' | 'nodeId' | 'native'>>;
   deliveredPullRequest?: unknown;
   implementation?: Static<typeof implementationResultSchema>;
   result?: AssessmentResult;
@@ -41,12 +42,30 @@ export default function replyOwner(
   purpose?: 'status-update',
 ) {
   const repository = `${target.owner}/${target.name}`.toLowerCase();
+  const callers = owners.filter((owner) => owner.threadId === session);
+  const callerIssue =
+    callers.length === 1 &&
+    callers[0]!.repository?.toLowerCase() === repository &&
+    callers[0]!.pullRequestNumber === target.number
+      ? callers[0]!.number
+      : undefined;
   const ownership = managedOwner(
     owners,
     session,
     (owner) =>
       owner.repository?.toLowerCase() === repository &&
-      (target.number === owner.number || target.number === owner.pullRequestNumber),
+      (target.number === owner.number ||
+        (target.number === owner.pullRequestNumber &&
+          (callerIssue === undefined || owner.number === callerIssue)) ||
+        Boolean(
+          target.source &&
+          (owner.sourceReceipts ?? owner.events)?.some(
+            (event) =>
+              event.native &&
+              event.nodeId === target.nodeId &&
+              event.sourceId === target.source!.nodeId,
+          ),
+        )),
   );
   if (ownership.status === 'ambiguous') throw new Error('reply-managed-owner-ambiguous');
   const { owner, caller } = ownership;
@@ -76,21 +95,7 @@ export default function replyOwner(
       ownerId: owner.id,
       pullRequestNumber: owner.pullRequestNumber,
       verifiedOutcome: {
-        assessment: owner.result,
-        implementation: owner.implementation,
         delivery: owner.deliveredPullRequest,
-        feedback: owner.events?.flatMap((event) =>
-          event.result || event.work?.result
-            ? [
-                {
-                  eventId: event.id,
-                  result: event.result,
-                  work: event.work?.result,
-                  receipt: event.receipt,
-                },
-              ]
-            : [],
-        ),
       },
     };
   if (target.source) {
@@ -99,6 +104,8 @@ export default function replyOwner(
     );
     const event = matching?.at(-1);
     if (!event) return manualContext(owner);
+    if (event.native || (!event.publicationAttempted && !event.receipt))
+      return manualContext(owner);
     if (!event.result || event.phase === 'blocked')
       throw new Error('reply-managed-response-required');
     if (event.receipt) {
@@ -158,8 +165,6 @@ function manualContext(owner: ReplyOwner) {
     workflow: 'issue-assignment' as const,
     ownerId: owner.id,
     verifiedOutcome: {
-      assessment: owner.result,
-      implementation: owner.implementation,
       delivery: owner.deliveredPullRequest,
     },
   };

@@ -69,6 +69,7 @@ export default async function reactivateAssignmentFeedback(input: {
       Pick<GitHubNotificationPublicationClient, 'createIssueComment' | 'findOwnIssueComment'>
   >;
   announcement?: DeliveryAnnouncementState;
+  ownReplies?: () => Promise<string[]>;
   now: number;
   budget?: DiscoveryBudget;
   save(): Promise<void>;
@@ -160,6 +161,7 @@ export default async function reactivateAssignmentFeedback(input: {
           intake,
           client: comments,
           announcement: input.announcement,
+          replies: input.ownReplies,
         })),
     });
     const event = feedback.events.find(

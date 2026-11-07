@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { ContextMaterialError } from '../agent/implementation-material.ts';
 
 import type {
   OpenClawPluginApi,
@@ -175,6 +176,17 @@ describe('tools/dispatch/tool', () => {
     for (const [error, code] of [
       [new Error('dispatch-intake-activation-required'), 'dispatch-intake-activation-required'],
       [new Error('private fixture token details'), 'dispatch-operation-failed'],
+      [
+        new ContextMaterialError(
+          'assessment-material-controls-too-large',
+          'private fixture details',
+        ),
+        'assessment-material-controls-too-large',
+      ],
+      [
+        new ContextMaterialError('implementation-material-stale', 'private fixture details'),
+        'implementation-material-stale',
+      ],
       ...[privateStateFileLockBusyErrorCode, privateStateFileLockLostErrorCode].map((code) => [
         Object.assign(new Error('private fixture lock details'), { code }),
         code,

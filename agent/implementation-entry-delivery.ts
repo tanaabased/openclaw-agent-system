@@ -24,7 +24,7 @@ export default async function implementationEntryDelivery(input: {
   const repository = `${locator.owner}/${locator.name}`;
   const authorize = async () => {
     await deps.assertCurrent();
-    if (entry.scope !== 'pull-request' || entry.result?.outcome !== 'done')
+    if (entry.scope !== 'pull-request' || entry.progression?.stage !== 'implementation')
       throw new Error('implementation-publication-not-authorized');
     if (await deps.managed({ repository, number: locator.number }))
       throw new Error('implementation-managed-context-changed');

@@ -36,11 +36,7 @@ export default async function retireOpenClawTask(options: {
     throw new Error('dispatch-operator-caller-required');
   const selected = await current.journal.exclusive(async (state, save) => {
     const managedCaller = state.records.find((record) => record.threadId === caller.sessionKey);
-    if (
-      managedCaller &&
-      (managedCaller.id !== (input.id ?? managedCaller.id) ||
-        managedCaller.sessionCreation?.sessionId !== caller.sessionId)
-    )
+    if (managedCaller && managedCaller.sessionCreation?.sessionId !== caller.sessionId)
       throw new Error('dispatch-retire-context-mismatch');
     const id = input.id ?? managedCaller?.id;
     if (!id) throw new Error('dispatch-retire-selection-required');

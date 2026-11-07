@@ -1,4 +1,5 @@
 import { managedPullRequest, managedIssueState, dispatchAdmission } from './managed-issue.ts';
+import { ContextMaterialError } from './implementation-material.ts';
 
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
@@ -34,7 +35,11 @@ import GitCommandError from '../tools/git/command-error.ts';
 import type TrustedGitWorktreeService from '../tools/git/trusted-worktree-service.ts';
 import { inspectFeedbackAssignment } from './assignment-feedback-reactivation.ts';
 import { automationHash } from './automation-hash.ts';
-import { inspectContinuedIssue, inspectAdmittedIssue } from './dispatch-assignment.ts';
+import {
+  inspectContinuedIssue,
+  inspectAdmittedIssue,
+  inspectIssueIdentity,
+} from './dispatch-assignment.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
 import type OpenClawAssignmentClaims from './openclaw-assignment-claims.ts';
 import { type OpenClawDeliveryConnection } from './openclaw-delivery.ts';
@@ -93,6 +98,7 @@ export interface OpenClawDispatchDependencies {
 }
 
 export function openClawDispatchFailureCode(error: unknown): string {
+  if (error instanceof ContextMaterialError) return error.code;
   const conflict = error instanceof AgentSystemToolError ? error.cause : error;
   if (conflict instanceof GitWorktreeConflict) return conflict.code;
   const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
@@ -145,7 +151,7 @@ export default class OpenClawDispatchContext {
     workspace: string,
     record: OpenClawDispatchRecord,
     work = false,
-    feedback = false,
+    feedback: boolean | 'native' = false,
   ) {
     const current = await this.scope(manifest, workspace);
     const fresh = await this.dependencies.intake.dependencies.manifestService.loadForAgentId(
@@ -163,10 +169,12 @@ export default class OpenClawDispatchContext {
       (await current.journal.read()).records.find((r) => r.id === record.id)?.supersededBy
     )
       throw new Error('dispatch-task-superseded');
-    if (record.retired || (record.retirement && record.retirement.reason !== 'assignment-removed'))
+    if (
+      feedback !== 'native' &&
+      (record.retired || (record.retirement && record.retirement.reason !== 'assignment-removed'))
+    )
       throw new Error('dispatch-issue-inactive');
     if (record.reset) throw new Error('dispatch-reset-pending');
-    if (record.handoff && !work && !feedback) throw new Error('dispatch-assessment-handed-off');
     const intake = dispatchAdmission(record, current.admitted.records ?? []);
     if (!intake) throw new Error('dispatch-admission-missing');
     if (
@@ -213,7 +221,7 @@ export default class OpenClawDispatchContext {
     workspace: string,
     record: OpenClawDispatchRecord,
     work = false,
-    feedback = false,
+    feedback: boolean | 'native' = false,
     connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient,
     signal?: AbortSignal,
   ) {
@@ -244,23 +252,29 @@ export default class OpenClawDispatchContext {
             record,
             (this.dependencies.now ?? Date.now)(),
           )
-        : feedback
-          ? await inspectFeedbackAssignment(
-              {
-                ...current.policy,
-                policy: {
-                  ...current.policy.policy,
-                  issueAssignment: {
-                    ...current.policy.policy.issueAssignment!,
-                    allowed: liveManifest.github?.notifications?.issueAssignment?.allowed ?? [],
+        : feedback === 'native'
+          ? await inspectIssueIdentity(intake, client)
+          : feedback
+            ? await inspectFeedbackAssignment(
+                {
+                  ...current.policy,
+                  policy: {
+                    ...current.policy.policy,
+                    issueAssignment: {
+                      ...current.policy.policy.issueAssignment!,
+                      allowed: liveManifest.github?.notifications?.issueAssignment?.allowed ?? [],
+                    },
                   },
                 },
-              },
-              intake,
-              client,
-              record,
-            )
-          : await inspectAdmittedIssue(intake, client, Boolean(record.sessionCreation?.attempted));
+                intake,
+                client,
+                record,
+              )
+            : await inspectAdmittedIssue(
+                intake,
+                client,
+                Boolean(record.sessionCreation?.attempted),
+              );
     const pullRequest = managedPullRequest(intake);
     if (
       pullRequest &&
@@ -282,7 +296,7 @@ export default class OpenClawDispatchContext {
         : {}),
       repositoryDatabaseId: repo.databaseId,
     };
-    if (record.worktree) {
+    if (record.worktree && !feedback) {
       const path = await realpath(record.worktree).catch((cause) => {
         throw new Error('dispatch-worktree-unavailable', { cause });
       });

@@ -1,3 +1,4 @@
+import nativeTaskContext from './native-task-context.ts';
 import { realpath } from 'node:fs/promises';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -6,21 +7,22 @@ import { directAssessmentRequestSchema } from '../tools/dispatch/assessment-sche
 import type { AgentManifest } from '../manifest/types.ts';
 import renderAssessmentResult from '../channels/github/presentation/assessment-result.ts';
 import assessmentSkillSource from './assessment-skill-source.ts';
-import assessmentSubmission from './assessment-submission.ts';
+import renderNativeAssessment, { assessmentPresentationRequest } from './assessment-render.ts';
 import assessmentCheckout from './assessment-checkout.ts';
+import assessmentMaterial from './assessment-material.ts';
 import { assessmentInstructions } from './assessment-instructions.ts';
 import {
   assessmentResultContextSchema,
   parseAssessmentSubmission,
   type AssessmentResult,
 } from './assessment-result.ts';
+import type { AssessmentConfiguration } from '../manifest/assessment-schema.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
 import { type AssessmentEntry, type AssessmentEntries } from './assessment-entry-state.ts';
 import AssessmentEntryStore, { type AssessmentEntryBinding } from './assessment-entry-store.ts';
 import { automationHash } from './automation-hash.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import type { DispatchGit } from './codex-dispatch-project.ts';
-import dispatchContext from './dispatch-context.ts';
 import type { ImplementationResult } from './implementation-result.ts';
 import type { nativeIssueContext } from './implementation-delivery.ts';
 import type { OpenClawDeliveryConnection } from './openclaw-delivery.ts';
@@ -51,6 +53,10 @@ export interface AssessmentEntryDependencies {
         owner?: { id: string; eventId?: string };
         implementationResult?: ImplementationResult;
         nativeContext?: ReturnType<typeof nativeIssueContext>;
+        selections?: {
+          assessment?: AssessmentConfiguration;
+          implementation?: AssessmentConfiguration;
+        };
         path: string;
         selection: AssessmentSelection;
         evidence: string;
@@ -73,15 +79,17 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
   if (!Value.Check(assessmentRequestSchema, input)) throw new Error('assessment-request-invalid');
   if (
     (input.result !== undefined && input.operation !== 'result') ||
-    (input.revise && input.operation !== 'context')
+    (input.revise && input.operation !== 'context') ||
+    (input.material && input.operation !== 'context')
   )
     throw new Error('assessment-request-invalid');
   if (input.operation !== 'context' && !input.id) throw new Error('assessment-entry-id-required');
   await deps.assertCurrent();
+  const fresh = input.operation === 'context' && !input.id && Boolean(input.target && input.path);
   const store = new AssessmentEntryStore(deps.root, deps.binding);
   // find the retained destination without consulting provider prose or changing ownership.
   const retained =
-    input.id || input.target
+    input.id || (!fresh && input.target)
       ? await store.exclusive(async (entries) =>
           entries.find((entry) =>
             input.id
@@ -101,21 +109,29 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     throw new Error('assessment-issue-url-required');
   const repository = `${locator.owner}/${locator.name}`;
   const managed = await deps.managed({ repository, number: locator.number });
-  if (managed?.nativeContext) return managed.nativeContext;
-  const managedEntry = managed
-    ? await managed.entries(async (entries) =>
-        entries.find(
-          (entry) =>
-            entry.binding === automationHash(deps.binding) &&
-            entry.target.toLowerCase() === targetUrl.toLowerCase(),
-        ),
-      )
-    : undefined;
+  if (managed?.nativeContext && input.operation !== 'present')
+    return input.operation === 'context'
+      ? nativeTaskContext(
+          'assessment',
+          targetUrl,
+          managed.nativeContext,
+          deps,
+          input.material,
+          managed.selections?.assessment,
+        )
+      : managed.nativeContext;
+  const managedEntry =
+    managed && !fresh
+      ? await managed.entries(async (entries) =>
+          entries.find(
+            (entry) =>
+              entry.binding === automationHash(deps.binding) &&
+              entry.target.toLowerCase() === targetUrl.toLowerCase(),
+          ),
+        )
+      : undefined;
   const saved = managedEntry ?? retained;
-  if (
-    saved?.result &&
-    (input.operation === 'present' || (input.operation === 'context' && !input.revise))
-  ) {
+  if (saved?.result && input.operation === 'present') {
     if (
       saved.ownerDigest !== managed?.digest ||
       saved.target.toLowerCase() !== targetUrl.toLowerCase() ||
@@ -153,7 +169,7 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
       status: 'clarification-needed',
       questions: ['Which existing local checkout root belongs to this issue?'],
     };
-  if (managed?.result && !managedEntry && !input.id && !input.revise) {
+  if (managed?.result && !managedEntry && input.operation === 'present') {
     if ((await realpath(path)) !== managed.path)
       throw new Error('assessment-managed-checkout-mismatch');
     await deps.assertCurrent();
@@ -199,6 +215,55 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
   const handoff = { next: 'assessment-only' as const };
   const instruction =
     'Show this complete assessment. This direct request authorizes neither implementation nor publication. Preserve existing managed stage and receipts; do not invoke summary, handoff, or another workflow.';
+  const response = (
+    record: Pick<AssessmentEntry, 'checkout' | 'evidence' | 'selection'> &
+      Partial<Pick<AssessmentEntry, 'id' | 'result'>>,
+  ) => ({
+    status: 'verified',
+    runtime: deps.binding.runtime,
+    entry: 'direct',
+    ...(record.id ? { id: record.id } : {}),
+    target: canonical,
+    project: record.checkout,
+    evidence: JSON.parse(record.evidence),
+    assessment: record.selection,
+    currentTurnId: deps.turnId,
+    mode: 'plan',
+    handoff,
+    resultContract: 'assessment-result/v1',
+    resultSchema: assessmentResultContextSchema,
+    previousResultDigest:
+      (record.result ?? managed?.result)
+        ? automationHash(record.result ?? managed!.result)
+        : undefined,
+    recording: 'native-context' as const,
+    presentationRequest: assessmentPresentationRequest(canonical, true, {
+      assessment: record.selection,
+      workspace: deps.binding.workspace,
+      debug: deps.manifest.debug,
+    }),
+    instructions:
+      assessmentInstructions +
+      '\n\nDirect execution: use these verified inputs and the selected assessment body once. Preserve the current chat/model. Use presentationRequest plus result matching resultFormat through dispatch assessment render. This pure formatter saves no assessment or summary. Show its presentation; keep the full result in native tool context. Historical assessment present remains an explicit read. No assignment, setup, implementation, publication, or new chat is authorized.',
+  });
+  if (fresh) {
+    const { selection } = await selectWorkflowStage({
+      stage: 'assessment',
+      configuration: deps.manifest.github?.notifications?.issueAssignment?.assessment,
+      workspace: deps.binding.workspace,
+      observedAt: deps.now,
+      resolveSkill: deps.resolveSkill,
+    });
+    const currentOwner = await deps.managed({ repository, number: locator.number });
+    if (currentOwner?.digest !== managed?.digest)
+      throw new Error('assessment-managed-context-changed');
+    await deps.assertCurrent();
+    return assessmentMaterial(
+      response({ checkout, evidence: JSON.stringify({ source: canonical }), selection }),
+      { action: 'assessment', operation: 'context', target: canonical, path: checkout.path },
+      input.material,
+    );
+  }
   const entries: AssessmentEntries = managed?.entries ?? store.exclusive.bind(store);
   return entries(async (records, save) => {
     const binding = automationHash(deps.binding);
@@ -219,72 +284,19 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     if (currentOwner?.digest !== managed?.digest)
       throw new Error('assessment-managed-context-changed');
     await deps.assertCurrent();
-    const response = (record: AssessmentEntry) => ({
-      status: 'verified',
-      runtime: deps.binding.runtime,
-      entry: 'direct',
-      id: record.id,
-      target: canonical,
-      project: record.checkout,
-      evidence: JSON.parse(record.evidence),
-      assessment: record.selection,
-      currentTurnId: deps.turnId,
-      previousResult: record.result ?? managed?.result,
-      previousResultDigest:
-        (record.result ?? managed?.result)
-          ? automationHash(record.result ?? managed!.result)
-          : undefined,
-      previousResultTurnId: record.resultTurnId,
-      previousPresentation: record.result
-        ? presentation(record.result, record.selection)
-        : undefined,
-      mode: 'plan',
-      handoff,
-      resultContract: 'assessment-result/v1',
-      resultSchema: assessmentResultContextSchema,
-      resultSubmission: assessmentSubmission({
-        entry: 'direct',
-        id: record.id,
-        target: canonical,
-        previousResultDigest:
-          (record.result ?? managed?.result)
-            ? automationHash(record.result ?? managed!.result)
-            : undefined,
-      }),
-      instructions:
-        assessmentInstructions +
-        '\n\nDirect execution: use these verified inputs and the selected assessment body, never its entry bootstrap again. Preserve the current chat/model. Submit using resultSubmission.request plus result matching resultSchema through dispatch assessment result (action assessment, operation result); use resultSubmission.refreshRequest for reconciliation and assessment present for readback. Do not use managed context/result or publication routes. The runtime returns assessment-only even with Work/Auto defaults. Missing or dirty checkout limitations belong in evidence. No assignment, setup, implementation, publication, or new chat is authorized.',
-    });
     if (input.operation === 'context') {
-      if (entry?.result && !input.revise)
-        return {
-          ...response(entry),
-          status: 'presented',
-          retained: true,
-          presentation: presentation(entry.result, entry.selection),
-          instruction,
-        };
+      const currentEvidence = { source: canonical };
       if (!entry) {
-        const selected =
-          managed?.selection ??
-          (
-            await selectWorkflowStage({
-              stage: 'assessment',
-              configuration: deps.manifest.github?.notifications?.issueAssignment?.assessment,
-              workspace: deps.binding.workspace,
-              observedAt: deps.now,
-              resolveSkill: deps.resolveSkill,
-            })
-          ).selection;
-        const evidence =
-          managed?.evidence ??
-          JSON.stringify(
-            dispatchContext(
-              await provider.getItemContext(locator.owner, locator.name, locator.number),
-              canonical,
-              deps.now,
-            ),
-          );
+        const selected = (
+          await selectWorkflowStage({
+            stage: 'assessment',
+            configuration: deps.manifest.github?.notifications?.issueAssignment?.assessment,
+            workspace: deps.binding.workspace,
+            observedAt: deps.now,
+            resolveSkill: deps.resolveSkill,
+          })
+        ).selection;
+        const evidence = JSON.stringify(currentEvidence);
         entry = {
           id: automationHash({ binding, canonical, owner: managed?.digest }),
           binding,
@@ -299,32 +311,37 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
           ...(managed ? { ownerDigest: managed.digest } : {}),
         };
         records.push(entry);
-      } else if (entry.turnId !== deps.turnId || entry.inputId !== deps.inputId) {
+      } else {
         entry.turnId = deps.turnId;
         entry.inputId = deps.inputId;
         entry.checkout = checkout;
-        if (!managed) {
-          entry.selection = (
-            await selectWorkflowStage({
-              stage: 'assessment',
-              configuration: deps.manifest.github?.notifications?.issueAssignment?.assessment,
-              workspace: deps.binding.workspace,
-              observedAt: deps.now,
-              resolveSkill: deps.resolveSkill,
-            })
-          ).selection;
-          entry.evidence = JSON.stringify(
-            dispatchContext(
-              await provider.getItemContext(locator.owner, locator.name, locator.number),
-              canonical,
-              deps.now,
-            ),
-          );
-        }
+        entry.selection = (
+          await selectWorkflowStage({
+            stage: 'assessment',
+            configuration: deps.manifest.github?.notifications?.issueAssignment?.assessment,
+            workspace: deps.binding.workspace,
+            observedAt: deps.now,
+            resolveSkill: deps.resolveSkill,
+          })
+        ).selection;
+        entry.evidence = JSON.stringify(currentEvidence);
       }
       await deps.assertCurrent();
       await save();
-      return response(entry);
+      return assessmentMaterial(
+        {
+          ...response(entry),
+          evidence: currentEvidence,
+        },
+        {
+          action: 'assessment',
+          operation: 'context',
+          id: entry.id,
+          target: canonical,
+          path: checkout.path,
+        },
+        input.material,
+      );
     }
     if (!entry) throw new Error('assessment-context-required');
     if (input.operation === 'present') {
@@ -348,30 +365,33 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     )
       throw new Error('assessment-selection-changed');
     const result = parseAssessmentSubmission(input.result);
-    const previous = entry.result ?? managed?.result;
-    if (
-      previous &&
-      automationHash(previous) !== automationHash(result) &&
-      input.previousResultDigest !== automationHash(previous)
-    )
-      throw new Error('assessment-result-conflict');
-    // this record has no workflow permissions; a model-authored auto decision cannot grant them.
-    if (entry.result && automationHash(entry.result) !== automationHash(result)) {
-      entry.history ??= [];
-      entry.history.push(entry.result);
-    }
-    entry.result = result;
-    entry.resultTurnId = deps.turnId;
     await deps.assertCurrent();
-    await save();
     return {
-      status: 'recorded',
       id: entry.id,
-      outcome: result.outcome,
-      previousResultDigest: automationHash(result),
-      presentation: presentation(result, entry.selection),
+      ...renderNativeAssessment(
+        {
+          ...assessmentPresentationRequest(canonical, true, {
+            assessment: entry?.selection,
+            workspace: deps.binding.workspace,
+            debug: deps.manifest.debug,
+          }),
+          result: {
+            ...result,
+            reviewSummary:
+              result.reviewSummary ??
+              [
+                result.summary,
+                ...(result.outcome === 'clarification-needed'
+                  ? result.questions
+                  : result.outcome === 'operator-setup-blocker'
+                    ? [result.remediation]
+                    : []),
+              ].join('\n\n'),
+          },
+        },
+        deps.binding.runtime,
+      ),
       handoff,
-      instruction,
     };
   });
 }

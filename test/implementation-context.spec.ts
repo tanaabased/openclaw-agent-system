@@ -1,39 +1,26 @@
 import assert from 'node:assert/strict';
-
 import implementationContext from '../agent/implementation-context.ts';
-import type { AssessmentResult } from '../agent/assessment-result.ts';
-
-const assessment = (plan: string) => ({ outcome: 'plan-ready', plan }) as AssessmentResult;
 
 describe('agent/implementation-context', () => {
   for (const runtime of ['codex', 'openclaw'] as const)
-    it(`should use a later ready plan in ${runtime} without replacing the historical assessment`, () => {
-      const original = assessment('Original plan.');
-      const reassessments = [
-        { result: assessment('First revision.') },
-        { result: assessment('Current plan.') },
-      ];
-      const before = structuredClone({ original, reassessments });
-      const response = implementationContext({
+    it(`should use native context and retain explicit publication scope for ${runtime}`, () => {
+      const context = implementationContext({
         runtime,
         id: 'issue',
         path: '/checkout',
-        assessment: original,
-        reassessments,
+        scope: 'local',
       });
-      assert.equal(response.plan, 'Current plan.');
-      assert.equal(response.assessment, original);
-      assert.deepEqual({ original, reassessments }, before);
+      assert.equal(context.publicationAuthorized, false);
+      for (const key of ['resultContract', 'resultSchema', 'recording', 'handoff'])
+        assert.equal(key in context, false);
+      assert.equal('plan' in context, false);
+      assert.equal('assessment' in context, false);
+      assert.equal('previousResult' in context, false);
+      assert.equal('deliveryOnly' in context, false);
+      assert.equal(
+        implementationContext({ runtime, id: 'issue', path: '/checkout', scope: 'pull-request' })
+          .publicationAuthorized,
+        true,
+      );
     });
-
-  it('should preserve an explicitly supplied plan over historical reassessment results', () => {
-    const response = implementationContext({
-      runtime: 'codex',
-      id: 'issue',
-      path: '/checkout',
-      plan: 'Current explicit plan.',
-      reassessments: [{ result: assessment('Historical revision.') }],
-    });
-    assert.equal(response.plan, 'Current explicit plan.');
-  });
 });

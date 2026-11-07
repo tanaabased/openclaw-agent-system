@@ -13,8 +13,10 @@ import githubNotificationCard, {
   githubNotificationQuote,
 } from './card.ts';
 
-interface AssessmentPresentationContext extends WorkflowInstructionsPresentation {
+export interface AssessmentPresentationContext extends WorkflowInstructionsPresentation {
+  cards?: string[];
   includeDetails?: boolean;
+  retained?: boolean;
   issue: { label: string; url: string; kind?: 'Issue' | 'Pull request' };
   assessmentOnly?: boolean;
   routing?: Pick<RoutingDecision, 'complexity' | 'profile' | 'reason' | 'source'> & {
@@ -42,24 +44,7 @@ export default function renderAssessmentResult(
     'clarification-needed': '❓ Clarification needed',
     'operator-setup-blocker': '⏸️ Issue assessment blocked',
   };
-  const { routing, effective, assessment } = context;
   const text = githubNotificationMarkdownText;
-  const routingCard = routing
-    ? modelRoutingCard({
-        routing,
-        effective,
-        instructions: context.routingInstructions,
-        workspace: context.workspace,
-        debug: context.debug,
-        manifestPath: context.routingManifestPath,
-      })
-    : undefined;
-  const instructionsCard = workflowInstructions(
-    'Assessment',
-    assessment,
-    context.workspace,
-    context,
-  );
   const outcomeCard = githubNotificationQuote(
     [
       '## ' + titles[result.outcome],
@@ -92,8 +77,7 @@ export default function renderAssessmentResult(
     ...(!reviewOnly && 'assessment' in result && needsSection(result.assessment)
       ? ['## Assessment', result.assessment]
       : []),
-    ...(routingCard ? [routingCard] : []),
-    ...(instructionsCard ? [instructionsCard] : []),
+    ...(context.cards ?? assessmentContextCards(context)),
     ...(result.decision && !context.assessmentOnly
       ? [
           githubNotificationCard({
@@ -138,7 +122,7 @@ export default function renderAssessmentResult(
       ? ['## Full plan', result.plan]
       : []),
   ];
-  if (reviewOnly)
+  if (reviewOnly && context.retained !== false)
     content.push(
       'The full assessment and engineering plan are saved for implementation. Ask for the full assessment to inspect them.',
     );
@@ -170,4 +154,21 @@ export default function renderAssessmentResult(
     }
   }
   return content.join('\n\n');
+}
+
+/** display-only context travels with the native render request, never as workflow authority. */
+export function assessmentContextCards(context: Omit<AssessmentPresentationContext, 'issue'>) {
+  return [
+    context.routing
+      ? modelRoutingCard({
+          routing: context.routing,
+          effective: context.effective,
+          instructions: context.routingInstructions,
+          workspace: context.workspace,
+          debug: context.debug,
+          manifestPath: context.routingManifestPath,
+        })
+      : undefined,
+    workflowInstructions('Assessment', context.assessment, context.workspace, context),
+  ].filter((card): card is string => card !== undefined);
 }

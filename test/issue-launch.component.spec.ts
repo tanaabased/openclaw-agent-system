@@ -233,6 +233,28 @@ describe('agent/issue-launch', () => {
     assert.equal((await journal.read()).records[0]!.retired?.by, 'operator');
   });
 
+  it('should keep legacy routing prose as history without returning it on launch retry', async () => {
+    await launch();
+    await journal.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.context = JSON.stringify({
+        ...JSON.parse(record.context!),
+        body: 'Old requirements.',
+        comments: [{ body: 'Old discussion.' }],
+        files: [{ filename: 'old.ts' }],
+        truncated: true,
+      });
+      await save();
+    });
+    const retried = await launch();
+    assert.ok('context' in retried && retried.context);
+    assert.equal('body' in retried.context, false);
+    assert.equal('comments' in retried.context, false);
+    assert.equal('files' in retried.context, false);
+    assert.match(String(retried.context.source), /github.com/);
+    assert.equal(JSON.parse((await journal.read()).records[0]!.context!).body, 'Old requirements.');
+  });
+
   it('should refresh unconsumed routing instructions in the same manual owner', async () => {
     context.manifest.models = {
       default: { model: 'openai/example', effort: 'high' },
@@ -420,7 +442,7 @@ describe('agent/issue-launch', () => {
         runtimes: ['openclaw'],
         intervalMinutes: 5,
         maxConcurrentItems: 1,
-        allowedRepositoryOwners: [],
+        routing: [],
         issueAssignment: assignment,
       },
     };

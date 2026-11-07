@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { setTimeout } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -12,6 +13,7 @@ import { formatProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 
 const repository = 'tanaabased/big-test-bucket';
 type FixtureRequest =
+  | { action: 'create'; title: string; body: string; run: string }
   | { action: 'assign'; number: number }
   | { action: 'comment'; number: number; body: string; run: string }
   | { action: 'pulls'; branch: string };
@@ -70,49 +72,77 @@ export default async function notificationFixtureGitHub(
     );
     return value;
   }
-  assert.ok(
-    Number.isSafeInteger(request.number) && request.number > 0,
-    'positive fixture issue required',
-  );
-  const issue = `repos/${repository}/issues/${request.number}`;
-  const marker =
-    request.action === 'comment'
-      ? `<!-- fixture:${request.run}:${createHash('sha256').update(request.body).digest('hex')} -->`
-      : undefined;
-  if (request.action === 'comment') {
+  if (request.action !== 'create')
+    assert.ok(
+      Number.isSafeInteger(request.number) && request.number > 0,
+      'positive fixture issue required',
+    );
+  const issue = `repos/${repository}/issues${request.action === 'create' ? '' : `/${request.number}`}`;
+  if (request.action === 'create')
+    assert.ok(
+      request.title.startsWith('agent-system-test-') && request.title.length <= 256,
+      'bounded fixture title required',
+    );
+  if (request.action !== 'assign') {
     assert.match(request.run, /^\d+-\d+$/u, 'workflow run and attempt required');
     assert.ok(
       request.body.trim() && request.body.length <= 16_384,
-      'bounded fixture comment required',
+      'bounded fixture body required',
     );
   }
-  const body = request.action === 'comment' ? `${request.body}\n\n${marker}` : undefined;
-  const argv =
+  const marker =
     request.action === 'assign'
-      ? ['api', '--method', 'POST', `${issue}/assignees`, '-f', 'assignees[]=tanaabot']
-      : ['api', '--method', 'POST', `${issue}/comments`, '-f', `body=${body}`];
+      ? undefined
+      : `<!-- fixture:${request.run}:${createHash('sha256')
+          .update(request.action === 'create' ? `${request.title}\0${request.body}` : request.body)
+          .digest('hex')} -->`;
+  const body = request.action === 'assign' ? undefined : `${request.body}\n\n${marker}`;
+  const route =
+    request.action === 'create'
+      ? issue
+      : `${issue}/${request.action === 'assign' ? 'assignees' : 'comments'}`;
+  const argv = [
+    'api',
+    '--method',
+    'POST',
+    route,
+    ...(request.action === 'assign'
+      ? ['-f', 'assignees[]=tanaabot']
+      : [
+          ...(request.action === 'create' ? ['-f', `title=${request.title}`] : []),
+          '-f',
+          `body=${body}`,
+        ]),
+  ];
   const matches = (value: unknown) => {
     const entry = object(value);
     if (!entry) return false;
-    if (request.action === 'assign') {
+    if (request.action === 'assign')
       return (
-        entry?.number === request.number &&
+        entry.number === request.number &&
         Array.isArray(entry.assignees) &&
         entry.assignees.some((user) => object(user)?.login === 'tanaabot')
       );
-    }
     return (
-      entry?.body === body &&
+      entry.body === body &&
       object(entry.user)?.login === 'emoriwan' &&
       typeof entry.node_id === 'string' &&
-      Number.isSafeInteger(entry.id)
+      Number.isSafeInteger(entry.id) &&
+      (request.action !== 'create' ||
+        (entry.title === request.title &&
+          entry.state === 'open' &&
+          !entry.pull_request &&
+          Number.isSafeInteger(entry.number) &&
+          Number(entry.number) > 0 &&
+          Array.isArray(entry.assignees) &&
+          entry.assignees.length === 0))
     );
   };
   const result = await execute(argv, 30_000);
   const value = json(result);
   if (matches(value)) return value;
   const diagnostic = githubCliDiagnostic(result);
-  const evidence = `method=POST route=${issue}/${request.action === 'assign' ? 'assignees' : 'comments'} exitCode=${result.exitCode ?? 'none'} timedOut=${result.timedOut} truncated=${result.truncated} response=${/unexpected end of JSON input/iu.test(result.stderr) ? 'incomplete-json' : value === undefined ? 'unavailable-or-invalid' : 'unexpected-shape'} ${formatProviderDiagnostic(diagnostic)}`;
+  const evidence = `method=POST route=${route} exitCode=${result.exitCode ?? 'none'} timedOut=${result.timedOut} truncated=${result.truncated} response=${/unexpected end of JSON input/iu.test(result.stderr) ? 'incomplete-json' : value === undefined ? 'unavailable-or-invalid' : 'unexpected-shape'} ${formatProviderDiagnostic(diagnostic)}`;
   // Denials are authoritative even if an earlier operation left matching state behind.
   if (['authentication', 'permission', 'rate-limit'].includes(diagnostic.classification)) {
     throw new Error(`fixture ${request.action} denied: ${evidence}`);
@@ -120,25 +150,28 @@ export default async function notificationFixtureGitHub(
   for (const delay of [0, 250, 1000]) {
     if (delay) await sleep(delay);
     const observed = await read(
-      request.action === 'assign'
-        ? ['api', issue]
-        : ['api', `${issue}/comments?per_page=100`, '--paginate', '--slurp'],
+      request.action === 'create'
+        ? ['api', `${issue}?state=all&creator=emoriwan&sort=created&direction=desc&per_page=100`]
+        : request.action === 'assign'
+          ? ['api', issue]
+          : ['api', `${issue}/comments?per_page=100`, '--paginate', '--slurp'],
     );
     const fresh = json(observed);
     if (fresh === undefined) {
       throw new Error(
-        `fixture ${request.action} reconciliation read failed: ${formatProviderDiagnostic(githubCliDiagnostic(observed))}`,
+        `fixture ${request.action} reconciliation read failed: ${formatProviderDiagnostic(githubCliDiagnostic(observed))}; original write: ${evidence}`,
       );
     }
     if (request.action === 'assign') {
       if (matches(fresh)) return fresh;
       assert.equal(object(fresh)?.number, request.number, 'invalid fixture issue readback');
     } else {
+      const pages: unknown = request.action === 'create' ? [fresh] : fresh;
       assert.ok(
-        Array.isArray(fresh) && fresh.every(Array.isArray),
-        'invalid fixture comment pages',
+        Array.isArray(pages) && pages.every(Array.isArray),
+        'invalid fixture reconciliation pages',
       );
-      const marked = fresh
+      const marked = pages
         .flat()
         .filter(
           (entry) =>
@@ -147,7 +180,7 @@ export default async function notificationFixtureGitHub(
         );
       assert.ok(
         marked.length <= 1 && marked.every(matches),
-        'ambiguous or altered fixture comment; write not repeated',
+        `ambiguous or altered fixture ${request.action}; write not repeated`,
       );
       if (marked.length === 1) return marked[0];
     }
@@ -159,24 +192,39 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   assert.equal(process.env.GITHUB_ACTIONS, 'true', 'GitHub Actions only.');
   const { values, positionals } = parseArgs({
     allowPositionals: true,
-    options: { number: { type: 'string' }, body: { type: 'string' }, branch: { type: 'string' } },
+    options: {
+      number: { type: 'string' },
+      body: { type: 'string' },
+      branch: { type: 'string' },
+      title: { type: 'string' },
+      'body-file': { type: 'string' },
+    },
   });
   const [action] = positionals;
   assert.ok(
-    positionals.length === 1 && ['assign', 'comment', 'pulls'].includes(action ?? ''),
-    'select assign, comment or pulls',
+    positionals.length === 1 && ['create', 'assign', 'comment', 'pulls'].includes(action ?? ''),
+    'select create, assign, comment or pulls',
   );
   const request: FixtureRequest =
-    action === 'pulls'
-      ? { action, branch: values.branch ?? '' }
-      : action === 'assign'
-        ? { action, number: Number(values.number) }
-        : {
-            action: 'comment',
-            number: Number(values.number),
-            body: values.body ?? '',
-            run: `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
-          };
+    action === 'create'
+      ? {
+          action,
+          title: values.title ?? '',
+          body: values['body-file']
+            ? await readFile(values['body-file'], 'utf8')
+            : (values.body ?? ''),
+          run: `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
+        }
+      : action === 'pulls'
+        ? { action, branch: values.branch ?? '' }
+        : action === 'assign'
+          ? { action, number: Number(values.number) }
+          : {
+              action: 'comment',
+              number: Number(values.number),
+              body: values.body ?? '',
+              run: `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
+            };
   const value = await notificationFixtureGitHub(request, async (argv, timeoutMs) => {
     const result = spawnSync('openclaw', ['agent-system', 'tool', 'gh', '--', ...argv], {
       encoding: 'utf8',

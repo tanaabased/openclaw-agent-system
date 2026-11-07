@@ -18,7 +18,7 @@ metadata:
 
 ## Overview
 
-Reset local notification tracking and replace the issue-assignment and installed project-pickup coordinators after an operator previews and confirms the scope. Optional purge also archives managed task chats and removes owned checkouts. GitHub issues, assignments, comments, pull requests, and remote branches remain unchanged.
+Reset local notification tracking and replace the issue-assignment and installed issue-pickup coordinators after an operator previews and confirms the scope. Optional purge also archives managed task chats and removes owned checkouts. GitHub issues, assignments, comments, pull requests, and remote branches remain unchanged.
 
 ## When to Use
 
@@ -51,7 +51,7 @@ Choose the route from trusted runtime context. Standalone Codex exposes `notific
 
 1. Hand the operator this read-only terminal command, substituting their explicit agent selection: `openclaw agent-system notifications reset --agent <id> --preview --json`. Add `--purge` only when requested. Repeat `--agent` for multiple agents; `--all` selects all configured agents.
 2. Review the returned inventory with the operator and obtain explicit confirmation. Explain the same local reset and purge consequences as above. Then provide the same selection with `--yes --confirmation <returned-digest> --json` in place of `--preview --json`. The operator runs it in their terminal. Do not execute operator-only commands through an agent-bound tool, erase authority environment variables, or substitute the Codex helper.
-3. The command pauses issue assignment and any installed project pickup, waits for turns, resets disposable local tracking while retaining pickup safety evidence, replaces their coordinators, and restores each prior schedule setting. Interactive recovery offers resume or start fresh; pass `--fresh` only for explicitly selected fresh recovery, retaining the same agent and purge selection. Preview and confirm it again. Fresh retains cleanup inventory and native action receipts, but checks current native sessions instead of requiring obsolete creation receipts. Unowned conversations and their checkouts remain untouched and appear as preserved resources/warnings. Report these separately from reset completion. If pause cannot be verified, the operator pauses the identified notification job in the scheduler before retrying.
+3. The command pauses issue assignment and any installed issue pickup, waits for turns, resets disposable local tracking while retaining pickup safety evidence, replaces their coordinators, and restores each prior schedule setting. Interactive recovery offers resume or start fresh; pass `--fresh` only for explicitly selected fresh recovery, retaining the same agent and purge selection. Preview and confirm it again. Fresh retains cleanup inventory and native action receipts, but checks current native sessions instead of requiring obsolete creation receipts. Unowned conversations and their checkouts remain untouched and appear as preserved resources/warnings. Report these separately from reset completion. If pause cannot be verified, the operator pauses the identified notification job in the scheduler before retrying.
 4. Report completion only from the command's result. A proposed command or user confirmation alone does not establish execution.
 
 ## Checkpoints

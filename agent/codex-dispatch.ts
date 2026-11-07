@@ -1,3 +1,4 @@
+import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
 import workflowFailure from './workflow-failure.ts';
 import { automationHash } from './automation-hash.ts';
 import codexIssueLaunch from './codex-issue-launch.ts';
@@ -114,6 +115,33 @@ export async function runCodexDispatch(
       { ...deps, directOperator: true, directScope: request.scope },
     );
   }
+  if (
+    action === 'assessment' &&
+    input &&
+    typeof input === 'object' &&
+    'operation' in input &&
+    input.operation === 'render'
+  ) {
+    if ('id' in input && input.id) {
+      const current = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
+      const journal = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      return renderBoundAssessment(
+        { ...input, action },
+        {
+          runtime: 'codex',
+          records: (await journal.read()).records,
+          admitted: (await current.store.read())?.records ?? [],
+          session: deps.threadId ?? process.env.CODEX_THREAD_ID ?? '',
+          workspace: current.workspace,
+          debug: current.manifest.debug,
+        },
+      );
+    }
+    return renderNativeAssessment({ ...input, action });
+  }
   if (action === 'assessment')
     return codexAssessmentEntry(
       pluginData,
@@ -135,10 +163,10 @@ export async function runCodexDispatch(
     const observation = await executeCodexDispatch(pluginData, 'observe-denials', {}, deps);
     if (!observation || !('status' in observation) || observation.status !== 'ready')
       return observation;
-    const retirement = await reconcileCodexLifecycle(pluginData, deps, input.threads);
-    if (retirement) return retirement;
     const feedback = await runCodexFeedback(pluginData, { action: 'next' }, deps);
     if (!['idle', 'disabled'].includes(feedback.status)) return feedback;
+    const retirement = await reconcileCodexLifecycle(pluginData, deps, input.threads);
+    if (retirement) return retirement;
   }
   return executeCodexDispatch(pluginData, action, input, deps);
 }
@@ -158,9 +186,44 @@ async function executeCodexDispatch(
   if (action === 'inspect') {
     const state = await store.read();
     return {
-      ...state,
+      version: state.version,
+      scope: state.scope,
+      resetGeneration: state.resetGeneration,
+      run: state.run && {
+        id: state.run.id,
+        actions: state.run.actions,
+        stopped: state.run.stopped,
+      },
       records: state.records.map((record) => ({
-        ...record,
+        id: record.id,
+        intakeId: record.intakeId,
+        phase: record.phase,
+        threadId: record.threadId,
+        clientThreadId: record.clientThreadId,
+        worktree: record.worktree,
+        effective: record.effective,
+        progression: record.progression,
+        pullRequestLink: record.pullRequestLink,
+        branch: record.issueBranch?.name,
+        supersededBy: record.supersededBy,
+        reset: record.reset,
+        retired: record.retired,
+        retirement: record.retirement && {
+          reason: record.retirement.reason,
+          code: record.retirement.code,
+          archivedAt: record.retirement.archivedAt,
+          worktreeRemovedAt: record.retirement.worktreeRemovedAt,
+        },
+        denial: record.denial && {
+          operation: record.denial.operation,
+          callId: record.denial.callId,
+          turnId: record.denial.turnId,
+        },
+        code: record.result?.outcome === 'operator-setup-blocker' ? record.result.code : undefined,
+        implementationPreparationError: record.implementationPreparationError,
+        feedback: record.feedback && {
+          events: record.feedback.events.map(({ id, phase, code }) => ({ id, phase, code })),
+        },
         workflowStatus: workflowStatus(record),
         assignmentObservation: record.assignmentObservation,
         assignmentWarning:
@@ -278,10 +341,12 @@ async function executeCodexDispatch(
             await reconcileIntakeDenial(record, tx);
           } catch (error) {
             const result = await fail(record, error);
-            // Missing evidence holds this retained operation; it does not establish a shared refusal.
+            // An exact task's missing or conflicting evidence does not establish a shared refusal.
             if (
-              workflowFailure(error, 'dispatch-operation-failed').code ===
-              'dispatch-denial-history-unavailable'
+              [
+                'dispatch-denial-history-unavailable',
+                'dispatch-denial-execution-unresolved',
+              ].includes(workflowFailure(error, 'dispatch-operation-failed').code)
             )
               continue;
             if (state.run) state.run.stopped = 'blocked';
@@ -329,7 +394,11 @@ async function executeCodexDispatch(
           : { status: 'retired', id: record.id, retirement: record.retirement };
       if (record.retired || (record.retirement && !operatorRetire))
         throw new Error('dispatch-assessment-retired');
-      if (record.handoff && !operatorRetire && action !== 'summary' && action !== 'recover')
+      if (
+        record.handoff &&
+        !operatorRetire &&
+        !['context', 'result', 'summary', 'recover'].includes(action)
+      )
         throw new Error('dispatch-assessment-handed-off');
       if (
         action === 'recover' ||
@@ -462,7 +531,7 @@ async function executeCodexDispatch(
             deps,
             save,
             childAction ? caller : (record.threadId ?? record.receiptThreadId),
-            action === 'summary' ? 'handoff' : 'assessment',
+            action === 'summary' || record.handoff ? 'handoff' : 'assessment',
             true,
             state.records,
           );

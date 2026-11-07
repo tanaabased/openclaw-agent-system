@@ -65,8 +65,11 @@ export default async function openClawEntryContext<T>(
       )
         throw new Error('assessment-managed-context-invalid');
       await describeIssueSession(request, record, deps.config());
-      const feedback = record.feedback?.events.find((event) => event.turn?.runId === caller.runId);
+      const feedback = record.feedback?.events.find(
+        (event) => !event.native && event.turn?.runId === caller.runId,
+      );
       return {
+        selections: record.manualIssue?.selections,
         nativeContext:
           !feedback && hasDeliveredImplementation(record) ? nativeIssueContext(record) : undefined,
         implementationResult: feedback ? feedback.work?.result : record.work?.result,
@@ -101,6 +104,27 @@ export default async function openClawEntryContext<T>(
       records[0] && dispatchAdmission(records[0], (await current.store.read())?.records ?? []);
     if (records.length && !admission) throw new Error('assessment-managed-admission-missing');
     const currentTarget = admission ? managedTargetUrl(admission) : undefined;
+    const nativeContextRequest =
+      !!records[0] &&
+      hasDeliveredImplementation(records[0]) &&
+      !!input.action &&
+      typeof input.action === 'object' &&
+      'operation' in input.action &&
+      input.action.operation === 'context' &&
+      (!('target' in input.action) ||
+        input.action.target === undefined ||
+        input.action.target === currentTarget);
+    const readOnlyNative =
+      nativeContextRequest &&
+      admission &&
+      Boolean(
+        (
+          await managed({
+            repository: `${admission.repository.owner.login}/${admission.repository.name}`,
+            number: admission.issue.number,
+          })
+        )?.nativeContext,
+      );
     if (routeManaged) {
       const routed = await managedImplementationRoute({
         action: input.action,
@@ -119,7 +143,7 @@ export default async function openClawEntryContext<T>(
         runId: caller.runId,
         retained: [],
       });
-    const turn = await nativeInput();
+    const turn = readOnlyNative ? undefined : await nativeInput();
     const assertCurrent = async () => {
       await authority.assertCurrent?.();
       const fresh = await deps.intake.dependencies.manifestService.loadForAgentId(
@@ -133,7 +157,7 @@ export default async function openClawEntryContext<T>(
         (await realpath(fresh.scope.workspaceDir)) !== current.workspace
       )
         throw new Error('assessment-binding-changed');
-      if ((await nativeInput()).inputEventId !== turn.inputEventId)
+      if (turn && (await nativeInput()).inputEventId !== turn.inputEventId)
         throw new Error('assessment-native-input-changed');
     };
     return collect({
@@ -149,8 +173,8 @@ export default async function openClawEntryContext<T>(
         incarnation: caller.sessionId,
       },
       turnId: caller.runId,
-      inputId: turn.inputEventId,
-      message: turn.message,
+      inputId: turn?.inputEventId ?? '',
+      message: turn?.message,
       manifest,
       now: (deps.now ?? Date.now)(),
       assertCurrent,

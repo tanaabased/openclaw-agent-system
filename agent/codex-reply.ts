@@ -1,5 +1,9 @@
+import codexFeedbackInput from './codex-feedback-input.ts';
+import codexContinuationNative from './codex-continuation-native.ts';
+import authorizeCodexFeedback from './codex-feedback-authority.ts';
+import ReplyStore, { type ReplyDraft } from './reply-store.ts';
 import { dispatchAdmission } from './managed-issue.ts';
-import { realpath } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 import { Value } from 'typebox/value';
 
@@ -34,7 +38,72 @@ export default async function codexReply(
     current.codexHome,
   );
   try {
-    const turn = await codexReplyInput(connection.request, caller);
+    const journal = new CodexDispatchStore(
+      current.store.location.root,
+      current.store.location.scope,
+    );
+    const binding = {
+      runtime: 'codex' as const,
+      agentId: current.agentId,
+      workspace: current.workspace,
+      namespace: current.codexHome,
+      session: caller,
+      incarnation: caller,
+    };
+    const replyStore = new ReplyStore(pluginData, binding);
+    let feedback: ReplyDraft['feedback'];
+    const nativeInput = () =>
+      codexReplyInput(connection.request, caller, async (turnId, items) => {
+        const records = (await journal.read()).records;
+        const match = await codexFeedbackInput(
+          records,
+          caller,
+          turnId,
+          deps.continuationNative ?? codexContinuationNative(connection.request),
+        );
+        if (!match) {
+          const draft = input.id
+            ? (await replyStore.read()).find((entry) => entry.id === input.id)
+            : undefined;
+          if (input.purpose !== 'status-update' && !draft?.update) return;
+          const owners = records.filter((record) => record.threadId === caller);
+          if (owners.length > 1) throw new Error('reply-managed-owner-ambiguous');
+          const record = owners[0];
+          if (!record?.request || !record.worktree) return;
+          if (record.reset || record.supersededBy || record.retired || record.retirement)
+            throw new Error('reply-managed-context-invalid');
+          const inputItem = items.findLast(
+            (item) =>
+              item.type === 'userMessage' ||
+              (item.type === 'functionCallOutput' &&
+                item.namespace === 'codex_app' &&
+                ['create_thread', 'send_message_to_thread'].includes(String(item.name))),
+          );
+          if (typeof inputItem?.id !== 'string') return;
+          const native = await withNative(current, deps, (host) =>
+            host.find({
+              sourceThreadId: record.sourceThreadId,
+              prompt: record.request!.prompt,
+              createdAfter: record.createdAt,
+              threadId: caller,
+            }),
+          );
+          if (!native || native.id !== caller || resolve(native.cwd) !== resolve(record.worktree))
+            throw new Error('reply-managed-context-invalid');
+          return { inputId: inputItem.id };
+        }
+        feedback = {
+          ownerId: match.record.id,
+          eventId: match.event.id,
+          revision: match.event.revision,
+          source: match.event.source,
+          number: match.event.number,
+          nodeId: match.event.nodeId,
+          itemType: match.event.itemType,
+        };
+        return { inputId: match.attempt.id, message: match.event.source };
+      });
+    const turn = await nativeInput();
     const connect = async (): Promise<OpenClawFeedbackProvider> => {
       const providerConnection = await (deps.feedbackConnect ?? connectCodexFeedback)(
         current.workspace,
@@ -70,10 +139,6 @@ export default async function codexReply(
     const provider = deps.replyProvider
       ? await deps.replyProvider(current.workspace, AbortSignal.timeout(60000))
       : await connect();
-    const journal = new CodexDispatchStore(
-      current.store.location.root,
-      current.store.location.scope,
-    );
     const readManifest = async () => {
       const fresh = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
       if (fresh.store.location.scope !== current.store.location.scope)
@@ -82,15 +147,40 @@ export default async function codexReply(
     };
     return await feedbackReply(input, {
       root: pluginData,
-      binding: {
-        runtime: 'codex',
-        agentId: current.agentId,
-        workspace: current.workspace,
-        namespace: current.codexHome,
-        session: caller,
-        incarnation: caller,
-      },
+      binding,
       ...turn,
+      feedback,
+      authorizeFeedback: async (source, target) => {
+        const state = await journal.read();
+        const record = state.records.find(
+          (entry) => entry.id === source.ownerId && entry.threadId === caller,
+        );
+        const retained =
+          record?.feedback?.events.find((entry) => entry.id === source.eventId) ??
+          record?.feedback?.completed?.find((entry) => entry.id === source.eventId);
+        const event = source;
+        const fresh = await selectCodexIntake(pluginData, deps);
+        const admitted =
+          record && dispatchAdmission(record, (await fresh.store.read())?.records ?? []);
+        if (
+          !record ||
+          !retained?.native ||
+          !admitted ||
+          retained.revision !== source.revision ||
+          retained.sourceId !== target.source?.nodeId ||
+          retained.nodeId !== target.nodeId ||
+          target.nodeId !== event.nodeId
+        )
+          throw new Error('reply-feedback-source-changed');
+        await authorizeCodexFeedback({
+          conversation: true,
+          current: fresh,
+          record,
+          event,
+          intake: admitted,
+          provider: { client: provider, comments: provider },
+        });
+      },
       manifest: current.manifest,
       readManifest,
       now: (deps.now ?? Date.now)(),
@@ -98,14 +188,14 @@ export default async function codexReply(
       resolveSkill: (id) => codexAssessmentSkill(connection.request, current.workspace, id),
       assertCurrent: async () => {
         await readManifest();
-        const fresh = await codexReplyInput(connection.request, caller);
+        const fresh = await nativeInput();
         if (fresh.turnId !== turn.turnId || fresh.inputId !== turn.inputId)
           throw new Error('reply-native-input-changed');
       },
       managed: async (target, purpose) => {
         const state = await journal.read();
         const admitted = await current.store.read();
-        if (purpose) {
+        if (purpose || feedback) {
           const owners = state.records.filter((record) => record.threadId === caller);
           if (owners.length > 1) throw new Error('reply-managed-owner-ambiguous');
           const record = owners[0];
@@ -120,11 +210,7 @@ export default async function codexReply(
                 threadId: record.threadId,
               }),
             );
-            if (
-              !native ||
-              native.id !== caller ||
-              (await realpath(native.cwd)) !== (await realpath(record.worktree))
-            )
+            if (!native || native.id !== caller || resolve(native.cwd) !== resolve(record.worktree))
               throw new Error('reply-managed-context-invalid');
           }
         }
@@ -132,11 +218,11 @@ export default async function codexReply(
           state.records.map((record) =>
             replyOwnerContext({
               record,
+              conversation: Boolean(feedback),
               intake: dispatchAdmission(record, admitted?.records ?? []),
               caller,
               custodyInvalid: !record.request,
               delivery: record.delivery,
-              implementation: record.continuation?.result,
             }),
           ),
           caller,

@@ -8,7 +8,7 @@ import {
   type AutomationReportTarget,
 } from './automation-report-delivery.ts';
 import openclawIntakeJobs from './openclaw-intake-policy.ts';
-import { projectPickupAutomationId, projectPickupErrorCode } from './project-pickup-jobs.ts';
+import { issuePickupAutomationId, issuePickupErrorCode } from './issue-pickup-jobs.ts';
 
 import {
   AutomationError,
@@ -255,10 +255,10 @@ export default class AutomationService {
   async notificationResetPickupSnapshot(manifest: AgentManifest, workspace: string) {
     const { store } = await this.scope(manifest, workspace);
     const record = (await store.read()).records.find(
-      (entry) => entry.id === projectPickupAutomationId,
+      (entry) => entry.id === issuePickupAutomationId,
     );
     if (!record || record.removed || record.retired) return;
-    return this.notificationResetSnapshot(manifest, workspace, projectPickupAutomationId);
+    return this.notificationResetSnapshot(manifest, workspace, issuePickupAutomationId);
   }
 
   /** temporarily pause an owned job without changing its installed desired-state receipt. */
@@ -832,11 +832,11 @@ export default class AutomationService {
         }
         for (const job of declarations) {
           const pickup =
-            job.id === projectPickupAutomationId && job.enabled
+            job.id === issuePickupAutomationId && job.enabled
               ? await this.dependencies.pickup?.prepare(manifest, context.workspaceDir)
               : undefined;
-          if (job.id === projectPickupAutomationId && job.enabled && !pickup)
-            throw new AutomationError('project-pickup-activation-required');
+          if (job.id === issuePickupAutomationId && job.enabled && !pickup)
+            throw new AutomationError('issue-pickup-activation-required');
           const effective = effectiveAutomation(job, context);
           let record = ledger.records.find(({ id }) => id === job.id);
           if (!record) {
@@ -1003,12 +1003,12 @@ export default class AutomationService {
         return { outcomes, warnings: [] };
       });
     } catch (error) {
-      const pickupCode = projectPickupErrorCode(error);
+      const pickupCode = issuePickupErrorCode(error);
       const code =
         error instanceof AutomationError
           ? error.code
-          : pickupCode.startsWith('project-pickup-') &&
-              pickupCode !== 'project-pickup-observation-unavailable'
+          : pickupCode.startsWith('issue-pickup-') &&
+              pickupCode !== 'issue-pickup-observation-unavailable'
             ? pickupCode
             : 'automation-reconcile-failed';
       throw new AgentSystemLifecycleError(

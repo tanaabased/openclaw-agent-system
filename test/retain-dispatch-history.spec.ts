@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { historyEvictions } from '../agent/cold-history.ts';
 import { historyLifetimeMs } from '../agent/history-state.ts';
+import { pendingRecoveryFeedback } from '../agent/issue-task-recovery.ts';
+import type { OpenClawFeedbackEvent } from '../agent/openclaw-feedback-state.ts';
 
 import retainDispatchHistory, {
   settledFeedback,
@@ -60,6 +62,27 @@ function event(index: number): FeedbackSourceEvent {
 }
 
 describe('agent/retain-dispatch-history', () => {
+  it('should distinguish replacement safety from legacy history compaction checkpoints', () => {
+    const source: OpenClawFeedbackEvent = event(1);
+    source.reported = false;
+    source.work = { selection };
+    assert.equal(settledFeedback(source), false);
+    assert.equal(pendingRecoveryFeedback(source), false);
+    source.publicationAttempted = true;
+    delete source.receipt;
+    assert.equal(pendingRecoveryFeedback(source), true);
+    source.receipt = { nodeId: 'reply', databaseId: 1 };
+    source.turn = { runId: 'original', message: 'input', status: 'accepted' };
+    assert.equal(pendingRecoveryFeedback(source), true);
+    source.turn.inactive = true;
+    assert.equal(pendingRecoveryFeedback(source), false);
+    source.native = true;
+    source.phase = 'queued';
+    assert.equal(pendingRecoveryFeedback(source), true);
+    source.phase = 'delivered';
+    assert.equal(pendingRecoveryFeedback(source), false);
+  });
+
   it('should evict oldest cold detail before exceeding the budget, including temporary write space', () => {
     const mib = 1024 * 1024;
     const entries = [
@@ -205,6 +228,40 @@ describe('agent/retain-dispatch-history', () => {
     assert.equal(validTerminalRecord(terminal), true);
   });
 
+  it('should compact delivered native input without waiting for a reply or losing source revision custody', () => {
+    const source = record();
+    delete source.retired;
+    delete source.retirement;
+    const first = {
+      ...event(1),
+      native: true as const,
+      phase: 'delivered' as const,
+      receipt: undefined,
+      result: undefined,
+    };
+    const next = {
+      ...event(2),
+      native: true as const,
+      phase: 'running' as const,
+      receipt: undefined,
+      result: undefined,
+    };
+    source.feedback = { baseline: {}, events: [first, next] };
+    const projected = retainDispatchHistory(source)!;
+    assert.deepEqual(projected.feedback!.events, [next]);
+    assert.deepEqual(projected.feedback!.completed, [
+      {
+        id: first.id,
+        sourceId: first.sourceId,
+        revision: first.revision,
+        nodeId: first.nodeId,
+        native: true,
+        receipt: undefined,
+      },
+    ]);
+    assert.equal(settledFeedback(first), true);
+    assert.equal(settledFeedback(next), false);
+  });
   it('should keep the latest context, current work owner and unfinished feedback exact', () => {
     const source = { ...record(), retired: undefined, retirement: undefined };
     source.feedback = { baseline: {}, events: [event(1), event(2), event(3), event(4)] };

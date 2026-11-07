@@ -1,6 +1,6 @@
 import { automationThreadSelection } from '../agent/automation-threads.ts';
 import assert from 'node:assert/strict';
-import ProjectPickupFailure from '../agent/project-pickup-failure.ts';
+import IssuePickupFailure from '../agent/issue-pickup-failure.ts';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -119,7 +119,6 @@ describe('openclaw v2 intake slice', () => {
     const f = fixture();
     const policy: GitHubNotificationPolicy = f.value.github.notifications;
     policy.routing = ['!owner/repo', 'owner/*'];
-    policy.allowedRepositoryOwners = [{ login: 'ignored', nodeId: '', reference: '@ignored' }];
     await f.service.run(f.value, root, 'activate');
     f.provider.events.push(...intakeFixture().events);
     f.setNow(baseline + 120000);
@@ -874,14 +873,14 @@ describe('openclaw v2 intake slice', () => {
     await tool.execute('call', event.params, controller.signal);
     const successfulPickup = f.service.pickup;
     f.service.pickup = async () => {
-      throw new ProjectPickupFailure(new Error('project-pickup-enrollment-changed'));
+      throw new IssuePickupFailure(new Error('issue-pickup-enrollment-changed'));
     };
     assert.equal(await invoke('before_tool_call', event), undefined);
     const failure = await tool.execute('call', event.params, controller.signal);
     const details = failure.details as { status: string; code: string; response: string };
     assert.equal(details.status, 'error');
-    assert.equal(details.code, 'project-pickup-enrollment-changed');
-    assert.match(details.response, /❌.*Project pickup/);
+    assert.equal(details.code, 'issue-pickup-enrollment-changed');
+    assert.match(details.response, /❌.*Issue pickup/);
     f.service.pickup = successfulPickup;
     assert.equal(await invoke('before_tool_call', event, { ...context, runId: '' }), undefined);
     await tool.execute('call', event.params, controller.signal);

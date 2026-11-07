@@ -23,11 +23,11 @@ describe('agent/workflow-recovery', () => {
       /ended completed native turn/,
     );
   });
-  it('should explain how to correct an incomplete assessment without replacing its saved result', () => {
+  it('should direct incomplete assessment recovery to native formatting', () => {
     const recovery = workflowRecovery('assessment-result-incomplete')!;
     assert.match(recovery.summary, /not recorded/);
-    assert.match(recovery.next, /fullAssessment.*resubmit/);
-    assert.match(recovery.next, /previous saved result/);
+    assert.match(recovery.next, /fullAssessment.*assessment render/);
+    assert.match(recovery.next, /native context/);
   });
   it('should explain unfinished delivery without suggesting publication retries', () => {
     for (const code of [

@@ -20,32 +20,61 @@ describe('agent/issue-progression', () => {
     });
     for (const mode of ['plan', 'work'] as const) {
       const issue = { ...planning, result: { ...planning.result, decision: { mode } } };
-      assert.equal(
-        issueProgression(issue, { mode: 'auto', now: 20 }).status,
-        mode === 'work' ? 'ready' : 'held',
-      );
+      assert.deepEqual(issueProgression(issue, { mode: 'auto', now: 20 }), {
+        status: 'held',
+        reason: 'auto-decision-required',
+      });
       assert.equal(issueProgression(issue, { mode: 'plan', now: 20 }).status, 'held');
     }
   });
 
-  it('should require an actionable plan even with an operator transition', () => {
-    for (const outcome of ['clarification-needed', 'operator-setup-blocker'])
-      for (const mode of ['plan', 'work', 'auto'] as const)
-        assert.deepEqual(
-          issueProgression(
-            { ...planning, result: { outcome } },
-            {
-              mode,
-              now: 20,
-              operator: true,
-            },
-          ),
-          { status: 'held', reason: 'assessment-not-actionable' },
-        );
-    assert.deepEqual(issueProgression(planning, { mode: 'plan', now: 20, operator: true }), {
-      status: 'ready',
-      progression: { stage: 'implementation', via: 'operator', enteredAt: 20 },
-    });
+  it('should permit work without a saved assessment or after an outdated assessment blocker', () => {
+    for (const issue of [
+      {},
+      { result: { outcome: 'operator-setup-blocker' } },
+      { result: { outcome: 'clarification-needed' } },
+    ]) {
+      assert.equal(issueProgression(issue, { mode: 'work', now: 20 }).status, 'ready');
+      assert.equal(issueProgression(issue, { mode: 'plan', now: 20 }).status, 'held');
+      assert.equal(
+        issueProgression(issue, { mode: 'plan', now: 20, operator: true }).status,
+        'ready',
+      );
+    }
+  });
+
+  it('should accept a bounded auto decision without serializing a plan', () => {
+    assert.equal(issueProgression({}, { mode: 'auto', now: 20 }).status, 'held');
+    assert.equal(
+      issueProgression(
+        {},
+        { mode: 'auto', now: 20, decision: { mode: 'plan', reasons: ['Need an answer.'] } },
+      ).status,
+      'held',
+    );
+    assert.equal(
+      issueProgression(
+        {},
+        { mode: 'auto', now: 20, decision: { mode: 'work', reasons: ['Scope is clear.'] } },
+      ).status,
+      'ready',
+    );
+  });
+
+  it('should use explicit saved permission instead of a conflicting historical assessment', () => {
+    for (const mode of ['plan', 'work'] as const) {
+      const issue = {
+        implementationDecision: { mode, reasons: ['Current native decision.'] },
+        result: {
+          outcome: 'plan-ready',
+          decision: { mode: mode === 'plan' ? ('work' as const) : ('plan' as const) },
+        },
+      };
+      assert.equal(
+        issueProgression(issue, { mode: 'auto', now: 20 }).status,
+        mode === 'work' ? 'ready' : 'held',
+      );
+    }
   });
 
   it('should preserve the first transition across mode changes and repeated evaluation', () => {
@@ -89,7 +118,6 @@ describe('agent/issue-progression', () => {
       { retired: { at: 30 } },
       { retirement: { reason: 'unassigned' } },
       { reset: { at: 30 } },
-      { continuation: { phase: 'cancelled' } },
     ])
       assert.equal(
         issueProgression(
@@ -102,5 +130,13 @@ describe('agent/issue-progression', () => {
         ).status,
         'stopped',
       );
+  });
+  it('should preserve cancellation until new explicit direction arrives', () => {
+    const issue = { continuation: { phase: 'cancelled' } };
+    assert.equal(issueProgression(issue, { mode: 'work', now: 99 }).status, 'stopped');
+    assert.equal(
+      issueProgression(issue, { mode: 'plan', now: 99, operator: true }).status,
+      'ready',
+    );
   });
 });

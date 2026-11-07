@@ -1,3 +1,5 @@
+import taskPullRequest from './task-pull-request.ts';
+import replyOwnPublications from './reply-own-publications.ts';
 import { managedPullRequest } from './managed-issue.ts';
 import { lstat } from 'node:fs/promises';
 
@@ -109,7 +111,7 @@ export default async function reconcileOpenClawLifecycle(input: {
       observe: (record) =>
         service.dependencies.credential.use(authority, (request) => observe(request, record)),
       reactivate: async (record, intake) => {
-        const pr = record.work?.delivery?.reconciled ? record.work.delivery.pullRequest : undefined;
+        const pr = taskPullRequest(record);
         return reactivateAssignmentFeedback({
           record,
           intake,
@@ -128,6 +130,27 @@ export default async function reconcileOpenClawLifecycle(input: {
             return provider;
           },
           announcement: record.work?.delivery?.announcement,
+          ownReplies: async () => {
+            const provider = await service.dependencies.feedbackConnect?.(
+              { manifest, workspaceDir: workspace },
+              authority.signal ?? AbortSignal.timeout(20_000),
+              client,
+            );
+            if (!provider) throw new Error('feedback-provider-unavailable');
+            return replyOwnPublications({
+              root: service.dependencies.root,
+              binding: {
+                runtime: 'openclaw',
+                agentId: manifest.agent.id,
+                workspace,
+                namespace: service.dependencies.intake.dependencies.namespace,
+                session: record.threadId!,
+                incarnation: record.sessionCreation!.sessionId!,
+              },
+              client: provider,
+              replies: provider.replies,
+            });
+          },
           pullRequest: pr
             ? { number: pr.pullRequestNumber, nodeId: pr.pullRequestNodeId }
             : undefined,

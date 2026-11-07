@@ -93,7 +93,7 @@ describe('manifest/overlays', () => {
 github:
   schema-version: 3
   username: data
-  allowed-repository-owners: [{owner: owner, node-id: O_owner}]
+  routing: ['owner/*']
   notifications: {obsolete: true}
 `,
     );
@@ -193,7 +193,7 @@ github:
   ssh-signing-keys: []
   schema-version: 3
   runtimes: [codex]
-  allowed-repository-owners: [{login: tanaabased, node-id: O_owner}]
+  routing: ['tanaabased/*']
   issue-assignment: {allowed: []}
 setup-host: { steps: [] }
 setup-agent: { apply: [echo, safe], runtimes: [] }
@@ -296,7 +296,7 @@ git: { worktrees: { root: /machine-${index}/worktrees, repositories: { local: {}
 environment:
   dotenv: [missing-local.env]
   set: { LOCAL: machine-${index}, SECRET: { from-op: 'op://vault/item/password' } }
-github: { username: data, schema-version: 3, runtimes: [codex], allowed-repository-owners: [{login: tanaabased, node-id: O_owner}], issue-assignment: {allowed: ${index === 0 ? '[]' : '[{login: operator, node-id: U_operator}]'}} }
+github: { username: data, schema-version: 3, runtimes: [codex], routing: ['tanaabased/*'], issue-assignment: {allowed: ${index === 0 ? '[]' : '[{login: operator, node-id: U_operator}]'}} }
 setup-agent: { apply: 'touch must-not-run' }
 `,
       );

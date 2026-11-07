@@ -9,17 +9,21 @@ export default function workflowFailure(error: unknown, fallback: string) {
   let code: string | undefined;
   let diagnostic: ProviderDiagnostic | undefined;
   let contention: PrivateStateContention | undefined;
+  let snapshotConflict: 'owner' | 'occurrence' | undefined;
   const seen = new Set<unknown>();
   for (let value = error; value && typeof value === 'object' && !seen.has(value);) {
     seen.add(value);
     if (seen.size > 8) break;
     if (value instanceof PrivateStateFileLockBusyError) contention ??= value.contention;
     const entry = value as {
+      snapshotConflict?: unknown;
       code?: unknown;
       message?: unknown;
       providerDiagnostic?: ProviderDiagnostic;
       cause?: unknown;
     };
+    if (entry.snapshotConflict === 'owner' || entry.snapshotConflict === 'occurrence')
+      snapshotConflict ??= entry.snapshotConflict;
     const candidate = typeof entry.code === 'string' ? entry.code : entry.message;
     if (!code && typeof candidate === 'string' && /^[a-z][a-z0-9-]{0,127}$/u.test(candidate))
       code = candidate;
@@ -37,6 +41,7 @@ export default function workflowFailure(error: unknown, fallback: string) {
     code: code ?? fallback,
     ...(diagnostic ? { providerDiagnostic: diagnostic } : {}),
     ...(contention ? { contention } : {}),
+    ...(snapshotConflict ? { snapshotConflict } : {}),
   };
 }
 
@@ -66,6 +71,7 @@ export function workflowFailureScope(runtime: 'codex' | 'openclaw', route: strin
     'retire',
     'recover',
     'bind',
+    'link',
     'cancel',
     'start',
     'assess',

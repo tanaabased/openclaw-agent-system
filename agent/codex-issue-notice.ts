@@ -134,6 +134,14 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
         'The work or authority changed after the recovery preview. The requested transition was not applied.',
       next: 'Preview the same recovery action again without a digest, inspect the current result, and apply its new digest only if the existing authorization still covers it. For handoff, use `action:handoff` with the same id; do not refresh assessment context after implementation. If it becomes stale again, stop and inspect concurrent changes. Preserve the existing chat, branch, and commit.',
     };
+  if (code === 'delivery-publication-incomplete')
+    return {
+      severity: 'warning',
+      title: 'PR publication is incomplete',
+      summary:
+        'The existing pull request is retained, but the latest publication has not been verified.',
+      next: 'Inspect the retained publication and current branch head, then resume that same delivery within the existing authorization. Preserve local commits and do not create another PR.',
+    };
   if (code === 'delivery-attachment-pending')
     return {
       severity: 'warning',

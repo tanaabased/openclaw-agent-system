@@ -1,12 +1,13 @@
+import nativeTaskContext from './native-task-context.ts';
+import nativeClarification from './native-clarification.ts';
 import implementationMaterial from './implementation-material.ts';
 import { realpath } from 'node:fs/promises';
 
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import assessmentCheckout from './assessment-checkout.ts';
 import type { AssessmentEntryDependencies } from './assessment-entry.ts';
-import AssessmentEntryStore, { DirectEntryStore } from './assessment-entry-store.ts';
+import { DirectEntryStore } from './assessment-entry-store.ts';
 import { automationHash } from './automation-hash.ts';
-import dispatchContext from './dispatch-context.ts';
 import implementationHandoff from './implementation-handoff.ts';
 import implementationEntryDelivery from './implementation-entry-delivery.ts';
 import implementationContext from './implementation-context.ts';
@@ -34,7 +35,6 @@ export default async function implementationEntry(
       input.id ? entry.id === input.id : entry.target.toLowerCase() === input.target?.toLowerCase(),
     ),
   );
-  if (input.material && !retained) throw new Error('implementation-entry-unavailable');
   const target = input.target ?? retained?.target ?? deps.currentTarget;
   if (!target)
     return {
@@ -53,6 +53,15 @@ export default async function implementationEntry(
     if (input.id && input.id !== managed.owner.id)
       throw new Error('implementation-managed-owner-mismatch');
     await deps.assertCurrent();
+    if (managed.nativeContext && input.operation === 'context')
+      return nativeTaskContext(
+        'implementation',
+        target,
+        managed.nativeContext,
+        deps,
+        input.material,
+        managed.selections?.implementation,
+      );
     if (input.operation === 'present')
       return implementationReadback(managed.owner.id, managed.implementationResult);
     return {
@@ -60,9 +69,10 @@ export default async function implementationEntry(
       owner: managed.owner,
       runtime: deps.binding.runtime,
       instruction:
-        'Use the existing implementation owner with its original plan, stage inputs, source and receipts. Do not bootstrap manual work.',
+        'Use the existing implementation owner with current native direction and its source and publication receipts. Do not bootstrap manual work.',
     };
   }
+  if (input.material && !retained) throw new Error('implementation-entry-unavailable');
   if (deps.operator === false) throw new Error('implementation-operator-required');
   if (input.id && !retained) throw new Error('implementation-entry-unavailable');
   const path = input.path ?? retained?.checkout.path;
@@ -85,33 +95,9 @@ export default async function implementationEntry(
       if (!entry) throw new Error('implementation-entry-unavailable');
       return implementationEntryDelivery({ entry, action: input, deps, save });
     });
-  if (
-    retained?.result &&
-    (input.operation === 'present' || (retained.result.outcome === 'done' && !input.scope))
-  ) {
-    if (input.result && automationHash(input.result) !== automationHash(retained.result))
-      throw new Error('implementation-result-conflict');
+  if (retained && input.operation === 'present') {
     await deps.assertCurrent();
-    if (input.operation === 'present') return implementationReadback(retained.id, retained.result);
-    return implementationMaterial(
-      {
-        status: 'presented',
-        runtime: deps.binding.runtime,
-        project: { path: checkout.path },
-        id: retained.id,
-        retained: true,
-        deliveryOnly: retained.result.outcome === 'done',
-        previousResult: retained.result,
-        presentation: implementationPresentation(retained.result),
-        handoff: implementationHandoff(retained.id, retained.result.outcome, deps.binding.runtime, {
-          publication: retained.scope === 'pull-request',
-        }),
-        instruction:
-          'Show the retained result. Do not repeat completed edits or commits. Follow the retained scope-aware handoff and original publication receipts; never infer publication authority from the plan.',
-      },
-      { action: 'implementation', operation: 'context', id: retained.id },
-      input.material,
-    );
+    return implementationReadback(retained.id, retained.result);
   }
   const provider = await deps.connectProvider();
   const repo = await provider.getRepository(locator.owner, locator.name);
@@ -140,7 +126,7 @@ export default async function implementationEntry(
       throw new Error('implementation-managed-context-changed');
     await deps.assertCurrent();
     if (input.operation === 'context') {
-      if (input.material && (!entry?.progression || !entry.selection || !entry.plan))
+      if (input.material && (!entry?.progression || !entry.selection))
         throw new Error('implementation-material-context-required');
       if (!entry) {
         entry = {
@@ -149,17 +135,9 @@ export default async function implementationEntry(
           repositoryId: repo.nodeId,
           subjectId: issue.nodeId,
           checkout,
-          evidence: JSON.stringify(
-            dispatchContext(
-              await provider.getItemContext(locator.owner, locator.name, locator.number),
-              canonical,
-              deps.now,
-            ),
-          ),
           scope: input.scope ?? 'local',
           authorization: source,
           scopeSource: source,
-          ...(deps.message ? { authorizationText: deps.message } : {}),
           caller: source,
         };
         entries.push(entry);
@@ -172,25 +150,10 @@ export default async function implementationEntry(
           throw new Error('implementation-scope-new-input-required');
         entry.scope = input.scope;
         entry.scopeSource = source;
-        entry.scopeText = deps.message;
       }
-      if (entry.plan && input.plan && entry.plan !== input.plan)
-        throw new Error('implementation-consumed-plan-changed');
-      if (!entry.plan) {
-        const assessment = await new AssessmentEntryStore(deps.root, deps.binding).exclusive(
-          async (records) =>
-            records.find(
-              (record) =>
-                record.target === canonical &&
-                record.checkout.path === checkout.path &&
-                record.repositoryId === repo.nodeId &&
-                record.subjectId === issue.nodeId,
-            )?.result,
-        );
-        entry.plan =
-          input.plan ?? (assessment?.outcome === 'plan-ready' ? assessment.plan : undefined);
-      }
-      if (!entry.plan?.trim()) {
+      // The supplied plan already belongs to native tool history. Do not retain it
+      // or make a historical plan a prerequisite for an admitted implementation.
+      if (!entry.progression && !input.plan?.trim()) {
         await save();
         return {
           status: 'clarification-needed',
@@ -200,26 +163,15 @@ export default async function implementationEntry(
           ],
         };
       }
-      if (
-        !input.material &&
-        entry.result?.outcome === 'clarification-needed' &&
-        automationHash(entry.resultSource) === automationHash(source)
-      )
-        return {
-          status: 'clarification-needed',
-          id: entry.id,
-          presentation: implementationPresentation(entry.result),
-        };
       if (!input.material) {
         const transition = issueProgression(entry, {
           mode: 'plan',
           operator: true,
-          actionablePlan: entry.plan,
           now: deps.now,
         });
         if (transition.status !== 'ready') throw new Error(transition.reason);
         await save();
-        entry.selection ??= (
+        entry.selection = (
           await selectWorkflowStage({
             stage: 'implementation',
             configuration: deps.manifest.github?.notifications?.issueAssignment?.implementation,
@@ -238,18 +190,14 @@ export default async function implementationEntry(
           runtime: deps.binding.runtime,
           id: entry.id,
           path: checkout.path,
-          plan: entry.plan,
           implementation: entry.selection,
-          previousResult: entry.result,
           scope: entry.scope,
-          direct: true,
         }),
         entry: 'direct',
         target: canonical,
-        evidence: JSON.parse(entry.evidence),
-        currentInput: deps.message,
+        evidence: { source: canonical },
         instructions:
-          'Execute the selected implementation body once using this verified context; never invoke its bootstrap again. Preserve partial files, consumed plan and selection. Reconcile current operator input with this plan. Do not assess, create another chat/worktree, activate notifications or change session settings. Respect the retained publicationAuthorized scope. Local scope forbids push and PR publication. A plan and skill composition grant no publication authority; pull-request scope is collected only from an explicit operator publication request, not inferred from the plan. For requested publication use the host-owned delivery handoff, never publish independently. Built-in and custom skills return their ordinary complete substantive output without Agent System fields or commands. You, the calling agent, preserve that output unchanged inside fullResult and construct result matching resultSchema: outcome done|blocked|clarification-needed, summary, fullResult, and questions only when clarification-needed. Submit dispatch implementation operation result with the returned id and that result object; do not submit the prose itself as result. Only the runtime acknowledgment proves recording. After an uncertain submission, refresh this same context and reconcile its retained previousResult before retrying; never repeat completed implementation. On clarification, retain questions and partial work, then wait for a new native input. Refresh this same context on the answer; do not request stage approval again. Existing publication effects must resume through their original owner and receipts, never a substitute publication.',
+          'Read evidence.source through normal GitHub tools for current requirements and relevant discussion, following pagination and recovering truncated reads. Execute the selected implementation body once using this verified context; never invoke its bootstrap again. Preserve partial files and follow the latest native plan and user direction. The plan supplied to this tool stays in native conversation; Agent System does not save or reload it. Do not assess, create another chat/worktree, activate notifications or change session settings. Respect the retained publicationAuthorized scope. Local scope forbids push and PR publication. A plan and skill composition grant no publication authority; pull-request scope is collected only from an explicit operator publication request, not inferred from the plan. When the authorized work is complete and verified, use dispatch implementation delivery prepare with this id, title and body. Result recording is optional history and never a delivery prerequisite. Report ordinary substantive output and ask questions directly in native chat. Read historical results only on explicit request or to reconcile a particular attempted operation; they do not replace current direction. Keep partial files and questions in the native conversation; an answer is ordinary input and needs no clarification checkpoint. Existing publication effects must resume through their original owner and receipts, never a substitute publication.',
       };
       return implementationMaterial(
         response,
@@ -272,9 +220,12 @@ export default async function implementationEntry(
       };
     }
     if (!input.result) throw new Error('implementation-result-required');
+    if (input.result.outcome === 'clarification-needed')
+      return nativeClarification(entry.id, implementationPresentation(input.result));
     if (
       entry.result &&
       automationHash(entry.result) !== automationHash(input.result) &&
+      entry.result.outcome !== 'clarification-needed' &&
       (entry.result.outcome === 'done' ||
         automationHash(entry.resultSource) === automationHash(source))
     )

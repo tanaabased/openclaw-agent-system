@@ -1,4 +1,4 @@
-import { automationHash } from './automation-hash.ts';
+import feedbackDiscoveryOwner from './feedback-discovery-owner.ts';
 
 /** compare-and-save each observation without replacing concurrently advanced workflow state. */
 export default async function discoveryCheckpoint<R extends { id: string; feedback?: F }, F>(
@@ -13,7 +13,7 @@ export default async function discoveryCheckpoint<R extends { id: string; feedba
   await store.exclusive(async (state, save) => {
     await assertCurrent?.();
     const record = state.records.find((entry) => entry.id === scan.id);
-    if (!record || automationHash(record) !== scan.before)
+    if (!record || feedbackDiscoveryOwner(record) !== scan.before)
       throw new Error('discovery-checkpoint-changed');
     record.feedback = structuredClone(scan.feedback);
     await save();

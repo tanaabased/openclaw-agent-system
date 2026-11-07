@@ -85,7 +85,12 @@ describe('codex model routing binding', () => {
     };
     const inspected = await codexModelRouting(data, { action: 'inspect' }, dependencies);
     assert.ok('instructions' in inspected && inspected.instructions);
-    assert.equal(inspected.instructions.guidance?.content, 'Prefer localized work.');
+    assert.ok(inspected.instructions.guidance?.path);
+    assert.equal('content' in inspected.instructions.guidance, false);
+    assert.equal(
+      await readFile(inspected.instructions.guidance.path, 'utf8'),
+      'Prefer localized work.',
+    );
     assert.equal(inspected.instructions.skill?.name, 'company:route');
     const request = {
       action: 'resolve',
