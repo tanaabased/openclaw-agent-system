@@ -66,9 +66,14 @@ describe('agent/codex-dispatch-handoff process transport', () => {
       const baseline = spawnSync(previous, [entrypoint], { encoding: 'utf8' });
       assert.equal((baseline.error as NodeJS.ErrnoException)?.code, 'ENOENT');
       for (const action of ['scan', 'failure-response']) {
+        const start = output.length;
         await run(action);
-        assert.equal(output.at(-1)!.exit_code, 0);
-        assert.equal(JSON.parse(output.at(-1)!.output).action, action);
+        const results = output.slice(start);
+        for (const result of results) assert.equal(result.exit_code, 0);
+        assert.deepEqual(
+          results.map((result) => JSON.parse(result.output).action),
+          action === 'scan' ? ['scan', 'observe-denials', 'next'] : ['failure-response'],
+        );
       }
       await rm(node);
       await assert.rejects(run('scan'), /codex-node-unavailable:.*PATH/u);

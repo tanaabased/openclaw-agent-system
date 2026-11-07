@@ -12,6 +12,7 @@ ${String.raw`const actions = {
   continuation: ['next', 'reconcile'],
   feedback: ['reconcile']
 };
+async function executeRuntime(runtimeRoute, runtimeInput) {
 if (!actions[runtimeRoute]?.includes(runtimeInput.action)) throw new Error('scheduled-runtime-action-unsupported');
 const key = 'agent-system:' + runtimeRoute + ':' + runtime.pluginData;
 const retained = load(key);
@@ -78,11 +79,17 @@ while (true) {
     await new Promise(resolve => setTimeout(resolve, 2000));
     continue;
   }
-  if (busy) break;
+  if (busy) return response;
   if (result.exit_code !== 0 || !response) throw new Error('native-handoff-preparation-failed; inspect the command result and reconcile before retrying');
   store(key, response);
   store(key + ":observation", null);
-  break;
+  return response;
+}
+}
+const response = await executeRuntime(runtimeRoute, runtimeInput);
+if (runtimeRoute === 'intake' && runtimeInput.action === 'scan' && response?.status === 'ready') {
+  const observed = await executeRuntime('dispatch', {action: 'observe-denials'});
+  if (observed?.status === 'ready') await executeRuntime('continuation', {action: 'next'});
 }`}`;
 }
 

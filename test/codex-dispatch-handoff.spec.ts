@@ -79,6 +79,47 @@ function fixture(results: (Record<string, unknown> | Error)[], failCreation = fa
 }
 
 describe('agent/codex-dispatch-handoff', () => {
+  it('should run scan and required observations with one fixed runtime identity', async () => {
+    const test = fixture([
+      success({ status: 'ready', changed: false }),
+      access,
+      success({ status: 'ready' }),
+      success({ status: 'idle' }),
+    ]);
+    await test.execute({ action: 'scan' }, 'intake');
+    assert.equal(test.commands.length, 4);
+    assert.ok(
+      test.commands.every(({ cmd }) => String(cmd).includes("'--plugin-data' '/private/data'")),
+    );
+    assert.ok(
+      test.commands.every(({ cmd }) => String(cmd).startsWith("'node' '/plugin'\\''s runtime.js'")),
+    );
+    assert.deepEqual(
+      test.commands.map(({ cmd }) => JSON.parse(String(cmd).split('\n')[1]!)),
+      [{}, { action: 'observe-denials' }, { action: 'observe-denials' }, { action: 'next' }],
+    );
+    assert.equal(test.commands[1]!.cmd, test.commands[2]!.cmd);
+    assert.equal(test.commands[2]!.sandbox_permissions, 'require_escalated');
+    assert.match(String(test.commands[3]!.cmd), /'continuation' 'next'/);
+    assert.equal(test.creations.length, 0);
+  });
+
+  it('should stop the fixed preflight at unresolved scans or denial observations', async () => {
+    for (const status of ['blocked', 'disabled']) {
+      const test = fixture([success({ status })]);
+      await test.execute({ action: 'scan' }, 'intake');
+      assert.equal(test.commands.length, 1);
+    }
+    const held = fixture([success({ status: 'ready' }), success({ status: 'blocked' })]);
+    await held.execute({ action: 'scan' }, 'intake');
+    assert.equal(held.commands.length, 2);
+    assert.equal(held.creations.length, 0);
+    const denied = fixture([success({ status: 'ready' }), access, new Error('native rejection')]);
+    await assert.rejects(denied.execute({ action: 'scan' }, 'intake'), /native rejection/);
+    assert.equal(denied.commands.length, 3);
+    assert.equal(denied.creations.length, 0);
+  });
+
   it('should send complete issue and pr feedback once and reconcile its retained source', async () => {
     for (const item of ['issues', 'pull']) {
       for (const fail of [false, true]) {
