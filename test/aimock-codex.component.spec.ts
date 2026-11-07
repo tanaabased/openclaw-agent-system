@@ -30,7 +30,12 @@ describe('hosted codex mock configuration', () => {
       new Promise<string>((resolveOutput, reject) => {
         const child = execFile(
           process.execPath,
-          [resolve('node_modules/@openai/codex/bin/codex.js'), ...args],
+          [
+            resolve('node_modules/@openai/codex/bin/codex.js'),
+            '-c',
+            'features.plugins=false',
+            ...args,
+          ],
           {
             cwd: root,
             env: {
