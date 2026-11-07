@@ -70,6 +70,34 @@ function fixture() {
 }
 
 describe('agent/codex-work-turn', () => {
+  it('should expose a recoverable observation reason and retain the decision only after a fresh read', async () => {
+    const { record, context, verified } = fixture();
+    delete record.progression;
+    verified.found.turnStatus = 'interrupted';
+    record.continuation!.observation = { turnId: 'work', afterItemId: 'boundary' };
+    context.observeTurn = async () => ({
+      status: 'unresolved',
+      reason: 'native-observation-superseded',
+    });
+    const pending = await advance(record, context, verified);
+    assert.equal(pending.ready, false);
+    if (!pending.ready) {
+      assert.equal(
+        'reason' in pending.response && pending.response.reason,
+        'native-observation-superseded',
+      );
+      assert.deepEqual('request' in pending.response && pending.response.request, {
+        tool: 'read_thread',
+        arguments: { threadId: 'chat', turnLimit: 1, includeOutputs: false },
+      });
+    }
+    assert.equal(record.progression, undefined);
+    context.observeTurn = async () => ({ status: 'active', receiptId: 'fresh-read' });
+    assert.equal((await advance(record, context, verified)).ready, true);
+    assert.equal((record as DispatchRecord).progression?.stage, 'implementation');
+    assert.equal(record.continuation!.observation.receiptId, 'fresh-read');
+  });
+
   it('should use current verified feedback without replacing an uncertain older request', async () => {
     const { record, context, verified } = fixture();
     const older = structuredClone(record.continuation!.attempt);

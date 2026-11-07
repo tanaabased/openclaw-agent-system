@@ -91,15 +91,16 @@ export default function codexLiveTurn(request: CodexThreadRequest) {
       result.turns[0].error != null
     )
       return unresolved('native-observation-turn-inactive');
-    // a live read is not a lease: later input or a completed native operation requires another read.
+    // execution (including a sandbox retry) is not new direction; native denials were checked above.
     if (
       items
         .slice(observed + 1)
         .some(
           (entry) =>
             entry.type === 'userMessage' ||
-            (['commandExecution', 'fileChange', 'mcpToolCall'].includes(String(entry.type)) &&
-              entry.status !== 'inProgress') ||
+            (entry.type === 'mcpToolCall' &&
+              entry.server === 'codex_app' &&
+              ['create_thread', 'send_message_to_thread'].includes(String(entry.tool))) ||
             (entry.type === 'functionCallOutput' &&
               entry.namespace === 'codex_app' &&
               ['create_thread', 'send_message_to_thread'].includes(String(entry.name))),

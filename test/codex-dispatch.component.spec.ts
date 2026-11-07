@@ -5061,6 +5061,16 @@ describe('agent/codex-dispatch', () => {
                         },
                       },
                     },
+                    {
+                      turnId,
+                      item: {
+                        id: 'sandbox-retry',
+                        type: 'commandExecution',
+                        status: 'failed',
+                        exitCode: 1,
+                        output: JSON.stringify({ code: 'codex-host-access-required' }),
+                      },
+                    },
                   ]
                 : []),
             ],

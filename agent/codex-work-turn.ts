@@ -83,7 +83,8 @@ export default async function advanceCodexWorkTurn(
             observed?.status === 'denied'
               ? 'continuation-native-approval-denied'
               : 'continuation-turn-state-unresolved',
-          ...(observed?.status === 'required'
+          ...(observed?.status === 'unresolved' ? { reason: observed.reason } : {}),
+          ...(observed?.status !== 'denied'
             ? {
                 request: {
                   tool: 'read_thread',
