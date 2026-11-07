@@ -17,7 +17,6 @@ export function openClawItemOccupied(record: OpenClawDispatchRecord) {
   ];
   if (record.retired && record.nativeInactive === true) return false;
   return Boolean(
-    !record.sessionCreation?.verified ||
     turns.some((turn) => turn?.status === 'attempted' && !turn.inactive) ||
     record.nativeInactive !== true,
   );
