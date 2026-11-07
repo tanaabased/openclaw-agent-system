@@ -161,6 +161,124 @@ describe('github readiness channel', () => {
     }
   });
 
+  for (const stopDuringRead of [false, true])
+    it(`should publish native readiness and stop without stale writes with pending read ${stopDuringRead}`, async () => {
+      const config: OpenClawConfig = {
+        channels: {
+          [githubChannelId]: {
+            accounts: {
+              receiver: { enabled: true, managedWorkspace: '/workspace' },
+              other: { enabled: true, managedWorkspace: '/other' },
+            },
+          },
+        },
+      };
+      let automation: string | undefined;
+      let pending: Promise<void> | undefined;
+      const channel = createGitHubStatusChannel({
+        manifestService: {
+          async loadForAgentId(id) {
+            assert.equal(id, 'receiver');
+            await pending;
+            return {
+              status: 'loaded',
+              manifest: manifest(),
+              scope: { workspaceDir: '/workspace', agentId: id },
+              path: '/workspace/agent.yaml',
+              digest: 'fixture',
+              diagnostics: [],
+              validationChecks: [],
+            };
+          },
+        },
+        intake: {
+          async inspect() {
+            return { status: 'ready', checkpoint: baseline, baselineAt: baseline, records: [] };
+          },
+        },
+        async automationReadiness() {
+          return automation;
+        },
+        now: () => baseline + 1000,
+      });
+      const gateway = channel.gateway;
+      assert.equal(gateway?.apiVersion, 2, 'ordinary status requires a native account publisher');
+      if (gateway?.apiVersion !== 2) throw Error('native publisher missing');
+      type Context = Parameters<NonNullable<typeof gateway.startAccount>>[0];
+      const controller = new AbortController();
+      const scheduled = Promise.withResolvers<Parameters<Context['scheduler']['schedule']>[0]>();
+      const snapshots: ReturnType<Context['getStatus']>[] = [];
+      let stopped = 0;
+      const scheduler: Context['scheduler'] = {
+        version: 1,
+        signal: controller.signal,
+        now: () => baseline,
+        schedule(job) {
+          scheduled.resolve(job);
+          return {
+            cancel() {},
+            async stop() {
+              stopped++;
+            },
+          };
+        },
+        scope() {
+          return this;
+        },
+        beginClose() {},
+        async stop() {},
+      };
+      const lifetime = gateway.startAccount!({
+        accountId: 'receiver',
+        account: channel.config.resolveAccount(config, 'receiver'),
+        cfg: config,
+        abortSignal: controller.signal,
+        scheduler,
+        runtime: {
+          log() {},
+          error() {},
+          exit() {
+            throw Error('unexpected exit');
+          },
+        },
+        getStatus: () => snapshots.at(-1) ?? { accountId: 'receiver' },
+        setStatus: (status) => {
+          snapshots.push(status);
+        },
+      });
+      const job = await scheduled.promise;
+      assert.equal(snapshots.at(-1)?.statusState, 'healthy');
+      assert.equal(snapshots.at(-1)?.lifecycle, 'ready');
+      assert.ok(job.everyMs && job.everyMs > 0);
+      automation = 'automation-execution-failed';
+      await job.run();
+      assert.equal(snapshots.at(-1)?.statusState, 'degraded');
+      assert.equal(snapshots.at(-1)?.lastError, automation);
+      automation = 'automation-observation-unavailable';
+      await job.run();
+      assert.equal(snapshots.at(-1)?.statusState, 'unknown');
+      assert.notEqual(snapshots.at(-1)?.lifecycle, 'ready');
+      assert.equal(snapshots.at(-1)?.running, false);
+      automation = undefined;
+      await job.run();
+      assert.equal(snapshots.at(-1)?.lifecycle, 'ready');
+      assert.equal(snapshots.at(-1)?.running, true);
+      assert.equal(snapshots.at(-1)?.lastError, null);
+      const before = snapshots.length;
+      const read = Promise.withResolvers<void>();
+      if (stopDuringRead) pending = read.promise;
+      const refresh = stopDuringRead ? job.run() : undefined;
+      controller.abort();
+      read.resolve();
+      await refresh;
+      await lifetime;
+      await job.run();
+      assert.equal(snapshots.length, before);
+      assert.equal(stopped, 1);
+      assert.ok(snapshots.every(({ accountId }) => accountId === 'receiver'));
+      assert.equal(channel.outbound, undefined);
+    });
+
   it('should report readiness, drift and failures without starting a transport or exposing errors', async () => {
     const value = manifest();
     let automation: string | undefined;
@@ -210,7 +328,7 @@ describe('github readiness channel', () => {
         account: channel.config.resolveAccount(config, 'receiver'),
         cfg: config,
       });
-    assert.equal(channel.gateway, undefined);
+    assert.equal(channel.gateway?.apiVersion, 2);
     assert.equal(channel.outbound, undefined);
     assert.equal((await snapshot()).statusState, 'healthy');
     checkpoint = null;

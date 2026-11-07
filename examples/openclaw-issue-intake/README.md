@@ -17,6 +17,7 @@ Activate notification intake, exclude fixture assignments through repository rou
 
 ## Notes
 
+- Ordinary channel status reads the native account snapshot; its bounded wait allows the once-per-minute readiness refresh. The same case compares an immediate probe without another install or restart.
 - Native skill discovery and retained guidance are asserted during admission; the fixed mock judgment does not prove interpretation of the custom skill. No additional live-model turn is required.
 - One completed assessment checks the concise native presentation; formatting and debug variants stay in owning renderer tests.
 - Strict AIMock holds each assessment behind a per-receipt release barrier. The test releases one after verifying three native starts, requires its native completion while two responses remain held, then releases the others; model judgment is not under test.
@@ -94,15 +95,18 @@ openclaw agent-system notifications wait --for baseline-ready --timeout 30 --jso
 ```bash
 # should expose the install-managed account through the native channel status interface
 set -eo pipefail
-for attempt in $(seq 1 30); do
-  openclaw gateway call channels.status --params '{"probe":true}' --json > "$TMPDIR/intake-channel-status.json"
-  if jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot")' "$TMPDIR/intake-channel-status.json" > /dev/null; then
+for attempt in $(seq 1 90); do
+  openclaw gateway call channels.status --params '{}' --json > "$TMPDIR/intake-channel-status.json"
+  if jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .lifecycle == "ready" and .running == true)' "$TMPDIR/intake-channel-status.json" > /dev/null; then
     break
   fi
   sleep 1
 done
 cat "$TMPDIR/intake-channel-status.json"
 jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .enabled == true and .configured == true and .mode == "readiness" and .statusState == "degraded" and .lifecycle == "ready" and .running == true and (.lastError | contains("review requests")))' "$TMPDIR/intake-channel-status.json"
+openclaw gateway call channels.status --params '{"probe":true}' --json > "$TMPDIR/intake-channel-probe.json"
+jq -e --slurpfile ordinary "$TMPDIR/intake-channel-status.json" 'def readiness: .channelAccounts["agent-system-github"] | map(select(.accountId == "intake-tanaabot") | {accountId,enabled,configured,mode,statusState,lifecycle,running,lastError}); readiness == ($ordinary[0] | readiness)' "$TMPDIR/intake-channel-probe.json"
+openclaw channels status --json | jq -e '.channelAccounts["agent-system-github"] | any(.accountId == "intake-tanaabot" and .lifecycle == "ready" and .running == true)'
 openclaw config get channels.agent-system-github --json | jq -e '.accounts["retired-agent"].enabled == false and .accounts["intake-tanaabot"].enabled == true'
 
 # should assign three disposable issues from emori to tanaabot after the safe intake baseline

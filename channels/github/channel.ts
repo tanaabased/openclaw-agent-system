@@ -1,3 +1,5 @@
+import { once } from 'node:events';
+
 import type { ChannelPlugin, OpenClawConfig } from 'openclaw/plugin-sdk/channel-core';
 import type { ChannelAccountSnapshot } from 'openclaw/plugin-sdk/status-helpers';
 import { buildJsonChannelConfigSchema } from 'openclaw/plugin-sdk/channel-config-schema';
@@ -30,7 +32,7 @@ interface Dependencies {
 
 export default function createGitHubStatusChannel(
   dependencies: Dependencies,
-): ChannelPlugin<Account> {
+): ChannelPlugin<Account, unknown, unknown, 2> {
   const resolveAccount = (config: OpenClawConfig, accountId?: string | null): Account => {
     const accounts = githubChannelAccounts(config);
     const id =
@@ -160,6 +162,29 @@ export default function createGitHubStatusChannel(
       isEnabled: (account) => account.enabled,
       isConfigured: (account, config) => Boolean(githubChannelAccounts(config)[account.accountId]),
       describeAccount: (account) => ({ ...account, name: account.accountId }),
+    },
+    gateway: {
+      apiVersion: 2,
+      async startAccount(context) {
+        const publish = async () => {
+          if (context.abortSignal.aborted) return;
+          const current = await snapshot(context.account, context.cfg);
+          if (!context.abortSignal.aborted) context.setStatus(current);
+        };
+        await publish();
+        if (context.abortSignal.aborted) return;
+        const refresh = context.scheduler.schedule({
+          id: 'readiness',
+          delayMs: 60_000,
+          everyMs: 60_000,
+          run: publish,
+        });
+        try {
+          if (!context.abortSignal.aborted) await once(context.abortSignal, 'abort');
+        } finally {
+          await refresh.stop();
+        }
+      },
     },
     status: {
       buildAccountSnapshot: ({ account, cfg }) => snapshot(account, cfg),
