@@ -1068,6 +1068,8 @@ describe('agent/codex-delivery', () => {
   }
 
   it('should display the retained pr and reconcile only attachment after head and authority change', async () => {
+    await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: true }));
+    delayedLinkReads = 2;
     await publish();
     head = 'b'.repeat(40);
     fixture.item.assignees = [];
@@ -1083,7 +1085,9 @@ describe('agent/codex-delivery', () => {
       throw new Error('presentation must not inspect git');
     };
     const shown = await request('present');
-    assert.equal(shown.status, 'linked');
+    assert.equal(shown.status, 'publication-incomplete');
+    assert.match(String(shown.presentation), /delivery-publication-incomplete/);
+    assert.doesNotMatch(String(shown.presentation), /delivery-linkage-retried/);
     assert.match(String(shown.presentation), /pull\/7/);
     attached = true;
     assert.equal((await request('reconcile')).status, 'publication-incomplete');
@@ -1881,6 +1885,76 @@ describe('agent/codex-delivery', () => {
     await publish({ title: 'Revised title', body: 'Authored body.' });
     assert.equal(pr!.title, 'Revised title');
     assert.equal(pr!.body, 'Operator clarification. Closes #3');
+  });
+  for (const checkpoint of ['prepare-save', 'push-save'] as const)
+    it(`should preserve concurrent activity observations during follow-up ${checkpoint}`, async () => {
+      await publish();
+      head = 'b'.repeat(40);
+      let observed = false;
+      const observe = async () => {
+        if (observed) return;
+        observed = true;
+        await store.exclusive(async (state, save) => {
+          state.records[0]!.capacityObservation = {
+            at: baseline + 90000,
+            code: 'dispatch-capacity-native-active',
+            threadId: 'child',
+            turnId: 'turn',
+          };
+          state.records[0]!.lifecycleCheckedAt = baseline + 90000;
+          state.run = {
+            id: 'later-intake',
+            automationId: 'intake',
+            currentTimeIso: new Date(baseline + 90000).toISOString(),
+            actions: 0,
+          };
+          await save();
+        });
+      };
+      const preview = await request('prepare');
+      const git = deps.git!;
+      const find = deps.native!.find!;
+      if (checkpoint === 'prepare-save')
+        deps.native!.find = async (...args) => {
+          await observe();
+          return find(...args);
+        };
+      else
+        deps.git = async (...args) => {
+          if (args[1][0] === 'ls-remote') await observe();
+          return git(...args);
+        };
+      assert.ok('publishRequest' in preview);
+      const published = await runCodexDelivery(pluginData, preview.publishRequest, deps);
+      assert.equal(published.status, 'published');
+      const saved = await store.read();
+      assert.equal(saved.records[0]!.capacityObservation?.at, baseline + 90000);
+      assert.equal(saved.run?.id, 'later-intake');
+      assert.equal(saved.records[0]!.delivery!.reconciled, true);
+      assert.equal(remote, head);
+      assert.equal(creates, 1);
+    });
+  it('should publish a new head after announcement with the provider closing reference retained', async () => {
+    delayedLinkReads = 2;
+    attached = true;
+    await publish();
+    const context = await request('compose');
+    const preview = await request('candidate', {
+      digest: requiredDigest(context),
+      publicText: 'Delivers the requested change.',
+    });
+    await request('announce', { digest: requiredDigest(preview) });
+    const retained = (await store.read()).records[0]!.delivery!;
+    await request('link', { pullRequest: url });
+    await request('present');
+    head = 'b'.repeat(40);
+    await publish({ title: String(pr!.title), body: String(pr!.body) });
+    assert.equal(remote, head);
+    const updated = (await store.read()).records[0]!.delivery!;
+    assert.equal(updated.reconciled, true);
+    assert.deepEqual(updated.announcement, retained.announcement);
+    assert.equal(creates, 1);
+    assert.equal(announcement.posts, 1);
   });
   for (const lostAnnouncement of [false, true])
     it(`should recover an interrupted follow-up push with a ${lostAnnouncement ? 'pending' : 'confirmed'} announcement`, async () => {

@@ -1,3 +1,4 @@
+import codexIssueNotice from './codex-issue-notice.ts';
 import taskPullRequest from './task-pull-request.ts';
 import { retainImplementationDelivery } from './implementation-delivery.ts';
 import {
@@ -578,6 +579,10 @@ export function presentOpenClawDelivery(
   const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
   const url = `https://github.com/${repository}/pull/${receipt.pullRequestNumber}`;
 
+  const incomplete = linkedDelivery && !linkedDelivery.reconciled;
+  const notice = incomplete
+    ? codexIssueNotice({ event: 'failure', changed: true, code: 'delivery-publication-incomplete' })
+    : undefined;
   const presentation =
     githubNotificationPullRequestOpenedCard({
       issueNumber: managedPullRequest(intake) ? undefined : intake.issue.number,
@@ -593,9 +598,10 @@ export function presentOpenClawDelivery(
       managedTargetUrl(intake),
       undefined,
       linkedDelivery?.announcementRecovery,
-    );
+    ) +
+    (notice ? '\n\n' + notice.message : '');
   return {
-    status: 'presented',
+    status: incomplete ? 'publication-incomplete' : 'presented',
     retained: true,
     workflowStatus: workflowStatus(record),
     id: record.id,

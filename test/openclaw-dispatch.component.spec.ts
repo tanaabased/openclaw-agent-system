@@ -5707,8 +5707,9 @@ describe('agent/openclaw issue dispatch', () => {
       { action: 'delivery', operation: 'present', id: setup.id },
       false,
     );
-    assert.equal(result.status, 'presented');
+    assert.equal(result.status, 'publication-incomplete');
     assert.ok('presentation' in result);
+    assert.match(String(result.presentation), /delivery-publication-incomplete/);
     assert.equal((await record()).work!.delivery!.reconciled, false);
     const plan = await service.run(
       manifest,

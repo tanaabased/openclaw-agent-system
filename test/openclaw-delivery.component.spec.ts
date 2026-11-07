@@ -816,6 +816,18 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(announcement.posts, 1);
   });
 
+  it('should show incomplete publication while preserving the original pr', async () => {
+    await publish();
+    record.work!.delivery!.reconciled = false;
+    const shown = await request('present');
+    assert.equal(shown.status, 'publication-incomplete');
+    assert.ok('presentation' in shown);
+    assert.match(shown.presentation!, /delivery-publication-incomplete/);
+    assert.match(shown.presentation!, /pull\/7/);
+    assert.equal(creates, 1);
+    assert.equal(pushes, 1);
+  });
+
   it('should publish once and retain the issue pr session binding with a quoted card and truthful feedback availability', async () => {
     assert.equal((await publish()).status, 'published');
     const shown = await request('present');

@@ -5,27 +5,43 @@ import codexCapacity, { codexItemOccupied } from './codex-capacity.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 
 /** reject competing effect/authority changes, checking capacity and branch ownership at commit. */
-export default function codexCommit(limit?: number, ownerId?: string) {
+export default function codexCommit(limit?: number, ownerId?: string, operation?: 'delivery') {
+  const delivery = operation === 'delivery';
+  // Delivery owns publication receipts, not intake counters or native activity observations.
+  const effectState = (record: DispatchState['records'][number] | undefined) => {
+    if (!delivery || !record) return record;
+    const effect = { ...record };
+    delete effect.capacityObservation;
+    delete effect.nativeInactive;
+    delete effect.lifecycleCheckedAt;
+    delete effect.intakeReportedAt;
+    return effect;
+  };
   return {
     reconcile(before: DispatchState, proposed: DispatchState, current: DispatchState) {
-      const conflict = () => {
+      const conflict = (snapshotConflict: 'occurrence' | 'owner') => {
         throw Object.assign(new Error(stateSnapshotConflictCode), {
           code: stateSnapshotConflictCode,
+          snapshotConflict,
         });
       };
       for (const key of ['run', 'continuationRun'] as const) {
-        if (!isDeepStrictEqual(before[key], current[key])) conflict();
+        if (
+          (!delivery || !isDeepStrictEqual(before[key], proposed[key])) &&
+          !isDeepStrictEqual(before[key], current[key])
+        )
+          conflict('occurrence');
       }
       for (const previous of before.records) {
         const desired = proposed.records.find((r) => r.id === previous.id);
         if (
           (previous.id === ownerId || !isDeepStrictEqual(previous, desired)) &&
           !isDeepStrictEqual(
-            previous,
-            current.records.find((r) => r.id === previous.id),
+            effectState(previous),
+            effectState(current.records.find((r) => r.id === previous.id)),
           )
         )
-          conflict();
+          conflict('owner');
       }
     },
     validate(before: DispatchState, after: DispatchState) {

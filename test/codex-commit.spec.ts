@@ -48,6 +48,30 @@ describe('agent/codex-commit', () => {
     assert.doesNotThrow(() => codexCommit(1, 'second').reconcile(before, before, current));
   });
 
+  it('should merge delivery observations while protecting authority and effect ownership', () => {
+    const before = state();
+    const current = structuredClone(before);
+    current.records[0]!.capacityObservation = { at: 2, code: 'dispatch-capacity-native-active' };
+    current.records[0]!.nativeInactive = false;
+    current.records[0]!.lifecycleCheckedAt = 2;
+    current.continuationRun = { id: 'new occurrence', actions: 0 };
+    const commit = codexCommit(1, 'first', 'delivery');
+    assert.doesNotThrow(() => commit.reconcile(before, before, current));
+    for (const change of [
+      { context: 'changed source' },
+      { retired: { at: 2, by: 'operator' } },
+      { handoff: { at: 2, by: 'operator', turnId: 'new turn' } },
+      { issueBranch: { attemptId: 'first', name: 'other', phase: 'ready' as const } },
+    ]) {
+      const conflicting = structuredClone(current);
+      Object.assign(conflicting.records[0]!, change);
+      assert.throws(() => commit.reconcile(before, before, conflicting), {
+        code: 'private-state-snapshot-conflict',
+        snapshotConflict: 'owner',
+      });
+    }
+  });
+
   it('should reject stale occurrence counters instead of collapsing equal increments', () => {
     const before = state();
     before.continuationRun = { id: 'occurrence', actions: 0 };

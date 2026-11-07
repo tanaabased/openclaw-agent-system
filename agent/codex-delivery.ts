@@ -189,7 +189,7 @@ export default async function runCodexDelivery(
     : await connectCodexThreads(current.workspace, current.codexHome);
   const native = deps.native ?? codexDispatchNative(connection!.request);
   const commitOptions = {
-    ...codexCommit(current.policy?.policy.maxConcurrentItems, input.id),
+    ...codexCommit(current.policy?.policy.maxConcurrentItems, input.id, 'delivery'),
     operation: 'delivery-checkpoint' as const,
   };
   try {
@@ -387,13 +387,17 @@ export default async function runCodexDelivery(
         [
           ...new Set([
             ...(record.delivery?.notices ?? []),
+            ...(record.delivery?.pullRequest && !record.delivery.reconciled
+              ? ['delivery-publication-incomplete']
+              : []),
             ...(!attached ? ['delivery-attachment-pending'] : []),
           ]),
         ]
           .filter(
             (code) =>
               code !== 'delivery-ssh-transport' &&
-              (code !== 'delivery-linkage-retried' || current.manifest.debug),
+              (code !== 'delivery-linkage-retried' ||
+                (current.manifest.debug && record.delivery?.reconciled)),
           )
           .map((code) => codexIssueNotice({ event: 'failure', changed: true, code }));
       const url = (number: number) => `https://github.com/${repository}/pull/${number}`;
@@ -499,7 +503,7 @@ export default async function runCodexDelivery(
         previous.cardAttempts++;
         await save();
         return {
-          status: 'linked',
+          status: previous.reconciled ? 'linked' : 'publication-incomplete',
           retained: true,
           workflowStatus: workflowStatus(record),
           instruction:
