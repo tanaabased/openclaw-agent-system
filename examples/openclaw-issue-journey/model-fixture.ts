@@ -10,6 +10,7 @@ import {
 } from '@copilotkit/aimock';
 
 import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
+import { replyRequestSchema } from '../../tools/dispatch/reply-schema.ts';
 import { Value } from 'typebox/value';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
@@ -214,19 +215,21 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       });
     assert.equal(current.status, 'status-update-context');
     assert.ok(typeof current.observation === 'string');
+    const composeRequest = current.composeRequest;
+    assert.ok(Value.Check(replyRequestSchema, composeRequest));
+    assert.ok(composeRequest.update);
+    assert.equal(composeRequest.update.observation, current.observation);
+    assert.equal(composeRequest.target, updateTarget);
     const noOp = prompt.includes('Check current status target:');
     const composed = result('update-compose');
     if (!composed)
       return dispatch('update-compose', {
-        action: 'reply',
-        operation: 'compose',
-        purpose: 'status-update',
-        target: updateTarget,
+        ...composeRequest,
         privateText: noOp
           ? 'The issue already reflects the selected approach.'
           : 'The operator selected the shared reply approach. Implementation remains unstarted.',
         update: {
-          observation: current.observation,
+          ...composeRequest.update,
           facts: noOp
             ? []
             : [

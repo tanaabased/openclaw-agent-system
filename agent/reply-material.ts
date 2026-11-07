@@ -10,7 +10,15 @@ export default function replyMaterial<T extends Record<string, unknown>>(
 ) {
   return implementationMaterial(context, request, read, {
     purpose: 'reply-material',
-    controls: ['digest', 'observation', 'destination', 'entry', 'factsProvenance', 'eventId'],
+    controls: [
+      'digest',
+      'observation',
+      'composeRequest',
+      'destination',
+      'entry',
+      'factsProvenance',
+      'eventId',
+    ],
     pagedFields: [
       'selection',
       'event',

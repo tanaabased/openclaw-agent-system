@@ -1237,9 +1237,22 @@ for (const scenario of [
         const context = await action(input, 'reply');
         assert.equal(context.operation, 'context');
         assert.equal(context.purpose, 'status-update');
-        append(input, 'update-context', { status: 'status-update-context', observation: digest });
+        const statusContext = {
+          status: 'status-update-context',
+          observation: digest,
+          composeRequest: {
+            action: 'reply',
+            operation: 'compose',
+            purpose: 'status-update',
+            target: source,
+            update: { observation: digest, facts: [] },
+          },
+        };
+        append(input, 'update-context', statusContext);
         const compose = await action(input, 'reply');
         assert.equal(compose.operation, 'compose');
+        assert.equal(compose.target, statusContext.composeRequest.target);
+        assert.equal('observation' in compose, false);
         assert.equal(compose.update?.observation, digest);
         assert.equal(compose.update?.facts.length, 1);
         append(input, 'update-compose', {
@@ -1260,7 +1273,7 @@ for (const scenario of [
         assert.deepEqual(await response(input), { content: 'Private answer and unlinked draft.' });
         const current = request(`Check current status target: ${source}`);
         assert.equal((await action(current, 'reply')).operation, 'context');
-        append(current, 'update-context', { status: 'status-update-context', observation: digest });
+        append(current, 'update-context', statusContext);
         assert.deepEqual((await action(current, 'reply')).update?.facts, []);
         append(current, 'update-compose', {
           status: 'already-current',

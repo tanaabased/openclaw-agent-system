@@ -101,6 +101,38 @@ describe('agent/feedback-reply', () => {
   const call = async (operation: string, extra: object = {}) =>
     feedbackReply({ action: 'reply', operation, ...extra }, deps);
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should compose a status update from the returned request in ${runtime}`, async () => {
+      deps.binding.runtime = runtime;
+      const context = await call('context', { purpose: 'status-update', target: url });
+      assert.ok('composeRequest' in context && context.composeRequest);
+      const request = context.composeRequest;
+      assert.equal(request.target, url);
+      assert.equal(request.update.observation, context.observation);
+      assert.equal((await feedbackReply(request, deps)).status, 'already-current');
+      const compose = {
+        ...request,
+        privateText: 'Verified progress with caveats.',
+        update: { ...request.update, facts: [progressFact] },
+      };
+      await assert.rejects(
+        feedbackReply({ ...compose, observation: context.observation }, deps),
+        /reply-request-invalid/,
+      );
+      await assert.rejects(
+        feedbackReply(
+          { ...compose, update: { ...compose.update, observation: '0'.repeat(64) } },
+          deps,
+        ),
+        /status-update-observation-changed/,
+      );
+      assert.deepEqual(await new ReplyStore(deps.root, deps.binding).read(), []);
+      const result = await feedbackReply(compose, deps);
+      assert.equal(result.status, 'composition-ready');
+      assert.ok('source' in result && result.source && 'facts' in result.source);
+      assert.deepEqual(result.source.facts, [progressFact]);
+      assert.equal(writes, 0);
+    });
+
     it(`should deliver a complete reply source in ${runtime} without recreating or publishing a draft`, async () => {
       deps.binding.runtime = runtime;
       const privateText = 'Verified progress: preserve the complete response.\n'.repeat(250);
