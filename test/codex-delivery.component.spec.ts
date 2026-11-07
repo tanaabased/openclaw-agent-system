@@ -1358,6 +1358,43 @@ describe('agent/codex-delivery', () => {
     assert.equal(creates, 1);
   });
 
+  it('should link the newly published pr with or without its url without new human input', async () => {
+    await publish();
+    const receipt = structuredClone((await store.read()).records[0]!.delivery);
+    deps.native!.operatorInput = async () => {
+      throw new Error('reply-native-user-input-required');
+    };
+    deps.connect = async () => {
+      throw new Error('unchanged association needs no provider write');
+    };
+    for (const input of [{ pullRequest: url }, {}, { pullRequest: url }]) {
+      const linked = await request('link', input);
+      assert.equal(linked.status, 'linked');
+      assert.deepEqual((await store.read()).records[0]!.pullRequestLink, receipt!.pullRequest);
+      assert.deepEqual((await store.read()).records[0]!.delivery, receipt);
+    }
+    for (const pullRequest of [
+      null,
+      'https://github.com/owner/repo/pull/8',
+      'https://github.com/other/repo/pull/7',
+    ])
+      await assert.rejects(request('link', { pullRequest }), /reply-native-user-input-required/);
+    assert.deepEqual((await store.read()).records[0]!.pullRequestLink, receipt!.pullRequest);
+    assert.equal(creates, 1);
+  });
+
+  it('should not restore an explicitly cleared association without operator direction', async () => {
+    await publish();
+    await request('link', { pullRequest: null });
+    deps.native!.operatorInput = async () => {
+      throw new Error('reply-native-user-input-required');
+    };
+    await assert.rejects(request('link', { pullRequest: url }), /reply-native-user-input-required/);
+    assert.equal((await request('link')).status, 'unlinked');
+    assert.equal((await store.read()).records[0]!.pullRequestLink, null);
+    assert.equal(creates, 1);
+  });
+
   it('should recover a lost creation response by adopting the same verified pr', async () => {
     failCreate = true;
     await assert.rejects(publish(), /transport lost/);

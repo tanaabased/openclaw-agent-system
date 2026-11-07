@@ -376,6 +376,39 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(creates, 1);
   });
 
+  it('should accept the current pr url without operator input while preserving association changes', async () => {
+    await publish();
+    const receipt = structuredClone(record.work!.delivery);
+    const pullRequest = `https://github.com/${input.intake.repository.owner.login}/${input.intake.repository.name}/pull/${receipt!.pullRequest!.pullRequestNumber}`;
+    const linked = await openClawDelivery({
+      ...input,
+      operator: false,
+      action: { action: 'delivery', operation: 'link', id: record.id, pullRequest },
+    });
+    assert.equal(linked.status, 'linked');
+    assert.deepEqual(record.pullRequestLink, receipt!.pullRequest);
+    for (const target of [null, pullRequest + '0'])
+      await assert.rejects(
+        openClawDelivery({
+          ...input,
+          operator: false,
+          action: { action: 'delivery', operation: 'link', id: record.id, pullRequest: target },
+        }),
+        /delivery-link-operator-required/,
+      );
+    record.pullRequestLink = null;
+    await assert.rejects(
+      openClawDelivery({
+        ...input,
+        operator: false,
+        action: { action: 'delivery', operation: 'link', id: record.id, pullRequest },
+      }),
+      /delivery-link-operator-required/,
+    );
+    assert.deepEqual(record.work!.delivery, receipt);
+    assert.equal(creates, 1);
+  });
+
   function adoptTarget() {
     adopted = true;
     const f = intakeFixture();

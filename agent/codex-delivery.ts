@@ -231,7 +231,12 @@ export default async function runCodexDelivery(
       const previous = record.delivery;
       if (input.action === 'link') {
         if (input.eventId || deps.schedule) throw new Error('delivery-link-operator-required');
-        if (input.pullRequest !== undefined) {
+        const currentLink = taskPullRequest(record);
+        const unchanged =
+          currentLink &&
+          input.pullRequest ===
+            `https://github.com/${repository}/pull/${currentLink.pullRequestNumber}`;
+        if (input.pullRequest !== undefined && !unchanged) {
           if (!native.operatorInput) throw new Error('delivery-link-operator-required');
           await native.operatorInput(caller!);
           if (input.pullRequest === null) record.pullRequestLink = null;

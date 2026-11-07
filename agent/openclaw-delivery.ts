@@ -76,7 +76,12 @@ export default async function openClawDelivery(input: {
   const adoptedPullRequest = managedPullRequest(intake);
   if (record.supersededBy) throw new Error('dispatch-task-superseded');
   if (action.operation === 'link') {
-    if (action.pullRequest === undefined) {
+    const currentLink = taskPullRequest(record);
+    const unchanged =
+      currentLink &&
+      action.pullRequest ===
+        `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/pull/${currentLink.pullRequestNumber}`;
+    if (action.pullRequest === undefined || unchanged) {
       if (record.pullRequestLink === undefined && record.work?.delivery?.pullRequest)
         record.pullRequestLink = record.work.delivery.pullRequest;
       await save();
