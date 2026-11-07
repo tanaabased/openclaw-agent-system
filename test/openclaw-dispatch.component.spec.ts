@@ -1022,6 +1022,37 @@ describe('agent/openclaw issue dispatch', () => {
     );
   });
 
+  it('should allow verified operator retirement of another task from a managed session', async () => {
+    await assignments(2, 2);
+    const first = await next();
+    await prepare(first);
+    await assess(first.id);
+    const second = await next();
+    await prepare(second);
+    await assess(second.id);
+    const caller = assessor(second.id);
+    const before = structuredClone(await record(caller.sessionKey));
+    const retire = (digest?: string, operator = true, sessionId = caller.sessionId) =>
+      service.run(
+        manifest,
+        root,
+        { ...caller, sessionId },
+        { action: 'retire', id: first.id, digest },
+        operator,
+      );
+    await assert.rejects(retire(undefined, false), /dispatch-operator-required/);
+    await assert.rejects(retire(undefined, true, 'stale'), /dispatch-retire-context-mismatch/);
+    assert.equal((await record(assessor(first.id).sessionKey)).retirement, undefined);
+    const preview = await retire();
+    assert.equal(preview.status, 'retire-available');
+    const applied = await retire('digest' in preview ? String(preview.digest) : '');
+    assert.equal(applied.status, 'retirement-pending');
+    const target = await record(assessor(first.id).sessionKey);
+    assert.equal(target.retirement!.operatorRequest!.caller, caller.sessionKey);
+    assert.equal(target.retirement!.operatorRequest!.targetId, first.id);
+    assert.deepEqual(await record(caller.sessionKey), before);
+  });
+
   it('should accept the exact current task but leave its active invocation pending', async () => {
     const first = await next();
     await prepare(first);
@@ -1033,7 +1064,7 @@ describe('agent/openclaw issue dispatch', () => {
     );
     await assert.rejects(
       service.run(manifest, root, caller, { action: 'retire', id: 'f'.repeat(64) }, true),
-      /dispatch-retire-context-mismatch/,
+      /dispatch-retire-target-mismatch/,
     );
     const preview = await service.run(manifest, root, caller, { action: 'retire' }, true);
     assert.equal(preview.status, 'retire-available');

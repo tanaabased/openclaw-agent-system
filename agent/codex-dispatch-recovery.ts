@@ -137,15 +137,6 @@ export default async function recoverDispatch(
     });
   }
   if (action === 'retire') {
-    if (
-      state.records.some(
-        (entry) =>
-          !entry.handoff &&
-          entry.id !== record.id &&
-          (entry.threadId === caller || entry.receiptThreadId === caller),
-      )
-    )
-      throw new Error('dispatch-operator-caller-required');
     const nativeCaller = await withNative((host) => host.operatorInput(caller));
     const client = await connect();
     const item = await client.getItem(

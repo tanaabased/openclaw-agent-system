@@ -2514,7 +2514,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(fixture.item.state, 'open');
   });
 
-  it('should allow retirement from a handed-off operator chat but not an active issue chat', async () => {
+  it('should allow verified operator retirement from another managed issue chat', async () => {
     const first = await prepare();
     fixture.item.state = 'closed';
     const operator = {
@@ -2533,19 +2533,41 @@ describe('agent/codex-dispatch', () => {
       });
       await save();
     });
+    const before = await readDispatchState();
+    let connected = false;
     await assert.rejects(
-      request('retire', { id: first.id }, operator),
-      /dispatch-operator-caller-required/,
+      request(
+        'retire',
+        { id: first.id },
+        {
+          ...operator,
+          native: {
+            ...deps.native!,
+            operatorInput: async () => {
+              throw new Error('reply-native-user-input-required');
+            },
+          },
+          connect: async (...args) => {
+            connected = true;
+            return deps.connect!(...args);
+          },
+        },
+      ),
+      /reply-native-user-input-required/,
     );
-    await store.exclusive(async (state, save) => {
-      state.records.at(-1)!.handoff = { at: now, by: 'operator', turnId: 'operator-turn' };
-      await save();
-    });
+    assert.equal(connected, false);
+    assert.deepEqual(await readDispatchState(), before);
     const preview = await request('retire', { id: first.id }, operator);
     assert.equal(preview.status, 'retire-available');
     assert.equal(
       (await request('retire', { id: first.id, digest: preview.digest }, operator)).status,
       'retirement-pending',
+    );
+    const after = (await readDispatchState()).records as Record<string, unknown>[];
+    assert.deepEqual(after[1], (before.records as Record<string, unknown>[])[1]);
+    assert.equal(
+      (after[0]!.retirement as { operatorRequest: { caller: string } }).operatorRequest.caller,
+      'operator',
     );
   });
 
