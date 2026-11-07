@@ -288,6 +288,14 @@ export default async function runCodexDelivery(
         } catch {
           signal.throwIfAborted();
         }
+        if (
+          previous?.pullRequest?.pullRequestNodeId === linked.pullRequestNodeId &&
+          attached !== undefined &&
+          previous.attached !== attached
+        ) {
+          previous.attached = attached;
+          await save();
+        }
         return {
           status: 'linked' as const,
           pullRequest: linked,

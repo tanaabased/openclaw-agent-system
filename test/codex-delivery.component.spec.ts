@@ -1298,7 +1298,9 @@ describe('agent/codex-delivery', () => {
     assert.equal((await request('present')).status, 'linked');
     assert.equal((await request('reconcile')).status, 'ready');
     attached = true;
-    assert.equal((await request('reconcile')).status, 'ready');
+    const linked = await request('link');
+    assert.equal(linked.status, 'linked');
+    assert.equal(linked.attached, true);
     const presented = await request('present');
     assert.equal(presented.status, 'linked');
     assert.deepEqual(presented.notices, []);
@@ -1311,13 +1313,32 @@ describe('agent/codex-delivery', () => {
     );
     assert.equal(creates, 1);
     deps.attachment = async () => undefined;
-    await request('reconcile');
+    await request('link');
     assert.equal((await store.read()).records[0]!.delivery!.attached, true);
     deps.attachment = async () => attached;
     attached = false;
-    await request('reconcile');
+    await request('link');
     assert.equal((await store.read()).records[0]!.delivery!.attached, false);
-    assert.equal((await request('present')).status, 'linked');
+    const missing = await request('present');
+    assert.equal(missing.status, 'linked');
+    assert.match(JSON.stringify(missing.notices), /delivery-attachment-pending/);
+  });
+
+  it('should preserve the delivery attachment when observing a different linked pr', async () => {
+    await publish();
+    const receipt = (await store.read()).records[0]!.delivery;
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.pullRequestLink = { pullRequestNodeId: 'PR_8', pullRequestNumber: 8 };
+      await save();
+    });
+    deps.attachment = async (_thread, _turn, target) => {
+      assert.equal(target, 'https://github.com/owner/repo/pull/8');
+      return true;
+    };
+    const linked = await request('link');
+    assert.equal(linked.attached, true);
+    assert.deepEqual((await store.read()).records[0]!.delivery, receipt);
+    assert.equal(creates, 1);
   });
 
   it('should return a complete publish request and refresh changed content before any write', async () => {
