@@ -263,6 +263,17 @@ export default async function runCodexContinuation(
         },
       },
     );
+    if ('publishRequest' in delivery && delivery.publishRequest) {
+      const { id: deliveryId, ...publication } = delivery.publishRequest;
+      return {
+        ...delivery,
+        publishRequest: {
+          action: 'delivery' as const,
+          id: deliveryId,
+          delivery: publication,
+        },
+      };
+    }
     return delivery;
   } catch (error) {
     const failure = workflowFailure(error, 'continuation-operation-failed');

@@ -280,9 +280,34 @@ describe('agent/openclaw-delivery', () => {
     });
   async function publish(content = { title: 'Fix issue', body: 'Closes #3' }) {
     const prepared = await request('prepare', content);
-    assert.ok('digest' in prepared);
-    return request('publish', { digest: prepared.digest, ...content });
+    assert.ok('publishRequest' in prepared && prepared.publishRequest);
+    return openClawDelivery({ ...input, action: prepared.publishRequest });
   }
+
+  it('should refresh changed content and publish the complete returned request once', async () => {
+    const prepared = await request('prepare', {
+      title: 'One poem',
+      body: 'First line.\n\nSecond line.',
+    });
+    assert.ok('publishRequest' in prepared && prepared.publishRequest);
+    assert.equal(prepared.publishRequest.body, 'First line.\n\nSecond line.');
+    const stale = await openClawDelivery({
+      ...input,
+      action: { ...prepared.publishRequest, body: 'Revised poem.' },
+    });
+    assert.equal(stale.status, 'prepared');
+    assert.equal(creates, 0);
+    assert.equal(pushes, 0);
+    assert.ok('publishRequest' in stale && stale.publishRequest);
+    assert.notEqual(stale.publishRequest.digest, prepared.publishRequest.digest);
+    assert.equal(
+      (await openClawDelivery({ ...input, action: stale.publishRequest })).status,
+      'published',
+    );
+    await request('reconcile');
+    assert.equal(creates, 1);
+    assert.ok(String(pr!.body).startsWith('Revised poem.'));
+  });
   function authorizePrFeedback() {
     const fixture = intakeFixture();
     const pullRequest = fixturePullRequest(fixture);

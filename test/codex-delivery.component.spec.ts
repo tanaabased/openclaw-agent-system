@@ -83,10 +83,8 @@ describe('agent/codex-delivery', () => {
   async function publish(content = { title: 'Authored title', body: 'Authored body.' }) {
     const preview = await request('prepare', content);
     assert.equal(preview.status, 'prepared');
-    return request('publish', {
-      digest: requiredDigest(preview),
-      ...content,
-    });
+    assert.ok('publishRequest' in preview && preview.publishRequest);
+    return runCodexDelivery(pluginData, preview.publishRequest, deps);
   }
   async function feedbackWorkFixture(firstDelivery = false) {
     const declaration = JSON.parse(await readFile(join(workspace, 'agent.yaml'), 'utf8'));
@@ -1291,6 +1289,37 @@ describe('agent/codex-delivery', () => {
     await request('reconcile');
     assert.equal((await store.read()).records[0]!.delivery!.attached, false);
     assert.equal((await request('present')).status, 'linked');
+  });
+
+  it('should return a complete publish request and refresh changed content before any write', async () => {
+    const content = { title: 'One poem', body: 'First line.\n\nSecond line with `code`.' };
+    const preview = await request('prepare', content);
+    assert.ok('publishRequest' in preview && preview.publishRequest);
+    assert.deepEqual(preview.publishRequest, {
+      action: 'publish',
+      id,
+      digest: requiredDigest(preview),
+      ...content,
+    });
+    const stale = await runCodexDelivery(
+      pluginData,
+      { ...preview.publishRequest, body: 'Revised poem.' },
+      deps,
+    );
+    assert.equal(stale.status, 'prepared');
+    assert.equal(creates, 0);
+    assert.ok(!gitCalls.some((argv) => argv.includes('push')));
+    assert.ok('publishRequest' in stale && stale.publishRequest);
+    assert.equal(stale.publishRequest.body, 'Revised poem.');
+    assert.notEqual(stale.publishRequest.digest, preview.publishRequest.digest);
+    assert.equal(
+      (await runCodexDelivery(pluginData, stale.publishRequest, deps)).status,
+      'published',
+    );
+    await request('reconcile');
+    assert.equal(creates, 1);
+    assert.equal(pr!.title, content.title);
+    assert.ok(String(pr!.body).startsWith('Revised poem.'));
   });
   it('should resume a failed linkage or recipient phase on the checkpointed pr', async () => {
     failLink = true;

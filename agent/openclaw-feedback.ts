@@ -503,8 +503,22 @@ export default async function openClawFeedback(input: {
     });
     return {
       ...result,
+      ...('publishRequest' in result && result.publishRequest
+        ? {
+            publishRequest: {
+              action: 'feedback' as const,
+              operation: 'delivery' as const,
+              deliveryOperation: 'publish' as const,
+              id: record.id,
+              eventId: event.id,
+              digest: result.publishRequest.digest,
+              title: result.publishRequest.title,
+              body: result.publishRequest.body,
+            },
+          }
+        : {}),
       instruction:
-        'Continue through feedback delivery with deliveryOperation and the returned digest. Reuse the same PR and any existing announcement. Compose the source-bound reply through the shared reply operation; no feedback result or implementation replay is required.',
+        'Continue through feedback delivery using the complete publishRequest when prepared. Reuse the same PR and any existing announcement. Compose the source-bound reply through the shared reply operation; no feedback result or implementation replay is required.',
     };
   }
   if (action.operation === 'context')

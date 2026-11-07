@@ -402,11 +402,19 @@ export default async function openClawDelivery(input: {
       id: record.id,
       digest,
       operation: { ...delivery, binding, title, body, contentUpdate },
+      publishRequest: {
+        action: 'delivery' as const,
+        operation: 'publish' as const,
+        id: record.id,
+        digest,
+        title,
+        body,
+      },
       instructions:
         (action.operation === 'publish'
-          ? 'This stale preview made no publication write. Inspect the refreshed operation and retry once with its digest only within the retained authorization; investigate repeated staleness. '
+          ? 'This stale preview made no publication write. Inspect the refreshed operation and use its complete publishRequest once within the retained authorization; investigate repeated staleness. '
           : '') +
-        'The verified implementation stage or current operator direction authorizes ordinary PR delivery and appropriate follow-up commits. Publish using this digest and the same title/body without a separate publication grant. Honor explicit user restrictions and native denials. On an uncertain result, prepare again to reconcile this operation; do not create a replacement PR.',
+        'The verified implementation stage or current operator direction authorizes ordinary PR delivery and appropriate follow-up commits. Submit the complete publishRequest through agent_system_dispatch without a separate publication grant. Keep its digest, title and body together. Honor explicit user restrictions and native denials. On an uncertain result, prepare again to reconcile this operation; do not create a replacement PR.',
     };
   const provider = new IssueDeliveryProvider({
     identity: connection.account.identity,

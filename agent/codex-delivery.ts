@@ -840,14 +840,22 @@ export default async function runCodexDelivery(
           id: input.id,
           digest,
           operation: delivery,
+          publishRequest: {
+            action: 'publish' as const,
+            id: input.id,
+            ...(input.eventId ? { eventId: input.eventId } : {}),
+            digest,
+            title: delivery.title,
+            body: delivery.body,
+          },
           currentPullRequest: taskPullRequest(record),
           instruction:
             (input.action === 'publish'
-              ? 'This stale preview made no publication write. Inspect the refreshed operation and retry once with its digest only within the existing authorization; investigate repeated staleness. '
+              ? 'This stale preview made no publication write. Inspect the refreshed operation and use its complete publishRequest once within the existing authorization; investigate repeated staleness. '
               : '') +
             (deps.schedule
               ? 'The activated workflow and verified continuation authorize publication. Publish through the owning continuationRuntime with this digest and the same title/body; no additional stage approval is required. Native execution review still applies.'
-              : 'The verified implementation stage or current user direction authorizes ordinary PR delivery and appropriate follow-up commits. Do not ask for a separate publication grant; honor explicit user restrictions. Execute delivery publish with this id and digest through native approval, retaining title/body if supplied. Preparation does not grant permission and a native denial stops the operation.'),
+              : 'The verified implementation stage or current user direction authorizes ordinary PR delivery and appropriate follow-up commits. Do not ask for a separate publication grant; honor explicit user restrictions. Execute delivery publish with the complete publishRequest as JSON on stdin through native approval. Keep its digest, title and body together. Preparation does not grant permission and a native denial stops the operation.'),
         };
       if (input.action === 'publish') {
         await authorizePublication();
