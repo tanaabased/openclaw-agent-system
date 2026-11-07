@@ -49,7 +49,7 @@ describe('agent/dispatch-inspection', () => {
     const { admitted, records } = fixture();
     const owners = records.map((r) => ({
       ...r,
-      delivery: { pullRequest: { pullRequestNumber: 7 } },
+      delivery: { pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 } },
     }));
     assert.equal(
       dispatchInspection(owners, [admitted], { target: 'OWNER/repo#3' }).records.length,
@@ -83,6 +83,25 @@ describe('agent/dispatch-inspection', () => {
       () => dispatchInspection(records, [admitted], { target: '3' }),
       /qualified-target-required/,
     );
+  });
+  it('should select the current pr link instead of a historical delivery receipt', () => {
+    const { admitted, records } = fixture();
+    const owner: SharedDispatchRecord & {
+      delivery: { pullRequest: { pullRequestNodeId: string; pullRequestNumber: number } };
+    } = {
+      ...records[0]!,
+      delivery: { pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 } },
+      pullRequestLink: { pullRequestNodeId: 'PR_8', pullRequestNumber: 8 },
+    };
+    const lookup = (number: number) =>
+      dispatchInspection([owner], [admitted], {
+        target: `https://github.com/owner/repo/pull/${number}`,
+      }).records;
+    assert.equal(lookup(8).length, 1);
+    assert.equal(lookup(7).length, 0);
+    owner.pullRequestLink = null;
+    assert.equal(lookup(8).length, 0);
+    assert.equal(lookup(7).length, 0);
   });
   it('should page retained owners while preserving the unfiltered inspection contract', () => {
     const { admitted, records } = fixture();

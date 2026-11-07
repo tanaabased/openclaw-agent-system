@@ -3265,8 +3265,10 @@ describe('agent/openclaw issue dispatch', () => {
           { action: 'next' },
         )
       ).status,
-      'idle',
+      'at-capacity',
     );
+    assert.equal((await record()).firstTurn?.status, 'attempted');
+    assert.equal(sends().length, 1);
   });
 
   it('should reject unrelated messages busy sessions and replaced incarnations before a first send', async () => {
@@ -7870,7 +7872,11 @@ describe('agent/openclaw issue dispatch', () => {
         owner.feedback!.baseline.PR_7 = {};
         owner.feedback!.watermarks = { ...owner.feedback!.watermarks, PR_7: baseline };
         owner.feedback!.discovery = {
-          PR_7: { since: baseline, startedAt: baseline + 1, reads: {} },
+          PR_7: {
+            since: baseline,
+            startedAt: baseline + 1,
+            reads: { 'comments:1': JSON.stringify({ comments: [], truncated: false }) },
+          },
           PR_other: { since: baseline, startedAt: baseline + 1, reads: {} },
         };
         owner.feedback!.discoveryStalls = {
@@ -7916,8 +7922,8 @@ describe('agent/openclaw issue dispatch', () => {
       for (let pass = 0; pass < 2; pass++) {
         await service.check(manifest, root);
         const feedback = (await record()).feedback!;
-        assert.deepEqual(feedback.discovery?.PR_other, before.discovery!.PR_other);
-        assert.deepEqual(feedback.discoveryStalls?.PR_other, before.discoveryStalls?.PR_other);
+        assert.equal(feedback.discovery?.PR_other, undefined);
+        assert.equal(feedback.discoveryStalls?.PR_other, undefined);
         assert.deepEqual(feedback.baseline.PR_7, before.baseline.PR_7);
         assert.equal(feedback.watermarks?.PR_7, baseline);
         assert.equal(JSON.stringify(feedback.events), JSON.stringify(before.events));
@@ -7927,10 +7933,7 @@ describe('agent/openclaw issue dispatch', () => {
         } else {
           assert.equal(feedback.discovery?.PR_7, undefined);
           assert.equal(feedback.discoveryStalls?.PR_7, undefined);
-          assert.equal(
-            feedback.code,
-            failure === 'other-stall' ? 'feedback-discovery-no-progress' : undefined,
-          );
+          assert.equal(feedback.code, undefined);
         }
       }
       if (!unavailable) {
@@ -7940,6 +7943,219 @@ describe('agent/openclaw issue dispatch', () => {
         assert.ok(reopened.watermarks!.PR_7! > baseline);
         assert.equal(reopened.discovery?.PR_7, undefined);
       }
+    });
+  }
+  it('should reject obsolete cleanup when a concurrent relink changes the selected source', async () => {
+    await feedbackOwner(true, false);
+    const current = await service.scope(manifest, root);
+    const cursor = { since: baseline, startedAt: baseline + 1, reads: { 'comments:1': '{}' } };
+    await current.journal.exclusive(async (state, save) => {
+      state.records[0]!.pullRequestLink = null;
+      state.records[0]!.feedback!.discovery = { PR_old: cursor };
+      await save();
+    });
+    const validate = service.validate.bind(service);
+    service.validate = async (...args) => {
+      const result = await validate(...args);
+      await current.journal.exclusive(async (state, save) => {
+        state.records[0]!.pullRequestLink = { pullRequestNodeId: 'PR_new', pullRequestNumber: 8 };
+        state.records[0]!.feedback!.discovery!.PR_new = cursor;
+        await save();
+      });
+      return result;
+    };
+    const scans = await scanOpenClawFeedback({
+      service,
+      state: await current.journal.read(),
+      manifest,
+      workspace: root,
+      sourceThreadId: coordinator.sessionKey,
+      authority: {},
+      now: service.dependencies.now!(),
+      checkpoint: (scan) => discoveryCheckpoint(current.journal, scan),
+    });
+    assert.equal(scans.length, 0);
+    const owner = await record();
+    assert.equal(owner.pullRequestLink?.pullRequestNodeId, 'PR_new');
+    assert.deepEqual(owner.feedback!.discovery!.PR_new, cursor);
+    assert.deepEqual(owner.feedback!.discovery!.PR_old, cursor);
+  });
+  it('should discover github feedback without a duplicate native activity poll', async () => {
+    await feedbackOwner(true, false);
+    const current = await service.scope(manifest, root);
+    service.dependencies.credential.use = async () => {
+      throw new Error('discovery must reuse lifecycle capacity observation');
+    };
+    const scans = await scanOpenClawFeedback({
+      service,
+      state: await current.journal.read(),
+      manifest,
+      workspace: root,
+      sourceThreadId: coordinator.sessionKey,
+      authority: {},
+      now: service.dependencies.now!(),
+      checkpoint: (scan) => discoveryCheckpoint(current.journal, scan),
+    });
+    assert.equal(scans.length, 1);
+    assert.equal(scans[0]!.feedback.discoveryPending, false);
+    assert.equal(scans[0]!.feedback.code, undefined);
+    assert.equal(scans[0]!.feedback.events.length, 1);
+  });
+  it('should eventually serve each eligible feedback owner across bounded occurrences', async () => {
+    await feedbackOwner(true, false);
+    const current = await service.scope(manifest, root);
+    const original = structuredClone(await record());
+    const validation = await service.validate(manifest, root, original, false, true);
+    const identities = [3, 4, 5].map((number) => ({
+      number,
+      id: number === 3 ? original.id : String(number).repeat(64),
+      nodeId: `I_${number}`,
+    }));
+    await current.journal.exclusive(async (state, save) => {
+      state.records = identities.map((source) => ({
+        ...structuredClone(original),
+        id: source.id,
+        worktreeAttemptId: source.id,
+        phase: 'created',
+        result: undefined,
+        assessmentCaller: undefined,
+        stageReceipt: undefined,
+        resultTurnId: undefined,
+        firstTurn: undefined,
+        assessmentTurn: undefined,
+        work: undefined,
+        decisionTurn: undefined,
+        handoff: undefined,
+        progression: undefined,
+        issueKey: automationHash(['fixture', String(source.number)]),
+        threadId: `fixture-${source.number}`,
+        request: { ...original.request!, key: `fixture-${source.number}` },
+        feedback: { startedAt: baseline, baseline: {}, events: [] },
+      }));
+      await save();
+    });
+    let clock = 0;
+    const attempted: number[] = [];
+    service.validate = async (_manifest, _workspace, owner) => {
+      const source = identities.find((source) => source.id === owner.id)!;
+      attempted.push(source.number);
+      clock += 11000;
+      return {
+        ...validation,
+        intake: {
+          ...validation.intake,
+          issue: { ...validation.intake.issue, nodeId: source.nodeId, number: source.number },
+        },
+      };
+    };
+    for (let pass = 0; pass < 4; pass++) {
+      clock = 0;
+      await scanOpenClawFeedback({
+        service,
+        state: await current.journal.read(),
+        manifest,
+        workspace: root,
+        sourceThreadId: coordinator.sessionKey,
+        authority: {},
+        now: baseline + 240000 + pass * 1000,
+        budget: new DiscoveryBudget(20000, undefined, () => clock),
+        checkpoint: (scan) => discoveryCheckpoint(current.journal, scan),
+      });
+    }
+    for (const source of identities) {
+      const owner = (await current.journal.read()).records.find((owner) => owner.id === source.id)!;
+      assert.ok(
+        owner.feedback!.watermarks?.[source.nodeId],
+        `owner ${source.number} must complete a source scan`,
+      );
+      assert.equal(owner.feedback!.events.length, 1);
+    }
+    assert.deepEqual([...new Set(attempted)].sort(), [3, 4, 5]);
+  });
+  it('should clear a record budget boundary only after a real successful next occurrence', async () => {
+    await feedbackOwner(true, false);
+    const current = await service.scope(manifest, root);
+    const initial = structuredClone((await record()).feedback!);
+    let clock = 0;
+    const budget = new DiscoveryBudget(20000, undefined, () => clock);
+    clock = 20000;
+    await scanOpenClawFeedback({
+      service,
+      state: await current.journal.read(),
+      manifest,
+      workspace: root,
+      sourceThreadId: coordinator.sessionKey,
+      authority: {},
+      now: service.dependencies.now!(),
+      budget,
+      checkpoint: (scan) => discoveryCheckpoint(current.journal, scan),
+    });
+    const blocked = (await record()).feedback!;
+    assert.equal(blocked.scannedTime, initial.scannedTime);
+    assert.equal(blocked.discoveryPending, true);
+    assert.equal(
+      blocked.discoveryStalls![(await record()).id]!.operation,
+      'occurrence-budget-before-feedback',
+    );
+    service = new OpenClawDispatch({ ...service.dependencies });
+    await service.check(manifest, root);
+    const completed = (await record()).feedback!;
+    assert.equal(completed.discoveryPending, false);
+    assert.equal(completed.discoveryStalls?.[(await record()).id], undefined);
+    assert.equal(completed.events.length, 1);
+    assert.equal(completed.code, undefined);
+  });
+  for (const association of ['relinked', 'unlinked'] as const) {
+    it(`should discard ${association} pr scratch durably without querying the old source`, async () => {
+      await feedbackOwner();
+      const current = await service.scope(manifest, root);
+      await current.journal.exclusive(async (state, save) => {
+        const owner = state.records[0]!;
+        owner.pullRequestLink =
+          association === 'unlinked' ? null : { pullRequestNodeId: 'PR_8', pullRequestNumber: 8 };
+        owner.feedback!.baseline.PR_7 = {};
+        owner.feedback!.watermarks = { ...owner.feedback!.watermarks, PR_7: baseline };
+        owner.feedback!.discovery = {
+          PR_7: {
+            since: baseline,
+            startedAt: baseline + 1,
+            reads: { 'comments:1': JSON.stringify({ comments: [], truncated: false }) },
+          },
+        };
+        owner.feedback!.discoveryStalls = { PR_7: { operation: 'source-validation', attempts: 3 } };
+        owner.feedback!.code = 'feedback-discovery-no-progress';
+        await save();
+      });
+      const before = structuredClone((await record()).feedback!);
+      const connect = service.dependencies.feedbackConnect!;
+      const linked = { ...fixture, item: structuredClone(fixture.item) };
+      fixturePullRequest(linked);
+      Object.assign(linked.item, { nodeId: 'PR_8', number: 8, state: 'closed' });
+      const sourceReads: number[] = [];
+      service.dependencies.feedbackConnect = async (...args) => {
+        const provider = await connect(...args);
+        return {
+          ...provider,
+          getItem: async (owner, name, number) => {
+            sourceReads.push(number);
+            assert.notEqual(number, 7, 'deselected source must not need a closure read');
+            return number === 8 ? linked.item : provider.getItem(owner, name, number);
+          },
+        };
+      };
+      for (let pass = 0; pass < 2; pass++) {
+        service = new OpenClawDispatch({ ...service.dependencies });
+        await service.check(manifest, root);
+        const feedback = (await record()).feedback!;
+        assert.equal(feedback.discovery?.PR_7, undefined);
+        assert.equal(feedback.discoveryStalls?.PR_7, undefined);
+        assert.equal(feedback.code, undefined);
+        assert.equal(feedback.discoveryPending, false);
+        assert.deepEqual(feedback.baseline.PR_7, before.baseline.PR_7);
+        assert.equal(feedback.watermarks?.PR_7, baseline);
+        assert.deepEqual(feedback.events, before.events);
+      }
+      assert.equal(sourceReads.includes(8), association === 'relinked');
     });
   }
   it('should rotate issue and pr discovery, report the stalled pr read, and admit its exact source once', async () => {

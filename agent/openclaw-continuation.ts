@@ -34,6 +34,7 @@ export default async function advanceOpenClawWork(input: {
     try {
       await input.assertCurrent();
       await reconcileOpenClawTurn({
+        record,
         request,
         sessionKey: expected.key,
         sessionId: record.sessionCreation!.sessionId!,

@@ -77,6 +77,8 @@ export default async function reconcileOpenClawLifecycle(input: {
   };
   const observe = async (request: DispatchRequest, record: OpenClawDispatchRecord) => {
     const observed = await observeRetirementSession(request, record, manifest.agent.id, owner);
+    if (observed && !observed.unavailableSession && !record.retirement)
+      record.nativeInactive = observed.idle;
     return (
       observed && { ...observed, idle: observed.idle && record.threadId !== input.activeSessionKey }
     );

@@ -1,3 +1,4 @@
+import taskPullRequest from './task-pull-request.ts';
 import { Type, type Static } from 'typebox';
 
 import type { SharedDispatchRecord } from './dispatch-state.ts';
@@ -20,8 +21,8 @@ type Inspection = {
 };
 type Inspectable = SharedDispatchRecord & {
   feedback?: FeedbackSourceState;
-  delivery?: { pullRequest?: { pullRequestNumber: number } };
-  work?: { delivery?: { pullRequest?: { pullRequestNumber: number } } };
+  delivery?: { pullRequest?: { pullRequestNodeId: string; pullRequestNumber: number } };
+  work?: { delivery?: { pullRequest?: { pullRequestNodeId: string; pullRequestNumber: number } } };
 };
 
 /** inspect saved observations only; selection never reads providers or changes lifecycle state. */
@@ -44,7 +45,7 @@ export default function dispatchInspection<R extends Inspectable>(
     )
       return false;
     const kind = target.itemType ?? 'issue';
-    const pr = record.work?.delivery?.pullRequest ?? record.delivery?.pullRequest;
+    const pr = taskPullRequest(record);
     return (
       ((managedPullRequest(source) ? 'pull-request' : 'issue') === kind &&
         source.issue.number === target.number) ||

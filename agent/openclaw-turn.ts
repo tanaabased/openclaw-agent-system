@@ -7,6 +7,7 @@ import {
 } from './openclaw-history.ts';
 import { sessionObject } from './openclaw-session-create.ts';
 import type { OpenClawTurn } from './openclaw-turn-state.ts';
+import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 import type { DispatchRequest } from '../credentials/session-dispatch.ts';
 /** ordinary consumed inputs leave the pending table; verify their exact transcript identity. */
 export function consumedInputEvent(messages: unknown[], turn: OpenClawTurn) {
@@ -63,6 +64,7 @@ export async function reconcileOpenClawTurn(input: {
   sessionKey: string;
   sessionId: string;
   turn: OpenClawTurn;
+  record?: Pick<OpenClawDispatchRecord, 'nativeInactive'>;
   save(): Promise<void>;
 }) {
   const { request, turn, save } = input;
@@ -85,6 +87,15 @@ export async function reconcileOpenClawTurn(input: {
     if (receipts.length > 1) throw new Error('dispatch-turn-receipt-invalid');
     const receipt = receipts[0];
     const info = sessionObject(history.sessionInfo);
+    const pending = sessionObject(history.pendingInputs).total;
+    if (
+      input.record &&
+      typeof info.hasActiveRun === 'boolean' &&
+      typeof pending === 'number' &&
+      Number.isSafeInteger(pending) &&
+      pending >= 0
+    )
+      input.record.nativeInactive = !info.hasActiveRun && pending === 0;
     delete turn.inactive;
     if (receipt?.cancelled === true || turn.cancelled) {
       turn.cancelled = true;

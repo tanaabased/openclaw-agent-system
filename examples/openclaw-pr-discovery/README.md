@@ -8,6 +8,7 @@ on the existing PR.
 
 - Real deadline cancellation of the forwarding provider, retained discovery checkpoints, and no fabricated admission while reads stall.
 - Compact native inspection of the selected stalled owner without another scan or lifecycle change.
+- Removing obsolete source discovery scratch without losing the current PR checkpoint or accepted feedback.
 - Processing the exact comment after recovery without duplicating earlier events, work, PRs, or replies.
 
 ## What Does Not Belong Here
@@ -172,11 +173,33 @@ openclaw agent-system tool gh -- api --method POST "repos/tanaabased/big-test-bu
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-discovery/tanaabot"
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const p=process.env.TMPDIR+"/pr-provider/control.json"; const control=JSON.parse(readFileSync(p,"utf8")); control.endpoint="repos/tanaabased/big-test-bucket/issues/"+process.argv[1]+"/comments"; control.paused=true; writeFileSync(p,JSON.stringify(control));' "$number"
 jq -s '[.[].records[] | {id, events:[.feedback.events[] | {id,sourceId}]}] | sort_by(.id)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-feedback-before-stall.json"
+node --input-type=module <<'NODE'
+import assert from 'node:assert/strict';
+import {readFileSync, readdirSync, writeFileSync} from 'node:fs';
+import {join} from 'node:path';
+assert.equal(process.env.GITHUB_ACTIONS, 'true');
+const directory = join(process.env.XDG_CONFIG_HOME, 'tanaab/agent-system/agent-system-dispatch-v2');
+const owner = JSON.parse(readFileSync(join(process.env.TMPDIR, 'notification-delivery.json'), 'utf8')).id;
+let seeded = 0;
+for (const file of readdirSync(directory).filter(name => /^openclaw-dispatch-.*[.]json$/.test(name))) {
+  const path = join(directory, file);
+  const state = JSON.parse(readFileSync(path, 'utf8'));
+  const record = state.records.find(record => record.id === owner);
+  if (!record) continue;
+  const feedback = record.feedback;
+  (feedback.discovery ??= {}).PR_fixture_obsolete = {since: 0, startedAt: 1, reads: {'comments:1': JSON.stringify({comments: [], truncated: false})}};
+  (feedback.discoveryStalls ??= {}).PR_fixture_obsolete = {operation: 'source-validation', attempts: 3};
+  feedback.lastSource = 'PR_fixture_obsolete';
+  writeFileSync(path, JSON.stringify(state));
+  seeded++;
+}
+assert.equal(seeded, 1);
+NODE
 for poll in 1 2 3; do
   PATH="$TMPDIR/pr-provider:$PATH" OPENCLAW_PATH_BOOTSTRAPPED=1 openclaw agent-system notifications refresh --repository tanaabased/big-test-bucket --kind issue --number "$(jq -er .number "$TMPDIR/notification-issue.json")" --json | jq -e '.status == "completed"'
 done
 jq -s -e 'length == 3 and all(.[]; .paused and .operation == "comments:1")' "$TMPDIR/pr-provider/reads.jsonl"
-jq -es --arg pr "$(jq -er .work.delivery.pullRequest.pullRequestNodeId "$TMPDIR/notification-delivery.json")" --arg source "$(jq -er .node_id "$TMPDIR/notification-feedback-source.json")" 'all(.[].records[]; .feedback.discoveryPending and .feedback.code == "feedback-discovery-no-progress" and .feedback.discoveryStalls[$pr].operation == "comments:1" and (.feedback.discovery[$pr].reads | length) == 0 and all(.feedback.events[]; .sourceId != $source))' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+jq -es --arg pr "$(jq -er .work.delivery.pullRequest.pullRequestNodeId "$TMPDIR/notification-delivery.json")" --arg source "$(jq -er .node_id "$TMPDIR/notification-feedback-source.json")" 'all(.[].records[]; .feedback.discoveryPending and .feedback.code == "feedback-discovery-no-progress" and .feedback.discoveryStalls[$pr].operation == "comments:1" and .feedback.discovery.PR_fixture_obsolete == null and .feedback.discoveryStalls.PR_fixture_obsolete == null and (.feedback.discovery[$pr].reads | length) == 0 and all(.feedback.events[]; .sourceId != $source))' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 jq -es --slurpfile before "$TMPDIR/notification-feedback-before-stall.json" '([.[].records[] | {id, events:[.feedback.events[] | {id,sourceId}]}] | sort_by(.id)) == $before[0]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 
 # should inspect the stalled owner through the installed native tool without another provider read

@@ -107,6 +107,22 @@ describe('agent/implementation-delivery', () => {
     assert.equal(openClawItemOccupied(openclaw), true);
   });
 
+  it('should retain an uncertain native effect despite an earlier idle observation', () => {
+    const record = {
+      request: {},
+      nativeInactive: true,
+      sessionCreation: { verified: true },
+      firstTurn: { status: 'attempted' },
+      feedback: { events: [], activity: { busy: true } },
+    } as unknown as OpenClawDispatchRecord;
+    assert.equal(openClawItemOccupied(record), true);
+    record.firstTurn!.status = 'completed';
+    assert.equal(openClawItemOccupied(record), false);
+    record.nativeInactive = false;
+    record.feedback!.activity!.busy = false;
+    assert.equal(openClawItemOccupied(record), true);
+  });
+
   it('should recognize verified pr publication without a saved implementation result', () => {
     const record: IssueWorkflowState = {
       phase: 'assessing',

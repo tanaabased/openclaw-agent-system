@@ -6,7 +6,6 @@ import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
 export function openClawItemOccupied(record: OpenClawDispatchRecord) {
   if (record.retired && record.retirement?.sessionUnavailableObserved) return false;
   if (record.supersededBy || record.reset || !record.request) return false;
-  if (record.nativeInactive !== undefined) return !record.nativeInactive;
   const turns = [
     record.firstTurn,
     record.assessmentTurn,
@@ -16,11 +15,11 @@ export function openClawItemOccupied(record: OpenClawDispatchRecord) {
     record.work?.deliveryTurn,
     ...(record.feedback?.events.map((event) => event.turn) ?? []),
   ];
+  if (record.retired && record.nativeInactive === true) return false;
   return Boolean(
     !record.sessionCreation?.verified ||
-    !turns.some(Boolean) ||
-    turns.some((turn) => turn && turn.status !== 'completed' && !turn.inactive) ||
-    record.feedback?.activity?.busy,
+    turns.some((turn) => turn?.status === 'attempted' && !turn.inactive) ||
+    record.nativeInactive !== true,
   );
 }
 export default function openClawCapacity(

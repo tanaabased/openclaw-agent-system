@@ -530,7 +530,8 @@ describe('agent/openclaw-feedback', () => {
       assert.equal(event.phase, 'running'); // source-bound feedback reply still has its own owner.
       input.record = record = JSON.parse(JSON.stringify(record));
       input.event = event = record.feedback!.events[0]!;
-      assert.equal(workflowStatus(record), 'native-unobserved');
+      assert.equal(record.nativeInactive, false);
+      assert.equal(workflowStatus(record), 'active');
       assert.equal(hasDeliveredImplementation(record), true);
       const replay = await action('delivery', { deliveryOperation: 'prepare' });
       assert.ok('digest' in replay);

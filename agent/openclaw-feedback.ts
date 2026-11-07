@@ -89,7 +89,7 @@ export async function advanceFeedbackTurn(input: {
   if (!event.turn) {
     const session = await observeIssueActivity(request, record, input.config);
     // The host's followup queue preserves active work; feedback needs no idle gate.
-    record.feedback!.activity = { busy: session.busy, observedAt: Date.now() };
+    record.nativeInactive = !session.busy;
     if (typeof session.leaf !== 'string' || !session.leaf)
       throw new Error('feedback-session-unverified');
     const runId = `${record.id}:feedback:${event.id}${event.resumed ? ':resume:' + event.resumed : ''}`;
@@ -126,6 +126,7 @@ export async function advanceFeedbackTurn(input: {
   }
   await describeIssueSession(request, record, input.config, 'feedback');
   await reconcileOpenClawTurn({
+    record,
     request,
     sessionKey: expected.key,
     sessionId: record.sessionCreation.sessionId!,

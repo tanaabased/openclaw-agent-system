@@ -110,6 +110,7 @@ export default async function advanceIssueTurn(input: {
     const turn = record[slot]!;
     await describeIssueSession(request, record, input.config);
     await reconcileOpenClawTurn({
+      record,
       request,
       sessionKey: expected.key,
       sessionId,

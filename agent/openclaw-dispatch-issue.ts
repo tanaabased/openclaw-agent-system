@@ -162,10 +162,6 @@ export default class OpenClawDispatchIssue {
               assertCurrent,
               config: this.context.dependencies.config(),
             });
-            if (event.turn?.status === 'completed' && record.feedback?.activity) {
-              record.feedback.activity.busy = false;
-              await save();
-            }
             return result;
           },
         );
@@ -286,7 +282,6 @@ export default class OpenClawDispatchIssue {
             });
             if (event.turn?.status === 'completed') {
               record.feedback!.lastServedAt = now;
-              if (record.feedback!.activity) record.feedback!.activity.busy = false;
               await save();
             }
             if (!event.publicationAttempted || event.receipt) return result;

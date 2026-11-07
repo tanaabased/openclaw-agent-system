@@ -1,3 +1,4 @@
+import taskPullRequest from './task-pull-request.ts';
 import observeIssueActivity from './openclaw-session-activity.ts';
 import { hasDeliveredImplementation } from './implementation-delivery.ts';
 import recoverOpenClawAnnouncement from './openclaw-announcement-recovery.ts';
@@ -120,7 +121,7 @@ export default class OpenClawDispatchCoordinator {
             const source = dispatchAdmission(record, admitted);
             if (!source || record.retired || record.reset) continue;
             const repository = `${source.repository.owner.login}/${source.repository.name}`;
-            const pr = record.work?.delivery?.pullRequest;
+            const pr = taskPullRequest(record);
             const matches =
               githubNotificationItemMatchesSelector(
                 { itemType: 'issue', number: source.issue.number },

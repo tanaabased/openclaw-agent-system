@@ -1,6 +1,6 @@
-import taskPullRequest from './task-pull-request.ts';
+import feedbackSources from './feedback-sources.ts';
 import replyOwnPublications from './reply-own-publications.ts';
-import { managedPullRequest, dispatchAdmission } from './managed-issue.ts';
+import { dispatchAdmission } from './managed-issue.ts';
 
 import workflowFailure from './workflow-failure.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
@@ -110,26 +110,7 @@ export async function scanCodexFeedback(input: {
         owner: admitted.repository.owner.login,
         name: admitted.repository.name,
       };
-      const pr = taskPullRequest(record);
-      const sources = [
-        {
-          number: admitted.issue.number,
-          nodeId: admitted.issue.nodeId,
-          itemType: managedPullRequest(admitted) ? ('pull-request' as const) : ('issue' as const),
-        },
-        ...(pr && pr.pullRequestNodeId !== admitted.issue.nodeId
-          ? [
-              {
-                number: pr.pullRequestNumber,
-                nodeId: pr.pullRequestNodeId,
-                itemType: 'pull-request' as const,
-              },
-            ]
-          : []),
-      ].sort(
-        (a, b) =>
-          Number(a.nodeId === feedback.lastSource) - Number(b.nodeId === feedback.lastSource),
-      );
+      const sources = feedbackSources(record, admitted, feedback);
       for (const target of sources) {
         budget.check();
         feedback.lastSource = target.nodeId;

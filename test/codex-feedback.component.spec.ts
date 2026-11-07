@@ -1,3 +1,4 @@
+import discoveryCheckpoint from '../agent/discovery-checkpoint.ts';
 import hydrateImplementation, { type Field } from './implementation-material-fixture.ts';
 import commentProviderFixture from './github-comment-provider-fixture.ts';
 import { providerDiagnostic } from '../utils/provider-diagnostic.ts';
@@ -459,7 +460,7 @@ describe('agent/codex-feedback', () => {
         checkpoint: async () => {},
       });
       const feedback = scans[0]!.feedback;
-      assert.deepEqual(feedback.discovery?.PR_other, before.discovery!.PR_other);
+      assert.equal(feedback.discovery?.PR_other, undefined);
       assert.deepEqual(feedback.baseline.PR_7, before.baseline.PR_7);
       assert.equal(feedback.watermarks?.PR_7, baseline);
       assert.equal(JSON.stringify(feedback.events), JSON.stringify(before.events));
@@ -479,6 +480,73 @@ describe('agent/codex-feedback', () => {
         assert.ok(next[0]!.feedback.watermarks!.PR_7! > baseline);
         assert.equal(next[0]!.feedback.discovery?.PR_7, undefined);
       }
+    });
+  }
+  for (const association of ['relinked', 'unlinked'] as const) {
+    it(`should discard ${association} pr scratch durably without querying the old source`, async () => {
+      await prepare();
+      const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+      await store.exclusive(async (state, save) => {
+        const owner = state.records[0]!;
+        owner.pullRequestLink =
+          association === 'unlinked' ? null : { pullRequestNodeId: 'PR_8', pullRequestNumber: 8 };
+        owner.feedback!.baseline.PR_7 = {};
+        owner.feedback!.watermarks = { ...owner.feedback!.watermarks, PR_7: baseline };
+        owner.feedback!.discovery = {
+          PR_7: {
+            since: baseline,
+            startedAt: baseline + 1,
+            reads: { 'comments:1': JSON.stringify({ comments: [], truncated: false }) },
+          },
+        };
+        await save();
+      });
+      const before = structuredClone((await store.read()).records[0]!.feedback!);
+      const provider = await deps.feedbackConnect!(current.workspace, new AbortController().signal);
+      const getItem = provider.client.getItem.bind(provider.client);
+      const calls: number[] = [];
+      provider.client.getItem = async (owner, name, number) => {
+        calls.push(number);
+        assert.notEqual(number, 7, 'deselected source must not need a closure read');
+        const item = await getItem(owner, name, number === 8 ? 3 : number);
+        return number === 8
+          ? {
+              ...item,
+              number: 8,
+              nodeId: 'PR_8',
+              itemType: 'pull-request',
+              state: 'closed',
+              pullRequest: {
+                baseRef: 'main',
+                baseRepositoryDatabaseId: 10,
+                baseRepositoryNodeId: 'R_repo',
+                headRef: 'issue-work',
+                headSha: 'a'.repeat(40),
+                draft: false,
+                merged: false,
+              },
+            }
+          : item;
+      };
+      for (let pass = 0; pass < 2; pass++) {
+        store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+        await scanCodexFeedback({
+          state: await store.read(),
+          current,
+          provider,
+          occurrence: `pr-association-${pass}`,
+          sourceThreadId: 'intake',
+          now: baseline + 71000 + pass,
+          checkpoint: (scan) => discoveryCheckpoint(store, scan),
+        });
+        const feedback = (await store.read()).records[0]!.feedback!;
+        assert.equal(feedback.discovery?.PR_7, undefined);
+        assert.deepEqual(feedback.baseline.PR_7, before.baseline.PR_7);
+        assert.equal(feedback.watermarks?.PR_7, baseline);
+        assert.deepEqual(feedback.events, before.events);
+        assert.equal(feedback.discoveryPending, false);
+      }
+      assert.equal(calls.includes(8), association === 'relinked');
     });
   }
   it('should continue scanning after an owner changes during its first checkpoint', async () => {

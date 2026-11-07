@@ -27,6 +27,7 @@ export default async function continueOpenClawResponse(input: {
   await input.assertCurrent();
   await describeIssueSession(request, record, input.config, 'feedback');
   await reconcileOpenClawTurn({
+    record,
     request,
     sessionKey: expected.key,
     sessionId: record.sessionCreation!.sessionId!,

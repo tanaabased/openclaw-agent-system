@@ -1,6 +1,5 @@
-import taskPullRequest from './task-pull-request.ts';
+import feedbackSources from './feedback-sources.ts';
 import replyOwnPublications from './reply-own-publications.ts';
-import { managedPullRequest } from './managed-issue.ts';
 import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
@@ -16,7 +15,6 @@ import {
   openClawDispatchFailureCode,
 } from './openclaw-dispatch-context.ts';
 import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
-import observeIssueActivity from './openclaw-session-activity.ts';
 
 export function openClawFeedbackEnabled(manifest: AgentManifest) {
   return workflowFeedbackAvailable(manifest.github?.notifications, 'issue-assignment');
@@ -199,34 +197,14 @@ export async function scanOpenClawFeedback(input: {
               event.code = 'feedback-source-changed';
             }
         };
-        const pr = taskPullRequest(record);
-        const sources = [
-          {
-            number: intake.issue.number,
-            nodeId: intake.issue.nodeId,
-            itemType: managedPullRequest(intake) ? ('pull-request' as const) : ('issue' as const),
-          },
-          ...(pr && pr.pullRequestNodeId !== intake.issue.nodeId
-            ? [
-                {
-                  number: pr.pullRequestNumber,
-                  nodeId: pr.pullRequestNodeId,
-                  itemType: 'pull-request' as const,
-                },
-              ]
-            : []),
-        ].sort(
-          (a, b) =>
-            Number(a.nodeId === feedback.lastSource) - Number(b.nodeId === feedback.lastSource),
-        );
+        const sources = feedbackSources(record, intake, feedback);
         let served = false;
         for (const source of sources) {
           budget.check();
           target = source.nodeId;
           completed = budget.completed;
           budget.operation = 'source-validation';
-          if (feedback.discoveryStalls?.[record.id]?.operation !== 'session-activity')
-            delete feedback.discoveryStalls?.[record.id];
+          delete feedback.discoveryStalls?.[record.id];
           if (!served) feedback.lastSource = source.nodeId;
           served = true;
           await save();
@@ -248,18 +226,8 @@ export async function scanOpenClawFeedback(input: {
         }
         target = record.id;
         completed = budget.completed;
-        budget.operation = 'session-activity';
+        budget.operation = 'workspace-binding';
         budget.check();
-        const activity = await service.dependencies.credential.use(
-          {
-            ...input.authority,
-            assertCurrent: async () => {
-              await validateLocal();
-            },
-          },
-          (request) => observeIssueActivity(request, record, service.dependencies.config()),
-        );
-        feedback.activity = { busy: activity.busy, observedAt: now };
         await validateLocal();
         delete feedback.discoveryStalls?.[record.id];
         delete feedback.code;
