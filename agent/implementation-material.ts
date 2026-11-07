@@ -71,6 +71,7 @@ export default function implementationMaterial<T extends Record<string, unknown>
     'handoff',
     'publicationAuthorized',
     'continuationRequest',
+    'deliveryPrepareRequest',
     'instructions',
     'instruction',
     ...(delivery.controls ?? []),

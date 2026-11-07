@@ -40,6 +40,7 @@ import { runCodexDispatch, type CodexDispatchDependencies } from '../agent/codex
 import type { DispatchNativeThread } from '../agent/codex-dispatch-native.ts';
 import CodexDispatchStore, { type DispatchRecord } from '../agent/codex-dispatch-state.ts';
 import runCodexFeedback from '../agent/codex-feedback.ts';
+import runCodexDelivery from '../agent/codex-delivery.ts';
 import { runCodexIntake, selectCodexIntake } from '../agent/codex-intake.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 import { githubNotificationMarkdownCode } from '../channels/github/presentation/card.ts';
@@ -4540,6 +4541,32 @@ describe('agent/codex-dispatch', () => {
       );
       assert.equal(context.status, 'verified', JSON.stringify(context));
       assert.ok('continuationRequest' in context);
+      assert.ok('deliveryPrepareRequest' in context);
+      assert.deepEqual(context.deliveryPrepareRequest, { action: 'prepare', id: work.id });
+      const delivery = await runCodexDelivery(
+        pluginData,
+        { ...context.deliveryPrepareRequest, title: 'One poem', body: 'The completed poem.' },
+        {
+          codexHome,
+          threadId: native!.id,
+          native: deps.native,
+          git: (cwd, argv, signal) =>
+            argv[0] === 'rev-list' ? Promise.resolve('1') : deps.git!(cwd, argv, signal),
+          connect: async () => ({
+            client: await deps.connect!(workspace, new AbortController().signal),
+            account: {
+              identity: fixture.client.identity,
+              execute: async () => {
+                throw new Error('preparation must not publish');
+              },
+            },
+          }),
+        },
+      );
+      assert.equal(delivery.status, 'prepared');
+      assert.ok('publishRequest' in delivery && delivery.publishRequest);
+      assert.equal(delivery.publishRequest.id, work.id);
+      assert.ok(!gitCalls.some((argv) => argv.includes('push')));
       const resumed = await runCodexContinuation(pluginData, context.continuationRequest, {
         ...work.continuation,
         threadId: native!.id,

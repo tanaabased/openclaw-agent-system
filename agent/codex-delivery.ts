@@ -162,7 +162,26 @@ export default async function runCodexDelivery(
   request: unknown,
   deps: CodexDeliveryDependencies = {},
 ) {
-  if (!Value.Check(requestSchema, request)) throw new Error('delivery-request-invalid');
+  if (!Value.Check(requestSchema, request)) {
+    const fields = nativeObject(request) ? request : {};
+    const invalid = Object.entries(requestSchema.properties)
+      .filter(
+        ([key, schema]) =>
+          (fields[key] !== undefined ||
+            requestSchema.required?.some((required) => required === key)) &&
+          !Value.Check(schema, fields[key]),
+      )
+      .map(([key]) => key);
+    const unsupported = Object.keys(fields).some(
+      (key) => !Object.hasOwn(requestSchema.properties, key),
+    );
+    throw Object.assign(
+      new Error(
+        `invalid delivery request${invalid.length ? `; missing or invalid fields: ${invalid.join(', ')}` : ''}${unsupported ? '; unsupported fields supplied' : ''}. use the managed context deliveryPrepareRequest with title and body for prepare, or the complete returned publishRequest for publish.`,
+      ),
+      { code: 'delivery-request-invalid' },
+    );
+  }
   const input: DeliveryRequest = request;
   if (
     input.material &&

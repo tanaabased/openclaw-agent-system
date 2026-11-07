@@ -55,6 +55,31 @@ const result = (value: unknown) => ({
   truncated: false,
 });
 
+describe('agent/codex-delivery request validation', () => {
+  it('should identify invalid request fields without exposing their content or accessing state', async () => {
+    for (const request of [
+      {
+        action: 'prepare',
+        target: 'private-target',
+        path: '/private-path',
+        commit: 'private-head',
+      },
+      { action: 'prepare', id: 'private-invalid-id', title: 123 },
+    ]) {
+      await assert.rejects(runCodexDelivery('/unused-plugin-data', request), (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal('code' in error && error.code, 'delivery-request-invalid');
+        assert.match(error.message, /missing or invalid fields: id/);
+        assert.match(error.message, /deliveryPrepareRequest/);
+        assert.doesNotMatch(error.message, /private-|publicText/);
+        if ('target' in request) assert.match(error.message, /unsupported fields/);
+        else assert.match(error.message, /id, title/);
+        return true;
+      });
+    }
+  });
+});
+
 describe('agent/codex-delivery', () => {
   let announcement: ReturnType<typeof announcementFixture>;
   let root: string, workspace: string, pluginData: string, store: CodexDispatchStore;
@@ -1590,7 +1615,9 @@ describe('agent/codex-delivery', () => {
       ),
       /workflow-policy-held/,
     );
-    await assert.rejects(request('prepare', { schedule: current }), /request-invalid/);
+    await assert.rejects(request('prepare', { schedule: current }), {
+      code: 'delivery-request-invalid',
+    });
     assert.equal(creates, 0);
   });
   it('should publish retained implementation without another human turn or handoff', async () => {
