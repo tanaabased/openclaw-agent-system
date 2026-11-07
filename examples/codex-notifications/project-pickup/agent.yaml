@@ -20,10 +20,15 @@ github:
     projects:
       - repository: tanaabased/big-test-bucket
         limit: 3
+        selection:
+          guidance: prefer bounded test coverage improvements
         milestone:
           number: 10
           policy: only
       - repository: tanaabased/actions
+        selection:
+          guidance:
+            file: actions-selection.md
         milestone:
           number: 1
           policy: only

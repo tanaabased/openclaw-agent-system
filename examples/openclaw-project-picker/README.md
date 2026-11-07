@@ -96,7 +96,7 @@ for runtime in codex openclaw; do
   openclaw agent-system install --yes --json | jq -e 'any(.outcomes[]; .stepId == "github-project-pickup" and .status == "updated")'
   openclaw agent-system automations list --json | jq -e --arg id "$native" --arg chat "$chat" 'any(.jobs[]; .id == "github-project-pickup" and .nativeId == $id and .routing == $chat and .nativeEnabled == true)'
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" --scheduled-after github-project-pickup "$native" "$due" > "$TMPDIR/pickup-$runtime-scheduled.json"
-  jq -e '(.summary | contains("Guidance source")) and (.summary | contains("inline")) and (.summary | contains("bounded cleanup clarification"))' "$TMPDIR/pickup-$runtime-scheduled.json"
+  jq -e '(.summary | contains("Guidance source")) and (.summary | contains("inline")) and (.summary | contains("bounded cleanup clarification")) and (.summary | contains("prefer fixture cleanup")) and (.summary | contains("2 eligible"))' "$TMPDIR/pickup-$runtime-scheduled.json"
   grep -F 'code=automation-lifecycle-' "$(openclaw-gateway log-path)" | tail -n 80 | node "$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
   number=$(jq -er .number "$TMPDIR/pickup-$runtime-selected.json")
   GH_TOKEN="$GH_TOKEN_TANAABOT" gh api "repos/tanaabased/big-test-bucket/issues/$number" | jq -e '.assignees | length == 1 and .[0].login == "tanaabot"'

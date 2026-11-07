@@ -42,7 +42,9 @@ export default function projectPickupReport(input: {
     'scan-complete': 'Project pickup already assigned an issue in this scan',
     empty: summary?.eligible
       ? 'Project pickup selected no issue'
-      : 'Project pickup found no eligible issues',
+      : allowances.some((entry) => entry.code)
+        ? 'Project pickup could not fully check eligible work'
+        : 'Project pickup found no eligible issues',
     'at-capacity': 'Project pickup is at capacity',
     paused: 'Project pickup is paused',
     idle: 'Project pickup is outside its window',
@@ -65,7 +67,13 @@ export default function projectPickupReport(input: {
           entry.used === undefined
             ? `limit ${entry.limit}`
             : `${entry.used} of ${entry.limit} assigned`,
+          entry.eligible === undefined
+            ? 'eligible count unavailable'
+            : `${entry.eligible} eligible`,
           entry.code ? code(entry.code) : '',
+          entry.providerDiagnostic
+            ? text(entry.providerDiagnostic.providerMessage ?? entry.providerDiagnostic.explanation)
+            : '',
         ]
           .filter(Boolean)
           .join(' · '),

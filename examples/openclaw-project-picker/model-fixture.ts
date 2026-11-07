@@ -90,6 +90,14 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
         const candidates = observed.candidates as Array<{ nodeId: string; body: string }>;
         assert.equal(candidates.length, 2);
         assert.match(String(observed.guidance), /bounded cleanup clarification/u);
+        const repositoryGuidance = observed.repositoryGuidance as Record<
+          string,
+          { content: string }
+        >;
+        assert.match(
+          repositoryGuidance['tanaabased/big-test-bucket']!.content,
+          /prefer fixture cleanup/u,
+        );
         const chosen = candidates.filter(({ body }) =>
           body.includes('pickup-cleanup-clarification'),
         );

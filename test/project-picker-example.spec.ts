@@ -41,6 +41,9 @@ describe('examples/openclaw-project-picker model fixture', () => {
               id: 'native-scan',
               digest: 'native-digest',
               guidance: 'Prefer the bounded cleanup clarification.',
+              repositoryGuidance: {
+                'tanaabased/big-test-bucket': { content: 'prefer fixture cleanup questions' },
+              },
               candidates: [
                 { nodeId: 'larger-issue', body: 'Redesign everything.' },
                 { nodeId: 'small-issue', body: 'pickup-cleanup-clarification' },

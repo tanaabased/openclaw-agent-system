@@ -82,6 +82,37 @@ describe('agent/project-pickup-report', () => {
       });
   });
 
+  it('should distinguish an unreadable repository from an empty one in one outcome card', () => {
+    const diagnostic = providerDiagnostic('github', 'api-request', 'permission', {
+      httpStatus: 403,
+      providerMessage: 'Access denied to [private](repo)',
+    });
+    const result = report({
+      outcome: {
+        status: 'empty',
+        allowances: [
+          { repository: 'owner/empty', milestone: 10, used: 0, limit: 1, eligible: 0 },
+          {
+            repository: 'owner/unreadable',
+            milestone: 10,
+            used: 0,
+            limit: 1,
+            code: 'github-notification-request-failed',
+            providerDiagnostic: diagnostic,
+          },
+        ],
+      },
+    });
+    assert.match(result.response, /⚠️.*could not fully check/);
+    assert.match(result.response, /owner\/empty.*0 eligible/);
+    assert.match(
+      result.response,
+      /owner\/unreadable.*eligible count unavailable.*github-notification-request-failed/,
+    );
+    assert.match(result.response, /Access denied to \\\[private\\\]/);
+    assert.equal(result.response.match(/> ##/g)?.length, 1);
+  });
+
   it('should distinguish an uncertain write from a definite github rejection', () => {
     const uncertain = report({
       outcome: { status: 'attempted', code: 'project-pickup-assignment-uncertain' },
