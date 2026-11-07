@@ -377,7 +377,7 @@ export async function assessDispatch(
       assignmentWarning:
         record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
       id: record.id,
-      project: record.project,
+      project: { ...record.project, path: record.worktree },
       routing: JSON.parse(record.routing!),
       routingNote: record.routingNote,
       effective: record.effective,

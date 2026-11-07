@@ -2051,6 +2051,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(context.currentTurnId, 'first-turn');
     assert.equal(context.previousResultTurnId, undefined);
     assert.equal(context.entry, 'managed');
+    assert.equal((context.project as { path: string }).path, native!.cwd);
     assert.equal((context.presentationRequest as { operation: string }).operation, 'render');
     assert.match(JSON.stringify(context.presentationRequest), /Model routing/);
     const original =
@@ -4559,6 +4560,7 @@ describe('agent/codex-dispatch', () => {
       );
       const store = await workStore();
       const original = (await store.read()).records[0]!;
+      const assessmentContext = await request('context', { id: work.id }, { threadId: native!.id });
       // Startup ended before implementation; compaction is followed by a native resume send.
       work.receive();
       native!.turnId = 'post-compaction-turn';
@@ -4590,7 +4592,7 @@ describe('agent/codex-dispatch', () => {
           {
             operation: 'context',
             target: 'https://github.com/owner/repo/issues/3',
-            path: worktree,
+            path: (assessmentContext.project as { path: string }).path,
             scope,
           },
           { ...work.continuation, threadId: native!.id },
