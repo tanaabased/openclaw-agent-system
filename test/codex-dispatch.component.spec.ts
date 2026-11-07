@@ -4490,6 +4490,19 @@ describe('agent/codex-dispatch', () => {
       assert.equal(record.stageReceipt, undefined);
       assert.equal(record.continuation?.result, undefined);
       assert.deepEqual(record.implementationDecision, decision);
+      const restored = await hydrateImplementation(context, async (read) =>
+        work.run('context', read, true),
+      );
+      const review = restored.initialReview as {
+        decision: unknown;
+        presentationRequest: { target: string; cards?: string[] };
+      };
+      assert.ok(review);
+      assert.deepEqual(review.decision, decision);
+      assert.equal(review.presentationRequest.target, 'https://github.com/owner/repo/issues/3');
+      assert.ok(
+        review.presentationRequest.cards?.some((card: string) => card.includes('Model routing')),
+      );
       assert.equal((await work.run('next')).status, 'reconciled');
     });
 

@@ -1,5 +1,6 @@
 import nativeTaskInstructions from './native-task-instructions.ts';
 import implementationContext from './implementation-context.ts';
+import assessmentReviewContext from './assessment-review-context.ts';
 import codexIssueBranch from './codex-issue-branch.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
@@ -53,6 +54,17 @@ export default async function codexWorkContext(
     assignmentWarning:
       record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
     currentIssue: { source: JSON.parse(record.context!).source },
+    initialReview: assessmentReviewContext(
+      record,
+      JSON.parse(record.context!).source,
+      current.workspace,
+      {
+        debug: current.manifest.debug,
+        manifestPath: current.manifestPath,
+        routingManifestPath:
+          current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
+      },
+    ),
     routing: record.routing && JSON.parse(record.routing),
     effective: record.effective,
     binding: work.binding,

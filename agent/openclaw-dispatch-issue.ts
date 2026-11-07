@@ -27,6 +27,7 @@ import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import assessmentSummary from './assessment-summary.ts';
+import assessmentReviewContext from './assessment-review-context.ts';
 import { automationHash } from './automation-hash.ts';
 import assessmentPresentation from './dispatch-presentation.ts';
 import {
@@ -635,6 +636,9 @@ export default class OpenClawDispatchIssue {
               ...response,
               implementation: selected,
               currentIssue: { source: managedTargetUrl(intake) },
+              initialReview: assessmentReviewContext(record, managedTargetUrl(intake), workspace, {
+                debug: manifest.debug,
+              }),
               ...(record.predecessorId
                 ? {
                     predecessor: (() => {

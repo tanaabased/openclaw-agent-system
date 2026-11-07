@@ -55,7 +55,7 @@ export default async function nativeTaskContext(
           ? nativeAssessmentInstructions()
           : nativeTaskInstructions(deps.binding.runtime),
     },
-    { action: stage, operation: 'context', target },
+    { action: stage, operation: 'context', target, id: native.id },
     material,
   );
 }

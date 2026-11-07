@@ -5,7 +5,7 @@ import type { DispatchRecord } from '../agent/codex-dispatch-state.ts';
 
 // Only the model-facing projection is under test; checkout and provider boundaries are injected.
 describe('agent/codex-work-context', () => {
-  it('should use current issue evidence and implementation guidance without replaying assessment guidance', async () => {
+  it('should separate initial review recovery from current implementation guidance', async () => {
     const implementation = {
       version: 1 as const,
       requestedSkill: 'implementation',
@@ -29,7 +29,7 @@ describe('agent/codex-work-context', () => {
       {
         signal: new AbortController().signal,
         records: [record],
-        current: {} as never,
+        current: { workspace: '/workspace', manifest: { debug: false } } as never,
         git: async () => {
           throw new Error('unexpected checkout mutation');
         },
@@ -53,6 +53,7 @@ describe('agent/codex-work-context', () => {
     assert.deepEqual(output.currentIssue, { source: 'https://github.com/owner/repo/issues/3' });
     assert.deepEqual(output.implementation, implementation);
     assert.equal('assessmentSelection' in output, false);
-    assert.doesNotMatch(JSON.stringify(output), /OLD GUIDANCE/);
+    assert.doesNotMatch(JSON.stringify(output.implementation), /OLD GUIDANCE/);
+    assert.deepEqual(output.initialReview.assessment, record.assessment);
   });
 });

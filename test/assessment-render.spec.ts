@@ -6,6 +6,10 @@ import { join } from 'node:path';
 import renderNativeAssessment, {
   assessmentPresentationRequest,
 } from '../agent/assessment-render.ts';
+import assessmentReviewContext from '../agent/assessment-review-context.ts';
+import implementationMaterial, {
+  type ImplementationMaterialRead,
+} from '../agent/implementation-material.ts';
 import { runCodexDispatch } from '../agent/codex-dispatch.ts';
 import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
@@ -29,6 +33,85 @@ const result: AssessmentSubmission = {
 };
 
 describe('agent/assessment-render', () => {
+  for (const runtime of ['codex', 'openclaw'] as const)
+    for (const outcome of ['plan-ready', 'clarification-needed'] as const)
+      it(`should recover a missing ${outcome} review in ${runtime} without saving a plan or gating work`, async () => {
+        const record = {
+          routing: JSON.stringify({
+            selection: { model: 'provider/model', effort: 'medium' },
+            complexity: 'low',
+            profile: 'low',
+            source: 'native',
+            reason: 'Bounded poem.',
+          }),
+          effective: { status: 'verified' as const, model: 'provider/model', effort: 'medium' },
+          assessment: {
+            version: 1 as const,
+            observedAt: 1,
+            requestedSkill: 'company:assessment',
+            defaultSkill: false,
+            skill: {
+              name: 'company:assessment',
+              path: '/skills/assessment/SKILL.md',
+              scope: 'user' as const,
+              digest: 'a'.repeat(64),
+            },
+          },
+          implementationDecision: {
+            mode: outcome === 'plan-ready' ? ('work' as const) : ('plan' as const),
+            reasons: [outcome === 'plan-ready' ? 'All choices supplied.' : 'Subject is missing.'],
+          },
+        };
+        const before = structuredClone(record);
+        const initialReview = assessmentReviewContext(record, target, '/workspace', {
+          debug: outcome === 'plan-ready',
+        });
+        const context = { runtime, status: 'verified', publicationAuthorized: true, initialReview };
+        const request = { action: 'context', id: 'task' };
+        const restored = await hydrateImplementation(
+          implementationMaterial(context, request),
+          async (read) =>
+            implementationMaterial(context, request, read.material as ImplementationMaterialRead),
+        );
+        assert.equal(restored.status, 'verified');
+        assert.equal(restored.publicationAuthorized, true);
+        assert.deepEqual(restored.initialReview, initialReview);
+        const submitted =
+          outcome === 'plan-ready'
+            ? result
+            : {
+                version: 1,
+                outcome,
+                summary: 'Choose a subject.',
+                assessment: 'Haiku form is known.',
+                fullAssessment: 'The subject is the only missing choice.',
+                reviewSummary: 'Choose a subject before writing.',
+                questions: ['What subject should the haiku cover?'],
+                evidence: [],
+                progress: { completed: [], remaining: [] },
+              };
+        const shown = renderNativeAssessment(
+          {
+            ...initialReview.presentationRequest,
+            result: { ...submitted, decision: initialReview.decision },
+          },
+          runtime,
+        );
+        assert.ok(shown.status === 'formatted');
+        assert.match(shown.presentation, /Model routing/);
+        assert.match(shown.presentation, /provider\/model/);
+        assert.match(shown.presentation, /Auto mode decision/);
+        assert.match(
+          shown.presentation,
+          outcome === 'plan-ready'
+            ? /Assessment instructions/
+            : /What subject should the haiku cover/,
+        );
+        if (outcome === 'clarification-needed') assert.doesNotMatch(shown.presentation, /Debug/);
+        assert.equal(shown.retained, false);
+        assert.deepEqual(record, before);
+        assert.equal('result' in record, false);
+      });
   for (const runtime of ['codex', 'openclaw'] as const)
     it(`should retain selected routing and debug cards through native ${runtime} presentation`, async () => {
       const metadata = {

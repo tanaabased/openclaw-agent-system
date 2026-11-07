@@ -6130,6 +6130,12 @@ describe('agent/openclaw issue dispatch', () => {
     );
     assert.equal(response.status, 'verified');
     assert.equal('feedbackWork' in response, false);
+    const restored = await hydrateImplementation(response, async (read) =>
+      service.run(manifest, root, who, read as never, false),
+    );
+    const review = restored.initialReview as { presentationRequest: { target: string } };
+    assert.ok(review);
+    assert.equal(review.presentationRequest.target, 'https://github.com/owner/repo/issues/3');
     assert.deepEqual((await record()).result, question);
     assert.equal((await record()).progression?.stage, 'implementation');
     assert.equal(creates().length, 1);

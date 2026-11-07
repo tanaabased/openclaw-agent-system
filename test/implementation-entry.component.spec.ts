@@ -95,14 +95,15 @@ describe('agent/implementation-entry', () => {
     it(`should refresh delivered ${runtime} context without another managed implementation round`, async () => {
       deps.binding.runtime = runtime;
       const skill = await deps.resolveSkill('old-assessment');
+      const ownerId = 'd'.repeat(64);
       const nativeContext = nativeIssueContext({
-        id: 'delivered',
+        id: ownerId,
         worktree: root,
         phase: 'complete',
       });
       deps.managed = async () => ({
         digest: 'c'.repeat(64),
-        owner: { id: 'delivered' },
+        owner: { id: ownerId },
         path: root,
         nativeContext,
         selections: { implementation: { skill: 'current-implementation' } },
@@ -118,9 +119,13 @@ describe('agent/implementation-entry', () => {
           throw new Error('must not reopen historical entries');
         },
       });
-      const complete = await hydrateImplementation(await call(), (read) =>
-        implementationEntry(read, deps),
-      );
+      let pages = 0;
+      const complete = await hydrateImplementation(await call(), (read) => {
+        pages++;
+        assert.equal(read.id, ownerId);
+        return implementationEntry(read, deps);
+      });
+      if (runtime === 'openclaw') assert.ok(pages > 0);
       assert.equal(complete.status, 'native');
       assert.equal(
         (complete.implementation as { requestedSkill: string }).requestedSkill,
