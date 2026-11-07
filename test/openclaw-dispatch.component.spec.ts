@@ -4125,12 +4125,43 @@ describe('agent/openclaw issue dispatch', () => {
   }
 
   for (const mode of ['work', 'auto'] as const) {
-    it(`should enter ${mode} in the initial native turn without a saved assessment`, async () => {
+    it(`should enter ${mode} without a saved assessment while intake accounting advances`, async () => {
       manifest.github!.notifications!.issueAssignment!.mode = mode;
       const routed = await next();
       await prepare(routed);
       consumeSend = true;
       await assess(routed.id);
+      const { journal } = await service.scope(manifest, root);
+      const credential = service.dependencies.credential;
+      let advanced = false;
+      service = new OpenClawDispatch({
+        ...service.dependencies,
+        credential: {
+          use: (authority, operation) =>
+            credential.use(authority, (request) =>
+              operation(async (method, params) => {
+                if (!advanced) {
+                  advanced = true;
+                  await journal.exclusive(async (state, save) => {
+                    state.openclawPasses!.push({
+                      sessionKey: coordinator.sessionKey,
+                      sessionId: coordinator.sessionId,
+                      runId: 'concurrent-intake',
+                      limit: 1,
+                      allowance: 0,
+                      candidates: [],
+                      recovery: [],
+                      selected: [],
+                      completed: true,
+                    });
+                    await save();
+                  });
+                }
+                return request(method, params);
+              }),
+            ),
+        },
+      });
       const result = await service.run(manifest, root, assessor(routed.id), {
         action: 'implementation-context',
         id: routed.id,
@@ -4139,6 +4170,12 @@ describe('agent/openclaw issue dispatch', () => {
           : {}),
       });
       assert.equal(result.status, 'verified', JSON.stringify(result));
+      assert.equal(advanced, true);
+      assert.equal(
+        (await journal.read()).openclawPasses?.find((pass) => pass.runId === 'concurrent-intake')
+          ?.completed,
+        true,
+      );
       const saved = await record();
       assert.equal(saved.result, undefined);
       assert.equal(saved.stageReceipt, undefined);

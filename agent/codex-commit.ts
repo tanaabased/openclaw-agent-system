@@ -5,7 +5,11 @@ import codexCapacity, { codexItemOccupied } from './codex-capacity.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 
 /** reject competing effect/authority changes, checking capacity and branch ownership at commit. */
-export default function codexCommit(limit?: number, ownerId?: string, operation?: 'delivery') {
+export default function codexCommit(
+  limit?: number,
+  ownerId?: string,
+  operation?: 'delivery' | 'continuation',
+) {
   const delivery = operation === 'delivery';
   // Delivery owns publication receipts, not intake counters or native activity observations.
   const effectState = (record: DispatchState['records'][number] | undefined) => {
@@ -27,7 +31,7 @@ export default function codexCommit(limit?: number, ownerId?: string, operation?
       };
       for (const key of ['run', 'continuationRun'] as const) {
         if (
-          (!delivery || !isDeepStrictEqual(before[key], proposed[key])) &&
+          (operation === undefined || !isDeepStrictEqual(before[key], proposed[key])) &&
           !isDeepStrictEqual(before[key], current[key])
         )
           conflict('occurrence');

@@ -86,7 +86,11 @@ export default async function runCodexContinuation(
   const git = deps.git ?? dispatchGit;
   let entered = false;
   const commitOptions = {
-    ...codexCommit(current.policy?.policy.maxConcurrentItems, input.id),
+    ...codexCommit(
+      current.policy?.policy.maxConcurrentItems,
+      input.id,
+      input.action === 'next' || input.action === 'reconcile' ? undefined : 'continuation',
+    ),
     operation: 'continuation-checkpoint' as const,
   };
   try {

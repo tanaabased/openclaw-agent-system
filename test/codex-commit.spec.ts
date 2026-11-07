@@ -88,6 +88,38 @@ describe('agent/codex-commit', () => {
     });
   });
 
+  it('should merge task-local continuation with unrelated counters but retain owner conflicts', () => {
+    const before = state();
+    const proposed = structuredClone(before);
+    proposed.records[0]!.context = 'task progress';
+    const current = structuredClone(before);
+    current.continuationRun = { id: 'other occurrence', actions: 1 };
+    const commit = codexCommit(1, 'first', 'continuation');
+    assert.doesNotThrow(() => commit.reconcile(before, proposed, current));
+    assert.throws(() => codexCommit(1, 'first').reconcile(before, proposed, current), {
+      code: 'private-state-snapshot-conflict',
+      snapshotConflict: 'occurrence',
+    });
+    current.records[0]!.retired = { at: 2, by: 'operator' };
+    assert.throws(() => commit.reconcile(before, proposed, current), {
+      code: 'private-state-snapshot-conflict',
+      snapshotConflict: 'owner',
+    });
+  });
+
+  for (const operation of ['delivery', 'continuation'] as const)
+    it(`should reject competing counter writes even for ${operation}`, () => {
+      const before = state();
+      before.continuationRun = { id: 'occurrence', actions: 0 };
+      const proposed = structuredClone(before);
+      proposed.continuationRun!.actions++;
+      const current = structuredClone(proposed);
+      assert.throws(() => codexCommit(1, 'first', operation).reconcile(before, proposed, current), {
+        code: 'private-state-snapshot-conflict',
+        snapshotConflict: 'occurrence',
+      });
+    });
+
   it('should reject a fresh branch reservation owned by another issue including retired custody', () => {
     const before = state();
     const project = {

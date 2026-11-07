@@ -4067,6 +4067,45 @@ describe('agent/codex-dispatch', () => {
     assert.equal((await work.run('next')).status, 'reconciled');
   });
 
+  for (const mode of ['work', 'auto'] as const)
+    it(`should enter ${mode} while unrelated scheduler counters advance`, async () => {
+      const work = await workIssue(null, 'Continue the task.', 'company:implement', mode);
+      const store = await workStore();
+      native!.status = 'active';
+      native!.turnStatus = 'inProgress';
+      const observe = work.continuation.continuationNative!;
+      let advanced = false;
+      work.continuation.continuationNative = async (...args) => {
+        if (!advanced) {
+          advanced = true;
+          await store.exclusive(async (state, save) => {
+            state.run = {
+              id: 'concurrent-intake',
+              automationId: 'native-intake',
+              currentTimeIso: new Date(now).toISOString(),
+              actions: 2,
+            };
+            state.continuationRun = { id: 'concurrent-continuation', actions: 1 };
+            await save();
+          });
+        }
+        return observe(...args);
+      };
+      const decision =
+        mode === 'auto' ? { mode: 'work', reasons: ['Requirements are clear.'] } : undefined;
+      const response = await work.run('context', decision ? { decision } : {}, true);
+      assert.equal(advanced, true);
+      assert.equal(response.status, 'verified');
+      const saved = await store.read();
+      assert.equal(saved.run?.id, 'concurrent-intake');
+      assert.equal(saved.run?.actions, 2);
+      assert.deepEqual(saved.continuationRun, { id: 'concurrent-continuation', actions: 1 });
+      const record = saved.records.find((entry) => entry.id === work.id)!;
+      assert.equal(record.progression?.via, mode);
+      assert.deepEqual(record.implementationDecision, decision);
+      assert.equal(record.continuation?.binding?.turnId, native!.turnId);
+    });
+
   it('should retain occurrence accounting across competing native observations', async () => {
     const work = await workIssue();
     const entered = Promise.withResolvers<void>();
