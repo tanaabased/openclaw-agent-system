@@ -1,4 +1,4 @@
-import renderNativeAssessment from './assessment-render.ts';
+import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
 import workflowFailure from './workflow-failure.ts';
 import { automationHash } from './automation-hash.ts';
 import codexIssueLaunch from './codex-issue-launch.ts';
@@ -121,8 +121,27 @@ export async function runCodexDispatch(
     typeof input === 'object' &&
     'operation' in input &&
     input.operation === 'render'
-  )
+  ) {
+    if ('id' in input && input.id) {
+      const current = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
+      const journal = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      return renderBoundAssessment(
+        { ...input, action },
+        {
+          runtime: 'codex',
+          records: (await journal.read()).records,
+          admitted: (await current.store.read())?.records ?? [],
+          session: deps.threadId ?? process.env.CODEX_THREAD_ID ?? '',
+          workspace: current.workspace,
+          debug: current.manifest.debug,
+        },
+      );
+    }
     return renderNativeAssessment({ ...input, action });
+  }
   if (action === 'assessment')
     return codexAssessmentEntry(
       pluginData,

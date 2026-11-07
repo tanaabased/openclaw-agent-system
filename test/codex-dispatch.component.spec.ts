@@ -2066,6 +2066,25 @@ describe('agent/codex-dispatch', () => {
       evidence: [],
       progress: { completed: [], remaining: ['Retention decision.'] },
     };
+    const beforeRender = await readDispatchState();
+    const renderRequest = {
+      ...(context.presentationRequest as Record<string, unknown>),
+      cards: ['forged card'],
+      result: { ...question, reviewSummary: question.summary },
+    };
+    const rendered = await request('assessment', renderRequest, child);
+    assert.equal(rendered.status, 'formatted');
+    assert.match(String(rendered.presentation), /Model routing/);
+    assert.doesNotMatch(String(rendered.presentation), /forged card/);
+    assert.deepEqual(await readDispatchState(), beforeRender);
+    await assert.rejects(
+      request('assessment', { ...renderRequest, id: 'f'.repeat(64) }, child),
+      /assessment-managed-context-invalid/,
+    );
+    await assert.rejects(
+      request('assessment', renderRequest, { threadId: 'foreign' }),
+      /assessment-managed-context-invalid/,
+    );
     const saved = await historicalResult('result', { id: prepared.id, result: question }, child);
     assert.ok(String(saved.presentation).includes('Which retention period applies?'));
     assert.doesNotMatch(String(saved.presentation), /Partial plan/);

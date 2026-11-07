@@ -403,20 +403,23 @@ export async function assessDispatch(
       recording: 'native-context' as const,
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
-      presentationRequest: assessmentPresentationRequest(
-        managedTargetUrl(intake),
-        false,
-        dispatchAssessmentContext(
-          { ...record, assessment, stageReceipt: undefined },
-          current.workspace,
-          {
-            debug: current.manifest.debug,
-            manifestPath: current.manifestPath,
-            routingManifestPath:
-              current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
-          },
+      presentationRequest: {
+        id: record.id,
+        ...assessmentPresentationRequest(
+          managedTargetUrl(intake),
+          false,
+          dispatchAssessmentContext(
+            { ...record, assessment, stageReceipt: undefined },
+            current.workspace,
+            {
+              debug: current.manifest.debug,
+              manifestPath: current.manifestPath,
+              routingManifestPath:
+                current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
+            },
+          ),
         ),
-      ),
+      },
       mode: issueWorkflowMode(current.manifest.github?.notifications, record),
       instructions:
         'When implementation context is needed, send continuationRequest unchanged to continuationRuntime context, adding a decision only when required.\n\n' +

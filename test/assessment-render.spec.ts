@@ -37,6 +37,7 @@ describe('agent/assessment-render', () => {
     for (const outcome of ['plan-ready', 'clarification-needed'] as const)
       it(`should recover a missing ${outcome} review in ${runtime} without saving a plan or gating work`, async () => {
         const record = {
+          id: 'd'.repeat(64),
           routing: JSON.stringify({
             selection: { model: 'provider/model', effort: 'medium' },
             complexity: 'low',

@@ -189,19 +189,22 @@ export async function issueAssessmentAction(input: {
       recording: 'native-context' as const,
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
-      presentationRequest: assessmentPresentationRequest(
-        managedTargetUrl(intake),
-        false,
-        dispatchAssessmentContext(
-          {
-            ...record,
-            assessment: record.turnEvidence?.selection ?? record.assessment,
-            stageReceipt: undefined,
-          },
-          input.workspace,
-          { debug: input.debug },
+      presentationRequest: {
+        id: record.id,
+        ...assessmentPresentationRequest(
+          managedTargetUrl(intake),
+          false,
+          dispatchAssessmentContext(
+            {
+              ...record,
+              assessment: record.turnEvidence?.selection ?? record.assessment,
+              stageReceipt: undefined,
+            },
+            input.workspace,
+            { debug: input.debug },
+          ),
         ),
-      ),
+      },
       instructions: nativeAssessmentInstructions(),
     };
   }

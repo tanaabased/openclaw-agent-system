@@ -1,5 +1,5 @@
 import launchPending from './launch-pending.ts';
-import renderNativeAssessment from './assessment-render.ts';
+import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
 import feedbackContextMaterial from './feedback-context-material.ts';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -320,8 +320,26 @@ export default class OpenClawDispatch {
               ? { action: 'implementation-result', id, implementationResult: input.result }
               : { action: 'implementation-context', id };
     }
-    if (input.action === 'assessment' && input.operation === 'render')
+    if (input.action === 'assessment' && input.operation === 'render') {
+      if (input.id) {
+        const current = await this.dependencies.intake.select(manifest, workspace, {
+          resolvePolicy: false,
+        });
+        const journal = new OpenClawDispatchStore(
+          this.dependencies.root,
+          current.store.location.scope,
+        );
+        return renderBoundAssessment(input, {
+          runtime: 'openclaw',
+          records: (await journal.read()).records,
+          admitted: (await current.store.read())?.records ?? [],
+          session: caller.sessionKey,
+          workspace,
+          debug: manifest.debug,
+        });
+      }
       return renderNativeAssessment(input, 'openclaw');
+    }
     if (input.action === 'assessment')
       return openClawAssessmentEntry({
         manifest,
