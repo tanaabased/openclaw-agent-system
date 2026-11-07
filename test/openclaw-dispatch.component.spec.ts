@@ -7683,6 +7683,89 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).feedback!.events.length, 1);
     assert.ok((await record()).feedback!.events[0]!.turn);
   });
+  for (const failure of ['none', 'provider', 'node', 'type', 'other-stall'] as const) {
+    it(`should handle closed pr discovery with ${failure} while preserving feedback`, async () => {
+      const unavailable = ['provider', 'node', 'type'].includes(failure);
+      await feedbackOwner();
+      const current = await service.scope(manifest, root);
+      await current.journal.exclusive(async (state, save) => {
+        const owner = state.records[0]!;
+        owner.pullRequestLink = { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 };
+        owner.feedback!.baseline.PR_7 = {};
+        owner.feedback!.watermarks = { ...owner.feedback!.watermarks, PR_7: baseline };
+        owner.feedback!.discovery = {
+          PR_7: { since: baseline, startedAt: baseline + 1, reads: {} },
+          PR_other: { since: baseline, startedAt: baseline + 1, reads: {} },
+        };
+        owner.feedback!.discoveryStalls = {
+          PR_7: { operation: 'source-validation', attempts: 3 },
+          ...(failure === 'other-stall'
+            ? { PR_other: { operation: 'comments', attempts: 3 } }
+            : {}),
+        };
+        owner.feedback!.code = 'feedback-discovery-no-progress';
+        await save();
+      });
+      const before = structuredClone((await record()).feedback!);
+      const connect = service.dependencies.feedbackConnect!;
+      const linked = { ...fixture, item: structuredClone(fixture.item) };
+      fixturePullRequest(linked);
+      Object.assign(linked.item, { nodeId: 'PR_7', number: 7, state: 'closed' });
+      service.dependencies.feedbackConnect = async (...args) => {
+        const provider = await connect(...args);
+        return {
+          ...provider,
+          reviews: {
+            listReviews: async () => ({ values: [], nextPage: 1 }),
+            listComments: async () => ({ values: [], nextPage: 1 }),
+            getReview: async () => {
+              throw new Error('no reviews');
+            },
+            getComment: async () => {
+              throw new Error('no review comments');
+            },
+            getReviewComments: async () => [],
+          },
+          getItem: async (owner, name, number) => {
+            if (number !== 7) return provider.getItem(owner, name, number);
+            if (failure === 'provider') throw new Error('feedback-provider-unavailable');
+            return {
+              ...linked.item,
+              ...(failure === 'node' ? { nodeId: 'PR_foreign' } : {}),
+              ...(failure === 'type' ? { itemType: 'issue' as const } : {}),
+            };
+          },
+        };
+      };
+      for (let pass = 0; pass < 2; pass++) {
+        await service.check(manifest, root);
+        const feedback = (await record()).feedback!;
+        assert.deepEqual(feedback.discovery?.PR_other, before.discovery!.PR_other);
+        assert.deepEqual(feedback.discoveryStalls?.PR_other, before.discoveryStalls?.PR_other);
+        assert.deepEqual(feedback.baseline.PR_7, before.baseline.PR_7);
+        assert.equal(feedback.watermarks?.PR_7, baseline);
+        assert.equal(JSON.stringify(feedback.events), JSON.stringify(before.events));
+        if (unavailable) {
+          assert.deepEqual(feedback.discovery?.PR_7, before.discovery!.PR_7);
+          assert.deepEqual(feedback.discoveryStalls?.PR_7, before.discoveryStalls!.PR_7);
+        } else {
+          assert.equal(feedback.discovery?.PR_7, undefined);
+          assert.equal(feedback.discoveryStalls?.PR_7, undefined);
+          assert.equal(
+            feedback.code,
+            failure === 'other-stall' ? 'feedback-discovery-no-progress' : undefined,
+          );
+        }
+      }
+      if (!unavailable) {
+        linked.item.state = 'open';
+        await service.check(manifest, root);
+        const reopened = (await record()).feedback!;
+        assert.ok(reopened.watermarks!.PR_7! > baseline);
+        assert.equal(reopened.discovery?.PR_7, undefined);
+      }
+    });
+  }
   it('should rotate issue and pr discovery, report the stalled pr read, and admit its exact source once', async () => {
     const { comments } = await feedbackOwner(true, false);
     const current = await service.scope(manifest, root);

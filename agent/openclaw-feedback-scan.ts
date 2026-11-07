@@ -234,7 +234,13 @@ export async function scanOpenClawFeedback(input: {
             const item = await provider.getItem(common.owner, common.name, source.number);
             if (item.nodeId !== source.nodeId || item.itemType !== 'pull-request')
               throw new Error('feedback-source-owner-changed');
-            if (item.state !== 'open') continue;
+            if (item.state !== 'open') {
+              delete feedback.discovery?.[source.nodeId];
+              delete feedback.discoveryStalls?.[source.nodeId];
+              updateStallCode();
+              await save();
+              continue;
+            }
           }
           invalidate(source.nodeId, await discoverFeedback({ ...common, ...source }));
           delete feedback.discoveryStalls?.[target];

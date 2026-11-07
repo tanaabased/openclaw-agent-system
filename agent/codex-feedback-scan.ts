@@ -138,7 +138,11 @@ export async function scanCodexFeedback(input: {
           const item = await provider.client.getItem(source.owner, source.name, target.number);
           if (item.nodeId !== target.nodeId || item.itemType !== 'pull-request')
             throw new Error('feedback-source-owner-changed');
-          if (item.state !== 'open') continue;
+          if (item.state !== 'open') {
+            delete feedback.discovery?.[target.nodeId];
+            await save();
+            continue;
+          }
         }
         await discoverCodexFeedback({ ...source, ...target });
       }

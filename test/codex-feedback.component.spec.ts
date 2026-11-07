@@ -397,6 +397,90 @@ describe('agent/codex-feedback', () => {
     await call('next');
     assert.equal((await store.read()).records[0]!.feedback!.admission?.after, first + 1000);
   });
+  for (const failure of ['none', 'provider', 'node', 'type'] as const) {
+    it(`should handle closed pr discovery with ${failure} while preserving feedback`, async () => {
+      const unavailable = ['provider', 'node', 'type'].includes(failure);
+      await prepare();
+      const state = await store.read();
+      const owner = state.records[0]!;
+      owner.pullRequestLink = { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 };
+      owner.feedback!.baseline.PR_7 = {};
+      owner.feedback!.watermarks = { ...owner.feedback!.watermarks, PR_7: baseline };
+      owner.feedback!.discovery = {
+        PR_7: { since: baseline, startedAt: baseline + 1, reads: {} },
+        PR_other: { since: baseline, startedAt: baseline + 1, reads: {} },
+      };
+      const before = structuredClone(owner.feedback!);
+      const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
+      const provider = await deps.feedbackConnect!(current.workspace, new AbortController().signal);
+      provider.comments.reviews = {
+        listReviews: async () => ({ values: [], nextPage: 1 }),
+        listComments: async () => ({ values: [], nextPage: 1 }),
+        getReview: async () => {
+          throw new Error('no reviews');
+        },
+        getComment: async () => {
+          throw new Error('no review comments');
+        },
+        getReviewComments: async () => [],
+      } as unknown as typeof provider.comments.reviews;
+      const getItem = provider.client.getItem.bind(provider.client);
+      let reopened = false;
+      provider.client.getItem = async (o, n, number) => {
+        if (number !== 7) return getItem(o, n, number);
+        if (failure === 'provider') throw new Error('feedback-provider-unavailable');
+        const item = await getItem(o, n, 3);
+        if (failure === 'type')
+          return { ...item, number: 7, nodeId: 'PR_7', itemType: 'issue', pullRequest: undefined };
+        return {
+          ...item,
+          number: 7,
+          nodeId: failure === 'node' ? 'PR_foreign' : 'PR_7',
+          itemType: 'pull-request',
+          state: reopened ? 'open' : 'closed',
+          pullRequest: {
+            baseRef: 'main',
+            baseRepositoryDatabaseId: 10,
+            baseRepositoryNodeId: 'R_repo',
+            headRef: 'issue-work',
+            headSha: 'a'.repeat(40),
+            draft: false,
+            merged: false,
+          },
+        };
+      };
+      const scans = await scanCodexFeedback({
+        state,
+        current,
+        provider,
+        occurrence: 'closed-pr',
+        sourceThreadId: 'intake',
+        now: baseline + 71000,
+        checkpoint: async () => {},
+      });
+      const feedback = scans[0]!.feedback;
+      assert.deepEqual(feedback.discovery?.PR_other, before.discovery!.PR_other);
+      assert.deepEqual(feedback.baseline.PR_7, before.baseline.PR_7);
+      assert.equal(feedback.watermarks?.PR_7, baseline);
+      assert.equal(JSON.stringify(feedback.events), JSON.stringify(before.events));
+      if (unavailable) assert.deepEqual(feedback.discovery?.PR_7, before.discovery!.PR_7);
+      else {
+        assert.equal(feedback.discovery?.PR_7, undefined);
+        reopened = true;
+        const next = await scanCodexFeedback({
+          state,
+          current,
+          provider,
+          occurrence: 'reopened-pr',
+          sourceThreadId: 'intake',
+          now: baseline + 72000,
+          checkpoint: async () => {},
+        });
+        assert.ok(next[0]!.feedback.watermarks!.PR_7! > baseline);
+        assert.equal(next[0]!.feedback.discovery?.PR_7, undefined);
+      }
+    });
+  }
   it('should continue scanning after an owner changes during its first checkpoint', async () => {
     const state = await store.read();
     const first = state.records[0]!;
