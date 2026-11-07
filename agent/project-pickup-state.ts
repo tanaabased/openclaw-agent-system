@@ -43,7 +43,12 @@ export const pickupOperationSchema = Type.Object(
     page: Type.Integer({ minimum: 1 }),
     scan: Type.Optional(
       Type.Object(
-        { digest: text, projectIndex: time, skipped: Type.Optional(Type.Record(text, text)) },
+        {
+          digest: text,
+          projectIndex: time,
+          skipped: Type.Optional(Type.Record(text, text)),
+          providerDiagnostics: Type.Optional(Type.Record(text, providerDiagnosticSchema)),
+        },
         { additionalProperties: false },
       ),
     ),
@@ -83,6 +88,19 @@ export const pickupOperationSchema = Type.Object(
     guidance: Type.Optional(Type.String({ maxLength: maximumAssessmentGuidanceBytes })),
     guidanceSource: Type.Optional(Type.Union([Type.Literal('inline'), Type.Literal('file')])),
     guidancePath: Type.Optional(text),
+    repositoryGuidance: Type.Optional(
+      Type.Record(
+        text,
+        Type.Object(
+          {
+            source: Type.Union([Type.Literal('inline'), Type.Literal('file')]),
+            path: Type.Optional(text),
+            content: Type.String({ maxLength: maximumAssessmentGuidanceBytes }),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
     selectionDigest: Type.Optional(text),
     selected: Type.Optional(
       Type.Object(

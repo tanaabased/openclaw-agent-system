@@ -54,6 +54,9 @@ github:
       guidance: Select the issue describing a bounded cleanup clarification before the larger redesign.
     projects:
       - repository: tanaabased/big-test-bucket
+        selection:
+          guidance:
+            file: selection.md
         milestone:
           number: __MILESTONE_NUMBER__
           policy: only
