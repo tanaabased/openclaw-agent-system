@@ -7,6 +7,7 @@ on the existing PR.
 ## What Belongs Here
 
 - Real deadline cancellation of the forwarding provider, retained discovery checkpoints, and no fabricated admission while reads stall.
+- Compact native inspection of the selected stalled owner without another scan or lifecycle change.
 - Processing the exact comment after recovery without duplicating earlier events, work, PRs, or replies.
 
 ## What Does Not Belong Here
@@ -178,6 +179,21 @@ done
 jq -s -e 'length == 3 and all(.[]; .paused and .operation == "comments:1")' "$TMPDIR/pr-provider/reads.jsonl"
 jq -es --arg pr "$(jq -er .work.delivery.pullRequest.pullRequestNodeId "$TMPDIR/notification-delivery.json")" --arg source "$(jq -er .node_id "$TMPDIR/notification-feedback-source.json")" 'all(.[].records[]; .feedback.discoveryPending and .feedback.code == "feedback-discovery-no-progress" and .feedback.discoveryStalls[$pr].operation == "comments:1" and (.feedback.discovery[$pr].reads | length) == 0 and all(.feedback.events[]; .sourceId != $source))' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 jq -es --slurpfile before "$TMPDIR/notification-feedback-before-stall.json" '([.[].records[] | {id, events:[.feedback.events[] | {id,sourceId}]}] | sort_by(.id)) == $before[0]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+
+# should inspect the stalled owner through the installed native tool without another provider read
+jq -cs '[.[].records[] | {id,lifecycleCheckedAt,feedback}] | sort_by(.id)' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-inspection-before.json"
+cp "$TMPDIR/pr-provider/reads.jsonl" "$TMPDIR/notification-inspection-reads.jsonl"
+conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
+session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-delivery.json")
+leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
+params=$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg target "$(jq -er .html_url "$TMPDIR/notification-issue.json")" '{sessionKey:$key,agentId:"pr-discovery-tanaabot",sessionId:$session,message:("Inspect saved discovery for " + $target),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"discovery-inspection"}')
+node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "discovery-inspection"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" discovery-inspection 600000
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,inputRunIds:["discovery-inspection"],limit:50,maxChars:64000}')" --json | jq -e '[.messages[] | select(.role == "assistant" and .stopReason == "stop") | .content | if type == "string" then . else map(.text // "") | join("") end | fromjson] | any(.[]; .total == 1 and (.records | length) == 1 and .records[0].feedback.discoveryPending and .records[0].feedback.code == "feedback-discovery-no-progress" and .records[0].lifecycleCheckedAt != null and .discoveryTimings.lifecycleMs >= 0)'
+jq -es --slurpfile before "$TMPDIR/notification-inspection-before.json" '([.[].records[] | {id,lifecycleCheckedAt,feedback}] | sort_by(.id)) == $before[0]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
+cmp "$TMPDIR/pr-provider/reads.jsonl" "$TMPDIR/notification-inspection-reads.jsonl"
+
+# should resume feedback discovery after restoring the provider
 node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const p=process.env.TMPDIR+"/pr-provider/control.json"; const control=JSON.parse(readFileSync(p,"utf8")); control.paused=false; writeFileSync(p,JSON.stringify(control));'
 run_id=$(openclaw agent-system automations run github-issue-assignment --json | jq -er 'select(.status == "queued") | .runId')
 node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" github-issue-assignment "$run_id"

@@ -1,4 +1,5 @@
 import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
+import { dispatchInspectionProperties } from './dispatch-inspection.ts';
 import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -12,7 +13,7 @@ const object = (properties: Parameters<typeof Type.Object>[0]) =>
   Type.Object(properties, { additionalProperties: false });
 const recovery = { id, digest };
 const schemas = {
-  inspect: object({}),
+  inspect: object(dispatchInspectionProperties),
   'observe-denials': object({}),
   next: object({ projects: Type.Optional(Type.Unknown()), threads: Type.Optional(Type.Unknown()) }),
   report: object({ automationId: Type.String(), currentTimeIso: Type.String() }),
@@ -60,6 +61,7 @@ export default function validateDispatchRequest(
   const schema = schemas[action as DispatchAction];
   const request = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
   if (
+    action !== 'inspect' &&
     (action === 'retire' || ('properties' in schema && Object.hasOwn(schema.properties, 'id'))) &&
     Object.hasOwn(request, 'id') &&
     !Value.Check(id, request.id)

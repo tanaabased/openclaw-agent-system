@@ -23,6 +23,7 @@ export default async function reconcileOpenClawLifecycle(input: {
   authority: DispatchAuthority;
   targetId?: string;
   activeSessionKey?: string;
+  budget?: DiscoveryBudget;
 }) {
   const { service, manifest, workspace, authority } = input;
   const readConfiguration = () => openClawCleanupConfiguration(service.dependencies.config);
@@ -38,7 +39,7 @@ export default async function reconcileOpenClawLifecycle(input: {
   const owner = manualTarget
     ? manualTarget.sourceThreadId
     : await service.dependencies.coordinator(manifest, workspace);
-  const feedbackBudget = new DiscoveryBudget();
+  const feedbackBudget = input.budget ?? new DiscoveryBudget();
   const now = (service.dependencies.now ?? Date.now)();
   const snapshot = await current.journal.read();
   if (
@@ -50,6 +51,7 @@ export default async function reconcileOpenClawLifecycle(input: {
     )
   )
     return;
+  input.budget?.check();
   const client = await service.dependencies.connect(
     { manifest, workspaceDir: workspace },
     authority.signal ?? AbortSignal.timeout(20_000),
@@ -105,6 +107,7 @@ export default async function reconcileOpenClawLifecycle(input: {
       client,
       owner,
       targetId: input.targetId,
+      budget: input.budget,
       now,
       fresh,
       save,

@@ -576,6 +576,27 @@ describe('agent/codex-dispatch', () => {
     );
   });
 
+  it('should inspect a selected saved owner without scanning or modifying state', async () => {
+    const prepared = await prepare();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(pluginData, current.store.location.scope);
+    const before = await store.read();
+    deps.connect = async () => {
+      throw new Error('unexpected provider read');
+    };
+    const result = await request('inspect', { target: 'owner/repo#3', limit: 1 });
+    const records = result.records as Array<{
+      id: string;
+      lifecycleCheckedAt?: number;
+      request?: unknown;
+    }>;
+    assert.equal(records.length, 1);
+    assert.equal(records[0]!.id, prepared.id);
+    assert.equal(records[0]!.lifecycleCheckedAt, before.records[0]!.lifecycleCheckedAt);
+    assert.equal(records[0]!.request, undefined);
+    assert.deepEqual(await store.read(), before);
+    assert.deepEqual((await request('inspect', { target: 'other/repo#3' })).records, []);
+  });
   it('should consume custom initial routing while verified complexity retains its tier', async () => {
     await writeFile(
       join(workspace, 'agent.yaml'),

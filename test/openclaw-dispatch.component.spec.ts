@@ -7603,6 +7603,145 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal((await record()).feedback?.events.length, 1);
     }
   });
+  for (const readCost of [2000, 5000])
+    it(`should preserve feedback and resume lifecycle work with ${readCost}ms reads`, async () => {
+      await feedbackOwner();
+      const current = await service.scope(manifest, root);
+      await current.store.exclusive(async (state, save) => {
+        const original = state!.records[0]!;
+        for (const number of [4, 5])
+          state!.records.push({
+            ...structuredClone(original),
+            id: automationHash([
+              state!.scope,
+              original.repository.nodeId,
+              `I_${number}`,
+              `E_${number}`,
+            ]),
+            issue: { ...original.issue, number, nodeId: `I_${number}`, databaseId: number },
+            assignment: { ...original.assignment, nodeId: `E_${number}`, databaseId: number },
+          });
+        await save(state!);
+      });
+      const admitted = (await current.store.read())!.records;
+      await current.journal.exclusive(async (state, save) => {
+        const owner = state.records[0]!;
+        owner.lifecycleCheckedAt = 0;
+        for (const admission of admitted.slice(1))
+          state.records.push({
+            id: admission.id,
+            intakeId: admission.id,
+            issueKey: issueKey(admission),
+            sourceThreadId: owner.sourceThreadId,
+            phase: 'routing',
+            createdAt: owner.createdAt,
+            manifestDigest: owner.manifestDigest,
+            lifecycleCheckedAt: 0,
+          });
+        await save();
+      });
+      const realNow = Date.now;
+      let wall = realNow();
+      let connections = 0;
+      const observedItems: number[] = [];
+      const connect = service.dependencies.connect;
+      service.dependencies.connect = async (...args) => {
+        const client = await connect(...args);
+        if (++connections > 1) return client;
+        return {
+          ...client,
+          getRepository: async (...args) => {
+            wall += readCost;
+            return client.getRepository(...args);
+          },
+          getItem: async (owner, name, number) => {
+            observedItems.push(number);
+            wall += readCost;
+            const item = await client.getItem(owner, name, number);
+            const admission = admitted.find((r) => r.issue.number === number)!;
+            return { ...item, ...admission.issue };
+          },
+        };
+      };
+      Date.now = () => wall;
+      try {
+        for (let pass = 0; pass < 3; pass++) {
+          connections = 0;
+          service.dependencies.now = () => baseline + 240_000 + pass * 60_000;
+          const started = wall;
+          await service.check(manifest, root, undefined, { status: 'ready', changed: false });
+          const owner = await record();
+          assert.equal(owner.feedback?.events.length, 1);
+          assert.equal(owner.feedback?.discoveryPending, false);
+          assert.equal(owner.feedback?.scannedTime, service.dependencies.now());
+          assert.notEqual(owner.feedback?.code, 'feedback-discovery-no-progress');
+          const state = await current.journal.read();
+          assert.equal(state.discoveryTimings?.lifecycleMs, wall - started);
+          assert.equal(state.discoveryTimings?.feedbackMs, 0);
+          assert.ok(wall - started < 20_000);
+          if (pass === 0) assert.ok(state.records.some((record) => record.lifecyclePending));
+        }
+        assert.deepEqual([...new Set(observedItems)].sort(), [3, 4, 5]);
+        assert.ok((await current.journal.read()).records.every((r) => r.lifecycleCheckedAt! > 0));
+      } finally {
+        Date.now = realNow;
+      }
+    });
+  it('should inspect one saved feedback owner without provider reads or lifecycle changes', async () => {
+    const { id } = await feedbackOwner();
+    await service.check(manifest, root);
+    const current = await service.scope(manifest, root);
+    const before = await current.journal.read();
+    service.dependencies.connect = async () => {
+      throw new Error('unexpected provider read');
+    };
+    const result = await service.run(
+      manifest,
+      root,
+      coordinator,
+      {
+        action: 'inspect',
+        target: 'owner/repo#3',
+        limit: 1,
+      },
+      true,
+    );
+    assert.ok('records' in result);
+    assert.equal(result.records.length, 1);
+    const owner = result.records[0]!;
+    assert.equal(owner.id, id);
+    assert.equal(owner.lifecycleCheckedAt, before.records[0]!.lifecycleCheckedAt);
+    assert.equal(owner.feedback?.scannedTime, before.records[0]!.feedback!.scannedTime);
+    assert.equal(owner.feedback?.discoveryPending, false);
+    assert.equal('events' in owner.feedback!, false);
+    assert.deepEqual(await current.journal.read(), before);
+    const missing = await service.run(
+      manifest,
+      root,
+      coordinator,
+      {
+        action: 'inspect',
+        target: 'other/repo#3',
+      },
+      true,
+    );
+    assert.ok('records' in missing);
+    assert.deepEqual(missing.records, []);
+  });
+  it('should stop all discovery phases on caller cancellation', async () => {
+    await feedbackOwner();
+    const before = await record();
+    const caller = new AbortController();
+    caller.abort(new Error('caller-cancelled'));
+    service.dependencies.connect = async () => {
+      throw new Error('unexpected provider read');
+    };
+    await assert.rejects(
+      service.check(manifest, root, caller.signal, { status: 'ready', changed: false }),
+      /caller-cancelled/,
+    );
+    assert.deepEqual((await record()).feedback, before.feedback);
+  });
   it('should validate each feedback owner once during discovery and consume the saved result', async () => {
     await feedbackOwner();
     const validate = service.validate.bind(service);

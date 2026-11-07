@@ -27,11 +27,55 @@ import {
   createPRExampleScenario,
   prExampleScenario,
 } from '../examples/openclaw-pr-journey/model-fixture.ts';
+import { prDiscoveryExampleScenario } from '../examples/openclaw-pr-discovery/model-fixture.ts';
 import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
 import resolveExampleModelScenario from '../scripts/example-model-scenarios.ts';
 import openclawTurnContext from '../agent/openclaw-turn-context.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
+
+describe('examples/pr discovery inspection fixture', () => {
+  it('should request the installed native inspection and return only its observed result', async () => {
+    const target = 'https://github.com/tanaabased/big-test-bucket/issues/69';
+    const input: ChatCompletionRequest = {
+      model: 'gpt-5.5',
+      messages: [
+        { role: 'system', content: 'Name: Notification Tanaabot' },
+        { role: 'user', content: `Inspect saved discovery for ${target}` },
+      ],
+      tools: [{ type: 'function', function: { name: 'agent_system_dispatch' } }],
+    };
+    const respond = async () => {
+      const fixture = matchFixture([...prDiscoveryExampleScenario.fixtures], input);
+      assert.ok(fixture);
+      return typeof fixture.response === 'function'
+        ? await fixture.response(input)
+        : fixture.response;
+    };
+    const first = await respond();
+    assert.ok('toolCalls' in first && first.toolCalls?.length === 1);
+    const call = first.toolCalls[0]!;
+    assert.equal(call.name, 'agent_system_dispatch');
+    assert.deepEqual(JSON.parse(call.arguments), { action: 'inspect', target, limit: 1 });
+    assert.ok(Value.Check(dispatchParameters, JSON.parse(call.arguments)));
+    const observed = {
+      status: 'ready',
+      total: 1,
+      records: [{ id: 'a'.repeat(64), feedback: { code: 'feedback-discovery-no-progress' } }],
+    };
+    input.messages.push({
+      role: 'tool',
+      tool_call_id: call.id + '_fc-native',
+      content: JSON.stringify(observed),
+    });
+    const complete = matchFixture(
+      [...prDiscoveryExampleScenario.dynamicFinalResponseFixtures!],
+      input,
+    );
+    assert.ok(complete && typeof complete.response === 'function');
+    assert.deepEqual(await complete.response(input), { content: JSON.stringify(observed) });
+  });
+});
 
 for (const scenario of [
   issueExampleScenario,

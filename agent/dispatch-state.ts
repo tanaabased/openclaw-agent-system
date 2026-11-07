@@ -118,6 +118,7 @@ export const dispatchRecordProperties = {
     Type.Object({ at: Type.Integer({ minimum: 0 }), by: text }, { additionalProperties: false }),
   ),
   lifecycleCheckedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+  lifecyclePending: Type.Optional(Type.Literal(true)),
   assignmentObservation: Type.Optional(assignmentObservationSchema),
   retirement: Type.Optional(retirementSchema),
   feedbackReactivation: Type.Optional(
@@ -210,6 +211,16 @@ export function dispatchStateSchema<R extends SharedDispatchRecord>(recordSchema
       ),
       discoveryCycleAt: Type.Optional(Type.Integer({ minimum: 0 })),
       discoveryCheckedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+      discoveryTimings: Type.Optional(
+        Type.Object(
+          {
+            assignmentMs: Type.Integer({ minimum: 0 }),
+            lifecycleMs: Type.Integer({ minimum: 0 }),
+            feedbackMs: Type.Integer({ minimum: 0 }),
+          },
+          { additionalProperties: false },
+        ),
+      ),
       discoveryRun: Type.Optional(
         Type.Pick(openclawIntakePassSchema, ['sessionKey', 'sessionId', 'runId']),
       ),

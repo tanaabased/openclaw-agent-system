@@ -1,5 +1,6 @@
 import { implementationMaterialSchema } from './implementation-material-schema.ts';
 import { implementationDecisionSchema } from '../../agent/issue-progression.ts';
+import { dispatchInspectionProperties } from '../../agent/dispatch-inspection.ts';
 import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
 import { launchRequestSchema } from './launch-schema.ts';
 import { retirementRequestSchema } from './retirement-schema.ts';
@@ -41,7 +42,7 @@ const dispatchRequestVariants = Type.Union([
     ),
   }),
   object({ action: Type.Literal('report') }),
-  object({ action: Type.Literal('inspect') }),
+  object({ action: Type.Literal('inspect'), ...dispatchInspectionProperties }),
   object({ action: Type.Literal('next') }),
   object({
     action: Type.Literal('prepare'),

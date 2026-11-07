@@ -29,6 +29,7 @@ const dispatchStages = [
   'summary-preview',
   'summary-publish',
   'report',
+  'discovery-inspect',
   'binding-verify',
   'work-context',
   'work-result',
@@ -143,6 +144,7 @@ interface PRFixtureOptions {
   initialQuestion?: boolean;
   incorporateCollaborator?: boolean;
   interruptFeedbackReply?: boolean;
+  inspectDiscovery?: boolean;
 }
 
 function publicText(composed: Record<string, unknown>, text: string) {
@@ -307,6 +309,20 @@ function respond(
   };
   const dispatch = (stage: string, args: unknown) =>
     call(retryStage(stage, attempts.get(stage) ?? 0), 'agent_system_dispatch', args);
+  if (options.inspectDiscovery && prompt.includes('Inspect saved discovery for ')) {
+    const target =
+      /Inspect saved discovery for (https:\/\/github\.com\/[^\s]+\/issues\/[1-9][0-9]*)/u.exec(
+        prompt,
+      )?.[1];
+    assert.ok(target);
+    const inspected = result('discovery-inspect');
+    if (!inspected) return dispatch('discovery-inspect', { action: 'inspect', target, limit: 1 });
+    assert.equal(inspected.status, 'ready');
+    const records = inspected.records as Array<{ feedback?: { events?: unknown } }>;
+    assert.equal(records.length, 1);
+    assert.equal(records[0]!.feedback?.events, undefined);
+    return { content: JSON.stringify(inspected) };
+  }
   const report = (): FixtureResponse | undefined => {
     const retained = result('report');
     if (!retained) return dispatch('report', { action: 'report' });

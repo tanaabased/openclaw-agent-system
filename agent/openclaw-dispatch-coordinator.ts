@@ -96,6 +96,7 @@ export default class OpenClawDispatchCoordinator {
     selector?: GitHubNotificationItemSelector,
   ) {
     const budget = new DiscoveryBudget(20000, signal);
+    const startedAt = budget.clock();
     const reporting = await this.context.reportScope(manifest, workspace);
     const intake =
       observation ??
@@ -106,8 +107,9 @@ export default class OpenClawDispatchCoordinator {
         reporting.selected.digest,
         signal,
         undefined,
-        new DiscoveryBudget(7000, budget.signal),
+        budget.fork(7000),
       ));
+    const assignmentAt = budget.clock();
     let lifecycleFailure: string | undefined;
     if (intake.status === 'ready') {
       if (selector) {
@@ -139,18 +141,24 @@ export default class OpenClawDispatchCoordinator {
           if (changed) await save();
         });
       }
+      // share the remaining time with feedback rather than letting lifecycle consume it all.
+      const lifecycleBudget = budget.fork(budget.remaining / 2);
       try {
         await reconcileOpenClawLifecycle({
           service: this.context,
           manifest,
           workspace,
-          authority: { signal: budget.signal },
+          authority: { signal: lifecycleBudget.signal },
+          budget: lifecycleBudget,
         });
       } catch (error) {
         signal?.throwIfAborted();
-        lifecycleFailure = workflowFailure(error, 'dispatch-lifecycle-observation-failed').code;
+        if (!lifecycleBudget.exhausted)
+          lifecycleFailure = workflowFailure(error, 'dispatch-lifecycle-observation-failed').code;
       }
+      signal?.throwIfAborted();
     }
+    const lifecycleAt = budget.clock();
     const state = await reporting.journal.read();
     const report = openclawIntakeReport({
       state,
@@ -182,6 +190,7 @@ export default class OpenClawDispatchCoordinator {
       checkpoint: (scan) => discoveryCheckpoint(current.journal, scan),
     });
     applyOpenClawFeedbackScans(state.records, scans);
+    const feedbackAt = budget.clock();
     const owners = state.records.filter(
       (r) => !r.retired && !r.retirement && !r.reset && r.sessionCreation?.verified && r.threadId,
     );
@@ -196,6 +205,11 @@ export default class OpenClawDispatchCoordinator {
     );
     await current.journal.exclusive(async (fresh, save) => {
       fresh.discoveryCheckedAt = Date.now();
+      fresh.discoveryTimings = {
+        assignmentMs: Math.max(0, assignmentAt - startedAt),
+        lifecycleMs: Math.max(0, lifecycleAt - assignmentAt),
+        feedbackMs: Math.max(0, feedbackAt - lifecycleAt),
+      };
       if (more) fresh.discoveryCycleAt = cycleAt;
       else delete fresh.discoveryCycleAt;
       if (more || fresh.discoveryProgress)

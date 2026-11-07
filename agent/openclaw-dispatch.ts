@@ -1,6 +1,7 @@
 import launchPending from './launch-pending.ts';
 import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
 import feedbackContextMaterial from './feedback-context-material.ts';
+import dispatchInspection, { dispatchInspectionSummary } from './dispatch-inspection.ts';
 import { isDeepStrictEqual } from 'node:util';
 
 import assessmentMaterial from './assessment-material.ts';
@@ -569,53 +570,67 @@ export default class OpenClawDispatch {
             throw new Error('feedback-schedule-owner-changed');
           if (applyOpenClawFeedbackScans(state.records, scans)) await save();
         }
-        if (input.action === 'inspect')
+        if (input.action === 'inspect') {
+          const { records, summary, ...page } = dispatchInspection(
+            state.records,
+            current.admitted.records,
+            input,
+          );
           return {
             status: 'ready' as const,
-            records: state.records.map((record) => ({
-              id: record.id,
-              intakeId: record.intakeId,
-              phase: record.phase,
-              workflowStatus: workflowStatus(record),
-              assignmentObservation: record.assignmentObservation,
-              assignmentWarning:
-                record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
-              threadId: record.threadId,
-              effective: record.effective,
-              sessionCreation: record.sessionCreation,
-              firstTurn: record.firstTurn
-                ? {
-                    status: record.firstTurn.status,
-                    runId: record.firstTurn.runId,
-                    consumedByEventId: record.firstTurn.consumedByEventId,
-                    replyEventId: record.firstTurn.replyEventId,
-                    executionModel: record.firstTurn.executionModel,
+            discoveryCheckedAt: state.discoveryCheckedAt,
+            discoveryTimings: state.discoveryTimings,
+            ...page,
+            records: summary
+              ? records.map(dispatchInspectionSummary)
+              : records.map((record) => ({
+                  id: record.id,
+                  intakeId: record.intakeId,
+                  phase: record.phase,
+                  workflowStatus: workflowStatus(record),
+                  assignmentObservation: record.assignmentObservation,
+                  assignmentWarning:
+                    record.assignmentObservation &&
+                    workflowRecovery(record.assignmentObservation.code),
+                  threadId: record.threadId,
+                  effective: record.effective,
+                  sessionCreation: record.sessionCreation,
+                  firstTurn: record.firstTurn
+                    ? {
+                        status: record.firstTurn.status,
+                        runId: record.firstTurn.runId,
+                        consumedByEventId: record.firstTurn.consumedByEventId,
+                        replyEventId: record.firstTurn.replyEventId,
+                        executionModel: record.firstTurn.executionModel,
+                        executionEffort: 'unverified',
+                      }
+                    : undefined,
+                  assessmentTurn: record.assessmentTurn && {
+                    status: record.assessmentTurn.status,
+                    runId: record.assessmentTurn.runId,
+                    consumedByEventId: record.assessmentTurn.consumedByEventId,
+                    replyEventId: record.assessmentTurn.replyEventId,
+                    executionModel: record.assessmentTurn.executionModel,
                     executionEffort: 'unverified',
-                  }
-                : undefined,
-              assessmentTurn: record.assessmentTurn && {
-                status: record.assessmentTurn.status,
-                runId: record.assessmentTurn.runId,
-                consumedByEventId: record.assessmentTurn.consumedByEventId,
-                replyEventId: record.assessmentTurn.replyEventId,
-                executionModel: record.assessmentTurn.executionModel,
-                executionEffort: 'unverified',
-              },
-              blocker: record.blocker,
-              failureStage: record.failureStage,
-              outcome: record.result?.outcome,
-              pendingPublicResponse: pendingPublicResponse(record),
-              summaryRecovery: record.summaryRecovery && {
-                revision: record.summaryRecovery.revision,
-                runId: record.summaryRecovery.turn.runId,
-                status: record.summaryRecovery.turn.status,
-                code: record.summaryRecovery.code,
-              },
-              retirement: record.retirement,
-              retired: record.retired,
-              feedback: record.feedback,
-            })),
+                  },
+                  blocker: record.blocker,
+                  failureStage: record.failureStage,
+                  outcome: record.result?.outcome,
+                  pendingPublicResponse: pendingPublicResponse(record),
+                  summaryRecovery: record.summaryRecovery && {
+                    revision: record.summaryRecovery.revision,
+                    runId: record.summaryRecovery.turn.runId,
+                    status: record.summaryRecovery.turn.status,
+                    code: record.summaryRecovery.code,
+                  },
+                  retirement: record.retirement,
+                  retired: record.retired,
+                  lifecycleCheckedAt: record.lifecycleCheckedAt,
+                  lifecyclePending: record.lifecyclePending,
+                  feedback: record.feedback,
+                })),
           };
+        }
         const now = (this.dependencies.now ?? Date.now)();
         const tx: OpenClawDispatchTransaction = {
           manifest,

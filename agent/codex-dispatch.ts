@@ -1,5 +1,6 @@
 import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
 import workflowFailure from './workflow-failure.ts';
+import dispatchInspection, { dispatchInspectionSummary } from './dispatch-inspection.ts';
 import { automationHash } from './automation-hash.ts';
 import codexIssueLaunch from './codex-issue-launch.ts';
 import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
@@ -185,7 +186,13 @@ async function executeCodexDispatch(
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   if (action === 'inspect') {
     const state = await store.read();
+    const { records, summary, ...page } = dispatchInspection(
+      state.records,
+      managedIssueState(retainedAdmission, state.records)?.records ?? [],
+      input as Parameters<typeof dispatchInspection>[2],
+    );
     return {
+      ...page,
       version: state.version,
       scope: state.scope,
       resetGeneration: state.resetGeneration,
@@ -194,41 +201,44 @@ async function executeCodexDispatch(
         actions: state.run.actions,
         stopped: state.run.stopped,
       },
-      records: state.records.map((record) => ({
-        id: record.id,
-        intakeId: record.intakeId,
-        phase: record.phase,
-        threadId: record.threadId,
-        clientThreadId: record.clientThreadId,
-        worktree: record.worktree,
-        effective: record.effective,
-        progression: record.progression,
-        pullRequestLink: record.pullRequestLink,
-        branch: record.issueBranch?.name,
-        supersededBy: record.supersededBy,
-        reset: record.reset,
-        retired: record.retired,
-        retirement: record.retirement && {
-          reason: record.retirement.reason,
-          code: record.retirement.code,
-          archivedAt: record.retirement.archivedAt,
-          worktreeRemovedAt: record.retirement.worktreeRemovedAt,
-        },
-        denial: record.denial && {
-          operation: record.denial.operation,
-          callId: record.denial.callId,
-          turnId: record.denial.turnId,
-        },
-        code: record.result?.outcome === 'operator-setup-blocker' ? record.result.code : undefined,
-        implementationPreparationError: record.implementationPreparationError,
-        feedback: record.feedback && {
-          events: record.feedback.events.map(({ id, phase, code }) => ({ id, phase, code })),
-        },
-        workflowStatus: workflowStatus(record),
-        assignmentObservation: record.assignmentObservation,
-        assignmentWarning:
-          record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
-      })),
+      records: summary
+        ? records.map(dispatchInspectionSummary)
+        : records.map((record) => ({
+            id: record.id,
+            intakeId: record.intakeId,
+            phase: record.phase,
+            threadId: record.threadId,
+            clientThreadId: record.clientThreadId,
+            worktree: record.worktree,
+            effective: record.effective,
+            progression: record.progression,
+            pullRequestLink: record.pullRequestLink,
+            branch: record.issueBranch?.name,
+            supersededBy: record.supersededBy,
+            reset: record.reset,
+            retired: record.retired,
+            retirement: record.retirement && {
+              reason: record.retirement.reason,
+              code: record.retirement.code,
+              archivedAt: record.retirement.archivedAt,
+              worktreeRemovedAt: record.retirement.worktreeRemovedAt,
+            },
+            denial: record.denial && {
+              operation: record.denial.operation,
+              callId: record.denial.callId,
+              turnId: record.denial.turnId,
+            },
+            code:
+              record.result?.outcome === 'operator-setup-blocker' ? record.result.code : undefined,
+            implementationPreparationError: record.implementationPreparationError,
+            feedback: record.feedback && {
+              events: record.feedback.events.map(({ id, phase, code }) => ({ id, phase, code })),
+            },
+            workflowStatus: workflowStatus(record),
+            assignmentObservation: record.assignmentObservation,
+            assignmentWarning:
+              record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
+          })),
     };
   }
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
