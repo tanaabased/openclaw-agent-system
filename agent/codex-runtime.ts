@@ -17,6 +17,7 @@ import { operateInstanceIdentity } from './instance-identity.ts';
 import codexHeartbeat, { codexHeartbeatEnvelope } from './codex-heartbeat.ts';
 import codexHostAccess from './codex-host-access.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
+import workflowNoticeInstructions from './workflow-notice-instructions.ts';
 import { runCodexDispatch } from './codex-dispatch.ts';
 import { inspectCodexIntake, runCodexIntake, runCodexIssuePickup } from './codex-intake.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
@@ -528,7 +529,7 @@ runCodexRuntime().catch((error: unknown) => {
             error instanceof RoutingError ||
             error instanceof CodexAutomationError
           ? { code: error.code }
-          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment|assessment-result|implementation|heartbeat|notification-reset|issue-pickup)-[a-z-]+$/u.test(
+          : /^(?:dispatch|continuation|workflow|delivery|github-delivery|assessment|assessment-result|implementation|reply|heartbeat|notification-reset|issue-pickup)-[a-z-]+$/u.test(
                 message,
               )
             ? { code: message }
@@ -547,7 +548,7 @@ runCodexRuntime().catch((error: unknown) => {
         })
       : undefined;
   process.stderr.write(
-    `${JSON.stringify({ status: 'error', ...failureScope, ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(pickup ? { response: codexHeartbeatEnvelope(pickup.automationId ?? issuePickupAutomationId, pickup.failure.response, true) } : {}), ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
+    `${JSON.stringify({ status: 'error', ...failureScope, ...evidence, ...details, message: codexHostAccess(error) ? 'Native host approval is required to access private plugin state.' : message, ...(pickup ? { response: codexHeartbeatEnvelope(pickup.automationId ?? issuePickupAutomationId, pickup.failure.response, true) } : {}), ...(notice ? { presentationInstructions: workflowNoticeInstructions(true) } : {}), ...(notice ? (process.argv[2] === 'delivery' ? { notices: error instanceof CodexDeliveryFailure ? error.notices : [notice] } : { notice }) : {}) })}\n`,
   );
   process.exitCode = 1;
 });

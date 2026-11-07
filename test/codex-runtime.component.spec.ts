@@ -142,6 +142,10 @@ describe('agent/codex-runtime', () => {
       assert.equal(result.stdout, '');
       const failure = JSON.parse(result.stderr);
       assert.equal(failure.code, 'workflow-request-invalid');
+      assert.equal(failure.notice.severity, 'error');
+      assert.match(failure.notice.message, /^> ## ❌/);
+      assert.ok(failure.notice.message.includes('`workflow-request-invalid`'));
+      assert.equal(typeof failure.presentationInstructions, 'string');
       assert.match(failure.message, /JSON on stdin/);
       assert.match(failure.message, /no workflow operation was attempted/);
       assert.doesNotMatch(result.stderr, /private-value/);

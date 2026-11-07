@@ -205,7 +205,13 @@ describe('tools/dispatch/tool', () => {
       const call = { ...event, params: { action: 'next' } };
       await f.hook(call, coordinator);
       const result = await f.build().execute(call.toolCallId, call.params);
-      assert.deepEqual(result.details, {
+      const { notice, presentationInstructions, ...details } = result.details as Record<
+        string,
+        unknown
+      >;
+      assert.ok(notice);
+      assert.equal(typeof presentationInstructions, 'string');
+      assert.deepEqual(details, {
         status: 'waiting',
         code,
         runtime: 'openclaw',
@@ -231,6 +237,30 @@ describe('tools/dispatch/tool', () => {
     assert.match(details.notice.message, /❌|Git could not/);
     assert.match(details.notice.message, /Permission to owner/);
     assert.doesNotMatch(JSON.stringify(result), /ghp_private/);
+  });
+
+  it('should supply ordinary workflow failure cards without provider diagnostics', async () => {
+    for (const [code, severity, emoji] of [
+      ['assessment-render-request-invalid', 'error', '❌'],
+      ['reply-draft-unavailable', 'error', '❌'],
+      ['dispatch-project-registration-unavailable', 'warning', '⚠️'],
+    ]) {
+      const f = fixture();
+      f.adapter.service.run = async () => {
+        throw new Error(code);
+      };
+      await f.hook(event, coordinator);
+      const result = await f.build().execute(event.toolCallId, event.params);
+      const details = result.details as {
+        code: string;
+        notice: { message: string; severity: string };
+      };
+      assert.equal(details.code, code);
+      assert.equal(details.notice.severity, severity);
+      assert.ok(details.notice.message.startsWith('> ## ' + emoji));
+      assert.ok(details.notice.message.includes('`' + code + '`'));
+      assert.ok(details.notice.message.split('\n').every((line) => line.startsWith('>')));
+    }
   });
 
   it('should allow the read-only predicate without a conversation session id', async () => {

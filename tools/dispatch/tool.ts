@@ -1,4 +1,5 @@
 import nativeTaskInstructions from '../../agent/native-task-instructions.ts';
+import workflowNoticeInstructions from '../../agent/workflow-notice-instructions.ts';
 import workflowFailure, { workflowFailureScope } from '../../agent/workflow-failure.ts';
 import codexIssueNotice from '../../agent/codex-issue-notice.ts';
 import { dispatchFailurePhase } from '../../agent/dispatch-retry.ts';
@@ -240,6 +241,8 @@ export default function createDispatchTool(input: {
                   status: dispatchFailurePhase({}, failure.code, error),
                   ...failure,
                   ...workflowFailureScope('openclaw', 'dispatch', params),
+                  notice: codexIssueNotice({ event: 'failure', changed: true, ...failure }),
+                  presentationInstructions: workflowNoticeInstructions(true),
                 };
               });
           }
@@ -248,8 +251,7 @@ export default function createDispatchTool(input: {
             result = {
               ...result,
               notice: codexIssueNotice({ event: 'failure', changed: true, ...failure }),
-              presentationInstructions:
-                'Show notice.message as the operation failure card. Preserve all retained work and reconcile uncertain writes before retrying.',
+              presentationInstructions: workflowNoticeInstructions(true),
             };
           }
           return {

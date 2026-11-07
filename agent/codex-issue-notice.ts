@@ -31,6 +31,22 @@ const events: Record<Exclude<IssueNoticeEvent, 'failure'>, NoticeCopy> = {
 };
 
 function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
+  if (code === 'assessment-render-request-invalid')
+    return {
+      severity: 'error',
+      title: 'The assessment could not be displayed',
+      summary:
+        'The assessment presentation request is invalid. This attempt produced no assessment card.',
+      next: 'Use the complete returned presentationRequest with result matching resultSchema, then retry rendering in the existing chat. Preserve the assessment and current task permission.',
+    };
+  if (code === 'reply-request-invalid' || code === 'reply-draft-unavailable')
+    return {
+      severity: 'error',
+      title: 'The reply request could not be completed',
+      summary:
+        'The reply request is invalid or does not identify an available reply draft. This failure does not establish whether an earlier publication succeeded.',
+      next: 'Use the complete request returned by the reply owner. A reply draft id is not a managed task id. Reconcile any earlier uncertain publication before retrying; preserve the issue, PR and existing work.',
+    };
   const retirement = code.startsWith('retirement-') ? retirementNotice(code) : undefined;
   if (retirement) return retirement;
   if (code === 'intake-manifest-unavailable')
