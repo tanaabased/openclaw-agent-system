@@ -557,6 +557,7 @@ export default async function openClawDelivery(input: {
     pullRequest: receipt,
     workflowStatus: workflowStatus(record),
     url,
+    linkRequest: { action: 'delivery' as const, operation: 'link' as const, id: record.id },
     instructions: deliveryCompletionInstructions(
       'openclaw',
       delivery,

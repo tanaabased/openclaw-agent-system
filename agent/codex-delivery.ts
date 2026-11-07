@@ -410,14 +410,14 @@ export default async function runCodexDelivery(
         await save();
         return { ...bindingResult };
       }
-      const notices = (attached: boolean) =>
+      const notices = (attached?: boolean) =>
         [
           ...new Set([
             ...(record.delivery?.notices ?? []),
             ...(record.delivery?.pullRequest && !record.delivery.reconciled
               ? ['delivery-publication-incomplete']
               : []),
-            ...(!attached ? ['delivery-attachment-pending'] : []),
+            ...(attached === false ? ['delivery-attachment-pending'] : []),
           ]),
         ]
           .filter(
@@ -969,9 +969,10 @@ export default async function runCodexDelivery(
           });
           return {
             status: 'published',
-            notices: notices(delivery.attached),
+            notices: notices(),
             id: input.id,
             pullRequest: delivery.pullRequest,
+            linkRequest: { action: 'link' as const, id: input.id },
             workflowStatus: workflowStatus(record),
             url: url(delivery.pullRequest!.pullRequestNumber),
             instruction: deliveryCompletionInstructions(

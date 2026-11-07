@@ -1281,6 +1281,11 @@ describe('agent/codex-delivery', () => {
     const published = await publish();
     assert.equal(published.status, 'published');
     assert.equal(published.workflowStatus, 'native-unobserved');
+    assert.doesNotMatch(JSON.stringify(published.notices), /delivery-attachment-pending/);
+    assert.ok('linkRequest' in published && published.linkRequest);
+    const initialLink = await runCodexDelivery(pluginData, published.linkRequest, deps);
+    assert.equal(initialLink.status, 'linked');
+    assert.equal(initialLink.attached, false);
     assert.equal(pr!.title, 'Authored title');
     assert.equal(pr!.body, 'Authored body.\n\nCloses https://github.com/owner/repo/issues/3');
     assert.deepEqual(

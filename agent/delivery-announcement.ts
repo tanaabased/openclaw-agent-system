@@ -260,7 +260,7 @@ export function deliveryCompletionInstructions(
   return (
     (updated
       ? ''
-      : 'Use delivery link for the initial task/PR association and supported native attachment. ') +
+      : 'Submit the complete returned linkRequest for the initial task/PR association; follow its native attachment instructions and reuse that request for attachment readback. ') +
     attachment +
     (updated
       ? 'This delivery updated the existing PR. Invoke Task Update for its material verified changes as a separate publication, coalescing any source-bound reply that already conveys them. An update failure does not undo delivery or prevent card presentation. '

@@ -300,10 +300,13 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(pushes, 0);
     assert.ok('publishRequest' in stale && stale.publishRequest);
     assert.notEqual(stale.publishRequest.digest, prepared.publishRequest.digest);
-    assert.equal(
-      (await openClawDelivery({ ...input, action: stale.publishRequest })).status,
-      'published',
-    );
+    const published = await openClawDelivery({ ...input, action: stale.publishRequest });
+    assert.equal(published.status, 'published');
+    assert.ok('linkRequest' in published && published.linkRequest);
+    const linked = await openClawDelivery({ ...input, action: published.linkRequest });
+    assert.equal(linked.status, 'linked');
+    assert.ok('pullRequest' in linked);
+    assert.deepEqual(linked.pullRequest, published.pullRequest);
     await request('reconcile');
     assert.equal(creates, 1);
     assert.ok(String(pr!.body).startsWith('Revised poem.'));
