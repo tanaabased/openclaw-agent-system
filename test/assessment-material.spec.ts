@@ -37,7 +37,11 @@ describe('agent/assessment-material', () => {
       digest: 'b'.repeat(64),
       content: 'Custom guidance. '.repeat(10000),
     };
-    const source = { ...base, assessment: { ...base.assessment, guidance } };
+    const source = {
+      ...base,
+      continuationRequest: { action: 'context', id: base.id },
+      assessment: { ...base.assessment, guidance },
+    };
     const request = { action: 'context', id: source.id };
     const file = assessmentMaterial(source, request);
     assert.equal('contextMaterials' in file, false);
@@ -51,6 +55,7 @@ describe('agent/assessment-material', () => {
     };
     const delivered = assessmentMaterial(inline, request);
     assert.ok('contextMaterials' in delivered);
+    assert.deepEqual(delivered.continuationRequest, source.continuationRequest);
     const restored = await hydrateImplementation(delivered, async (next) =>
       assessmentMaterial(inline, request, next.material as ImplementationMaterialRead),
     );

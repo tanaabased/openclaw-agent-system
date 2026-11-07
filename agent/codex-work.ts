@@ -225,7 +225,12 @@ export default async function advanceCodexWork(record: DispatchRecord, context: 
     if (error instanceof WorkflowPolicyHeld && record.continuation) {
       record.continuation.policyHeld = error.reason;
       await save();
-      return { status: 'policy-held' as const, id: record.id, reason: error.reason };
+      return {
+        status: 'policy-held' as const,
+        id: record.id,
+        reason: error.reason,
+        continuationRequest: { action: 'context' as const, id: record.id },
+      };
     }
     throw error;
   }

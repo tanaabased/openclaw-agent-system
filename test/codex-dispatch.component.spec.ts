@@ -4468,6 +4468,31 @@ describe('agent/codex-dispatch', () => {
         assert.equal(after.progression, undefined);
       });
 
+  it('should reject incomplete continuation requests before accessing workflow state', async () => {
+    for (const action of [
+      'context',
+      'reconcile',
+      'result',
+      'delivery',
+      'cancel',
+      'retry',
+      'retry-denied',
+    ])
+      await assert.rejects(
+        runCodexContinuation('/unused-plugin-data', { action }),
+        /continuation-request-invalid/,
+      );
+    for (const input of [
+      { action: 'context', id: 'task', decision: { mode: 'work' } },
+      { action: 'context', id: 'task', unknown: true },
+      { action: 'result', id: 'task', material: { path: [], digest: 'a'.repeat(64), offset: 0 } },
+    ])
+      await assert.rejects(
+        runCodexContinuation('/unused-plugin-data', input),
+        /continuation-request-invalid/,
+      );
+  });
+
   for (const mode of ['work', 'auto'] as const)
     it(`should enter ${mode} in the initial native turn without recording an assessment`, async () => {
       const work = await workIssue(
@@ -4480,8 +4505,26 @@ describe('agent/codex-dispatch', () => {
       native!.turnStatus = 'inProgress';
       const decision =
         mode === 'auto' ? { mode: 'work', reasons: ['Requirements are clear.'] } : undefined;
-      const context = await work.run('context', decision ? { decision } : {}, true);
+      const assessmentContext = await request('context', { id: work.id }, { threadId: native!.id });
+      assert.deepEqual(assessmentContext.continuationRequest, {
+        action: 'context',
+        id: work.id,
+      });
+      const context = await runCodexContinuation(
+        pluginData,
+        {
+          ...(assessmentContext.continuationRequest as object),
+          ...(decision ? { decision } : {}),
+        },
+        { ...work.continuation, threadId: native!.id },
+      );
       assert.equal(context.status, 'verified', JSON.stringify(context));
+      assert.ok('continuationRequest' in context);
+      const resumed = await runCodexContinuation(pluginData, context.continuationRequest, {
+        ...work.continuation,
+        threadId: native!.id,
+      });
+      assert.equal(resumed.status, 'verified', JSON.stringify(resumed));
       const record = (await (await workStore()).read()).records[0]!;
       assert.equal(record.progression?.via, mode);
       assert.equal(record.continuation?.attempt, undefined);
@@ -4566,10 +4609,13 @@ describe('agent/codex-dispatch', () => {
         assert.equal(initial.status, 'policy-held', JSON.stringify(initial));
         assert.equal(initial.reason, 'auto-decision-required');
         assert.equal((await store.read()).records[0]!.progression, undefined);
-        const decided = await work.run(
-          'context',
-          { decision: { mode: 'work', reasons: ['Bounded requested change.'] } },
-          true,
+        const decided = await runCodexContinuation(
+          pluginData,
+          {
+            ...(initial.continuationRequest as object),
+            decision: { mode: 'work', reasons: ['Bounded requested change.'] },
+          },
+          { ...work.continuation, threadId: native!.id },
         );
         assert.equal(decided.status, 'verified', JSON.stringify(decided));
       }

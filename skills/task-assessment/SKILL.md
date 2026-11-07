@@ -256,7 +256,9 @@ Permission is independent of a saved assessment. Work permits scoped implementat
 Plan requires explicit operator or verified approved-feedback implementation
 direction. In Auto, make a bounded proceed/wait decision and retain it through
 implementation context with `decision: {mode: plan|work, reasons: [...]}`. Use
-`continuationRuntime context` in Codex or `agent_system_dispatch` action
+`continuationRuntime context` in Codex with the complete returned
+`continuationRequest`, preserving `action` and `id` and adding the decision, or
+`agent_system_dispatch` action
 `implementation-context` in OpenClaw when permission or implementation guidance is
 needed. Proceed in the same native turn when authorized. No coordinator message,
 saved plan, summary or implementation result is a prerequisite.

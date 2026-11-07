@@ -419,8 +419,10 @@ export async function assessDispatch(
       ),
       mode: issueWorkflowMode(current.manifest.github?.notifications, record),
       instructions:
+        'When implementation context is needed, send continuationRequest unchanged to continuationRuntime context, adding a decision only when required.\n\n' +
         codexAssessmentInstructions +
         (record.issueMode === 'auto' ? '\n\n' + autoAssessmentInstructions : ''),
+      continuationRequest: { action: 'context' as const, id: record.id },
     };
     return assessmentMaterial(
       context,

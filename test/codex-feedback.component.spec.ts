@@ -288,6 +288,10 @@ describe('agent/codex-feedback', () => {
         const context = await call(action, ref, true);
         assert.equal(context.status, 'verified');
         assert.equal('mode' in context && context.mode, mode);
+        assert.deepEqual('continuationRequest' in context && context.continuationRequest, {
+          action: 'context',
+          id: ref.id,
+        });
         assert.equal('resultSchema' in context, false);
         assert.equal('implementation' in context, false);
         assert.equal(

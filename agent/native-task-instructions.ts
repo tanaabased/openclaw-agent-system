@@ -4,8 +4,8 @@ import taskUpdateInstructions from './task-update-instructions.ts';
 export default function nativeTaskInstructions(runtime: 'codex' | 'openclaw') {
   const context =
     runtime === 'codex'
-      ? 'continuationRuntime action context'
-      : 'agent_system_dispatch action implementation-context';
+      ? 'continuationRuntime context with the complete continuationRequest (or action:context and the verified managed task id when no request is supplied)'
+      : 'agent_system_dispatch action implementation-context with the current verified task id';
   const delivery =
     runtime === 'codex' ? 'deliveryRuntime' : 'agent_system_dispatch action delivery';
   return (

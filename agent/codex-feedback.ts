@@ -566,6 +566,7 @@ export default async function runCodexFeedback(
                 id: record.id,
                 eventId: event.id,
                 presentation: sourcePresentation,
+                continuationRequest: { action: 'context' as const, id: record.id },
                 project: { path: record.worktree },
               };
             }
