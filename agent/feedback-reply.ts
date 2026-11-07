@@ -5,6 +5,7 @@ import assessmentSkillSource from './assessment-skill-source.ts';
 import { automationHash } from './automation-hash.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import feedbackComposition from './feedback-composition.ts';
+import feedbackPresentation from './feedback-presentation.ts';
 import replyMaterial from './reply-material.ts';
 import redactFeedback from './feedback-redaction.ts';
 import selectFeedbackStage from './feedback-stage.ts';
@@ -658,25 +659,34 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
       ...result,
       id: record.id,
       ...(publishedUrl ? { url: publishedUrl } : {}),
-      presentation: purpose
-        ? feedbackResponse({
-            privateText: record.privateText,
-            publicReply: { author: record.authorLogin, text: body },
-            publication: publishedUrl
-              ? { url: publishedUrl }
-              : {
-                  withheld:
-                    result.status === 'uncertain'
-                      ? 'github-notification-publication-unconfirmed'
-                      : 'code' in result
-                        ? result.code
-                        : 'github-notification-publication-unconfirmed',
-                },
-          })
-        : feedbackReplyPresentation(record.authorLogin, body, publishedUrl) +
-          (publishedUrl
-            ? ''
-            : '\n\nPublication is unconfirmed; reconcile this retained attempt without reposting.'),
+      instruction:
+        'Reproduce the complete returned presentation in the final response, preserving the incoming card, private answer, exact public reply, attribution links and debug card when supplied. Publication failure affects only this reply; reconcile its original receipt without repeating work.',
+      presentation:
+        purpose || record.feedback
+          ? feedbackResponse({
+              sourcePresentation: record.feedback
+                ? feedbackPresentation(record.feedback, `${target.owner}/${target.name}`)
+                : undefined,
+              selection: record.selection,
+              workspace: deps.binding.workspace,
+              debug: deps.manifest.debug,
+              privateText: record.privateText,
+              publicReply: { author: record.authorLogin, text: body },
+              publication: publishedUrl
+                ? { url: publishedUrl }
+                : {
+                    withheld:
+                      result.status === 'uncertain'
+                        ? 'github-notification-publication-unconfirmed'
+                        : 'code' in result
+                          ? result.code
+                          : 'github-notification-publication-unconfirmed',
+                  },
+            })
+          : feedbackReplyPresentation(record.authorLogin, body, publishedUrl) +
+            (publishedUrl
+              ? ''
+              : '\n\nPublication is unconfirmed; reconcile this retained attempt without reposting.'),
     };
   });
 }

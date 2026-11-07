@@ -828,6 +828,59 @@ describe('agent/feedback-reply', () => {
     };
     return url + '#issuecomment-' + number;
   }
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should reply once to verified choices despite blocked implementation in ${runtime}`, async () => {
+      deps.binding.runtime = runtime;
+      deps.manifest.debug = true;
+      const target = await nativeFeedback();
+      owners = [
+        {
+          id: deps.feedback!.ownerId,
+          threadId: 'chat',
+          incarnation: 'session',
+          inactive: false,
+          repository: 'owner/repo',
+          number: 3,
+          result: { outcome: 'blocked', summary: 'continuation-turn-state-unresolved' } as never,
+        },
+      ];
+      const before = structuredClone(owners);
+      const privateText =
+        'Both choices are known. Native continuation failed before any poem was written.';
+      const composed = await call('compose', { target, privateText });
+      assert.ok('id' in composed && 'digest' in composed);
+      assert.ok(typeof composed.id === 'string');
+      await call('candidate', {
+        id: composed.id,
+        digest: composed.digest,
+        publicText:
+          'Haiku about overengineering confirmed. A continuation error currently prevents writing it.',
+      });
+      const done = await call('publish', { id: composed.id, digest: await preview(composed.id) });
+      assert.equal(done.status, 'published');
+      assert.ok('presentation' in done && typeof done.presentation === 'string');
+      assert.ok(done.presentation.startsWith('> A question.'));
+      assert.ok(
+        done.presentation.includes(
+          '[Comment ↗](' + target + ') from [@author](https://github.com/author)',
+        ),
+      );
+      assert.ok(done.presentation.includes(privateText));
+      assert.ok(
+        done.presentation.includes('> @author\n>\n> Haiku about overengineering confirmed.'),
+      );
+      assert.ok(done.presentation.includes('[Reply ↗](' + url + '#issuecomment-9)'));
+      assert.ok(done.presentation.includes('Feedback reply instructions'));
+      assert.ok(!posted!.body.includes(privateText));
+      assert.ok(!posted!.body.includes('Debug'));
+      deps.manifest.debug = false;
+      const recovered = await call('reconcile', { id: composed.id });
+      assert.equal(recovered.status, 'published');
+      assert.ok('presentation' in recovered && typeof recovered.presentation === 'string');
+      assert.ok(!recovered.presentation.includes('Debug'));
+      assert.equal(writes, 1);
+      assert.deepEqual(owners, before);
+    });
   it('should keep a native reply independent of evolving issue outcomes without progress comparison', async () => {
     const target = await nativeFeedback();
     owners = [
