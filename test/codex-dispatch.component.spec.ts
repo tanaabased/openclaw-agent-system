@@ -139,6 +139,7 @@ describe('agent/codex-dispatch', () => {
           previousResultDigest: automationHash(source),
           presentation: assessmentPresentation(record.result!, record, intake, selected.workspace, {
             debug: selected.manifest.debug,
+            workflow: selected.manifest.github?.notifications?.issueAssignment,
           }),
         };
       },

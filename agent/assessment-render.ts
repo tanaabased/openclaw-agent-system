@@ -3,6 +3,7 @@ import implementationMaterial from './implementation-material.ts';
 import { Value } from 'typebox/value';
 import { Type } from 'typebox';
 
+import type { WorkflowInstructionsPresentation } from '../channels/github/presentation/workflow-instructions.ts';
 import renderAssessmentResult, {
   assessmentContextCards,
   type AssessmentPresentationContext,
@@ -44,6 +45,7 @@ export function renderBoundAssessment(
     session: string;
     workspace: string;
     debug?: boolean;
+    workflow?: WorkflowInstructionsPresentation['workflow'];
   },
 ) {
   if (!Value.Check(boundRenderRequestSchema, input))
@@ -71,7 +73,7 @@ export function renderBoundAssessment(
             stageReceipt: undefined,
           },
           context.workspace,
-          { debug: context.debug },
+          { debug: context.debug, workflow: context.workflow },
         ),
       ),
     },

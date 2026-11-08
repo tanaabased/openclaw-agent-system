@@ -1,6 +1,12 @@
-import { isAbsolute, relative } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
 
 import { githubNotificationMarkdownCode, githubNotificationMarkdownText } from './card.ts';
+import {
+  defaultAssessmentSkill,
+  defaultImplementationSkill,
+  defaultFeedbackSkill,
+  type AssessmentConfiguration,
+} from '../../../manifest/assessment-schema.ts';
 import debugCard from './debug.ts';
 
 export interface WorkflowInstructionsSelection {
@@ -12,6 +18,11 @@ export interface WorkflowInstructionsSelection {
 export interface WorkflowInstructionsPresentation {
   debug?: boolean;
   manifestPath?: string;
+  workflow?: {
+    assessment?: AssessmentConfiguration;
+    implementation?: AssessmentConfiguration;
+    feedback?: AssessmentConfiguration;
+  };
 }
 
 export function fileLink(label: string, path?: string, literal = true): string {
@@ -31,6 +42,20 @@ export default function workflowInstructions(
   presentation: WorkflowInstructionsPresentation = {},
 ): string | undefined {
   if (!presentation.debug || !selection) return;
+  const { facts, sections } = workflowInstructionDetails(selection, workspace, presentation);
+  return debugCard({
+    debug: presentation.debug,
+    context: `${stage} instructions`,
+    facts,
+    detail: sections.join('\n\n'),
+  });
+}
+
+function workflowInstructionDetails(
+  selection: WorkflowInstructionsSelection,
+  workspace?: string,
+  presentation: WorkflowInstructionsPresentation = {},
+) {
   const { guidance, skill } = selection;
   const facts = [
     {
@@ -65,10 +90,75 @@ export default function workflowInstructions(
     );
     sections.push([fence + 'text', guidance.content.replace(/\r\n?/gu, '\n'), fence].join('\n'));
   }
+  return { facts, sections };
+}
+
+/** configuration preview only: no discovery, reads, stage execution, or retained display state. */
+export function workflowConfigurationCard(
+  input: WorkflowInstructionsPresentation & {
+    workspace?: string;
+    routing?: WorkflowInstructionsSelection;
+    assessment?: WorkflowInstructionsSelection;
+    routingManifestPath?: string;
+  },
+) {
+  if (!input.debug) return;
+  const configured = (
+    configuration: AssessmentConfiguration | undefined,
+    fallback: string,
+  ): WorkflowInstructionsSelection => ({
+    defaultSkill: !configuration?.skill,
+    skill: { name: configuration?.skill ?? fallback },
+    ...(configuration?.guidance
+      ? {
+          guidance:
+            typeof configuration.guidance === 'string'
+              ? { source: 'inline' as const, content: configuration.guidance }
+              : {
+                  source: 'file' as const,
+                  content: '',
+                  path: input.workspace
+                    ? resolve(input.workspace, configuration.guidance.file)
+                    : configuration.guidance.file,
+                },
+        }
+      : {}),
+  });
+  const stages: Array<[string, WorkflowInstructionsSelection | undefined, string | undefined]> = [
+    ['Model routing', input.routing, input.routingManifestPath ?? input.manifestPath],
+    [
+      'Assessment',
+      input.assessment ??
+        (input.workflow && configured(input.workflow.assessment, defaultAssessmentSkill)),
+      input.manifestPath,
+    ],
+    [
+      'Implementation',
+      input.workflow && configured(input.workflow.implementation, defaultImplementationSkill),
+      input.manifestPath,
+    ],
+    [
+      'Feedback reply',
+      input.workflow && configured(input.workflow.feedback, defaultFeedbackSkill),
+      input.manifestPath,
+    ],
+  ];
+  const sections = stages.flatMap(([stage, selection, manifestPath]) => {
+    if (!selection) return [];
+    const detail = workflowInstructionDetails(selection, input.workspace, { manifestPath });
+    return [
+      `### ${stage} instructions`,
+      detail.facts.map(({ label, value }) => `- **${label}:** ${value}`).join('\n'),
+      ...detail.sections,
+    ];
+  });
+  if (!sections.length) return;
   return debugCard({
-    debug: presentation.debug,
-    context: `${stage} instructions`,
-    facts,
-    detail: sections.join('\n\n'),
+    debug: true,
+    context: 'Configured workflow',
+    detail: [
+      'Configured skills and guidance; this is not proof that a skill ran or its instructions were followed.',
+      ...sections,
+    ].join('\n\n'),
   });
 }

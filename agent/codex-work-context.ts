@@ -60,6 +60,7 @@ export default async function codexWorkContext(
       current.workspace,
       {
         debug: current.manifest.debug,
+        workflow: current.manifest.github?.notifications?.issueAssignment,
         manifestPath: current.manifestPath,
         routingManifestPath:
           current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,

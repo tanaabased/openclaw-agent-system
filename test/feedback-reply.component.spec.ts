@@ -908,7 +908,7 @@ describe('agent/feedback-reply', () => {
         done.presentation.includes('> @author\n>\n> Haiku about overengineering confirmed.'),
       );
       assert.ok(done.presentation.includes('[Reply ↗](' + url + '#issuecomment-9)'));
-      assert.ok(done.presentation.includes('Feedback reply instructions'));
+      assert.ok(!done.presentation.includes('Feedback reply instructions'));
       assert.ok(!posted!.body.includes(privateText));
       assert.ok(!posted!.body.includes('Debug'));
       deps.manifest.debug = false;

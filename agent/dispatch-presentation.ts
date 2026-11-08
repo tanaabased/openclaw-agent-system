@@ -39,7 +39,7 @@ export default function assessmentPresentation(
 export function dispatchAssessmentContext(
   record: Pick<
     SharedDispatchRecord,
-    'routing' | 'effective' | 'routingInstructions' | 'stageReceipt' | 'assessment'
+    'routing' | 'effective' | 'routingInstructions' | 'stageReceipt' | 'assessment' | 'manualIssue'
   >,
   workspace: string,
   presentation: WorkflowInstructionsPresentation & { routingManifestPath?: string } = {},
@@ -47,6 +47,10 @@ export function dispatchAssessmentContext(
   const decision = record.routing ? (JSON.parse(record.routing) as RoutingDecision) : undefined;
   return {
     ...presentation,
+    workflow: presentation.workflow && {
+      ...presentation.workflow,
+      ...record.manualIssue?.selections,
+    },
     routing: decision?.selection ? { ...decision, ...decision.selection } : undefined,
     effective: record.effective,
     routingInstructions: record.routingInstructions,

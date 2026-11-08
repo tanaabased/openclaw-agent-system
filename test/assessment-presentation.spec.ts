@@ -134,6 +134,7 @@ describe('channels/github/presentation/assessment-result', () => {
       assert.equal(output.includes('[Inline guidance](</workspace/agent.yaml>)'), debug);
       assert.ok(!output.includes('agent-system-model-routing`](<'));
       if (debug) {
+        assert.equal(output.match(/## 🔬 Debug/g)?.length, 1);
         assert.ok(output.includes('**Skill:** `agent-system-model-routing` (default)'));
         assert.ok(
           output.indexOf('Model routing instructions') < output.indexOf('Assessment instructions'),

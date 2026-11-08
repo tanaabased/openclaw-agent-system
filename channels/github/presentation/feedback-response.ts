@@ -1,6 +1,6 @@
 import publicResponsePresentation from './public-response.ts';
 import { githubCommentCard } from './comment.ts';
-import workflowInstructions, {
+import {
   type WorkflowInstructionsSelection,
   type WorkflowInstructionsPresentation,
 } from './workflow-instructions.ts';
@@ -61,12 +61,5 @@ export default function feedbackResponse(
         withheld: /private-only|not-required|self-publication/.test(input.publication.withheld),
       }),
     );
-  const instructions = workflowInstructions(
-    'Feedback reply',
-    input.selection,
-    input.workspace,
-    input,
-  );
-  if (instructions) sections.push(instructions);
   return sections.join('\n\n');
 }

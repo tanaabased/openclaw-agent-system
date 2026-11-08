@@ -337,28 +337,18 @@ Keep consequential uncertainty, blocking questions, and required actions in the 
 assessment, questions, or action; the reference section must not be their only home.
 The framing follows the structured result; prose headings never select state.
 
-When debug presentation is enabled, follow Model routing with the shared quoted
-**🔬 Debug** card using **Context: Model routing instructions**. Show the retained
-skill and guidance source through the instruction renderer below, including
-literal inline guidance. Do not invent a resolved path for the default routing
-skill. Exact guidance stays private and out of public GitHub summaries.
+When debug presentation is enabled, include one shared quoted **🔬 Debug** card
+with **Context: Configured workflow** alongside the initial plan or clarification.
+Group routing, assessment, implementation and reply skills and custom guidance in
+that card. Link resolved skill sources when available; show configured future
+skills by name without inventing resolved paths. Link file guidance and preserve
+inline guidance literally. Label this as configuration, not proof of execution or
+compliance. Keep all guidance private.
 
-Follow routing and its optional debug details with a quoted
-**🔬 Debug** card with **Context: Assessment instructions**. Show the retained **Skill**, including the
-default, linked to its resolved `SKILL.md`. Show file **Guidance** as a linked
-workspace-relative label. For inline guidance, link “Inline guidance” to its
-verified manifest source when available, then show the retained text in a literal
-block preserving whitespace and Markdown characters. The source file may change;
-the retained text records what the turn used. Keep these links and instructions
-private. Selection metadata is not proof of compliance.
-
-Reuse the same **🔬 Debug** component with **Implementation instructions** context
-immediately after the PR card and **Feedback reply instructions** context after the public reply quote and
-publication link or obstacle. With debug off, omit instruction cards entirely,
-including custom selections and guidance details; the compact **Routing method**
-fact remains visible when customized. Errors, blockers, private responses,
-and publication outcomes remain visible. Do not put reply instructions in the
-incoming comment card or public GitHub reply.
+Do not repeat this configuration card after ordinary replies or PR cards. With
+debug off, omit it; retain the compact customized **Routing method** fact and all
+actual publication obstacles. Display recovery and other diagnostic events only
+when they occur, using the shared severity components.
 
 ## Question
 
@@ -423,8 +413,8 @@ show the answer only in the reply card. Compare line endings and outer whitespac
 without rewriting the displayed text. Keep distinct private information outside
 the quote; do not infer equivalence from similar wording or discard caveats.
 Private-only answers remain visible without a public reply card. Drafts stay
-unlinked and uncertain or failed publication keeps its notice. Debug instruction
-cards remain private, after the reply or publication obstacle.
+unlinked and uncertain or failed publication keeps its notice. Configured instruction cards belong with the initial plan or clarification; do
+not append them to each reply.
 
 ```markdown
 > <complete GitHub-facing response>

@@ -113,6 +113,10 @@ describe('agent/assessment-render', () => {
         const before = structuredClone(record);
         const initialReview = assessmentReviewContext(record, target, '/workspace', {
           debug: outcome === 'plan-ready',
+          workflow: {
+            implementation: { skill: 'configured:work' },
+            feedback: { skill: 'configured:reply' },
+          },
         });
         const context = { runtime, status: 'verified', publicationAuthorized: true, initialReview };
         const request = { action: 'context', id: 'task' };
@@ -156,6 +160,11 @@ describe('agent/assessment-render', () => {
             : /What subject should the haiku cover/,
         );
         if (outcome === 'clarification-needed') assert.doesNotMatch(shown.presentation, /Debug/);
+        else {
+          assert.match(shown.presentation, /configured:work/);
+          assert.match(shown.presentation, /configured:reply/);
+          assert.equal(shown.presentation.match(/## 🔬 Debug/g)?.length, 1);
+        }
         assert.equal(shown.retained, false);
         assert.deepEqual(record, before);
         assert.equal('result' in record, false);
