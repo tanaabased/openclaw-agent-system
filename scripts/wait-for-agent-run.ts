@@ -3,6 +3,29 @@ import { spawnSync } from 'node:child_process';
 import { setTimeout } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 
+/** Capture native failures before later scenario steps or Gateway shutdown lose the evidence. */
+export async function reportNativeRunDiagnostics(
+  runId: string,
+  dependencies: {
+    request(method: 'logs.tail', params: Record<string, never>): Promise<unknown>;
+    report(value: unknown): void;
+  },
+) {
+  try {
+    // The native endpoint owns log redaction, size limits and truncation metadata.
+    const nativeLogs = (await dependencies.request('logs.tail', {})) as {
+      lines: string[];
+      [key: string]: unknown;
+    };
+    const { lines, ...metadata } = nativeLogs;
+    dependencies.report({ runId, nativeLogs: metadata });
+    // Keep each native line separate instead of producing one oversized CI log record.
+    for (const line of lines) dependencies.report({ runId, nativeLogLine: line });
+  } catch {
+    dependencies.report({ runId, nativeLogsUnavailable: true });
+  }
+}
+
 /** a wait timeout is an observation, not a completed or cancelled agent run. */
 export default async function waitForAgentRun(input: {
   runId: string;
@@ -66,6 +89,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       now: Date.now,
     });
   } catch (error) {
+    await reportNativeRunDiagnostics(runId, {
+      async request(method, params) {
+        const { callGatewayFromCli } = await import('openclaw/plugin-sdk/gateway-runtime');
+        return callGatewayFromCli(method, { json: true }, params, {
+          scopes: ['operator.read'],
+          progress: false,
+          sharedStateMode: 'read-only',
+        });
+      },
+      report: (diagnostics) => process.stderr.write(JSON.stringify(diagnostics) + '\n'),
+    });
     // The shared mock captures predicate exceptions that the native receipt cannot explain.
     // This entrypoint runs only in hosted, disposable examples; never mask the original failure.
     try {
