@@ -7592,6 +7592,64 @@ describe('agent/openclaw issue dispatch', () => {
     if (implementation && discover) await service.check(manifest, root);
     return { id, who, comments };
   }
+  for (const implementation of [false, true])
+    for (const source of ['unrelated', 'current'] as const)
+      it(`should preserve ${implementation ? 'implementation' : 'assessment'} task context when ${source} feedback history is unavailable`, async () => {
+        const { id } = await feedbackOwner(implementation);
+        await service.check(manifest, root);
+        await service.run(manifest, root, coordinator, { action: 'next' });
+        const before = await record();
+        const event = before.feedback!.events[0]!;
+        assert.equal(event.native, true);
+        assert.ok(event.turn);
+        assert.equal(event.turn.executionRunId, undefined);
+        const who = assessor(id, source === 'current' ? event.turn.runId : 'ordinary-answer');
+        historyRejected = true;
+        const output = await service.promptContext(manifest, root, {
+          agentId: manifest.agent.id,
+          sessionKey: who.sessionKey,
+          sessionId: who.sessionId,
+          runId: who.runId,
+        });
+        assert.ok(output);
+        const facts = JSON.parse(output.appendContext.split('\n')[1]!);
+        assert.equal(facts.receipt, id);
+        assert.equal(facts.worktree, before.worktree);
+        assert.equal(facts.stage, implementation ? 'implementation' : 'assessment');
+        assert.deepEqual(facts.contextRequest, { action: 'context', id });
+        assert.equal(facts.feedbackLookupError, 'session-dispatch-history-request-invalid');
+        assert.equal(facts.feedbackContextRequest, undefined);
+        assert.match(output.appendSystemContext, /source-dependent work/);
+        assert.doesNotMatch(JSON.stringify(output), /private-token/);
+        assert.deepEqual(await record(), before);
+        historyRejected = false;
+        if (source === 'current')
+          inputReceipts = [
+            {
+              runId: event.turn.runId,
+              state: 'consumed',
+              consumedByEventId: `${event.turn.runId}:input`,
+            },
+          ];
+        const recovered = await service.promptContext(manifest, root, {
+          agentId: manifest.agent.id,
+          sessionKey: who.sessionKey,
+          sessionId: who.sessionId,
+          runId: who.runId,
+        });
+        assert.ok(recovered);
+        const recoveredFacts = JSON.parse(recovered.appendContext.split('\n')[1]!);
+        assert.equal(recoveredFacts.feedbackLookupError, undefined);
+        if (source === 'current')
+          assert.deepEqual(recoveredFacts.feedbackContextRequest, {
+            action: 'feedback',
+            operation: 'context',
+            id,
+            eventId: event.id,
+          });
+        assert.deepEqual(await record(), before);
+      });
+
   it('should deliver feedback without waiting for the assessment reconciliation pass', async () => {
     await feedbackOwner(false);
     assert.equal((await record()).handoff, undefined);

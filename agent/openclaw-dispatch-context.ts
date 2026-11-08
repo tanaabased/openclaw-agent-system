@@ -337,19 +337,27 @@ export default class OpenClawDispatchContext {
       return context;
     // receipt discovery may annotate this detached snapshot, never the retained journal.
     const snapshot = structuredClone(record);
-    // native receipts bind the source/run; the hook input id may instead be an idempotency key.
-    await this.dependencies.credential.use({}, (request) =>
-      openClawFeedbackInput(
-        snapshot,
-        {
-          runId: binding.runId!,
-          sessionId: binding.sessionId!,
-          sessionKey: binding.sessionKey!,
-        },
-        request,
-        this.dependencies.config(),
-      ),
-    );
+    try {
+      // native receipts bind the source/run; the hook input id may instead be an idempotency key.
+      await this.dependencies.credential.use({}, (request) =>
+        openClawFeedbackInput(
+          snapshot,
+          {
+            runId: binding.runId!,
+            sessionId: binding.sessionId!,
+            sessionKey: binding.sessionKey!,
+          },
+          request,
+          this.dependencies.config(),
+        ),
+      );
+    } catch (error) {
+      return openclawTurnContext(
+        record,
+        { ...binding, workspace },
+        openClawDispatchFailureCode(error),
+      );
+    }
     return openclawTurnContext(snapshot, { ...binding, workspace });
   }
 
