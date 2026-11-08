@@ -183,7 +183,8 @@ export default async function openClawReply(input: {
         if (purpose || feedback) {
           const owners = state.records.filter((record) => record.threadId === caller.sessionKey);
           if (owners.length > 1) throw new Error('reply-managed-owner-ambiguous');
-          if (owners[0]) await describeIssueSession(request, owners[0], deps.config(), 'conversation');
+          if (owners[0])
+            await describeIssueSession(request, owners[0], deps.config(), 'conversation');
         }
         return replyOwner(
           state.records.map((record) =>

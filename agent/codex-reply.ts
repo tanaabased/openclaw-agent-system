@@ -87,8 +87,7 @@ export default async function codexReply(
               threadId: caller,
             }),
           );
-          if (!native || native.id !== caller)
-            throw new Error('reply-managed-context-invalid');
+          if (!native || native.id !== caller) throw new Error('reply-managed-context-invalid');
           return { inputId: inputItem.id };
         }
         feedback = {
@@ -209,8 +208,7 @@ export default async function codexReply(
                 threadId: record.threadId,
               }),
             );
-            if (!native || native.id !== caller)
-              throw new Error('reply-managed-context-invalid');
+            if (!native || native.id !== caller) throw new Error('reply-managed-context-invalid');
           }
         }
         return replyOwner(
