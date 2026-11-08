@@ -155,7 +155,10 @@ for attempt in $(seq 1 120); do
   if test -n "$execution_run"; then break; fi
   sleep 0.5
 done
-test -n "$execution_run"
+if test -z "$execution_run"; then
+  jq '{sessionId, sessionInfo, inputReceipts, messages: [.messages[] | {role, idempotencyKey, native: .__openclaw}]}' "$TMPDIR/notification-followup-history.json" >&2
+  exit 1
+fi
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$execution_run" 600000
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
