@@ -50,8 +50,7 @@ describe('shared delivery branch tracking', () => {
         await writeFile(join(cwd, 'poem.md'), 'first poem\n');
         await git(['commit', '-am', 'poem']);
         const head = await git(['rev-parse', 'HEAD']);
-        if (mode === 'already published')
-          await git(['push', 'origin', `${head}:refs/heads/task`]);
+        if (mode === 'already published') await git(['push', 'origin', `${head}:refs/heads/task`]);
         assert.equal(await git(['rev-parse', '--abbrev-ref', '@{upstream}']), 'origin/main');
         const pullRequest = { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 };
         await publishIssueDelivery({
@@ -75,7 +74,10 @@ describe('shared delivery branch tracking', () => {
           },
           git,
           ...(mode === 'already published'
-            ? { push: async () => assert.fail('an observed published head must not be pushed again') }
+            ? {
+                push: async () =>
+                  assert.fail('an observed published head must not be pushed again'),
+              }
             : mode === 'native push'
               ? {
                   push: async (sha: string, ref: string) => {
