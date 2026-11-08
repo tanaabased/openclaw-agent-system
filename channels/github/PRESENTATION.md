@@ -13,8 +13,8 @@ their appearance and composition. The
 - Link canonical GitHub actors and items where they are named.
 - Keep headings and labels stable while allowing natural response prose to vary.
 - Keep literal plaintext understandable without relying on emoji or Markdown.
-- Give private lifecycle results a report-like structure with stable sections
-  for the complete assessment, plan, question, or result.
+- Present private results as ordinary chat prose. Add descriptive sections only
+  when they help organize a substantial assessment, plan, question, or result.
 - Keep GitHub-facing responses conversational; they are comments rather than
   reports. Feedback presents one exact public reply card and any distinct private
   context, without replaying the incoming message or duplicating the answer.
@@ -244,9 +244,9 @@ conversation ownership, and publication.
 > The public plan is published. Carry it out now in `work` mode.
 ```
 
-Keep the following private result report-like with stable implementation and
-validation sections. Do not add a second GitHub-facing response merely because
-implementation began.
+Describe the implementation and relevant validation concisely. Add sections only
+when they help the reader. Do not add a second GitHub-facing response merely
+because implementation began.
 
 ## Response
 
@@ -255,13 +255,14 @@ implementation began.
 >
 > <one-sentence outcome summary>
 
-## Response
-
 <complete private response>
 ```
 
-Keep the complete result in the private response. Use headings, compact lists, or
-tables when they make it easier to review.
+Keep the complete result in ordinary chat prose. Omit generic wrapper headings
+such as “Response,” “Private context,” “Published issue comment,” or “Initial
+assessment update.” Preserve the complete attributed comment and reply cards;
+their existing labels identify their purpose. Use descriptive headings, compact
+lists, or tables only when they make substantive content easier to review.
 
 ## Plan
 
