@@ -221,6 +221,7 @@ describe('shared delivery push recovery', () => {
       async git(argv) {
         if (argv[0] === 'ls-remote') return `${remote}\trefs/heads/task`;
         if (argv[0] === 'remote') return 'https://github.com/owner/repo.git';
+        if (argv[0] === 'branch') return '';
         if (argv[0] === 'merge-base') return '';
         if (argv[0] === 'push') {
           // the pending transition must survive a process interruption after push.

@@ -85,6 +85,9 @@ export default async function publishIssueDelivery(input: {
   }
   if ((await git(['ls-remote', '--heads', 'origin', ref])).trim().split(/\s/u)[0] !== head)
     throw new Error('delivery-push-unverified');
+  const localBranch = (await git(['branch', '--show-current'])).trim();
+  if (localBranch)
+    await git(['branch', `--set-upstream-to=origin/${publication.branch}`, localBranch]);
   delivery.pushedHead = head;
   await save();
   await authorize();
