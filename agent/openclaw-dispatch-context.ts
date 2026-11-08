@@ -337,7 +337,8 @@ export default class OpenClawDispatchContext {
       return context;
     // receipt discovery may annotate this detached snapshot, never the retained journal.
     const snapshot = structuredClone(record);
-    const source = await this.dependencies.credential.use({}, (request) =>
+    // native receipts bind the source/run; the hook input id may instead be an idempotency key.
+    await this.dependencies.credential.use({}, (request) =>
       openClawFeedbackInput(
         snapshot,
         {
@@ -349,8 +350,6 @@ export default class OpenClawDispatchContext {
         this.dependencies.config(),
       ),
     );
-    if (source && binding.inputId && source.inputId !== binding.inputId)
-      throw new Error('feedback-input-unverified');
     return openclawTurnContext(snapshot, { ...binding, workspace });
   }
 

@@ -6954,6 +6954,7 @@ describe('agent/openclaw issue dispatch', () => {
           sessionKey: who.sessionKey,
           sessionId: who.sessionId,
           runId: who.runId,
+          inputId: `${event.turn!.runId}:user`,
         });
         assert.ok(hookContext);
         const facts = JSON.parse(hookContext.appendContext.split('\n')[1]!);
