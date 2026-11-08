@@ -40,10 +40,7 @@ export default function feedbackResponse(
     (privateText === publicText ||
       privateText === publicText.replace(/^@[A-Za-z0-9][A-Za-z0-9-]*\n\n/u, ''));
   const sections: string[] = [];
-  if (!repeated) {
-    if (input.publicReply) sections.push('## Private context');
-    sections.push(input.privateText);
-  }
+  if (!repeated) sections.push(input.privateText);
   if (input.publicReply)
     sections.push(
       feedbackReplyPresentation(

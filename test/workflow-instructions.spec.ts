@@ -49,11 +49,7 @@ describe('channels/github/presentation/workflow-instructions', () => {
       privateText: 'First private paragraph.\n\nSecond private paragraph.',
       publicReply: { author: 'posting-agent', text: body },
     });
-    assert.ok(
-      response.startsWith(
-        '## Private context\n\nFirst private paragraph.\n\nSecond private paragraph.',
-      ),
-    );
+    assert.ok(response.startsWith('First private paragraph.\n\nSecond private paragraph.'));
     assert.ok(response.endsWith(card));
   });
   it('should hide instructions unless debug is enabled and link retained sources', () => {
