@@ -68,6 +68,7 @@ describe('agent/codex-turn-context', () => {
           contextRuntime: 'dispatchRuntime',
           feedbackContextRequest: { action: 'context', id: 'owner', eventId: 'source' },
           worktree: '/task',
+          nativeCwd: '/task',
           pullRequest: undefined,
           branch: undefined,
         };
