@@ -879,7 +879,13 @@ describe('agent/feedback-reply', () => {
       const before = structuredClone(owners);
       const privateText =
         'Both choices are known. Native continuation failed before any poem was written.';
-      const composed = await call('compose', { target, privateText });
+      const status = await call('context', { target: url, purpose: 'status-update' });
+      assert.equal(status.status, 'status-update-context');
+      await assert.rejects(
+        call('compose', { target: url + '#issuecomment-999', privateText }),
+        /reply-feedback-target-mismatch/,
+      );
+      const composed = await call('compose', { target: url, privateText });
       assert.ok('id' in composed && 'digest' in composed);
       assert.ok(typeof composed.id === 'string');
       await call('candidate', {

@@ -13,7 +13,12 @@ import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
 import taskUpdate from './task-update.ts';
 import type replyOwner from './reply-owner.ts';
 import ReplyStore, { type ReplyBinding, type ReplyDraft } from './reply-store.ts';
-import readReplyTarget, { verifyReplyDestination, type ReplyTarget } from './reply-target.ts';
+import readReplyTarget, {
+  feedbackTarget,
+  replyLocator,
+  verifyReplyDestination,
+  type ReplyTarget,
+} from './reply-target.ts';
 import statusUpdateContext, {
   statusUpdateIdentity,
   statusUpdateObservation,
@@ -98,12 +103,25 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
       throw new Error('reply-feedback-source-changed');
     if (draft && input.operation !== 'compose' && Boolean(draft.update) !== Boolean(purpose))
       throw new Error('reply-draft-conflict');
-    const url = input.target ?? (draft ? (JSON.parse(draft.target) as ReplyTarget).url : undefined);
+    let url = input.target ?? (draft ? (JSON.parse(draft.target) as ReplyTarget).url : undefined);
     if (!url)
       return {
         status: 'clarification-needed',
         questions: ['Which exact GitHub comment or issue/PR destination should this reply use?'],
       };
+    if (feedback && !draft?.attempted && !draft?.receipt) {
+      const selected = replyLocator(url);
+      const exact = feedbackTarget(`${selected.owner}/${selected.name}`, feedback);
+      const source = replyLocator(exact);
+      if (
+        selected.number !== source.number ||
+        selected.itemType !== source.itemType ||
+        (selected.kind &&
+          (selected.kind !== source.kind || selected.commentId !== source.commentId))
+      )
+        throw new Error('reply-feedback-target-mismatch');
+      url = exact;
+    }
     const currentTarget =
       draft?.attempted || draft?.receipt
         ? await verifyReplyDestination(deps.provider, JSON.parse(draft.target) as ReplyTarget)

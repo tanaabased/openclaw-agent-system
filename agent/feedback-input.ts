@@ -1,10 +1,8 @@
 import taskUpdateInstructions from './task-update-instructions.ts';
 import nativeTaskInstructions from './native-task-instructions.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
-import {
-  isReviewFeedback,
-  type GitHubCanonicalFeedback,
-} from '../channels/github/provider/review-feedback.ts';
+import type { GitHubCanonicalFeedback } from '../channels/github/provider/review-feedback.ts';
+import { feedbackTarget } from './reply-target.ts';
 
 /** The intake owner supplies authority; this is ordinary attributed conversation. */
 export function feedbackInputContext(input: {
@@ -17,12 +15,7 @@ export function feedbackInputContext(input: {
 }) {
   const { event } = input;
   const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
-  const kind = isReviewFeedback(source)
-    ? source.feedback.receipt.kind === 'review-comment'
-      ? 'discussion_r'
-      : 'pullrequestreview-'
-    : 'issuecomment-';
-  const target = `https://github.com/${input.repository}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}#${kind}${source.databaseId}`;
+  const target = feedbackTarget(input.repository, event);
   return {
     status: 'verified' as const,
     source,

@@ -7031,7 +7031,7 @@ describe('agent/openclaw issue dispatch', () => {
         {
           action: 'reply',
           operation: 'compose',
-          target: 'https://github.com/owner/repo/issues/3#issuecomment-99',
+          target: 'https://github.com/owner/repo/issues/3',
           privateText: 'Implemented the requested change and checked it.',
         },
         false,

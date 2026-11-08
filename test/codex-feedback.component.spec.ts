@@ -799,7 +799,7 @@ describe('agent/codex-feedback', () => {
       'reply',
       {
         operation: 'compose',
-        target: 'https://github.com/owner/repo/issues/3#issuecomment-42',
+        target: 'https://github.com/owner/repo/issues/3',
         privateText: 'The explanation.',
       },
       true,
