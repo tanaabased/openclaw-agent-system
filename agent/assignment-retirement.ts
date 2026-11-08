@@ -79,6 +79,15 @@ export const retirementSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+    childArchiveRequests: Type.Optional(
+      Type.Record(
+        text,
+        Type.Object(
+          { at: time, sessionId: text, code: Type.Optional(text) },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
     archiveAttempt: Type.Optional(
       Type.Object(
         { at: time, turnId: text, sourceThreadId: Type.Optional(text) },
