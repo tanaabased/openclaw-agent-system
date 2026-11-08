@@ -8,7 +8,7 @@ Retire a second task whose completed session is missing, preserving its saved ev
 
 - Closed-issue retirement observing external cleanup and archiving the retained native owner without losing its assessment.
 - A fresh assignment creating a distinct owner/branch from the repository base while preserving the retired branch's local commit.
-- Closed-issue archival and automatic removal of that fresh checkout despite terminal input history, a changed branch, and modified/untracked files, preserving its branches and assessment.
+- Closed-issue archival of the task and its helper, followed by automatic removal of that fresh checkout despite terminal input history, a changed branch, and modified/untracked files, preserving its branches and assessment.
 - Explicit retirement from an active turn remaining pending, followed by verified missing-session reconciliation and safe checkout removal without invented archival.
 - Offloading verified retirement immediately, including legacy stale consumed turns below 2 MiB, through an installed normal save, then retaining the terminal owner after loss of its cold copy.
 
@@ -21,6 +21,7 @@ Retire a second task whose completed session is missing, preserving its saved ev
 ## Notes
 
 - The queue regression holds one real native turn at the mock provider, cancels a queued followup through `chat.abort`, and observes a pending closed retirement before releasing the turn. No native store or retirement journal is edited.
+- Two additional mocked native turns create and finish a helper in the task checkout through `sessions_spawn`. This checks real parentage and archival rather than fabricating a child session in storage.
 - Strict AIMock reuses assessment judgment and adds the existing digest-bound retirement preview/apply exchange. Real native execution must leave the request pending while its own turn is active.
 - The retention check restores an archived fixture and seeds stale consumed-turn bookkeeping only while the Gateway is stopped. It exercises the packed runtime after restart; it neither fabricates cleanup receipts nor runs a performance benchmark.
 - The two native cases share a job but select their exact retained owners. No reset empties the journal between them; earlier retired attempts remain as independent history.
@@ -161,6 +162,15 @@ test "$(git -C "$worktree" rev-parse HEAD)" = "$(git -C "$worktree" rev-parse "o
 run_id=$(jq -er .assessmentTurn.runId "$TMPDIR/notification-fresh.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 
+# should retain a finished native helper in the task checkout
+conversation=$(jq -er .threadId "$TMPDIR/notification-fresh.json")
+worktree=$(jq -er .worktree "$TMPDIR/notification-fresh.json")
+openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" --arg cwd "$worktree" '{sessionKey:$key,message:("Spawn retirement checkout helper at " + $cwd),deliver:false,idempotencyKey:"retirement-spawn-helper"}')" --json | jq -e '.runId == "retirement-spawn-helper"'
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" retirement-spawn-helper 600000
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$(jq -er .runId "$TMPDIR/notification-helper.json")" 600000
+helper=$(jq -er .childSessionKey "$TMPDIR/notification-helper.json")
+openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$helper" '{key:$key}')" --json | jq -e --arg parent "$conversation" --arg cwd "$worktree" '.session.parentSessionKey == $parent and (.session.spawnedCwd // .session.spawnedWorkspaceDir // .session.workspaceDir) == $cwd and .session.archivedAt == null and .session.archived != true'
+
 # should leave modified and untracked files on a changed checkout branch
 worktree=$(jq -er .worktree "$TMPDIR/notification-fresh.json")
 git -C "$worktree" switch -c "retirement-leftovers-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -200,6 +210,8 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 60
 jq -es --slurpfile before "$TMPDIR/notification-fresh.json" '[.[].records[] | select(.id == $before[0].id)] | length == 1 and .[0].retired.at != null and .[0].retirement.archivedAt != null and .[0].retirement.worktreeRemovalAttemptedAt != null and .[0].retirement.worktreeRemovedAt != null and .[0].retainedHistory.terminal == true and .[0].retainedHistory.outcome.assessment == "missing" and $before[0].result == null and .[0].threadId == $before[0].threadId' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json
 node --import tsx "$GITHUB_WORKSPACE/examples/openclaw-notifications-retirement/history-pressure.ts" verify-result "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2" "$TMPDIR/notification-fresh.json"
 test ! -e "$(jq -er .worktree "$TMPDIR/notification-fresh.json")"
+helper=$(jq -er .childSessionKey "$TMPDIR/notification-helper.json")
+openclaw gateway call sessions.describe --params "$(jq -nc --arg key "$helper" '{key:$key}')" --json | jq -e '.session.archived == true or .session.archivedAt != null'
 test "$(git --git-dir="$(cat "$TMPDIR/notification-git-dir")" rev-parse "$(cat "$TMPDIR/notification-dirty-branch")")" = "$(cat "$TMPDIR/notification-dirty-tip")"
 
 # should admit another disposable issue for unavailable-session retirement
