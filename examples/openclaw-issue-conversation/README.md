@@ -8,6 +8,7 @@ that an already-current issue needs no further post.
 ## What Belongs Here
 
 - Labels and categories remaining cosmetic while the same native chat and checkout continue.
+- Feedback queued behind an active native turn retains its exact source and settles through the execution that consumes it.
 - Prior private feedback supplied to later GitHub and direct questions, with source-bound publication only for GitHub feedback.
 - Complete assessment history through clarification and answer; direct readback reuses the saved result and receipts without resubmission.
 
@@ -127,7 +128,15 @@ openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" 
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-feedback.json"
 jq -e --slurp '.[1].retirement == null and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[0].stageReceipt == .[1].stageReceipt and .[1].work == null and (.[1].feedback.events | length) == 1 and all(.[1].feedback.events[]; .native == true and .itemType == "issue" and .result == null and .work == null)' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-feedback.json"
 
-# should answer another github question with the earlier private explanation in context
+# should answer queued github feedback with the earlier private explanation in context
+cd "$GITHUB_WORKSPACE/examples/openclaw-issue-conversation/tanaabot"
+conversation=$(jq -er .threadId "$TMPDIR/notification-feedback.json")
+openclaw gateway call chat.send --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,message:"Hold conversation queue until release",queueMode:"followup",deliver:false,idempotencyKey:"conversation-queue-hold"}')" --json | jq -e '.runId == "conversation-queue-hold"'
+for attempt in $(seq 1 120); do
+  if test -f "$TMPDIR/conversation-queue-ready"; then break; fi
+  sleep 0.5
+done
+test -f "$TMPDIR/conversation-queue-ready"
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-conversation/emori"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
 node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" comment --number "$number" --body '@tanaabot explain the retained plan again using the earlier explanation.' > "$TMPDIR/notification-followup-source.json"
@@ -135,14 +144,26 @@ cd "$GITHUB_WORKSPACE/examples/openclaw-issue-conversation/tanaabot"
 run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 feedback_run=$(jq -ers --arg source "$(jq -er .node_id "$TMPDIR/notification-followup-source.json")" '[.[].records[].feedback.events[] | select(.sourceId == $source and .turn != null)] | if length == 1 then .[0].turn.runId else error("one follow-up turn required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000
-conversation=$(jq -er .threadId "$TMPDIR/notification-feedback.json")
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:1}')" --json | jq -e --arg run "$feedback_run" '.sessionInfo.hasActiveRun == true and any(.inputReceipts[]; .runId == $run and .state == "pending" and .queued == true)'
+touch "$TMPDIR/conversation-queue-release"
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" conversation-queue-hold 600000
+execution_run=''
+for attempt in $(seq 1 120); do
+  openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-followup-history.json"
+  execution_run=$(jq -r --arg run "$feedback_run" '. as $history | [.inputReceipts[] | select(.runId == $run and .state == "consumed") | .consumedByEventId] as $ids | [$history.messages[] | select(.role == "user" and (.__openclaw.id as $id | $ids | index($id)) != null and .__openclaw.idempotencyKey == ($run + ":user")) | .__openclaw.runId] | if length == 1 then .[0] // "" else "" end' "$TMPDIR/notification-followup-history.json")
+  if test -n "$execution_run"; then break; fi
+  sleep 0.5
+done
+test -n "$execution_run"
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$execution_run" 600000
+run_id=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notifications.ts" --repository tanaabased/big-test-bucket --kind issue --number "$number")
+node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$run_id" 600000
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-followup-history.json"
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one issue owner required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-followup.json"
 jq -e --slurp '.[0] as $before | .[1] as $after | $before.id == $after.id and $before.threadId == $after.threadId and $before.worktree == $after.worktree and $before.result == $after.result and $after.progression == null and $after.work == null and ($after.feedback.events | length) == 2 and $before.feedback.events[0].result == $after.feedback.events[0].result and all($after.feedback.events[]; .native == true and .work == null and .result == null)' "$TMPDIR/notification-feedback.json" "$TMPDIR/notification-followup.json"
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-followup-replies.json"
 jq -s '[.[] | (.drafts // [.])[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-reply-drafts.json"
-node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const record=read("followup"), event=record.feedback.events[1], source=read("followup-source"), replies=read("followup-replies"); assert.equal(event.sourceId,source.node_id); const draft=read("reply-drafts").find(d=>d.feedback?.eventId===event.id); assert.ok(draft); const reply=replies.filter(c=>c.node_id===draft.receipt.nodeId); assert.equal(reply.length,1); assert.ok(reply[0].body.includes(draft.publicText)); const history=read("followup-history"); const text=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId===event.turn.runId && m.stopReason==="stop").map(m=>typeof m.content==="string"?m.content:m.content.map(c=>c.text??"").join("")).join("\n"); assert.ok(text.includes(draft.privateText)); assert.ok(text.includes(draft.publicText));'
+node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const record=read("followup"), event=record.feedback.events[1], source=read("followup-source"), replies=read("followup-replies"); assert.equal(event.sourceId,source.node_id); const draft=read("reply-drafts").find(d=>d.feedback?.eventId===event.id); assert.ok(draft); const reply=replies.filter(c=>c.node_id===draft.receipt.nodeId); assert.equal(event.phase,"delivered"); assert.equal(event.turn.status,"completed"); assert.equal(reply.length,1); assert.ok(reply[0].body.includes(draft.publicText)); const history=read("followup-history"); const text=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId===(event.turn.executionRunId??event.turn.runId) && m.stopReason==="stop").map(m=>typeof m.content==="string"?m.content:m.content.map(c=>c.text??"").join("")).join("\n"); assert.ok(text.includes(draft.privateText)); assert.ok(text.includes(draft.publicText));'
 
 # should answer the equivalent direct question without implementation or another github reply
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-conversation/tanaabot"

@@ -55,7 +55,9 @@ export async function verifyOpenClawWork(input: {
     caller.runId !== record.work?.turn?.runId &&
     caller.runId !== record.work?.deliveryTurn?.runId &&
     !record.work?.previousTurns?.some(({ turn }) => turn.runId === caller.runId) &&
-    !record.feedback?.events.some((event) => event.turn?.runId === caller.runId);
+    !record.feedback?.events.some(
+      (event) => event.turn?.runId === caller.runId || event.turn?.executionRunId === caller.runId,
+    );
   const automatic = issueProgression(record, {
     mode: input.mode,
     now: input.now,

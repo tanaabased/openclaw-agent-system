@@ -126,6 +126,7 @@ export async function advanceFeedbackTurn(input: {
   }
   await describeIssueSession(request, record, input.config, 'feedback');
   await reconcileOpenClawTurn({
+    allowExecutionRunId: event.native === true,
     record,
     request,
     sessionKey: expected.key,
@@ -238,7 +239,7 @@ export default async function openClawFeedback(input: {
       caller.sessionId !== record.sessionCreation?.sessionId
     )
       throw new Error('feedback-owner-caller-required');
-    if (caller.runId !== event.turn.runId) {
+    if (caller.runId !== (event.turn.executionRunId ?? event.turn.runId)) {
       if (
         !event.result ||
         event.phase === 'published' ||
@@ -267,10 +268,13 @@ export default async function openClawFeedback(input: {
         retained: [],
       });
       const terminal = sessionObject(
-        await request('agent.wait', { runId: event.turn.runId, timeoutMs: 0 }),
+        await request('agent.wait', {
+          runId: event.turn.executionRunId ?? event.turn.runId,
+          timeoutMs: 0,
+        }),
       );
       if (
-        terminal.runId !== event.turn.runId ||
+        terminal.runId !== (event.turn.executionRunId ?? event.turn.runId) ||
         !['ok', 'error'].includes(String(terminal.status)) ||
         /denied|rejected/.test(String(terminal.code ?? ''))
       )
@@ -291,10 +295,16 @@ export default async function openClawFeedback(input: {
           caller,
           previousTurn,
           history,
+          event.native === true,
         );
-        const reply = await openClawTurnReply(request, caller, previousTurn.runId, {
-          first: history,
-        });
+        const reply = await openClawTurnReply(
+          request,
+          caller,
+          previousTurn.executionRunId ?? previousTurn.runId,
+          {
+            first: history,
+          },
+        );
         if (reply) previousTurn.replyEventId = String(sessionObject(reply.__openclaw).id);
         else if (terminal.status === 'error') previousTurn.failed = true;
         else throw new Error('feedback-resume-terminal-unverified');
@@ -353,7 +363,6 @@ export default async function openClawFeedback(input: {
     if (
       caller.sessionKey !== record.threadId ||
       caller.sessionId !== record.sessionCreation?.sessionId ||
-      caller.runId !== event.turn.runId ||
       event.turn.cancelled ||
       event.turn.status === 'completed'
     )
@@ -362,12 +371,20 @@ export default async function openClawFeedback(input: {
     const history = sessionObject(
       await request('chat.history', {
         sessionKey: record.threadId,
-        inputRunIds: [caller.runId],
+        inputRunIds: [event.turn.runId],
       }),
     );
     if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
       throw new Error('feedback-input-unverified');
-    const inputId = await openClawConsumedInput(request, caller, event.turn, history);
+    const inputId = await openClawConsumedInput(
+      request,
+      caller,
+      event.turn,
+      history,
+      event.native === true,
+    );
+    if (caller.runId !== (event.turn.executionRunId ?? event.turn.runId))
+      throw new Error('feedback-owner-caller-required');
     if (!action.material) {
       event.turn.consumedByEventId = inputId;
       event.turn.status = 'consumed';

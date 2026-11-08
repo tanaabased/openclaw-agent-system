@@ -17,7 +17,10 @@ export default function openclawTurnContext(
   const implementation = Boolean(retainedIssueProgression(record));
   if (
     !binding.runId ||
-    record.feedback?.events.some((event) => event.turn?.runId === binding.runId) ||
+    record.feedback?.events.some(
+      (event) =>
+        event.turn?.runId === binding.runId || event.turn?.executionRunId === binding.runId,
+    ) ||
     !record.request ||
     !('key' in record.request) ||
     record.request.agentId !== binding.agentId ||

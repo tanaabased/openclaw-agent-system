@@ -5,6 +5,65 @@ import type { OpenClawTurn } from '../agent/openclaw-turn-state.ts';
 import { reconcileOpenClawTurn } from '../agent/openclaw-turn.ts';
 
 describe('agent/openclaw-turn', () => {
+  it('should settle a queued input through its native execution without resending it', async () => {
+    const turn: OpenClawTurn = { runId: 'delivery', message: 'queued comment', status: 'accepted' };
+    const waited: unknown[] = [];
+    await reconcileOpenClawTurn({
+      turn,
+      allowExecutionRunId: true,
+      sessionKey: 'chat',
+      sessionId: 'session',
+      save: async () => {},
+      request: async (method, params) => {
+        if (method === 'chat.history')
+          return {
+            sessionId: 'session',
+            inputReceipts: [{ runId: 'delivery', state: 'consumed', consumedByEventId: 'input' }],
+            sessionInfo: { hasActiveRun: false },
+            pendingInputs: { total: 0 },
+            messages: [
+              {
+                role: 'user',
+                content: 'queued comment',
+                __openclaw: {
+                  id: 'input',
+                  runId: 'execution',
+                  idempotencyKey: 'delivery:user',
+                },
+              },
+              {
+                role: 'assistant',
+                content: [{ type: 'text', text: 'reply' }],
+                stopReason: 'stop',
+                __openclaw: {
+                  id: 'reply',
+                  runId: 'execution',
+                  runTerminal: true,
+                },
+              },
+            ],
+          };
+        assert.equal(method, 'agent.wait');
+        waited.push(params.runId);
+        return {
+          runId: params.runId,
+          status: 'ok',
+          terminalReceipt: {
+            runId: 'execution',
+            sessionId: 'session',
+            effective: { provider: 'test', model: 'model' },
+          },
+        };
+      },
+    });
+    assert.deepEqual(waited, ['execution']);
+    assert.equal(turn.runId, 'delivery');
+    assert.equal(turn.executionRunId, 'execution');
+    assert.equal(turn.status, 'completed');
+    assert.equal(turn.consumedByEventId, 'input');
+    assert.equal(turn.replyEventId, 'reply');
+    assert.equal(turn.executionModel, 'test/model');
+  });
   for (const pending of [0, 1, undefined, -1, 'missing']) {
     it(`should refresh capacity from native history without another poll with ${pending} pending inputs`, async () => {
       const record: Pick<OpenClawDispatchRecord, 'nativeInactive'> = { nativeInactive: true };

@@ -379,9 +379,19 @@ export default class OpenClawDispatchIssue {
         throw new Error('feedback-send-unverified');
       if (
         feedbackChild &&
+        event.native &&
+        event.turn &&
+        caller.runId !== (event.turn.executionRunId ?? event.turn.runId)
+      ) {
+        await this.context.dependencies.credential.use(authority, (request) =>
+          openClawFeedbackInput(record, caller, request, this.context.dependencies.config()),
+        );
+      }
+      if (
+        feedbackChild &&
         (caller.sessionKey !== record.threadId ||
           caller.sessionId !== record.sessionCreation?.sessionId ||
-          (caller.runId !== event.turn?.runId &&
+          (caller.runId !== (event.turn?.executionRunId ?? event.turn?.runId) &&
             !(operator && input.operation === 'context' && input.resume)))
       )
         throw new Error('feedback-owner-caller-required');
@@ -402,8 +412,24 @@ export default class OpenClawDispatchIssue {
         operator,
       );
     }
+    if (
+      !record.feedback?.events.some(
+        (event) => (event.turn?.executionRunId ?? event.turn?.runId) === caller.runId,
+      ) &&
+      record.feedback?.events.some(
+        (event) =>
+          event.native &&
+          event.turn &&
+          !event.turn.executionRunId &&
+          event.turn.status !== 'completed',
+      )
+    ) {
+      await this.context.dependencies.credential.use(authority, (request) =>
+        openClawFeedbackInput(record, caller, request, this.context.dependencies.config()),
+      );
+    }
     const feedbackSource = record.feedback?.events.find(
-      (event) => event.turn?.runId === caller.runId,
+      (event) => (event.turn?.executionRunId ?? event.turn?.runId) === caller.runId,
     );
     if (feedbackSource && (input.action === 'context' || !feedbackSource.native)) {
       if (input.action === 'delivery' && ['bind', 'link'].includes(input.operation))
@@ -471,7 +497,8 @@ export default class OpenClawDispatchIssue {
         ? AbortSignal.any([authority.signal, transactionSignal])
         : transactionSignal;
       const feedbackEvent = record.feedback?.events.find(
-        (event) => event.native && event.turn?.runId === caller.runId,
+        (event) =>
+          event.native && (event.turn?.executionRunId ?? event.turn?.runId) === caller.runId,
       );
       const assertCurrent = async () => {
         signal.throwIfAborted();

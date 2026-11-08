@@ -6844,7 +6844,27 @@ describe('agent/openclaw issue dispatch', () => {
       await service.run(manifest, root, coordinator, { action: 'next' });
       const before = await record();
       const event = before.feedback!.events[0]!;
-      const who = assessor(id, event.turn!.runId);
+      const queued = outcome === 'plan-ready';
+      const who = assessor(id, queued ? 'queued-execution' : event.turn!.runId);
+      if (queued) {
+        const incoming = messages.find(
+          (entry) =>
+            (entry.__openclaw as Record<string, unknown>)?.idempotencyKey ===
+            `${event.turn!.runId}:user`,
+        )!;
+        (incoming.__openclaw as Record<string, unknown>).runId = who.runId;
+        const context = await service.run(
+          manifest,
+          root,
+          who,
+          {
+            action: 'context',
+            id,
+          },
+          false,
+        );
+        assert.equal(context.status, 'verified');
+      }
       const context = await service.run(
         manifest,
         root,
@@ -8524,7 +8544,6 @@ describe('agent/openclaw issue dispatch', () => {
     await service.run(manifest, root, coordinator, { action: 'next' });
     const event = (await record()).feedback!.events[0]!;
     assert.ok(event.turn);
-    (messages.at(-1)!.__openclaw as Record<string, unknown>).id = 'feedback-input';
     assert.equal(creates().length, 1);
     assert.equal((await record()).result?.fullAssessment, plan.fullAssessment);
     const who = assessor(id, event.turn.runId);

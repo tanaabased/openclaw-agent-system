@@ -40,6 +40,11 @@ describe('agent/openclaw-turn-context', () => {
       feedback: { baseline: {}, events: [{ turn: { runId: 'feedback-run' } }] },
     } as OpenClawDispatchRecord;
     assert.equal(openclawTurnContext(feedback, { ...binding, runId: 'feedback-run' }), undefined);
+    feedback.feedback!.events[0]!.turn!.executionRunId = 'queued-execution';
+    assert.equal(
+      openclawTurnContext(feedback, { ...binding, runId: 'queued-execution' }),
+      undefined,
+    );
   });
   it('should route an automatic implementation and its later answer through implementation context', () => {
     const working = {

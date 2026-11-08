@@ -102,7 +102,9 @@ export async function issueAssessmentAction(input: {
 }) {
   const { request, record, caller, intake } = input;
   if (
-    record.feedback?.events.some((event) => event.turn?.runId === caller.runId) ||
+    record.feedback?.events.some(
+      (event) => event.turn?.runId === caller.runId || event.turn?.executionRunId === caller.runId,
+    ) ||
     !record.assessmentTurn ||
     !record.assessment ||
     !record.sessionCreation?.verified ||

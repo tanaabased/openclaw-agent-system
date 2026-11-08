@@ -241,6 +241,99 @@ describe('agent/openclaw-feedback', () => {
     await advanceFeedbackTurn(input);
     return action('context');
   }
+  it('should accept an exact queued comment from its actual native execution', async () => {
+    event.native = true;
+    await advanceFeedbackTurn(input);
+    const deliveryRunId = event.turn!.runId;
+    (messages[0]!.__openclaw as Record<string, unknown>).runId = 'queued-execution';
+    messages.unshift({ role: 'assistant', content: 'unrelated historical context' });
+    input.caller.runId = 'queued-execution';
+    const discovered = await openClawFeedbackInput(
+      record,
+      input.caller,
+      input.request,
+      input.config,
+    );
+    assert.equal(discovered?.event.id, event.id);
+    assert.equal((await action('context')).status, 'verified');
+    const feedback = await openClawFeedbackInput(record, input.caller, input.request, input.config);
+    assert.equal(feedback?.event.id, event.id);
+    assert.equal(feedback?.inputId, 'input');
+    assert.equal(event.turn!.runId, deliveryRunId);
+    input.caller.runId = 'unrelated-execution';
+    await assert.rejects(action('context'), /feedback-owner-caller-required/);
+    assert.equal(sends, 1);
+    assert.equal(writes, 0);
+  });
+  it('should refuse ambiguous queued sources even across native history pages', async () => {
+    event.native = true;
+    await advanceFeedbackTurn(input);
+    const second = structuredClone(event);
+    second.id = 'd'.repeat(64);
+    second.turn = { runId: 'second-delivery', message: 'second comment', status: 'accepted' };
+    record.feedback!.events.push(second);
+    (messages[0]!.__openclaw as Record<string, unknown>).runId = 'shared-execution';
+    input.caller.runId = 'shared-execution';
+    const request = input.request;
+    input.request = async (method, params) =>
+      method === 'chat.history'
+        ? {
+            sessionId: 'session',
+            messages: params.cursor
+              ? [
+                  {
+                    role: 'user',
+                    content: 'second comment',
+                    __openclaw: {
+                      id: 'second-input',
+                      runId: 'shared-execution',
+                      idempotencyKey: 'second-delivery:user',
+                    },
+                  },
+                ]
+              : messages,
+            ...(params.cursor ? {} : { olderCursor: 'older-inputs' }),
+          }
+        : request(method, params);
+    await assert.rejects(
+      openClawFeedbackInput(record, input.caller, input.request, input.config),
+      /feedback-native-input-ambiguous/,
+    );
+    assert.equal(sends, 1);
+    assert.equal(writes, 0);
+  });
+  for (const change of ['key', 'body', 'session', 'cancelled', 'receipt', 'legacy'])
+    it(`should refuse queued feedback with conflicting ${change}`, async () => {
+      event.native = true;
+      await advanceFeedbackTurn(input);
+      const meta = messages[0]!.__openclaw as Record<string, unknown>;
+      meta.runId = 'queued-execution';
+      input.caller.runId = 'queued-execution';
+      if (change === 'legacy') delete event.native;
+      if (change === 'key') meta.idempotencyKey = 'different:user';
+      if (change === 'body') messages[0]!.content = 'a different comment';
+      if (change === 'session') input.caller.sessionId = 'replacement-session';
+      if (change === 'cancelled') event.turn!.cancelled = true;
+      if (change === 'receipt') {
+        const request = input.request;
+        input.request = async (method, params) =>
+          method === 'chat.history'
+            ? {
+                sessionId: 'session',
+                messages,
+                inputReceipts: [
+                  { runId: event.turn!.runId, state: 'consumed', consumedByEventId: 'other-input' },
+                ],
+              }
+            : request(method, params);
+      }
+      await assert.rejects(
+        action('context'),
+        /feedback-owner-caller-required|dispatch-turn-input-mismatch/,
+      );
+      assert.equal(sends, 1);
+      assert.equal(writes, 0);
+    });
   it('should reuse native feedback custody for the initial task transition and preserve cancellation', async () => {
     event.native = true;
     await start();
