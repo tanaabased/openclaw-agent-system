@@ -157,6 +157,25 @@ describe('agent/codex-issue-notice', () => {
     assert.ok(!notice.message.includes('my\\\\'));
   });
 
+  it('should describe verified linkage recovery as debug with its outcome', () => {
+    const recovered = codexIssueNotice({
+      event: 'failure',
+      code: 'delivery-linkage-retried',
+      changed: true,
+    });
+    assert.equal(recovered.severity, 'info');
+    assert.match(recovered.message, /## 🔬 Debug/);
+    assert.match(recovered.message, /\*\*Outcome:\*\* No action is needed/);
+    assert.doesNotMatch(recovered.message, /## ⚠️|## ❌/);
+    const unresolved = codexIssueNotice({
+      event: 'failure',
+      code: 'delivery-attachment-pending',
+      changed: true,
+    });
+    assert.match(unresolved.message, /## ⚠️/);
+    assert.match(unresolved.message, /\*\*Next step:/);
+  });
+
   it('should distinguish normal progress, decisions, and failed operations without letting severity force notifications', () => {
     for (const [code, severity] of [
       ['delivery-attachment-pending', 'warning'],
@@ -190,7 +209,7 @@ describe('agent/codex-issue-notice', () => {
         code,
       );
       assert.match(first.message, /What happened/);
-      assert.match(first.message, /Next step/);
+      assert.match(first.message, code === 'delivery-linkage-retried' ? /Outcome/ : /Next step/);
       assert.ok(first.message.endsWith('`' + code + '`'));
     }
     for (const event of ['intake-recovered'] as const) {

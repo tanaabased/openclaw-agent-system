@@ -395,12 +395,17 @@ from the recipient or active chat, or resolve credentials just for presentation.
 Assessment summaries retain the complete private assessment and plan separately.
 PR announcements use this same renderer with the exact public announcement, including
 its PR link, below the complete private **Pull request opened** card. Preserve native
-PR attachment. Keep failed, withheld, pending, or uncertain publication visible in
-separate warning callouts, with debug off too. Successful no-action recovery details,
+PR attachment. Keep failed or uncertain publication visible with debug off too. Use warning for
+an actionable obstacle or uncertain outcome and error for a failed operation.
+Ordinary waiting, deliberately withheld publication and clarification questions
+are not warnings or errors. Successful no-action recovery details,
 such as verified issue linkage after retry, use **🔬 Debug** with delivery recovery
 context only when debug is enabled. Historical missing archive/removal evidence
 uses the same card with intake context, separate from actionable warnings. Omit
-empty debug cards. Visibility changes are not cleanup recovery; unchanged debug
+empty debug cards. Diagnostics are events, not turn-ending footers. Consolidate
+related recovered attempts into one debug card with the observed outcome and
+only verified counts. Do not repeat resolved historical events on ordinary
+follow-ups. Visibility changes are not cleanup recovery; unchanged debug
 detail does not wake quiet intake or create repeated notifications.
 
 ## Private and Public Composition
