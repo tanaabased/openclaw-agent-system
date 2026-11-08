@@ -3,12 +3,36 @@ import assert from 'node:assert/strict';
 import assessmentMaterial from '../agent/assessment-material.ts';
 import openclawTurnContext from '../agent/openclaw-turn-context.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
-import type { ImplementationMaterialRead } from '../agent/implementation-material.ts';
+import {
+  implementationMaterialSize,
+  type ImplementationMaterialRead,
+} from '../agent/implementation-material.ts';
 import { hostedAssessmentContextFixture } from './assessment-material-fixture.ts';
 import { issuePickupScenario } from '../examples/openclaw-project-picker/model-fixture.ts';
 import nativeMaterialFixture from './native-material-fixture.ts';
 
 describe('issue pickup model transport', () => {
+  it('should deliver context above the former cutoff intact through the native host', async () => {
+    const context = {
+      ...hostedAssessmentContextFixture(),
+      project: { path: '/workspace/' + 'nested/'.repeat(400) },
+    };
+    const request = { action: 'context', id: context.id };
+    const response = assessmentMaterial(context, request);
+    assert.ok(implementationMaterialSize(response) > 10000);
+    await nativeMaterialFixture({
+      request,
+      run: (input) =>
+        assessmentMaterial(context, request, input.material as ImplementationMaterialRead),
+      verify: (complete) => {
+        assert.equal(complete.status, 'verified');
+        assert.deepEqual(complete.project, context.project);
+        assert.deepEqual(complete.presentationRequest, context.presentationRequest);
+        assert.equal(complete.instructions, context.instructions);
+      },
+      minimumPages: 0,
+    });
+  });
   it('should deliver assessment source references through native codex without tool-output truncation', async () => {
     const context = hostedAssessmentContextFixture();
     const request = { action: 'context', id: context.id };

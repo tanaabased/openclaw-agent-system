@@ -21,9 +21,15 @@ function parse(text: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function searchTool(request: ChatCompletionRequest) {
+  return request.tools?.find((tool) =>
+    ['tool_search', 'openclaw_tool_search'].includes(tool.function.name),
+  )?.function.name;
+}
+
 function controls(request: ChatCompletionRequest): boolean {
-  return ['tool_search', 'tool_call'].every((name) =>
-    request.tools?.some((tool) => tool.function.name === name),
+  return (
+    !!searchTool(request) && !!request.tools?.some((tool) => tool.function.name === 'tool_call')
   );
 }
 
@@ -231,7 +237,7 @@ export default function withToolSearch(scenario: OpenClawAIMockScenario): OpenCl
       toolCalls: [
         {
           id: `${discoveryPrefix}${request.messages.filter((message) => message.role === 'user').length}`,
-          name: 'tool_search',
+          name: searchTool(request)!,
           arguments: JSON.stringify({ queries: names.map((query) => ({ query, limit: 1 })) }),
         },
       ],

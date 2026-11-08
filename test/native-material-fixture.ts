@@ -26,7 +26,7 @@ export default async function nativeMaterialFixture(input: {
 }) {
   const materialScenario: OpenClawAIMockScenario = {
     id: 'native-material',
-    model: { match: /gpt-5\.4-nano/u, reference: 'openai/gpt-5.4-nano' },
+    model: { match: /gpt-5\.5/u, reference: 'openai/gpt-5.5' },
     systemPromptSignals: [],
     finalResponses: ['native-material-complete'],
     toolCalls: [{ id: 'call_material_context', name: 'agent_system_dispatch' }],
@@ -44,7 +44,9 @@ export default async function nativeMaterialFixture(input: {
             (message) =>
               message.role === 'tool' && message.tool_call_id === 'call_material_context',
           )!;
-          input.verify?.(JSON.parse(getTextContent(message.content) ?? ''));
+          const content = getTextContent(message.content) ?? '';
+          assert.ok(content.startsWith('{'), content);
+          input.verify?.(JSON.parse(content));
           return { content: 'native-material-complete' };
         },
       },
@@ -131,7 +133,7 @@ export default async function nativeMaterialFixture(input: {
       const message = JSON.parse(line);
       if (message.method === 'item/tool/call') {
         let result: unknown;
-        if (message.params.tool === 'tool_search') {
+        if (message.params.tool === 'openclaw_tool_search') {
           result = {
             results: ['agent_system_intake', 'agent_system_dispatch', 'agent_system_github'].map(
               (name) => ({
@@ -187,12 +189,13 @@ export default async function nativeMaterialFixture(input: {
     });
     send({ method: 'initialized' });
     const thread = await rpc('thread/start', {
-      model: 'gpt-5.4-nano',
+      model: 'gpt-5.5',
       modelProvider: 'openai',
       cwd: root,
       ephemeral: true,
       approvalPolicy: 'never',
-      dynamicTools: ['tool_search', 'tool_call'].map((name) => ({
+      // Avoid collision with the recognized model's built-in tool_search.
+      dynamicTools: ['openclaw_tool_search', 'tool_call'].map((name) => ({
         name,
         description: 'fixture tool',
         inputSchema: { type: 'object', additionalProperties: true },

@@ -7,9 +7,11 @@ import type { Static } from 'typebox';
 import type { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 
 export type ImplementationMaterialRead = Static<typeof implementationMaterialSchema>;
-// Native Codex truncates the complete Tool Search envelope near 12k characters
-// in the installed runtime regression. Leave headroom and count host duplication.
-export const implementationContextBudget = 10000;
+// OpenClaw 2026.10.6's smallest automatic live tool result allows 16,000 characters;
+// Codex 0.164.0's catalog models allow 10,000 tokens. Bound UTF-8 bytes (including
+// the hosted wrapper) to that smaller allowance so structured JSON arrives intact.
+// Unknown Codex model metadata has a smaller fallback; it is not the shared default.
+export const implementationContextBudget = 16000;
 const pageCharacters = 6000;
 export function implementationMaterialSize(value: Record<string, unknown>) {
   const text =
@@ -235,7 +237,7 @@ export default function implementationMaterial<T extends Record<string, unknown>
   if (measure(response()) > limit)
     throw failure(
       `${delivery.purpose ?? 'implementation-context'}-controls-too-large`,
-      'shorten selected instruction metadata and refresh context',
+      'context control metadata exceeds the supported native delivery allowance; inspect the context producer for duplicated or oversized control fields',
     );
   if (!read) return response();
   const text = values.get(key(read.path));
