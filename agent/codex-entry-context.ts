@@ -29,6 +29,13 @@ export default async function codexEntryContext<T>(
     result?: ImplementationResult,
   ) => Promise<T>,
 ) {
+  const assessmentRead =
+    !!input &&
+    typeof input === 'object' &&
+    'action' in input &&
+    input.action === 'assessment' &&
+    'operation' in input &&
+    input.operation === 'context';
   const current = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('assessment-native-caller-required');
@@ -68,7 +75,9 @@ export default async function codexEntryContext<T>(
       return {
         selections: record.manualIssue?.selections,
         nativeContext:
-          !feedback && hasDeliveredImplementation(record) ? nativeIssueContext(record) : undefined,
+          !feedback && (assessmentRead || hasDeliveredImplementation(record))
+            ? nativeIssueContext(record)
+            : undefined,
         implementationResult: feedback ? feedback.work?.result : record.continuation?.result,
         digest,
         owner: { id: record.id, ...(eventId ? { eventId } : {}) },
@@ -100,7 +109,7 @@ export default async function codexEntryContext<T>(
     const currentTarget = admission ? managedTargetUrl(admission) : undefined;
     const nativeContextRequest =
       !!records[0] &&
-      hasDeliveredImplementation(records[0]) &&
+      (assessmentRead || hasDeliveredImplementation(records[0])) &&
       !!input &&
       typeof input === 'object' &&
       'operation' in input &&

@@ -33,12 +33,18 @@ export default async function openClawEntryContext<T>(
     result?: ImplementationResult,
   ) => Promise<T>,
 ) {
+  const assessmentRead =
+    !!input.action &&
+    typeof input.action === 'object' &&
+    'action' in input.action &&
+    input.action.action === 'assessment' &&
+    'operation' in input.action &&
+    input.action.operation === 'context';
   const implementation =
     !!input.action &&
     typeof input.action === 'object' &&
     'action' in input.action &&
     input.action.action === 'implementation';
-  if (!input.operator && !implementation) throw new Error('assessment-operator-required');
   const { manifest, caller, authority, dependencies: deps } = input;
   await authority.assertCurrent?.();
   const current = await deps.intake.select(manifest, input.workspace, { resolvePolicy: false });
@@ -71,7 +77,9 @@ export default async function openClawEntryContext<T>(
       return {
         selections: record.manualIssue?.selections,
         nativeContext:
-          !feedback && hasDeliveredImplementation(record) ? nativeIssueContext(record) : undefined,
+          !feedback && (assessmentRead || hasDeliveredImplementation(record))
+            ? nativeIssueContext(record)
+            : undefined,
         implementationResult: feedback ? feedback.work?.result : record.work?.result,
         digest,
         owner: { id: record.id, ...(feedback ? { eventId: feedback.id } : {}) },
@@ -106,7 +114,7 @@ export default async function openClawEntryContext<T>(
     const currentTarget = admission ? managedTargetUrl(admission) : undefined;
     const nativeContextRequest =
       !!records[0] &&
-      hasDeliveredImplementation(records[0]) &&
+      (assessmentRead || hasDeliveredImplementation(records[0])) &&
       !!input.action &&
       typeof input.action === 'object' &&
       'operation' in input.action &&
@@ -134,6 +142,8 @@ export default async function openClawEntryContext<T>(
       });
       if (routed) return routed.result;
     }
+    if (!input.operator && !implementation && !readOnlyNative)
+      throw new Error('assessment-operator-required');
     const nativeInput = () =>
       (input.operator ? operatorInputEvent : nativeInputEvent)({
         request,

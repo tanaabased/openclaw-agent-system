@@ -6302,6 +6302,21 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(creates().length, 1);
   });
 
+  it('should recover initial managed assessment without requiring an operator message', async () => {
+    const routed = await next();
+    await prepare(routed);
+    consumeSend = true;
+    await assess(routed.id);
+    const output = await service.run(manifest, root, assessor(routed.id), {
+      action: 'assessment',
+      operation: 'context',
+      target: 'https://github.com/owner/repo/issues/3',
+    });
+    assert.equal(output.status, 'native');
+    assert.ok('project' in output && 'presentationRequest' in output);
+    assert.equal((await record()).progression, undefined);
+  });
+
   it('should compose an initial plan update in its native turn without recording an assessment', async () => {
     const routed = await next();
     await prepare(routed);

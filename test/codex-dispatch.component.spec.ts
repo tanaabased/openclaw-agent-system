@@ -399,6 +399,51 @@ describe('agent/codex-dispatch', () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it('should recover initial managed assessment without requiring a direct user message', async () => {
+    await writeFile(join(root, 'SKILL.md'), '# assessment fixture');
+    const prepared = await prepare();
+    created();
+    await request('reconcile', { id: prepared.id });
+    const output = await request(
+      'assessment',
+      {
+        action: 'assessment',
+        operation: 'context',
+        target: 'https://github.com/owner/repo/issues/3',
+        path: worktree,
+      },
+      {
+        threadId: native!.id,
+        replyConnection: async () => ({
+          close: async () => {},
+          request: async (method) => {
+            if (method === 'skills/list')
+              return {
+                data: [
+                  {
+                    cwd: workspace,
+                    errors: [],
+                    skills: [
+                      {
+                        name: 'agent-system:agent-system-task-assessment',
+                        path: join(root, 'SKILL.md'),
+                        scope: 'user',
+                        enabled: true,
+                      },
+                    ],
+                  },
+                ],
+              };
+            throw new Error('must not require direct input: ' + method);
+          },
+        }),
+      },
+    );
+    assert.equal(output.status, 'native');
+    assert.equal((output.project as { path: string }).path, worktree);
+    assert.ok(output.presentationRequest);
+  });
+
   it('should launch explicit collaborator work from the selected pr head without replacing the intake task', async () => {
     const original = await prepare();
     created();
