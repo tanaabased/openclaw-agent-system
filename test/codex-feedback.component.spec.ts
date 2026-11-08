@@ -793,6 +793,8 @@ describe('agent/codex-feedback', () => {
     turn = 'feedback';
     await call('context', ref, true);
     await replyTransport();
+    const find = deps.native!.find;
+    deps.native!.find = async (input) => ({ ...(await find(input))!, cwd: '/another-checkout' });
     const compose = await call(
       'reply',
       {

@@ -6368,6 +6368,7 @@ describe('agent/openclaw issue dispatch', () => {
   for (const operator of [true, false])
     it(`should reuse the managed issue for later status composition with operator ${operator}`, async () => {
       const { who } = await operatorFollowup(operator);
+      session!.spawnedCwd = join(root, 'different-checkout');
       messages.at(-1)!.content = 'Draft a public status update; do not implement.';
       const { journal } = await service.scope(manifest, root);
       await journal.exclusive(async (state, save) => {
@@ -7022,6 +7023,7 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(afterWork.feedback!.events[0]!.work, undefined);
       assert.equal(afterWork.feedback!.events[0]!.result, undefined);
       await rm(afterWork.worktree!, { recursive: true, force: true });
+      session!.spawnedCwd = join(root, 'another-checkout');
       const reply = await service.run(
         manifest,
         root,

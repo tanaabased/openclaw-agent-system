@@ -5532,8 +5532,7 @@ describe('agent/codex-dispatch', () => {
       await assert.rejects(call('context', context), /reply-native-approval-denied/);
       items = [inputItem];
       native!.cwd = root;
-      await assert.rejects(call('context', context), /reply-managed-context-invalid/);
-      native!.cwd = worktree;
+      assert.equal((await call('context', context)).status, 'status-update-context');
       await assert.rejects(
         call('context', { ...context, target: 'https://github.com/owner/repo/issues/4' }),
         /reply-target-diverged/,

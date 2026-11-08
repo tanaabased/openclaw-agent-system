@@ -3,7 +3,6 @@ import codexContinuationNative from './codex-continuation-native.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import ReplyStore, { type ReplyDraft } from './reply-store.ts';
 import { dispatchAdmission } from './managed-issue.ts';
-import { resolve } from 'node:path';
 
 import { Value } from 'typebox/value';
 
@@ -88,7 +87,7 @@ export default async function codexReply(
               threadId: caller,
             }),
           );
-          if (!native || native.id !== caller || resolve(native.cwd) !== resolve(record.worktree))
+          if (!native || native.id !== caller)
             throw new Error('reply-managed-context-invalid');
           return { inputId: inputItem.id };
         }
@@ -210,7 +209,7 @@ export default async function codexReply(
                 threadId: record.threadId,
               }),
             );
-            if (!native || native.id !== caller || resolve(native.cwd) !== resolve(record.worktree))
+            if (!native || native.id !== caller)
               throw new Error('reply-managed-context-invalid');
           }
         }

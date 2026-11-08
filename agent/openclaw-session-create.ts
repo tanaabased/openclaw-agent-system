@@ -33,7 +33,7 @@ export async function describeIssueSession(
   request: DispatchRequest,
   record: OpenClawDispatchRecord,
   config: OpenClawConfig,
-  scope: 'workflow' | 'feedback' | 'retained' = 'workflow',
+  scope: 'workflow' | 'feedback' | 'conversation' | 'retained' = 'workflow',
 ) {
   const expected = record.request;
   if (!expected || !('key' in expected) || !record.sessionCreation)
@@ -68,8 +68,8 @@ export async function describeIssueSession(
     'sessionId',
   );
   match(row.archived !== true && !row.archivedAt, 'archived');
-  // Retained presentation proves session custody only; it grants no new workflow authority.
-  if (scope === 'retained') return row.sessionId;
+  // Conversation and retained presentation prove custody; their owners authorize each effect.
+  if (scope === 'retained' || scope === 'conversation') return row.sessionId;
   match(
     typeof cwd === 'string' &&
       (scope === 'feedback'
