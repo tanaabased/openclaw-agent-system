@@ -25,4 +25,4 @@ export default function feedbackPresentation(
 }
 
 export const feedbackResponseInstructions =
-  'The incoming comment or review card is already visible as native input. Do not replay it in your response. Show the returned response presentation once, preserving the exact public reply, attribution links, distinct private context, publication outcome and any actual diagnostic events. Do not repeat the same answer outside its reply card. ';
+  'Keep the incoming comment or review visible in its native input card; do not replay it in your response. Always show the exact outgoing reply in its attributed card, including its publication link or draft status. Keep publication obstacles and actual diagnostic events. Outside the cards, use normal concise prose only for additional findings, limitations or actions not already conveyed by the assessment, questions or reply. Omit redundant private paraphrases and section labels; never shorten or omit a comment or reply card to reduce repetition. ';

@@ -257,6 +257,26 @@ describe('channels/github/presentation/assessment-result', () => {
     }
   });
 
+  it('should omit an identical review recap without hiding questions or changing the full source', () => {
+    const result: AssessmentResult = {
+      ...common,
+      outcome: 'clarification-needed',
+      summary: 'The poem needs a subject.',
+      reviewSummary: 'The poem needs a subject.\n',
+      assessment: 'Ask before writing.',
+      fullAssessment: 'Preserve the complete rationale and constraints in native context.',
+      questions: ['What should the poem be about?'],
+    };
+    const before = structuredClone(result);
+    const output = renderAssessmentResult(result, { ...context, includeDetails: false });
+    assert.equal(output.split(result.summary).length - 1, 1);
+    assert.ok(output.includes(result.questions[0]!));
+    assert.ok(!output.includes('## Proposed change'));
+    assert.ok(!output.includes(result.fullAssessment!));
+    assert.ok(renderAssessmentResult(result, context).includes(result.fullAssessment!));
+    assert.deepEqual(result, before);
+  });
+
   it('should not hide a legacy plan when a review has no retained full assessment', () => {
     const result: AssessmentResult = {
       ...common,

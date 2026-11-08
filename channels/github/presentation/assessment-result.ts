@@ -108,7 +108,9 @@ export default function renderAssessmentResult(
           }),
         ]
       : []),
-    ...(reviewOnly ? ['## Proposed change', result.reviewSummary!] : []),
+    ...(reviewOnly && result.reviewSummary!.trim() !== result.summary.trim()
+      ? ['## Proposed change', result.reviewSummary!]
+      : []),
     ...(!reviewOnly && result.outcome === 'plan-ready'
       ? [
           ...(result.planSummary && needsSection(result.planSummary)
