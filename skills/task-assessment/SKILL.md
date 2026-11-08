@@ -31,7 +31,10 @@ mode and current user direction; new assessments stay in native tool context wit
   These govern appearance only; runtime results govern lifecycle state.
 - **Before repository investigation:** read the applicable repository instructions
   and their conditionally required references. Read each applicable reference before
-  its dependent work; reuse complete reads and report unavailable required material.
+  its dependent work; reuse complete reads. Use supplied absolute paths exactly and
+  resolve relative references from their owning skill or guidance file, not the
+  checkout. Compare a failed read with that path and correct an identifiable path
+  mistake once before reporting required material unavailable; never bypass denied access.
 - **Before writing the opening:** read [User Journey Editor](./references/user-journey-editor.md)
   and use its isolated editing pass after completing the investigation and full plan.
 
@@ -231,9 +234,17 @@ The receipt selects retained evidence; it does not grant authority by itself.
    and `plan` enter native tool history; the returned `presentation` contains the
    concise `reviewSummary` and consequential questions or required actions.
    Formatting writes no task journal, saved summary or plan revisions. Do not use
-   legacy `result` recording routes or write a separate plan file. If schema
-   validation fails, correct the shape without inventing findings or truncating
-   the source. Report an unresolved formatting limitation without claiming success.
+   legacy `result` recording routes or write a separate plan file. Submit the complete
+   result, never a placeholder. After explicit schema rejection, use the supplied
+   contract and field diagnostic for one source-supported correction in this turn;
+   preserve findings, outcome, complete source and destination. Do not restart the
+   assessment or retry unchanged arguments. For paged context or presentation, forward
+   each returned request and `next` unchanged, adding only its listed `inputFields`
+   from the original call. Preserve the owning action/operation and digest; refresh
+   genuinely stale context without mixing versions. Uncertain writes require their
+   original reconciliation, and actual authority or native approval denials remain
+   stops. Report an unresolved limitation and useful partial work without claiming
+   success; do not ask a coordinator to send a recovery message.
 
 8. Show the returned `presentation` as the visible assessment reply. Do not append
    the full engineering plan or tool JSON. The model can use the complete result

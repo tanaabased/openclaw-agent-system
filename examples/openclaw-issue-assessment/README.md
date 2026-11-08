@@ -18,6 +18,7 @@ implementing changes, or publishing to GitHub.
 ## Notes
 
 - Strict AIMock reuses the issue protocol for model text and tool selection. Provider reads, native chat execution, and pure assessment formatting remain real; this does not prove genuine model judgment.
+- The fixture omits one required assessment field, checks its diagnostic and supplies the complete result in the same turn. This verifies installed validation and correction plumbing, not autonomous model self-correction; no recovery message is sent.
 - Install enrolls the native Gateway device credential with both notification schedules paused. Only one unassigned disposable issue is created; no production agent receives an assignment or review request.
 - Both workflow schedules are paused and the default assessment wrapper is configured before installation. The explicit operation remains assessment-only under Work mode.
 - The fixture omits `plan` once, requires a native `result.plan` diagnostic without unrelated outcome requirements, then corrects that shape on the same entry with the complete source unchanged. This proves bounded protocol recovery, not genuine model adaptation.

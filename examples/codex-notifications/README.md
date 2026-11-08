@@ -301,6 +301,18 @@ runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(printf '%s\n' '{"action":"summary","operation":"candidate","id":"malformed"}' | node "$runtime" dispatch summary candidate --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-receipt-id-invalid" and (.notice.next | contains("exact receipt ID from verified workflow context"))'
 
+# should correct a rejected assessment shape without opening workflow state or exposing its source
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+cat > "$TMPDIR/assessment-shape.json" <<'JSON'
+{"action":"assessment","operation":"render","target":"https://github.com/tanaabased/big-test-bucket/issues/1","result":{"version":1,"outcome":"plan-ready","summary":"Inspect the documented change.","assessment":"Bounded change.","fullAssessment":"PRIVATE-ASSESSMENT-SOURCE","reviewSummary":"You can review the documented change.","plan":"Complete source plan.","evidence":[],"progress":{"completed":[]}}}
+JSON
+if output=$(node "$runtime" dispatch assessment render --plugin-data "$root/notification-data" < "$TMPDIR/assessment-shape.json" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-render-request-invalid" and .recovery.fields == ["request.result.progress.remaining"] and (tostring | contains("PRIVATE-ASSESSMENT-SOURCE") | not)'
+jq '.result.progress.remaining = []' "$TMPDIR/assessment-shape.json" > "$TMPDIR/assessment-corrected.json"
+node "$runtime" dispatch assessment render --plugin-data "$root/notification-data" < "$TMPDIR/assessment-corrected.json" | jq -e '.status == "formatted" and .retained == false and (.presentation | contains("You can review the documented change.")) and (tostring | contains("PRIVATE-ASSESSMENT-SOURCE") | not)'
+
 # should keep historical capacity reconciliation behind the owning intake activation
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")

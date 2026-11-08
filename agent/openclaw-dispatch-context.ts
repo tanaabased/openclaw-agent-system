@@ -1,5 +1,6 @@
 import { managedPullRequest, managedIssueState, dispatchAdmission } from './managed-issue.ts';
 import { ContextMaterialError } from './implementation-material.ts';
+import AssessmentValidationError from './assessment-validation.ts';
 
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import type AssignmentClaimStore from './assignment-claim-store.ts';
@@ -99,6 +100,7 @@ export interface OpenClawDispatchDependencies {
 
 export function openClawDispatchFailureCode(error: unknown): string {
   if (error instanceof ContextMaterialError) return error.code;
+  if (error instanceof AssessmentValidationError) return error.code;
   const conflict = error instanceof AgentSystemToolError ? error.cause : error;
   if (conflict instanceof GitWorktreeConflict) return conflict.code;
   const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;

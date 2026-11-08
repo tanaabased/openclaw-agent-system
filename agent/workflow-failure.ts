@@ -3,6 +3,8 @@ import {
   type PrivateStateContention,
 } from '../core/private-state-file-lock.ts';
 import { providerDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
+import AssessmentValidationError from './assessment-validation.ts';
+import { ContextMaterialError } from './implementation-material.ts';
 
 /** preserve public codes and bounded provider evidence through wrapped runtime failures. */
 export default function workflowFailure(error: unknown, fallback: string) {
@@ -10,11 +12,18 @@ export default function workflowFailure(error: unknown, fallback: string) {
   let diagnostic: ProviderDiagnostic | undefined;
   let contention: PrivateStateContention | undefined;
   let snapshotConflict: 'owner' | 'occurrence' | undefined;
+  let recovery: { instruction: string; fields?: string[] } | undefined;
   const seen = new Set<unknown>();
   for (let value = error; value && typeof value === 'object' && !seen.has(value);) {
     seen.add(value);
     if (seen.size > 8) break;
     if (value instanceof PrivateStateFileLockBusyError) contention ??= value.contention;
+    if (value instanceof AssessmentValidationError) recovery ??= value.recovery;
+    if (value instanceof ContextMaterialError && value.code.endsWith('-stale'))
+      recovery ??= {
+        instruction:
+          'Compare with the complete returned page request, preserving action, operation, identity, digest and offset. Correct an identifiable transcription mistake once; otherwise refresh the owning context and use its new requests without mixing versions.',
+      };
     const entry = value as {
       snapshotConflict?: unknown;
       code?: unknown;
@@ -42,6 +51,7 @@ export default function workflowFailure(error: unknown, fallback: string) {
     ...(diagnostic ? { providerDiagnostic: diagnostic } : {}),
     ...(contention ? { contention } : {}),
     ...(snapshotConflict ? { snapshotConflict } : {}),
+    ...(recovery ? { recovery } : {}),
   };
 }
 

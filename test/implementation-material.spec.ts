@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 
 import implementationContext from '../agent/implementation-context.ts';
 import implementationMaterial, {
+  ContextMaterialError,
   type ImplementationMaterialRead,
   implementationContextBudget,
 } from '../agent/implementation-material.ts';
 import hydrateImplementation from './implementation-material-fixture.ts';
+import assessmentMaterial from '../agent/assessment-material.ts';
+import workflowFailure from '../agent/workflow-failure.ts';
 
 const original = () => {
   const text = 'Full engineering source: \\ "\n 🧭\u0000 '.repeat(700);
@@ -43,6 +46,41 @@ const original = () => {
 const request = { action: 'implementation-context', id: 'a'.repeat(64) };
 
 describe('agent/implementation-material', () => {
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should recover an altered context action through the original ${runtime} page requests`, async () => {
+      const source = { ...original(), runtime };
+      const snapshot = structuredClone(source);
+      const delivered = implementationMaterial(source, request);
+      assert.ok('contextMaterials' in delivered && delivered.contextMaterials);
+      const field = delivered.contextMaterials.fields.find(
+        (field) => field.path.join('.') === 'currentRequirements',
+      )!;
+      assert.ok(field);
+      const wrong: Record<string, unknown> = { ...field.request, action: 'context' };
+      assert.throws(
+        () =>
+          assessmentMaterial(
+            { runtime, evidence: { source: 'https://github.com/owner/repo/issues/3' } },
+            wrong,
+            wrong.material as ImplementationMaterialRead,
+          ),
+        (error: unknown) => {
+          assert.ok(error instanceof ContextMaterialError);
+          assert.equal(error.code, 'assessment-material-stale');
+          const failure = workflowFailure(error, 'fallback');
+          assert.match(failure.recovery!.instruction, /request|operation/);
+          assert.doesNotMatch(JSON.stringify(failure), /Full engineering source/);
+          return true;
+        },
+      );
+      const restored = await hydrateImplementation(delivered, async (next) => {
+        assert.equal(next.action, request.action);
+        assert.equal(next.id, request.id);
+        return implementationMaterial(source, request, next.material as ImplementationMaterialRead);
+      });
+      assert.deepEqual(restored, source);
+      assert.deepEqual(source, snapshot);
+    });
   it('should reproduce oversized raw context and retrieve every distinct value exactly', async () => {
     const source = original();
     const snapshot = JSON.stringify(source);

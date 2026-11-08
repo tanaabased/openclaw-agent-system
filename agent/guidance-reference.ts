@@ -8,6 +8,6 @@ export default function guidanceReference(guidance: AssessmentGuidance) {
     path: guidance.path,
     digest: guidance.digest,
     instruction:
-      'Read this entire file at its absolute path using the native file-reading tool before proceeding. Follow any continuation of a truncated read. Apply its guidance with the selected skill. If the read fails, report the required guidance as unavailable; do not silently skip it.',
+      'Read the whole file at its supplied absolute path, following truncated reads. Resolve relative references from the file naming them, not the checkout. Compare a failed read with the supplied path and correct an identifiable mistake once before reporting guidance unavailable. Never skip required guidance or bypass denied access.',
   };
 }

@@ -1,5 +1,6 @@
 import implementationMaterial from './implementation-material.ts';
 import { Value } from 'typebox/value';
+import { Type } from 'typebox';
 
 import renderAssessmentResult, {
   assessmentContextCards,
@@ -13,6 +14,24 @@ import { dispatchAssessmentContext } from './dispatch-presentation.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { ManagedIssue } from './managed-issue.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
+import AssessmentValidationError from './assessment-validation.ts';
+
+const renderRequestSchema = Type.Object(
+  {
+    ...directAssessmentRequestSchema.properties,
+    ...Type.Required(Type.Pick(directAssessmentRequestSchema, ['target'])).properties,
+    operation: Type.Literal('render'),
+    includeDetails: Type.Optional(Type.Literal(false)),
+  },
+  { additionalProperties: false },
+);
+const boundRenderRequestSchema = Type.Object(
+  {
+    ...renderRequestSchema.properties,
+    ...Type.Required(Type.Pick(directAssessmentRequestSchema, ['id'])).properties,
+  },
+  { additionalProperties: false },
+);
 
 /** resolve display metadata from the bound owner without saving an assessment or advancing work. */
 export function renderBoundAssessment(
@@ -26,8 +45,13 @@ export function renderBoundAssessment(
     debug?: boolean;
   },
 ) {
-  if (!Value.Check(directAssessmentRequestSchema, input) || !input.id || !input.target)
-    throw new Error('assessment-render-request-invalid');
+  if (!Value.Check(boundRenderRequestSchema, input))
+    throw new AssessmentValidationError(
+      'assessment-render-request-invalid',
+      boundRenderRequestSchema,
+      input,
+      'request',
+    );
   const target = replyLocator(input.target);
   const owner = assessmentOwner(context.records, context.admitted, context.session, {
     repository: `${target.owner}/${target.name}`,
@@ -59,13 +83,13 @@ export default function renderNativeAssessment(
   input: unknown,
   runtime: 'codex' | 'openclaw' = 'codex',
 ) {
-  if (
-    !Value.Check(directAssessmentRequestSchema, input) ||
-    input.operation !== 'render' ||
-    !input.target ||
-    input.includeDetails
-  )
-    throw new Error('assessment-render-request-invalid');
+  if (!Value.Check(renderRequestSchema, input))
+    throw new AssessmentValidationError(
+      'assessment-render-request-invalid',
+      renderRequestSchema,
+      input,
+      'request',
+    );
   const target = replyLocator(input.target);
   if (target.kind) throw new Error('assessment-render-target-invalid');
   const submitted = parseAssessmentSubmission(input.result);

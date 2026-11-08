@@ -205,12 +205,18 @@ describe('tools/dispatch/tool', () => {
       const call = { ...event, params: { action: 'next' } };
       await f.hook(call, coordinator);
       const result = await f.build().execute(call.toolCallId, call.params);
-      const { notice, presentationInstructions, ...details } = result.details as Record<
+      const { notice, presentationInstructions, recovery, ...details } = result.details as Record<
         string,
         unknown
       >;
       assert.ok(notice);
       assert.equal(typeof presentationInstructions, 'string');
+      if (code === 'implementation-material-stale')
+        assert.match(
+          String((recovery as { instruction: string }).instruction),
+          /returned page request/,
+        );
+      else assert.equal(recovery, undefined);
       assert.deepEqual(details, {
         status: 'waiting',
         code,

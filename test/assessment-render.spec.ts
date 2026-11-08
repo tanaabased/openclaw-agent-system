@@ -16,6 +16,7 @@ import OpenClawDispatch from '../agent/openclaw-dispatch.ts';
 import type { AssessmentSubmission } from '../agent/assessment-result.ts';
 import hydrateImplementation from './implementation-material-fixture.ts';
 import type { AgentManifest } from '../manifest/types.ts';
+import AssessmentValidationError from '../agent/assessment-validation.ts';
 
 const target = 'https://github.com/owner/repo/issues/3';
 const result: AssessmentSubmission = {
@@ -264,6 +265,25 @@ describe('agent/assessment-render', () => {
       assert.throws(() => renderNativeAssessment(invalid));
   });
 
+  it('should identify malformed render envelope fields without exposing their values', () => {
+    const request = { ...assessmentPresentationRequest(target), result };
+    for (const [input, field] of [
+      [{ ...request, target: undefined }, 'request.target'],
+      [{ ...request, operation: 'PRIVATE-OPERATION' }, 'request.operation'],
+      [{ ...request, includeDetails: true }, 'request.includeDetails'],
+      [{ ...request, id: 'PRIVATE-ID' }, 'request.id'],
+    ] as const)
+      assert.throws(
+        () => renderNativeAssessment(input),
+        (error: unknown) => {
+          assert.ok(error instanceof AssessmentValidationError);
+          assert.deepEqual(error.recovery.fields, [field]);
+          assert.doesNotMatch(error.message + JSON.stringify(error.recovery), /PRIVATE-/);
+          return true;
+        },
+      );
+  });
+
   for (const runtime of ['codex', 'openclaw'] as const)
     it(`should format in ${runtime} without opening a journal or resolving runtime dependencies`, async () => {
       const root = await mkdtemp(join(tmpdir(), 'assessment-render-'));
@@ -276,19 +296,31 @@ describe('agent/assessment-render', () => {
         },
       );
       try {
-        const request = { ...assessmentPresentationRequest(target), result };
-        const response =
+        const invoke = (request: object) =>
           runtime === 'codex'
-            ? await runCodexDispatch(root, 'assessment', request, dependencies)
-            : await new OpenClawDispatch(dependencies as never).run(
+            ? runCodexDispatch(root, 'assessment', request, dependencies)
+            : new OpenClawDispatch(dependencies as never).run(
                 {} as AgentManifest,
                 root,
                 {} as never,
-                request,
+                request as never,
               );
+        const request = { ...assessmentPresentationRequest(target), result };
+        const snapshot = structuredClone(request);
+        await assert.rejects(
+          invoke({ ...request, result: { ...result, progress: { completed: [] } } }),
+          (error: unknown) => {
+            assert.ok(error instanceof AssessmentValidationError);
+            assert.deepEqual(error.recovery.fields, ['request.result.progress.remaining']);
+            assert.equal(error.code, 'assessment-render-request-invalid');
+            return true;
+          },
+        );
+        const response = await invoke(request);
         assert.ok(response && 'status' in response);
         assert.equal(response.status, 'formatted');
         assert.deepEqual(await readdir(root), []);
+        assert.deepEqual(request, snapshot);
       } finally {
         await rm(root, { recursive: true, force: true });
       }

@@ -179,7 +179,7 @@ export default function implementationMaterial<T extends Record<string, unknown>
     aliases,
     instruction:
       (delivery.instruction ?? instruction) +
-      ' Shallow-merge restored objects with inline fields; replace arrays and scalars.',
+      ' Shallow-merge restored objects with inline fields; replace arrays and scalars. Forward each returned request and next unchanged, including action, operation, identity, digest and offset; add only the listed inputFields from the original call when required. Do not reconstruct the envelope or substitute another context action. A rejected page read does not prove the installation is stale: compare the exact returned request, correct an identifiable transcription mistake once, or refresh the owning context on a stale digest.',
   });
   const response = () => ({
     ...projected,
@@ -242,7 +242,7 @@ export default function implementationMaterial<T extends Record<string, unknown>
   if (text === undefined || hash(text) !== read.digest)
     throw failure(
       `${delivery.purpose ?? 'implementation-material'}-stale`,
-      'refresh context and use its returned requests',
+      'the requested field or digest does not match this context; this may be stale content or a request sent to the wrong context operation. Compare with the complete returned request, preserving action, operation, identity and material; correct an identifiable transcription mistake once, otherwise refresh the owning context and use its new requests without mixing versions',
     );
   if (!Number.isSafeInteger(read.offset) || read.offset < 0 || read.offset >= text.length)
     throw new Error('implementation-material-range-invalid');

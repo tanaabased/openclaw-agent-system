@@ -2,6 +2,7 @@ import { Type, type Static, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import discriminatedSchema from '../utils/discriminated-schema.ts';
+import AssessmentValidationError from './assessment-validation.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 32000, pattern: '\\S' });
 const decisionReasons = Type.Array(Type.String({ minLength: 1, maxLength: 1000, pattern: '\\S' }), {
@@ -124,8 +125,14 @@ export const assessmentResultFormat = {
 };
 
 export function parseAssessmentResult(value: unknown): AssessmentResult {
-  if (!Value.Check(assessmentResultSchema, value) || JSON.stringify(value).length > 96000)
-    throw new Error('assessment-result-invalid');
+  if (!Value.Check(assessmentResultSchema, value))
+    throw new AssessmentValidationError(
+      'assessment-result-invalid',
+      assessmentResultSchema,
+      value,
+      'result',
+    );
+  if (JSON.stringify(value).length > 96000) throw new Error('assessment-result-invalid');
   if (assessmentDecisionMode(value.decision) === 'work' && value.outcome !== 'plan-ready')
     throw new Error('assessment-decision-conflict');
   return value;
@@ -135,11 +142,11 @@ export function parseAssessmentSubmission(value: unknown): AssessmentSubmission 
   if (value && typeof value === 'object') {
     const source = (value as { fullAssessment?: unknown }).fullAssessment;
     if (typeof source !== 'string' || !source.trim())
-      throw Object.assign(
-        new Error(
-          'assessment-result-incomplete: include the complete assessment in fullAssessment and resubmit in this chat.',
-        ),
-        { code: 'assessment-result-incomplete' },
+      throw new AssessmentValidationError(
+        'assessment-result-incomplete',
+        Type.Object({ fullAssessment: text }),
+        value,
+        'result',
       );
   }
   const result = parseAssessmentResult(value);
