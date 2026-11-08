@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
 import assessmentMaterial from '../agent/assessment-material.ts';
+import openclawTurnContext from '../agent/openclaw-turn-context.ts';
+import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 import type { ImplementationMaterialRead } from '../agent/implementation-material.ts';
 import { hostedAssessmentContextFixture } from './assessment-material-fixture.ts';
 import { issuePickupScenario } from '../examples/openclaw-project-picker/model-fixture.ts';
@@ -10,6 +12,15 @@ describe('issue pickup model transport', () => {
   it('should deliver assessment source references through native codex without tool-output truncation', async () => {
     const context = hostedAssessmentContextFixture();
     const request = { action: 'context', id: context.id };
+    const turn = openclawTurnContext(
+      {
+        id: context.id,
+        threadId: 'issue',
+        request: { key: 'issue', agentId: 'receiver' },
+        sessionCreation: { verified: true, sessionId: 'incarnation' },
+      } as OpenClawDispatchRecord,
+      { agentId: 'receiver', sessionKey: 'issue', sessionId: 'incarnation', runId: 'assessment' },
+    )!;
     let sourceReads = 0;
     await nativeMaterialFixture({
       request,
@@ -45,7 +56,7 @@ describe('issue pickup model transport', () => {
       },
       minimumPages: 0,
       scenario: issuePickupScenario,
-      prompt: `Call agent_system_dispatch with action context and id ${context.id}`,
+      prompt: `New issue assigned: clarify cleanup.\n\n${turn.appendContext}`,
       finalText: 'Should disposable issues close after evidence capture?',
     });
     assert.equal(sourceReads, 1);

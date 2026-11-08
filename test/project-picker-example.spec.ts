@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { type ChatCompletionRequest, type FixtureResponse } from '@copilotkit/aimock';
 
 import { pickupResponse } from '../examples/openclaw-project-picker/model-fixture.ts';
+import openclawTurnContext from '../agent/openclaw-turn-context.ts';
+import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 
 function request(prompt: string, results: Array<[string, unknown]> = []): ChatCompletionRequest {
   return {
@@ -123,9 +125,19 @@ describe('examples/openclaw-project-picker model fixture', () => {
       project: { path: '/fixture/issue' },
       evidence: { source: 'https://github.com/owner/repo/issues/2' },
     };
-    const input = request(`Call agent_system_dispatch with action context and id ${id}`, [
-      ['context', context],
-    ]);
+    const privateContext = openclawTurnContext(
+      {
+        id,
+        threadId: 'issue',
+        request: { key: 'issue', agentId: 'receiver' },
+        sessionCreation: { verified: true, sessionId: 'incarnation' },
+      } as OpenClawDispatchRecord,
+      { agentId: 'receiver', sessionKey: 'issue', sessionId: 'incarnation', runId: 'assessment' },
+    )!;
+    const input = request('New issue assigned: clarify cleanup.');
+    input.messages.push({ role: 'user', content: privateContext.appendContext });
+    assert.deepEqual(argumentsOf(pickupResponse(input)), { action: 'context', id });
+    input.messages.push(...request('', [['context', context]]).messages.slice(2));
     const read = pickupResponse(input);
     assert.ok(read && 'toolCalls' in read);
     assert.equal(read.toolCalls![0]!.name, 'agent_system_github');
@@ -141,14 +153,10 @@ describe('examples/openclaw-project-picker model fixture', () => {
     assert.deepEqual(pickupResponse(input), {
       content: 'Should disposable issues close after evidence capture?',
     });
-    assert.throws(
-      () =>
-        pickupResponse(
-          request(`Call agent_system_dispatch with action context and id ${id}`, [
-            ['context', { ...context, mode: 'plan' }],
-          ]),
-        ),
-      /override ordinary plan mode/u,
-    );
+    const wrongMode = structuredClone(input);
+    wrongMode.messages.find(
+      (message) => message.tool_call_id === 'call_pickup_context-0',
+    )!.content = JSON.stringify({ ...context, mode: 'plan' });
+    assert.throws(() => pickupResponse(wrongMode), /override ordinary plan mode/u);
   });
 });

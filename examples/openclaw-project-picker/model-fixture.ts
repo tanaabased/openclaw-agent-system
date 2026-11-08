@@ -1,4 +1,5 @@
 import assessmentSource from '../../scripts/aimock-assessment-source.ts';
+import { currentFacts } from '../openclaw-pr-journey/model-fixture.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -185,9 +186,7 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
     return { content: String(report.response) || 'pickup-intake-unchanged' };
   }
 
-  const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
-    prompt,
-  )?.[1];
+  const id = currentFacts(messages, false).contextRequest?.id;
   if (!id) return;
   const context = result('context');
   if (!context) return dispatch('context', { action: 'context', id });
