@@ -306,7 +306,7 @@ or rewrite substantive source text. Questions and required actions remain promin
 in every default and detailed view, even when repeated in the complete source.
 
 When an assessment includes a continuation decision, show an **Auto mode decision**
-card after the instruction card (or routing card when debug is off). Keep it visible
+card after the routing card. Keep it visible
 regardless of debug presentation. Use ▶️ for `work` and ⏸️ for `plan`, with the exact
 code-formatted value in **Decision**. Use **Next** to distinguish automatic continuation
 once runtime checks pass from waiting for the operator's direction before implementation.
@@ -338,7 +338,8 @@ assessment, questions, or action; the reference section must not be their only h
 The framing follows the structured result; prose headings never select state.
 
 When debug presentation is enabled, include one shared quoted **🔬 Debug** card
-with **Context: Configured workflow** alongside the initial plan or clarification.
+with **Context: Configured workflow** after the initial assessment, questions,
+routing and Auto decision, before any optional reference material.
 Group routing, assessment, implementation and reply skills and custom guidance in
 that card. Link resolved skill sources when available; show configured future
 skills by name without inventing resolved paths. Link file guidance and preserve

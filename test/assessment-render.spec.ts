@@ -183,6 +183,10 @@ describe('agent/assessment-render', () => {
           assert.match(shown.presentation, /configured:work/);
           assert.match(shown.presentation, /configured:reply/);
           assert.equal(shown.presentation.match(/## 🔬 Debug/g)?.length, 1);
+          assert.ok(
+            shown.presentation.indexOf('## 🔬 Debug') >
+              shown.presentation.indexOf('Auto mode decision'),
+          );
         }
         assert.equal(shown.retained, false);
         assert.deepEqual(record, before);
@@ -215,6 +219,10 @@ describe('agent/assessment-render', () => {
       assert.match(String(restored.presentation), /Shared behavior needs investigation/);
       assert.match(String(restored.presentation), /Not independently verified/);
       assert.match(String(restored.presentation), /company:assessment/);
+      assert.ok(
+        String(restored.presentation).indexOf('## 🔬 Debug') >
+          String(restored.presentation).lastIndexOf('Review detail.'),
+      );
       const quiet = renderNativeAssessment(
         {
           ...assessmentPresentationRequest(target, false, { ...metadata, debug: false }),

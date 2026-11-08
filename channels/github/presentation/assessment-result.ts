@@ -73,12 +73,14 @@ export default function renderAssessmentResult(
   const source = result.fullAssessment ?? (result.outcome === 'plan-ready' ? result.plan : '');
   const reviewOnly = !!result.reviewSummary && !!result.fullAssessment && !context.includeDetails;
   const needsSection = (value: string) => value !== result.summary && !source.includes(value);
+  const cards = context.cards ?? assessmentContextCards(context);
+  const isDebugCard = (card: string) => card.startsWith('> ## 🔬 Debug\n');
   const content = [
     outcomeCard,
     ...(!reviewOnly && 'assessment' in result && needsSection(result.assessment)
       ? ['## Assessment', result.assessment]
       : []),
-    ...(context.cards ?? assessmentContextCards(context)),
+    ...cards.filter((card) => !isDebugCard(card)),
     ...(result.decision && !context.assessmentOnly
       ? [
           githubNotificationCard({
@@ -124,6 +126,7 @@ export default function renderAssessmentResult(
     !source.includes(result.plan)
       ? ['## Full plan', result.plan]
       : []),
+    ...cards.filter(isDebugCard),
   ];
   if (reviewOnly && context.retained !== false)
     content.push(

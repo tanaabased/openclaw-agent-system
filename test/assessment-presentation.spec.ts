@@ -453,16 +453,21 @@ describe('channels/github/presentation/assessment-result', () => {
         if ('assessment' in result) assert.ok(output.indexOf(result.assessment) < routing);
         assert.equal(instructions >= 0, debug);
         if (debug) assert.ok(routing < instructions);
-        if (result.outcome === 'plan-ready')
-          assert.ok(output.indexOf('## Plan summary') > (debug ? instructions : routing));
-        if (result.outcome === 'clarification-needed')
-          assert.ok(output.indexOf('## Question') > (debug ? instructions : routing));
+        if (result.outcome === 'plan-ready') {
+          assert.ok(output.indexOf('## Plan summary') > routing);
+          if (debug) assert.ok(instructions > output.indexOf('## Full plan'));
+        }
+        if (result.outcome === 'clarification-needed') {
+          assert.ok(output.indexOf('## Question') > routing);
+          if (debug) assert.ok(instructions > output.indexOf('## Question'));
+        }
         if (result.outcome === 'operator-setup-blocker') {
           assert.ok(output.indexOf('## Action') >= 0);
           assert.ok(output.indexOf('## Action') < routing);
         }
         if (result.outcome === 'plan-ready') {
-          assert.ok(output.indexOf('Auto mode decision') > (debug ? instructions : routing));
+          assert.ok(output.indexOf('Auto mode decision') > routing);
+          if (debug) assert.ok(output.indexOf('Auto mode decision') < instructions);
           assert.ok(output.indexOf('## Full plan') > output.indexOf('## Plan summary'));
         }
       }
@@ -498,7 +503,7 @@ describe('channels/github/presentation/assessment-result', () => {
       ),
     );
     assert.deepEqual(guidance, before);
-    assert.ok(output.indexOf('Assessment instructions') < output.indexOf('## Full plan'));
+    assert.ok(output.indexOf('Assessment instructions') > output.indexOf('## Full plan'));
   });
 
   it('should preserve a complete markdown plan and frame routing from trusted context', () => {
