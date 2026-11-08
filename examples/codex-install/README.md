@@ -19,6 +19,7 @@ then unbind without changing the workspace manifests.
 
 - Direct checks need no model or provider credentials. Workspaces run in place; independent snapshots verify that shared manifests stay unchanged. Run only in GitHub Actions.
 - Session context includes the model-routing projection; one packaged resolution accepts an issue object and custom routing guidance. Source tests cover routing input, fallback, and override permutations.
+- The per-prompt probe projects native thread/turn identities without sender receipts, provider prose or workflow writes. Direct invocation proves the packaged envelope, not native hook execution or model visibility; native Codex still owns hook review.
 - Pending relocation: direct-assessment caller guards, quiet/debug setup diagnostics, missing-identity inspection and rename/rotation, inherited-pipe timeout, local-settings refresh, and inactive/replacement binding checks remain below.
 
 ## Setup
@@ -189,6 +190,18 @@ printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
 printf '%s\n' "$context" | sed -n '/^{/,/^}/p' \
   | jq -e '.feedbackRuntime.argvPrefix[-1] == "feedback"'
 printf '%s\n' "$context" | grep -F 'For new routed work, use'
+
+# should project per-prompt identities through the packaged hook without granting authority
+root="$TMPDIR/agent-system-codex-install"
+plugin_root="$root/plugin with spaces"
+hook=$(jq -r '.hooks.UserPromptSubmit[0].hooks[0].command' "$plugin_root/hooks/hooks.json")
+for turn in initial-assignment later-feedback; do
+  jq -n --arg turn "$turn" '{hook_event_name:"UserPromptSubmit",session_id:"native-probe-thread",turn_id:$turn,prompt:"private-provider-prose"}' \
+    | PLUGIN_DATA="$root/plugin-data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" \
+    | jq -er '.hookSpecificOutput | select(.hookEventName == "UserPromptSubmit") | .additionalContext | split("\n")[-1] | fromjson | select(.contextProbe.runtime == "codex" and .currentTurn.threadId == "native-probe-thread") | .currentTurn.turnId' \
+    | grep -Fx "$turn"
+done
+PLUGIN_DATA="$root/plugin-data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" <<<'not-json' | jq -e '. == {}'
 
 # should approve installed runtime calls and leave unrelated commands to normal approval
 root="$TMPDIR/agent-system-codex-install"

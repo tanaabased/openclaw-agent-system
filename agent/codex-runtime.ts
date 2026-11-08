@@ -11,6 +11,7 @@ import { Value } from 'typebox/value';
 import { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
 import assertCodexNodeVersion, { CodexNodeVersionError } from './codex-node-version.ts';
 import codexPermission from './codex-permission.ts';
+import codexTurnContext from './codex-turn-context.ts';
 import CodexAssignmentClaims, { codexInstanceStore } from './codex-assignment-claims.ts';
 import { operateInstanceIdentity } from './instance-identity.ts';
 
@@ -280,6 +281,28 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
           : {},
       );
     } catch {
+      writeJson({});
+    }
+    return;
+  }
+  if (command === 'user-prompt-submit') {
+    try {
+      assertCodexNodeVersion();
+      const pluginData = process.env.PLUGIN_DATA;
+      const context =
+        pluginData && (await codexTurnContext(pluginData, JSON.parse(await readStandardInput())));
+      writeJson(
+        context
+          ? {
+              hookSpecificOutput: {
+                hookEventName: 'UserPromptSubmit',
+                additionalContext: context,
+              },
+            }
+          : {},
+      );
+    } catch {
+      // the additive probe must never block an otherwise valid native prompt.
       writeJson({});
     }
     return;

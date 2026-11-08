@@ -128,19 +128,23 @@ async function freshSkills(
             assert.ok(Array.isArray(message.result.data));
             const entry = message.result.data.find((item) => record(item) && item.cwd === cwd);
             assert.ok(record(entry) && Array.isArray(entry.hooks));
-            const hooks = entry.hooks.filter(
-              (item) =>
-                record(item) &&
-                item.sourcePath === permissionHookPath &&
-                item.eventName === 'permissionRequest',
-            );
-            assert.equal(hooks.length, 1, 'the installed permission hook must be discoverable');
-            assert.equal(hooks[0].enabled, true);
-            assert.equal(
-              hooks[0].trustStatus,
-              'untrusted',
-              'installation must not grant native hook trust',
-            );
+            for (const eventName of ['permissionRequest', 'userPromptSubmit']) {
+              const hooks: Record<string, unknown>[] = entry.hooks.filter(
+                (item) =>
+                  record(item) &&
+                  item.sourcePath === permissionHookPath &&
+                  item.eventName === eventName,
+              );
+              assert.equal(hooks.length, 1, `the installed ${eventName} hook must be discoverable`);
+              const hook = hooks[0];
+              assert.ok(hook);
+              assert.equal(hook.enabled, true);
+              assert.equal(
+                hook.trustStatus,
+                'untrusted',
+                'installation must not grant native hook trust',
+              );
+            }
             finish(undefined, discovered);
           } catch (error) {
             finish(error as Error);

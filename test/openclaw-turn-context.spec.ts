@@ -33,18 +33,68 @@ describe('agent/openclaw-turn-context', () => {
     assert.match(output.appendContext, /"runId":"assessment"/);
     assert.doesNotMatch(output.appendContext, /inputId/);
   });
-  it('should leave admitted feedback to its own explicit context contract', () => {
+  it('should supply a read-only feedback lookup without repeating instructions or source prose', () => {
     const feedback = {
       ...structuredClone(record),
       result: { outcome: 'plan-ready', plan: 'RETAINED-PLAN' },
-      feedback: { baseline: {}, events: [{ turn: { runId: 'feedback-run' } }] },
+      feedback: {
+        baseline: {},
+        events: [
+          {
+            id: 'comment',
+            native: true,
+            source: 'PRIVATE-COMMENT',
+            turn: { runId: 'feedback-run' },
+          },
+        ],
+      },
     } as OpenClawDispatchRecord;
-    assert.equal(openclawTurnContext(feedback, { ...binding, runId: 'feedback-run' }), undefined);
+    const output = openclawTurnContext(feedback, { ...binding, runId: 'feedback-run' })!;
+    const facts = JSON.parse(output.appendContext.split('\n')[1]!);
+    assert.deepEqual(facts.contextProbe, {
+      version: 1,
+      runtime: 'openclaw',
+      hook: 'before_prompt_build',
+    });
+    assert.equal(facts.stage, 'feedback');
+    assert.deepEqual(facts.feedbackContextRequest, {
+      action: 'feedback',
+      operation: 'context',
+      id: record.id,
+      eventId: 'comment',
+    });
+    assert.equal(output.appendSystemContext, '');
+    assert.doesNotMatch(output.appendContext, /PRIVATE-COMMENT|RETAINED-PLAN/);
     feedback.feedback!.events[0]!.turn!.executionRunId = 'queued-execution';
-    assert.equal(
-      openclawTurnContext(feedback, { ...binding, runId: 'queued-execution' }),
-      undefined,
+    const before = structuredClone(feedback);
+    const queued = openclawTurnContext(feedback, { ...binding, runId: 'queued-execution' })!;
+    assert.match(queued.appendContext, /"eventId":"comment"/);
+    assert.deepEqual(feedback, before);
+    assert.doesNotMatch(
+      openclawTurnContext(feedback, { ...binding, runId: 'feedback-run' })!.appendContext,
+      /feedbackContextRequest/,
     );
+  });
+  it('should omit a source lookup for ambiguous or cancelled feedback without blocking the turn', () => {
+    for (const events of [
+      [{ id: 'a', native: true, turn: { runId: 'feedback', cancelled: true } }],
+      ['a', 'b'].map((id) => ({ id, native: true, turn: { runId: 'feedback' } })),
+    ]) {
+      const output = openclawTurnContext(
+        { ...record, feedback: { baseline: {}, events } } as OpenClawDispatchRecord,
+        { ...binding, runId: 'feedback' },
+      )!;
+      assert.doesNotMatch(output.appendContext, /feedbackContextRequest/);
+      assert.match(output.appendContext, /contextProbe/);
+      assert.equal(output.appendSystemContext, '');
+    }
+  });
+  it('should leave legacy feedback on its existing explicit context path', () => {
+    const legacy = {
+      ...record,
+      feedback: { baseline: {}, events: [{ turn: { runId: 'legacy' } }] },
+    } as OpenClawDispatchRecord;
+    assert.equal(openclawTurnContext(legacy, { ...binding, runId: 'legacy' }), undefined);
   });
   it('should route an automatic implementation and its later answer through implementation context', () => {
     const working = {

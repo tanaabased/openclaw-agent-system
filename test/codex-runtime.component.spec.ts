@@ -1,13 +1,93 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 
 import codexDispatchHandoff from '../agent/codex-dispatch-handoff.ts';
+import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 
 describe('agent/codex-runtime', () => {
+  it('should deliver a private per-prompt probe without receipts or plugin state changes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codex-turn-probe-'));
+    const workspace = join(root, 'workspace');
+    const pluginData = join(root, 'data');
+    try {
+      await mkdir(workspace);
+      await writeFile(join(workspace, 'agent.yaml'), 'schema-version: 1\nagent:\n  id: probe\n');
+      await bindCodexWorkspace(pluginData, workspace);
+      const files = await readdir(pluginData);
+      const before = await Promise.all(
+        files.map((file) => readFile(join(pluginData, file), 'utf8')),
+      );
+      for (const turn of ['initial-assignment', 'later-feedback']) {
+        const result = spawnSync(
+          process.execPath,
+          ['dist/codex/codex-runtime.js', 'user-prompt-submit'],
+          {
+            input: JSON.stringify({
+              hook_event_name: 'UserPromptSubmit',
+              session_id: 'native-thread',
+              turn_id: turn,
+              prompt: 'PRIVATE-PROVIDER-TEXT',
+            }),
+            env: { ...process.env, PLUGIN_DATA: pluginData },
+            encoding: 'utf8',
+            timeout: 10000,
+          },
+        );
+        assert.ifError(result.error);
+        assert.equal(result.status, 0);
+        assert.equal(result.stderr, '');
+        const output = JSON.parse(result.stdout).hookSpecificOutput;
+        assert.equal(output.hookEventName, 'UserPromptSubmit');
+        const facts = JSON.parse(output.additionalContext.split('\n')[1]);
+        assert.equal(facts.contextProbe.runtime, 'codex');
+        assert.deepEqual(facts.currentTurn, { threadId: 'native-thread', turnId: turn });
+        assert.doesNotMatch(result.stdout, /PRIVATE-PROVIDER-TEXT/);
+      }
+      assert.deepEqual(await readdir(pluginData), files);
+      assert.deepEqual(
+        await Promise.all(files.map((file) => readFile(join(pluginData, file), 'utf8'))),
+        before,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it('should keep probe failures silent and non-blocking', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codex-turn-probe-unbound-'));
+    try {
+      for (const input of [
+        '',
+        'not-json',
+        JSON.stringify({
+          hook_event_name: 'UserPromptSubmit',
+          session_id: 'chat',
+          turn_id: 'turn',
+        }),
+      ]) {
+        const result = spawnSync(
+          process.execPath,
+          ['dist/codex/codex-runtime.js', 'user-prompt-submit'],
+          {
+            input,
+            env: { ...process.env, PLUGIN_DATA: root },
+            encoding: 'utf8',
+            timeout: 10000,
+          },
+        );
+        assert.ifError(result.error);
+        assert.equal(result.status, 0);
+        assert.equal(result.stderr, '');
+        assert.deepEqual(JSON.parse(result.stdout), {});
+      }
+      assert.deepEqual(await readdir(root), []);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it('should report an early pickup failure in its native envelope while exiting unsuccessfully', async () => {
     const root = await mkdtemp(join(tmpdir(), 'codex-pickup-failure-'));
     try {

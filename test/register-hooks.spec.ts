@@ -65,6 +65,21 @@ describe('core/register-hooks', () => {
     };
     assert.doesNotMatch(later.appendContext, /RETAINED-PLAN/);
     assert.match(later.appendContext, /"runId":"later"/);
+    const visible = structuredClone(event);
+    record.feedback = {
+      baseline: {},
+      events: [{ id: 'comment', native: true, turn: { runId: 'feedback' } }],
+    } as OpenClawDispatchRecord['feedback'];
+    const feedback = (await hook(event, { ...binding, runId: 'feedback' })) as {
+      appendContext: string;
+      appendSystemContext: string;
+    };
+    assert.match(feedback.appendContext, /"eventId":"comment"/);
+    assert.doesNotMatch(
+      feedback.appendSystemContext,
+      /Reproduce|Feedback reply|When initialReview/,
+    );
+    assert.deepEqual(event, visible);
     for (const change of [
       { runId: undefined },
       { sessionKey: 'other' },

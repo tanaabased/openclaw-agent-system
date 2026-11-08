@@ -437,7 +437,18 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     const [, id, eventId] = feedback;
     const args = { action: 'feedback', id, eventId };
     const context = result('feedback-context');
-    if (!context) return dispatch('feedback-context', { ...args, operation: 'context' });
+    if (!context) {
+      const privateContext = request.messages
+        .map(({ content }) => getTextContent(content) ?? '')
+        .join('\n');
+      if (
+        !privateContext.includes(
+          '"contextProbe":{"version":1,"runtime":"openclaw","hook":"before_prompt_build"}',
+        )
+      )
+        return;
+      return dispatch('feedback-context', { ...args, operation: 'context' });
+    }
     if (
       context.status !== 'verified' ||
       context.runtime !== 'openclaw' ||
@@ -503,7 +514,12 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     const privateContext = request.messages
       .map(({ content }) => getTextContent(content) ?? '')
       .join('\n');
-    if (!privateContext.includes('Agent System model-only current-turn facts')) return;
+    if (
+      !privateContext.includes(
+        '"contextProbe":{"version":1,"runtime":"openclaw","hook":"before_prompt_build"}',
+      )
+    )
+      return;
     return dispatch('context', { action: 'context', id });
   }
   const project = context.project as { path?: unknown } | undefined;

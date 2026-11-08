@@ -22,6 +22,7 @@ Verify that another scan reuses the same chat without repeating assessment or pu
 
 - The fixture submits through the returned entry-specific request and validates its candidate against the returned schema; it does not infer a contract or prove model adaptation.
 - Strict AIMock supplies judgment and text; GitHub, scheduling, dispatch, managed Git, and receipts remain real. The selected ordinary workspace assessment skill proves installed selection and retention, not genuine model adaptation.
+- Initial assignment and feedback fixture responses require the model-only native turn probe in the actual provider request. Visible instructions remain unchanged during this delivery experiment; the marker proves context transport, not autonomous instruction following or native card rendering.
 - The fixture's compact reviewer differs from the assigning actor and is initially uncached. This example creates no PR and requests no review.
 - The default private response shows the user journey and documentation/test impact; full engineering assessment and evidence remain retained for explicit readback.
 - Only Tanaabot is assigned. Refreshes target this job's issue; the 24-hour schedule avoids unrelated discovery. Cleanup stops the Gateway before closing fixtures or revoking its SSH key.
@@ -111,6 +112,7 @@ reconcile_run=$(node --import tsx "$GITHUB_WORKSPACE/scripts/refresh-notificatio
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$reconcile_run" 600000
 jq -es --arg conversation "$conversation" '[.[].records[] | select(.threadId == $conversation)] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-dispatch-before.json"
 jq -e '.assessmentTurn.status == "completed" and .result == null and .stageReceipt == null and .assessment.requestedSkill == "generic-assessment" and .assessmentHistory == null' "$TMPDIR/notification-dispatch-before.json"
+jq -e '(.assessmentTurn.message | contains("contextProbe") | not)' "$TMPDIR/notification-dispatch-before.json"
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-assessment-history.json"
 jq -e --arg run "$run_id" '[.messages[] | select(.role == "assistant" and .__openclaw.runId == $run) | (.content | if type == "string" then . else map(.text // "") | join("") end)] | any(.[]; contains("Proposed change")) and all(.[]; (contains("notification-hidden-initial-fact") | not) and (contains("Documentation-only change:") | not))' "$TMPDIR/notification-assessment-history.json"
 jq -e --arg conversation "$conversation" --arg source "$(jq -er .html_url "$TMPDIR/notification-issue.json")" '.threadId == $conversation and (.context | fromjson).source == $source and .sessionCreation.verified == true' "$TMPDIR/notification-dispatch-before.json"

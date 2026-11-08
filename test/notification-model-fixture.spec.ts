@@ -116,12 +116,12 @@ for (const scenario of [
         { role: 'user', content: prompt },
         ...(prompt.includes(
           'Agent System: assess this admitted issue and retain its complete plan.',
-        )
+        ) || prompt.includes('action feedback, operation context, id ')
           ? [
               {
                 role: 'user' as const,
                 content:
-                  'OpenClaw runtime context:\nAgent System model-only current-turn facts\nEnd OpenClaw runtime context.',
+                  'OpenClaw runtime context:\nAgent System model-only current-turn facts\n{"contextProbe":{"version":1,"runtime":"openclaw","hook":"before_prompt_build"}}\nEnd OpenClaw runtime context.',
               },
             ]
           : []),
@@ -1363,7 +1363,7 @@ for (const scenario of [
           input.messages.push({
             role: 'user',
             content:
-              '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts',
+              '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts\n{"contextProbe":{"version":1,"runtime":"openclaw","hook":"before_prompt_build"}}',
           });
           assert.equal((await action(input, 'context')).id, id);
           append(input, 'context', {
