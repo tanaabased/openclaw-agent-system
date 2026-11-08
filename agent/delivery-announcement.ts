@@ -271,7 +271,7 @@ export function deliveryCompletionInstructions(
     taskUpdateInstructions() +
     ' ' +
     announcementRecoveryInstructions(delivery.announcement, delivery.announcementRecovery) +
-    ' Then call delivery present and reproduce its complete private PR card and announcement outcome. Attempt these steps in this turn; retain any specific failure without reopening implementation or preparing a generic resume. Never recreate the verified PR. ' +
+    ' When an admitted feedback request is on the announcement destination, include its completion answer in the announcement and reuse that confirmed comment as the reply. Do not publish a separate done/PR-ready reply with the same information. Different destinations or distinct unanswered questions still need their own source-bound replies. Then call delivery present and reproduce its complete private PR card and announcement outcome. Attempt these steps in this turn; retain any specific failure without reopening implementation or preparing a generic resume. Never recreate the verified PR. ' +
     (runtime === 'codex'
       ? 'Use deliveryRuntime directly for these independent external effects; no conversation phase changes.'
       : 'Use agent_system_dispatch action delivery with the requested operation.')
@@ -370,6 +370,7 @@ export default async function deliveryAnnouncement(input: {
         {
           runtime: input.runtime,
           status: 'composition-ready' as const,
+          destination: issueUrl,
           digest,
           selection: composition,
           event: {
@@ -381,7 +382,7 @@ export default async function deliveryAnnouncement(input: {
           },
           maximumPublicCharacters: 500,
           instruction:
-            'Invoke the selected reply skill with this public delivery event and applicable voice guidance. Return only a short description of what the PR delivers; the host adds its verified link and draft/ready state. Do not claim tests, approval or merge or expose private context. Submit delivery candidate with this digest and publicText, then inspect its exact preview and call announce with the returned digest through native approval. Missing skills stop composition. If skill content or guidance changes before publication is attempted, call compose again and replace the candidate; an uncertain write must be reconciled without reposting. Keep the full private PR card even if announcing fails.',
+            'Invoke the selected reply skill with this public delivery event and applicable voice guidance. Return only a short description of what the PR delivers; the host adds its verified link and draft/ready state. If this also answers an admitted feedback request on this destination, include its answer and source-author attribution in this one comment; reuse its confirmed text and permalink instead of a separate completion reply. Different destinations or distinct unanswered questions still require their own source-bound replies. Do not claim tests, approval or merge or expose private context. Submit delivery candidate with this digest and publicText, then inspect its exact preview and call announce with the returned digest through native approval. Missing skills stop composition. If skill content or guidance changes before publication is attempted, call compose again and replace the candidate; an uncertain write must be reconciled without reposting. Keep the full private PR card even if announcing fails.',
         },
         { ...input.request, digest },
         input.material,

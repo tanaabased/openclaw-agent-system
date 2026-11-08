@@ -2,6 +2,7 @@ import type { IntakeRecord } from '../channels/github/intake/record-store.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
 import type { ReplyOwner } from './reply-owner.ts';
+import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts';
 
 /** project common reply obligations; native adapters supply only custody and lifecycle evidence. */
 export default function replyOwnerContext(input: {
@@ -20,10 +21,16 @@ export default function replyOwnerContext(input: {
     adopted?: unknown;
     pushedHead?: string;
     pullRequest?: { pullRequestNodeId: string; pullRequestNumber: number };
+    announcement?: DeliveryAnnouncementState;
+    announcementRecovery?: unknown;
   };
 }): ReplyOwner {
   const { record, intake, delivery } = input;
   const observationOnly = Boolean(delivery?.adopted && !delivery.pushedHead);
+  const announcement = delivery?.announcement;
+  const destination = intake
+    ? `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/${record.manualIssue?.pullRequest ? 'pull' : 'issues'}/${intake.issue.number}`
+    : undefined;
   if (!intake && record.threadId === input.caller) throw new Error('reply-managed-context-invalid');
   return {
     id: record.id,
@@ -53,6 +60,20 @@ export default function replyOwnerContext(input: {
       ...record.feedback.events,
     ],
     deliveredPullRequest: observationOnly ? undefined : delivery?.pullRequest,
+    ...(destination &&
+    announcement?.receipt &&
+    announcement.publicText &&
+    announcement.authorId === intake?.receiving.nodeId &&
+    !announcement.code &&
+    !delivery?.announcementRecovery
+      ? {
+          announcement: {
+            destination,
+            url: `${destination}#issuecomment-${announcement.receipt.databaseId}`,
+            publicText: announcement.publicText,
+          },
+        }
+      : {}),
     publisherLogin: intake?.receiving.login,
   };
 }

@@ -861,6 +861,51 @@ describe('agent/feedback-reply', () => {
     return url + '#issuecomment-' + number;
   }
   for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should supply the same-issue announcement without suppressing distinct answers in ${runtime}`, async () => {
+      deps.binding.runtime = runtime;
+      const target = await nativeFeedback();
+      const announcement = {
+        destination: url,
+        url: url + '#issuecomment-8',
+        publicText: '@author Both choices implemented. PR #7 ready for review.',
+      };
+      owners = [
+        {
+          id: deps.feedback!.ownerId,
+          threadId: 'chat',
+          incarnation: 'session',
+          inactive: false,
+          repository: 'owner/repo',
+          number: 3,
+          announcement,
+        },
+      ];
+      const composed = await call('compose', {
+        target,
+        privateText:
+          'The announcement covered completion, but the author also asked about a limitation.',
+      });
+      assert.ok(
+        'verifiedOutcome' in composed &&
+          composed.verifiedOutcome &&
+          'id' in composed &&
+          'digest' in composed,
+      );
+      assert.deepEqual(composed.verifiedOutcome.announcement, announcement);
+      assert.equal(writes, 0);
+      await call('candidate', {
+        id: composed.id,
+        digest: composed.digest,
+        publicText: 'The requested limitation: this has not been verified in a live runtime.',
+      });
+      const done = await call('publish', { id: composed.id, digest: await preview(composed.id!) });
+      assert.equal(done.status, 'published');
+      assert.equal(writes, 1);
+      assert.equal(postedNumber, 3);
+      assert.ok(posted!.body.includes('@author'));
+      assert.equal(owners[0]!.announcement, announcement);
+    });
+  for (const runtime of ['codex', 'openclaw'] as const)
     it(`should reply once to verified choices despite blocked implementation in ${runtime}`, async () => {
       deps.binding.runtime = runtime;
       deps.manifest.debug = true;

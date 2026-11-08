@@ -77,6 +77,14 @@ conversation remains usable independently of the schedule.
 
 - **Direct implementation:** invoke the configured body once with a supplied or retained plan, issue and existing checkout, including an explicitly configured default wrapper. Verify local-only scope cannot publish, explicit PR scope uses retained delivery, and interrupted/completed results resume without duplicate work. Managed entry must preserve its owner, stage, source receipts and partial work; supplying scope on feedback-owned re-entry must not reject the entry or rewrite that owner's scope. Compare both runtimes; invalid ownership never falls back to manual entry. Native instruction-following and desktop display remain unverified by headless checks.
 
+For both runtimes, also verify with a live model that an implementation answer on
+the issue produces one combined PR announcement, not an announcement followed by
+the same completion reply. Reuse its confirmed text and permalink in chat. A later
+unanswered question or feedback on the PR must still receive its own source-bound
+reply. An uncertain announcement must be reconciled, never treated as a confirmed
+answer. These native instruction-following checks are not established by the
+headless tests below.
+
 ## Announcement recovery acceptance
 
 In the native desktop acceptance environment, retain a published PR and its first

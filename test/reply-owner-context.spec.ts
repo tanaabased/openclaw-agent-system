@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+import type { DeliveryAnnouncementState } from '../agent/delivery-announcement-state.ts';
 import replyOwner from '../agent/reply-owner.ts';
 import type { ReplyTarget } from '../agent/reply-target.ts';
 import replyOwnerContext from '../agent/reply-owner-context.ts';
@@ -113,5 +114,48 @@ describe('agent/reply-owner-context', () => {
     assert.equal(reply?.status, 'status-update-context');
     assert.equal(reply && 'ownerId' in reply && reply.ownerId, input.record.id);
     assert.equal(owner.pullRequestNumber, undefined);
+  });
+  it('should expose a confirmed announcement only at its original destination', () => {
+    const input = fixture();
+    const announcement = {
+      authorId: input.intake.receiving.nodeId,
+      publicText: 'Both choices implemented. PR ready.',
+      receipt: { nodeId: 'C_ready', databaseId: 99 },
+    } as DeliveryAnnouncementState;
+    const delivery = { announcement };
+    const owner = replyOwnerContext({ ...input, delivery });
+    const destination = 'https://github.com/owner/repo/issues/3';
+    const target = { owner: 'owner', name: 'repo', number: 3, destination } as ReplyTarget;
+    for (const purpose of [undefined, 'status-update'] as const) {
+      const context = replyOwner([owner], 'chat', 'chat', target, purpose);
+      assert.ok(context && 'verifiedOutcome' in context && context.verifiedOutcome);
+      assert.deepEqual(context.verifiedOutcome.announcement, {
+        destination,
+        url: destination + '#issuecomment-99',
+        publicText: announcement.publicText,
+      });
+    }
+    owner.pullRequestNumber = 7;
+    const other = replyOwner([owner], 'chat', 'chat', {
+      ...target,
+      number: 7,
+      destination: 'https://github.com/owner/repo/pull/7',
+    });
+    assert.ok(other && 'verifiedOutcome' in other && other.verifiedOutcome);
+    assert.equal(other.verifiedOutcome.announcement, undefined);
+    for (const changed of [
+      { ...announcement, receipt: undefined, attempted: true },
+      { ...announcement, code: 'delivery-announcement-unconfirmed' },
+      { ...announcement, authorId: 'another-account' },
+    ])
+      assert.equal(
+        replyOwnerContext({ ...input, delivery: { announcement: changed } }).announcement,
+        undefined,
+      );
+    assert.equal(
+      replyOwnerContext({ ...input, delivery: { announcement, announcementRecovery: {} } })
+        .announcement,
+      undefined,
+    );
   });
 });

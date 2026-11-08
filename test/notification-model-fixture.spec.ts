@@ -1502,7 +1502,7 @@ for (const scenario of [
             [false, 'openclaw-pr-reply-recovery'],
           ] as const)
         : ([[false, undefined]] as const))
-        it(`should keep feedback ${initial ? 'initial implementation' : (driver ?? scenario.id) + ' continuation'} native work and independent reply publication as distinct stages`, async () => {
+        it(`should ${initial ? 'combine initial feedback completion with the issue announcement' : 'keep feedback ' + (driver ?? scenario.id) + ' continuation and source-bound publication distinct'}`, async () => {
           const selectedScenario = driver ? resolveExampleModelScenario(driver) : scenario;
           const collaboration = driver === 'openclaw-pr-collaboration';
           const replyRecovery = driver === 'openclaw-pr-reply-recovery';
@@ -1713,6 +1713,15 @@ for (const scenario of [
               });
               assert.equal((await runAction(input, 'delivery')).operation, 'announce');
               append(input, 'feedback-delivery-announce', { status: 'announced' });
+              assert.equal((await runAction(input, 'delivery')).operation, 'present');
+              append(input, 'feedback-delivery-present', {
+                status: 'presented',
+                presentation: 'Complete PR card and confirmed combined announcement',
+              });
+              assert.deepEqual(await runResponse(input), {
+                content: 'Complete PR card and confirmed combined announcement',
+              });
+              return;
             }
           }
           const composition = await runAction(input, 'reply');

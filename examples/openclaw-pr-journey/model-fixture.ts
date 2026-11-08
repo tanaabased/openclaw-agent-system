@@ -60,6 +60,7 @@ const dispatchStages = [
   'feedback-delivery-compose',
   'feedback-delivery-candidate',
   'feedback-delivery-announce',
+  'feedback-delivery-present',
   'feedback-result',
   'feedback-compose',
   'feedback-candidate',
@@ -680,13 +681,18 @@ function respond(
         if (!openClawAIMockToolResultText(messages, prefix + 'delivery-skill'))
           return call('delivery-skill', 'read', { path: selection.skill.path });
         const candidate = result('feedback-delivery-candidate');
+        const author = (context.source as { author?: { login?: string } } | undefined)?.author
+          ?.login;
         if (!candidate)
           return dispatch('feedback-delivery-candidate', {
             action: 'delivery',
             id,
             operation: 'candidate',
             digest: composed.digest,
-            publicText: publicText(composed, 'Adds the disposable issue cleanup note.'),
+            publicText: publicText(
+              composed,
+              `${author ? '@' + author + ' ' : ''}Implemented the agreed disposable issue cleanup note.`,
+            ),
           });
         if (candidate.status !== 'announcement-prepared' || typeof candidate.digest !== 'string')
           return;
@@ -699,6 +705,15 @@ function respond(
             digest: candidate.digest,
           });
         if (announced.status !== 'announced') return;
+        const presented = result('feedback-delivery-present');
+        if (!presented)
+          return dispatch('feedback-delivery-present', {
+            action: 'delivery',
+            id,
+            operation: 'present',
+          });
+        if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
+        return { content: presented.presentation };
       }
     }
     const privateText = initial

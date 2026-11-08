@@ -7,7 +7,7 @@ publish a reply. Verify that another scan repeats none of the completed actions.
 ## What Belongs Here
 
 - An initial question shown in chat and on GitHub, followed by an approved answer entering Work without rewriting the assessment or requiring another handoff.
-- Pushed changes, issue linkage, configured recipients, one issue announcement, and their durable receipts.
+- Pushed changes, issue linkage, configured recipients, and one issue announcement that also answers the implementation request, without a second completion reply.
 - One uninterrupted PR feedback change preserving the assessment, owner, checkout, PR, and announcement, with exact source attribution and duplicate prevention.
 
 ## What Does Not Belong Here
@@ -23,6 +23,7 @@ publish a reply. Verify that another scan repeats none of the completed actions.
 - Strict AIMock supplies the model text and tool choices. GitHub requests, chat execution, dispatch, managed Git, and saved results still run normally. Only Tanaabot is assigned; EMORI creates the test issues and comments.
 - Each job prepares its own issue, assessment, and linked PR. The coordinator has up to three passes to verify the assessment before handling initial feedback, keeping the same source revision. Refreshes target only this issue; a 24-hour schedule avoids unrelated discovery.
 - Approved GitHub comments retain their exact source, native turn, and publication receipts in the owning issue chat.
+- The strict fixture chooses one combined completion announcement on the issue and a separate reply to later PR feedback. This verifies the publication paths, not a live model's judgment about whether an announcement fully answers a question.
 - Feedback work enters through direct implementation with a scope argument; re-entry must preserve the existing feedback owner and its publication contract.
 - If the closing-issue link is delayed, the shared fixture checks the same delivery through at most three prepare/publish passes. Unknown failures and uncertain writes never create replacement PRs.
 
@@ -162,11 +163,10 @@ node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_r
 jq -es '[.[].records[]] | if length == 1 then .[0] else error("one dispatch record required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json > "$TMPDIR/notification-delivery.json"
 jq -e --slurp --arg issue_id "$(jq -er .node_id "$TMPDIR/notification-issue.json")" '.[1].progression.workOwner == "issue" and .[0].id == .[1].id and .[0].threadId == .[1].threadId and .[0].worktree == .[1].worktree and .[0].result == .[1].result and .[1].progression.stage == "implementation" and .[1].progression.via == "operator" and .[1].feedback.events[0].native == true and .[1].feedback.events[0].work == null and .[1].feedback.events[0].result == null and .[1].work.result.outcome == "done" and .[1].work.delivery.reconciled == true and .[1].work.delivery.binding.sessionId == .[1].sessionCreation.sessionId and .[1].work.delivery.binding.issueId == $issue_id' "$TMPDIR/notification-dispatch-before.json" "$TMPDIR/notification-delivery.json"
 
-# should bind the initial implementation reply to its exact github source
+# should answer the initial implementation request with one combined announcement
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
 number=$(jq -er .number "$TMPDIR/notification-issue.json")
-jq -s '[.[] | (.drafts // [.])[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-reply-drafts.json"
-openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile drafts "$TMPDIR/notification-reply-drafts.json" --slurpfile saved "$TMPDIR/notification-delivery.json" --slurpfile source "$TMPDIR/notification-initial-source.json" '($saved[0].feedback.events[0]) as $event | ($drafts[0][] | select(.feedback.eventId == $event.id)) as $draft | ($event.source | fromjson).nodeId == $source[0].node_id and ([.[] | select(.node_id == $draft.receipt.nodeId and .user.login == "tanaabot" and (.body | contains($draft.publicText)))] | length) == 1'
+openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" | jq -e --slurpfile saved "$TMPDIR/notification-delivery.json" --slurpfile source "$TMPDIR/notification-initial-source.json" '($saved[0].feedback.events[0]) as $event | $saved[0].work.delivery.announcement as $announcement | ($event.source | fromjson).nodeId == $source[0].node_id and ([.[] | select(.id > $source[0].id and .user.login == "tanaabot")] | length == 1 and .[0].node_id == $announcement.receipt.nodeId and (.[0].body | contains($announcement.publicText)) and (.[0].body | contains("@" + $source[0].user.login)))'
 
 # should derive completion from receipts without a separate delivery wakeup
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
@@ -180,8 +180,7 @@ openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/pulls/$pr
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-published-history.json"
 jq -e '.work.delivery.presentation == null' "$TMPDIR/notification-delivery.json"
-jq -s '[.[] | (.drafts // [.])[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-reply-drafts.json"
-jq -e --arg run "$(jq -er .feedback.events[0].turn.runId "$TMPDIR/notification-delivery.json")" --arg text "$(jq -er --slurpfile saved "$TMPDIR/notification-delivery.json" 'map(select(.feedback.eventId == $saved[0].feedback.events[0].id))[0].privateText' "$TMPDIR/notification-reply-drafts.json")" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains($text)))' "$TMPDIR/notification-published-history.json"
+jq -e --arg run "$(jq -er .feedback.events[0].turn.runId "$TMPDIR/notification-delivery.json")" --arg text "$(jq -er .work.delivery.announcement.publicText "$TMPDIR/notification-delivery.json")" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains($text)))' "$TMPDIR/notification-published-history.json"
 
 # should publish one issue announcement with a retained receipt and verified ready state
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"

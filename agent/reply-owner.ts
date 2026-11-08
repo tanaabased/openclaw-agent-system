@@ -28,6 +28,7 @@ export interface ReplyOwner {
   events?: FeedbackSourceEvent[];
   sourceReceipts?: Array<Pick<FeedbackSourceEvent, 'sourceId' | 'nodeId' | 'native'>>;
   deliveredPullRequest?: unknown;
+  announcement?: { destination: string; url: string; publicText: string };
   implementation?: Static<typeof implementationResultSchema>;
   result?: AssessmentResult;
   publisherLogin?: string;
@@ -96,6 +97,7 @@ export default function replyOwner(
       pullRequestNumber: owner.pullRequestNumber,
       verifiedOutcome: {
         delivery: owner.deliveredPullRequest,
+        ...announcementOutcome(owner, target),
       },
     };
   if (target.source) {
@@ -103,9 +105,9 @@ export default function replyOwner(
       (event) => event.nodeId === target.nodeId && event.sourceId === target.source!.nodeId,
     );
     const event = matching?.at(-1);
-    if (!event) return manualContext(owner);
+    if (!event) return manualContext(owner, target);
     if (event.native || (!event.publicationAttempted && !event.receipt))
-      return manualContext(owner);
+      return manualContext(owner, target);
     if (!event.result || event.phase === 'blocked')
       throw new Error('reply-managed-response-required');
     if (event.receipt) {
@@ -155,17 +157,24 @@ export default function replyOwner(
         'Reuse this exact managed feedback route and retained response. The owning route verifies current source and authority. If its previous run ended, use supported owner resume with explicit user direction; never fall back to manual reply or repeat implementation.',
     };
   }
-  return manualContext(owner);
+  return manualContext(owner, target);
 }
 
 /** A new requested comment is independent of earlier summary and delivery effects. */
-function manualContext(owner: ReplyOwner) {
+function manualContext(owner: ReplyOwner, target: ReplyTarget) {
   return {
     status: 'manual-reply-context' as const,
     workflow: 'issue-assignment' as const,
     ownerId: owner.id,
     verifiedOutcome: {
       delivery: owner.deliveredPullRequest,
+      ...announcementOutcome(owner, target),
     },
   };
+}
+
+function announcementOutcome(owner: ReplyOwner, target: ReplyTarget) {
+  return owner.announcement && owner.announcement.destination === target.destination
+    ? { announcement: owner.announcement }
+    : {};
 }
