@@ -180,7 +180,7 @@ openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/pulls/$pr
 conversation=$(jq -er .threadId "$TMPDIR/notification-delivery.json")
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json > "$TMPDIR/notification-published-history.json"
 jq -e '.work.delivery.presentation == null' "$TMPDIR/notification-delivery.json"
-jq -e --arg run "$(jq -er .feedback.events[0].turn.runId "$TMPDIR/notification-delivery.json")" --arg text "$(jq -er .work.delivery.announcement.publicText "$TMPDIR/notification-delivery.json")" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | contains($text)))' "$TMPDIR/notification-published-history.json"
+jq -e --arg run "$(jq -er .feedback.events[0].turn.runId "$TMPDIR/notification-delivery.json")" --arg text "$(jq -er .work.delivery.announcement.publicText "$TMPDIR/notification-delivery.json")" 'any(.messages[]; .role == "assistant" and .__openclaw.runId == $run and .stopReason == "stop" and ((.content | if type == "string" then . else map(.text // "") | join("") end) | (gsub("(?m)^> ?"; "") | contains($text))))' "$TMPDIR/notification-published-history.json"
 
 # should publish one issue announcement with a retained receipt and verified ready state
 cd "$GITHUB_WORKSPACE/examples/openclaw-pr-journey/tanaabot"
