@@ -1,3 +1,4 @@
+import openClawFeedbackInput from './openclaw-feedback-input.ts';
 import feedbackPresentation from './feedback-presentation.ts';
 import observeIssueActivity from './openclaw-session-activity.ts';
 import { feedbackInputContext } from './feedback-input.ts';
@@ -365,31 +366,44 @@ export default async function openClawFeedback(input: {
       caller.sessionKey !== record.threadId ||
       caller.sessionId !== record.sessionCreation?.sessionId ||
       event.turn.cancelled ||
-      event.turn.status === 'completed'
+      (!event.native && event.turn.status === 'completed')
     )
       throw new Error('feedback-owner-caller-required');
-    await describeIssueSession(request, record, input.config, 'feedback');
-    const history = sessionObject(
-      await request('chat.history', {
-        sessionKey: record.threadId,
-        inputRunIds: [event.turn.runId],
-      }),
-    );
-    if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
-      throw new Error('feedback-input-unverified');
-    const inputId = await openClawConsumedInput(
-      request,
-      caller,
-      event.turn,
-      history,
-      event.native === true,
-    );
-    if (caller.runId !== (event.turn.executionRunId ?? event.turn.runId))
+    let inputId: string;
+    if (event.native) {
+      const selected = await openClawFeedbackInput(record, caller, request, input.config, event.id);
+      if (!selected) throw new Error('feedback-input-unverified');
+      inputId = selected.inputId;
+    } else {
+      await describeIssueSession(request, record, input.config, 'feedback');
+      const history = sessionObject(
+        await request('chat.history', {
+          sessionKey: record.threadId,
+          inputRunIds: [event.turn.runId],
+        }),
+      );
+      if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
+        throw new Error('feedback-input-unverified');
+      inputId = await openClawConsumedInput(request, caller, event.turn, history);
+    }
+    if (!event.native && caller.runId !== (event.turn.executionRunId ?? event.turn.runId))
       throw new Error('feedback-owner-caller-required');
     if (!action.material) {
       event.turn.consumedByEventId = inputId;
-      event.turn.status = 'consumed';
+      if (event.turn.status !== 'completed') event.turn.status = 'consumed';
       if (event.native) {
+        // The native caller explicitly selected this delivered source; no transcript inference.
+        if (
+          event.turn.status !== 'completed' &&
+          !event.turn.executionRunId &&
+          caller.runId !== event.turn.runId
+        )
+          event.turn.executionRunId = caller.runId;
+        record.feedback!.context = {
+          runId: caller.runId,
+          eventId: event.id,
+          inputEventId: inputId,
+        };
         await save();
       } else if (action.operation === 'context' || action.operation === 'implementation-context') {
         event.contextInputId = inputId;

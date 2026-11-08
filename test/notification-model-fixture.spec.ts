@@ -1375,14 +1375,27 @@ for (const scenario of [
         assert.deepEqual(await response(current), { content: 'Already current.' });
       });
     if (scenario.id === 'openclaw-issue-journey')
-      it('should recover feedback from the private task request before composing a source-bound reply', async () => {
-        const input = request('> Explain the plan.');
+      it('should select queued feedback by its received source before composing a source-bound reply', async () => {
+        const input = request(`> Explain the plan. [Comment](${source}#issuecomment-42)`);
         const privateContext = openclawTurnContext(
           {
             id,
             threadId: 'issue',
             request: { key: 'issue', agentId: 'receiver' },
             sessionCreation: { verified: true, sessionId: 'incarnation' },
+            feedback: {
+              baseline: {},
+              events: [
+                {
+                  id: 'e'.repeat(64),
+                  native: true,
+                  number: 123,
+                  itemType: 'issue',
+                  source: JSON.stringify({ databaseId: 42 }),
+                  turn: { runId: 'delivery' },
+                },
+              ],
+            },
           } as OpenClawDispatchRecord,
           {
             agentId: 'receiver',
@@ -1390,13 +1403,17 @@ for (const scenario of [
             sessionId: 'incarnation',
             runId: 'queued-feedback',
           },
-          'session-dispatch-history-request-invalid',
         )!;
         input.messages.push({
           role: 'user',
           content: 'OpenClaw runtime context:\n' + privateContext.appendContext,
         });
-        assert.deepEqual(await action(input, 'context'), { action: 'context', id });
+        assert.deepEqual(await action(input, 'feedback'), {
+          action: 'feedback',
+          operation: 'context',
+          id,
+          eventId: 'e'.repeat(64),
+        });
         append(input, 'feedback-context', {
           status: 'verified',
           runtime: 'openclaw',

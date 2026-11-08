@@ -7073,22 +7073,28 @@ describe('agent/openclaw issue dispatch', () => {
             (entry.__openclaw as Record<string, unknown>)?.idempotencyKey ===
             `${event.turn!.runId}:user`,
         )!;
-        (incoming.__openclaw as Record<string, unknown>).runId = who.runId;
+        delete (incoming.__openclaw as Record<string, unknown>).runId;
         const hookContext = await service.promptContext(manifest, root, {
           agentId: manifest.agent.id,
           sessionKey: who.sessionKey,
           sessionId: who.sessionId,
           runId: who.runId,
-          inputId: `${event.turn!.runId}:user`,
         });
         assert.ok(hookContext);
         const facts = JSON.parse(hookContext.appendContext.split('\n')[1]!);
-        assert.deepEqual(facts.feedbackContextRequest, {
-          action: 'feedback',
-          operation: 'context',
-          id,
-          eventId: event.id,
-        });
+        assert.equal(facts.feedbackContextRequest, undefined);
+        assert.deepEqual(
+          facts.availableFeedback.find(
+            (entry: { contextRequest: { eventId: string } }) =>
+              entry.contextRequest.eventId === event.id,
+          ).contextRequest,
+          {
+            action: 'feedback',
+            operation: 'context',
+            id,
+            eventId: event.id,
+          },
+        );
         assert.match(hookContext.appendSystemContext, /configured reply skill/);
         assert.deepEqual(await record(), before);
         const context = await service.run(
@@ -7096,8 +7102,10 @@ describe('agent/openclaw issue dispatch', () => {
           root,
           who,
           {
-            action: 'context',
+            action: 'feedback',
+            operation: 'context',
             id,
+            eventId: event.id,
           },
           false,
         );
@@ -7144,6 +7152,7 @@ describe('agent/openclaw issue dispatch', () => {
         false,
       );
       assert.equal(feedbackContext.status, 'verified');
+      const beforeReply = await record();
       assert.equal('implementation' in feedbackContext, false);
       assert.deepEqual(afterWork.work?.result, result);
       assert.equal(afterWork.feedback!.events[0]!.work, undefined);
@@ -7163,7 +7172,7 @@ describe('agent/openclaw issue dispatch', () => {
         false,
       );
       assert.equal(reply.status, 'composition-ready', JSON.stringify(reply));
-      assert.deepEqual(await record(), afterWork);
+      assert.deepEqual(await record(), beforeReply);
       comments[0]!.body = '@receiver Withdrawn.';
       await assert.rejects(
         service.run(
@@ -7204,7 +7213,7 @@ describe('agent/openclaw issue dispatch', () => {
         eventId: event.id,
       };
       await assert.rejects(
-        service.run(manifest, root, { ...who, runId: 'unbound-native-owner' }, request, true),
+        service.run(manifest, root, { ...who, sessionId: 'another-incarnation' }, request, true),
         /feedback-owner-caller-required/,
       );
       const result = await service.run(
@@ -7615,11 +7624,22 @@ describe('agent/openclaw issue dispatch', () => {
         const facts = JSON.parse(output.appendContext.split('\n')[1]!);
         assert.equal(facts.receipt, id);
         assert.equal(facts.worktree, before.worktree);
-        assert.equal(facts.stage, implementation ? 'implementation' : 'assessment');
-        assert.deepEqual(facts.contextRequest, { action: 'context', id });
-        assert.equal(facts.feedbackLookupError, 'session-dispatch-history-request-invalid');
-        assert.equal(facts.feedbackContextRequest, undefined);
-        assert.match(output.appendSystemContext, /source-dependent work/);
+        assert.equal(
+          facts.stage,
+          source === 'current' ? 'feedback' : implementation ? 'implementation' : 'conversation',
+        );
+        assert.equal(facts.feedbackLookupError, undefined);
+        assert.equal(facts.contextRequest, undefined);
+        const request =
+          source === 'current'
+            ? facts.feedbackContextRequest
+            : facts.availableFeedback[0].contextRequest;
+        assert.deepEqual(request, {
+          action: 'feedback',
+          operation: 'context',
+          id,
+          eventId: event.id,
+        });
         assert.doesNotMatch(JSON.stringify(output), /private-token/);
         assert.deepEqual(await record(), before);
         historyRejected = false;

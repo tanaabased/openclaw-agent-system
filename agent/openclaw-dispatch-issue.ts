@@ -1,7 +1,7 @@
 import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 import recoverFeedbackPublication from './feedback-publication-recovery.ts';
 import feedbackPresentation from './feedback-presentation.ts';
-import openClawFeedbackInput from './openclaw-feedback-input.ts';
+import openClawFeedbackInput, { selectedOpenClawFeedback } from './openclaw-feedback-input.ts';
 import openClawResponseAuthority from './openclaw-response-authority.ts';
 import workflowStatus from './workflow-status.ts';
 import { isCurrentTaskPullRequest } from './task-pull-request.ts';
@@ -380,19 +380,10 @@ export default class OpenClawDispatchIssue {
         throw new Error('feedback-send-unverified');
       if (
         feedbackChild &&
-        event.native &&
-        event.turn &&
-        caller.runId !== (event.turn.executionRunId ?? event.turn.runId)
-      ) {
-        await this.context.dependencies.credential.use(authority, (request) =>
-          openClawFeedbackInput(record, caller, request, this.context.dependencies.config()),
-        );
-      }
-      if (
-        feedbackChild &&
         (caller.sessionKey !== record.threadId ||
           caller.sessionId !== record.sessionCreation?.sessionId ||
-          (caller.runId !== (event.turn?.executionRunId ?? event.turn?.runId) &&
+          (!event.native &&
+            caller.runId !== (event.turn?.executionRunId ?? event.turn?.runId) &&
             !(operator && input.operation === 'context' && input.resume)))
       )
         throw new Error('feedback-owner-caller-required');
@@ -413,25 +404,7 @@ export default class OpenClawDispatchIssue {
         operator,
       );
     }
-    if (
-      !record.feedback?.events.some(
-        (event) => (event.turn?.executionRunId ?? event.turn?.runId) === caller.runId,
-      ) &&
-      record.feedback?.events.some(
-        (event) =>
-          event.native &&
-          event.turn &&
-          !event.turn.executionRunId &&
-          event.turn.status !== 'completed',
-      )
-    ) {
-      await this.context.dependencies.credential.use(authority, (request) =>
-        openClawFeedbackInput(record, caller, request, this.context.dependencies.config()),
-      );
-    }
-    const feedbackSource = record.feedback?.events.find(
-      (event) => (event.turn?.executionRunId ?? event.turn?.runId) === caller.runId,
-    );
+    const feedbackSource = selectedOpenClawFeedback(record, caller.runId);
     if (feedbackSource && (input.action === 'context' || !feedbackSource.native)) {
       if (input.action === 'delivery' && ['bind', 'link'].includes(input.operation))
         throw new Error('delivery-binding-operator-required');
@@ -497,10 +470,8 @@ export default class OpenClawDispatchIssue {
       const signal = authority.signal
         ? AbortSignal.any([authority.signal, transactionSignal])
         : transactionSignal;
-      const feedbackEvent = record.feedback?.events.find(
-        (event) =>
-          event.native && (event.turn?.executionRunId ?? event.turn?.runId) === caller.runId,
-      );
+      const selectedFeedback = selectedOpenClawFeedback(record, caller.runId);
+      const feedbackEvent = selectedFeedback?.native ? selectedFeedback : undefined;
       const assertCurrent = async () => {
         signal.throwIfAborted();
         await authority.assertCurrent?.();

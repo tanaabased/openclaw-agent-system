@@ -148,14 +148,15 @@ feedback_run=$(jq -ers --arg source "$(jq -er .node_id "$TMPDIR/notification-fol
 openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:1}')" --json | jq -e --arg run "$feedback_run" '.sessionInfo.hasActiveRun == true and any(.inputReceipts[]; .runId == $run and .state == "pending" and .queued == true)'
 touch "$TMPDIR/conversation-queue-release"
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" conversation-queue-hold 600000
+feedback_event=$(jq -ers --arg source "$(jq -er .node_id "$TMPDIR/notification-followup-source.json")" '[.[].records[].feedback.events[] | select(.sourceId == $source)] | if length == 1 then .[0].id else error("one follow-up source required") end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"openclaw-dispatch-*.json)
 execution_run=''
 for attempt in $(seq 1 120); do
-  openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-followup-history.json"
-  execution_run=$(jq -r --arg run "$feedback_run" '. as $history | [.inputReceipts[] | select(.runId == $run and .state == "consumed") | .consumedByEventId] as $ids | [$history.messages[] | select(.role == "user" and (.__openclaw.id as $id | $ids | index($id)) != null and .__openclaw.idempotencyKey == ($run + ":user")) | .__openclaw.runId] | if length == 1 then .[0] // "" else "" end' "$TMPDIR/notification-followup-history.json")
+  execution_run=$(jq -rs --arg event "$feedback_event" '[.[] | (.drafts // [.])[] | select(.feedback.eventId == $event) | .turnId] | unique | if length == 1 then .[0] else "" end' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json)
   if test -n "$execution_run"; then break; fi
   sleep 0.5
 done
 if test -z "$execution_run"; then
+  openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" --arg run "$feedback_run" '{sessionKey:$key,inputRunIds:[$run],limit:200,maxChars:100000}')" --json > "$TMPDIR/notification-followup-history.json"
   jq '{sessionId, sessionInfo, inputReceipts, messages: [.messages[] | {role, idempotencyKey, native: .__openclaw}]}' "$TMPDIR/notification-followup-history.json" >&2
   exit 1
 fi
@@ -168,7 +169,7 @@ jq -e --slurp '.[0] as $before | .[1] as $after | $before.id == $after.id and $b
 jq -e 'all(.feedback.events[]; (.turn.message | contains("contextProbe") | not))' "$TMPDIR/notification-followup.json"
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number/comments" > "$TMPDIR/notification-followup-replies.json"
 jq -s '[.[] | (.drafts // [.])[]]' "$XDG_CONFIG_HOME/tanaab/agent-system/agent-system-dispatch-v2/"github-reply-*.json > "$TMPDIR/notification-reply-drafts.json"
-node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const record=read("followup"), event=record.feedback.events[1], source=read("followup-source"), replies=read("followup-replies"); assert.equal(event.sourceId,source.node_id); const draft=read("reply-drafts").find(d=>d.feedback?.eventId===event.id); assert.ok(draft); const reply=replies.filter(c=>c.node_id===draft.receipt.nodeId); assert.equal(event.phase,"delivered"); assert.equal(event.turn.status,"completed"); assert.equal(reply.length,1); assert.ok(reply[0].body.includes(draft.publicText)); const history=read("followup-history"); const text=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId===(event.turn.executionRunId??event.turn.runId) && m.stopReason==="stop").map(m=>typeof m.content==="string"?m.content:m.content.map(c=>c.text??"").join("")).join("\n"); assert.ok(text.includes(draft.privateText)); assert.ok(text.includes(draft.publicText));'
+node --input-type=module -e 'import assert from "node:assert/strict"; import {readFileSync} from "node:fs"; const read=n=>JSON.parse(readFileSync(process.env.TMPDIR+"/notification-"+n+".json","utf8")); const record=read("followup"), event=record.feedback.events[1], source=read("followup-source"), replies=read("followup-replies"); assert.equal(event.sourceId,source.node_id); const draft=read("reply-drafts").find(d=>d.feedback?.eventId===event.id); assert.ok(draft); const reply=replies.filter(c=>c.node_id===draft.receipt.nodeId); assert.equal(event.phase,"delivered"); assert.equal(event.turn.status,"completed"); assert.equal(reply.length,1); assert.ok(reply[0].body.includes(draft.publicText)); const history=read("followup-history"); const text=history.messages.filter(m=>m.role==="assistant" && m.__openclaw?.runId===draft.turnId && m.stopReason==="stop").map(m=>typeof m.content==="string"?m.content:m.content.map(c=>c.text??"").join("")).join("\n"); assert.ok(text.includes(draft.privateText)); assert.ok(text.includes(draft.publicText));'
 
 # should answer the equivalent direct question without implementation or another github reply
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-conversation/tanaabot"

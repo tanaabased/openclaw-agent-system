@@ -253,80 +253,85 @@ describe('agent/openclaw-feedback', () => {
     assert.ok(!event.turn!.message.includes(record.id));
     assert.ok(!event.turn!.message.includes(event.id));
   });
-  it('should accept an exact queued comment from its actual native execution', async () => {
+  it('should answer a delivered comment from a later run without execution metadata', async () => {
     event.native = true;
     await advanceFeedbackTurn(input);
     const deliveryRunId = event.turn!.runId;
-    (messages[0]!.__openclaw as Record<string, unknown>).runId = 'queued-execution';
-    messages.unshift({ role: 'assistant', content: 'unrelated historical context' });
+    // OpenClaw 2026.10.6 CI: consumed user has a delivery key, no runId, and no pending receipt.
+    assert.equal((messages[0]!.__openclaw as Record<string, unknown>).runId, undefined);
     input.caller.runId = 'queued-execution';
-    const discovered = await openClawFeedbackInput(
-      record,
-      input.caller,
-      input.request,
-      input.config,
+    assert.equal(
+      await openClawFeedbackInput(record, input.caller, input.request, input.config),
+      undefined,
     );
-    assert.equal(discovered?.event.id, event.id);
     assert.equal((await action('context')).status, 'verified');
     const feedback = await openClawFeedbackInput(record, input.caller, input.request, input.config);
     assert.equal(feedback?.event.id, event.id);
     assert.equal(feedback?.inputId, 'input');
     assert.equal(event.turn!.runId, deliveryRunId);
-    input.caller.runId = 'unrelated-execution';
-    await assert.rejects(action('context'), /feedback-owner-caller-required/);
+    assert.equal(event.turn!.executionRunId, 'queued-execution');
+    assert.deepEqual(record.feedback!.context, {
+      runId: 'queued-execution',
+      eventId: event.id,
+      inputEventId: 'input',
+    });
+    input.caller.runId = 'later-run';
+    assert.equal(
+      await openClawFeedbackInput(record, input.caller, input.request, input.config),
+      undefined,
+    );
+    assert.equal((await action('context')).status, 'verified');
     assert.equal(sends, 1);
     assert.equal(writes, 0);
   });
-  it('should refuse ambiguous queued sources even across native history pages', async () => {
+  it('should select an exact delivered source when several comments are available', async () => {
     event.native = true;
     await advanceFeedbackTurn(input);
     const second = structuredClone(event);
     second.id = 'd'.repeat(64);
     second.turn = { runId: 'second-delivery', message: 'second comment', status: 'accepted' };
     record.feedback!.events.push(second);
-    (messages[0]!.__openclaw as Record<string, unknown>).runId = 'shared-execution';
-    input.caller.runId = 'shared-execution';
-    const request = input.request;
-    input.request = async (method, params) =>
-      method === 'chat.history'
-        ? {
-            sessionId: 'session',
-            messages: params.cursor
-              ? [
-                  {
-                    role: 'user',
-                    content: 'second comment',
-                    __openclaw: {
-                      id: 'second-input',
-                      runId: 'shared-execution',
-                      idempotencyKey: 'second-delivery:user',
-                    },
-                  },
-                ]
-              : messages,
-            ...(params.cursor ? {} : { olderCursor: 'older-inputs' }),
-          }
-        : request(method, params);
-    await assert.rejects(
-      openClawFeedbackInput(record, input.caller, input.request, input.config),
-      /feedback-native-input-ambiguous/,
+    messages.push({
+      role: 'user',
+      content: 'second comment',
+      __openclaw: {
+        id: 'second-input',
+        idempotencyKey: 'second-delivery:user',
+      },
+    });
+    input.caller.runId = 'queued-execution';
+    assert.equal(
+      await openClawFeedbackInput(record, input.caller, input.request, input.config),
+      undefined,
     );
-    assert.equal(sends, 1);
-    assert.equal(writes, 0);
+    const selected = await openClawFeedbackInput(
+      record,
+      input.caller,
+      input.request,
+      input.config,
+      second.id,
+    );
+    assert.equal(selected?.event.id, second.id);
+    assert.equal(selected?.inputId, 'second-input');
+    assert.equal(record.feedback!.context, undefined);
+    await action('context');
+    assert.equal(
+      (await openClawFeedbackInput(record, input.caller, input.request, input.config))?.event.id,
+      event.id,
+    );
   });
-  for (const change of ['key', 'body', 'session', 'cancelled', 'receipt', 'legacy'])
+  for (const change of ['key', 'body', 'session', 'cancelled', 'receipt', 'pending', 'legacy'])
     it(`should refuse queued feedback with conflicting ${change}`, async () => {
       event.native = true;
       await advanceFeedbackTurn(input);
       const meta = messages[0]!.__openclaw as Record<string, unknown>;
-      meta.runId = 'queued-execution';
       input.caller.runId = 'queued-execution';
       if (change === 'legacy') delete event.native;
       if (change === 'key') meta.idempotencyKey = 'different:user';
       if (change === 'body') messages[0]!.content = 'a different comment';
       if (change === 'session') input.caller.sessionId = 'replacement-session';
       if (change === 'cancelled') event.turn!.cancelled = true;
-      if (change === 'receipt') {
+      if (change === 'receipt' || change === 'pending') {
         const request = input.request;
         input.request = async (method, params) =>
           method === 'chat.history'
@@ -334,14 +339,18 @@ describe('agent/openclaw-feedback', () => {
                 sessionId: 'session',
                 messages,
                 inputReceipts: [
-                  { runId: event.turn!.runId, state: 'consumed', consumedByEventId: 'other-input' },
+                  {
+                    runId: event.turn!.runId,
+                    state: change === 'pending' ? 'pending' : 'consumed',
+                    consumedByEventId: 'other-input',
+                  },
                 ],
               }
             : request(method, params);
       }
       await assert.rejects(
         action('context'),
-        /feedback-owner-caller-required|dispatch-turn-input-mismatch/,
+        /feedback-owner-caller-required|dispatch-turn-input-mismatch|reply-managed-context-invalid|dispatch-turn-delivery-unverified/,
       );
       assert.equal(sends, 1);
       assert.equal(writes, 0);

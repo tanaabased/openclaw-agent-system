@@ -45,6 +45,8 @@ export default async function openClawReply(input: {
   const replyStore = new ReplyStore(deps.root, binding);
   return deps.credential.use(authority, async (request) => {
     let feedback: ReplyDraft['feedback'];
+    const selectedDraft =
+      action.id && (await replyStore.read()).find((entry) => entry.id === action.id);
     const nativeInput = async () => {
       const records = (await journal.read()).records.filter(
         (record) => record.threadId === caller.sessionKey,
@@ -52,7 +54,14 @@ export default async function openClawReply(input: {
       if (records.length > 1) throw new Error('reply-managed-owner-ambiguous');
       const record = records[0];
       const matched =
-        record && (await openClawFeedbackInput(record, caller, request, deps.config()));
+        record &&
+        (await openClawFeedbackInput(
+          record,
+          caller,
+          request,
+          deps.config(),
+          selectedDraft ? selectedDraft.feedback?.eventId : undefined,
+        ));
       if (matched) {
         feedback = {
           ownerId: record.id,

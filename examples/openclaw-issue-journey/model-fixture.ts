@@ -433,17 +433,20 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     return nativePlan(fresh, true);
   }
   const facts = currentFacts(messages, false);
-  const recoveredFeedback = facts.feedbackLookupError ? result('feedback-context') : undefined;
-  if (facts.feedbackLookupError) {
-    assert.ok(
-      facts.contextRequest,
-      'failed feedback lookup must retain its exact recovery request',
-    );
-    assert.equal(facts.feedbackContextRequest, undefined);
-    if (!recoveredFeedback) return dispatch('feedback-context', facts.contextRequest);
-    if (recoveredFeedback.status !== 'verified' || !recoveredFeedback.eventId) return;
-  }
-  const privateFeedback = recoveredFeedback ?? facts.feedbackContextRequest;
+  const available = facts.availableFeedback as
+    | Array<{
+        source: { number: number; itemType: string; commentId: number; kind: string };
+        contextRequest: { id: string; eventId: string };
+      }>
+    | undefined;
+  const received = available?.filter(({ source }) =>
+    prompt.includes(
+      `/${source.itemType === 'issue' ? 'issues' : 'pull'}/${source.number}#${source.kind}${source.commentId}`,
+    ),
+  );
+  const privateFeedback =
+    facts.feedbackContextRequest ??
+    (received?.length === 1 ? received[0]!.contextRequest : undefined);
   const feedback = privateFeedback
     ? ['', privateFeedback.id, privateFeedback.eventId]
     : /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);

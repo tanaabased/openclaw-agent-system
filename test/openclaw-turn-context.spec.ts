@@ -51,7 +51,9 @@ describe('agent/openclaw-turn-context', () => {
           {
             id: 'comment',
             native: true,
-            source: 'PRIVATE-COMMENT',
+            source: JSON.stringify({ databaseId: 42, body: 'PRIVATE-COMMENT' }),
+            number: 3,
+            itemType: 'issue',
             turn: { runId: 'feedback-run' },
           },
         ],
@@ -85,20 +87,48 @@ describe('agent/openclaw-turn-context', () => {
       /feedbackContextRequest/,
     );
   });
-  it('should omit a source lookup for ambiguous or cancelled feedback without blocking the turn', () => {
-    for (const events of [
-      [{ id: 'a', native: true, turn: { runId: 'feedback', cancelled: true } }],
-      ['a', 'b'].map((id) => ({ id, native: true, turn: { runId: 'feedback' } })),
-    ]) {
-      const output = openclawTurnContext(
+  it('should expose explicit source choices without inventing a current-run mapping', () => {
+    const events = ['a', 'b'].map((id, index) => ({
+      id,
+      native: true,
+      number: 3,
+      itemType: 'issue',
+      source: JSON.stringify({ databaseId: index + 42, body: 'PRIVATE-COMMENT' }),
+      turn: { runId: id, status: 'accepted' },
+    }));
+    const output = openclawTurnContext(
+      { ...record, feedback: { baseline: {}, events } } as OpenClawDispatchRecord,
+      { ...binding, runId: 'queued-execution' },
+    )!;
+    const facts = JSON.parse(output.appendContext.split('\n')[1]!);
+    assert.equal(facts.feedbackContextRequest, undefined);
+    assert.equal(facts.contextRequest, undefined);
+    assert.equal(facts.stage, 'conversation');
+    assert.deepEqual(
+      facts.availableFeedback.map(
+        (entry: { source: { commentId: number } }) => entry.source.commentId,
+      ),
+      [42, 43],
+    );
+    assert.doesNotMatch(output.appendContext, /PRIVATE-COMMENT/);
+    const initial = JSON.parse(
+      openclawTurnContext(
         { ...record, feedback: { baseline: {}, events } } as OpenClawDispatchRecord,
-        { ...binding, runId: 'feedback' },
-      )!;
-      assert.doesNotMatch(output.appendContext, /feedbackContextRequest/);
-      assert.match(output.appendContext, /contextProbe/);
-      assert.match(output.appendSystemContext, /not uniquely verified/);
-      assert.doesNotMatch(output.appendSystemContext, /eventId/);
-    }
+        binding,
+      )!.appendContext.split('\n')[1]!,
+    );
+    assert.equal(initial.stage, 'assessment');
+    assert.deepEqual(initial.contextRequest, { action: 'context', id: record.id });
+    for (const event of events) Object.assign(event.turn, { cancelled: true });
+    assert.equal(
+      JSON.parse(
+        openclawTurnContext(
+          { ...record, feedback: { baseline: {}, events } } as OpenClawDispatchRecord,
+          { ...binding, runId: 'queued-execution' },
+        )!.appendContext.split('\n')[1]!,
+      ).availableFeedback,
+      undefined,
+    );
   });
   it('should leave legacy feedback on its existing explicit context path', () => {
     const legacy = {

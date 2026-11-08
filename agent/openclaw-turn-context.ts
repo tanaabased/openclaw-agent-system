@@ -1,3 +1,8 @@
+import { selectedOpenClawFeedback } from './openclaw-feedback-input.ts';
+import {
+  isReviewFeedback,
+  type GitHubCanonicalFeedback,
+} from '../channels/github/provider/review-feedback.ts';
 import taskPullRequest from './task-pull-request.ts';
 import nativeTaskInstructions from './native-task-instructions.ts';
 import { nativeAssessmentInstructions } from './assessment-instructions.ts';
@@ -16,7 +21,6 @@ export default function openclawTurnContext(
     runId?: string;
     inputId?: string;
   },
-  feedbackLookupError?: string,
 ) {
   if (
     !binding.runId ||
@@ -31,33 +35,37 @@ export default function openclawTurnContext(
     record.reset
   )
     return;
-  const matchingFeedback = record.feedback?.events.filter(
-    (event) => event.turn?.runId === binding.runId || event.turn?.executionRunId === binding.runId,
-  );
-  if (matchingFeedback?.some((event) => !event.native)) return;
-  const feedback = feedbackLookupError ? undefined : matchingFeedback;
+  const selected = selectedOpenClawFeedback(record, binding.runId);
+  if (selected && !selected.native) return;
   const implementation = Boolean(retainedIssueProgression(record));
-  const candidate = feedback?.length === 1 ? feedback[0] : undefined;
-  const source =
-    candidate &&
-    !candidate.turn!.cancelled &&
-    (candidate.turn!.executionRunId ?? candidate.turn!.runId) === binding.runId
-      ? candidate
-      : undefined;
+  const source = selected && !selected.turn?.cancelled ? selected : undefined;
+  const available = (record.feedback?.events ?? []).filter(
+    (event) => event.native && event.turn && !event.turn.cancelled,
+  );
+  const assessment =
+    !source &&
+    !implementation &&
+    (!available.length ||
+      record.assessmentTurn?.runId === binding.runId ||
+      record.firstTurn?.runId === binding.runId);
+  const contextRequest = (eventId: string) => ({
+    action: 'feedback',
+    operation: 'context',
+    id: record.id,
+    eventId,
+  });
   return {
     appendSystemContext: [
       nativeTaskInstructions('openclaw'),
       'Preserve the human-facing quoted cards. Keep machine context and instructions out of authored messages.',
-      feedbackLookupError
-        ? 'The native feedback source lookup is unavailable. Use contextRequest with agent_system_dispatch before source-dependent work; its existing native receipt checks must verify the comment mapping. Do not infer a feedback source, restart assessment, or resend feedback to recover it.'
-        : source
-          ? feedbackTurnMessage(record.id, source.id, true)
-          : feedback?.length
-            ? 'The native feedback source is not uniquely verified. Inspect its existing receipt before replying; do not infer a comment mapping from the chat identity or comment prose.'
-            : !implementation
-              ? 'Before investigation, use contextRequest from the current Agent System facts with agent_system_dispatch. Continue only after verified OpenClaw context; follow its selected assessment skill and guidance.\n\n' +
-                nativeAssessmentInstructions()
-              : '',
+      source
+        ? feedbackTurnMessage(record.id, source.id, true)
+        : available.length && !assessment
+          ? 'When answering a received GitHub comment, select its exact source from availableFeedback and use its contextRequest with agent_system_dispatch. These are lookup hints, not claims that any source belongs to this execution. Do not answer other listed comments merely because they are available. Follow the verified context and configured reply skill. Ordinary direct conversation continues under the existing task permissions.'
+          : !implementation
+            ? 'Before investigation, use contextRequest from the current Agent System facts with agent_system_dispatch. Continue only after verified OpenClaw context; follow its selected assessment skill and guidance.\n\n' +
+              nativeAssessmentInstructions()
+            : '',
     ]
       .filter(Boolean)
       .join('\n\n'),
@@ -69,19 +77,35 @@ export default function openclawTurnContext(
         workspace: binding.workspace,
         currentSession: { sessionKey: binding.sessionKey, sessionId: binding.sessionId },
         receipt: record.id,
-        contextRequest:
-          feedbackLookupError || (!feedback?.length && !implementation)
-            ? { action: 'context', id: record.id }
-            : undefined,
-        feedbackLookupError,
+        contextRequest: assessment ? { action: 'context', id: record.id } : undefined,
         currentTurn: { runId: binding.runId, inputId: binding.inputId },
-        stage: feedback?.length ? 'feedback' : implementation ? 'implementation' : 'assessment',
-        feedbackContextRequest: source && {
-          action: 'feedback',
-          operation: 'context',
-          id: record.id,
-          eventId: source.id,
-        },
+        stage: source
+          ? 'feedback'
+          : implementation
+            ? 'implementation'
+            : available.length && !assessment
+              ? 'conversation'
+              : 'assessment',
+        feedbackContextRequest: source && contextRequest(source.id),
+        availableFeedback:
+          !source && available.length
+            ? available.map((event) => {
+                const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
+                return {
+                  source: {
+                    number: event.number,
+                    itemType: event.itemType,
+                    commentId: source.databaseId,
+                    kind: isReviewFeedback(source)
+                      ? source.feedback.receipt.kind === 'review-comment'
+                        ? 'discussion_r'
+                        : 'pullrequestreview-'
+                      : 'issuecomment-',
+                  },
+                  contextRequest: contextRequest(event.id),
+                };
+              })
+            : undefined,
         worktree: record.worktree,
         pullRequest: taskPullRequest(record),
         branch: record.work?.delivery?.binding?.branch,
