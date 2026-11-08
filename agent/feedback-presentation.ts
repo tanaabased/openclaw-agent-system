@@ -23,3 +23,6 @@ export default function feedbackPresentation(
         },
       });
 }
+
+export const feedbackResponseInstructions =
+  'The incoming comment or review card is already visible as native input. Do not replay it in your response. Show the returned response presentation once, preserving the exact public reply, attribution links, distinct private context, publication outcome and configured debug cards. Do not repeat the same answer outside its reply card. ';

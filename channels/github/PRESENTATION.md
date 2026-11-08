@@ -16,8 +16,8 @@ their appearance and composition. The
 - Give private lifecycle results a report-like structure with stable sections
   for the complete assessment, plan, question, or result.
 - Keep GitHub-facing responses conversational; they are comments rather than
-  reports. Codex feedback presents the complete private response and a separate
-  public quote.
+  reports. Feedback presents one exact public reply card and any distinct private
+  context, without replaying the incoming message or duplicating the answer.
 - Use GitHub-flavored Markdown, including headings, lists, tables, blockquotes,
   code formatting, and links, only when it materially improves clarity.
 
@@ -415,21 +415,18 @@ detail does not wake quiet intake or create repeated notifications.
 
 ## Private and Public Composition
 
-Keep the complete incoming comment or review card at the top of the final response;
-commentary alone is insufficient because clients may collapse it. Preserve the full
-private response outside the public quote. Keep debug instruction cards private and
-after the reply/footer or publication obstacle.
+The native incoming message already displays the complete comment or review card,
+including its attribution and source link. Do not replay that card in the response.
+Show the exact outgoing reply in its own linked card. If the private and public
+answers match, including a standalone commenter mention added during publication,
+show the answer only in the reply card. Compare line endings and outer whitespace
+without rewriting the displayed text. Keep distinct private information outside
+the quote; do not infer equivalence from similar wording or discard caveats.
+Private-only answers remain visible without a public reply card. Drafts stay
+unlinked and uncertain or failed publication keeps its notice. Debug instruction
+cards remain private, after the reply or publication obstacle.
 
 ```markdown
-> <complete incoming comment>
->
-> &nbsp;\
-> _[Comment ↗](https://github.com/owner/repo/issues/123#issuecomment-456) from [@author](https://github.com/author)_
-
-## Response
-
-<complete private response>
-
 > <complete GitHub-facing response>
 >
 > &nbsp;\

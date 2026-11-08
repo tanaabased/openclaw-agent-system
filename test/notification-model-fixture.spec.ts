@@ -1749,9 +1749,7 @@ for (const scenario of [
             presentation: 'Complete private and public presentation',
           });
           assert.deepEqual(await runResponse(input), {
-            content:
-              (replyRecovery ? '' : composition.privateText + '\n\n') +
-              'Complete private and public presentation',
+            content: 'Complete private and public presentation',
           });
         });
   });

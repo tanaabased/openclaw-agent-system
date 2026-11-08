@@ -21,10 +21,9 @@ export function feedbackReplyPresentation(
   });
 }
 
-/** display the retained private answer separately from the exact public reply and outcome. */
+/** render one reply, retaining distinct private context and publication outcomes. */
 export default function feedbackResponse(
   input: WorkflowInstructionsPresentation & {
-    sourcePresentation?: string;
     selection?: WorkflowInstructionsSelection;
     workspace?: string;
     privateText: string;
@@ -32,11 +31,19 @@ export default function feedbackResponse(
     publication?: { url: string } | { withheld: string };
   },
 ): string {
-  const sections = [
-    ...(input.sourcePresentation ? [input.sourcePresentation] : []),
-    '## Response',
-    input.privateText,
-  ];
+  const comparable = (text: string) => text.replace(/\r\n?/gu, '\n').trim();
+  const publicText = input.publicReply ? comparable(input.publicReply.text) : undefined;
+  const privateText = comparable(input.privateText);
+  // publication may prepend a standalone verified commenter mention; keep it in the quote.
+  const repeated =
+    publicText !== undefined &&
+    (privateText === publicText ||
+      privateText === publicText.replace(/^@[A-Za-z0-9][A-Za-z0-9-]*\n\n/u, ''));
+  const sections: string[] = [];
+  if (!repeated) {
+    if (input.publicReply) sections.push('## Private context');
+    sections.push(input.privateText);
+  }
   if (input.publicReply)
     sections.push(
       feedbackReplyPresentation(

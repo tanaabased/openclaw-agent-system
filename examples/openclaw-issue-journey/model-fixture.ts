@@ -513,7 +513,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         digest: preview.digest,
       });
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
-    return { content: privateText + '\n\n' + published.presentation };
+    return { content: published.presentation };
   }
   const revision = /(Clarify|Answer) ordinary assessment for managed issue ([a-f0-9]{64})/u.exec(
     prompt,

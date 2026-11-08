@@ -25,7 +25,9 @@ describe('channels/github/presentation/workflow-instructions', () => {
       publicReply: { author: 'posting-agent', text: body },
     });
     assert.ok(
-      response.startsWith('## Response\n\nFirst private paragraph.\n\nSecond private paragraph.'),
+      response.startsWith(
+        '## Private context\n\nFirst private paragraph.\n\nSecond private paragraph.',
+      ),
     );
     assert.ok(response.endsWith(card));
   });
