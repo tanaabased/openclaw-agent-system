@@ -92,7 +92,9 @@ export default function renderAssessmentResult(
                 label: 'Next',
                 value:
                   assessmentDecisionMode(result.decision) === 'plan'
-                    ? 'Await your direction before implementation.'
+                    ? result.outcome === 'clarification-needed'
+                      ? 'Waiting for the missing answers before implementation.'
+                      : 'Await your direction before implementation.'
                     : 'Continue automatically once runtime checks pass.',
               },
               ...result.decision.reasons.map((reason) => ({

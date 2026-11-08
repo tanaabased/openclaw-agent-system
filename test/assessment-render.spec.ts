@@ -35,6 +35,41 @@ const result: AssessmentSubmission = {
 
 describe('agent/assessment-render', () => {
   for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should format ${runtime} input without boilerplate while preserving substantive requirements`, () => {
+      const unversioned: Record<string, unknown> = { ...result };
+      delete unversioned.version;
+      const request = { ...assessmentPresentationRequest(target), result: unversioned };
+      const formatted = renderNativeAssessment(request, runtime);
+      assert.equal(formatted.status, 'formatted');
+      assert.ok(!('version' in request.result));
+      assert.throws(() =>
+        renderNativeAssessment({ ...request, result: { ...unversioned, version: 2 } }, runtime),
+      );
+      const withoutPlan = { ...unversioned };
+      delete withoutPlan.plan;
+      assert.throws(
+        () => renderNativeAssessment({ ...request, result: withoutPlan }, runtime),
+        /request.result.plan/,
+      );
+      const question = {
+        ...withoutPlan,
+        outcome: 'clarification-needed',
+        questions: ['Which subject?'],
+        decision: { mode: 'plan', reasons: ['Subject missing.'] },
+      };
+      const asked = renderNativeAssessment({ ...request, result: question }, runtime);
+      assert.ok('presentation' in asked);
+      assert.match(String(asked.presentation), /Which subject/);
+      assert.match(String(asked.presentation), /Waiting for the missing answers/);
+      assert.doesNotMatch(String(asked.presentation), /Await your direction/);
+      assert.throws(
+        () =>
+          renderNativeAssessment({ ...request, result: { ...question, questions: [] } }, runtime),
+        /questions/,
+      );
+    });
+
+  for (const runtime of ['codex', 'openclaw'] as const)
     for (const outcome of ['plan-ready', 'clarification-needed'] as const)
       it(`should recover a missing ${outcome} review in ${runtime} without saving a plan or gating work`, async () => {
         const record = {
