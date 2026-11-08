@@ -1,3 +1,4 @@
+import resolveGitProtocol from '../tools/git/protocol.ts';
 import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
@@ -526,6 +527,7 @@ export async function prepareIssueProject(
           repositoryId,
           repository: repository(intake),
           cloneUrl: repo.cloneUrl,
+          protocol: resolveGitProtocol(current.manifest),
           defaultBranch: repo.defaultBranch,
           previous: record.repositoryPreparation,
         },

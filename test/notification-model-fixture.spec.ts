@@ -112,7 +112,11 @@ for (const scenario of [
     return {
       model: 'gpt-5.5',
       messages: [
-        { role: 'system', content: 'Name: Notification Tanaabot' },
+        {
+          role: 'system',
+          content:
+            'Name: Notification Tanaabot\nAgent System Git context for GitHub repositories (keep private):\n{"git":{"protocol":"ssh"}}',
+        },
         { role: 'user', content: prompt },
         ...(prompt.includes(
           'Agent System: assess this admitted issue and retain its complete plan.',

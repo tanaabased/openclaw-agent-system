@@ -1,3 +1,4 @@
+import resolveGitProtocol from '../tools/git/protocol.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
 import { codexDispatchNative, type DispatchNativeThread } from './codex-dispatch-native.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
@@ -111,10 +112,11 @@ export default async function readCodexTurnTask(pluginData: string, turn: Turn) 
     return;
   const connection = await connectCodexThreads(current.workspace, current.codexHome);
   try {
-    return await selectCodexTurnTask(records, turn, {
+    const selected = await selectCodexTurnTask(records, turn, {
       find: codexDispatchNative(connection.request).find,
       receipt: codexContinuationNative(connection.request),
     });
+    return selected && { ...selected, git: { protocol: resolveGitProtocol(current.manifest) } };
   } finally {
     await connection.close();
   }

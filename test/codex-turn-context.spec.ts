@@ -69,6 +69,7 @@ describe('agent/codex-turn-context', () => {
           feedbackContextRequest: { action: 'context', id: 'owner', eventId: 'source' },
           worktree: '/task',
           nativeCwd: '/task',
+          git: { protocol: 'ssh' },
           pullRequest: undefined,
           branch: undefined,
         };
@@ -102,6 +103,7 @@ describe('agent/codex-turn-context', () => {
       contextProbe: { version: 1, runtime: 'codex', hook: 'UserPromptSubmit' },
       agentId: 'receiver',
       workspace: '/workspace',
+      git: { protocol: 'ssh' },
       currentTurn: { threadId: 'native-chat', turnId: 'native-turn' },
     });
     assert.doesNotMatch(output!, /PRIVATE|SECRET|forged-agent|untrusted-project|must-not-read/);
@@ -124,6 +126,21 @@ describe('agent/codex-turn-context', () => {
     assert.match(later!, /later-turn/);
     assert.doesNotMatch(later!, /native-turn/);
     assert.deepEqual(bound, snapshot);
+    if (
+      snapshot.status !== 'bound' ||
+      snapshot.preview.status !== 'ready' ||
+      snapshot.preview.manifest.status !== 'loaded'
+    )
+      throw new Error('fixture');
+    snapshot.preview.manifest.manifest.github!.config = { gitProtocol: 'https' };
+    const changed = await codexTurnContext(
+      '/data',
+      { ...hook, turn_id: 'changed' },
+      async () => snapshot,
+      async () => undefined,
+    );
+    assert.equal(JSON.parse(initial!.split('\n')[1]!).git.protocol, 'ssh');
+    assert.equal(JSON.parse(changed!.split('\n')[1]!).git.protocol, 'https');
   });
   it('should ignore incomplete or unrelated hook inputs before reading a binding', async () => {
     for (const input of [

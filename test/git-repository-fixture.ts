@@ -44,7 +44,14 @@ export class RepositoryGit implements GitWorktreeGitRunner {
     } catch {
       return { exitCode: 1, stderr: 'not a repository', stdout: '' };
     }
-    if (argv[0] === 'remote') return ok(argv.length === 1 ? 'origin' : repo.origin);
+    if (argv[0] === 'remote') {
+      if (argv[1] === 'set-url') {
+        repo.origin = argv[3]!;
+        await writeFile(join(cwd, '.fake-git.json'), JSON.stringify(repo));
+        return ok();
+      }
+      return ok(argv.length === 1 ? 'origin' : repo.origin);
+    }
     if (argv[0] === 'rev-parse') {
       if (argv.includes('--is-bare-repository')) return ok(String(repo.bare));
       if (argv.includes('--show-toplevel')) return ok(cwd);

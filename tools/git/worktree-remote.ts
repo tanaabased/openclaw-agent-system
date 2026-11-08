@@ -1,3 +1,5 @@
+import type { GitProtocol } from './protocol.ts';
+
 const scpRemotePattern = /^([A-Za-z0-9._-]+)@([A-Za-z0-9.-]+):([^\s]+)$/u;
 
 function hasControlOrShellSyntax(value: string): boolean {
@@ -91,6 +93,25 @@ export function preferGitHubSshWorktreeRemote(input: string): string {
   } catch {
     return normalized;
   }
+}
+
+/** Apply the selected transport to canonical GitHub remotes; preserve other hosts and aliases. */
+export function githubWorktreeRemote(input: string, protocol: GitProtocol): string {
+  const normalized = normalizeGitWorktreeRemote(input);
+  const scp = scpRemotePattern.exec(normalized);
+  const remote = scp ? new URL(`ssh://${scp[1]}@${scp[2]}/${scp[3]}`) : new URL(normalized);
+  const match = /^\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/u.exec(remote.pathname);
+  if (
+    remote.hostname !== 'github.com' ||
+    remote.port ||
+    !['https:', 'ssh:'].includes(remote.protocol) ||
+    (remote.username && remote.username !== 'git') ||
+    !match
+  )
+    return normalized;
+  gitRemoteIdentity(normalized);
+  const repository = `${match[1]}/${match[2]}.git`;
+  return protocol === 'ssh' ? `git@github.com:${repository}` : `https://github.com/${repository}`;
 }
 
 /** retain the provider's repository spelling for the configured checkout destination. */

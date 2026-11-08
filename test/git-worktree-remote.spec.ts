@@ -2,11 +2,28 @@ import assert from 'node:assert/strict';
 
 import normalizeGitWorktreeRemote, {
   githubSshWorktreeRemote,
+  githubWorktreeRemote,
   gitRemoteIdentity,
   preferGitHubSshWorktreeRemote,
 } from '../tools/git/worktree-remote.ts';
 
 describe('tools/git/worktree-remote', () => {
+  it('should select either github transport and preserve other hosts and ssh aliases', () => {
+    for (const source of [
+      'https://github.com/Owner/Repo.git',
+      'git@github.com:Owner/Repo.git',
+      'ssh://git@github.com/Owner/Repo',
+    ]) {
+      assert.equal(githubWorktreeRemote(source, 'ssh'), 'git@github.com:Owner/Repo.git');
+      assert.equal(githubWorktreeRemote(source, 'https'), 'https://github.com/Owner/Repo.git');
+    }
+    for (const source of [
+      'git@github-pirog:Owner/Repo.git',
+      'https://elsewhere.example/Owner/Repo.git',
+      'ssh://git@github.com:2222/Owner/Repo.git',
+    ])
+      assert.equal(githubWorktreeRemote(source, 'https'), source);
+  });
   it('should compare full remote identities across supported transports', () => {
     for (const remote of [
       'https://github.com/Owner/Repo.git',

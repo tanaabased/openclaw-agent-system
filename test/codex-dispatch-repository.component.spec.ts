@@ -19,7 +19,7 @@ describe('agent/codex-dispatch-repository', () => {
   afterEach(async () => {
     await rm(fixture.workspaceDir, { recursive: true, force: true });
   });
-  const prepare = (bare = false, authorize = async () => {}) =>
+  const prepare = (bare = false, authorize = async () => {}, protocol: 'ssh' | 'https' = 'ssh') =>
     prepareDispatchRepository(
       {
         workspace: fixture.workspaceDir,
@@ -27,6 +27,7 @@ describe('agent/codex-dispatch-repository', () => {
         repositoryId: 'github-10',
         repository: 'owner/repo',
         cloneUrl: source,
+        protocol,
         defaultBranch: 'main',
         previous: retained,
       },
@@ -57,12 +58,26 @@ describe('agent/codex-dispatch-repository', () => {
     );
   });
 
-  it('should reuse an existing https checkout without changing its origin or cloning again', async () => {
+  it('should reconcile a managed checkout to the selected protocol without cloning again', async () => {
     const path = join(fixture.workspaceDir, 'checkouts', 'repo');
     await fixture.git.seed(path, source);
     assert.equal(await prepare(), path);
+    assert.equal(
+      await fixture.git.execute(path, ['remote', 'get-url', 'origin']),
+      'git@github.com:owner/repo.git',
+    );
+    assert.equal(await prepare(false, async () => {}, 'https'), path);
     assert.equal(await fixture.git.execute(path, ['remote', 'get-url', 'origin']), source);
     assert.ok(!fixture.git.calls.some(({ argv }) => argv[0] === 'clone'));
+  });
+
+  it('should preserve the origin of an explicitly mapped local checkout', async () => {
+    const checkout = join(fixture.workspaceDir, 'explicit');
+    await fixture.git.seed(checkout, source);
+    Object.assign(fixture.configuration.repositories, { local: { 'github-10': checkout } });
+    assert.equal(await prepare(), checkout);
+    assert.equal(await fixture.git.execute(checkout, ['remote', 'get-url', 'origin']), source);
+    assert.ok(!fixture.git.calls.some(({ argv }) => argv.includes('set-url')));
   });
 
   it('should materialize one stable bare-backed base checkout without an issue branch', async () => {

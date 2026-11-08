@@ -468,7 +468,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       if (
         !privateContext.includes(
           '"contextProbe":{"version":1,"runtime":"openclaw","hook":"before_prompt_build"}',
-        )
+        ) ||
+        !privateContext.includes('"git":{"protocol":"ssh"}')
       )
         return;
       return dispatch('feedback-context', { ...args, operation: 'context' });
@@ -544,7 +545,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (
       !privateContext.includes(
         '"contextProbe":{"version":1,"runtime":"openclaw","hook":"before_prompt_build"}',
-      )
+      ) ||
+      !privateContext.includes('"git":{"protocol":"ssh"}')
     )
       return;
     return dispatch('context', { action: 'context', id });

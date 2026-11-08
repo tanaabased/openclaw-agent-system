@@ -1,3 +1,4 @@
+import resolveGitProtocol from '../tools/git/protocol.ts';
 import readCodexTurnTask from './codex-turn-task.ts';
 import nativeTaskInstructions from './native-task-instructions.ts';
 import codexRuntimeInstructions from './codex-runtime-instructions.ts';
@@ -72,6 +73,7 @@ export default async function codexTurnContext(
       workspace: binding.preview.workspaceDir,
       currentTurn,
       ...retained,
+      git: { protocol: resolveGitProtocol(binding.preview.manifest.manifest) },
       ...(unavailable ? { lookupStatus: 'unavailable' } : {}),
     }) +
     (retained

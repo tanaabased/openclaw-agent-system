@@ -1,3 +1,4 @@
+import resolveGitProtocol from '../tools/git/protocol.ts';
 import nativeTaskInstructions from './native-task-instructions.ts';
 import taskUpdateInstructions from './task-update-instructions.ts';
 import { join } from 'node:path';
@@ -56,15 +57,18 @@ export function projectCodexManifest(manifest: AgentManifest): Record<string, un
     avatar: manifest.agent.avatar,
     emoji: manifest.agent.emoji,
   });
-  const git = manifest.git
-    ? compactRecord({
-        name: literal(manifest.git.name),
-        email: literal(manifest.git.email),
-        extensions: manifest.git.extensions,
-        policy: manifest.git.policy,
-        worktrees: manifest.git.worktrees,
-      })
-    : undefined;
+  const git = {
+    protocol: resolveGitProtocol(manifest),
+    ...(manifest.git
+      ? compactRecord({
+          name: literal(manifest.git.name),
+          email: literal(manifest.git.email),
+          extensions: manifest.git.extensions,
+          policy: manifest.git.policy,
+          worktrees: manifest.git.worktrees,
+        })
+      : undefined),
+  };
   const github = manifest.github
     ? compactRecord({
         host: manifest.github.host,

@@ -198,7 +198,7 @@ hook=$(jq -r '.hooks.UserPromptSubmit[0].hooks[0].command' "$plugin_root/hooks/h
 for turn in initial-assignment later-feedback; do
   jq -n --arg turn "$turn" '{hook_event_name:"UserPromptSubmit",session_id:"native-probe-thread",turn_id:$turn,prompt:"private-provider-prose"}' \
     | PLUGIN_DATA="$root/plugin-data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" \
-    | jq -er '.hookSpecificOutput | select(.hookEventName == "UserPromptSubmit") | .additionalContext | split("\n")[1] | fromjson | select(.contextProbe.runtime == "codex" and .currentTurn.threadId == "native-probe-thread") | .currentTurn.turnId' \
+    | jq -er '.hookSpecificOutput | select(.hookEventName == "UserPromptSubmit") | .additionalContext | split("\n")[1] | fromjson | select(.contextProbe.runtime == "codex" and .git.protocol == "ssh" and .currentTurn.threadId == "native-probe-thread") | .currentTurn.turnId' \
     | grep -Fx "$turn"
 done
 PLUGIN_DATA="$root/plugin-data" PLUGIN_ROOT="$plugin_root" sh -c "$hook" <<<'not-json' | jq -e '. == {}'

@@ -86,7 +86,8 @@ describe('core/register-hooks', () => {
       const output = (await hook(event, { ...binding, ...change })) as {
         appendContext?: string;
       };
-      assert.equal(output.appendContext, undefined);
+      assert.equal(JSON.parse(output.appendContext!.split('\n')[1]!).git.protocol, 'ssh');
+      assert.doesNotMatch(output.appendContext!, /receipt|currentTurn/);
     }
   });
 
@@ -151,6 +152,9 @@ describe('core/register-hooks', () => {
 
     assert.deepEqual(result, {
       appendSystemContext: `${agentCommandSecurityGuidance}\n\nPrefer the configured Agent System tool.`,
+      appendContext:
+        'Agent System Git context for GitHub repositories (keep private):\n' +
+        JSON.stringify({ git: { protocol: 'ssh' } }),
     });
   });
 });

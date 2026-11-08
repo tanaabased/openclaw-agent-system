@@ -1,3 +1,4 @@
+import resolveGitProtocol from '../tools/git/protocol.ts';
 import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
 import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import taskPullRequest, {
@@ -30,7 +31,7 @@ import GitHubIssueCommentClient from '../channels/github/provider/issue-comment-
 import GitHubWorkEventApiClient from '../channels/github/provider/work-event-api-client.ts';
 import { realpath } from 'node:fs/promises';
 
-import { preferGitHubSshWorktreeRemote } from '../tools/git/worktree-remote.ts';
+import { githubWorktreeRemote } from '../tools/git/worktree-remote.ts';
 import type abortableDelay from '../utils/abortable-delay.ts';
 
 import { Type, type Static } from 'typebox';
@@ -943,7 +944,10 @@ export default async function runCodexDelivery(
             git: (argv) => git(found.cwd, argv, signal),
             push: async (head, ref, remotes) => {
               const transport = remotes.flatMap((remote) => {
-                const preferred = preferGitHubSshWorktreeRemote(remote);
+                const preferred = githubWorktreeRemote(
+                  remote,
+                  resolveGitProtocol(current.manifest),
+                );
                 return preferred === remote ? [] : ['-c', `url.${preferred}.insteadOf=${remote}`];
               });
               await git(

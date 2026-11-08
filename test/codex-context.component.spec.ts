@@ -156,7 +156,7 @@ describe('agent/codex-context', () => {
         description: 'Repository caretaker',
         emoji: '🦉',
       },
-      git: { name: 'Emori Git', policy: { forcePush: 'deny' } },
+      git: { protocol: 'ssh', name: 'Emori Git', policy: { forcePush: 'deny' } },
       github: { host: 'github.com', username: 'emoriwan', policy: { releases: 'deny' } },
       capabilities: [
         'agent-system-doctor',
