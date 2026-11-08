@@ -19,7 +19,7 @@ then unbind without changing the workspace manifests.
 
 - Direct checks need no model or provider credentials. Workspaces run in place; independent snapshots verify that shared manifests stay unchanged. Run only in GitHub Actions.
 - Session context includes the model-routing projection; one packaged resolution accepts an issue object and custom routing guidance. Source tests cover routing input, fallback, and override permutations.
-- The per-prompt probe projects native thread/turn identities without sender receipts, provider prose or workflow writes. Direct invocation proves the packaged envelope, not native hook execution or model visibility; native Codex still owns hook review.
+- The per-prompt hook supplies native thread/turn identities and reads existing native task/send receipts for workflow lookup hints. It never changes workflow state or treats provider prose as authority. Direct invocation proves the packaged envelope, not native hook execution or model visibility; native Codex still owns hook review.
 - Pending relocation: direct-assessment caller guards, quiet/debug setup diagnostics, missing-identity inspection and rename/rotation, inherited-pipe timeout, local-settings refresh, and inactive/replacement binding checks remain below.
 
 ## Setup

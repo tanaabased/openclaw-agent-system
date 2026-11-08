@@ -82,7 +82,7 @@ function currentTurn(request: ChatCompletionRequest) {
   );
 }
 
-function currentFacts(messages: ChatCompletionRequest['messages']) {
+export function currentFacts(messages: ChatCompletionRequest['messages'], required = true) {
   const context = messages
     .filter(({ role }) => role === 'user')
     .map(({ content }) => getTextContent(content) ?? '')
@@ -90,8 +90,8 @@ function currentFacts(messages: ChatCompletionRequest['messages']) {
   const facts = /Agent System model-only current-turn facts \(keep private\):\n([^\n]+)/u.exec(
     context,
   )?.[1];
-  assert.ok(facts, 'the native hook must retain task facts in the current turn');
-  return JSON.parse(facts);
+  if (required) assert.ok(facts, 'the native hook must retain task facts in the current turn');
+  return facts ? JSON.parse(facts) : {};
 }
 
 function isContention(result: Record<string, unknown> | undefined) {
@@ -502,7 +502,10 @@ function respond(
     if (published.status !== 'published') return;
     return { content: String(published.presentation) };
   }
-  const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
+  const privateFeedback = currentFacts(messages, false).feedbackContextRequest;
+  const feedback = privateFeedback
+    ? ['', privateFeedback.id, privateFeedback.eventId]
+    : /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
   if (feedback) {
     const [, id, eventId] = feedback;
     const args = { action: 'feedback', id, eventId };
@@ -748,11 +751,11 @@ function respond(
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: privateText + '\n\n' + published.presentation };
   }
-  const id = /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(
-    prompt,
-  )?.[1];
+  const id =
+    currentFacts(messages, false).contextRequest?.id ??
+    /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   let automaticId: string | undefined;
-  if (id && prompt.includes('Call agent_system_dispatch with action context and id ')) {
+  if (id) {
     const context = result('context');
     if (!context) {
       const privateContext = request.messages

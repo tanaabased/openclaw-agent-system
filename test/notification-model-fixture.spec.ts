@@ -139,6 +139,34 @@ for (const scenario of [
     };
   }
 
+  if (
+    ['openclaw-issue-journey', 'openclaw-pr-journey', 'openclaw-issue-progression'].includes(
+      scenario.id,
+    )
+  ) {
+    it('should read the initial task lookup from private hook context without a visible instruction recipe', async () => {
+      const input = request('> ## 📥 Issue assigned\n>\n> Assess this issue and prepare a plan.');
+      const context = openclawTurnContext(
+        {
+          id,
+          threadId: 'issue',
+          request: { key: 'issue', agentId: 'receiver' },
+          sessionCreation: { verified: true, sessionId: 'incarnation' },
+          assessmentTurn: { runId: 'assessment' },
+        } as OpenClawDispatchRecord,
+        { agentId: 'receiver', sessionKey: 'issue', sessionId: 'incarnation', runId: 'assessment' },
+      )!;
+      input.messages.push({
+        role: 'user',
+        content: 'OpenClaw runtime context:\n' + context.appendContext,
+      });
+      const next = await response(input);
+      assert.ok('toolCalls' in next);
+      assert.deepEqual(JSON.parse(next.toolCalls![0]!.arguments), { action: 'context', id });
+      assert.ok(!String(input.messages[1]!.content).includes(id));
+    });
+  }
+
   function append(input: ChatCompletionRequest, stage: string, result: unknown) {
     input.messages.push({
       role: 'tool',

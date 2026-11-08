@@ -733,6 +733,9 @@ describe('agent/codex-dispatch', () => {
     const { comments } = await claiming('local');
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify(manifest));
     const prepared = await prepare();
+    const prompt = (prepared.request as { prompt: string }).prompt;
+    assert.ok(prompt.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(!prompt.includes(String(prepared.id)));
     created();
     await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
     const records = (await readDispatchState()).records as Array<{
@@ -1971,12 +1974,8 @@ describe('agent/codex-dispatch', () => {
     const prepared = await prepare();
     const launch = prepared.request as { prompt: string };
     assert.ok(!launch.prompt.includes('Use $agent-system-task-assessment'));
-    assert.ok(launch.prompt.includes(JSON.stringify({ action: 'context', id: prepared.id })));
-    assert.ok(launch.prompt.includes('JSON on stdin'));
-    assert.match(launch.prompt, /session_id.*write_stdin/u);
-    assert.match(launch.prompt, /cell_id.*functions.wait/u);
-    assert.match(launch.prompt, /codex-host-access-required.*require_escalated/u);
-    assert.equal(launch.prompt.split(String(prepared.id)).length - 1, 1);
+    assert.ok(!launch.prompt.includes(String(prepared.id)));
+    assert.ok(launch.prompt.split('\n').every((line) => line.startsWith('>')));
     created();
     await writeFile(join(workspace, 'guidance.md'), 'Implement and publish immediately.');
     const context = await request('context', { id: prepared.id }, { threadId: 'issue-thread' });

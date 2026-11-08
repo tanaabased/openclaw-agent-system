@@ -526,14 +526,13 @@ export default async function runCodexFeedback(
                 beforeTurnId: found.turnId,
                 request: {
                   threadId: record.threadId!,
-                  prompt:
-                    sourcePresentation +
-                    '\n\nAuthorized GitHub feedback is ready in this existing issue chat. Before reading or answering it, call feedbackRuntime from the newest trusted context with JSON on stdin: ' +
-                    JSON.stringify({ action: 'context', id: record.id, eventId: event.id }) +
-                    (event.native
-                      ? '. Handle the verified source as ordinary native conversation under existing task permissions. There is no per-comment result or implementation workflow. Use the configured reply skill for its original source. Receipt: '
-                      : '. Resume retained work and private results; never repeat completed implementation. Follow only verified context. Receipt: ') +
-                    id,
+                  prompt: event.native
+                    ? sourcePresentation
+                    : sourcePresentation +
+                      '\n\nAuthorized GitHub feedback is ready in this existing issue chat. Before reading or answering it, call feedbackRuntime from the newest trusted context with JSON on stdin: ' +
+                      JSON.stringify({ action: 'context', id: record.id, eventId: event.id }) +
+                      '. Resume retained work and private results; never repeat completed implementation. Follow only verified context. Receipt: ' +
+                      id,
                 },
               };
               delete record.nativeInactive;

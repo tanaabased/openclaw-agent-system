@@ -95,10 +95,11 @@ export async function advanceFeedbackTurn(input: {
     const runId = `${record.id}:feedback:${event.id}${event.resumed ? ':resume:' + event.resumed : ''}`;
     const message = [
       input.sourcePresentation,
-      feedbackTurnMessage(record.id, event.id, event.native),
+      event.native ? undefined : feedbackTurnMessage(record.id, event.id),
     ]
       .filter(Boolean)
       .join('\n\n');
+    if (!message) throw new Error('feedback-source-presentation-required');
     await sendOpenClawTurn({
       request,
       params: {

@@ -1,3 +1,4 @@
+import feedbackPresentation from '../agent/feedback-presentation.ts';
 import openClawFeedbackInput from '../agent/openclaw-feedback-input.ts';
 import { verifyOpenClawWork } from '../agent/openclaw-work.ts';
 import assert from 'node:assert/strict';
@@ -33,7 +34,9 @@ const actor = { login: 'operator', nodeId: 'U_operator', type: 'User' };
 describe('agent/openclaw-feedback', () => {
   let root: string, record: OpenClawDispatchRecord, event: OpenClawFeedbackEvent;
   let source: GitHubCanonicalIssueComment, provider: OpenClawFeedbackProvider;
-  let input: Omit<Parameters<typeof openClawFeedback>[0], 'action'>;
+  let input: Omit<Parameters<typeof openClawFeedback>[0], 'action'> & {
+    sourcePresentation?: string;
+  };
   let busy: boolean, lost: boolean, uncertain: boolean, revoked: boolean, skill: boolean;
   let sends: number, writes: number, saves: number, destination: string;
   let published: { nodeId: string; databaseId: number; body: string } | undefined;
@@ -141,6 +144,7 @@ describe('agent/openclaw-feedback', () => {
     input = {
       record,
       event,
+      sourcePresentation: feedbackPresentation(event, 'owner/repo'),
       provider,
       policy: fixture.policy,
       workspace: root,
@@ -241,6 +245,14 @@ describe('agent/openclaw-feedback', () => {
     await advanceFeedbackTurn(input);
     return action('context');
   }
+  it('should send only the native quoted comment card without workflow instructions or identifiers', async () => {
+    event.native = true;
+    await advanceFeedbackTurn(input);
+    assert.equal(event.turn!.message, feedbackPresentation(event, 'owner/repo'));
+    assert.ok(event.turn!.message.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(!event.turn!.message.includes(record.id));
+    assert.ok(!event.turn!.message.includes(event.id));
+  });
   it('should accept an exact queued comment from its actual native execution', async () => {
     event.native = true;
     await advanceFeedbackTurn(input);

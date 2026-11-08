@@ -1,5 +1,5 @@
 import assessmentSource from '../../scripts/aimock-assessment-source.ts';
-import { nativePlanResponse } from '../openclaw-pr-journey/model-fixture.ts';
+import { currentFacts, nativePlanResponse } from '../openclaw-pr-journey/model-fixture.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -432,7 +432,10 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (!evidence.body.includes('notification-hidden-later-fact')) return;
     return nativePlan(fresh, true);
   }
-  const feedback = /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
+  const privateFeedback = currentFacts(messages, false).feedbackContextRequest;
+  const feedback = privateFeedback
+    ? ['', privateFeedback.id, privateFeedback.eventId]
+    : /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
   if (feedback) {
     const [, id, eventId] = feedback;
     const args = { action: 'feedback', id, eventId };
@@ -503,10 +506,13 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   );
   const id =
     revision?.[2] ??
+    currentFacts(messages, false).contextRequest?.id ??
     /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   if (
     !id ||
-    (!revision && !prompt.includes('Call agent_system_dispatch with action context and id '))
+    (!revision &&
+      !currentFacts(messages, false).contextRequest &&
+      !prompt.includes('Call agent_system_dispatch with action context and id '))
   )
     return;
   const context = result('context');

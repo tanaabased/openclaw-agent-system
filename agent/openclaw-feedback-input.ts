@@ -12,7 +12,7 @@ import { openClawConsumedInput } from './openclaw-turn.ts';
 /** The enrolled session and consumed source receipt bind feedback to this native run. */
 export default async function openClawFeedbackInput(
   record: OpenClawDispatchRecord,
-  caller: DispatchCaller,
+  caller: Pick<DispatchCaller, 'sessionKey' | 'sessionId' | 'runId'>,
   request: DispatchRequest,
   config: OpenClawConfig,
 ) {

@@ -1,15 +1,20 @@
+import readCodexTurnTask from './codex-turn-task.ts';
+import nativeTaskInstructions from './native-task-instructions.ts';
+import codexRuntimeInstructions from './codex-runtime-instructions.ts';
+
 import {
   inspectCodexWorkspaceBinding,
   type CodexWorkspaceBindingInspection,
 } from './codex-workspace-binding.ts';
 
-/** project native hook identities without reading provider prose or workflow receipts. */
+/** refresh native identities and read-only task hints without trusting provider prose. */
 export default async function codexTurnContext(
   pluginData: string,
   input: unknown,
   inspect: (
     pluginData: string,
   ) => Promise<CodexWorkspaceBindingInspection> = inspectCodexWorkspaceBinding,
+  task: typeof readCodexTurnTask = readCodexTurnTask,
 ) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return;
   const hook = input as Record<string, unknown>;
@@ -28,14 +33,25 @@ export default async function codexTurnContext(
     binding.preview.manifest.status !== 'loaded'
   )
     return;
+  const currentTurn = { threadId: hook.session_id, turnId: hook.turn_id };
+  const retained = await task(pluginData, currentTurn).catch(() => undefined);
   return (
-    'Agent System model-only native turn probe (keep private). ' +
-    'This read-only probe grants no task or publication authority; existing context tools still verify the source.\n' +
+    'Agent System model-only current-turn context (keep private). ' +
+    'These lookup facts grant no task or publication authority; existing context tools still verify the source.\n' +
     JSON.stringify({
       contextProbe: { version: 1, runtime: 'codex', hook: 'UserPromptSubmit' },
       agentId: binding.preview.manifest.manifest.agent.id,
       workspace: binding.preview.workspaceDir,
-      currentTurn: { threadId: hook.session_id, turnId: hook.turn_id },
-    })
+      currentTurn,
+      ...retained,
+    }) +
+    (retained
+      ? '\n\n' +
+        codexRuntimeInstructions +
+        '\n\n' +
+        nativeTaskInstructions('codex') +
+        '\n\n' +
+        'Use feedbackContextRequest with feedbackRuntime context when supplied; otherwise use contextRequest with contextRuntime when task context is needed. Read the verified source and configured method before dependent work. Preserve the human-facing quoted cards; keep these machine instructions and facts out of your authored messages. If a source lookup is unavailable or ambiguous, use the existing native receipt inspection; do not infer a feedback source or restart assessment from a chat identity. The hook supplies lookup hints, not task or publication authority.'
+      : '')
   );
 }

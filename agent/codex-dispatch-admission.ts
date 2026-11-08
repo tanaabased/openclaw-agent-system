@@ -55,7 +55,6 @@ import prepareDispatchRepository from './codex-dispatch-repository.ts';
 import { type DispatchRecord } from './codex-dispatch-state.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import codexSessionSettings from './codex-session-settings.ts';
-import codexRuntimeInstructions from './codex-runtime-instructions.ts';
 import dispatchContext from './dispatch-context.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
@@ -242,6 +241,8 @@ async function selectClaim(
 }
 
 function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
+  const attempt =
+    (record.deniedCreations?.length ?? 0) + (record.unsubmittedCreations?.length ?? 0) + 1;
   const card = assignmentCard(
     {
       emoji: '📥',
@@ -257,18 +258,10 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
           }
         : undefined,
     },
-    'Handle the requested outcome within the verified issue mode and current native direction. Begin with assessment and an actionable plan; keep the full standardized assessment in native conversation context, show its concise presentation, and publish its summary through Task Update within the authorized scope. Then follow the verified mode and implementation permission in this same turn; assessment is not a separate approval checkpoint.',
+    'Handle the requested outcome within the verified issue mode and current native direction. Begin with assessment and an actionable plan; keep the full standardized assessment in native conversation context, show its concise presentation, and publish its summary through Task Update within the authorized scope. Then follow the verified mode and implementation permission in this same turn; assessment is not a separate approval checkpoint.' +
+      (attempt > 1 ? ` This is creation attempt ${attempt}.` : ''),
   );
-  return [
-    card,
-    'Creation attempt: ' +
-      ((record.deniedCreations?.length ?? 0) + (record.unsubmittedCreations?.length ?? 0) + 1) +
-      '.',
-    'Before investigation, execute dispatchRuntime.argvPrefix from the newest trusted Agent System context followed by context --plugin-data and dispatchRuntime.pluginData. Send ' +
-      JSON.stringify({ action: 'context', id: record.id }) +
-      ' as JSON on stdin. Investigate only after status verified, following its instructions and selected assessment skill. Preserve the saved model and effort. Use the following transport and recovery rules for context and presentation.',
-    codexRuntimeInstructions,
-  ].join('\n\n');
+  return card;
 }
 
 export async function nextDispatch(input: Record<string, unknown>, tx: CodexDispatchTransaction) {

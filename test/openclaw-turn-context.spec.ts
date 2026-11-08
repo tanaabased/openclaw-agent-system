@@ -26,6 +26,14 @@ describe('agent/openclaw-turn-context', () => {
     assert.match(output.appendContext, /current-input/);
     assert.doesNotMatch(output.appendContext, /BEGIN UNTRUSTED GITHUB PROVIDER DATA/);
     assert.doesNotMatch(output.appendSystemContext, /PRIVATE-GITHUB-FACT/);
+    const facts = JSON.parse(output.appendContext.split('\n')[1]!);
+    assert.deepEqual(facts.contextRequest, { action: 'context', id: record.id });
+    assert.equal(facts.agentId, binding.agentId);
+    assert.deepEqual(facts.currentSession, {
+      sessionKey: binding.sessionKey,
+      sessionId: binding.sessionId,
+    });
+    assert.match(output.appendSystemContext, /selected assessment skill/);
   });
   it('should bind native runs without inventing an optional input id', () => {
     const output = openclawTurnContext(record, { ...binding, inputId: undefined })!;
@@ -33,7 +41,7 @@ describe('agent/openclaw-turn-context', () => {
     assert.match(output.appendContext, /"runId":"assessment"/);
     assert.doesNotMatch(output.appendContext, /inputId/);
   });
-  it('should supply a read-only feedback lookup without repeating instructions or source prose', () => {
+  it('should supply a read-only feedback lookup with private instructions and no source prose', () => {
     const feedback = {
       ...structuredClone(record),
       result: { outcome: 'plan-ready', plan: 'RETAINED-PLAN' },
@@ -63,7 +71,9 @@ describe('agent/openclaw-turn-context', () => {
       id: record.id,
       eventId: 'comment',
     });
-    assert.equal(output.appendSystemContext, '');
+    assert.match(output.appendSystemContext, /operation context/);
+    assert.match(output.appendSystemContext, /configured reply skill/);
+    assert.doesNotMatch(output.appendSystemContext, /PRIVATE-COMMENT|RETAINED-PLAN/);
     assert.doesNotMatch(output.appendContext, /PRIVATE-COMMENT|RETAINED-PLAN/);
     feedback.feedback!.events[0]!.turn!.executionRunId = 'queued-execution';
     const before = structuredClone(feedback);
@@ -86,7 +96,8 @@ describe('agent/openclaw-turn-context', () => {
       )!;
       assert.doesNotMatch(output.appendContext, /feedbackContextRequest/);
       assert.match(output.appendContext, /contextProbe/);
-      assert.equal(output.appendSystemContext, '');
+      assert.match(output.appendSystemContext, /not uniquely verified/);
+      assert.doesNotMatch(output.appendSystemContext, /eventId/);
     }
   });
   it('should leave legacy feedback on its existing explicit context path', () => {

@@ -698,6 +698,12 @@ describe('agent/codex-feedback', () => {
     const result = await call('next');
     assert.equal(result.status, 'feedback-prepared');
     assert.ok('eventId' in result && result.eventId);
+    const prompt = (await store.read()).records[0]!.feedback!.events.find(
+      (event) => event.id === result.eventId,
+    )!.attempt!.request.prompt;
+    assert.ok(prompt.split('\n').every((line) => line.startsWith('>')));
+    assert.ok(!prompt.includes(id));
+    assert.ok(!prompt.includes(result.eventId));
     return { id, eventId: result.eventId };
   }
   it('should deliver native conversation once without a feedback result or a reply gate', async () => {

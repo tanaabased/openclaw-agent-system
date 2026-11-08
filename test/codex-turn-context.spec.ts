@@ -25,6 +25,35 @@ const hook = {
 };
 
 describe('agent/codex-turn-context', () => {
+  it('should supply production task lookup and transport privately after native binding', async () => {
+    const output = await codexTurnContext(
+      '/data',
+      hook,
+      async () => bound,
+      async (_data, turn) => {
+        assert.deepEqual(turn, { threadId: 'native-chat', turnId: 'native-turn' });
+        return {
+          receipt: 'owner',
+          stage: 'feedback',
+          contextRequest: undefined,
+          contextRuntime: 'dispatchRuntime',
+          feedbackContextRequest: { action: 'context', id: 'owner', eventId: 'source' },
+          worktree: '/task',
+          pullRequest: undefined,
+          branch: undefined,
+        };
+      },
+    );
+    const facts = JSON.parse(output!.split('\n')[1]!);
+    assert.equal(facts.feedbackContextRequest.eventId, 'source');
+    assert.match(output!, /feedbackRuntime context/);
+    assert.match(output!, /--plugin-data/);
+    assert.match(output!, /session_id.*write_stdin/u);
+    assert.match(output!, /cell_id.*functions.wait/u);
+    assert.match(output!, /codex-host-access-required.*require_escalated/u);
+    assert.doesNotMatch(output!, /PRIVATE-TOKEN|SECRET-VALUE/);
+  });
+
   it('should project only native turn identities before a sender receipt exists', async () => {
     const output = await codexTurnContext(
       '/data',
@@ -36,6 +65,7 @@ describe('agent/codex-turn-context', () => {
         agent_id: 'forged-agent',
       },
       async () => bound,
+      async () => undefined,
     );
     const facts = JSON.parse(output!.split('\n')[1]!);
     assert.deepEqual(facts, {
@@ -48,11 +78,17 @@ describe('agent/codex-turn-context', () => {
   });
   it('should refresh identities on later turns without caching or workflow writes', async () => {
     const snapshot = structuredClone(bound);
-    const initial = await codexTurnContext('/data', hook, async () => bound);
+    const initial = await codexTurnContext(
+      '/data',
+      hook,
+      async () => bound,
+      async () => undefined,
+    );
     const later = await codexTurnContext(
       '/data',
       { ...hook, turn_id: 'later-turn' },
       async () => bound,
+      async () => undefined,
     );
     assert.match(initial!, /native-turn/);
     assert.match(later!, /later-turn/);

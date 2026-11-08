@@ -4402,6 +4402,8 @@ describe('agent/openclaw issue dispatch', () => {
       assert.ok(!message.includes('Assessment instructions'));
       assert.ok(!message.includes('Effective settings'));
       assert.doesNotMatch(message, /Return the missing result/);
+      assert.ok(message.split('\n').every((line) => line.startsWith('>')));
+      assert.ok(!message.includes(input.id));
       const snapshot = (await record()).context;
       service.dependencies.connect = async () => ({
         ...fixture.client,
@@ -4699,7 +4701,20 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await assess(input.id)).status, 'assessment-pending');
     assert.equal((await record()).firstTurn, undefined);
     assert.equal(sends().length, 1);
-    assert.match(String(sends()[0]!.params.message), /action context/);
+    assert.ok(
+      String(sends()[0]!.params.message)
+        .split('\n')
+        .every((line) => line.startsWith('>')),
+    );
+    const current = await record();
+    const privateContext = await service.promptContext(manifest, root, {
+      agentId: manifest.agent.id,
+      sessionKey: current.threadId,
+      sessionId: current.sessionCreation!.sessionId,
+      runId: current.assessmentTurn!.runId,
+    });
+    const privateFacts = JSON.parse(privateContext!.appendContext.split('\n')[1]!);
+    assert.deepEqual(privateFacts.contextRequest, { action: 'context', id: input.id });
     const verified = await context(input.id);
     assert.ok('runtime' in verified && verified.runtime === 'openclaw');
     assert.ok('evidence' in verified && 'resultContract' in verified && 'assessment' in verified);
@@ -6918,6 +6933,22 @@ describe('agent/openclaw issue dispatch', () => {
             `${event.turn!.runId}:user`,
         )!;
         (incoming.__openclaw as Record<string, unknown>).runId = who.runId;
+        const hookContext = await service.promptContext(manifest, root, {
+          agentId: manifest.agent.id,
+          sessionKey: who.sessionKey,
+          sessionId: who.sessionId,
+          runId: who.runId,
+        });
+        assert.ok(hookContext);
+        const facts = JSON.parse(hookContext.appendContext.split('\n')[1]!);
+        assert.deepEqual(facts.feedbackContextRequest, {
+          action: 'feedback',
+          operation: 'context',
+          id,
+          eventId: event.id,
+        });
+        assert.match(hookContext.appendSystemContext, /configured reply skill/);
+        assert.deepEqual(await record(), before);
         const context = await service.run(
           manifest,
           root,

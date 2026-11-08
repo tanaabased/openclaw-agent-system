@@ -54,6 +54,7 @@ import { type IntakeObservation } from './openclaw-intake-report.ts';
 import type OpenClawIntake from './openclaw-intake.ts';
 import { type DispatchCaller } from './openclaw-session-create.ts';
 import openclawTurnContext from './openclaw-turn-context.ts';
+import openClawFeedbackInput from './openclaw-feedback-input.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
 
 export interface OpenClawDispatchDependencies {
@@ -319,7 +320,37 @@ export default class OpenClawDispatchContext {
     const record = (await journal.read()).records.find(
       (entry) => entry.threadId === binding.sessionKey,
     );
-    return record && openclawTurnContext(record, binding);
+    const context = record && openclawTurnContext(record, { ...binding, workspace });
+    if (!record || !context || !binding.runId || !binding.sessionId || !binding.sessionKey)
+      return context;
+    if (
+      !record.feedback?.events.some(
+        (event) =>
+          event.native &&
+          event.turn &&
+          !event.turn.executionRunId &&
+          !event.turn.cancelled &&
+          event.turn.status !== 'completed',
+      )
+    )
+      return context;
+    // receipt discovery may annotate this detached snapshot, never the retained journal.
+    const snapshot = structuredClone(record);
+    const source = await this.dependencies.credential.use({}, (request) =>
+      openClawFeedbackInput(
+        snapshot,
+        {
+          runId: binding.runId!,
+          sessionId: binding.sessionId!,
+          sessionKey: binding.sessionKey!,
+        },
+        request,
+        this.dependencies.config(),
+      ),
+    );
+    if (source && binding.inputId && source.inputId !== binding.inputId)
+      throw new Error('feedback-input-unverified');
+    return openclawTurnContext(snapshot, { ...binding, workspace });
   }
 
   async reportScope(manifest: AgentManifest, workspace: string) {
