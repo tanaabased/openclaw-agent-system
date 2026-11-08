@@ -5688,14 +5688,13 @@ describe('agent/codex-dispatch', () => {
     assert.equal(composed.status, 'composition-ready');
     assert.deepEqual(await store.read(), before);
     native!.cwd = root;
-    await assert.rejects(
-      runCodexFeedback(
-        pluginData,
-        { action: 'reply', operation: 'context', purpose: 'status-update', target },
-        nativeDeps,
-      ),
-      /reply-managed-context-invalid/,
+    const moved = await runCodexFeedback(
+      pluginData,
+      { action: 'reply', operation: 'context', purpose: 'status-update', target },
+      nativeDeps,
     );
+    assert.ok('entry' in moved && moved.entry === 'managed');
+    assert.ok('observation' in moved && moved.observation === read.observation);
     assert.deepEqual(await store.read(), before);
   });
 
