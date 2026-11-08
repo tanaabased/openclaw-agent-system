@@ -9,7 +9,6 @@ const record = {
   createdAt: 1,
   sourceThreadId: 'intake',
   request: { prompt: '> assignment card' },
-  worktree: '/task',
   context: 'PRIVATE-PROVIDER-PROSE',
   result: { plan: 'OLD-PLAN' },
 } as DispatchRecord;
@@ -37,6 +36,7 @@ describe('agent/codex-turn-task', () => {
     });
     assert.equal(output?.receipt, record.id);
     assert.equal(output?.stage, 'assessment');
+    assert.equal(output?.worktree, native.cwd);
     assert.deepEqual(output?.contextRequest, { action: 'context', id: record.id });
     assert.doesNotMatch(JSON.stringify(output), /PRIVATE-PROVIDER-PROSE|OLD-PLAN/);
     assert.deepEqual(record, before);
@@ -109,7 +109,7 @@ describe('agent/codex-turn-task', () => {
     assert.equal(await selectCodexTurnTask([], turn, lookup), undefined);
   });
   it('should retain the assigned checkout when the native working directory changes', async () => {
-    const output = await selectCodexTurnTask([record], turn, {
+    const output = await selectCodexTurnTask([{ ...record, worktree: '/task' }], turn, {
       ...lookup,
       find: async () => ({ ...native, cwd: '/another-checkout' }),
     });

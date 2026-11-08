@@ -1,4 +1,5 @@
 import codexDirectInput from '../agent/codex-direct-input.ts';
+import { selectCodexTurnTask } from '../agent/codex-turn-task.ts';
 import seedHistoricalAssessment from './legacy-assessment-fixture.ts';
 import assessmentPresentation from '../agent/dispatch-presentation.ts';
 import { dispatchAdmission } from '../agent/managed-issue.ts';
@@ -2111,9 +2112,23 @@ describe('agent/codex-dispatch', () => {
   it('should keep clarification in native chat before recording a completed assessment', async () => {
     await configureAssessment({ skill: 'company:assess' });
     const prepared = await prepare();
+    const pendingState = await readDispatchState();
+    const pending = pendingState.records as DispatchRecord[];
+    assert.equal(pending[0]!.threadId, undefined);
+    assert.equal(pending[0]!.worktree, undefined);
     created();
     const child = { threadId: 'issue-thread' };
-    const context = await request('context', { id: prepared.id }, child);
+    const hints = await selectCodexTurnTask(pending, child, {
+      find: deps.native!.find,
+      receipt: async () => {
+        throw new Error('initial assignment must not require feedback');
+      },
+    });
+    assert.equal(hints?.worktree, native!.cwd);
+    assert.equal(hints?.contextRuntime, 'dispatchRuntime');
+    assert.deepEqual(await readDispatchState(), pendingState);
+    const { action, ...input } = hints!.contextRequest!;
+    const context = await request(action, input, child);
     assert.equal(context.currentTurnId, 'first-turn');
     assert.equal(context.previousResultTurnId, undefined);
     assert.equal(context.entry, 'managed');

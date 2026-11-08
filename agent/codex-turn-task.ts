@@ -27,7 +27,6 @@ export async function selectCodexTurnTask(
   for (const record of records) {
     if (
       !record.request ||
-      !record.worktree ||
       record.retired ||
       record.reset ||
       record.supersededBy ||
@@ -87,7 +86,7 @@ export async function selectCodexTurnTask(
       !feedback.length && !unresolvedFeedback ? { action: 'context', id: record.id } : undefined,
     contextRuntime: implementation ? 'continuationRuntime' : 'dispatchRuntime',
     feedbackContextRequest: source && { action: 'context', id: record.id, eventId: source.id },
-    worktree: record.worktree,
+    worktree: record.worktree ?? native.cwd,
     nativeCwd: native.cwd,
     pullRequest: taskPullRequest(record),
     branch: record.issueBranch?.name,

@@ -20,6 +20,8 @@ conversation remains usable independently of the schedule.
 
 ## Notes
 
+- **Assignment startup ordering (native desktop acceptance):** let the new issue chat load task context before its coordinator reconciles native creation. Require the child to resolve its managed issue and checkout from the existing creation receipt, then show its plan or clarification and continue according to the assigned mode without another message. Repeat with the coordinator finishing first. The controlled component case covers both lookup and context consumption; headless installation checks do not prove this desktop ordering or rendered outcome.
+
 - Issue pickup selection and uncertain-assignment recovery have controlled native-adapter coverage in `test/issue-pickup-selection.component.spec.ts`. The packaged check below validates coordinator-free routing and rejects pickup before installation activation. Native desktop activation still needs app receipts; unattended acceptance remains [#529](https://github.com/tanaabased/openclaw-agent-system/issues/529). This headless scenario does not establish desktop activation or unattended execution.
 
 - These direct Ubuntu checks use isolated Codex state without hosted secrets or model generation. Both active and paused fixtures declare V3; a paused declaration retains configuration while future occurrences remain disabled.
