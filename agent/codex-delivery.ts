@@ -239,11 +239,14 @@ export default async function runCodexDelivery(
         createdAfter: record.createdAt,
         threadId: record.threadId,
       });
+      const conversationOnly = ['link', 'present', 'compose', 'candidate', 'announce'].includes(
+        input.action,
+      );
       if (
         !found ||
         found.id !== caller ||
         !found.turnId ||
-        (await realpath(found.cwd)) !== (await realpath(record.worktree))
+        (!conversationOnly && (await realpath(found.cwd)) !== (await realpath(record.worktree)))
       )
         throw new Error('delivery-native-binding-mismatch');
       const intake = dispatchAdmission(record, (await current.store.read())?.records ?? []);

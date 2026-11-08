@@ -1159,6 +1159,7 @@ describe('agent/codex-delivery', () => {
     });
   it('should recover only the lost announcement despite newer local work without republishing the pr', async () => {
     await publish();
+    await rm((await store.read()).records[0]!.worktree!, { recursive: true });
     head = 'b'.repeat(40);
     deps.git = async () => {
       throw new Error('announcement recovery must not inspect newer local work');
@@ -1332,11 +1333,13 @@ describe('agent/codex-delivery', () => {
 
   it('should link the current pr without operator input and refuse association changes', async () => {
     await publish();
+    await rm((await store.read()).records[0]!.worktree!, { recursive: true });
     delete deps.native!.operatorInput;
     const url = 'https://github.com/owner/repo/pull/7';
     for (const pullRequest of [undefined, url, url]) {
       const linked = await request('link', { pullRequest });
       assert.equal(linked.status, 'linked');
+      assert.equal((await request('present')).status, 'linked');
       assert.deepEqual((await store.read()).records[0]!.pullRequestLink, {
         pullRequestNodeId: 'PR_7',
         pullRequestNumber: 7,

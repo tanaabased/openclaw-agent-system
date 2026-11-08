@@ -3620,6 +3620,7 @@ describe('agent/openclaw issue dispatch', () => {
       await save();
     });
     const receipt = (await record()).work!.delivery;
+    await rm((await record()).worktree!, { recursive: true });
     service.dependencies.delivery = async () => {
       throw new Error('same-pr linkage must not publish or read another pr');
     };

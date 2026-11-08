@@ -227,6 +227,7 @@ export default class OpenClawDispatchContext {
     feedback: boolean | 'native' = false,
     connection?: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient,
     signal?: AbortSignal,
+    inspectCheckout = true,
   ) {
     const {
       current,
@@ -299,7 +300,7 @@ export default class OpenClawDispatchContext {
         : {}),
       repositoryDatabaseId: repo.databaseId,
     };
-    if (record.worktree && !feedback) {
+    if (record.worktree && !feedback && inspectCheckout) {
       const path = await realpath(record.worktree).catch((cause) => {
         throw new Error('dispatch-worktree-unavailable', { cause });
       });

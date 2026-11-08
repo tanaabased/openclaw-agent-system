@@ -681,6 +681,10 @@ export default class OpenClawDispatch {
           authority.signal
             ? AbortSignal.any([authority.signal, transactionSignal])
             : transactionSignal,
+          !(
+            input.action === 'delivery' &&
+            ['link', 'compose', 'candidate', 'announce'].includes(input.operation)
+          ),
         );
         if (childAction) return this.issue.run(input, record, tx, verified, operator);
         return this.admission.run(input, record, tx, verified, (stage) => {
