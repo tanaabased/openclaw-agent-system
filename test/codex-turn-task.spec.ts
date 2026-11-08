@@ -56,7 +56,7 @@ describe('agent/codex-turn-task', () => {
       /turn-context-native-turn-unavailable/,
     );
   });
-  it('should ignore unrelated, stale, retired and ambiguous native owners', async () => {
+  it('should ignore unrelated, stale and retired native owners', async () => {
     for (const changed of [
       { threadId: 'other' },
       { supersededBy: 'other' },
@@ -68,9 +68,9 @@ describe('agent/codex-turn-task', () => {
         undefined,
       );
     }
-    assert.equal(
-      await selectCodexTurnTask([record, { ...record, id: 'b'.repeat(64) }], turn, lookup),
-      undefined,
+    await assert.rejects(
+      selectCodexTurnTask([record, { ...record, id: 'b'.repeat(64) }], turn, lookup),
+      /turn-context-owner-ambiguous/,
     );
     assert.equal(
       (await selectCodexTurnTask([record], { ...turn, turnId: 'later' }, lookup))?.receipt,
@@ -85,6 +85,28 @@ describe('agent/codex-turn-task', () => {
       }),
       undefined,
     );
+  });
+  it('should distinguish an unverified active owner from an unmanaged native chat', async () => {
+    const owned = { ...record, threadId: turn.threadId };
+    for (const find of [
+      async () => undefined,
+      async () => {
+        throw new Error('dispatch-native-readback-diverged');
+      },
+    ])
+      await assert.rejects(
+        selectCodexTurnTask([owned], turn, { ...lookup, find }),
+        /turn-context-owner-unverified/,
+      );
+    await assert.rejects(
+      selectCodexTurnTask([owned, { ...owned, id: 'b'.repeat(64) }], turn, lookup),
+      /turn-context-owner-ambiguous/,
+    );
+    await assert.rejects(
+      selectCodexTurnTask([{ ...owned, request: undefined }], turn, lookup),
+      /turn-context-owner-unverified/,
+    );
+    assert.equal(await selectCodexTurnTask([], turn, lookup), undefined);
   });
   it('should retain the assigned checkout when the native working directory changes', async () => {
     const output = await selectCodexTurnTask([record], turn, {

@@ -18,6 +18,11 @@ export async function selectCodexTurnTask(
   turn: Turn,
   lookup: Lookup,
 ) {
+  const owners = records.filter(
+    (record) =>
+      record.threadId === turn.threadId && !record.retired && !record.reset && !record.supersededBy,
+  );
+  if (owners.length > 1) throw new Error('turn-context-owner-ambiguous');
   const matches: { record: DispatchRecord; native: DispatchNativeThread }[] = [];
   for (const record of records) {
     if (
@@ -44,7 +49,11 @@ export async function selectCodexTurnTask(
     if (!native || native.id !== turn.threadId) continue;
     matches.push({ record, native });
   }
-  if (matches.length !== 1) return;
+  if (matches.length > 1) throw new Error('turn-context-owner-ambiguous');
+  if (!matches.length) {
+    if (owners.length) throw new Error('turn-context-owner-unverified');
+    return;
+  }
   const { record, native } = matches[0]!;
   const turnId = turn.turnId ?? native.turnId;
   if (!turnId) throw new Error('turn-context-native-turn-unavailable');
