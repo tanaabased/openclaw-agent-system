@@ -1,5 +1,3 @@
-import { realpath } from 'node:fs/promises';
-
 import codexContinuationNative from './codex-continuation-native.ts';
 import { codexDispatchNative, type DispatchNativeThread } from './codex-dispatch-native.ts';
 import CodexDispatchStore, { type DispatchRecord } from './codex-dispatch-state.ts';
@@ -12,7 +10,6 @@ type Turn = { threadId: string; turnId?: string };
 type Lookup = {
   find: ReturnType<typeof codexDispatchNative>['find'];
   receipt: ReturnType<typeof codexContinuationNative>;
-  path: typeof realpath;
 };
 
 /** resolve hints through native creation and send receipts, never provider text. */
@@ -44,12 +41,7 @@ export async function selectCodexTurnTask(
       if (error instanceof Error && error.message === 'dispatch-native-readback-diverged') continue;
       throw error;
     }
-    if (
-      !native ||
-      native.id !== turn.threadId ||
-      (await lookup.path(native.cwd)) !== (await lookup.path(record.worktree))
-    )
-      continue;
+    if (!native || native.id !== turn.threadId) continue;
     matches.push({ record, native });
   }
   if (matches.length !== 1) return;
@@ -87,6 +79,7 @@ export async function selectCodexTurnTask(
     contextRuntime: implementation ? 'continuationRuntime' : 'dispatchRuntime',
     feedbackContextRequest: source && { action: 'context', id: record.id, eventId: source.id },
     worktree: record.worktree,
+    nativeCwd: native.cwd,
     pullRequest: taskPullRequest(record),
     branch: record.issueBranch?.name,
   };
@@ -113,7 +106,6 @@ export default async function readCodexTurnTask(pluginData: string, turn: Turn) 
     return await selectCodexTurnTask(records, turn, {
       find: codexDispatchNative(connection.request).find,
       receipt: codexContinuationNative(connection.request),
-      path: realpath,
     });
   } finally {
     await connection.close();

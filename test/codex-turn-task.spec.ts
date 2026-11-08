@@ -18,7 +18,6 @@ const native = { id: turn.threadId, turnId: turn.turnId, cwd: '/task', status: '
 const lookup = {
   find: async () => native,
   receipt: async () => ({ status: 'verified' as const, turnId: turn.turnId, ended: false }),
-  path: async (value: string) => value,
 } as unknown as Parameters<typeof selectCodexTurnTask>[2];
 
 describe('agent/codex-turn-task', () => {
@@ -63,7 +62,6 @@ describe('agent/codex-turn-task', () => {
       { supersededBy: 'other' },
       { retired: {} },
       { reset: {} },
-      { worktree: '/other' },
     ]) {
       assert.equal(
         await selectCodexTurnTask([{ ...record, ...changed } as DispatchRecord], turn, lookup),
@@ -87,6 +85,15 @@ describe('agent/codex-turn-task', () => {
       }),
       undefined,
     );
+  });
+  it('should retain the assigned checkout when the native working directory changes', async () => {
+    const output = await selectCodexTurnTask([record], turn, {
+      ...lookup,
+      find: async () => ({ ...native, cwd: '/another-checkout' }),
+    });
+    assert.equal(output?.worktree, '/task');
+    assert.equal(output?.nativeCwd, '/another-checkout');
+    assert.deepEqual(output?.contextRequest, { action: 'context', id: record.id });
   });
   it('should map feedback through its exact native send receipt before the sender records a turn id', async () => {
     const feedback = {
