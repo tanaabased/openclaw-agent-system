@@ -749,7 +749,7 @@ function respond(
         digest: preview.digest,
       });
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
-    return { content: privateText + '\n\n' + published.presentation };
+    return { content: published.presentation };
   }
   const id =
     currentFacts(messages, false).contextRequest?.id ??

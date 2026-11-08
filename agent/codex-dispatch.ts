@@ -138,6 +138,7 @@ export async function runCodexDispatch(
           session: deps.threadId ?? process.env.CODEX_THREAD_ID ?? '',
           workspace: current.workspace,
           debug: current.manifest.debug,
+          workflow: current.manifest.github?.notifications?.issueAssignment,
         },
       );
     }

@@ -263,6 +263,7 @@ export default function retainDispatchHistory<R extends SharedDispatchRecord>(
   }
   if (record.feedback) {
     const current = new Set([
+      events.find((event) => event.id === record.feedback?.context?.eventId),
       events.findLast((event) => event.result),
       events.findLast((event) => event.native),
       events.findLast((event) => event.work?.decision),

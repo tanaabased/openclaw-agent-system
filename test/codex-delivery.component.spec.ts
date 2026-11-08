@@ -1192,7 +1192,7 @@ describe('agent/codex-delivery', () => {
     assert.equal((await store.read())!.records[0]!.delivery!.reconciled, true);
   });
 
-  it('should retain linked custom implementation instructions after the pr card', async () => {
+  it('should present the pr without repeating configured implementation instructions', async () => {
     await publish();
     await request('reconcile');
     await store.exclusive(async (state, save) => {
@@ -1224,9 +1224,9 @@ describe('agent/codex-delivery', () => {
     assert.ok(!normal.includes('Implementation instructions'));
     await writeFile(join(workspace, 'agent.yaml'), JSON.stringify({ ...manifest, debug: true }));
     const shown = String((await request('present')).presentation);
-    assert.ok(shown.indexOf('Implementation instructions') > shown.indexOf('Comment flow'));
-    assert.ok(shown.includes('[`custom:work`](</skills/work/SKILL.md>)'));
-    assert.ok(shown.includes('[`work.md`](<'));
+    assert.ok(!shown.includes('Implementation instructions'));
+    assert.ok(!shown.includes('custom:work'));
+    assert.ok(shown.includes('Comment flow'));
     assert.ok(!shown.includes('Private instructions'));
   });
   it('should show feedback under a verified replacement scheduler without changing the issue owner', async () => {

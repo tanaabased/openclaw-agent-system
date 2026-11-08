@@ -2,6 +2,7 @@ import nativeTaskInstructions from '../../agent/native-task-instructions.ts';
 import workflowNoticeInstructions from '../../agent/workflow-notice-instructions.ts';
 import workflowFailure, { workflowFailureScope } from '../../agent/workflow-failure.ts';
 import codexIssueNotice from '../../agent/codex-issue-notice.ts';
+import contextMaterialTransport from '../../agent/context-material-transport.ts';
 import { dispatchFailurePhase } from '../../agent/dispatch-retry.ts';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 import { Value } from 'typebox/value';
@@ -254,9 +255,10 @@ export default function createDispatchTool(input: {
               presentationInstructions: workflowNoticeInstructions(true),
             };
           }
+          const delivered = contextMaterialTransport(result, { tool: 'agent_system_dispatch' });
           return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-            details: result,
+            content: [{ type: 'text' as const, text: JSON.stringify(delivered) }],
+            details: delivered,
           };
         },
       }));

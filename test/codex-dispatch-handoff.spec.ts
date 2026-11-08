@@ -82,12 +82,11 @@ describe('agent/codex-dispatch-handoff', () => {
   it('should run scan and required observations with one fixed runtime identity', async () => {
     const test = fixture([
       success({ status: 'ready', changed: false }),
-      access,
       success({ status: 'ready' }),
       success({ status: 'idle' }),
     ]);
     await test.execute({ action: 'scan' }, 'intake');
-    assert.equal(test.commands.length, 4);
+    assert.equal(test.commands.length, 3);
     assert.ok(
       test.commands.every(({ cmd }) => String(cmd).includes("'--plugin-data' '/private/data'")),
     );
@@ -96,11 +95,10 @@ describe('agent/codex-dispatch-handoff', () => {
     );
     assert.deepEqual(
       test.commands.map(({ cmd }) => JSON.parse(String(cmd).split('\n')[1]!)),
-      [{}, { action: 'observe-denials' }, { action: 'observe-denials' }, { action: 'next' }],
+      [{}, { action: 'observe-denials' }, { action: 'next' }],
     );
-    assert.equal(test.commands[1]!.cmd, test.commands[2]!.cmd);
     assert.equal(test.commands[2]!.sandbox_permissions, 'require_escalated');
-    assert.match(String(test.commands[3]!.cmd), /'continuation' 'next'/);
+    assert.match(String(test.commands[2]!.cmd), /'continuation' 'next'/);
     assert.equal(test.creations.length, 0);
   });
 
@@ -114,9 +112,9 @@ describe('agent/codex-dispatch-handoff', () => {
     await held.execute({ action: 'scan' }, 'intake');
     assert.equal(held.commands.length, 2);
     assert.equal(held.creations.length, 0);
-    const denied = fixture([success({ status: 'ready' }), access, new Error('native rejection')]);
+    const denied = fixture([success({ status: 'ready' }), new Error('native rejection')]);
     await assert.rejects(denied.execute({ action: 'scan' }, 'intake'), /native rejection/);
-    assert.equal(denied.commands.length, 3);
+    assert.equal(denied.commands.length, 2);
     assert.equal(denied.creations.length, 0);
   });
 
@@ -249,11 +247,11 @@ describe('agent/codex-dispatch-handoff', () => {
       ['continuation', { action: 'next' }],
       ['feedback', { action: 'reconcile', id: 'owner', eventId: 'event' }],
     ] as const) {
-      const test = fixture([access, lockBusy, busy, success({ status: 'idle' })]);
+      const test = fixture([lockBusy, busy, success({ status: 'idle' })]);
       await test.execute(input, route);
-      assert.equal(test.commands.length, 4);
+      assert.equal(test.commands.length, 3);
       assert.equal(new Set(test.commands.map((command) => command.cmd)).size, 1);
-      assert.equal(test.commands[0]!.sandbox_permissions, undefined);
+      assert.equal(test.commands[0]!.sandbox_permissions, 'require_escalated');
       assert.ok(
         test.commands
           .slice(1)
@@ -264,7 +262,7 @@ describe('agent/codex-dispatch-handoff', () => {
   });
 
   it('should retry preparation without losing retained routing evidence', async () => {
-    const test = fixture([success(routing), access, lockBusy, success(prepared)]);
+    const test = fixture([success(routing), lockBusy, success(prepared)]);
     await test.execute();
     await test.execute({ action: 'prepare', title: 'poem', assessment: {} });
     assert.equal(new Set(test.commands.slice(1).map((command) => command.cmd)).size, 1);
@@ -306,15 +304,14 @@ describe('agent/codex-dispatch-handoff', () => {
       assert.equal(test.commands.length, 2);
       assert.equal(test.creations.length, 0);
     }
-    const test = fixture([access, new Error('native rejection'), success(prepared)]);
+    const test = fixture([new Error('native rejection'), success(prepared)]);
     await assert.rejects(test.execute(), /native rejection/);
-    assert.equal(test.commands.length, 2);
+    assert.equal(test.commands.length, 1);
   });
 
   it('should retain only operation identity for evidence reconciliation after a refused preparation', async () => {
     const test = fixture([
       success(routing),
-      access,
       new Error('native rejection'),
       success({ status: 'blocked', nextAction: 'next' }),
     ]);
@@ -327,7 +324,7 @@ describe('agent/codex-dispatch-handoff', () => {
     await test.execute({ action: 'reconcile' });
     const input = JSON.parse(String(test.commands.at(-1)!.cmd).split('\n')[1]!);
     assert.deepEqual(input, { action: 'reconcile', id: routing.id });
-    assert.equal(test.commands.length, 4);
+    assert.equal(test.commands.length, 3);
     assert.equal(test.creations.length, 0);
   });
 
@@ -346,10 +343,7 @@ describe('agent/codex-dispatch-handoff', () => {
   });
 
   it('should bound busy and access retries without retaining a sendable request', async () => {
-    for (const results of [
-      [busy, lockBusy, busy, lockBusy],
-      [access, access],
-    ]) {
+    for (const results of [[busy, lockBusy, busy, lockBusy], [access]]) {
       const test = fixture(results.slice());
       if (results[0] === access) await assert.rejects(test.execute(), /preparation-failed/);
       else await test.execute();

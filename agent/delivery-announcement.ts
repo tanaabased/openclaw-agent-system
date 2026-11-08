@@ -1,3 +1,4 @@
+import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
 import replyMaterial from './reply-material.ts';
 import type { ImplementationMaterialRead } from './implementation-material.ts';
 import taskUpdateInstructions from './task-update-instructions.ts';
@@ -258,6 +259,8 @@ export function deliveryCompletionInstructions(
         ? 'Native PR attachment is confirmed. '
         : 'Call native attach_artifact for this pull_request URL, then list_artifacts and delivery reconcile. ';
   return (
+    cardCopyInstructions +
+    ' ' +
     (updated
       ? ''
       : 'Submit the complete returned linkRequest for the initial task/PR association; follow its native attachment instructions and reuse that request for attachment readback. ') +

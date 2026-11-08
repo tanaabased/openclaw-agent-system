@@ -32,7 +32,9 @@ export default function contextMaterialExchange(request: ChatCompletionRequest):
     const original = messages
       .flatMap((item) => item.tool_calls ?? [])
       .find((call) => call.id === message.tool_call_id)?.function;
-    const owner = original?.name ?? 'agent_system_dispatch';
+    const transport = context.materialTransport as { tool: string };
+    assert.equal(transport.tool, original?.name);
+    const owner = transport.tool;
     const materials = context.contextMaterials as {
       inputFields?: string[];
       fields: Array<{
@@ -85,6 +87,7 @@ export default function contextMaterialExchange(request: ChatCompletionRequest):
             },
           };
         const result = JSON.parse(observed);
+        assert.deepEqual(result.materialTransport, transport);
         assert.equal(result.status, 'material');
         assert.equal(result.materialPage.digest, field.digest);
         assert.equal(result.materialPage.offset, text.length);

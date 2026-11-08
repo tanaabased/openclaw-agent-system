@@ -54,7 +54,6 @@ import { type IntakeObservation } from './openclaw-intake-report.ts';
 import type OpenClawIntake from './openclaw-intake.ts';
 import { type DispatchCaller } from './openclaw-session-create.ts';
 import openclawTurnContext from './openclaw-turn-context.ts';
-import openClawFeedbackInput from './openclaw-feedback-input.ts';
 import retainedIntakePolicy from './retained-intake-policy.ts';
 
 export interface OpenClawDispatchDependencies {
@@ -321,44 +320,7 @@ export default class OpenClawDispatchContext {
     const record = (await journal.read()).records.find(
       (entry) => entry.threadId === binding.sessionKey,
     );
-    const context = record && openclawTurnContext(record, { ...binding, workspace });
-    if (!record || !context || !binding.runId || !binding.sessionId || !binding.sessionKey)
-      return context;
-    if (
-      !record.feedback?.events.some(
-        (event) =>
-          event.native &&
-          event.turn &&
-          !event.turn.executionRunId &&
-          !event.turn.cancelled &&
-          event.turn.status !== 'completed',
-      )
-    )
-      return context;
-    // receipt discovery may annotate this detached snapshot, never the retained journal.
-    const snapshot = structuredClone(record);
-    try {
-      // native receipts bind the source/run; the hook input id may instead be an idempotency key.
-      await this.dependencies.credential.use({}, (request) =>
-        openClawFeedbackInput(
-          snapshot,
-          {
-            runId: binding.runId!,
-            sessionId: binding.sessionId!,
-            sessionKey: binding.sessionKey!,
-          },
-          request,
-          this.dependencies.config(),
-        ),
-      );
-    } catch (error) {
-      return openclawTurnContext(
-        record,
-        { ...binding, workspace },
-        openClawDispatchFailureCode(error),
-      );
-    }
-    return openclawTurnContext(snapshot, { ...binding, workspace });
+    return record && openclawTurnContext(record, { ...binding, workspace });
   }
 
   async reportScope(manifest: AgentManifest, workspace: string) {

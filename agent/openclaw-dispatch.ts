@@ -337,6 +337,7 @@ export default class OpenClawDispatch {
           session: caller.sessionKey,
           workspace,
           debug: manifest.debug,
+          workflow: manifest.github?.notifications?.issueAssignment,
         });
       }
       return renderNativeAssessment(input, 'openclaw');

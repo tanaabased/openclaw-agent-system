@@ -43,18 +43,17 @@ const request = {...input};
 if (runtimeRoute === 'intake') delete request.action;
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 const command = argv.map(quote).join(' ') + " <<'AGENT_SYSTEM_INPUT'\n" + JSON.stringify(request) + '\nAGENT_SYSTEM_INPUT';
-let escalated = false;
 let busyRetries = 0;
 while (true) {
   let result = await tools.exec_command({
     cmd: command, max_output_tokens: 32000,
-    ...(escalated ? {
+    ...{
       sandbox_permissions: 'require_escalated',
       justification: runtimeRoute === 'intake' && input.action === 'pickup'
         ? 'Allow this occurrence of the activated issue pickup workflow to verify candidates, update its private journal, and self-assign at most one eligible GitHub issue under the designated installation policy? Native denials stop the operation.'
         : 'Allow ' + runtimeRoute + ':' + input.action + ' for the operator-activated recurring assignment workflow? This exact command checks workflow evidence, prepares configured repositories when required, and updates private tracking state; it does not create chats, send turns, implement task code, or publish to GitHub. Eligible assignments are selected by the activated manifest policy. Current operator restrictions and native approval decisions still apply.',
       prefix_rule: argv
-    } : {})
+    }
   });
   let output = result.output;
   while (result.session_id !== undefined) {
@@ -68,11 +67,6 @@ while (true) {
     throw new Error('codex-node-unavailable: put a Node.js version supported by this plugin package.json#engines.node on the configured host PATH, then retry; no automation rewrite is needed. The runtime failure formatter cannot start until Node is available.');
   }
   if (response?.code === 'codex-node-version-unsupported') throw new Error(response.message);
-  const accessRequired = response?.code === 'codex-host-access-required' || /^(?:EPERM|EACCES)\b/u.test(output.trim());
-  if (result.exit_code !== 0 && accessRequired && !escalated) {
-    escalated = true;
-    continue;
-  }
   const busy = response?.status === 'busy' || response?.code === 'private-state-file-lock-busy';
   if (busy && busyRetries < 3) {
     busyRetries++;

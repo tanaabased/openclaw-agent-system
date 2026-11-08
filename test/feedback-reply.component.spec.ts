@@ -897,18 +897,18 @@ describe('agent/feedback-reply', () => {
       const done = await call('publish', { id: composed.id, digest: await preview(composed.id) });
       assert.equal(done.status, 'published');
       assert.ok('presentation' in done && typeof done.presentation === 'string');
-      assert.ok(done.presentation.startsWith('> A question.'));
-      assert.ok(
-        done.presentation.includes(
-          '[Comment ↗](' + target + ') from [@author](https://github.com/author)',
-        ),
+      assert.ok(!done.presentation.includes('> A question.'));
+      assert.ok(!done.presentation.includes('[Comment ↗](' + target + ')'));
+      assert.equal(
+        deps.feedback!.source,
+        JSON.stringify(await provider.getIssueComment('owner', 'repo', 3, 42)),
       );
       assert.ok(done.presentation.includes(privateText));
       assert.ok(
         done.presentation.includes('> @author\n>\n> Haiku about overengineering confirmed.'),
       );
       assert.ok(done.presentation.includes('[Reply ↗](' + url + '#issuecomment-9)'));
-      assert.ok(done.presentation.includes('Feedback reply instructions'));
+      assert.ok(!done.presentation.includes('Feedback reply instructions'));
       assert.ok(!posted!.body.includes(privateText));
       assert.ok(!posted!.body.includes('Debug'));
       deps.manifest.debug = false;
@@ -918,6 +918,26 @@ describe('agent/feedback-reply', () => {
       assert.ok(!recovered.presentation.includes('Debug'));
       assert.equal(writes, 1);
       assert.deepEqual(owners, before);
+    });
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should display one answer while retaining its native source and publication receipt in ${runtime}`, async () => {
+      deps.binding.runtime = runtime;
+      const target = await nativeFeedback();
+      const source = deps.feedback!.source;
+      const text = 'The supplied choices are sufficient.';
+      const composed = await call('compose', { target, privateText: text });
+      assert.ok('id' in composed && typeof composed.id === 'string' && 'digest' in composed);
+      await call('candidate', { id: composed.id, digest: composed.digest, publicText: text });
+      const done = await call('publish', { id: composed.id, digest: await preview(composed.id) });
+      assert.equal(done.status, 'published');
+      assert.ok('presentation' in done && typeof done.presentation === 'string');
+      assert.equal(done.presentation.split(text).length - 1, 1);
+      assert.ok(done.presentation.startsWith('> @author'));
+      assert.ok(!done.presentation.includes('[Comment ↗]'));
+      assert.ok(done.presentation.includes('[Reply ↗](' + url + '#issuecomment-9)'));
+      assert.equal(deps.feedback!.source, source);
+      assert.equal((await call('reconcile', { id: composed.id })).status, 'published');
+      assert.equal(writes, 1);
     });
   it('should keep a native reply independent of evolving issue outcomes without progress comparison', async () => {
     const target = await nativeFeedback();

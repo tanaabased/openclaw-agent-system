@@ -138,7 +138,7 @@ export default function replyOwner(
           publication: { url },
         }),
         instruction:
-          'Show this retained private response and confirmed public quote. This operation only reads the owning result and receipt; do not resume, recompose, implement or publish it again.',
+          'Show the returned presentation once, preserving distinct private context and the confirmed public quote without repeating the answer. This operation only reads the owning result and receipt; do not resume, recompose, implement or publish it again.',
       };
     }
     return {

@@ -47,6 +47,7 @@ export default async function nativeTaskContext(
               assessment: selection,
               workspace: deps.binding.workspace,
               debug: deps.manifest.debug,
+              workflow: deps.manifest.github?.notifications?.issueAssignment,
             }),
           }
         : { implementation: selection }),

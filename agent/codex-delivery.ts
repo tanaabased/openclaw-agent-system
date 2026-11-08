@@ -1,3 +1,4 @@
+import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
 import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import taskPullRequest, {
   isCurrentTaskPullRequest,
@@ -50,7 +51,6 @@ import codexHostAccess from './codex-host-access.ts';
 import { selectCodexIntake, type CodexIntakeDependencies } from './codex-intake.ts';
 import { connectCodexThreads, type CodexThreadRequest } from './codex-thread-client.ts';
 import { requireWorkflowSchedule, type WorkflowScheduleAuthority } from './workflow-result.ts';
-import workflowInstructions from '../channels/github/presentation/workflow-instructions.ts';
 import { githubNotificationPullRequestOpenedCard } from '../channels/github/presentation/pull-request-opened.ts';
 import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
 import IssueDeliveryProvider, {
@@ -517,17 +517,6 @@ export default async function runCodexDelivery(
             // presentation cannot claim active feedback when schedule readback fails.
           }
         }
-        const implementationInstructions = workflowInstructions(
-          'Implementation',
-          record.continuation?.selection,
-          current.workspace,
-          {
-            debug: current.manifest.debug,
-            manifestPath:
-              current.manifestSources?.['/github/issue-assignment/implementation/guidance']?.path ??
-              current.manifestPath,
-          },
-        );
         const presentationNotices = notices(previous.attached);
         previous.cardAttempts++;
         await save();
@@ -536,7 +525,8 @@ export default async function runCodexDelivery(
           retained: true,
           workflowStatus: workflowStatus(record),
           instruction:
-            'Reproduce the complete presentation Markdown below in your final reply, including the PR card and all notices, without a code fence. Do not replace it with a summary or a claim that the card was verified. This result establishes card generation, not visible delivery. Put any additional verification notes after the cards.',
+            cardCopyInstructions +
+            ' Reproduce the complete presentation Markdown below in your final reply, including the PR card and all notices, without a code fence. Do not replace it with a summary or a claim that the card was verified. This result establishes card generation, not visible delivery. Put any additional verification notes after the cards.',
           notices: presentationNotices,
           url: pullRequestUrl,
           pullRequest: previous.pullRequest,
@@ -549,7 +539,6 @@ export default async function runCodexDelivery(
               repositoryName: intake.repository.name,
               commentFlow,
             }),
-            ...(implementationInstructions ? [implementationInstructions] : []),
             announcementPresentation(
               previous.announcement,
               managedTargetUrl(intake),

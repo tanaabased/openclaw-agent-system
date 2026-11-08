@@ -3,7 +3,8 @@ import modelRoutingCard from './model-routing.ts';
 import redactCodexFeedback from '../../../agent/codex-feedback-redaction.ts';
 import type { RoutingDecision } from '../../../agent/model-routing.ts';
 import type { RoutingInstructions } from '../../../agent/routing-instructions.ts';
-import workflowInstructions, {
+import {
+  workflowConfigurationCard,
   type WorkflowInstructionsSelection,
   type WorkflowInstructionsPresentation,
 } from './workflow-instructions.ts';
@@ -92,7 +93,9 @@ export default function renderAssessmentResult(
                 label: 'Next',
                 value:
                   assessmentDecisionMode(result.decision) === 'plan'
-                    ? 'Await your direction before implementation.'
+                    ? result.outcome === 'clarification-needed'
+                      ? 'Waiting for the missing answers before implementation.'
+                      : 'Await your direction before implementation.'
                     : 'Continue automatically once runtime checks pass.',
               },
               ...result.decision.reasons.map((reason) => ({
@@ -165,10 +168,18 @@ export function assessmentContextCards(context: Omit<AssessmentPresentationConte
           effective: context.effective,
           instructions: context.routingInstructions,
           workspace: context.workspace,
-          debug: context.debug,
+          debug: false,
           manifestPath: context.routingManifestPath,
         })
       : undefined,
-    workflowInstructions('Assessment', context.assessment, context.workspace, context),
+    workflowConfigurationCard({
+      ...context,
+      routing: context.routingInstructions && {
+        ...context.routingInstructions,
+        skill: context.routingInstructions.skill ?? {
+          name: context.routingInstructions.requestedSkill,
+        },
+      },
+    }),
   ].filter((card): card is string => card !== undefined);
 }

@@ -94,10 +94,33 @@ export const assessmentResultSchema = discriminatedSchema('outcome', assessmentR
 const submissionVariants = resultVariants(text);
 // saved results retain the legacy shape; new submissions must supply their summary source.
 export const assessmentSubmissionSchema = discriminatedSchema('outcome', submissionVariants);
+const presentationVariants = Type.Union(
+  submissionVariants.anyOf.map((variant) =>
+    Type.Object(
+      {
+        ...variant.properties,
+        version: Type.Optional(Type.Literal(1)),
+        evidence: Type.Optional(evidence),
+        progress: Type.Optional(progress),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+);
+type AssessmentPresentationInput<T = Static<typeof assessmentSubmissionSchema>> = T extends unknown
+  ? Omit<T, 'version' | 'evidence' | 'progress'> & {
+      version?: 1;
+      evidence?: Static<typeof evidence>;
+      progress?: Static<typeof progress>;
+    }
+  : never;
+export const assessmentPresentationSchema = Type.Unsafe<AssessmentPresentationInput>(
+  discriminatedSchema('outcome', presentationVariants),
+);
 // the model-facing contract shares repeated fields instead of expanding them per outcome.
 export const assessmentResultContextSchema = {
   $defs: { ...common, fullAssessment: text, decision: Type.Optional(currentDecisionSchema) },
-  anyOf: submissionVariants.anyOf.map((variant) => ({
+  anyOf: presentationVariants.anyOf.map((variant) => ({
     ...variant,
     properties: {
       ...variant.properties,
@@ -114,14 +137,14 @@ export type AssessmentSubmission = Static<typeof assessmentSubmissionSchema>;
 export type AssessmentResult = Static<typeof assessmentResultSchema>;
 
 export const assessmentResultFormat = {
-  common:
-    'version:1; summary, fullAssessment, reviewSummary:string; evidence:[{source:string,status:observed|absent|unavailable|conflicting|assumed,detail:string}]; progress:{completed:string[],remaining:string[]}',
+  common: 'summary, fullAssessment, reviewSummary:string',
   outcomes: {
     'plan-ready': 'outcome:plan-ready; assessment:string; plan:string',
     'clarification-needed': 'outcome:clarification-needed; assessment:string; questions:string[]',
     'operator-setup-blocker': 'outcome:operator-setup-blocker; code:string; remediation:string',
   },
-  optional: 'decision:{mode:plan|work,reasons:string[]}; a work decision requires plan-ready',
+  optional:
+    'version:1; evidence:[{source:string,status:observed|absent|unavailable|conflicting|assumed,detail:string}]; progress:{completed:string[],remaining:string[]} (version and empty supporting details supplied when omitted); decision:{mode:plan|work,reasons:string[]}; a work decision requires plan-ready',
 };
 
 export function parseAssessmentResult(value: unknown): AssessmentResult {
@@ -139,6 +162,15 @@ export function parseAssessmentResult(value: unknown): AssessmentResult {
 }
 
 export function parseAssessmentSubmission(value: unknown): AssessmentSubmission {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const fields = value as Record<string, unknown>;
+    value = {
+      ...fields,
+      version: fields.version === undefined ? 1 : fields.version,
+      evidence: fields.evidence === undefined ? [] : fields.evidence,
+      progress: fields.progress === undefined ? { completed: [], remaining: [] } : fields.progress,
+    };
+  }
   if (value && typeof value === 'object') {
     const source = (value as { fullAssessment?: unknown }).fullAssessment;
     if (typeof source !== 'string' || !source.trim())

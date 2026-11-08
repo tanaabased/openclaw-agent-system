@@ -1,7 +1,9 @@
+import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
 import implementationMaterial from './implementation-material.ts';
 import { Value } from 'typebox/value';
 import { Type } from 'typebox';
 
+import type { WorkflowInstructionsPresentation } from '../channels/github/presentation/workflow-instructions.ts';
 import renderAssessmentResult, {
   assessmentContextCards,
   type AssessmentPresentationContext,
@@ -43,6 +45,7 @@ export function renderBoundAssessment(
     session: string;
     workspace: string;
     debug?: boolean;
+    workflow?: WorkflowInstructionsPresentation['workflow'];
   },
 ) {
   if (!Value.Check(boundRenderRequestSchema, input))
@@ -70,7 +73,7 @@ export function renderBoundAssessment(
             stageReceipt: undefined,
           },
           context.workspace,
-          { debug: context.debug },
+          { debug: context.debug, workflow: context.workflow },
         ),
       ),
     },
@@ -122,7 +125,8 @@ export default function renderNativeAssessment(
         assessmentOnly: input.assessmentOnly,
       }),
       instructions:
-        "The complete assessment stays in this native tool call; Agent System has not saved it. Include the complete presentation, with all routing, decision and debug cards, in this turn's final response. Commentary or progress output does not count as final presentation. Append any Task Update publication outcome and current blocker to that final response without replacing the assessment cards or duplicating the full engineering source. Continue from native conversation and current direction; do not record or reinject this assessment. Formatting grants no implementation or publication authority. Publish the concise review through Task Update only within its existing authorization.",
+        cardCopyInstructions +
+        " The complete assessment stays in this native tool call; Agent System has not saved it. Include the complete presentation, with all routing, decision and debug cards, in this turn's final response. Commentary or progress output does not count as final presentation. Append any Task Update publication outcome and current blocker to that final response without replacing the assessment cards or duplicating the full engineering source. Continue from native conversation and current direction; do not record or reinject this assessment. Formatting grants no implementation or publication authority. Publish the concise review through Task Update only within its existing authorization.",
     },
     {
       ...assessmentPresentationRequest(input.target, input.assessmentOnly),

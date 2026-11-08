@@ -262,6 +262,35 @@ describe('agent/retain-dispatch-history', () => {
     assert.equal(settledFeedback(first), true);
     assert.equal(settledFeedback(next), false);
   });
+  it('should retain the explicitly selected feedback source while a newer comment arrives', () => {
+    const source = record();
+    delete source.retired;
+    delete source.retirement;
+    const first = {
+      ...event(1),
+      native: true as const,
+      phase: 'delivered' as const,
+      result: undefined,
+    };
+    const next = {
+      ...event(2),
+      native: true as const,
+      phase: 'running' as const,
+      result: undefined,
+    };
+    source.feedback = {
+      baseline: {},
+      events: [first, next],
+      context: {
+        runId: 'later-run',
+        eventId: first.id,
+        inputEventId: 'delivered-input',
+      },
+    };
+    const projected = retainDispatchHistory(source) ?? source;
+    assert.deepEqual(projected.feedback!.events, [first, next]);
+  });
+
   it('should keep the latest context, current work owner and unfinished feedback exact', () => {
     const source = { ...record(), retired: undefined, retirement: undefined };
     source.feedback = { baseline: {}, events: [event(1), event(2), event(3), event(4)] };

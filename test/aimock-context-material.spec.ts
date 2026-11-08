@@ -5,11 +5,13 @@ import { getTextContent, type ChatCompletionRequest } from '@copilotkit/aimock';
 import implementationMaterial, {
   type ImplementationMaterialRead,
 } from '../agent/implementation-material.ts';
+import contextMaterialTransport from '../agent/context-material-transport.ts';
 import contextMaterialExchange from '../scripts/aimock-context-material.ts';
 
 describe('aimock context material', () => {
   it('should advance all pages when the host normalizes long tool call ids', () => {
     const source = { status: 'verified', instructions: 'Distinct reply context. '.repeat(1000) };
+    const transport = { tool: 'agent_system_dispatch' };
     const input = { action: 'reply', operation: 'compose' };
     const initialId = 'call_notifications_context_fc-zexhi4gzCy-qDwcw_ec91c0';
     const request = {
@@ -30,7 +32,9 @@ describe('aimock context material', () => {
         {
           role: 'tool',
           tool_call_id: initialId,
-          content: JSON.stringify(implementationMaterial(source, input)),
+          content: JSON.stringify(
+            contextMaterialTransport(implementationMaterial(source, input), transport),
+          ),
         },
       ],
     } as ChatCompletionRequest;
@@ -38,10 +42,10 @@ describe('aimock context material', () => {
     for (let attempt = 0; attempt < 20; attempt++) {
       const exchange = contextMaterialExchange(request);
       if (!exchange.pending) {
-        assert.deepEqual(
-          JSON.parse(getTextContent(exchange.request.messages[2]!.content)!),
-          source,
-        );
+        assert.deepEqual(JSON.parse(getTextContent(exchange.request.messages[2]!.content)!), {
+          ...source,
+          materialTransport: transport,
+        });
         assert.ok(offsets.size > 1);
         return;
       }
@@ -71,7 +75,10 @@ describe('aimock context material', () => {
           role: 'tool',
           tool_call_id: normalized,
           content: JSON.stringify(
-            implementationMaterial(source, input, read.material as ImplementationMaterialRead),
+            contextMaterialTransport(
+              implementationMaterial(source, input, read.material as ImplementationMaterialRead),
+              transport,
+            ),
           ),
         },
       );

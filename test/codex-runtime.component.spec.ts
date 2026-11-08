@@ -9,6 +9,26 @@ import codexDispatchHandoff from '../agent/codex-dispatch-handoff.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 
 describe('agent/codex-runtime', () => {
+  it('should accept empty lookup input while retaining native caller binding', () => {
+    for (const input of ['', ' \n', '{}', '{"threadId":"foreign"}']) {
+      const env = { ...process.env };
+      delete env.CODEX_THREAD_ID;
+      const result = spawnSync(
+        process.execPath,
+        ['dist/codex/codex-runtime.js', 'turn-context', '--plugin-data', '/unused'],
+        { input, env, encoding: 'utf8', timeout: 10000 },
+      );
+      assert.ifError(result.error);
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, '');
+      assert.equal(
+        JSON.parse(result.stderr).code,
+        input.includes('threadId')
+          ? 'turn-context-request-invalid'
+          : 'turn-context-native-caller-required',
+      );
+    }
+  });
   it('should deliver a private per-prompt probe without receipts or plugin state changes', async () => {
     const root = await mkdtemp(join(tmpdir(), 'codex-turn-probe-'));
     const workspace = join(root, 'workspace');

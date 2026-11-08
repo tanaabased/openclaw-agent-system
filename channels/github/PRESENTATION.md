@@ -16,8 +16,8 @@ their appearance and composition. The
 - Give private lifecycle results a report-like structure with stable sections
   for the complete assessment, plan, question, or result.
 - Keep GitHub-facing responses conversational; they are comments rather than
-  reports. Codex feedback presents the complete private response and a separate
-  public quote.
+  reports. Feedback presents one exact public reply card and any distinct private
+  context, without replaying the incoming message or duplicating the answer.
 - Use GitHub-flavored Markdown, including headings, lists, tables, blockquotes,
   code formatting, and links, only when it materially improves clarity.
 
@@ -195,6 +195,10 @@ Normal HTTPS links do not promise a particular browser destination.
 | Public assessment summary         | Plan assessment | by        |
 | Public PR announcement            | PR announcement | by        |
 
+Copy decoded Markdown, not its JSON representation: the spacer ends in one
+backslash, never two. Preserve unquoted blank lines between cards; do not quote
+the complete response a second time.
+
 Use one `&nbsp;` spacer followed by a Markdown hard break before the attribution,
 without a blank quoted line between the spacer and footer. Keep a paragraph boundary
 after the body so trailing code fences and nested quotes remain intact. Native
@@ -333,28 +337,18 @@ Keep consequential uncertainty, blocking questions, and required actions in the 
 assessment, questions, or action; the reference section must not be their only home.
 The framing follows the structured result; prose headings never select state.
 
-When debug presentation is enabled, follow Model routing with the shared quoted
-**🔬 Debug** card using **Context: Model routing instructions**. Show the retained
-skill and guidance source through the instruction renderer below, including
-literal inline guidance. Do not invent a resolved path for the default routing
-skill. Exact guidance stays private and out of public GitHub summaries.
+When debug presentation is enabled, include one shared quoted **🔬 Debug** card
+with **Context: Configured workflow** alongside the initial plan or clarification.
+Group routing, assessment, implementation and reply skills and custom guidance in
+that card. Link resolved skill sources when available; show configured future
+skills by name without inventing resolved paths. Link file guidance and preserve
+inline guidance literally. Label this as configuration, not proof of execution or
+compliance. Keep all guidance private.
 
-Follow routing and its optional debug details with a quoted
-**🔬 Debug** card with **Context: Assessment instructions**. Show the retained **Skill**, including the
-default, linked to its resolved `SKILL.md`. Show file **Guidance** as a linked
-workspace-relative label. For inline guidance, link “Inline guidance” to its
-verified manifest source when available, then show the retained text in a literal
-block preserving whitespace and Markdown characters. The source file may change;
-the retained text records what the turn used. Keep these links and instructions
-private. Selection metadata is not proof of compliance.
-
-Reuse the same **🔬 Debug** component with **Implementation instructions** context
-immediately after the PR card and **Feedback reply instructions** context after the public reply quote and
-publication link or obstacle. With debug off, omit instruction cards entirely,
-including custom selections and guidance details; the compact **Routing method**
-fact remains visible when customized. Errors, blockers, private responses,
-and publication outcomes remain visible. Do not put reply instructions in the
-incoming comment card or public GitHub reply.
+Do not repeat this configuration card after ordinary replies or PR cards. With
+debug off, omit it; retain the compact customized **Routing method** fact and all
+actual publication obstacles. Display recovery and other diagnostic events only
+when they occur, using the shared severity components.
 
 ## Question
 
@@ -401,31 +395,33 @@ from the recipient or active chat, or resolve credentials just for presentation.
 Assessment summaries retain the complete private assessment and plan separately.
 PR announcements use this same renderer with the exact public announcement, including
 its PR link, below the complete private **Pull request opened** card. Preserve native
-PR attachment. Keep failed, withheld, pending, or uncertain publication visible in
-separate warning callouts, with debug off too. Successful no-action recovery details,
+PR attachment. Keep failed or uncertain publication visible with debug off too. Use warning for
+an actionable obstacle or uncertain outcome and error for a failed operation.
+Ordinary waiting, deliberately withheld publication and clarification questions
+are not warnings or errors. Successful no-action recovery details,
 such as verified issue linkage after retry, use **🔬 Debug** with delivery recovery
 context only when debug is enabled. Historical missing archive/removal evidence
 uses the same card with intake context, separate from actionable warnings. Omit
-empty debug cards. Visibility changes are not cleanup recovery; unchanged debug
+empty debug cards. Diagnostics are events, not turn-ending footers. Consolidate
+related recovered attempts into one debug card with the observed outcome and
+only verified counts. Do not repeat resolved historical events on ordinary
+follow-ups. Visibility changes are not cleanup recovery; unchanged debug
 detail does not wake quiet intake or create repeated notifications.
 
 ## Private and Public Composition
 
-Keep the complete incoming comment or review card at the top of the final response;
-commentary alone is insufficient because clients may collapse it. Preserve the full
-private response outside the public quote. Keep debug instruction cards private and
-after the reply/footer or publication obstacle.
+The native incoming message already displays the complete comment or review card,
+including its attribution and source link. Do not replay that card in the response.
+Show the exact outgoing reply in its own linked card. If the private and public
+answers match, including a standalone commenter mention added during publication,
+show the answer only in the reply card. Compare line endings and outer whitespace
+without rewriting the displayed text. Keep distinct private information outside
+the quote; do not infer equivalence from similar wording or discard caveats.
+Private-only answers remain visible without a public reply card. Drafts stay
+unlinked and uncertain or failed publication keeps its notice. Configured instruction cards belong with the initial plan or clarification; do
+not append them to each reply.
 
 ```markdown
-> <complete incoming comment>
->
-> &nbsp;\
-> _[Comment ↗](https://github.com/owner/repo/issues/123#issuecomment-456) from [@author](https://github.com/author)_
-
-## Response
-
-<complete private response>
-
 > <complete GitHub-facing response>
 >
 > &nbsp;\

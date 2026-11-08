@@ -382,7 +382,10 @@ export default function codexIssueNotice(input: {
       ? [{ label: 'Issue', value: `[${text(input.issue.label)}](${input.issue.url})` }]
       : []),
     { label: 'What happened', value: copy.summary },
-    { label: 'Next step', value: input.actionMarkdown ?? copy.next },
+    {
+      label: code === 'delivery-linkage-retried' ? 'Outcome' : 'Next step',
+      value: input.actionMarkdown ?? copy.next,
+    },
     ...(input.facts ?? []),
     ...(diagnostic?.httpStatus
       ? [{ label: 'HTTP status', value: String(diagnostic.httpStatus) }]

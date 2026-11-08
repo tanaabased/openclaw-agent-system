@@ -195,7 +195,7 @@ export async function issueAssessmentAction(input: {
               stageReceipt: undefined,
             },
             input.workspace,
-            { debug: input.debug },
+            { debug: input.debug, workflow: input.policy?.issueAssignment },
           ),
         ),
       },
@@ -222,7 +222,7 @@ export async function issueAssessmentAction(input: {
               stageReceipt: undefined,
             },
             input.workspace,
-            { debug: input.debug },
+            { debug: input.debug, workflow: input.policy?.issueAssignment },
           ),
         ),
         result: {

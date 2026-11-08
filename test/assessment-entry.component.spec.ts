@@ -1,3 +1,5 @@
+import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
+import { conversationExampleScenario } from '../examples/openclaw-issue-conversation/model-fixture.ts';
 import renderNativeAssessment from '../agent/assessment-render.ts';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
@@ -449,6 +451,87 @@ describe('agent/assessment-entry', () => {
             'current-override',
           );
           assert.equal('previousResult' in complete, false);
+          if (runtime === 'openclaw') {
+            // feed the real native response into the CI conversation driver, not a copied status fixture.
+            const conversation: ChatCompletionRequest = {
+              model: 'gpt-5.5',
+              messages: [
+                { role: 'system', content: 'Name: Notification Tanaabot' },
+                {
+                  role: 'user',
+                  content: `Direct issue assessment target: ${target} checkout: ${root}`,
+                },
+              ],
+              tools: ['agent_system_dispatch', 'agent_system_github', 'read'].map((name) => ({
+                type: 'function',
+                function: { name },
+              })),
+            };
+            let rendered = '';
+            let completed = false;
+            let rejected = 0;
+            for (let step = 0; step < 8; step++) {
+              const fixture = matchFixture([...conversationExampleScenario.fixtures], conversation);
+              assert.ok(fixture);
+              const response =
+                typeof fixture.response === 'function'
+                  ? await fixture.response(conversation)
+                  : fixture.response;
+              if (!('toolCalls' in response) || !response.toolCalls?.length) {
+                assert.deepEqual(response, { content: rendered });
+                completed = true;
+                break;
+              }
+              const tool = response.toolCalls[0]!;
+              assert.ok(tool.id);
+              const args = JSON.parse(tool.arguments);
+              let output: unknown;
+              if (tool.name === 'read') output = await readFile(args.path, 'utf8');
+              else if (tool.name === 'agent_system_github')
+                output = {
+                  exitCode: 0,
+                  truncated: false,
+                  stdout: JSON.stringify({ body: 'Current issue requirement.', comments: [] }),
+                };
+              else if (args.operation === 'context') output = complete;
+              else {
+                assert.equal(args.operation, 'render');
+                try {
+                  const result = renderNativeAssessment(args, runtime);
+                  assert.equal(result.status, 'formatted');
+                  assert.equal(result.retained, false);
+                  assert.ok('presentation' in result);
+                  rendered = result.presentation;
+                  output = result;
+                } catch (error) {
+                  assert.ok(error instanceof Error && error.message.includes('result.plan'));
+                  rejected++;
+                  output = error.message;
+                }
+              }
+              conversation.messages.push(
+                {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: tool.id,
+                      type: 'function',
+                      function: { name: tool.name, arguments: tool.arguments },
+                    },
+                  ],
+                },
+                {
+                  role: 'tool',
+                  tool_call_id: tool.id,
+                  content: typeof output === 'string' ? output : JSON.stringify(output),
+                },
+              );
+            }
+            assert.equal(completed, true);
+            assert.equal(rejected, 1);
+            assert.ok(rendered.includes('Plan ready'));
+          }
         } else assert.deepEqual(response, before);
         assert.equal('resultSubmission' in response, false);
       }

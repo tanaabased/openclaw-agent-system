@@ -1,3 +1,4 @@
+import contextMaterialTransport from '../agent/context-material-transport.ts';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
@@ -147,7 +148,7 @@ export default async function nativeMaterialFixture(input: {
           assert.ok(['agent_system_dispatch', 'agent_system_github'].includes(name));
           const args = message.params.arguments.args;
           if (args.material) pages += 1;
-          const output = await input.run(args, name);
+          const output = contextMaterialTransport(await input.run(args, name), { tool: name });
           result = {
             tool: {
               id: `openclaw:${name}`,

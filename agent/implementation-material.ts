@@ -179,7 +179,7 @@ export default function implementationMaterial<T extends Record<string, unknown>
     aliases,
     instruction:
       (delivery.instruction ?? instruction) +
-      ' Shallow-merge restored objects with inline fields; replace arrays and scalars. Forward each returned request and next unchanged, including action, operation, identity, digest and offset; add only the listed inputFields from the original call when required. Do not reconstruct the envelope or substitute another context action. A rejected page read does not prove the installation is stale: compare the exact returned request, correct an identifiable transcription mistake once, or refresh the owning context on a stale digest.',
+      ' Shallow-merge restored objects with inline fields; replace arrays and scalars. Use materialTransport for every page: execute its exact argv with the returned request JSON on stdin in Codex, or call its named OpenClaw tool with that request. Forward each returned request and next as an object unchanged, including action, operation, identity, digest and offset; add only the listed inputFields from the original call when required. Do not retype digests or reconstruct the envelope or substitute another context action. A rejected page read does not prove the installation is stale: compare the exact returned request, correct an identifiable transcription mistake once, or refresh the owning context on a stale digest.',
   });
   const response = () => ({
     ...projected,

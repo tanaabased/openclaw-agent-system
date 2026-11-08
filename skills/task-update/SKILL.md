@@ -123,11 +123,12 @@ shared reply owners. An update request never begins implementation or changes mo
    attempted, refresh context and compose again with the same fact keys and revisions
    for unchanged evidence. This replaces the unattempted candidate and its observation.
    Attempted writes retain their original text and marker and use `reply reconcile` only.
-7. Show the complete private answer separately from the exact accepted public body,
-   posting agent and verified comment permalink returned by the shared renderer.
-   Show drafts without success links and keep failed, withheld and uncertain outcomes
-   visible. A saved candidate or uncertain write is not publication. Do not replace
-   the private answer with the public quote or add a separate success acknowledgment.
+7. Show the shared renderer's presentation once: the exact accepted public body,
+   posting agent, verified comment permalink and any distinct private context.
+   Do not replay the incoming card or repeat an identical answer outside its reply
+   card. Keep private-only answers visible. Show drafts without success links and
+   keep failed, withheld and uncertain outcomes visible. A saved candidate or
+   uncertain write is not publication; do not add a separate success acknowledgment.
 
 ## Checkpoints
 
@@ -140,7 +141,7 @@ shared reply owners. An update request never begins implementation or changes mo
 ## Completion Criteria
 
 The requester sees either a clear already-current result, an explicit publication
-obstacle, or the complete private answer and exact confirmed public quote. Repeated
+obstacle, or the exact confirmed public quote with any distinct private context. Repeated
 requests and uncertain-write reconciliation do not create duplicate comments.
 
 ## Bundled Resources

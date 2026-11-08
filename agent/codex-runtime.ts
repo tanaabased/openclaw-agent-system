@@ -4,6 +4,7 @@ import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
 import runCodexNotificationReset from './codex-notification-reset.ts';
 import runCodexFeedback from './codex-feedback.ts';
 import codexRuntimeRequest from './codex-runtime-request.ts';
+import contextMaterialTransport from './context-material-transport.ts';
 import runCodexContinuation from './codex-continuation.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
 import process from 'node:process';
@@ -131,7 +132,9 @@ function summarizePreview(preview: CodexWorkspacePreview): Record<string, unknow
 }
 
 function writeJson(value: unknown): void {
-  process.stdout.write(`${JSON.stringify(value)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(contextMaterialTransport(value, { argv: [process.execPath, ...process.argv.slice(1)] }))}\n`,
+  );
 }
 
 async function readStandardInput(): Promise<string> {
@@ -310,7 +313,8 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   assertCodexNodeVersion();
   if (command === 'turn-context') {
     const pluginData = parsePluginData(args.slice(1));
-    const input = JSON.parse(await readStandardInput());
+    const source = await readStandardInput();
+    const input = source.trim() ? JSON.parse(source) : {};
     if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length)
       throw new Error('turn-context-request-invalid');
     writeJson(await codexCurrentTurnContext(pluginData, process.env.CODEX_THREAD_ID));

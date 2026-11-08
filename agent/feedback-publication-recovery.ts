@@ -1,4 +1,3 @@
-import feedbackPresentation from './feedback-presentation.ts';
 import feedbackResponse from '../channels/github/presentation/feedback-response.ts';
 import { githubNotificationAttributedReplyText } from '../channels/github/publication/publication-contract.ts';
 import type { FeedbackSourceEvent } from './feedback-state.ts';
@@ -89,7 +88,6 @@ export default async function recoverFeedbackPublication(input: {
     ...result,
     eventId: event.id,
     presentation: feedbackResponse({
-      sourcePresentation: feedbackPresentation(event, owner + '/' + name),
       privateText: event.result.privateText,
       publicReply: {
         author: provider.identity.login,

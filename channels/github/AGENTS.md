@@ -32,6 +32,11 @@ OpenClaw, including owners outside this directory.
 - Repair observed failures in their existing owner. First consider removing an
   unnecessary dependency; do not turn each pilot failure into another controller
   layer or a workflow redesign.
+- Verified issue closure retires the task through native archival and checkout
+  cleanup. Reconcile stale checkout paths against current native ownership and
+  repository identity; historical bookkeeping must not permanently block cleanup.
+  Preserve actual shared-resource conflicts and native denials, and distinguish
+  confirmed archival from observed checkout reclamation.
 - Test the user-visible behavior with realistic incomplete state and controlled
   ordering, including child startup before coordinator reconciliation. Do not
   prepopulate the very records the test claims are unnecessary. Hook delivery and

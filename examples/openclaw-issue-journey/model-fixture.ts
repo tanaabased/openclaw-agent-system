@@ -9,7 +9,7 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
-import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
+import { assessmentPresentationSchema } from '../../agent/assessment-result.ts';
 import { replyRequestSchema } from '../../tools/dispatch/reply-schema.ts';
 import { Value } from 'typebox/value';
 
@@ -53,7 +53,7 @@ const dispatchStages = [
 ];
 
 function assessmentRequest(context: Record<string, unknown>, payload: object) {
-  assert.ok(Value.Check(assessmentSubmissionSchema, payload));
+  assert.ok(Value.Check(assessmentPresentationSchema, payload));
   return {
     action: 'assessment',
     operation: 'render',
@@ -162,9 +162,17 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       assert.equal((context.handoff as { next: string }).next, 'assessment-only');
       return { content: String(context.presentation) };
     }
-    assert.equal(context.status, 'verified');
-    assert.equal(context.entry, 'direct');
-    assert.equal('id' in context, false);
+    if (context.status === 'native') {
+      assert.equal(typeof context.id, 'string');
+      assert.equal((context.project as { path: string }).path, assessmentTarget[2]!.trim());
+      const presentation = context.presentationRequest as { operation: string; target: string };
+      assert.equal(presentation.operation, 'render');
+      assert.equal(presentation.target, assessmentTarget[1]);
+    } else {
+      assert.equal(context.status, 'verified');
+      assert.equal(context.entry, 'direct');
+      assert.equal('id' in context, false);
+    }
     const sourceRead = assessmentSource(context, result, call);
     if (sourceRead) return sourceRead;
     const selected = context.assessment as { skill: { path: string } };
@@ -178,8 +186,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       fullAssessment,
       plan: fullAssessment,
       reviewSummary,
-      evidence: [],
-      progress: { completed: ['Read the selected assessment method.'], remaining: [] },
     };
     const rejection = openClawAIMockToolResultText(messages, prefix + 'direct-assessment-invalid');
     if (rejection === undefined) {
@@ -433,17 +439,20 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     return nativePlan(fresh, true);
   }
   const facts = currentFacts(messages, false);
-  const recoveredFeedback = facts.feedbackLookupError ? result('feedback-context') : undefined;
-  if (facts.feedbackLookupError) {
-    assert.ok(
-      facts.contextRequest,
-      'failed feedback lookup must retain its exact recovery request',
-    );
-    assert.equal(facts.feedbackContextRequest, undefined);
-    if (!recoveredFeedback) return dispatch('feedback-context', facts.contextRequest);
-    if (recoveredFeedback.status !== 'verified' || !recoveredFeedback.eventId) return;
-  }
-  const privateFeedback = recoveredFeedback ?? facts.feedbackContextRequest;
+  const available = facts.availableFeedback as
+    | Array<{
+        source: { number: number; itemType: string; commentId: number; kind: string };
+        contextRequest: { id: string; eventId: string };
+      }>
+    | undefined;
+  const received = available?.filter(({ source }) =>
+    prompt.includes(
+      `/${source.itemType === 'issue' ? 'issues' : 'pull'}/${source.number}#${source.kind}${source.commentId}`,
+    ),
+  );
+  const privateFeedback =
+    facts.feedbackContextRequest ??
+    (received?.length === 1 ? received[0]!.contextRequest : undefined);
   const feedback = privateFeedback
     ? ['', privateFeedback.id, privateFeedback.eventId]
     : /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
@@ -510,7 +519,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         digest: preview.digest,
       });
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
-    return { content: privateText + '\n\n' + published.presentation };
+    return { content: published.presentation };
   }
   const revision = /(Clarify|Answer) ordinary assessment for managed issue ([a-f0-9]{64})/u.exec(
     prompt,

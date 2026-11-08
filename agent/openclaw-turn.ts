@@ -29,8 +29,11 @@ export function consumedInputEvent(
   const entry = inputs[0]!;
   const meta = sessionObject(entry.__openclaw);
   // queued delivery custody and the execution consuming it are distinct native identities.
-  const executionRunId =
-    allowExecutionRunId && typeof meta.runId === 'string' && meta.runId ? meta.runId : turn.runId;
+  const executionRunId = allowExecutionRunId
+    ? typeof meta.runId === 'string' && meta.runId
+      ? meta.runId
+      : (turn.executionRunId ?? turn.runId)
+    : turn.runId;
   if (turn.executionRunId && turn.executionRunId !== executionRunId)
     throw new Error('dispatch-turn-run-mismatch');
   const eventId =
