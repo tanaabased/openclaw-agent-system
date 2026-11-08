@@ -54,18 +54,7 @@ export default async function codexWorkContext(
     assignmentWarning:
       record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
     currentIssue: { source: JSON.parse(record.context!).source },
-    initialReview: assessmentReviewContext(
-      record,
-      JSON.parse(record.context!).source,
-      current.workspace,
-      {
-        debug: current.manifest.debug,
-        workflow: current.manifest.github?.notifications?.issueAssignment,
-        manifestPath: current.manifestPath,
-        routingManifestPath:
-          current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
-      },
-    ),
+    initialReview: assessmentReviewContext(record, JSON.parse(record.context!).source),
     routing: record.routing && JSON.parse(record.routing),
     effective: record.effective,
     continuationRequest: { action: 'context' as const, id: record.id },

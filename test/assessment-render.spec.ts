@@ -1,3 +1,4 @@
+import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -5,6 +6,7 @@ import { join } from 'node:path';
 
 import renderNativeAssessment, {
   assessmentPresentationRequest,
+  renderBoundAssessment,
 } from '../agent/assessment-render.ts';
 import assessmentReviewContext from '../agent/assessment-review-context.ts';
 import implementationMaterial, {
@@ -111,13 +113,19 @@ describe('agent/assessment-render', () => {
           },
         };
         const before = structuredClone(record);
-        const initialReview = assessmentReviewContext(record, target, '/workspace', {
-          debug: outcome === 'plan-ready',
-          workflow: {
-            implementation: { skill: 'configured:work' },
-            feedback: { skill: 'configured:reply' },
+        const initialReview = assessmentReviewContext(record, target);
+        assert.equal('cards' in initialReview.presentationRequest, false);
+        const owner = {
+          ...record,
+          threadId: 'thread',
+          request: { key: 'issue' },
+          worktree: '/checkout',
+          context: JSON.stringify({ source: target }),
+          manualIssue: {
+            repository: { owner: { login: 'owner' }, name: 'repo' },
+            issue: { number: 3 },
           },
-        });
+        } as SharedDispatchRecord;
         const context = { runtime, status: 'verified', publicationAuthorized: true, initialReview };
         const request = { action: 'context', id: 'task' };
         const restored = await hydrateImplementation(
@@ -142,12 +150,23 @@ describe('agent/assessment-render', () => {
                 evidence: [],
                 progress: { completed: [], remaining: [] },
               };
-        const shown = renderNativeAssessment(
+        const shown = renderBoundAssessment(
           {
             ...initialReview.presentationRequest,
             result: { ...submitted, decision: initialReview.decision },
           },
-          runtime,
+          {
+            runtime,
+            records: [owner],
+            admitted: [],
+            session: 'thread',
+            workspace: '/workspace',
+            debug: outcome === 'plan-ready',
+            workflow: {
+              implementation: { skill: 'configured:work' },
+              feedback: { skill: 'configured:reply' },
+            },
+          },
         );
         assert.ok(shown.status === 'formatted');
         assert.match(shown.presentation, /Model routing/);

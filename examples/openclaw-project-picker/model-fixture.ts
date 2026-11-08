@@ -190,7 +190,8 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
   if (!id) return;
   const context = result('context');
   if (!context) return dispatch('context', { action: 'context', id });
-  assert.equal(context.status, 'verified');
+  assert.equal(context.status, 'verified', JSON.stringify(context));
+  assert.equal(context.contextMaterials, undefined, 'ordinary assignment context must fit inline');
   assert.equal(context.mode, 'work', 'pickup must override ordinary plan mode');
   const project = context.project as { path: string };
   assert.equal(typeof project.path, 'string');

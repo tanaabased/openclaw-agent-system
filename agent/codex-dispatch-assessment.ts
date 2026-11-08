@@ -407,21 +407,7 @@ export async function assessDispatch(
       resultSchema: assessmentResultContextSchema,
       presentationRequest: {
         id: record.id,
-        ...assessmentPresentationRequest(
-          managedTargetUrl(intake),
-          false,
-          dispatchAssessmentContext(
-            { ...record, assessment, stageReceipt: undefined },
-            current.workspace,
-            {
-              debug: current.manifest.debug,
-              workflow: current.manifest.github?.notifications?.issueAssignment,
-              manifestPath: current.manifestPath,
-              routingManifestPath:
-                current.manifestSources?.['/models/routing/guidance']?.path ?? current.manifestPath,
-            },
-          ),
-        ),
+        ...assessmentPresentationRequest(managedTargetUrl(intake)),
       },
       mode: issueWorkflowMode(current.manifest.github?.notifications, record),
       instructions:

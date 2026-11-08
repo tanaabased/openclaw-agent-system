@@ -431,7 +431,8 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (!privateContext.includes('Agent System model-only current-turn facts')) return;
     const fresh = result('refresh-context');
     if (!fresh) return dispatch('refresh-context', { action: 'context', id: refreshId });
-    if (fresh.status !== 'verified') return;
+    assert.equal(fresh.status, 'verified', JSON.stringify(fresh));
+    assert.equal(fresh.contextMaterials, undefined, 'ordinary refreshed context must fit inline');
     const sourceRead = assessmentSource(fresh, result, call);
     if (sourceRead) return sourceRead;
     const evidence = JSON.parse(String(result('assessment-source')!.stdout));

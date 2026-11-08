@@ -4850,7 +4850,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.ok('presentationRequest' in verified && 'entry' in verified);
     assert.equal(verified.entry, 'managed');
     assert.equal(verified.presentationRequest.operation, 'render');
-    assert.match(JSON.stringify(verified.presentationRequest), /Model routing/);
+    assert.equal('cards' in verified.presentationRequest, false);
     const beforeRender = await record();
     const rendered = await service.run(manifest, root, assessor(input.id), {
       ...verified.presentationRequest,

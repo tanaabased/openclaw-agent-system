@@ -185,19 +185,7 @@ export async function issueAssessmentAction(input: {
       resultSchema: assessmentResultContextSchema,
       presentationRequest: {
         id: record.id,
-        ...assessmentPresentationRequest(
-          managedTargetUrl(intake),
-          false,
-          dispatchAssessmentContext(
-            {
-              ...record,
-              assessment: record.turnEvidence?.selection ?? record.assessment,
-              stageReceipt: undefined,
-            },
-            input.workspace,
-            { debug: input.debug, workflow: input.policy?.issueAssignment },
-          ),
-        ),
+        ...assessmentPresentationRequest(managedTargetUrl(intake)),
       },
       instructions: nativeAssessmentInstructions(),
     };

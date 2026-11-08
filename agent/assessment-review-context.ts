@@ -1,26 +1,18 @@
 import { assessmentPresentationRequest } from './assessment-render.ts';
 import { assessmentResultContextSchema } from './assessment-result.ts';
-import { dispatchAssessmentContext } from './dispatch-presentation.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 
 /** carry display inputs through native resumption without storing or requiring a review receipt. */
 export default function assessmentReviewContext(
-  record: Parameters<typeof dispatchAssessmentContext>[0] &
-    Pick<SharedDispatchRecord, 'id' | 'implementationDecision'>,
+  record: Pick<SharedDispatchRecord, 'id' | 'assessment' | 'implementationDecision'>,
   target: string,
-  workspace: string,
-  presentation: Parameters<typeof dispatchAssessmentContext>[2] = {},
 ) {
   return {
     assessment: record.assessment,
     resultSchema: assessmentResultContextSchema,
     presentationRequest: {
       id: record.id,
-      ...assessmentPresentationRequest(
-        target,
-        false,
-        dispatchAssessmentContext({ ...record, stageReceipt: undefined }, workspace, presentation),
-      ),
+      ...assessmentPresentationRequest(target),
     },
     decision: record.implementationDecision,
     instruction:

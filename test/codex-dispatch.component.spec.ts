@@ -2135,7 +2135,7 @@ describe('agent/codex-dispatch', () => {
     assert.equal(context.entry, 'managed');
     assert.equal((context.project as { path: string }).path, native!.cwd);
     assert.equal((context.presentationRequest as { operation: string }).operation, 'render');
-    assert.match(JSON.stringify(context.presentationRequest), /Model routing/);
+    assert.equal('cards' in (context.presentationRequest as object), false);
     const original =
       'Keep records until the retention decision is answered.\n\nPartial plan: inspect the store, then remove eligible records only after approval.\n\nWhich retention period applies?\n\nThe failure cause is unverified.';
     const question = {
@@ -4797,9 +4797,7 @@ describe('agent/codex-dispatch', () => {
       assert.ok(review);
       assert.deepEqual(review.decision, decision);
       assert.equal(review.presentationRequest.target, 'https://github.com/owner/repo/issues/3');
-      assert.ok(
-        review.presentationRequest.cards?.some((card: string) => card.includes('Model routing')),
-      );
+      assert.equal(review.presentationRequest.cards, undefined);
       assert.equal((await work.run('next')).status, 'reconciled');
     });
 

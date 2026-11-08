@@ -632,10 +632,7 @@ export default class OpenClawDispatchIssue {
               ...response,
               implementation: selected,
               currentIssue: { source: managedTargetUrl(intake) },
-              initialReview: assessmentReviewContext(record, managedTargetUrl(intake), workspace, {
-                debug: manifest.debug,
-                workflow: manifest.github?.notifications?.issueAssignment,
-              }),
+              initialReview: assessmentReviewContext(record, managedTargetUrl(intake)),
               ...(record.predecessorId
                 ? {
                     predecessor: (() => {

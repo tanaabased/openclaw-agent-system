@@ -1,3 +1,4 @@
+import { assessmentPresentationRequest } from '../agent/assessment-render.ts';
 import dispatchContext from '../agent/dispatch-context.ts';
 import resolveModelRoutingRequest from '../agent/model-routing-request.ts';
 import {
@@ -40,9 +41,8 @@ export default function assessmentContextFixture(runtime: 'openclaw' | 'codex' =
     resultContract: 'assessment-result/v1',
     resultSchema: assessmentResultContextSchema,
     presentationRequest: {
-      action: 'assessment',
-      operation: 'render',
-      target: 'https://github.com/tanaabased/big-test-bucket/issues/123',
+      id: 'a'.repeat(64),
+      ...assessmentPresentationRequest('https://github.com/tanaabased/big-test-bucket/issues/123'),
     },
     instructions: nativeAssessmentInstructions(),
   };
