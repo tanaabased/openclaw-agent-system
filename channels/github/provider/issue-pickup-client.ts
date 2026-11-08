@@ -44,7 +44,7 @@ export interface IssuePickupClient extends GitHubNotificationIntakeClient {
   discoverProject(
     owner: string,
     name: string,
-    milestone: number,
+    milestone: number | undefined,
     page: number,
   ): Promise<{ candidates: Array<Pick<ProjectCandidate, 'nodeId' | 'number'>>; nextPage?: number }>;
   projectCandidate(
@@ -62,16 +62,19 @@ const projection = '{nodeId:.node_id,number,title,labels:[.labels[].name]}';
 export default class GitHubIssuePickupClient {
   constructor(private readonly api: GitHubWorkEventApiClient) {}
 
-  async discoverProject(owner: string, name: string, milestone: number, page: number) {
-    if (![milestone, page].every((n) => Number.isSafeInteger(n) && n > 0))
+  async discoverProject(owner: string, name: string, milestone: number | undefined, page: number) {
+    if (
+      ![...(milestone === undefined ? [] : [milestone]), page].every(
+        (n) => Number.isSafeInteger(n) && n > 0,
+      )
+    )
       throw new Error('issue-pickup-page-invalid');
     const result = await this.api.request(
       [
         '--method',
         'GET',
         `${githubRepositoryEndpoint(owner, name)}/issues`,
-        '-F',
-        `milestone=${milestone}`,
+        ...(milestone === undefined ? [] : ['-F', `milestone=${milestone}`]),
         '-f',
         'state=open',
         '-F',

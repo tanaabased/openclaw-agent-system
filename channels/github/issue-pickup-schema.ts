@@ -46,12 +46,20 @@ export const issuePickupSchema = Type.Object(
               { additionalProperties: false },
             ),
           ),
-          milestone: Type.Object(
-            {
-              number: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
-              policy: Type.Literal('only'),
-            },
-            { additionalProperties: false },
+          milestone: Type.Optional(
+            Type.Object(
+              {
+                number: Type.Union([
+                  Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+                  Type.Array(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }), {
+                    minItems: 1,
+                    uniqueItems: true,
+                  }),
+                ]),
+                policy: Type.Optional(Type.Union([Type.Literal('only'), Type.Literal('prefer')])),
+              },
+              { additionalProperties: false },
+            ),
           ),
         },
         { additionalProperties: false },

@@ -92,7 +92,7 @@ export default class IssuePickupEnrollmentStore {
   }) {
     const identity = await this.owner();
     const pickup = input.policy.issuePickup!;
-    const targets = new Map<string, string>();
+    const targets = new Map<string, string | undefined>();
     for (const project of pickup.projects) {
       const [owner, name] = project.repository.split('/') as [string, string];
       const repository = await input.client.getRepository(owner, name);
@@ -100,7 +100,7 @@ export default class IssuePickupEnrollmentStore {
       if (!milestone) throw new IntakeError('issue-pickup-milestone-invalid');
       if (targets.has(repository.nodeId))
         throw new IntakeError('issue-pickup-repository-duplicate');
-      targets.set(repository.nodeId, milestone.nodeId);
+      targets.set(repository.nodeId, milestone.milestoneNodeIds[0]);
     }
     // keep the original enrollment shape readable by existing intake receipts.
     const [repositoryNodeId, milestoneNodeId] = [...targets][0]!;

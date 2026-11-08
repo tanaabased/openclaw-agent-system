@@ -80,9 +80,51 @@ describe('github issue pickup policy', () => {
     f.policy.routing = ['!owner/repo', '*/*'];
     assert.equal(await issuePickupScope(f.policy, f.client, f.repository), undefined);
     f.policy.routing.reverse();
-    assert.equal(await issuePickupScope(f.policy, f.client, f.repository), f.milestone);
+    assert.deepEqual(await issuePickupScope(f.policy, f.client, f.repository), {
+      policy: 'only',
+      milestoneNodeIds: [f.milestone.nodeId],
+      discoveryMilestone: 10,
+    });
     f.policy.routing = [];
     assert.equal(await issuePickupScope(f.policy, f.client, f.repository), undefined);
+  });
+
+  for (const milestone of [
+    undefined,
+    { number: 10 },
+    { number: [10, 11] },
+    { number: [10, 11], policy: 'prefer' },
+  ]) {
+    it(`should accept pickup scope ${JSON.stringify(milestone)}`, () => {
+      assert.equal(
+        parse({
+          ...pickupDeclaration,
+          projects: [{ repository: 'owner/repo', ...(milestone ? { milestone } : {}) }],
+        }).status,
+        'valid',
+      );
+    });
+  }
+
+  it('should resolve all selected milestones once and default to only', async () => {
+    const f = pickupFixture();
+    f.policy.issuePickup!.projects[0]!.milestone = { number: [10, 11] };
+    const calls: number[] = [];
+    f.client.getMilestone = async (_owner, _name, number) => {
+      calls.push(number);
+      return { number, nodeId: `M_${number}`, state: 'open' };
+    };
+    assert.deepEqual(await issuePickupScope(f.policy, f.client, f.repository), {
+      policy: 'only',
+      milestoneNodeIds: ['M_10', 'M_11'],
+    });
+    assert.deepEqual(calls, [10, 11]);
+    delete f.policy.issuePickup!.projects[0]!.milestone;
+    assert.deepEqual(await issuePickupScope(f.policy, f.client, f.repository), {
+      policy: 'all',
+      milestoneNodeIds: [],
+    });
+    assert.deepEqual(calls, [10, 11]);
   });
 
   it('should normalize recurring schedules and both guidance forms without activating work', () => {
@@ -128,12 +170,14 @@ describe('github issue pickup policy', () => {
 
   it('should reject unsupported pilot declarations rather than widen scope', () => {
     for (const patch of [
+      ...[[], [1, 1], [0], [1.5], ['1']].map((number) => ({
+        projects: [{ repository: 'owner/repo', milestone: { number } }],
+      })),
       { projects: [] },
       { projects: [...pickupDeclaration.projects, ...pickupDeclaration.projects] },
-      { projects: [{ repository: 'owner/repo' }] },
       { projects: [{ repository: 'other/repo', milestone: { number: 1, policy: 'only' } }] },
       { projects: [{ repository: 'owner/repo', milestone: { number: 0, policy: 'only' } }] },
-      { projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'prefer' } }] },
+      { projects: [{ repository: 'owner/repo', milestone: { number: 10, policy: 'unknown' } }] },
       { 'window-minutes': 0 },
       { 'window-minutes': 1.5 },
       { paused: 'false' },
@@ -367,7 +411,7 @@ describe('github issue pickup policy', () => {
     const f = pickupFixture();
     f.policy.routing = [];
     const original = structuredClone(f.authority.enrollment);
-    f.policy.issuePickup!.projects[0]!.milestone.number = 11;
+    f.policy.issuePickup!.projects[0]!.milestone!.number = 11;
     f.policy.issuePickup!.windowMinutes = 30;
     if (f.item.itemType === 'issue') f.item.milestone = null;
     const work = await authorizeProjectAssignment(f.input);

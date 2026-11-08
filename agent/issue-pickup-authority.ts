@@ -24,7 +24,7 @@ export const issuePickupEnrollmentSchema = Type.Object(
     agentId: text,
     account: identity,
     repositoryNodeId: text,
-    milestoneNodeId: text,
+    milestoneNodeId: Type.Optional(text),
     policyDigest: text,
     startedAt: time,
   },

@@ -134,7 +134,7 @@ describe('issue pickup installation enrollment', () => {
           ],
         },
       };
-      f.policy.issuePickup!.projects[0]!.milestone.number = 11;
+      f.policy.issuePickup!.projects[0]!.milestone!.number = 11;
       f.milestone.number = 11;
       f.milestone.nodeId = 'MI_new';
       let saves = 0;
