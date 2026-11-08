@@ -27,6 +27,8 @@ import issuePickupCapacity, {
   type PickupManagedRecord,
 } from './issue-pickup-capacity.ts';
 import issuePickupScope from './issue-pickup-scope.ts';
+import issuePickupLabels from './issue-pickup-labels.ts';
+import type { IssuePickupFilters } from '../channels/github/issue-pickup-schema.ts';
 import { type PickupOperation, type IssuePickupState } from './issue-pickup-state.ts';
 import issuePickupWindow from './issue-pickup-window.ts';
 import { maximumPickupWindowMs } from '../channels/github/issue-pickup-timing.ts';
@@ -84,6 +86,7 @@ export interface PickupAllowance {
   used?: number;
   limit: number;
   code?: string;
+  filters?: IssuePickupFilters;
 }
 
 type ManagedRecord = PickupManagedRecord;
@@ -191,6 +194,10 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
     automationHash({
       policyDigest: issuePickupPolicyDigest(live),
       selection: live.issuePickup?.selection,
+      filters: live.issuePickup?.projects.map(({ repository, filters }) => ({
+        repository,
+        filters,
+      })),
     });
   const window = issuePickupWindow({
     schedule: pickup.schedule,
@@ -237,6 +244,7 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
     repository: project.repository,
     milestone: project.milestone.number,
     limit: project.limit,
+    ...(project.filters ? { filters: project.filters } : {}),
     ...(window
       ? {
           used: charges.filter(
@@ -417,9 +425,13 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
     readContent = true,
   ) => {
     const { owner, name } = repository;
-    const observation = readContent
-      ? await client.projectCandidate(owner.login, name, number)
-      : undefined;
+    const filters = policy.issuePickup?.projects.find(
+      (project) => project.repository.toLowerCase() === `${owner.login}/${name}`.toLowerCase(),
+    )?.filters;
+    const observation =
+      readContent || filters?.labels?.length || filters?.excludeLabels?.length
+        ? await client.projectCandidate(owner.login, name, number)
+        : undefined;
     const item = observation ? observation.item : await client.getItem(owner.login, name, number);
     if (
       item.nodeId !== nodeId ||
@@ -439,6 +451,7 @@ export default async function issuePickup<R extends ManagedRecord>(tx: {
       return;
     const evidence = observation?.candidate;
     if (evidence && evidence.nodeId !== nodeId) return;
+    if (evidence && !issuePickupLabels(evidence.labels, filters)) return;
     return { item, evidence };
   };
   try {

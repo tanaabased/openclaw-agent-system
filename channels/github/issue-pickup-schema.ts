@@ -35,6 +35,17 @@ export const issuePickupSchema = Type.Object(
             pattern: '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9_.-]+$',
           }),
           limit: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
+          filters: Type.Optional(
+            Type.Object(
+              {
+                labels: Type.Optional(Type.Array(Type.String({ minLength: 1, pattern: '\\S' }))),
+                'exclude-labels': Type.Optional(
+                  Type.Array(Type.String({ minLength: 1, pattern: '\\S' })),
+                ),
+              },
+              { additionalProperties: false },
+            ),
+          ),
           milestone: Type.Object(
             {
               number: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
@@ -52,6 +63,10 @@ export const issuePickupSchema = Type.Object(
 );
 
 type Declaration = Static<typeof issuePickupSchema>;
+export interface IssuePickupFilters {
+  labels?: string[];
+  excludeLabels?: string[];
+}
 export interface IssuePickupPolicy extends AutomationModelSettings {
   paused: boolean;
   thread?: { id?: string; name?: string };
@@ -64,7 +79,12 @@ export interface IssuePickupPolicy extends AutomationModelSettings {
     | 'issue-pickup-schedule-precision'
     | 'issue-pickup-schedule-unsupported';
   selection?: Declaration['selection'];
-  projects: Array<Declaration['projects'][number] & { limit: number }>;
+  projects: Array<
+    Omit<Declaration['projects'][number], 'filters'> & {
+      limit: number;
+      filters?: IssuePickupFilters;
+    }
+  >;
 }
 
 export default function decodeIssuePickup(value: Declaration): IssuePickupPolicy {
@@ -89,7 +109,18 @@ export default function decodeIssuePickup(value: Declaration): IssuePickupPolicy
     ...(timing?.scanSchedule ? { scanSchedule: timing.scanSchedule } : {}),
     ...(timingError ? { timingError } : {}),
     ...(value.selection ? { selection: value.selection } : {}),
-    projects: value.projects.map((project) => ({ ...project, limit: project.limit ?? 1 })),
+    projects: value.projects.map(({ filters, ...project }) => ({
+      ...project,
+      limit: project.limit ?? 1,
+      ...(filters
+        ? {
+            filters: {
+              ...(filters.labels ? { labels: filters.labels } : {}),
+              ...(filters['exclude-labels'] ? { excludeLabels: filters['exclude-labels'] } : {}),
+            },
+          }
+        : {}),
+    })),
   };
 }
 

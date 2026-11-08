@@ -172,18 +172,20 @@ Pickup uses the existing GitHub access and approved assignment and feedback auth
 > and approve its native pickup schedule. Doctor checks that installation’s saved
 > enrollment and schedule; routing alone does not activate pickup.
 
-| Field                | Required | Meaning                                                                                                                                                                                                                                                                              |
-| -------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `effort`             | no       | Optional [automation effort](../../MANIFEST.md#automations). Inherits the selected profile’s effort; a direct model reference inherits `models.default.effort`.                                                                                                                      |
-| `model`              | no       | String: `default`, `low`, `medium`, `high`, or a `provider/model` reference. Defaults to `default` in both runtimes. Uses [automation model rules](../../MANIFEST.md#automations).                                                                                                   |
-| `paused`             | no       | Defaults to `false`; pauses new pickup immediately. Run Install to synchronize the saved native job.                                                                                                                                                                                 |
-| `start`              | no       | Daily local start time; defaults to `"03:00"`. Accepts `"3 am"`, `"3 A.M."`, `"3:00am"` and 24-hour clocks.                                                                                                                                                                          |
-| `window`             | no       | Duration, default `"2 hours"`; accepts seconds, minutes, hours, days, short units (`"2h"`) and compounds (`"1 hour 30 minutes"`). Maximum 24 hours. `duration` is an alias.                                                                                                          |
-| `end`                | no       | Closing clock time instead of a duration. An earlier or equal time closes the following day. Supplied duration fields must agree.                                                                                                                                                    |
-| `scans`              | no       | Defaults to `8`, evenly distributed from the start up to—but excluding—the closing time, rounded down to minute slots. Multiple scans need at least one minute each.                                                                                                                 |
-| `selection.guidance` | no       | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                                                                                                         |
-| `thread`             | no       | Persistent coordination chat: a name string or `{name, id}`, using the existing [automation thread convention](../../MANIFEST.md#automations). Defaults to `ISSUE PICKUP`. Run Install to reconcile a changed choice; missing conversations use the native automation recovery flow. |
-| `projects`           | yes      | One or more distinct entries with `repository: owner/name`, `milestone: {number: 10, policy: only}`, and optional `limit`. The milestone number and limit must be positive integers. `limit` defaults to `1`.                                                                        |
+| Field                               | Required | Meaning                                                                                                                                                                                                                                                                              |
+| ----------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `effort`                            | no       | Optional [automation effort](../../MANIFEST.md#automations). Inherits the selected profile’s effort; a direct model reference inherits `models.default.effort`.                                                                                                                      |
+| `model`                             | no       | String: `default`, `low`, `medium`, `high`, or a `provider/model` reference. Defaults to `default` in both runtimes. Uses [automation model rules](../../MANIFEST.md#automations).                                                                                                   |
+| `paused`                            | no       | Defaults to `false`; pauses new pickup immediately. Run Install to synchronize the saved native job.                                                                                                                                                                                 |
+| `start`                             | no       | Daily local start time; defaults to `"03:00"`. Accepts `"3 am"`, `"3 A.M."`, `"3:00am"` and 24-hour clocks.                                                                                                                                                                          |
+| `window`                            | no       | Duration, default `"2 hours"`; accepts seconds, minutes, hours, days, short units (`"2h"`) and compounds (`"1 hour 30 minutes"`). Maximum 24 hours. `duration` is an alias.                                                                                                          |
+| `end`                               | no       | Closing clock time instead of a duration. An earlier or equal time closes the following day. Supplied duration fields must agree.                                                                                                                                                    |
+| `scans`                             | no       | Defaults to `8`, evenly distributed from the start up to—but excluding—the closing time, rounded down to minute slots. Multiple scans need at least one minute each.                                                                                                                 |
+| `selection.guidance`                | no       | Inline text or `{file: relative/path.md}`, following [guidance rules](#workflow-customization). Selection guidance cannot override eligibility or authority.                                                                                                                         |
+| `thread`                            | no       | Persistent coordination chat: a name string or `{name, id}`, using the existing [automation thread convention](../../MANIFEST.md#automations). Defaults to `ISSUE PICKUP`. Run Install to reconcile a changed choice; missing conversations use the native automation recovery flow. |
+| `projects`                          | yes      | One or more distinct entries with `repository: owner/name`, `milestone: {number: 10, policy: only}`, and optional `limit`. The milestone number and limit must be positive integers. `limit` defaults to `1`.                                                                        |
+| `projects[].filters.labels`         | no       | Label names an issue must have, all required. Omitted or empty means no inclusion restriction.                                                                                                                                                                                       |
+| `projects[].filters.exclude-labels` | no       | Label names that exclude an issue when any is present. Omitted or empty means no exclusion restriction.                                                                                                                                                                              |
 
 Install adds one `📥 ISSUE PICKUP` job alongside assignment intake. The default native
 schedule has eight daily starts: 03:00, 03:15, 03:30, 03:45, 04:00, 04:15, 04:30 and
@@ -202,7 +204,19 @@ Explicit `effort` wins over inherited effort. These settings select the pickup
 coordinator, not the models that assess or implement individual issues. Existing
 [standalone Codex limitations](../../MANIFEST.md#automations) still apply.
 
-Repository, milestone, limit, guidance and route changes apply on the next run
+Label filters apply in both runtimes, within the configured repository and milestone,
+alongside open/unassigned eligibility. Names are compared case-insensitively; label
+values are not otherwise rewritten. The model still chooses whether matching work
+is worth taking. Before assignment, pickup reads the selected issue's current labels
+again; unrelated title, body or label changes do not invalidate a still-matching issue.
+This read and assignment are not atomic against later GitHub edits.
+
+An unknown required label leaves no matches; an unknown excluded label excludes
+nothing. Contradictory criteria or no eligible matches are explained in the scan
+card without widening the search. GitHub read errors remain separate. Edit criteria
+for a later scan; filters do not cancel accepted work or repeat uncertain assignments.
+
+Repository, milestone, limit, label filters, guidance and route changes apply on the next run
 without Install. Edits preserve assignments already counted in the window and
 the receipts for accepted assignments. Run Install after changing timing, chat or model settings.
 Replace the former `schedule` and `window-minutes` fields with `start`, `window` and `scans`.
