@@ -1330,6 +1330,35 @@ describe('agent/codex-delivery', () => {
     assert.match(JSON.stringify(missing.notices), /delivery-attachment-pending/);
   });
 
+  it('should link the current pr without operator input and refuse association changes', async () => {
+    await publish();
+    delete deps.native!.operatorInput;
+    const url = 'https://github.com/owner/repo/pull/7';
+    for (const pullRequest of [undefined, url, url]) {
+      const linked = await request('link', { pullRequest });
+      assert.equal(linked.status, 'linked');
+      assert.deepEqual((await store.read()).records[0]!.pullRequestLink, {
+        pullRequestNodeId: 'PR_7',
+        pullRequestNumber: 7,
+      });
+    }
+    const receipt = (await store.read()).records[0]!.delivery;
+    for (const pullRequest of [
+      null,
+      'https://github.com/owner/repo/pull/8',
+      'https://github.com/other/repo/pull/7',
+    ])
+      await assert.rejects(request('link', { pullRequest }), /delivery-link-operator-required/);
+    await store.exclusive(async (state, save) => {
+      state.records[0]!.pullRequestLink = null;
+      await save();
+    });
+    await assert.rejects(request('link', { pullRequest: url }), /delivery-link-operator-required/);
+    assert.equal((await store.read()).records[0]!.pullRequestLink, null);
+    assert.deepEqual((await store.read()).records[0]!.delivery, receipt);
+    assert.equal(creates, 1);
+  });
+
   it('should preserve the delivery attachment when observing a different linked pr', async () => {
     await publish();
     const receipt = (await store.read()).records[0]!.delivery;

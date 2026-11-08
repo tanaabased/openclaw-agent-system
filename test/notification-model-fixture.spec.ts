@@ -1018,7 +1018,9 @@ for (const scenario of [
       });
       for (const mode of ['operator', 'work', 'auto', 'custom'])
         it(`should carry ${mode} through implementation and the same delivery on retry`, async () => {
-          const workScenario = createPRExampleScenario(scenario.id);
+          const workScenario = createPRExampleScenario(scenario.id, {
+            explicitInitialLink: mode === 'work',
+          });
           const input = request(
             mode === 'operator'
               ? `Operator request for managed issue ${id}: Implement the retained plan and open a linked pull request.`
@@ -1123,8 +1125,12 @@ for (const scenario of [
           append(input, 'delivery-link-publish-0', {
             status: 'published',
             workflowStatus: 'native-unobserved',
+            url: 'https://github.com/owner/repo/pull/456',
           });
-          assert.equal((await action(input, 'delivery', workScenario)).operation, 'link');
+          const association = await action(input, 'delivery', workScenario);
+          assert.equal(association.operation, 'link');
+          if (mode === 'work')
+            assert.equal(association.pullRequest, 'https://github.com/owner/repo/pull/456');
           append(input, 'delivery-association', {
             status: 'linked',
             pullRequest: { pullRequestNumber: 456 },

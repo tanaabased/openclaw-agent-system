@@ -3588,6 +3588,71 @@ describe('agent/openclaw issue dispatch', () => {
   const workPass = (runId: string) =>
     service.run(manifest, root, { ...coordinator, runId }, { action: 'next' });
 
+  it('should link the current pr through native dispatch without operator input and refuse association changes', async () => {
+    const id = await readyWork('work');
+    const who = assessor(id);
+    await service.run(manifest, root, who, { action: 'implementation-context', id });
+    const current = await service.scope(manifest, root);
+    const intake = (await current.store.read())!.records[0]!;
+    const pullRequest = { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 };
+    await current.journal.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.work!.delivery = {
+        id,
+        binding: {
+          repositoryId: intake.repository.nodeId,
+          issueId: intake.issue.nodeId,
+          threadId: record.threadId!,
+          sessionId: record.sessionCreation!.sessionId!,
+          worktree: record.worktree!,
+          branch: 'branch',
+          base: 'main',
+          head: 'a'.repeat(40),
+          authorId: fixture.client.identity.nodeId,
+          policyDigest: 'a'.repeat(64),
+        },
+        title: 'Title',
+        body: 'Closes #3',
+        creationAttempted: true,
+        reconciled: true,
+        pullRequest,
+      };
+      await save();
+    });
+    const receipt = (await record()).work!.delivery;
+    service.dependencies.delivery = async () => {
+      throw new Error('same-pr linkage must not publish or read another pr');
+    };
+    const action = { action: 'delivery' as const, operation: 'link' as const, id };
+    const url = 'https://github.com/owner/repo/pull/7';
+    for (const target of [url, undefined, url]) {
+      const linked = await service.run(manifest, root, who, { ...action, pullRequest: target });
+      assert.equal(linked.status, 'linked', JSON.stringify(linked));
+      assert.deepEqual((await record()).pullRequestLink, pullRequest);
+    }
+    for (const target of [
+      null,
+      'https://github.com/owner/repo/pull/8',
+      'https://github.com/other/repo/pull/7',
+    ]) {
+      await assert.rejects(
+        service.run(manifest, root, who, { ...action, pullRequest: target }),
+        /delivery-binding-operator-required/,
+      );
+      assert.deepEqual((await record()).pullRequestLink, pullRequest);
+    }
+    await current.journal.exclusive(async (state, save) => {
+      state.records[0]!.pullRequestLink = null;
+      await save();
+    });
+    await assert.rejects(
+      service.run(manifest, root, who, { ...action, pullRequest: url }),
+      /delivery-binding-operator-required/,
+    );
+    assert.equal((await record()).pullRequestLink, null);
+    assert.deepEqual((await record()).work!.delivery, receipt);
+  });
+
   it('should bound scheduled announcement checks without sending another openclaw delivery turn', async () => {
     const id = await readyWork('work');
     await service.run(manifest, root, assessor(id), { action: 'implementation-context', id });

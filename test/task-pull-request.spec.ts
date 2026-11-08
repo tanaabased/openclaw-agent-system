@@ -1,9 +1,36 @@
 import assert from 'node:assert/strict';
-import taskPullRequest, { setTaskPullRequestLink } from '../agent/task-pull-request.ts';
+import taskPullRequest, {
+  isCurrentTaskPullRequest,
+  setTaskPullRequestLink,
+} from '../agent/task-pull-request.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import { intakeFixture } from './github-intake-fixture.ts';
 
 describe('agent/task-pull-request', () => {
+  it('should identify the current repository-qualified pr without reviving a cleared or replaced association', () => {
+    const { repository } = intakeFixture();
+    const original = { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 };
+    for (const delivery of [
+      { delivery: { pullRequest: original } },
+      { work: { delivery: { pullRequest: original } } },
+    ]) {
+      const record: Parameters<typeof taskPullRequest>[0] = delivery;
+      const url = 'https://github.com/owner/repo/pull/7';
+      assert.equal(isCurrentTaskPullRequest(record, { repository }, url), true);
+      for (const target of [
+        undefined,
+        null,
+        'https://github.com/owner/repo/pull/8',
+        'https://github.com/other/repo/pull/7',
+      ])
+        assert.equal(isCurrentTaskPullRequest(record, { repository }, target), false);
+      record.pullRequestLink = { pullRequestNodeId: 'PR_8', pullRequestNumber: 8 };
+      assert.equal(isCurrentTaskPullRequest(record, { repository }, url), false);
+      record.pullRequestLink = null;
+      assert.equal(isCurrentTaskPullRequest(record, { repository }, url), false);
+    }
+  });
+
   it('should change or clear the current association without rewriting earlier operation receipts', () => {
     const original = { pullRequestNodeId: 'old-pr', pullRequestNumber: 7 };
     const record: Pick<SharedDispatchRecord, 'pullRequestLink'> & {

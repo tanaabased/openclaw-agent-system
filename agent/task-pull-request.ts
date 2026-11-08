@@ -17,6 +17,19 @@ export default function taskPullRequest(
     : (record.delivery?.pullRequest ?? record.work?.delivery?.pullRequest);
 }
 
+export function isCurrentTaskPullRequest(
+  record: Parameters<typeof taskPullRequest>[0],
+  intake: Pick<ManagedIssue, 'repository'>,
+  target: string | null | undefined,
+) {
+  const current = taskPullRequest(record);
+  return Boolean(
+    current &&
+    target ===
+      `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/pull/${current.pullRequestNumber}`,
+  );
+}
+
 export async function setTaskPullRequestLink(
   record: Pick<SharedDispatchRecord, 'pullRequestLink'>,
   intake: ManagedIssue,

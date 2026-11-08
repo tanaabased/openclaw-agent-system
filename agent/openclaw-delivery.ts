@@ -1,5 +1,5 @@
 import codexIssueNotice from './codex-issue-notice.ts';
-import taskPullRequest from './task-pull-request.ts';
+import taskPullRequest, { isCurrentTaskPullRequest } from './task-pull-request.ts';
 import { retainImplementationDelivery } from './implementation-delivery.ts';
 import {
   managedPullRequest,
@@ -77,11 +77,7 @@ export default async function openClawDelivery(input: {
   const adoptedPullRequest = managedPullRequest(intake);
   if (record.supersededBy) throw new Error('dispatch-task-superseded');
   if (action.operation === 'link') {
-    const currentLink = taskPullRequest(record);
-    const unchanged =
-      currentLink &&
-      action.pullRequest ===
-        `https://github.com/${intake.repository.owner.login}/${intake.repository.name}/pull/${currentLink.pullRequestNumber}`;
+    const unchanged = isCurrentTaskPullRequest(record, intake, action.pullRequest);
     if (action.pullRequest === undefined || unchanged) {
       if (record.pullRequestLink === undefined && record.work?.delivery?.pullRequest)
         record.pullRequestLink = record.work.delivery.pullRequest;

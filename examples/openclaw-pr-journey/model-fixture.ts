@@ -141,6 +141,7 @@ function call(stage: string, name: string, args: unknown): FixtureResponse {
 }
 
 interface PRFixtureOptions {
+  explicitInitialLink?: boolean;
   initialQuestion?: boolean;
   incorporateCollaborator?: boolean;
   interruptFeedbackReply?: boolean;
@@ -841,6 +842,7 @@ function respond(
     const body = update
       ? 'Document closing disposable test issues and verifying the retained delivery after follow-up commits.'
       : 'Document closing disposable test issues after their evidence is captured.';
+    let published = result('delivery-publish');
     if (!retry) {
       const nativeWork = update;
       const context = nativeWork ? currentFacts(messages) : result('work-context');
@@ -932,7 +934,6 @@ function respond(
           body,
         });
       if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
-      let published = result('delivery-publish');
       if (!published)
         return dispatch('delivery-publish', {
           action: 'delivery',
@@ -992,12 +993,14 @@ function respond(
       if (published.status !== 'published') return deliveryObstacle(published);
     }
     if (!retry && !update) {
+      if (options.explicitInitialLink) assert.equal(typeof published?.url, 'string');
       const linked = result('delivery-association');
       if (!linked)
         return dispatch('delivery-association', {
           action: 'delivery',
           id: operatorId,
           operation: 'link',
+          ...(options.explicitInitialLink ? { pullRequest: published?.url } : {}),
         });
       assert.equal(linked.status, 'linked');
       assert.ok((linked.pullRequest as Record<string, unknown>)?.pullRequestNumber);

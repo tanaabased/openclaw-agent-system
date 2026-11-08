@@ -4,6 +4,7 @@ import feedbackPresentation from './feedback-presentation.ts';
 import openClawFeedbackInput from './openclaw-feedback-input.ts';
 import openClawResponseAuthority from './openclaw-response-authority.ts';
 import workflowStatus from './workflow-status.ts';
+import { isCurrentTaskPullRequest } from './task-pull-request.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
 import {
   managedTargetUrl,
@@ -558,7 +559,9 @@ export default class OpenClawDispatchIssue {
           const bindingOnly =
             input.action === 'delivery' &&
             (input.operation === 'bind' ||
-              (input.operation === 'link' && input.pullRequest !== undefined));
+              (input.operation === 'link' &&
+                input.pullRequest !== undefined &&
+                !isCurrentTaskPullRequest(record, intake, input.pullRequest)));
           if (bindingOnly && !operator) throw new Error('delivery-binding-operator-required');
           const receiptEffect =
             input.action === 'delivery' &&

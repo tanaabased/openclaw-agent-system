@@ -18,6 +18,7 @@ Publish the plan update, then independently link, announce and present the PR.
 ## Notes
 
 - Strict AIMock supplies the decisions and tool choices. GitHub requests, native execution, permission checks and publication remain real. Model interpretation and desktop rendering need separate verification.
+- Initial linkage supplies the just-published PR URL to verify that same-PR linkage needs no operator input; changing or clearing the association remains separately protected.
 - Adapted from the automatic-delivery fixtures in #434 (`a17b4f7`, authored by `emoriwan`), with one disposable issue and PR per job.
 - Account checks use the live provider. Only Tanaabot is assigned. Refreshes target this test issue, and cleanup stops the Gateway before closing external resources.
 
