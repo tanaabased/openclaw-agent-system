@@ -1,3 +1,4 @@
+import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
 import { implementationMaterialSchema } from '../tools/dispatch/implementation-material-schema.ts';
 import taskPullRequest, {
   isCurrentTaskPullRequest,
@@ -536,7 +537,8 @@ export default async function runCodexDelivery(
           retained: true,
           workflowStatus: workflowStatus(record),
           instruction:
-            'Reproduce the complete presentation Markdown below in your final reply, including the PR card and all notices, without a code fence. Do not replace it with a summary or a claim that the card was verified. This result establishes card generation, not visible delivery. Put any additional verification notes after the cards.',
+            cardCopyInstructions +
+            ' Reproduce the complete presentation Markdown below in your final reply, including the PR card and all notices, without a code fence. Do not replace it with a summary or a claim that the card was verified. This result establishes card generation, not visible delivery. Put any additional verification notes after the cards.',
           notices: presentationNotices,
           url: pullRequestUrl,
           pullRequest: previous.pullRequest,

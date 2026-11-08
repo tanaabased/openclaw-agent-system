@@ -195,6 +195,10 @@ Normal HTTPS links do not promise a particular browser destination.
 | Public assessment summary         | Plan assessment | by        |
 | Public PR announcement            | PR announcement | by        |
 
+Copy decoded Markdown, not its JSON representation: the spacer ends in one
+backslash, never two. Preserve unquoted blank lines between cards; do not quote
+the complete response a second time.
+
 Use one `&nbsp;` spacer followed by a Markdown hard break before the attribution,
 without a blank quoted line between the spacer and footer. Keep a paragraph boundary
 after the body so trailing code fences and nested quotes remain intact. Native

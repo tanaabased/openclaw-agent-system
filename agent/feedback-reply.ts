@@ -1,3 +1,4 @@
+import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
 import { Value } from 'typebox/value';
 
 import assessmentGuidance from './assessment-guidance.ts';
@@ -688,7 +689,8 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
       id: record.id,
       ...(publishedUrl ? { url: publishedUrl } : {}),
       instruction:
-        'Reproduce the complete returned presentation in the final response, preserving the incoming card, private answer, exact public reply, attribution links and debug card when supplied. When this turn produced an assessment, keep its complete review, routing, decision and configured debug cards in the same final response; this reply presentation must not replace them. Publication failure affects only this reply; reconcile its original receipt without repeating work.',
+        cardCopyInstructions +
+        ' Reproduce the complete returned presentation in the final response, preserving the incoming card, private answer, exact public reply, attribution links and debug card when supplied. When this turn produced an assessment, keep its complete review, routing, decision and configured debug cards in the same final response; this reply presentation must not replace them. Publication failure affects only this reply; reconcile its original receipt without repeating work.',
       presentation:
         purpose || record.feedback
           ? feedbackResponse({
