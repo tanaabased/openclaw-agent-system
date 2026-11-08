@@ -162,9 +162,17 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       assert.equal((context.handoff as { next: string }).next, 'assessment-only');
       return { content: String(context.presentation) };
     }
-    assert.equal(context.status, 'verified');
-    assert.equal(context.entry, 'direct');
-    assert.equal('id' in context, false);
+    if (context.status === 'native') {
+      assert.equal(typeof context.id, 'string');
+      assert.equal((context.project as { path: string }).path, assessmentTarget[2]!.trim());
+      const presentation = context.presentationRequest as { operation: string; target: string };
+      assert.equal(presentation.operation, 'render');
+      assert.equal(presentation.target, assessmentTarget[1]);
+    } else {
+      assert.equal(context.status, 'verified');
+      assert.equal(context.entry, 'direct');
+      assert.equal('id' in context, false);
+    }
     const sourceRead = assessmentSource(context, result, call);
     if (sourceRead) return sourceRead;
     const selected = context.assessment as { skill: { path: string } };
