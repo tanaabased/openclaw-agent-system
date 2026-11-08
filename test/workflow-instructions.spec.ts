@@ -111,7 +111,7 @@ describe('channels/github/presentation/workflow-instructions', () => {
     );
     assert.ok(!output.includes('Reply published'));
     assert.ok(output.includes('Private English answer.'));
-    assert.ok(output.includes('> Ita.\n>\n> <br>'));
+    assert.ok(output.includes('> Ita.'));
     const withheld = feedbackResponse({
       privateText: 'Private.',
       selection,

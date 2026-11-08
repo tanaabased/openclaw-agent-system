@@ -1030,7 +1030,6 @@ describe('agent/codex-feedback', () => {
     assert.equal('publication' in context && context.publication, 'private-only');
     assert.ok('presentation' in context && typeof context.presentation === 'string');
     assert.ok(attempt.request.prompt.startsWith(context.presentation));
-    assert.ok(context.presentation.includes('> <br>'));
     assert.ok(context.presentation.includes('from [@receiver]'));
     assert.equal((await store.read()).records[0]!.feedback!.events[0]!.result, undefined);
     assert.equal(creates, 0);

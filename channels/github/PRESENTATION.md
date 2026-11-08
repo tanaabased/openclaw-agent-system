@@ -179,8 +179,7 @@ italic attribution footer inside that same quote. Preserve raw provider text sep
 ```markdown
 > @tanaabot can you confirm whether this also covers comments received while planning?
 >
-> <br>
->
+> &nbsp;\
 > _[Comment ↗](https://github.com/tanaabased/example/issues/7#issuecomment-123) from [@pirog](https://github.com/pirog)_
 ```
 
@@ -196,7 +195,9 @@ Normal HTTPS links do not promise a particular browser destination.
 | Public assessment summary         | Plan assessment | by        |
 | Public PR announcement            | PR announcement | by        |
 
-The quoted `<br>` separator has operator-confirmed Codex display support. Native
+Use one `&nbsp;` spacer followed by a Markdown hard break before the attribution,
+without a blank quoted line between the spacer and footer. Keep a paragraph boundary
+after the body so trailing code fences and nested quotes remain intact. Native
 OpenClaw spacing must also be observed: renderer output or an HTML preview is not
 native display evidence. Do not introduce `<small>` or HTML anchors, which Codex
 displays literally. Record any unsupported host limitation and missing native
@@ -385,8 +386,7 @@ the suggested name from the exact required primary folder; retain issue and diag
 ```markdown
 > Thanks for flagging this, @pirog. The notification flow now preserves the link.
 >
-> <br>
->
+> &nbsp;\
 > _Reply draft from [@smutlord](https://github.com/smutlord)_
 ```
 
@@ -419,8 +419,7 @@ after the reply/footer or publication obstacle.
 ```markdown
 > <complete incoming comment>
 >
-> <br>
->
+> &nbsp;\
 > _[Comment ↗](https://github.com/owner/repo/issues/123#issuecomment-456) from [@author](https://github.com/author)_
 
 ## Response
@@ -429,8 +428,7 @@ after the reply/footer or publication obstacle.
 
 > <complete GitHub-facing response>
 >
-> <br>
->
+> &nbsp;\
 > _[Reply ↗](https://github.com/owner/repo/issues/123#issuecomment-789) from [@smutlord](https://github.com/smutlord)_
 ```
 

@@ -65,8 +65,7 @@ describe('channels/github/presentation/feedback', () => {
         '> const mention = "@tanaabot";',
         '> ```',
         '>',
-        '> <br>',
-        '>',
+        '> &nbsp;\\',
         '> *[Comment ↗](https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123) from [@pirog](https://github.com/pirog)*',
       ].join('\n'),
     );
@@ -89,7 +88,7 @@ describe('channels/github/presentation/feedback', () => {
       assert.ok(card.includes('> run();\n> ```\n>\n> > context'));
       assert.ok(
         card.endsWith(
-          `> <br>\n>\n> *[${label} ↗](${url}) ${connector} [@posting-agent](https://github.com/posting-agent)*`,
+          `> &nbsp;\\\n> *[${label} ↗](${url}) ${connector} [@posting-agent](https://github.com/posting-agent)*`,
         ),
       );
       const draft = githubCommentCard({
