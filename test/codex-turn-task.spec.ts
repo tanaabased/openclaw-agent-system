@@ -42,6 +42,21 @@ describe('agent/codex-turn-task', () => {
     assert.doesNotMatch(JSON.stringify(output), /PRIVATE-PROVIDER-PROSE|OLD-PLAN/);
     assert.deepEqual(record, before);
   });
+  it('should resolve the current native turn for delegated input without trusting a supplied turn id', async () => {
+    const output = await selectCodexTurnTask([record], { threadId: turn.threadId }, lookup);
+    assert.deepEqual(output?.currentTurn, turn);
+    await assert.rejects(
+      selectCodexTurnTask(
+        [record],
+        { threadId: turn.threadId },
+        {
+          ...lookup,
+          find: async () => ({ ...native, turnId: undefined }),
+        },
+      ),
+      /turn-context-native-turn-unavailable/,
+    );
+  });
   it('should ignore unrelated, stale, retired and ambiguous native owners', async () => {
     for (const changed of [
       { threadId: 'other' },

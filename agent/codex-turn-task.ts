@@ -8,7 +8,7 @@ import { connectCodexThreads } from './codex-thread-client.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
 import taskPullRequest from './task-pull-request.ts';
 
-type Turn = { threadId: string; turnId: string };
+type Turn = { threadId: string; turnId?: string };
 type Lookup = {
   find: ReturnType<typeof codexDispatchNative>['find'];
   receipt: ReturnType<typeof codexContinuationNative>;
@@ -53,18 +53,20 @@ export async function selectCodexTurnTask(
     matches.push({ record, native });
   }
   if (matches.length !== 1) return;
-  const { record } = matches[0]!;
+  const { record, native } = matches[0]!;
+  const turnId = turn.turnId ?? native.turnId;
+  if (!turnId) throw new Error('turn-context-native-turn-unavailable');
   const feedback = [];
   let unresolvedFeedback = false;
   for (const event of record.feedback?.events ?? []) {
     if (
       !event.attempt ||
       event.attempt.request.threadId !== turn.threadId ||
-      (event.attempt.turnId && event.attempt.turnId !== turn.turnId)
+      (event.attempt.turnId && event.attempt.turnId !== turnId)
     )
       continue;
     const receipt = await lookup.receipt(record.sourceThreadId, event.attempt);
-    if (receipt.status === 'verified' && receipt.turnId === turn.turnId) {
+    if (receipt.status === 'verified' && receipt.turnId === turnId) {
       if (!event.native) return;
       feedback.push(event);
     } else if (receipt.status !== 'verified') unresolvedFeedback = true;
@@ -72,6 +74,7 @@ export async function selectCodexTurnTask(
   const source = !unresolvedFeedback && feedback.length === 1 ? feedback[0] : undefined;
   const implementation = Boolean(retainedIssueProgression(record));
   return {
+    currentTurn: { threadId: turn.threadId, turnId },
     receipt: record.id,
     stage:
       feedback.length || unresolvedFeedback

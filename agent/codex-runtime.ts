@@ -11,7 +11,7 @@ import { Value } from 'typebox/value';
 import { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
 import assertCodexNodeVersion, { CodexNodeVersionError } from './codex-node-version.ts';
 import codexPermission from './codex-permission.ts';
-import codexTurnContext from './codex-turn-context.ts';
+import codexTurnContext, { codexCurrentTurnContext } from './codex-turn-context.ts';
 import CodexAssignmentClaims, { codexInstanceStore } from './codex-assignment-claims.ts';
 import { operateInstanceIdentity } from './instance-identity.ts';
 
@@ -308,6 +308,14 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     return;
   }
   assertCodexNodeVersion();
+  if (command === 'turn-context') {
+    const pluginData = parsePluginData(args.slice(1));
+    const input = JSON.parse(await readStandardInput());
+    if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length)
+      throw new Error('turn-context-request-invalid');
+    writeJson(await codexCurrentTurnContext(pluginData, process.env.CODEX_THREAD_ID));
+    return;
+  }
   if (command === 'session-start') return runSessionStart();
   if (command === 'binding') return runBinding(args.slice(1));
   if (command === 'instance') {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import codexTurnContext from '../agent/codex-turn-context.ts';
+import codexTurnContext, { codexCurrentTurnContext } from '../agent/codex-turn-context.ts';
 import type { CodexWorkspaceBindingInspection } from '../agent/codex-workspace-binding.ts';
 
 const bound = {
@@ -25,6 +25,34 @@ const hook = {
 };
 
 describe('agent/codex-turn-context', () => {
+  it('should recover delegated input from the native caller without caller-supplied task identifiers', async () => {
+    const output = await codexCurrentTurnContext('/data', 'native-chat', async (data, turn) => {
+      assert.equal(data, '/data');
+      assert.deepEqual(turn, { threadId: 'native-chat' });
+      return undefined;
+    });
+    assert.equal(output.status, 'unmanaged-turn');
+    await assert.rejects(codexCurrentTurnContext('/data', undefined), /native-caller-required/);
+    await assert.rejects(
+      codexCurrentTurnContext('/data', 'native-chat', async () => {
+        throw new Error('native-read-failed');
+      }),
+      /native-read-failed/,
+    );
+  });
+  it('should distinguish failed lookup from absent task context without exposing raw errors', async () => {
+    const output = await codexTurnContext(
+      '/data',
+      hook,
+      async () => bound,
+      async () => {
+        throw new Error('PRIVATE-ERROR');
+      },
+    );
+    assert.equal(JSON.parse(output!.split('\n')[1]!).lookupStatus, 'unavailable');
+    assert.doesNotMatch(output!, /PRIVATE-ERROR/);
+    assert.match(output!, /turnContextRuntime/);
+  });
   it('should supply production task lookup and transport privately after native binding', async () => {
     const output = await codexTurnContext(
       '/data',
@@ -33,6 +61,7 @@ describe('agent/codex-turn-context', () => {
       async (_data, turn) => {
         assert.deepEqual(turn, { threadId: 'native-chat', turnId: 'native-turn' });
         return {
+          currentTurn: turn,
           receipt: 'owner',
           stage: 'feedback',
           contextRequest: undefined,

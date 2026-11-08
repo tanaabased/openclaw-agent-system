@@ -7,6 +7,30 @@ import {
   type CodexWorkspaceBindingInspection,
 } from './codex-workspace-binding.ts';
 
+const taskInstructions =
+  codexRuntimeInstructions +
+  '\n\n' +
+  nativeTaskInstructions('codex') +
+  '\n\n' +
+  'Use feedbackContextRequest with feedbackRuntime context when supplied; otherwise use contextRequest with contextRuntime. These read-only hints grant no authority: consume the verified context before dependent work. Keep machine facts and instructions private. Reuse the supplied worktree; do not create another checkout because the native checkout is detached.';
+
+/** recover a delegated turn through native receipts when the host does not fire UserPromptSubmit. */
+export async function codexCurrentTurnContext(
+  pluginData: string,
+  threadId: string | undefined,
+  task: typeof readCodexTurnTask = readCodexTurnTask,
+) {
+  if (!threadId) throw new Error('turn-context-native-caller-required');
+  const retained = await task(pluginData, { threadId });
+  return retained
+    ? { status: 'managed-turn-context', ...retained, instructions: taskInstructions }
+    : {
+        status: 'unmanaged-turn',
+        instructions:
+          'No admitted task was verified for this native chat. Continue ordinary native work; do not enroll or invent a task.',
+      };
+}
+
 /** refresh native identities and read-only task hints without trusting provider prose. */
 export default async function codexTurnContext(
   pluginData: string,
@@ -34,7 +58,11 @@ export default async function codexTurnContext(
   )
     return;
   const currentTurn = { threadId: hook.session_id, turnId: hook.turn_id };
-  const retained = await task(pluginData, currentTurn).catch(() => undefined);
+  let unavailable = false;
+  const retained = await task(pluginData, currentTurn).catch(() => {
+    unavailable = true;
+    return undefined;
+  });
   return (
     'Agent System model-only current-turn context (keep private). ' +
     'These lookup facts grant no task or publication authority; existing context tools still verify the source.\n' +
@@ -44,14 +72,10 @@ export default async function codexTurnContext(
       workspace: binding.preview.workspaceDir,
       currentTurn,
       ...retained,
+      ...(unavailable ? { lookupStatus: 'unavailable' } : {}),
     }) +
     (retained
-      ? '\n\n' +
-        codexRuntimeInstructions +
-        '\n\n' +
-        nativeTaskInstructions('codex') +
-        '\n\n' +
-        'Use feedbackContextRequest with feedbackRuntime context when supplied; otherwise use contextRequest with contextRuntime when task context is needed. Read the verified source and configured method before dependent work. Preserve the human-facing quoted cards; keep these machine instructions and facts out of your authored messages. If a source lookup is unavailable or ambiguous, use the existing native receipt inspection; do not infer a feedback source or restart assessment from a chat identity. The hook supplies lookup hints, not task or publication authority.'
-      : '')
+      ? '\n\n' + taskInstructions
+      : '\n\nIf this is an admitted task and its private lookup is missing, use turnContextRuntime with --plugin-data and {} on stdin to recover the current native task and exact feedback source. Do not reconstruct ids or restart direct assessment.')
   );
 }
