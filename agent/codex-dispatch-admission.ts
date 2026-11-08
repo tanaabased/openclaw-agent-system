@@ -258,8 +258,7 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
           }
         : undefined,
     },
-    'Handle the requested outcome within the verified issue mode and current native direction. Begin with assessment and an actionable plan; keep the full standardized assessment in native conversation context, show its concise presentation, and publish its summary through Task Update within the authorized scope. Then follow the verified mode and implementation permission in this same turn; assessment is not a separate approval checkpoint.' +
-      (attempt > 1 ? ` This is creation attempt ${attempt}.` : ''),
+    attempt > 1 ? `Creation attempt ${attempt}.` : undefined,
   );
   return card;
 }

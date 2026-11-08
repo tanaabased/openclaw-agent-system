@@ -35,25 +35,22 @@ export function assessmentTurnMessage(
   },
 ) {
   const assignment = input
-    ? assignmentCard(
-        {
-          emoji: '📥',
-          item: {
-            kind: managedPullRequest(input.intake) ? 'Pull request' : 'Issue',
-            label: `${input.intake.repository.owner.login}/${input.intake.repository.name}#${input.intake.issue.number}`,
-            url: managedTargetUrl(input.intake),
-          },
-          sender: input.intake.assignment
-            ? {
-                label: input.intake.assignment.actor.login,
-                url: 'https://github.com/' + input.intake.assignment.actor.login,
-              }
-            : undefined,
+    ? assignmentCard({
+        emoji: '📥',
+        item: {
+          kind: managedPullRequest(input.intake) ? 'Pull request' : 'Issue',
+          label: `${input.intake.repository.owner.login}/${input.intake.repository.name}#${input.intake.issue.number}`,
+          url: managedTargetUrl(input.intake),
         },
-        'Assess this issue and prepare a plan in the chat, then continue within its configured mode and current user direction.',
-      )
+        sender: input.intake.assignment
+          ? {
+              label: input.intake.assignment.actor.login,
+              url: 'https://github.com/' + input.intake.assignment.actor.login,
+            }
+          : undefined,
+      })
     : undefined;
-  return assignment ?? 'Assess the admitted task and prepare a plan in this chat.';
+  return assignment ?? 'Task assigned.';
 }
 
 /** resolve the selected method from this agent's native catalog without fallback. */

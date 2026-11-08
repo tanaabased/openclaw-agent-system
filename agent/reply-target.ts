@@ -8,11 +8,14 @@ import {
 } from '../channels/github/provider/review-feedback.ts';
 
 /** Retained provider metadata selects the exact source; prose never selects a destination. */
-export function feedbackTarget(repository: string, event: {
-  itemType: 'issue' | 'pull-request';
-  number: number;
-  source: string;
-}) {
+export function feedbackTarget(
+  repository: string,
+  event: {
+    itemType: 'issue' | 'pull-request';
+    number: number;
+    source: string;
+  },
+) {
   const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
   const kind = isReviewFeedback(source)
     ? source.feedback.receipt.kind === 'review-comment'

@@ -4395,7 +4395,6 @@ describe('agent/openclaw issue dispatch', () => {
       await assess(input.id);
       const message = String(sends()[0]!.params.message);
       assert.match(message, /Issue assigned/);
-      assert.match(message, /Assess this issue and prepare a plan/);
       assert.ok(!message.includes('Model routing'));
       assert.match(message, /https:\/\/github.com\/receiver/);
       assert.match(message, /owner\/repo#3/);

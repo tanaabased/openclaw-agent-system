@@ -31,6 +31,8 @@ export default function feedbackComposition<Source, Outcome>(input: {
   return {
     status: 'composition-ready' as const,
     compositionContext: 'feedback/v1' as const,
+    instructions:
+      'privateResponse is the finished human-facing answer shown verbatim in the Response section, not instructions to the reply composer. Keep workflow steps, tool arguments and rendering directions outside that answer. Apply the selected skill and guidance privately to produce the public candidate.',
     ...input,
     maximumPublicCharacters: maximumGitHubNotificationReplyLength,
   };
