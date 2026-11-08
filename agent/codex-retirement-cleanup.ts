@@ -27,6 +27,7 @@ export default async function codexRetirementCleanup(input: {
   save(): Promise<void>;
 }): Promise<RetirementCleanupResult & { request?: RetirementArchiveRequest }> {
   const { record } = input;
+  const worktree = record.worktree;
   const retirement = record.retirement!;
   const threadId = record.threadId ?? record.receiptThreadId;
   const pending = (code: string) => ({ archived: input.archived, worktreeRemoved: false, code });
@@ -140,6 +141,7 @@ export default async function codexRetirementCleanup(input: {
       return pending('retirement-worktree-unpreserved');
   }
   await input.fresh();
+  if (record.worktree !== worktree) return pending('retirement-observation-changed');
   retirement.archiveAttempt = {
     at: input.now,
     turnId: input.turnId,

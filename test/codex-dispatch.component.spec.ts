@@ -3736,6 +3736,71 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(await next(), { status: 'idle', changed: false });
   });
 
+  for (const relocation of [
+    'same repository',
+    'foreign repository',
+    'project root',
+    'shared checkout',
+  ] as const) {
+    it(`should reconcile closed task checkout ownership before native cleanup: ${relocation}`, async () => {
+      const prepared = await prepare();
+      created();
+      await request('reconcile', { id: prepared.id, receipt: { threadId: native!.id } });
+      const moved = relocation === 'project root' ? source : join(root, 'moved-checkout');
+      if (moved !== source) await mkdir(moved);
+      native!.cwd = moved;
+      native!.status = 'idle';
+      native!.turnEnded = true;
+      fixture.item.state = 'closed';
+      await writeCleanup(0);
+      now += 60_000;
+      const git = deps.git!;
+      deps.git = async (path, args) =>
+        relocation === 'foreign repository' && path === moved && args[0] === 'remote'
+          ? 'https://github.com/other/repo.git'
+          : git(path, args);
+      deps.retirementNative = {
+        worktreeUsers: async (path) => {
+          assert.equal(path, moved);
+          return relocation === 'shared checkout'
+            ? ['issue-thread', 'unrelated']
+            : ['issue-thread'];
+        },
+        archiveOutcome: async () => 'unverified',
+      };
+      const threads = {
+        schemaVersion: 4,
+        pinnedThreads: [],
+        unavailableHosts: [],
+        unavailableSources: [],
+      };
+      const attempt = await request('next', { projects, threads });
+      const record = async () => ((await readDispatchState()).records as DispatchRecord[])[0]!;
+      if (relocation !== 'same repository') {
+        assert.notEqual(attempt.status, 'retirement-prepared');
+        assert.equal((await record()).retirement?.archiveAttempt, undefined);
+        assert.equal((await record()).retired, undefined);
+        return;
+      }
+      assert.equal(attempt.status, 'retirement-prepared');
+      assert.deepEqual(attempt.request, {
+        threadId: 'issue-thread',
+        hostId: 'local',
+        archived: true,
+      });
+      assert.equal((await record()).worktree, moved);
+      assert.equal((await record()).result, undefined);
+      native!.archived = true;
+      native!.cwd = source;
+      await next();
+      assert.equal((await record()).retirement?.code, 'retirement-native-reclamation-pending');
+      await rm(moved, { recursive: true });
+      await next();
+      assert.ok((await record()).retired);
+      assert.ok(!gitCalls.some((args) => args.includes('remove')));
+    });
+  }
+
   for (const reason of ['closure', 'closure after removal', 'operator request'] as const) {
     it(`should prepare native archival during intake and retire only after observed reclamation: ${reason}`, async () => {
       worktree = join(codexHome, 'worktrees', 'retiring', 'repo');
