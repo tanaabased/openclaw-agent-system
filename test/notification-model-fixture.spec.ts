@@ -281,6 +281,21 @@ for (const scenario of [
         assert.deepEqual(await response(input), { content: 'Retained complete assessment.' });
       });
 
+    if (scenario.id === 'openclaw-notifications-retirement')
+      it('should scope helper spawning to the current native input', async () => {
+        const input = request('Spawn retirement checkout helper at /managed/issue-checkout');
+        const spawn = await response(input);
+        assert.ok('toolCalls' in spawn && spawn.toolCalls?.length === 1);
+        assert.equal(spawn.toolCalls[0]!.name, 'sessions_spawn');
+        const args = JSON.parse(spawn.toolCalls[0]!.arguments);
+        assert.equal(args.cwd, '/managed/issue-checkout');
+        assert.equal(args.cleanup, 'keep');
+        assert.equal(args.expectsCompletionMessage, false);
+        input.messages.push({ role: 'user', content: args.task });
+        const completed = await response(input);
+        assert.ok('content' in completed && !('toolCalls' in completed));
+      });
+
     if (scenario.id === 'openclaw-issue-journey')
       it('should preserve a failed recovery candidate without retrying or claiming publication', async () => {
         const input = request(`recover only the pending public assessment summary with id ${id}`);

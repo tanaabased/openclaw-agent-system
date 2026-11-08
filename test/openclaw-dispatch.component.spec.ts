@@ -351,13 +351,20 @@ describe('agent/openclaw issue dispatch', () => {
               if (method === 'sessions.patch') {
                 if (archiveError)
                   throw new GatewayClientRequestError({ code: 'FORBIDDEN', message: 'private' });
-                (multiple ? sessions.get(String(params.key))! : session!).archived =
-                  params.archived;
+                const target =
+                  foreignSessions.find((row) => row.key === params.key) ??
+                  (multiple ? sessions.get(String(params.key))! : session!);
+                assert.equal(target.sessionId, params.expectedSessionId);
+                target.archived = params.archived;
                 return { ok: true };
               }
               if (method === 'sessions.describe') {
                 if (describeError) throw describeError;
-                return { session: multiple ? sessions.get(String(params.key)) : session };
+                return {
+                  session:
+                    foreignSessions.find((row) => row.key === params.key) ??
+                    (multiple ? sessions.get(String(params.key)) : session),
+                };
               }
               if (method === 'sessions.list') {
                 const rows = [
@@ -1615,12 +1622,130 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).retired, undefined);
     assert.equal(calls.filter(({ method }) => method === 'sessions.patch').length, 1);
   });
-  for (const custody of ['unowned-session', 'incomplete-automations'] as const) {
+  it('should retire a closed task and its native helper chats without a shared-checkout veto', async () => {
+    await prepare(await next());
+    const target = await record();
+    const helper = {
+      key: 'agent:receiver:subagent:helper',
+      agentId: 'receiver',
+      sessionId: 'helper-incarnation',
+      spawnedCwd: target.worktree,
+      parentSessionKey: target.threadId,
+      status: 'done',
+      archived: false,
+    };
+    const nested = {
+      ...helper,
+      key: 'agent:receiver:subagent:nested',
+      sessionId: 'nested-incarnation',
+      parentSessionKey: helper.key,
+    };
+    foreignSessions = [nested, helper];
+    let removals = 0;
+    service.dependencies.worktrees.cleanupGitHub = async (input) => {
+      assert.equal(input.purge, true);
+      if (!input.verifyOnly) {
+        assert.equal(session!.archived, true);
+        assert.equal(helper.archived, true);
+        assert.equal(nested.archived, true);
+        removals++;
+      }
+      return {
+        ...input.worktree,
+        repositoryId: 'github-10',
+        workId: 'issue-20',
+        status: input.verifyOnly ? 'preserved' : 'removed',
+      };
+    };
+    fixture.item.state = 'closed';
+    await service.run(manifest, root, coordinator, { action: 'next' });
+    service.dependencies.now = () => baseline + 24 * 60 * 60_000;
+    await service.run(manifest, root, { ...coordinator, runId: 'cleanup' }, { action: 'next' });
+    assert.ok((await record()).retired);
+    assert.equal(removals, 1);
+    assert.deepEqual(
+      new Set(
+        calls.filter(({ method }) => method === 'sessions.patch').map(({ params }) => params.key),
+      ),
+      new Set([target.threadId, helper.key, nested.key]),
+    );
+  });
+
+  for (const recovery of ['observed', 'replaced', 'archived-parent'] as const) {
+    it(`should reconcile ${recovery} helper archival without replaying native refusal`, async () => {
+      await prepare(await next());
+      const target = await record();
+      const helper = {
+        key: 'agent:receiver:subagent:helper',
+        agentId: 'receiver',
+        sessionId: 'helper-id',
+        spawnedCwd: target.worktree,
+        parentSessionKey: target.threadId,
+        archived: false,
+      };
+      foreignSessions = [helper];
+      let removals = 0;
+      service.dependencies.worktrees.cleanupGitHub = async (input) => {
+        if (!input.verifyOnly) removals++;
+        return {
+          ...input.worktree,
+          repositoryId: 'github-10',
+          workId: 'issue-20',
+          status: input.verifyOnly ? 'preserved' : 'removed',
+        };
+      };
+      fixture.item.state = 'closed';
+      await service.run(manifest, root, coordinator, { action: 'next' });
+      let now = baseline + 24 * 60 * 60_000;
+      service.dependencies.now = () => now;
+      if (recovery === 'archived-parent') session!.archived = true;
+      const expectedCalls = recovery === 'archived-parent' ? 1 : 2;
+      archiveError = true;
+      await service.run(manifest, root, { ...coordinator, runId: 'refused' }, { action: 'next' });
+      assert.equal((await record()).retirement?.code, 'session-dispatch-sessions-patch-forbidden');
+      assert.equal(removals, 0);
+      assert.equal(calls.filter(({ method }) => method === 'sessions.patch').length, expectedCalls);
+      archiveError = false;
+      now += 60_000;
+      await service.run(manifest, root, { ...coordinator, runId: 'reconcile' }, { action: 'next' });
+      assert.equal(removals, 0);
+      assert.equal(calls.filter(({ method }) => method === 'sessions.patch').length, expectedCalls);
+      if (recovery === 'archived-parent')
+        assert.equal((await record()).retirement?.archiveRequest, undefined);
+      session!.archived = true;
+      helper.archived = true;
+      if (recovery === 'replaced') helper.sessionId = 'replacement';
+      now += 60_000;
+      await service.run(manifest, root, { ...coordinator, runId: 'observe' }, { action: 'next' });
+      assert.equal(Boolean((await record()).retired), recovery !== 'replaced');
+      assert.equal(removals, recovery !== 'replaced' ? 1 : 0);
+      if (recovery === 'replaced')
+        assert.equal((await record()).retirement?.code, 'retirement-session-identity-changed');
+      assert.equal(calls.filter(({ method }) => method === 'sessions.patch').length, expectedCalls);
+    });
+  }
+
+  for (const custody of [
+    'unowned-session',
+    'unrelated-helper',
+    'cross-agent-helper',
+    'incomplete-automations',
+  ] as const) {
     it(`should retain checkout custody when native inventory reports ${custody}`, async () => {
       await prepare(await next());
       const target = await record();
-      if (custody === 'unowned-session')
-        foreignSessions = [{ key: 'unowned', spawnedCwd: target.worktree }];
+      if (custody !== 'incomplete-automations')
+        foreignSessions = [
+          custody === 'unowned-session'
+            ? { key: 'unowned', spawnedCwd: target.worktree }
+            : {
+                key: 'agent:receiver:subagent:unrelated',
+                spawnedCwd: target.worktree,
+                sessionId: 'other-id',
+                agentId: custody === 'cross-agent-helper' ? 'other' : 'receiver',
+                parentSessionKey: custody === 'cross-agent-helper' ? target.threadId : 'other',
+              },
+        ];
       else cronInventoryTotal = 1;
       let mutations = 0;
       service.dependencies.worktrees.cleanupGitHub = async () => {
@@ -1640,9 +1765,9 @@ describe('agent/openclaw issue dispatch', () => {
       const after = await record();
       assert.equal(
         after.retirement?.code,
-        custody === 'unowned-session'
-          ? 'retirement-worktree-shared'
-          : 'retirement-automation-ownership-unavailable',
+        custody === 'incomplete-automations'
+          ? 'retirement-automation-ownership-unavailable'
+          : 'retirement-worktree-shared',
       );
       assert.equal(after.retired, undefined);
       assert.equal(mutations, 0);
