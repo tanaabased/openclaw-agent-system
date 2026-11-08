@@ -9,7 +9,7 @@ import {
   type FixtureResponse,
 } from '@copilotkit/aimock';
 
-import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
+import { assessmentPresentationSchema } from '../../agent/assessment-result.ts';
 import { replyRequestSchema } from '../../tools/dispatch/reply-schema.ts';
 import { Value } from 'typebox/value';
 
@@ -53,7 +53,7 @@ const dispatchStages = [
 ];
 
 function assessmentRequest(context: Record<string, unknown>, payload: object) {
-  assert.ok(Value.Check(assessmentSubmissionSchema, payload));
+  assert.ok(Value.Check(assessmentPresentationSchema, payload));
   return {
     action: 'assessment',
     operation: 'render',
@@ -178,8 +178,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       fullAssessment,
       plan: fullAssessment,
       reviewSummary,
-      evidence: [],
-      progress: { completed: ['Read the selected assessment method.'], remaining: [] },
     };
     const rejection = openClawAIMockToolResultText(messages, prefix + 'direct-assessment-invalid');
     if (rejection === undefined) {

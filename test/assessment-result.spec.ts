@@ -52,6 +52,15 @@ describe('agent/assessment-result', () => {
       );
     }
     assert.deepEqual(parseAssessmentSubmission(complete), complete);
+    assert.deepEqual(
+      parseAssessmentSubmission({
+        ...complete,
+        version: undefined,
+        evidence: undefined,
+        progress: undefined,
+      }),
+      { ...complete, version: 1, evidence: [], progress: { completed: [], remaining: [] } },
+    );
     assert.equal(
       workflowFailure(
         { code: 'assessment-result-invalid', recovery: { fields: ['PRIVATE'] } },

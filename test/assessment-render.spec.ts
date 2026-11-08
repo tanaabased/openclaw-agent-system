@@ -38,6 +38,8 @@ describe('agent/assessment-render', () => {
     it(`should format ${runtime} input without boilerplate while preserving substantive requirements`, () => {
       const unversioned: Record<string, unknown> = { ...result };
       delete unversioned.version;
+      delete unversioned.evidence;
+      delete unversioned.progress;
       const request = { ...assessmentPresentationRequest(target), result: unversioned };
       const formatted = renderNativeAssessment(request, runtime);
       assert.equal(formatted.status, 'formatted');
@@ -45,6 +47,15 @@ describe('agent/assessment-render', () => {
       assert.throws(() =>
         renderNativeAssessment({ ...request, result: { ...unversioned, version: 2 } }, runtime),
       );
+      for (const invalid of [
+        { evidence: null },
+        { evidence: [{}] },
+        { progress: null },
+        { progress: { completed: [] } },
+      ])
+        assert.throws(() =>
+          renderNativeAssessment({ ...request, result: { ...unversioned, ...invalid } }, runtime),
+        );
       const withoutPlan = { ...unversioned };
       delete withoutPlan.plan;
       assert.throws(
