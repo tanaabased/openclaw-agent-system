@@ -213,6 +213,31 @@ describe('agent/assessment-render', () => {
     assert.match(response.presentation, /Should existing tasks keep their current settings/);
   });
 
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should render complete clarification without a separate review summary in ${runtime}`, () => {
+      const question = 'What should the haiku be about?';
+      const response = renderNativeAssessment(
+        {
+          ...assessmentPresentationRequest(target),
+          result: {
+            version: 1,
+            outcome: 'clarification-needed',
+            summary: 'Choose a subject.',
+            assessment: 'The form is already known.',
+            fullAssessment: 'A haiku is requested. Its subject remains undecided.',
+            questions: [question],
+            evidence: [],
+            progress: { completed: ['Selected haiku.'], remaining: ['Choose subject.'] },
+          },
+        },
+        runtime,
+      );
+      assert.equal(response.status, 'formatted');
+      assert.equal(response.retained, false);
+      assert.ok(response.presentation.includes('Clarification needed'));
+      assert.ok(response.presentation.includes(question));
+    });
+
   it('should page long clarification text without saving or echoing the engineering plan', async () => {
     const partial = {
       version: result.version,

@@ -93,19 +93,15 @@ export default function renderNativeAssessment(
   const target = replyLocator(input.target);
   if (target.kind) throw new Error('assessment-render-target-invalid');
   const submitted = parseAssessmentSubmission(input.result);
-  // Compatibility result callers supply the source in their native input; older sources lack
-  // the concise review that their adapter derives for the first page.
+  // Complete questions already carry their own concise review; formatting must not hide them.
+  // Older paged results also derive a review from their retained source.
   const assessment =
-    input.material && !submitted.reviewSummary
+    !submitted.reviewSummary && (input.material || submitted.outcome === 'clarification-needed')
       ? {
           ...submitted,
           reviewSummary: [
             submitted.summary,
-            ...(submitted.outcome === 'clarification-needed'
-              ? submitted.questions
-              : submitted.outcome === 'operator-setup-blocker'
-                ? [submitted.remediation]
-                : []),
+            ...(submitted.outcome === 'operator-setup-blocker' ? [submitted.remediation] : []),
           ].join('\n\n'),
         }
       : submitted;
