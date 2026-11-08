@@ -18,6 +18,7 @@ describe('agent/managed-owner', () => {
   const current = {
     id: 'current',
     intakeId: 'admitted',
+    issueKey: 'current-issue',
     threadId: 'current-chat',
     request: {},
     context: '{}',
@@ -66,6 +67,35 @@ describe('agent/managed-owner', () => {
     assert.equal(assess([idle])?.record, idle);
     assert.equal(assess([idle])?.digest, assess([current])?.digest);
     assert.ok(reply([idle]));
+  });
+
+  it('should isolate unrelated missing admissions without allowing unresolved ownership to fall back', () => {
+    const orphan = {
+      ...current,
+      id: 'orphan',
+      intakeId: 'missing',
+      threadId: 'other-chat',
+      issueKey: 'other-issue',
+    };
+    assert.equal(assess([orphan, current])?.record, current);
+    assert.equal(assess([current, orphan])?.record, current);
+    for (const records of [
+      [orphan],
+      [current, { ...orphan, issueKey: current.issueKey }],
+      [current, { ...orphan, issueKey: undefined }],
+    ])
+      assert.throws(
+        () => assess(records as SharedDispatchRecord[]),
+        /assessment-managed-admission-missing/,
+      );
+    assert.throws(
+      () => assess([orphan, current], 'other-chat'),
+      /assessment-managed-admission-missing/,
+    );
+    assert.throws(
+      () => assess([orphan, current], 'new-chat'),
+      /assessment-managed-admission-missing/,
+    );
   });
 
   it('should resolve current work independently of retained history and record order', () => {
