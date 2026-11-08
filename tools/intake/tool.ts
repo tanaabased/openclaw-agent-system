@@ -2,6 +2,7 @@ import { Value } from 'typebox/value';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import { IntakeError } from '../../channels/github/intake/record-store.ts';
+import contextMaterialTransport from '../../agent/context-material-transport.ts';
 import IssuePickupFailure from '../../agent/issue-pickup-failure.ts';
 import { AutomationError } from '../../agent/automation-gateway.ts';
 
@@ -141,9 +142,10 @@ export default function createIntakeTool(
                       params.policyDigest,
                       signal,
                     );
+            const delivered = contextMaterialTransport(result, { tool: 'agent_system_intake' });
             return {
-              content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-              details: result,
+              content: [{ type: 'text' as const, text: JSON.stringify(delivered) }],
+              details: delivered,
             };
           },
         }),
