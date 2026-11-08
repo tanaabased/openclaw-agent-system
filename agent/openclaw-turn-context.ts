@@ -16,6 +16,7 @@ export default function openclawTurnContext(
     runId?: string;
     inputId?: string;
   },
+  feedbackLookupError?: string,
 ) {
   if (
     !binding.runId ||
@@ -30,10 +31,11 @@ export default function openclawTurnContext(
     record.reset
   )
     return;
-  const feedback = record.feedback?.events.filter(
+  const matchingFeedback = record.feedback?.events.filter(
     (event) => event.turn?.runId === binding.runId || event.turn?.executionRunId === binding.runId,
   );
-  if (feedback?.some((event) => !event.native)) return;
+  if (matchingFeedback?.some((event) => !event.native)) return;
+  const feedback = feedbackLookupError ? undefined : matchingFeedback;
   const implementation = Boolean(retainedIssueProgression(record));
   const candidate = feedback?.length === 1 ? feedback[0] : undefined;
   const source =
@@ -46,14 +48,16 @@ export default function openclawTurnContext(
     appendSystemContext: [
       nativeTaskInstructions('openclaw'),
       'Preserve the human-facing quoted cards. Keep machine context and instructions out of authored messages.',
-      source
-        ? feedbackTurnMessage(record.id, source.id, true)
-        : feedback?.length
-          ? 'The native feedback source is not uniquely verified. Inspect its existing receipt before replying; do not infer a comment mapping from the chat identity or comment prose.'
-          : !implementation
-            ? 'Before investigation, use contextRequest from the current Agent System facts with agent_system_dispatch. Continue only after verified OpenClaw context; follow its selected assessment skill and guidance.\n\n' +
-              nativeAssessmentInstructions()
-            : '',
+      feedbackLookupError
+        ? 'The native feedback source lookup is unavailable. Use contextRequest with agent_system_dispatch before source-dependent work; its existing native receipt checks must verify the comment mapping. Do not infer a feedback source, restart assessment, or resend feedback to recover it.'
+        : source
+          ? feedbackTurnMessage(record.id, source.id, true)
+          : feedback?.length
+            ? 'The native feedback source is not uniquely verified. Inspect its existing receipt before replying; do not infer a comment mapping from the chat identity or comment prose.'
+            : !implementation
+              ? 'Before investigation, use contextRequest from the current Agent System facts with agent_system_dispatch. Continue only after verified OpenClaw context; follow its selected assessment skill and guidance.\n\n' +
+                nativeAssessmentInstructions()
+              : '',
     ]
       .filter(Boolean)
       .join('\n\n'),
@@ -66,7 +70,10 @@ export default function openclawTurnContext(
         currentSession: { sessionKey: binding.sessionKey, sessionId: binding.sessionId },
         receipt: record.id,
         contextRequest:
-          !feedback?.length && !implementation ? { action: 'context', id: record.id } : undefined,
+          feedbackLookupError || (!feedback?.length && !implementation)
+            ? { action: 'context', id: record.id }
+            : undefined,
+        feedbackLookupError,
         currentTurn: { runId: binding.runId, inputId: binding.inputId },
         stage: feedback?.length ? 'feedback' : implementation ? 'implementation' : 'assessment',
         feedbackContextRequest: source && {

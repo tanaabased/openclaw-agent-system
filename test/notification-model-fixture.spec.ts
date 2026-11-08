@@ -1375,6 +1375,41 @@ for (const scenario of [
         assert.deepEqual(await response(current), { content: 'Already current.' });
       });
     if (scenario.id === 'openclaw-issue-journey')
+      it('should recover feedback from the private task request before composing a source-bound reply', async () => {
+        const input = request('> Explain the plan.');
+        const privateContext = openclawTurnContext(
+          {
+            id,
+            threadId: 'issue',
+            request: { key: 'issue', agentId: 'receiver' },
+            sessionCreation: { verified: true, sessionId: 'incarnation' },
+          } as OpenClawDispatchRecord,
+          {
+            agentId: 'receiver',
+            sessionKey: 'issue',
+            sessionId: 'incarnation',
+            runId: 'queued-feedback',
+          },
+          'session-dispatch-history-request-invalid',
+        )!;
+        input.messages.push({
+          role: 'user',
+          content: 'OpenClaw runtime context:\n' + privateContext.appendContext,
+        });
+        assert.deepEqual(await action(input, 'context'), { action: 'context', id });
+        append(input, 'feedback-context', {
+          status: 'verified',
+          runtime: 'openclaw',
+          id,
+          eventId: 'e'.repeat(64),
+          publication: 'allowed',
+          replyTarget: source,
+        });
+        const composed = await action(input, 'reply');
+        assert.equal(composed.operation, 'compose');
+        assert.equal(composed.target, source);
+      });
+    if (scenario.id === 'openclaw-issue-journey')
       it('should answer github and direct questions from native conversation without a result checkpoint', async () => {
         const github = request(
           `Call agent_system_dispatch with action feedback, operation context, id ${id}, eventId ${'e'.repeat(64)}`,

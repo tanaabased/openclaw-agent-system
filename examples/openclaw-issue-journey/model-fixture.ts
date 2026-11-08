@@ -432,7 +432,18 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     if (!evidence.body.includes('notification-hidden-later-fact')) return;
     return nativePlan(fresh, true);
   }
-  const privateFeedback = currentFacts(messages, false).feedbackContextRequest;
+  const facts = currentFacts(messages, false);
+  const recoveredFeedback = facts.feedbackLookupError ? result('feedback-context') : undefined;
+  if (facts.feedbackLookupError) {
+    assert.ok(
+      facts.contextRequest,
+      'failed feedback lookup must retain its exact recovery request',
+    );
+    assert.equal(facts.feedbackContextRequest, undefined);
+    if (!recoveredFeedback) return dispatch('feedback-context', facts.contextRequest);
+    if (recoveredFeedback.status !== 'verified' || !recoveredFeedback.eventId) return;
+  }
+  const privateFeedback = recoveredFeedback ?? facts.feedbackContextRequest;
   const feedback = privateFeedback
     ? ['', privateFeedback.id, privateFeedback.eventId]
     : /operation context, id ([a-f0-9]{64}), eventId ([a-f0-9]{64})/u.exec(prompt);
