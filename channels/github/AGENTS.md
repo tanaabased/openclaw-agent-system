@@ -7,6 +7,39 @@ and delivery, including their owners in `agent/` and `tools/dispatch/`.
 Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
 [Presentation](./PRESENTATION.md) for visual components.
 
+## Workflow State and Progress
+
+These constraints apply to implementation, review, and repairs in both Codex and
+OpenClaw, including owners outside this directory.
+
+- Native conversation owns investigation, plans, questions, answers, implementation,
+  and continuation. Agent System supplies verified issue context, configured guidance,
+  live policy, and routing. Do not mirror the conversation in a second state machine.
+- Before adding a persisted field, receipt, checkpoint, retry, or blocking gate,
+  identify the concrete wrong external action or resource loss it prevents and why
+  existing native/provider evidence cannot prevent it. Explain this in the existing
+  change review, not a new tracking artifact. Convenience, observability, or making
+  internal records agree does not justify a prerequisite for work.
+- Retain only the state needed for owned effects such as admission, routing,
+  duplicate prevention, uncertain publication, and safe resource cleanup. Optional
+  progress and presentation records must remain optional. Missing assessments,
+  summaries, cards, or acknowledgments must not stop otherwise authorized work.
+- A verified child chat must not depend on its coordinator finishing later
+  bookkeeping before it can obtain task context. Reuse native creation evidence;
+  do not add a readiness handshake or polling loop to compensate for that dependency.
+  Missing local bookkeeping is not proof that a chat is unmanaged. Preserve actual
+  identity, source, destination, authorization, and uncertain-effect protections.
+- Repair observed failures in their existing owner. First consider removing an
+  unnecessary dependency; do not turn each pilot failure into another controller
+  layer or a workflow redesign.
+- Test the user-visible behavior with realistic incomplete state and controlled
+  ordering, including child startup before coordinator reconciliation. Do not
+  prepopulate the very records the test claims are unnecessary. Hook delivery and
+  successful bookkeeping are supporting checks, not proof that an assigned task
+  investigates, asks and publishes a needed question, continues after an answer,
+  or delivers a PR within its authorized mode. Cover those outcomes and their
+  required presentation at the owning runtime boundary before claiming them verified.
+
 ## Live Policy
 
 - Read the current bound `agent.yaml` when deciding the next automatic operation.
