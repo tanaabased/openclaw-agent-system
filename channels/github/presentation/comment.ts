@@ -36,7 +36,7 @@ export function githubCommentCard(input: GitHubCommentCardInput): string {
     ? `[@${githubNotificationMarkdownText(input.author.label)}](${input.author.url})`
     : 'author unavailable';
   return githubNotificationQuote(
-    `${input.body}\n\n&nbsp;\\\n*${label} ${input.connector} ${author}*`,
+    `${input.body}\n\n&nbsp;  \n*${label} ${input.connector} ${author}*`,
   );
 }
 

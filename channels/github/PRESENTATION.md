@@ -179,7 +179,7 @@ italic attribution footer inside that same quote. Preserve raw provider text sep
 ```markdown
 > @tanaabot can you confirm whether this also covers comments received while planning?
 >
-> &nbsp;\
+> &nbsp;  
 > _[Comment ↗](https://github.com/tanaabased/example/issues/7#issuecomment-123) from [@pirog](https://github.com/pirog)_
 ```
 
@@ -195,8 +195,8 @@ Normal HTTPS links do not promise a particular browser destination.
 | Public assessment summary         | Plan assessment | by        |
 | Public PR announcement            | PR announcement | by        |
 
-Copy decoded Markdown, not its JSON representation: the spacer ends in one
-backslash, never two. Preserve unquoted blank lines between cards; do not quote
+Copy decoded Markdown, not its JSON representation: the spacer ends in two
+spaces for a Markdown hard break, without a backslash. Preserve unquoted blank lines between cards; do not quote
 the complete response a second time.
 
 Use one `&nbsp;` spacer followed by a Markdown hard break before the attribution,
@@ -382,7 +382,7 @@ the suggested name from the exact required primary folder; retain issue and diag
 ```markdown
 > Thanks for flagging this, @pirog. The notification flow now preserves the link.
 >
-> &nbsp;\
+> &nbsp;  
 > _Reply draft from [@smutlord](https://github.com/smutlord)_
 ```
 
@@ -426,7 +426,7 @@ not append them to each reply.
 ```markdown
 > <complete GitHub-facing response>
 >
-> &nbsp;\
+> &nbsp;  
 > _[Reply ↗](https://github.com/owner/repo/issues/123#issuecomment-789) from [@smutlord](https://github.com/smutlord)_
 ```
 
