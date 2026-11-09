@@ -7182,7 +7182,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.deepEqual(after.result, before.result);
   });
 
-  for (const outcome of ['plan-ready', 'clarification-needed'] as const)
+  for (const outcome of ['plan-ready', 'clarification-needed', 'interrupted'] as const)
     it(`should keep native feedback implementation and its reply independent after ${outcome}`, async () => {
       const { id, comments } = await feedbackOwner(false);
       if (outcome === 'clarification-needed') {
@@ -7214,7 +7214,7 @@ describe('agent/openclaw issue dispatch', () => {
       await service.run(manifest, root, coordinator, { action: 'next' });
       const before = await record();
       const event = before.feedback!.events[0]!;
-      const queued = outcome === 'plan-ready';
+      const queued = outcome !== 'clarification-needed';
       const who = assessor(id, queued ? 'queued-execution' : event.turn!.runId);
       if (queued) {
         const incoming = messages.find(
@@ -7222,7 +7222,8 @@ describe('agent/openclaw issue dispatch', () => {
             (entry.__openclaw as Record<string, unknown>)?.idempotencyKey ===
             `${event.turn!.runId}:user`,
         )!;
-        delete (incoming.__openclaw as Record<string, unknown>).runId;
+        if (outcome !== 'interrupted')
+          delete (incoming.__openclaw as Record<string, unknown>).runId;
         const hookContext = await service.promptContext(manifest, root, {
           agentId: manifest.agent.id,
           sessionKey: who.sessionKey,
@@ -7259,6 +7260,10 @@ describe('agent/openclaw issue dispatch', () => {
           false,
         );
         assert.equal(context.status, 'verified');
+        const complete = await hydrateImplementation(context, (read) =>
+          service.run(manifest, root, who, read as Parameters<OpenClawDispatch['run']>[3], false),
+        );
+        assert.equal(typeof complete.instructions, 'string');
       }
       const context = await service.run(
         manifest,
@@ -7338,6 +7343,42 @@ describe('agent/openclaw issue dispatch', () => {
         ),
         /feedback-source-changed/,
       );
+      if (outcome === 'interrupted') {
+        comments[0]!.body = '@receiver Use the smaller approach and implement it.';
+        const connect = service.dependencies.feedbackConnect!;
+        let writes = 0;
+        let publishedBody: string | undefined;
+        service.dependencies.feedbackConnect = async (...args) => ({
+          ...(await connect(...args)),
+          createIssueComment: async (_owner, _repository, _number, body) => {
+            writes++;
+            publishedBody = body;
+            return { nodeId: 'recovered-reply', databaseId: 100 };
+          },
+          findOwnIssueComment: async () =>
+            publishedBody
+              ? { nodeId: 'recovered-reply', databaseId: 100, body: publishedBody }
+              : undefined,
+        });
+        const respond = (operation: 'candidate' | 'publish', publicText?: string) =>
+          service.run(
+            manifest,
+            root,
+            who,
+            {
+              action: 'reply',
+              operation,
+              target: 'https://github.com/owner/repo/issues/3#issuecomment-99',
+              ...(publicText ? { publicText } : {}),
+            },
+            false,
+          );
+        await respond('candidate', 'Implemented and checked the requested change.');
+        const published = await respond('publish');
+        assert.equal(published.status, 'published', JSON.stringify(published));
+        assert.equal((await respond('publish')).status, 'published');
+        assert.equal(writes, 1);
+      }
       assert.equal((await record()).threadId, before.threadId);
       assert.equal((await record()).worktree, before.worktree);
       assert.deepEqual((await record()).result, before.result);

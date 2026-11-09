@@ -514,7 +514,7 @@ export default async function runCodexFeedback(
                 !reconcilingPublication
               )
                 continue;
-              if (!reconcilingPublication && found.turnId !== receipt.turnId)
+              if (!event.native && !reconcilingPublication && found.turnId !== receipt.turnId)
                 throw new Error('feedback-turn-changed');
             } else {
               if (input.action !== 'next') throw new Error('feedback-send-unverified');

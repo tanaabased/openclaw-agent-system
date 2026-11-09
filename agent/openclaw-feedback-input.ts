@@ -52,8 +52,15 @@ export default async function openClawFeedbackInput(
   );
   if (history.sessionId !== caller.sessionId || !Array.isArray(history.messages))
     throw new Error('feedback-input-unverified');
-  const inputId = await openClawConsumedInput(request, caller, event.turn!, history, true);
   const selection = record.feedback?.context;
+  const inputId = await openClawConsumedInput(
+    request,
+    caller,
+    event.turn!,
+    history,
+    true,
+    selection?.eventId === event.id ? selection : undefined,
+  );
   if (!eventId && selection?.runId === caller.runId && selection.inputEventId !== inputId)
     throw new Error('feedback-input-unverified');
   return { event, inputId };

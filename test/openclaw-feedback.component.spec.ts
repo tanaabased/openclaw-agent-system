@@ -269,7 +269,7 @@ describe('agent/openclaw-feedback', () => {
     assert.equal(feedback?.event.id, event.id);
     assert.equal(feedback?.inputId, 'input');
     assert.equal(event.turn!.runId, deliveryRunId);
-    assert.equal(event.turn!.executionRunId, 'queued-execution');
+    assert.equal(event.turn!.executionRunId, undefined);
     assert.deepEqual(record.feedback!.context, {
       runId: 'queued-execution',
       eventId: event.id,
@@ -284,6 +284,60 @@ describe('agent/openclaw-feedback', () => {
     assert.equal(sends, 1);
     assert.equal(writes, 0);
   });
+  for (const execution of ['delivery', 'queued'] as const)
+    it(`should preserve ${execution} consumption while a later native turn reads the selected feedback`, async () => {
+      event.native = true;
+      await advanceFeedbackTurn(input);
+      const originalRun = event.turn!.runId;
+      const executionRun = execution === 'delivery' ? originalRun : 'original-queued-execution';
+      (messages[0]!.__openclaw as Record<string, unknown>).runId = executionRun;
+      input.caller.runId = 'operator-retry';
+      const context = await action('context');
+      assert.equal(context.status, 'verified');
+      for (let read = 0; read < 2; read++) {
+        const selected = await openClawFeedbackInput(
+          record,
+          input.caller,
+          input.request,
+          input.config,
+        );
+        assert.equal(selected?.inputId, 'input');
+        assert.equal(selected?.event.id, event.id);
+      }
+      assert.equal(event.turn!.runId, originalRun);
+      assert.equal(event.turn!.executionRunId, execution === 'delivery' ? undefined : executionRun);
+      assert.equal(record.feedback!.context?.runId, 'operator-retry');
+      assert.equal(sends, 1);
+      assert.equal(writes, 0);
+    });
+  for (const recovery of ['context', 'reconciliation'] as const)
+    it(`should repair a prior responder-derived execution hint through ${recovery}`, async () => {
+      event.native = true;
+      await advanceFeedbackTurn(input);
+      const originalRun = event.turn!.runId;
+      (messages[0]!.__openclaw as Record<string, unknown>).runId = originalRun;
+      event.turn!.executionRunId = 'earlier-retry';
+      event.turn!.consumedByEventId = 'input';
+      record.feedback!.context = {
+        runId: 'earlier-retry',
+        eventId: event.id,
+        inputEventId: 'input',
+      };
+      input.caller.runId = 'operator-retry';
+      if (recovery === 'reconciliation') {
+        await advanceFeedbackTurn(input);
+        assert.equal(event.turn!.executionRunId, undefined);
+      }
+      assert.equal((await action('context')).status, 'verified');
+      assert.equal(event.turn!.executionRunId, undefined);
+      assert.equal(event.turn!.consumedByEventId, 'input');
+      assert.equal(
+        (await openClawFeedbackInput(record, input.caller, input.request, input.config))?.inputId,
+        'input',
+      );
+      assert.equal(sends, 1);
+      assert.equal(writes, 0);
+    });
   it('should select an exact delivered source when several comments are available', async () => {
     event.native = true;
     await advanceFeedbackTurn(input);
