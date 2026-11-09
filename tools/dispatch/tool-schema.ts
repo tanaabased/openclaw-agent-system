@@ -18,7 +18,7 @@ import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';
 import { feedbackResultSchema } from '../../agent/feedback-state.ts';
 import { implementationResultSchema } from '../../agent/implementation-result.ts';
-import { replyExecutionSchema, type ReplyExecutionRequest } from './reply-schema.ts';
+import { replyExecutionSchema } from './reply-schema.ts';
 import discriminatedSchema from '../../utils/discriminated-schema.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -190,9 +190,7 @@ type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
           ? Static<typeof retirementModelSchema>
           : T extends { action: 'prepare' | 'reconcile' | 'start' | 'assess' }
             ? Omit<T, 'id' | 'digest'> & { target?: string }
-            : T extends { action: 'reply' }
-              ? ReplyExecutionRequest
-              : Omit<T, 'projects' | 'observation'>;
+            : Omit<T, 'projects' | 'observation'>;
 type ModelMaterialInput<T> = T extends { material?: unknown }
   ? Omit<T, 'material'> & { material?: Static<typeof modelMaterialSchema> }
   : T;
@@ -241,9 +239,7 @@ export const dispatchModelParameters = Type.Unsafe<ModelMaterialInput<ModelDispa
                               ? Type.String({ minLength: 1, maxLength: 4096 })
                               : Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
                         })
-                      : variant.properties.action.const === 'reply'
-                        ? replyExecutionSchema
-                        : variant,
+                      : variant,
         )
         .map((schema) => {
           const fields = Type.Omit(schema, ['projects', 'observation']);
