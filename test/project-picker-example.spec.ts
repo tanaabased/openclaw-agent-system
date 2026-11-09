@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { type ChatCompletionRequest, type FixtureResponse } from '@copilotkit/aimock';
 
 import { pickupResponse } from '../examples/openclaw-project-picker/model-fixture.ts';
+import taskTurnContext from '../agent/task-turn-context.ts';
 import openclawTurnContext from '../agent/openclaw-turn-context.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 
@@ -115,7 +116,7 @@ describe('examples/openclaw-project-picker model fixture', () => {
     assert.throws(() => pickupResponse(input), /contention exhausted/u);
   });
 
-  it('should require ordinary intake to supply work mode before asking a native question', () => {
+  it('should require ordinary intake to supply work mode before asking a native question', async () => {
     const id = 'a'.repeat(64);
     const context = {
       status: 'verified',
@@ -123,19 +124,35 @@ describe('examples/openclaw-project-picker model fixture', () => {
       project: { path: '/fixture/issue' },
       evidence: { source: 'https://github.com/owner/repo/issues/2' },
     };
+    const record = {
+      id,
+      threadId: 'issue',
+      request: { key: 'issue', agentId: 'receiver' },
+      sessionCreation: { verified: true, sessionId: 'incarnation' },
+      worktree: context.project.path,
+      manualIssue: { selections: { mode: 'work' } },
+    } as OpenClawDispatchRecord;
+    const task = await taskTurnContext({
+      runtime: 'openclaw',
+      workspace: '/fixture',
+      manifest: { schemaVersion: 1, agent: { id: 'receiver' } },
+      target: context.evidence.source,
+      record,
+      stage: 'assessment',
+      resolveSkill: async () => ({
+        name: 'assessment',
+        path: '/fixture/SKILL.md',
+        scope: 'test',
+        digest: 'b'.repeat(64),
+      }),
+    });
     const privateContext = openclawTurnContext(
-      {
-        id,
-        threadId: 'issue',
-        request: { key: 'issue', agentId: 'receiver' },
-        sessionCreation: { verified: true, sessionId: 'incarnation' },
-      } as OpenClawDispatchRecord,
+      record,
       { agentId: 'receiver', sessionKey: 'issue', sessionId: 'incarnation', runId: 'assessment' },
+      task,
     )!;
     const input = request('New issue assigned: clarify cleanup.');
     input.messages.push({ role: 'user', content: privateContext.appendContext });
-    assert.deepEqual(argumentsOf(pickupResponse(input)), { action: 'context' });
-    input.messages.push(...request('', [['context', context]]).messages.slice(2));
     const read = pickupResponse(input);
     assert.ok(read && 'toolCalls' in read);
     assert.equal(read.toolCalls![0]!.name, 'agent_system_github');
@@ -152,9 +169,12 @@ describe('examples/openclaw-project-picker model fixture', () => {
       content: 'Should disposable issues close after evidence capture?',
     });
     const wrongMode = structuredClone(input);
-    wrongMode.messages.find(
-      (message) => message.tool_call_id === 'call_pickup_context-0',
-    )!.content = JSON.stringify({ ...context, mode: 'plan' });
+    const native = wrongMode.messages.find(
+      (message) =>
+        typeof message.content === 'string' &&
+        message.content.includes('model-only current-turn facts'),
+    )!;
+    native.content = String(native.content).replace('"mode":"work"', '"mode":"plan"');
     assert.throws(() => pickupResponse(wrongMode), /override ordinary plan mode/u);
   });
 });

@@ -9,7 +9,10 @@ import openClawAIMockEvidence from '../scripts/aimock-evidence.ts';
 import resolveScenario from '../scripts/example-model-scenarios.ts';
 import withToolSearch, { normalizeToolSearchRequest } from '../scripts/aimock-tool-search.ts';
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
-import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
+import {
+  assessmentResultContextSchema,
+  assessmentResultFormat,
+} from '../agent/assessment-result.ts';
 
 function request(prompt = githubExampleTanaabotPrompt): ChatCompletionRequest {
   return {
@@ -354,7 +357,17 @@ describe('scripts/aimock-tool-search', () => {
     input.messages.push({
       role: 'user',
       content:
-        '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts notification-hidden-initial-fact',
+        'OpenClaw runtime context:\nAgent System model-only current-turn facts (keep private):\n' +
+        JSON.stringify({
+          receipt: 'a'.repeat(64),
+          stage: 'assessment',
+          status: 'verified',
+          runtime: 'openclaw',
+          evidence: { source: 'https://github.com/owner/repo/issues/3' },
+          project: { path: '/tmp/owned' },
+          assessment: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
+          resultFormat: assessmentResultFormat,
+        }),
     });
     const discover = async () => {
       append(
@@ -388,21 +401,6 @@ describe('scripts/aimock-tool-search', () => {
       return args.args;
     };
     await discover();
-    assert.equal(
-      (
-        await step('context', 'agent_system_dispatch', {
-          status: 'verified',
-          runtime: 'openclaw',
-          id,
-          currentTurnId: 'initial',
-          evidence: { source: 'https://github.com/owner/repo/issues/3' },
-          project: { path: '/tmp/owned' },
-          assessment: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
-          resultContract: 'assessment-result/v1',
-        })
-      ).id,
-      undefined,
-    );
     await step('git', 'agent_system_git', {
       exitCode: 0,
       stdout: '/tmp/owned\n',
@@ -522,7 +520,17 @@ describe('scripts/aimock-tool-search', () => {
     input.messages.push({
       role: 'user',
       content:
-        '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts notification-hidden-initial-fact',
+        'OpenClaw runtime context:\nAgent System model-only current-turn facts (keep private):\n' +
+        JSON.stringify({
+          receipt: 'a'.repeat(64),
+          stage: 'assessment',
+          status: 'verified',
+          runtime: 'openclaw',
+          evidence: { source: 'https://github.com/owner/repo/issues/3' },
+          project: { path: '/tmp/owned' },
+          assessment: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
+          resultFormat: assessmentResultFormat,
+        }),
     });
     append(
       input,
@@ -542,8 +550,8 @@ describe('scripts/aimock-tool-search', () => {
       () => normalizeToolSearchRequest(input),
       (error: unknown) => {
         assert.ok(error instanceof Error);
-        assert.match(error.message, /call_notifications_context/u);
-        assert.match(error.message, /agent_system_dispatch/u);
+        assert.match(error.message, /call_notifications_git/u);
+        assert.match(error.message, /agent_system_git/u);
         assert.match(error.message, /native-dispatch-error/u);
         assert.doesNotMatch(error.message, /private-tool-argument/u);
         assert.ok(error.message.length < 1800);

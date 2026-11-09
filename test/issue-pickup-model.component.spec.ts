@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import assessmentMaterial from '../agent/assessment-material.ts';
+import taskTurnContext from '../agent/task-turn-context.ts';
 import openclawTurnContext from '../agent/openclaw-turn-context.ts';
 import type { OpenClawDispatchRecord } from '../agent/openclaw-dispatch-state.ts';
 import {
@@ -33,17 +34,30 @@ describe('issue pickup model transport', () => {
       minimumPages: 0,
     });
   });
-  it('should deliver assessment source references through native codex without tool-output truncation', async () => {
+  it('should inspect the issue from injected native context without a bootstrap call', async () => {
     const context = hostedAssessmentContextFixture();
     const request = { action: 'context', id: context.id };
+    const record = {
+      id: context.id,
+      threadId: 'issue',
+      request: { key: 'issue', agentId: 'receiver' },
+      sessionCreation: { verified: true, sessionId: 'incarnation' },
+      worktree: context.project.path,
+      manualIssue: { selections: { mode: 'work' } },
+    } as OpenClawDispatchRecord;
+    const task = await taskTurnContext({
+      runtime: 'openclaw',
+      workspace: '/fixture',
+      manifest: { schemaVersion: 1, agent: { id: 'receiver' } },
+      target: context.evidence.source,
+      record,
+      stage: 'assessment',
+      resolveSkill: async () => context.assessment.skill,
+    });
     const turn = openclawTurnContext(
-      {
-        id: context.id,
-        threadId: 'issue',
-        request: { key: 'issue', agentId: 'receiver' },
-        sessionCreation: { verified: true, sessionId: 'incarnation' },
-      } as OpenClawDispatchRecord,
+      record,
       { agentId: 'receiver', sessionKey: 'issue', sessionId: 'incarnation', runId: 'assessment' },
+      task,
     )!;
     let sourceReads = 0;
     await nativeMaterialFixture({
@@ -68,15 +82,7 @@ describe('issue pickup model transport', () => {
             }),
           };
         }
-        const result = assessmentMaterial(
-          context,
-          request,
-          input.material as ImplementationMaterialRead,
-        );
-        assert.ok('evidence' in result);
-        assert.deepEqual(result.evidence, { source: context.evidence.source });
-        assert.equal('contextMaterials' in result, false);
-        return result;
+        assert.fail('native context must let assessment start without a dispatch lookup');
       },
       minimumPages: 0,
       scenario: issuePickupScenario,

@@ -15,7 +15,10 @@ import { matchFixture, type ChatCompletionRequest } from '@copilotkit/aimock';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
+import {
+  assessmentResultFormat,
+  assessmentResultContextSchema,
+} from '../agent/assessment-result.ts';
 import renderNativeAssessment from '../agent/assessment-render.ts';
 import { issueExampleScenario } from '../examples/openclaw-issue-journey/model-fixture.ts';
 import {
@@ -103,12 +106,38 @@ for (const scenario of [
   const digest = 'd'.repeat(64);
 
   const source = 'https://github.com/tanaabased/big-test-bucket/issues/123';
+  const hookAssessment = ['openclaw-pr-journey', 'openclaw-issue-progression'].includes(
+    scenario.id,
+  );
+
+  function supplyFacts(input: ChatCompletionRequest, values: Record<string, unknown>) {
+    const marker = 'Agent System model-only current-turn facts (keep private):\n';
+    const existing = input.messages.findLast(
+      (message) => typeof message.content === 'string' && message.content.includes(marker),
+    );
+    const previous = existing
+      ? JSON.parse(String(existing.content).split(marker)[1]!.split('\n')[0]!)
+      : {};
+    const content =
+      'OpenClaw runtime context:\n' +
+      marker +
+      JSON.stringify({
+        contextProbe: { version: 1, runtime: 'openclaw', hook: 'before_prompt_build' },
+        receipt: id,
+        stage: 'assessment',
+        ...previous,
+        ...values,
+      });
+    if (existing) existing.content = content;
+    else input.messages.push({ role: 'user', content });
+  }
 
   function assessmentContract(previousResultDigest?: string) {
     return {
       entry: 'managed',
       previousResultDigest,
       resultSchema: assessmentResultContextSchema,
+      resultFormat: assessmentResultFormat,
     };
   }
 
@@ -169,6 +198,7 @@ for (const scenario of [
       tools: [
         'agent_system_intake',
         'agent_system_dispatch',
+        'agent_system_context',
         'agent_system_git',
         'agent_system_github',
         'read',
@@ -184,7 +214,7 @@ for (const scenario of [
       scenario.id,
     )
   ) {
-    it('should read the initial task lookup from private hook context without a visible instruction recipe', async () => {
+    it('should start from native context or the no-argument recovery tool without a visible recipe', async () => {
       const input = request('> ## 📥 Issue assigned\n>\n> Assess this issue and prepare a plan.');
       const context = openclawTurnContext(
         {
@@ -200,14 +230,37 @@ for (const scenario of [
         role: 'user',
         content: 'OpenClaw runtime context:\n' + context.appendContext,
       });
+      if (hookAssessment)
+        supplyFacts(input, {
+          status: 'verified',
+          runtime: 'openclaw',
+          project: { path: '/fixture' },
+          assessment: { defaultSkill: true, skill: { path: '/fixture/SKILL.md' } },
+          resultFormat: assessmentResultFormat,
+        });
       const next = await response(input);
       assert.ok('toolCalls' in next);
-      assert.deepEqual(JSON.parse(next.toolCalls![0]!.arguments), { action: 'context' });
+      assert.equal(
+        next.toolCalls![0]!.name,
+        hookAssessment ? 'agent_system_git' : 'agent_system_context',
+      );
+      assert.deepEqual(
+        JSON.parse(next.toolCalls![0]!.arguments),
+        hookAssessment ? { argv: ['rev-parse', '--show-toplevel'] } : {},
+      );
       assert.ok(!String(input.messages[1]!.content).includes(id));
     });
   }
 
   function append(input: ChatCompletionRequest, stage: string, result: unknown) {
+    if (stage === 'context' && hookAssessment) {
+      supplyFacts(input, result as Record<string, unknown>);
+      return;
+    }
+    if (stage === 'feedback-context') {
+      supplyFacts(input, { stage: 'feedback', feedback: result });
+      return;
+    }
     input.messages.push({
       role: 'tool',
       tool_call_id: `call_notifications_${['next', 'prepare', 'assess', 'reconcile'].includes(stage) ? stage + '-0' : stage}_fc-native`,
@@ -296,6 +349,11 @@ for (const scenario of [
     assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
     const call = next.toolCalls[0]!;
     const args = JSON.parse(call.arguments);
+    if (call.name === 'agent_system_context') {
+      assert.equal(expected, 'context');
+      assert.deepEqual(args, {});
+      return args as Extract<Action, { action: A }>;
+    }
     assert.equal(args.action, expected);
     assert.ok(
       Value.Check(
@@ -465,6 +523,7 @@ for (const scenario of [
           target: source,
           evidence: { source },
           resultSchema: assessmentResultContextSchema,
+          resultFormat: assessmentResultFormat,
 
           assessment: { skill: { path: '/fixture/SKILL.md' } },
         });
@@ -558,7 +617,7 @@ for (const scenario of [
         const selected = createIntakeExampleScenario(async (receipt) => {
           released.push(receipt);
         });
-        assert.deepEqual(await action(input, 'context', selected), { action: 'context' });
+        assert.deepEqual(await action(input, 'context', selected), {});
         assert.deepEqual(released, [id]);
       });
       it('should release only the assessment explicitly unblocked by the native scenario', async () => {
@@ -806,7 +865,12 @@ for (const scenario of [
         `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
       );
       missing.messages.pop();
-      assert.equal(matchFixture([...scenario.fixtures], missing), null);
+      if (scenario.id === 'openclaw-pr-journey')
+        assert.throws(
+          () => matchFixture([...scenario.fixtures], missing),
+          /native hook must retain task facts/,
+        );
+      else assert.equal(matchFixture([...scenario.fixtures], missing), null);
     });
 
     if (!['openclaw-pr-journey', 'openclaw-issue-progression'].includes(scenario.id))
@@ -855,48 +919,49 @@ for (const scenario of [
         await publishNativePlan(later, scenario, false, 'notification-hidden-later-fact');
       });
 
-    it('should recover blocked child context without changing its identity or accepting other blockers', async () => {
-      const prompt = `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`;
-      for (const code of ['private-state-file-lock-busy', 'private-state-snapshot-conflict']) {
-        const input = request(prompt);
-        const original = await action(input, 'context');
-        append(input, 'context', { status: 'blocked', code });
-        assert.deepEqual(await action(input, 'context'), original);
-        append(input, 'context_retry_1', {
-          status: 'verified',
-          runtime: 'openclaw',
-          id,
-          project: { path: '/fixture' },
-          assessment:
-            scenario.id === 'openclaw-issue-journey'
-              ? { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } }
-              : {},
-          resultContract: 'assessment-result/v1',
-        });
-        if (scenario.id === 'openclaw-issue-journey') {
-          const read = await response(input);
-          assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
-          append(input, 'assessment-skill', 'Generic Assessment');
+    if (!hookAssessment)
+      it('should recover blocked child context without changing its identity or accepting other blockers', async () => {
+        const prompt = `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`;
+        for (const code of ['private-state-file-lock-busy', 'private-state-snapshot-conflict']) {
+          const input = request(prompt);
+          const original = await action(input, 'context');
+          append(input, 'context', { status: 'blocked', code });
+          assert.deepEqual(await action(input, 'context'), original);
+          append(input, 'context_retry_1', {
+            status: 'verified',
+            runtime: 'openclaw',
+            id,
+            project: { path: '/fixture' },
+            assessment:
+              scenario.id === 'openclaw-issue-journey'
+                ? { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } }
+                : {},
+            resultFormat: assessmentResultFormat,
+          });
+          if (scenario.id === 'openclaw-issue-journey') {
+            const read = await response(input);
+            assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
+            append(input, 'assessment-skill', 'Generic Assessment');
+          }
+          const next = await response(input);
+          assert.ok('toolCalls' in next && next.toolCalls?.[0]?.name === 'agent_system_git');
         }
-        const next = await response(input);
-        assert.ok('toolCalls' in next && next.toolCalls?.[0]?.name === 'agent_system_git');
-      }
-      for (const code of [
-        'dispatch-turn-send-unverified',
-        'feedback-authority-changed',
-        'permission-denied',
-      ]) {
-        const input = request(prompt);
-        append(input, 'context', { status: 'blocked', code });
-        assert.equal(matchFixture([...scenario.fixtures], input), null);
-      }
-    });
+        for (const code of [
+          'dispatch-turn-send-unverified',
+          'feedback-authority-changed',
+          'permission-denied',
+        ]) {
+          const input = request(prompt);
+          append(input, 'context', { status: 'blocked', code });
+          assert.equal(matchFixture([...scenario.fixtures], input), null);
+        }
+      });
 
     it('should format a native plan only after context and git verify its worktree', async () => {
       const input = request(
         `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
       );
-      assert.equal('id' in (await action(input, 'context')), false);
+      if (!hookAssessment) assert.equal('id' in (await action(input, 'context')), false);
       const context = {
         status: 'verified',
         runtime: 'openclaw',
@@ -912,7 +977,7 @@ for (const scenario of [
               ? { name: 'generic-assessment', path: '/fixture/SKILL.md' }
               : { path: '/fixture/SKILL.md' },
         },
-        resultContract: 'assessment-result/v1',
+        resultFormat: assessmentResultFormat,
       };
       append(input, 'context', context);
       if (scenario.id === 'openclaw-issue-journey') {
@@ -938,7 +1003,7 @@ for (const scenario of [
       await publishNativePlan(input);
       for (const value of [
         { ...context, runtime: 'codex' },
-        { ...context, id: 'c'.repeat(64) },
+        { ...context, resultFormat: undefined },
         { ...context, status: 'blocked' },
       ]) {
         const invalid = request(
@@ -981,7 +1046,7 @@ for (const scenario of [
         id,
         project: { path: '/tmp/owned' },
         assessment: {},
-        resultContract: 'assessment-result/v1',
+        resultFormat: assessmentResultFormat,
       });
       append(invalid, 'git', { exitCode: 0, stdout: '/tmp/other', truncated: false });
       assert.equal(matchFixture([...scenario.fixtures], invalid), null);
@@ -1156,7 +1221,6 @@ for (const scenario of [
               : `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
           );
           if (mode !== 'operator') {
-            await action(input, 'context', workScenario);
             append(input, 'context', {
               status: 'verified',
               runtime: 'openclaw',
@@ -1165,7 +1229,7 @@ for (const scenario of [
               evidence: { source: 'https://github.com/owner/repo/issues/3' },
               currentTurnId: 'native-turn',
               project: { path: '/tmp/owned' },
-              resultContract: 'assessment-result/v1',
+              resultFormat: assessmentResultFormat,
               assessment: {
                 defaultSkill: mode !== 'custom',
                 skill: { path: '/assessment/SKILL.md' },
@@ -1507,7 +1571,6 @@ for (const scenario of [
         const github = request(
           `Call agent_system_dispatch with action feedback, operation context, id ${id}, eventId ${'e'.repeat(64)}`,
         );
-        assert.equal((await action(github, 'feedback')).operation, 'context');
         append(github, 'feedback-context', {
           status: 'verified',
           runtime: 'openclaw',
@@ -1542,7 +1605,7 @@ for (const scenario of [
             content:
               '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts\n{"contextProbe":{"version":1,"runtime":"openclaw","hook":"before_prompt_build"}}',
           });
-          assert.equal('id' in (await action(input, 'context')), false);
+          if (!hookAssessment) assert.equal('id' in (await action(input, 'context')), false);
           append(input, 'context', {
             status: 'verified',
             runtime: 'openclaw',
@@ -1552,7 +1615,7 @@ for (const scenario of [
             assessment: { skill: { name: 'generic-assessment', path: '/fixture/SKILL.md' } },
             currentTurnId: 'native-answer',
             evidence: { source: 'https://github.com/owner/repo/issues/3' },
-            resultContract: 'assessment-result/v1',
+            resultFormat: assessmentResultFormat,
           });
           const read = await response(input);
           assert.ok('toolCalls' in read && read.toolCalls?.[0]?.name === 'read');
@@ -1591,7 +1654,6 @@ for (const scenario of [
           let input = request(
             `Call agent_system_dispatch with action feedback, operation context, id ${id}, eventId ${eventId}`,
           );
-          assert.equal((await runAction(input, 'feedback')).operation, 'context');
           append(input, 'feedback-context', {
             status: 'verified',
             runtime: 'openclaw',
@@ -1600,8 +1662,7 @@ for (const scenario of [
             source: { body: '@tanaabot explain the plan.' },
           });
           if (scenario.id === 'openclaw-pr-journey') {
-            const last = input.messages.at(-1)!;
-            last.content = JSON.stringify({
+            append(input, 'feedback-context', {
               status: 'verified',
               runtime: 'openclaw',
               publication: 'allowed',
