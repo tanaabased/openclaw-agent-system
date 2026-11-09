@@ -180,8 +180,9 @@ jq -e --slurpfile before "$TMPDIR/notification-feedback-retained.json" '.feedbac
 jq -e --slurp '
   (.[0].feedback.events[0]) as $before |
   (.[1].feedback.events[0]) as $after |
-  if $after == ($before + {phase:"delivered",turn:($before.turn + {status:"completed",replyEventId:$after.turn.replyEventId,executionModel:$after.turn.executionModel})})
-    and $after.turn.replyEventId != null and $after.turn.executionModel != null
+  if $after == ($before + {phase:"delivered",turn:($before.turn + {status:"consumed",consumedByEventId:$after.turn.consumedByEventId})})
+    and $after.turn.consumedByEventId != null
+    and ($before.turn.consumedByEventId == null or $before.turn.consumedByEventId == $after.turn.consumedByEventId)
     and $after.turn.failed != true and $after.turn.cancelled != true
   then true else error({code:"initial-feedback-receipts-changed",before:$before,after:$after} | tojson) end
 ' "$TMPDIR/notification-delivery.json" "$TMPDIR/notification-feedback.json"
