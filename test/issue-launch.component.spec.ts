@@ -73,6 +73,31 @@ describe('agent/issue-launch', () => {
       verifyExisting: async () => {},
     });
 
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should resolve ${runtime} launch attempts from native custody without copied selectors`, async () => {
+      context.binding.runtime = runtime;
+      await launch();
+      const extra = await launch(undefined, { fresh: true });
+      assert.ok('id' in extra && 'digest' in extra);
+      for (const override of [{ id: extra.id }, { digest: extra.digest }])
+        await assert.rejects(
+          launch(undefined, override as Partial<LaunchRequest>),
+          /launch-request-invalid/,
+        );
+      context.inputId = 'resumed-input';
+      const resumed = await launch(undefined, { operation: 'prepare', fresh: true });
+      assert.ok('id' in resumed);
+      assert.equal(resumed.id, extra.id);
+      await launch(undefined, { fresh: true });
+      context.inputId = 'ambiguous-followup';
+      const before = await journal.read();
+      await assert.rejects(
+        launch(undefined, { operation: 'prepare', fresh: true }),
+        /launch-owner-ambiguous/,
+      );
+      assert.deepEqual(await journal.read(), before);
+    });
+
   it('should retain an unassigned draft pr, refresh its unsubmitted head and reuse its native destination', async () => {
     const pr = fixturePullRequest(fixture);
     fixture.client.listAssignmentEvents = async () => {
@@ -397,7 +422,10 @@ describe('agent/issue-launch', () => {
     });
     const before = await journal.read();
     await assert.rejects(launch(), /launch-owner-inactive/);
-    await assert.rejects(launch(undefined, { id: before.records[0]!.id }), /launch-owner-inactive/);
+    await assert.rejects(
+      launch(undefined, { id: before.records[0]!.id } as unknown as Partial<LaunchRequest>),
+      /launch-request-invalid/,
+    );
     assert.deepEqual(await journal.read(), before);
   });
 

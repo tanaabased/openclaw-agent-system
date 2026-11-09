@@ -77,8 +77,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       action: 'launch',
       operation: 'prepare',
       target,
-      id: context.id,
-      digest: context.digest,
       assessment: { complexity: 'low', reason: 'A bounded disposable documentation plan.' },
       fallback: 'default',
       title: 'Document disposable test issue cleanup',

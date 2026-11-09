@@ -9338,7 +9338,7 @@ describe('agent/openclaw issue dispatch', () => {
         manifest,
         root,
         operator,
-        { action: 'launch', operation: 'context', target, id: applied.successorId },
+        { action: 'launch', operation: 'context', target },
         true,
       );
       assert.ok('digest' in admitted && typeof admitted.digest === 'string');
@@ -9360,8 +9360,6 @@ describe('agent/openclaw issue dispatch', () => {
           action: 'launch',
           operation: 'prepare',
           target,
-          id: applied.successorId,
-          digest: admitted.digest,
           title: 'continue existing work',
           assessment: { complexity: 'low', reason: 'Retain the task plan.' },
         },
@@ -9373,7 +9371,7 @@ describe('agent/openclaw issue dispatch', () => {
         manifest,
         root,
         operator,
-        { action: 'launch', operation: 'reconcile', target, id: applied.successorId },
+        { action: 'launch', operation: 'reconcile', target },
         true,
       );
       assert.equal(recovered.status, 'assessment-pending', JSON.stringify(recovered));
@@ -9458,8 +9456,6 @@ describe('agent/openclaw issue dispatch', () => {
         action: 'launch',
         operation: 'prepare',
         target,
-        id: first.id,
-        digest: first.digest,
         assessment: { complexity: 'medium', reason: 'Use existing workflow pieces.' },
         title: 'MANUAL ISSUE',
         fallback: 'default',
@@ -9551,8 +9547,6 @@ describe('agent/openclaw issue dispatch', () => {
           action: 'launch',
           operation: 'prepare',
           target,
-          id: first.id,
-          digest: first.digest,
           assessment: { complexity: 'medium', reason: 'Use existing workflow pieces.' },
           title: 'MANUAL ISSUE',
         },
@@ -9619,8 +9613,6 @@ describe('agent/openclaw issue dispatch', () => {
           operation: 'prepare',
           target,
           fresh: true,
-          id: additional.id,
-          digest: additional.digest,
           title: 'additional collaboration',
           assessment: { complexity: 'low', reason: 'Bounded independent collaboration.' },
         },
@@ -9707,8 +9699,6 @@ describe('agent/openclaw issue dispatch', () => {
             action: 'launch',
             operation: 'prepare',
             target,
-            id: first.id,
-            digest: first.digest,
             assessment: { complexity: 'low', reason: 'A bounded manual issue.' },
             fallback: 'default',
             title: 'MANUAL ISSUE',
@@ -9722,7 +9712,7 @@ describe('agent/openclaw issue dispatch', () => {
           manifest,
           root,
           who,
-          { action: 'launch', operation: 'reconcile', target, id: first.id },
+          { action: 'launch', operation: 'reconcile', target },
           true,
         );
         assert.equal(recovered.status, 'assessment-pending', JSON.stringify(recovered));

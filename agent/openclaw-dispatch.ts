@@ -285,10 +285,11 @@ export default class OpenClawDispatch {
     );
     if (action.operation === 'context' || admitted.status === 'clarification-needed')
       return admitted;
-    if (!action.id || !('id' in admitted) || action.id !== admitted.id)
-      throw new Error('launch-receipt-required');
+    if (!('id' in admitted)) throw new Error('launch-owner-unavailable');
     const selected = await this.context.scope(manifest, workspace);
-    const record = (await selected.journal.read()).records.find((entry) => entry.id === action.id);
+    const record = (await selected.journal.read()).records.find(
+      (entry) => entry.id === admitted.id,
+    );
     if (
       !record?.manualIssue ||
       record.sourceThreadId !== caller.sessionKey ||
@@ -297,7 +298,12 @@ export default class OpenClawDispatch {
     )
       return admitted;
     if (action.operation === 'prepare') {
-      if (!action.assessment || !action.title || !action.digest)
+      if (
+        !action.assessment ||
+        !action.title ||
+        !('digest' in admitted) ||
+        typeof admitted.digest !== 'string'
+      )
         throw new Error('launch-preparation-required');
       const prepared = await this.execute(
         manifest,
@@ -305,11 +311,11 @@ export default class OpenClawDispatch {
         caller,
         {
           action: 'prepare',
-          id: action.id,
+          id: admitted.id,
           assessment: action.assessment,
           ...(action.fallback ? { fallback: action.fallback } : {}),
           title: action.title,
-          digest: action.digest,
+          digest: admitted.digest,
         },
         true,
         authority,
@@ -322,7 +328,7 @@ export default class OpenClawDispatch {
         manifest,
         workspace,
         caller,
-        { action: 'reconcile', id: action.id },
+        { action: 'reconcile', id: admitted.id },
         true,
         authority,
       );
@@ -333,7 +339,7 @@ export default class OpenClawDispatch {
       manifest,
       workspace,
       caller,
-      { action: 'assess', id: action.id },
+      { action: 'assess', id: admitted.id },
       true,
       authority,
     );

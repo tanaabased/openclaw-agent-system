@@ -97,7 +97,7 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
       status: 'recovery-ready',
       id: record.id,
       successorId: successor.id,
-      launch: { action: 'launch', operation: 'context', target: issueUrl, id: successor.id },
+      launch: { action: 'launch', operation: 'context', target: issueUrl },
       instruction:
         'Continue this retained successor through Task Launch; reconcile its prepared native request without creating another successor.',
     };
@@ -206,7 +206,7 @@ export default async function recoverIssueTask<R extends SharedDispatchRecord>(i
     status: 'recovery-ready',
     id: record.id,
     successorId: id,
-    launch: { action: 'launch', operation: 'context', target: issueUrl, id },
+    launch: { action: 'launch', operation: 'context', target: issueUrl },
     instruction:
       'Use Task Launch with this exact successor id, then prepare and reconcile its one native creation. Old chat, checkout, commits and assessment remain evidence; the old managed task cannot resume.',
   };

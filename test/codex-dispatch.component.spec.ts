@@ -453,7 +453,7 @@ describe('agent/codex-dispatch', () => {
     operatorLaunch();
     selectedPullRequest();
     const target = 'owner/repo#3';
-    const launch = await request('launch', {
+    await request('launch', {
       operation: 'context',
       target,
       fresh: true,
@@ -462,15 +462,14 @@ describe('agent/codex-dispatch', () => {
     const project = await request('launch', {
       operation: 'prepare',
       target,
-      id: launch.id,
+      fresh: true,
       projects,
     });
     assert.equal(project.status, 'routing-required', JSON.stringify(project));
     const prepared = await request('launch', {
       operation: 'prepare',
       target,
-      id: launch.id,
-      digest: project.digest,
+      fresh: true,
       assessment: { complexity: 'medium', reason: 'Collaborate on existing work.' },
       title: 'COLLABORATE',
     });
@@ -498,7 +497,7 @@ describe('agent/codex-dispatch', () => {
     deps.native!.find = async (input) =>
       input.sourceThreadId === 'intake-thread' ? originalNative : parallel;
     for (let retry = 0; retry < 2; retry++) {
-      const recovered = await request('launch', { operation: 'reconcile', target, id: launch.id });
+      const recovered = await request('launch', { operation: 'reconcile', target, fresh: true });
       assert.equal(recovered.destination, parallel.id);
     }
     const intake = await request('next', { projects }, { threadId: 'intake-thread' });
@@ -6138,7 +6137,6 @@ describe('agent/codex-dispatch', () => {
       const project = await request('launch', {
         target,
         operation: 'prepare',
-        id: first.id,
         projects,
       });
       assert.equal(project.status, 'routing-required', JSON.stringify(project));
@@ -6199,9 +6197,7 @@ describe('agent/codex-dispatch', () => {
       const prepared = await request('launch', {
         target,
         operation: 'prepare',
-        id: first.id,
         projects,
-        digest: resumed.digest,
         assessment: { complexity: 'medium', reason: 'Reuse existing issue work.' },
         title: 'MANUAL ISSUE',
       });
@@ -6214,7 +6210,7 @@ describe('agent/codex-dispatch', () => {
           ),
         );
       created();
-      const recovered = await request('launch', { target, operation: 'reconcile', id: first.id });
+      const recovered = await request('launch', { target, operation: 'reconcile' });
       assert.equal(recovered.status, 'existing', JSON.stringify(recovered));
       const state = await new CodexDispatchStore(pluginData, selected.store.location.scope).read();
       assert.equal(state.records.length, 1);
