@@ -1,9 +1,8 @@
 /** the host owns delivery even when a custom skill supplies the implementation report. */
 export default function implementationHandoff(
-  id: string,
   outcome: 'done' | 'blocked' | 'clarification-needed' | undefined,
   runtime: 'codex' | 'openclaw',
-  direct?: { publication: boolean },
+  direct?: { publication: boolean; target?: string },
   existingPullRequest = false,
 ) {
   // legacy questions are history, not a new request to stop the conversation.
@@ -25,19 +24,19 @@ export default function implementationHandoff(
           request: {
             action: 'implementation',
             operation: 'delivery',
-            id,
-            deliveryOperation: 'prepare',
+            ...(direct.target ? { target: direct.target } : {}),
+            deliveryOperation: 'publish',
           },
           instruction:
-            'Continue direct implementation delivery in this same chat through dispatch implementation delivery. Supply title and body, then publish the prepared digest. Resume uncertain effects through these original receipts; never repeat implementation or create a replacement PR.',
+            'Continue direct implementation delivery in this same chat through dispatch implementation delivery. Supply authored title and body; native invocation resolves the current work. Resume uncertain effects through these original receipts; never repeat implementation or create a replacement PR.',
         }
       : { next: 'complete' as const };
   return {
     next: 'delivery' as const,
     request:
       runtime === 'codex'
-        ? { action: 'delivery', id, delivery: { action: 'prepare' } }
-        : { action: 'delivery', id, operation: 'prepare' },
+        ? { action: 'delivery', delivery: { action: 'publish' } }
+        : { action: 'delivery', operation: 'publish' },
     instruction:
       `Continue PR delivery in this same turn through ${runtime === 'codex' ? 'continuationRuntime' : 'agent_system_dispatch'}. ` +
       (existingPullRequest
@@ -48,6 +47,6 @@ export default function implementationHandoff(
       (existingPullRequest
         ? ''
         : 'Describe the verified change, validation, limitations, and closing issue reference concisely. ') +
-      'Keep private context out of the public text. Publish the prepared operation with its digest and the same title/body, then follow its attachment, announcement, and card instructions. The implementation stage already authorizes routine delivery; honor user restrictions and native denials. Do not end the turn or wait for intake between these steps. If delivery is interrupted, resume the saved operation and receipts without repeating implementation or creating a replacement PR.',
+      'Keep private context out of the public text. Publish the authored title/body, then follow its attachment, announcement, and card instructions. The implementation stage already authorizes routine delivery; honor user restrictions and native denials. Do not end the turn or wait for intake between these steps. If delivery is interrupted, resume the saved operation and receipts without repeating implementation or creating a replacement PR.',
   };
 }

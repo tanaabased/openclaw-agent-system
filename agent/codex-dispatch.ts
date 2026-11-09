@@ -66,7 +66,6 @@ export async function runCodexDispatch(
           action: request.deliveryOperation ?? 'prepare',
           title: request.title,
           body: request.body,
-          digest: request.digest,
         },
         {
           codexHome: deps.codexHome,
@@ -109,7 +108,6 @@ export async function runCodexDispatch(
                 action: request.deliveryOperation,
                 title: request.title,
                 body: request.body,
-                digest: request.digest,
               },
             }
           : {}),

@@ -30,12 +30,16 @@ export default async function implementationEntry(
     implementationEntriesSchema,
     'implementation',
   );
-  const retained = await store.exclusive(async (entries) =>
-    entries.find((entry) =>
-      input.id ? entry.id === input.id : entry.target.toLowerCase() === input.target?.toLowerCase(),
-    ),
-  );
-  const target = input.target ?? retained?.target ?? deps.currentTarget;
+  const selectedTarget = input.target ?? deps.currentTarget;
+  const retained = await store.exclusive(async (entries) => {
+    const candidates = entries.filter((entry) =>
+      selectedTarget ? entry.target.toLowerCase() === selectedTarget.toLowerCase() : true,
+    );
+    if (candidates.length > 1)
+      throw new Error('implementation-target-selection-required: select the issue URL');
+    return candidates[0];
+  });
+  const target = selectedTarget ?? retained?.target;
   if (!target)
     return {
       status: 'clarification-needed',
@@ -50,8 +54,6 @@ export default async function implementationEntry(
     if (!managed.owner) throw new Error('implementation-managed-owner-unavailable');
     if (input.path && (await realpath(input.path)) !== managed.path)
       throw new Error('implementation-managed-checkout-mismatch');
-    if (input.id && input.id !== managed.owner.id)
-      throw new Error('implementation-managed-owner-mismatch');
     await deps.assertCurrent();
     if (managed.nativeContext && input.operation === 'context')
       return nativeTaskContext(
@@ -74,7 +76,8 @@ export default async function implementationEntry(
   }
   if (input.material && !retained) throw new Error('implementation-entry-unavailable');
   if (deps.operator === false) throw new Error('implementation-operator-required');
-  if (input.id && !retained) throw new Error('implementation-entry-unavailable');
+  if (input.operation !== 'context' && !retained)
+    throw new Error('implementation-entry-unavailable');
   const path = input.path ?? retained?.checkout.path;
   if (!path)
     return {
@@ -111,10 +114,7 @@ export default async function implementationEntry(
   const canonical = `https://github.com/${repo.owner.login}/${repo.name}/issues/${issue.number}`;
   const source = { turnId: deps.turnId, inputId: deps.inputId };
   return store.exclusive(async (entries, save) => {
-    let entry = entries.find((record) =>
-      input.id ? record.id === input.id : record.target === canonical,
-    );
-    if (input.id && !entry) throw new Error('implementation-entry-unavailable');
+    let entry = entries.find((record) => record.target === canonical);
     if (
       entry &&
       (entry.repositoryId !== repo.nodeId ||
@@ -197,11 +197,11 @@ export default async function implementationEntry(
         target: canonical,
         evidence: { source: canonical },
         instructions:
-          'Read evidence.source through normal GitHub tools for current requirements and relevant discussion, following pagination and recovering truncated reads. Execute the selected implementation body once using this verified context; never invoke its bootstrap again. Preserve partial files and follow the latest native plan and user direction. The plan supplied to this tool stays in native conversation; Agent System does not save or reload it. Do not assess, create another chat/worktree, activate notifications or change session settings. Respect the retained publicationAuthorized scope. Local scope forbids push and PR publication. A plan and skill composition grant no publication authority; pull-request scope is collected only from an explicit operator publication request, not inferred from the plan. When the authorized work is complete and verified, use dispatch implementation delivery prepare with this id, title and body. Result recording is optional history and never a delivery prerequisite. Report ordinary substantive output and ask questions directly in native chat. Read historical results only on explicit request or to reconcile a particular attempted operation; they do not replace current direction. Keep partial files and questions in the native conversation; an answer is ordinary input and needs no clarification checkpoint. Existing publication effects must resume through their original owner and receipts, never a substitute publication.',
+          'Read evidence.source through normal GitHub tools for current requirements and relevant discussion, following pagination and recovering truncated reads. Execute the selected implementation body once using this verified context; never invoke its bootstrap again. Preserve partial files and follow the latest native plan and user direction. The plan supplied to this tool stays in native conversation; Agent System does not save or reload it. Do not assess, create another chat/worktree, activate notifications or change session settings. Respect the retained publicationAuthorized scope. Local scope forbids push and PR publication. A plan and skill composition grant no publication authority; pull-request scope is collected only from an explicit operator publication request, not inferred from the plan. When the authorized work is complete and verified, use dispatch implementation delivery publish with authored title and body. The native caller and selected issue determine the retained work; do not supply IDs or digests. Result recording is optional history and never a delivery prerequisite. Report ordinary substantive output and ask questions directly in native chat. Read historical results only on explicit request or to reconcile a particular attempted operation; they do not replace current direction. Keep partial files and questions in the native conversation; an answer is ordinary input and needs no clarification checkpoint. Existing publication effects must resume through their original owner and receipts, never a substitute publication.',
       };
       return implementationMaterial(
         response,
-        { action: 'implementation', operation: 'context', id: entry.id },
+        { action: 'implementation', operation: 'context', target: canonical },
         input.material,
       );
     }
@@ -239,8 +239,9 @@ export default async function implementationEntry(
       id: entry.id,
       outcome: entry.result.outcome,
       presentation: implementationPresentation(entry.result),
-      handoff: implementationHandoff(entry.id, entry.result.outcome, deps.binding.runtime, {
+      handoff: implementationHandoff(entry.result.outcome, deps.binding.runtime, {
         publication: entry.scope === 'pull-request',
+        target: entry.target,
       }),
       instruction:
         'Show this complete result and follow its scope-aware host handoff. Preserve the result and do not repeat completed work.',

@@ -67,7 +67,6 @@ export default async function recordCodexWorkResult(
     outcome: input.result.outcome,
     next: work.phase,
     handoff: implementationHandoff(
-      record.id,
       input.result.outcome,
       'codex',
       work.scope === 'local' ? { publication: false } : undefined,

@@ -94,6 +94,39 @@ describe('agent/implementation-entry', () => {
     );
 
   for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should select ${runtime} direct work by native custody and require a real target only when ambiguous`, async () => {
+      deps.binding.runtime = runtime;
+      const context = await call();
+      assert.ok('id' in context);
+      await call('result', { result: ready });
+      const request = { action: 'implementation', operation: 'present' };
+      assert.equal((await implementationEntry(request, deps)).status, 'presented');
+      for (const field of ['id', 'digest', 'agentId', 'workspace', 'threadId'])
+        await assert.rejects(
+          implementationEntry({ ...request, [field]: context.id }, deps),
+          /implementation-request-invalid/,
+        );
+      const store = new DirectEntryStore(
+        deps.root,
+        deps.binding,
+        implementationEntriesSchema,
+        'implementation',
+      );
+      await store.exclusive(async (entries, save) => {
+        entries.push({
+          ...structuredClone(entries[0]!),
+          id: 'f'.repeat(64),
+          target: target.replace('/3', '/4'),
+        });
+        await save();
+      });
+      await assert.rejects(implementationEntry(request, deps), /target-selection-required/);
+      assert.equal((await implementationEntry({ ...request, target }, deps)).status, 'presented');
+      deps.binding.incarnation = 'another-native-conversation';
+      await assert.rejects(implementationEntry({ ...request, target }, deps), /entry-unavailable/);
+    });
+
+  for (const runtime of ['codex', 'openclaw'] as const)
     it(`should refresh delivered ${runtime} context without another managed implementation round`, async () => {
       deps.binding.runtime = runtime;
       const skill = await deps.resolveSkill('old-assessment');
@@ -124,7 +157,7 @@ describe('agent/implementation-entry', () => {
       let pages = 0;
       const complete = await hydrateImplementation(await call(), (read) => {
         pages++;
-        assert.equal(read.id, ownerId);
+        assert.equal('id' in read, false);
         return implementationEntry(read, deps);
       });
       if (runtime === 'openclaw') assert.ok(pages > 0);
@@ -163,7 +196,7 @@ describe('agent/implementation-entry', () => {
     };
     const first = await call();
     assert.ok('id' in first);
-    await call('result', { id: first.id, result: ready });
+    await call('result', { result: ready });
     for (let number = 4; number <= 23; number++)
       await call('context', { target: `https://github.com/owner/repo/issues/${number}` });
     const entries = await new DirectEntryStore(
@@ -176,7 +209,7 @@ describe('agent/implementation-entry', () => {
     deps.connectProvider = async () => {
       throw new Error('completed work must recover without provider access');
     };
-    const recovered = await call('present', { id: first.id });
+    const recovered = await call('present', {});
     assert.equal(recovered.status, 'presented');
     assert.ok('previousResult' in recovered);
     assert.deepEqual(recovered.previousResult, ready);
@@ -201,16 +234,13 @@ describe('agent/implementation-entry', () => {
       assert.equal(entries[0]!.plan, undefined);
       assert.equal(entries[0]!.authorizationText, undefined);
       assert.equal(entries[0]!.scopeText, undefined);
-      assert.equal(
-        (await call('context', { id: first.id, plan: 'Current revised plan.' })).status,
-        'verified',
-      );
+      assert.equal((await call('context', { plan: 'Current revised plan.' })).status, 'verified');
       await store.exclusive(async (entries, save) => {
         entries[0]!.plan = 'HISTORICAL-PLAN';
         entries[0]!.evidence = JSON.stringify({ body: 'HISTORICAL-ISSUE-SNAPSHOT' });
         await save();
       });
-      const resumed = await call('context', { id: first.id, plan: undefined });
+      const resumed = await call('context', { plan: undefined });
       assert.equal(resumed.status, 'verified');
       assert.doesNotMatch(JSON.stringify(resumed), /HISTORICAL-PLAN|HISTORICAL-ISSUE-SNAPSHOT/);
       assert.ok('evidence' in resumed);
@@ -234,20 +264,20 @@ describe('agent/implementation-entry', () => {
       assert.ok('publicationAuthorized' in first);
       assert.equal(first.publicationAuthorized, false);
       assert.equal(first.entry, 'direct');
-      const resumed = await call('context', { id: first.id });
+      const resumed = await call('context', {});
       assert.ok('implementation' in resumed);
       assert.deepEqual(resumed.implementation, first.implementation);
       assert.equal(selections.length, 2);
-      const saved = await call('result', { id: first.id, result: ready });
+      const saved = await call('result', { result: ready });
       assert.ok('presentation' in saved);
       assert.equal(saved.presentation, ready.fullResult);
       assert.deepEqual('handoff' in saved && saved.handoff, { next: 'complete' });
       deps.turnId = 'followup';
       deps.inputId = 'new-direction';
-      const completed = await call('context', { id: first.id });
+      const completed = await call('context', {});
       assert.equal(completed.status, 'verified');
       assert.equal('previousResult' in completed, false);
-      const readback = await call('present', { id: first.id });
+      const readback = await call('present', {});
       assert.ok('previousResult' in readback);
       assert.deepEqual(readback.previousResult, ready);
     });
@@ -280,7 +310,6 @@ describe('agent/implementation-entry', () => {
           {
             action: 'implementation',
             operation: 'context',
-            id: 'a'.repeat(64),
             issue: 'private-target',
             checkout: 'private-checkout',
           },
@@ -305,7 +334,7 @@ describe('agent/implementation-entry', () => {
     assert.equal(selections.length, 0);
     deps.turnId = 'answer';
     deps.inputId = 'answer-input';
-    const answered = await call('context', { id: missing.id });
+    const answered = await call('context', {});
     assert.equal(answered.status, 'verified');
     assert.equal('assessment' in answered, false);
   });
@@ -344,18 +373,15 @@ describe('agent/implementation-entry', () => {
       fullResult: 'Partial handler retained.',
       questions: ['Which result?'],
     };
-    assert.equal((await call('result', { id: first.id, result: question })).status, 'native');
-    assert.equal((await call('context', { id: first.id })).status, 'verified');
+    assert.equal((await call('result', { result: question })).status, 'native');
+    assert.equal((await call('context', {})).status, 'verified');
     deps.turnId = 'answer';
     deps.inputId = 'answer-input';
-    await assert.rejects(
-      call('result', { id: first.id, result: ready }),
-      /implementation-context-required/,
-    );
-    const resumed = await call('context', { id: first.id });
+    await assert.rejects(call('result', { result: ready }), /implementation-context-required/);
+    const resumed = await call('context', {});
     assert.equal('previousResult' in resumed, false);
     assert.equal(selections.length, 3);
-    assert.equal((await call('result', { id: first.id, result: ready })).status, 'recorded');
+    assert.equal((await call('result', { result: ready })).status, 'recorded');
   });
   it('should keep ownership failures ahead of provider access and never fall back to manual work', async () => {
     for (const code of [
@@ -408,7 +434,7 @@ describe('agent/implementation-entry', () => {
       const owner = await feedbackOwner(target);
       return owner && { ...owner, implementationResult: ready };
     };
-    const read = await call('present', { id: 'd'.repeat(64) });
+    const read = await call('present', {});
     assert.equal(read.status, 'presented');
     assert.equal('handoff' in read, false);
 
@@ -418,25 +444,23 @@ describe('agent/implementation-entry', () => {
   it('should preserve consumed inputs across restart and reject changed targets native custody and publication scope', async () => {
     const first = await call();
     assert.ok('id' in first);
-    assert.equal(
-      (await call('context', { id: first.id, plan: 'Current plan' })).status,
-      'verified',
-    );
+    assert.equal((await call('context', { plan: 'Current plan' })).status, 'verified');
     await assert.rejects(
-      call('context', { id: first.id, scope: 'pull-request' }),
+      call('context', { scope: 'pull-request' }),
       /implementation-scope-new-input-required/,
     );
     await assert.rejects(
-      call('delivery', { id: first.id, deliveryOperation: 'prepare' }),
+      call('delivery', { deliveryOperation: 'prepare' }),
       /implementation-publication-not-authorized/,
     );
     deps.assertCurrent = async () => {
       throw new Error('native-input-changed');
     };
-    await assert.rejects(call('result', { id: first.id, result: ready }), /native-input-changed/);
+    await assert.rejects(call('result', { result: ready }), /native-input-changed/);
     deps.assertCurrent = async () => {};
     deps.binding.incarnation = 'replacement';
-    await assert.rejects(call('context', { id: first.id }), /implementation-entry-unavailable/);
+    await assert.rejects(call('result', { result: ready }), /implementation-entry-unavailable/);
+    assert.equal((await call('context')).status, 'verified');
   });
   for (const configuration of [
     undefined,
@@ -466,18 +490,18 @@ describe('agent/implementation-entry', () => {
           'Contained rule.',
         );
       }
-      await call('context', { id: first.id });
+      await call('context', {});
       assert.equal(selections.length, 2);
     });
   }
   it('should retain original implementation authorization when a later operator explicitly requests publication', async () => {
     const context = await call();
     assert.ok('id' in context && typeof context.id === 'string');
-    await call('result', { id: context.id, result: ready });
+    await call('result', { result: ready });
     deps.turnId = 'publication-request';
     deps.inputId = 'publication-input';
     deps.message = 'Now open a pull request for the completed work.';
-    const resumed = await call('context', { id: context.id, scope: 'pull-request' });
+    const resumed = await call('context', { scope: 'pull-request' });
     assert.equal('deliveryOnly' in resumed && resumed.deliveryOnly, false);
     assert.equal('publicationAuthorized' in resumed && resumed.publicationAuthorized, true);
     const store = new DirectEntryStore(
@@ -498,7 +522,7 @@ describe('agent/implementation-entry', () => {
   it('should recover lost push and pr responses through the same persisted publication without repeated effects', async () => {
     const context = await call('context', { scope: 'pull-request' });
     assert.ok('id' in context && typeof context.id === 'string');
-    const result = await call('result', { id: context.id, result: ready });
+    const result = await call('result', { result: ready });
     assert.equal('handoff' in result && result.handoff?.next, 'delivery');
     let remote = '',
       pushes = 0,
@@ -553,16 +577,14 @@ describe('agent/implementation-entry', () => {
         return receipt;
       },
     };
-    const perform = (deliveryOperation: 'prepare' | 'publish' | 'reconcile', digest?: string) =>
+    const perform = (deliveryOperation: 'prepare' | 'publish' | 'reconcile') =>
       store().exclusive(async (entries, save) =>
         implementationEntryDelivery({
           entry: entries[0]!,
           action: {
             action: 'implementation',
             operation: 'delivery',
-            id: context.id,
             deliveryOperation,
-            digest,
             title: 'Implement handler',
             body: 'Verified change. Closes #3',
           },
@@ -572,7 +594,8 @@ describe('agent/implementation-entry', () => {
         }),
       );
     const prepared = await perform('prepare');
-    assert.ok('digest' in prepared);
+    assert.equal('digest' in prepared, false);
+    assert.equal(await store().exclusive(async (entries) => entries[0]!.delivery), undefined);
     const publishPrepared = () =>
       store().exclusive(async (entries, save) =>
         implementationEntryDelivery({
@@ -607,7 +630,7 @@ describe('agent/implementation-entry', () => {
     );
     deps.turnId = 'stop-publication';
     deps.inputId = 'restriction-input';
-    const stopped = await call('context', { id: context.id, scope: 'local' });
+    const stopped = await call('context', { scope: 'local' });
     assert.equal('publicationAuthorized' in stopped && stopped.publicationAuthorized, false);
     assert.deepEqual(
       await store().exclusive(async (entries) => entries[0]!.delivery),
@@ -728,7 +751,7 @@ describe('agent/native-implementation-entry', () => {
     assert.ok('id' in context && typeof context.id === 'string');
     const result = await codexImplementationEntry(
       data,
-      { action: 'implementation', operation: 'result', id: context.id, target, result: ready },
+      { action: 'implementation', operation: 'result', target, result: ready },
       deps,
     );
     assert.equal(result.status, 'recorded');
@@ -859,7 +882,7 @@ describe('agent/native-implementation-entry', () => {
       manifest,
       workspace,
       caller,
-      { action: 'implementation', operation: 'result', target, id: context.id, result: ready },
+      { action: 'implementation', operation: 'result', target, result: ready },
       true,
     );
     assert.equal(result.status, 'recorded');

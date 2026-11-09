@@ -819,7 +819,7 @@ function respond(
                 action: 'implementation-context',
                 decision: { mode: 'work', reasons: ['The current cleanup scope is clear.'] },
               }
-            : { action: 'implementation', operation: 'context', id: operatorId }),
+            : { action: 'implementation', operation: 'context' }),
         });
       const path = nativeWork ? context.worktree : context.project?.path;
       if (!path) return;

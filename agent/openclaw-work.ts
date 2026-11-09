@@ -210,7 +210,6 @@ export default async function openClawWorkAction(input: {
     id: record.id,
     outcome: action.implementationResult.outcome,
     handoff: implementationHandoff(
-      record.id,
       action.implementationResult.outcome,
       'openclaw',
       record.work.scope === 'local' ? { publication: false } : undefined,

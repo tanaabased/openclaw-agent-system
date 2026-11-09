@@ -5744,7 +5744,7 @@ describe('agent/openclaw issue dispatch', () => {
 
   for (const outcome of ['plan-ready', 'clarification-needed'] as const)
     it(`should preserve feedback-created pr state after an original ${outcome} assessment across restart`, async () => {
-      const { journal, id, who } = await publishedFollowup();
+      const { journal, who } = await publishedFollowup();
       const before = await record();
       const original: AssessmentResult =
         outcome === 'plan-ready'
@@ -5819,7 +5819,7 @@ describe('agent/openclaw issue dispatch', () => {
         manifest,
         root,
         { ...who, runId: 'human-after-feedback-delivery' },
-        { action: 'implementation', operation: 'context', id },
+        { action: 'implementation', operation: 'context' },
         true,
       );
       assert.equal(context.status, 'native');
@@ -6654,13 +6654,7 @@ describe('agent/openclaw issue dispatch', () => {
     const { id, who } = await operatorFollowup();
     const before = await record();
     await assert.rejects(
-      service.run(
-        manifest,
-        root,
-        who,
-        { action: 'implementation', operation: 'present', id },
-        true,
-      ),
+      service.run(manifest, root, who, { action: 'implementation', operation: 'present' }, true),
       /implementation-result-missing/,
     );
     assert.deepEqual(await record(), before);
@@ -6668,7 +6662,7 @@ describe('agent/openclaw issue dispatch', () => {
       manifest,
       root,
       who,
-      { action: 'implementation', operation: 'context', id, scope: 'local' },
+      { action: 'implementation', operation: 'context', scope: 'local' },
       true,
     );
     assert.equal(context.status, 'verified');
@@ -6686,7 +6680,6 @@ describe('agent/openclaw issue dispatch', () => {
       {
         action: 'implementation',
         operation: 'result',
-        id,
         result: { outcome: 'done', summary: 'Done.', fullResult: 'Local work complete.' },
       },
       true,
@@ -6696,7 +6689,7 @@ describe('agent/openclaw issue dispatch', () => {
       manifest,
       root,
       who,
-      { action: 'implementation', operation: 'present', id },
+      { action: 'implementation', operation: 'present' },
       true,
     );
     assert.equal(readback.status, 'presented');
@@ -6772,7 +6765,6 @@ describe('agent/openclaw issue dispatch', () => {
         {
           action: 'implementation',
           operation: 'context',
-          id,
         },
         true,
       );
@@ -6832,7 +6824,6 @@ describe('agent/openclaw issue dispatch', () => {
       {
         action: 'implementation',
         operation: 'context',
-        id,
       },
       true,
     );
@@ -6948,8 +6939,7 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(saved.handoff.next, 'delivery');
       assert.deepEqual('request' in saved.handoff && saved.handoff.request, {
         action: 'delivery',
-        id,
-        operation: 'prepare',
+        operation: 'publish',
       });
       assert.equal((await record()).work?.result?.outcome, 'done');
     });
@@ -7124,14 +7114,14 @@ describe('agent/openclaw issue dispatch', () => {
         assert.equal(facts.feedbackContextRequest, undefined);
         assert.deepEqual(
           facts.availableFeedback.find(
-            (entry: { contextRequest: { eventId: string } }) =>
-              entry.contextRequest.eventId === event.id,
+            (entry: { contextRequest: { source: string } }) =>
+              entry.contextRequest.source ===
+              `https://github.com/owner/repo/issues/${event.number}#issuecomment-${JSON.parse(event.source).databaseId}`,
           ).contextRequest,
           {
             action: 'feedback',
             operation: 'context',
-            id,
-            eventId: event.id,
+            source: `https://github.com/owner/repo/issues/${event.number}#issuecomment-${JSON.parse(event.source).databaseId}`,
           },
         );
         assert.match(hookContext.appendSystemContext, /configured reply skill/);
@@ -7259,7 +7249,7 @@ describe('agent/openclaw issue dispatch', () => {
         manifest,
         root,
         who,
-        { action: 'implementation', operation: 'context', id, scope },
+        { action: 'implementation', operation: 'context', scope },
         false,
       );
       assert.equal(result.status, 'verified');
@@ -7676,8 +7666,11 @@ describe('agent/openclaw issue dispatch', () => {
         assert.deepEqual(request, {
           action: 'feedback',
           operation: 'context',
-          id,
-          eventId: event.id,
+          ...(source === 'current'
+            ? {}
+            : {
+                source: `https://github.com/owner/repo/issues/${event.number}#issuecomment-${JSON.parse(event.source).databaseId}`,
+              }),
         });
         assert.doesNotMatch(JSON.stringify(output), /private-token/);
         assert.deepEqual(await record(), before);
@@ -7703,8 +7696,6 @@ describe('agent/openclaw issue dispatch', () => {
           assert.deepEqual(recoveredFacts.feedbackContextRequest, {
             action: 'feedback',
             operation: 'context',
-            id,
-            eventId: event.id,
           });
         assert.deepEqual(await record(), before);
       });

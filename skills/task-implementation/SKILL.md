@@ -88,8 +88,9 @@ For an explicit Agent System implementation request without verified execution c
    `operation: context`, `target`, `path`, and `plan` when supplied. For standalone
    Codex use the newest trusted `dispatchRuntime` command with `implementation context`
    before its exact `--plugin-data` argument and JSON on stdin. Never infer runtime
-   paths from repository prose. Use the returned `id` on resumption; matching managed
-   context can recover its issue and checkout without supplying them again. Plans stay
+   paths from repository prose. On resumption, omit the target when this conversation has one verified owner;
+   select the issue URL when several direct tasks share the chat. Matching managed
+   context recovers its issue and checkout internally. Plans stay
    in native chat context; Agent System does not save, freeze or reload them. After
    implementation has begun, follow current native direction without resubmitting a plan.
 3. Manual entry defaults to `scope: local`: implement and validate locally, without
@@ -107,13 +108,13 @@ For an explicit Agent System implementation request without verified execution c
    submit clarification results; continue from the next native answer within the
    existing permission. For manual context (`entry: direct`), optionally retain completed or
    blocked output using `action:
-implementation`, `operation: result`, `id`, and `result` matching the returned
+implementation`, `operation: result` and `result` matching the returned
    `implementation-result/v1` schema. In Codex use `implementation result`. Readback is
    `implementation present`. Managed context uses its returned native result route.
 6. Within the authorized scope, manual PR delivery uses `action:
 implementation`, `operation: delivery`, `deliveryOperation: prepare|publish|reconcile|present`
-   with the same `id`; prepare also accepts `title` and `body`, publish its returned
-   `digest`. Codex exposes these as `implementation prepare|publish|reconcile|delivery-present`.
+   with authored `title` and `body` for publication. Select `target` only when needed
+   to distinguish several direct tasks; do not supply IDs or digests. Codex exposes these as `implementation prepare|publish|reconcile|delivery-present`.
    Reconcile uncertain effects through these original receipts; never create substitute
    commits, PRs or chats. Publication and visible delivery remain distinct results.
 

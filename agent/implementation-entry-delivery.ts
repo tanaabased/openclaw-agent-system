@@ -118,20 +118,18 @@ export default async function implementationEntryDelivery(input: {
     (title !== previous.title || body !== previous.body || head !== previous.binding.head)
   )
     throw new Error('delivery-content-changed');
-  const delivery = (entry.delivery ??= {
+  const delivery = entry.delivery ?? {
     id: automationHash({ binding, title, body }),
     binding,
     title,
     body,
     creationAttempted: false,
     reconciled: false,
-  });
-  await save();
+  };
   if (operation === 'prepare')
     return {
       status: 'prepared',
       id: entry.id,
-      digest: delivery.id,
       title,
       body,
       branch,
@@ -140,16 +138,15 @@ export default async function implementationEntryDelivery(input: {
         action: 'implementation' as const,
         operation: 'delivery' as const,
         deliveryOperation: 'publish' as const,
-        id: entry.id,
-        digest: delivery.id,
+        target: entry.target,
         title,
         body,
       },
       instruction:
-        'Submit the complete publishRequest through the owning runtime within the existing publication scope. In Codex, capture preparation stdout in a private temporary JSON file outside the checkout, inspect it, and pass the entire saved response unchanged on stdin to dispatch implementation publish. If not saved, repeat prepare with output capture first. Do not retype digests or draft fields, or pipe preparation directly into publication. Native denials stop publication; reconcile uncertain effects through their original receipts without replay.',
+        'Publish authored title and body through the owning runtime within the existing publication scope. The native caller and selected issue determine the retained work; do not supply IDs or digests. Native denials stop publication; reconcile uncertain effects through their original receipts without replay.',
     };
-  if (operation === 'publish' && action.digest !== delivery.id)
-    throw new Error('delivery-digest-stale');
+  entry.delivery = delivery;
+  await save();
   await publishIssueDelivery({
     delivery,
     publication: {
