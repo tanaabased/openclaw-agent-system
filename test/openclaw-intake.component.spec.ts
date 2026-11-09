@@ -668,7 +668,6 @@ describe('openclaw v2 intake slice', () => {
           assert.equal((args as { action: string }).action, 'check');
           const result = await tool.execute('condition', {
             action: 'check',
-            policyDigest: assignmentIntakePolicy(f.value, 'openclaw')!.digest,
           });
           assert.deepEqual(
             result.details,
@@ -789,6 +788,7 @@ describe('openclaw v2 intake slice', () => {
       { action: 'activate' },
       { action: 'inspect', agentId: 'other' },
       { action: 'scan', policyDigest: 'invalid' },
+      { action: 'scan', policyDigest: assignmentIntakePolicy(f.value, 'openclaw')!.digest },
     ]) {
       await assert.rejects(tool.execute('call', request), { code: 'intake-request-invalid' });
     }

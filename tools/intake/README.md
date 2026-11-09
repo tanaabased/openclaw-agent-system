@@ -36,10 +36,9 @@ Inspect saved assignments or scan GitHub for eligible work.
 
 ### Parameters
 
-| Parameter      | Type                                    | Required | Default | Description                                                                                                                           |
-| -------------- | --------------------------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `action`       | `inspect`, `check`, `scan`, or `pickup` | yes      | none    | Inspect retained state, scan assignments, or select and self-assign one project issue from its verified native pickup job.            |
-| `policyDigest` | string                                  | no       | none    | Optional compatibility field for `check` and `scan`: 64 lowercase hexadecimal characters. It does not override or freeze live policy. |
+| Parameter | Type                                    | Required | Default | Description                                                                                                                |
+| --------- | --------------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `action`  | `inspect`, `check`, `scan`, or `pickup` | yes      | none    | Inspect retained state, scan assignments, or select and self-assign one project issue from its verified native pickup job. |
 
 `inspect` accepts only `action` and reads the saved baseline, checkpoint, records, and
 blockers without contacting GitHub.

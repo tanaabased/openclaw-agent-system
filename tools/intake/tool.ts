@@ -139,7 +139,7 @@ export default function createIntakeTool(
                       loaded.manifest,
                       loaded.scope.workspaceDir,
                       params.action,
-                      params.policyDigest,
+                      undefined,
                       signal,
                     );
             const delivered = contextMaterialTransport(result, { tool: 'agent_system_intake' });

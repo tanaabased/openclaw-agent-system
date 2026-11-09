@@ -392,12 +392,10 @@ function respond(
   const manual = prompt.includes('Advance previously admitted issue or feedback work.');
   if (manual || prompt.includes('Fill initially available intake slots in one bounded pass.')) {
     if (!manual && !prompt.includes('Consume saved discoveries')) {
-      const digest = /Policy digest: ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
       const scan = result('scan');
       if (!scan)
         return call('scan', 'agent_system_intake', {
           action: 'scan',
-          ...(digest ? { policyDigest: digest } : {}),
         });
       if (scan.status === 'blocked') return report();
       if (scan.status !== 'ready') return;
