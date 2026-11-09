@@ -79,6 +79,7 @@ export async function selectCodexTurnTask(
   if (!turnId) throw new Error('turn-context-native-turn-unavailable');
   const feedback = [];
   let unresolvedFeedback = false;
+  let feedbackLimitation: { code: string } | undefined;
   for (const event of record.feedback?.events ?? []) {
     if (
       !event.attempt ||
@@ -86,10 +87,17 @@ export async function selectCodexTurnTask(
       (event.attempt.turnId && event.attempt.turnId !== turnId)
     )
       continue;
-    const receipt = await lookup.receipt(record.sourceThreadId, event.attempt);
-    if (receipt.status === 'verified' && receipt.turnId === turnId) {
-      feedback.push(event);
-    } else if (receipt.status !== 'verified') unresolvedFeedback = true;
+    try {
+      const receipt = await lookup.receipt(record.sourceThreadId, event.attempt);
+      if (receipt.status === 'verified' && receipt.turnId === turnId) {
+        feedback.push(event);
+      } else if (receipt.status !== 'verified') unresolvedFeedback = true;
+    } catch (error) {
+      unresolvedFeedback = true;
+      feedbackLimitation = {
+        code: workflowFailure(error, 'feedback-native-input-unavailable').code,
+      };
+    }
   }
   const source = !unresolvedFeedback && feedback.length === 1 ? feedback[0] : undefined;
   const implementation = Boolean(retainedIssueProgression(record));
@@ -105,6 +113,7 @@ export async function selectCodexTurnTask(
     contextRequest: !feedback.length && !unresolvedFeedback ? { action: 'context' } : undefined,
     contextRuntime: implementation ? 'continuationRuntime' : 'dispatchRuntime',
     feedbackContextRequest: source && { action: 'context', id: record.id, eventId: source.id },
+    ...(feedbackLimitation ? { feedbackLimitation } : {}),
     worktree: record.worktree ?? native.cwd,
     nativeCwd: native.cwd,
     pullRequest: taskPullRequest(record),
@@ -191,10 +200,10 @@ export default async function readCodexTurnTask(
       owner.feedbackContextRequest &&
       record.feedback?.events.find((event) => event.id === owner.feedbackContextRequest!.eventId);
     let feedback;
-    let feedbackLimitation;
+    let feedbackLimitation = owner.feedbackLimitation;
     try {
       if (owner.stage === 'feedback' && !selected)
-        throw new Error('feedback-native-input-unverified');
+        feedbackLimitation ??= { code: 'feedback-native-input-unverified' };
       if (selected) {
         const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
           workspace,

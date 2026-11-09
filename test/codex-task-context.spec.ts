@@ -105,6 +105,31 @@ describe('agent/codex-task-context', () => {
     assert.equal(context?.evidence.source, 'https://github.com/org/repo/issues/1');
   });
 
+  it('should carry the exact receipt limitation into recovered task context', async () => {
+    const context = await readCodexTurnTask(
+      '/data',
+      { threadId: 'native-chat' },
+      {
+        owner: async () => ({
+          ...owner,
+          stage: 'feedback',
+          feedbackLimitation: { code: 'feedback-native-input-unavailable' },
+        }),
+        connect: async () => connection,
+        skill: async (_request, _cwd, name) => ({
+          name,
+          path: '/skills/SKILL.md',
+          scope: 'user',
+          digest: 'a'.repeat(64),
+        }),
+      },
+    );
+    assert.equal(context?.evidence.source, 'https://github.com/org/repo/issues/1');
+    assert.equal(context?.feedback, undefined);
+    assert.deepEqual(context?.feedbackLimitation, { code: 'feedback-native-input-unavailable' });
+    assert.ok(context?.assessment);
+  });
+
   it('should refuse a native turn that changes during context assembly', async () => {
     let reads = 0;
     await assert.rejects(

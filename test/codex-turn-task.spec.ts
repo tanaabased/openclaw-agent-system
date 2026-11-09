@@ -156,6 +156,38 @@ describe('agent/codex-turn-task', () => {
       undefined,
     );
   });
+  it('should preserve the verified task when exact feedback receipt inspection fails', async () => {
+    const feedback = {
+      ...record,
+      threadId: turn.threadId,
+      feedback: {
+        events: [
+          {
+            id: 'source',
+            native: true,
+            attempt: { request: { threadId: turn.threadId, prompt: '> comment' } },
+          },
+        ],
+      },
+    } as DispatchRecord;
+    const before = structuredClone(feedback);
+    const output = await selectCodexTurnTask([feedback], turn, {
+      ...lookup,
+      receipt: async () => {
+        throw new Error('private transport failure');
+      },
+    });
+    assert.equal(output?.receipt, record.id);
+    assert.equal(output?.stage, 'feedback');
+    assert.equal(output?.feedbackContextRequest, undefined);
+    assert.deepEqual(output?.feedbackLimitation, { code: 'feedback-native-input-unavailable' });
+    assert.doesNotMatch(JSON.stringify(output), /private transport failure/);
+    assert.deepEqual(feedback, before);
+    const recovered = await selectCodexTurnTask([feedback], turn, lookup);
+    assert.equal(recovered?.feedbackContextRequest?.eventId, 'source');
+    assert.equal(recovered?.feedbackLimitation, undefined);
+  });
+
   it('should not invent a feedback mapping from a blocked or uncertain receipt', async () => {
     const feedback = {
       ...record,
