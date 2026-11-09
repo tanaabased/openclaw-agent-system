@@ -233,10 +233,7 @@ export function nativePlanResponse(
       target,
       privateText: plan,
       update: {
-        observation: observed.observation,
-        facts: [
-          { key: 'initial-plan', reference: context.currentTurnId, revision: '1', text: plan },
-        ],
+        facts: [{ reference: target, text: plan }],
       },
     });
   assert.equal(composed.status, 'composition-ready');
@@ -247,27 +244,17 @@ export function nativePlanResponse(
     return dispatch('native-plan-candidate', {
       action: 'reply',
       operation: 'candidate',
-      id: composed.id,
-      digest: composed.digest,
+      target,
       publicText: publicText(composed, plan),
     });
   assert.equal(candidate.publication, 'workflow-authorized');
   if (leavePending) return { content: String(rendered.presentation) };
-  const preview = result('native-plan-preview');
-  if (!preview)
-    return dispatch('native-plan-preview', {
-      action: 'reply',
-      operation: 'publish',
-      id: composed.id,
-    });
-  assert.equal(preview.status, 'publication-ready');
   const published = result('native-plan-publish');
   if (!published)
     return dispatch('native-plan-publish', {
       action: 'reply',
       operation: 'publish',
-      id: composed.id,
-      digest: preview.digest,
+      target,
     });
   assert.equal(published.status, 'published');
   return { content: String(published.presentation) };
@@ -485,19 +472,12 @@ function respond(
     }
     return;
   }
-  const retainedReply = /Publish retained reply draft: ([a-f0-9]{64})/u.exec(prompt)?.[1];
+  const retainedReply = /Publish retained reply: (\{[^\n]+\})/u.exec(prompt)?.[1];
   if (retainedReply) {
-    const args = { action: 'reply', id: retainedReply };
-    const preview = result('feedback-preview');
-    if (!preview) return dispatch('feedback-preview', { ...args, operation: 'publish' });
-    if (preview.status !== 'publication-ready') return;
+    const selected = JSON.parse(retainedReply) as { target: string; publicText: string };
     const published = result('feedback-publish');
     if (!published)
-      return dispatch('feedback-publish', {
-        ...args,
-        operation: 'publish',
-        digest: preview.digest,
-      });
+      return dispatch('feedback-publish', { action: 'reply', operation: 'publish', ...selected });
     if (published.status !== 'published') return;
     return { content: String(published.presentation) };
   }
@@ -722,14 +702,9 @@ function respond(
         target: context.replyTarget,
         privateText,
       });
-    const reply = { action: 'reply', id: composition.id };
+    const reply = { action: 'reply', target: context.replyTarget };
     const skill = (composition.selection as { skill?: { path?: string } } | undefined)?.skill;
-    if (
-      composition.status !== 'composition-ready' ||
-      typeof composition.digest !== 'string' ||
-      !skill?.path
-    )
-      return;
+    if (composition.status !== 'composition-ready' || !skill?.path) return;
     if (openClawAIMockToolResultText(messages, prefix + 'feedback-skill') === undefined)
       return call('feedback-skill', 'read', { path: skill.path });
     const candidate = result('feedback-candidate');
@@ -737,7 +712,6 @@ function respond(
       return dispatch('feedback-candidate', {
         ...reply,
         operation: 'candidate',
-        digest: composition.digest,
         publicText: publicText(
           composition,
           initial
@@ -748,16 +722,8 @@ function respond(
     if (candidate.status !== 'candidate-recorded') return;
     if (!initial && options.interruptFeedbackReply)
       return { content: privateText + '\n\nReply draft retained: ' + composition.id };
-    const preview = result('feedback-preview');
-    if (!preview) return dispatch('feedback-preview', { ...reply, operation: 'publish' });
-    if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
     const published = result('feedback-publish');
-    if (!published)
-      return dispatch('feedback-publish', {
-        ...reply,
-        operation: 'publish',
-        digest: preview.digest,
-      });
+    if (!published) return dispatch('feedback-publish', { ...reply, operation: 'publish' });
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   }

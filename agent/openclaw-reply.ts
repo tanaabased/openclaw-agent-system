@@ -1,11 +1,13 @@
+import selectReplyDraft from './reply-selection.ts';
 import { Value } from 'typebox/value';
-import { replyRequestSchema } from '../tools/dispatch/reply-schema.ts';
+import { replyModelSchema } from '../tools/dispatch/reply-schema.ts';
 import ReplyStore, { type ReplyDraft } from './reply-store.ts';
 import openClawFeedbackInput from './openclaw-feedback-input.ts';
 import { authorizeFeedback } from './openclaw-feedback.ts';
 import assignmentIntakePolicy from './assignment-intake-policy.ts';
 import { inspectIssueIdentity } from './dispatch-assignment.ts';
-import { dispatchAdmission } from './managed-issue.ts';
+import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
+import { feedbackTarget } from './reply-target.ts';
 import feedbackReply from './feedback-reply.ts';
 import type { OpenClawDispatchDependencies } from './openclaw-dispatch-context.ts';
 import OpenClawDispatchStore from './openclaw-dispatch-state.ts';
@@ -29,7 +31,7 @@ export default async function openClawReply(input: {
   dependencies: OpenClawDispatchDependencies;
 }) {
   const { manifest, caller, dependencies: deps, authority } = input;
-  if (!Value.Check(replyRequestSchema, input.action)) throw new Error('reply-request-invalid');
+  if (!Value.Check(replyModelSchema, input.action)) throw new Error('reply-request-invalid');
   const action = input.action;
   await authority.assertCurrent?.();
   const current = await deps.intake.select(manifest, input.workspace, { resolvePolicy: false });
@@ -45,8 +47,11 @@ export default async function openClawReply(input: {
   const replyStore = new ReplyStore(deps.root, binding);
   return deps.credential.use(authority, async (request) => {
     let feedback: ReplyDraft['feedback'];
+    let defaultTarget: string | undefined;
     const selectedDraft =
-      action.id && (await replyStore.read()).find((entry) => entry.id === action.id);
+      action.target && (action.operation !== 'compose' || action.material)
+        ? selectReplyDraft(await replyStore.read(), action, { turnId: caller.runId, inputId: '' })
+        : undefined;
     const nativeInput = async () => {
       const records = (await journal.read()).records.filter(
         (record) => record.threadId === caller.sessionKey,
@@ -62,6 +67,16 @@ export default async function openClawReply(input: {
           deps.config(),
           selectedDraft ? selectedDraft.feedback?.eventId : undefined,
         ));
+      const admission =
+        record && dispatchAdmission(record, (await current.store.read())?.records ?? []);
+      defaultTarget =
+        admission &&
+        (matched
+          ? feedbackTarget(
+              `${admission.repository.owner.login}/${admission.repository.name}`,
+              matched.event,
+            )
+          : managedTargetUrl(admission));
       if (matched) {
         feedback = {
           ownerId: record.id,
@@ -75,16 +90,13 @@ export default async function openClawReply(input: {
         return { inputEventId: matched.inputId, message: matched.event.source };
       }
       if (!input.operator) {
-        const draft =
-          action.id && (await replyStore.read()).find((entry) => entry.id === action.id);
-        const update = action.purpose === 'status-update' || Boolean(draft && draft.update);
         const turn = [
           record?.assessmentTurn,
           record?.decisionTurn,
           record?.work?.turn,
           record?.work?.deliveryTurn,
         ].find((entry) => entry?.runId === caller.runId);
-        if (!update || !record) throw new Error('reply-operator-required');
+        if (!record) throw new Error('reply-operator-required');
         if (
           record.reset ||
           record.supersededBy ||
@@ -95,13 +107,23 @@ export default async function openClawReply(input: {
         )
           throw new Error('reply-managed-context-invalid');
         await describeIssueSession(request, record, deps.config(), 'conversation');
-        return nativeInputEvent({
+        const native = await nativeInputEvent({
           request,
           sessionKey: caller.sessionKey,
           sessionId: caller.sessionId,
           runId: caller.runId,
           retained: [record.assessmentCaller, record.work?.caller],
         });
+        const draft =
+          action.operation !== 'compose' || action.material
+            ? selectReplyDraft(await replyStore.read(), action, {
+                turnId: caller.runId,
+                inputId: native.inputEventId,
+              })
+            : undefined;
+        if (action.purpose !== 'status-update' && !draft?.update)
+          throw new Error('reply-operator-required');
+        return native;
       }
       return operatorInputEvent({
         request,
@@ -138,6 +160,8 @@ export default async function openClawReply(input: {
         throw new Error('reply-input-changed');
     };
     return feedbackReply(input.action, {
+      modelInput: true,
+      defaultTarget,
       root: deps.root,
       binding,
       turnId: caller.runId,

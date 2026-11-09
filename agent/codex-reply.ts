@@ -1,8 +1,10 @@
+import selectReplyDraft from './reply-selection.ts';
 import codexFeedbackInput from './codex-feedback-input.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
 import authorizeCodexFeedback from './codex-feedback-authority.ts';
 import ReplyStore, { type ReplyDraft } from './reply-store.ts';
-import { dispatchAdmission } from './managed-issue.ts';
+import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
+import { feedbackTarget } from './reply-target.ts';
 
 import { Value } from 'typebox/value';
 
@@ -18,7 +20,7 @@ import feedbackReply from './feedback-reply.ts';
 import replyOwner from './reply-owner.ts';
 import replyOwnerContext from './reply-owner-context.ts';
 import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
-import { replyRequestSchema } from '../tools/dispatch/reply-schema.ts';
+import { replyModelSchema } from '../tools/dispatch/reply-schema.ts';
 
 export { default as codexReplyInput } from './codex-direct-input.ts';
 
@@ -28,7 +30,7 @@ export default async function codexReply(
   input: unknown,
   deps: CodexFeedbackDependencies,
 ) {
-  if (!Value.Check(replyRequestSchema, input)) throw new Error('reply-request-invalid');
+  if (!Value.Check(replyModelSchema, input)) throw new Error('reply-request-invalid');
   const current = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('reply-native-caller-required');
@@ -51,6 +53,7 @@ export default async function codexReply(
     };
     const replyStore = new ReplyStore(pluginData, binding);
     let feedback: ReplyDraft['feedback'];
+    let defaultTarget: string | undefined;
     const nativeInput = () =>
       codexReplyInput(connection.request, caller, async (turnId, items) => {
         const records = (await journal.read()).records;
@@ -61,14 +64,12 @@ export default async function codexReply(
           deps.continuationNative ?? codexContinuationNative(connection.request),
         );
         if (!match) {
-          const draft = input.id
-            ? (await replyStore.read()).find((entry) => entry.id === input.id)
-            : undefined;
-          if (input.purpose !== 'status-update' && !draft?.update) return;
           const owners = records.filter((record) => record.threadId === caller);
           if (owners.length > 1) throw new Error('reply-managed-owner-ambiguous');
           const record = owners[0];
           if (!record?.request || !record.worktree) return;
+          const admission = dispatchAdmission(record, (await current.store.read())?.records ?? []);
+          defaultTarget = admission && managedTargetUrl(admission);
           if (record.reset || record.supersededBy || record.retired || record.retirement)
             throw new Error('reply-managed-context-invalid');
           const inputItem = items.findLast(
@@ -79,6 +80,11 @@ export default async function codexReply(
                 ['create_thread', 'send_message_to_thread'].includes(String(item.name))),
           );
           if (typeof inputItem?.id !== 'string') return;
+          const draft =
+            input.operation !== 'compose' || input.material
+              ? selectReplyDraft(await replyStore.read(), input, { turnId, inputId: inputItem.id })
+              : undefined;
+          if (input.purpose !== 'status-update' && !draft?.update) return;
           const native = await withNative(current, deps, (host) =>
             host.find({
               sourceThreadId: record.sourceThreadId,
@@ -90,6 +96,16 @@ export default async function codexReply(
           if (!native || native.id !== caller) throw new Error('reply-managed-context-invalid');
           return { inputId: inputItem.id };
         }
+        const admission = dispatchAdmission(
+          match.record,
+          (await current.store.read())?.records ?? [],
+        );
+        defaultTarget =
+          admission &&
+          feedbackTarget(
+            `${admission.repository.owner.login}/${admission.repository.name}`,
+            match.event,
+          );
         feedback = {
           ownerId: match.record.id,
           eventId: match.event.id,
@@ -144,6 +160,8 @@ export default async function codexReply(
       return fresh.manifest;
     };
     return await feedbackReply(input, {
+      modelInput: true,
+      defaultTarget,
       root: pluginData,
       binding,
       ...turn,

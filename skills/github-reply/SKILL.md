@@ -58,16 +58,17 @@ a missing or denied tool:
   `reply compose --plugin-data <feedbackRuntime.pluginData>`, with the matching
   JSON request on stdin. Never guess its executable, binding, or workspace.
 
-Supply `target` as an exact `https://github.com/OWNER/REPO/issues/NUMBER` or
+For an explicitly selected destination, supply `target` as an exact `https://github.com/OWNER/REPO/issues/NUMBER` or
 `/pull/NUMBER` URL, including its `#issuecomment-ID`, `#discussion_rID`, or
 `#pullrequestreview-ID` anchor when selecting a comment/review. Supply `privateText`
 with the intended response and, when useful, `outcome` with supporting facts.
+For the current admitted input, omit `target` when its native source already determines the destination.
 These are supplied facts, not verified execution results. Ask the returned focused
 question when information is missing; never invent progress or an admitted event.
 
 The native adapter reads applicable settings from the invoking agent's bound
-`agent.yaml`. Follow a returned managed-owner route using its exact ids, retained
-inputs/results and receipts. Do not reimplement finished work. Invalid managed
+`agent.yaml`. Follow a returned managed-owner route using its source URL and retained response.
+The runtime resolves native ownership and effect receipts internally. Do not reimplement finished work. Invalid managed
 context must recover through that owner or stop, never fall back to manual entry.
 Invalid explicit skill/guidance configuration stops composition.
 
@@ -75,16 +76,18 @@ For `composition-ready`, read the returned selected skill and guidance once. If
 this skill is selected, continue below without reentering direct entry. A custom
 skill receives the ordinary composition inputs and returns candidate text only;
 the native caller adapts its output. Submit that text with `operation: "candidate"`,
-the returned `id`, `digest`, and `publicText`. Codex uses `reply candidate` in argv.
+`publicText`, and `target` when selecting a destination. Codex uses `reply candidate` in argv.
+Do not supply draft IDs or digests. If multiple drafts share a destination, select the
+intended one using its authored `privateText` or, for publication, `publicText`.
 Show the returned draft; candidate creation performs no GitHub write. Reuse a
 retained candidate instead of composing it again.
 
 Only an explicit request to publish authorizes the manual publication path. Use
-`reply publish` (OpenClaw `action: "reply", operation: "publish"`) without a digest
-to inspect the exact body/destination, then with that digest through native
-approval. No extra conversational confirmation is needed when the request already
+`reply publish` (OpenClaw `action: "reply", operation: "publish"`) through native
+approval. It publishes the exact retained candidate, rechecking its source, account,
+and destination internally. No extra conversational confirmation is needed when the request already
 covers that operation. Stop on denial. For an attempted or uncertain write, use
-`reply reconcile` and its retained `id`; never change the text or repost. Preserve
+`reply reconcile` with the same semantic destination/text selection; never change the text or repost. Preserve
 existing admitted-feedback authority without adding a manual confirmation gate.
 
 ### Composition

@@ -13,7 +13,7 @@ import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';
 import { feedbackResultSchema } from '../../agent/feedback-state.ts';
 import { implementationResultSchema } from '../../agent/implementation-result.ts';
-import { replyRequestSchema } from './reply-schema.ts';
+import { replyRequestSchema, replyModelSchema, type ReplyModelRequest } from './reply-schema.ts';
 import discriminatedSchema from '../../utils/discriminated-schema.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -168,7 +168,9 @@ type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
   ? Omit<T, 'id'>
   : T extends { action: 'feedback' }
     ? Omit<T, 'id' | 'eventId'> & { source?: string }
-    : T;
+    : T extends { action: 'reply' }
+      ? ReplyModelRequest
+      : T;
 export const dispatchModelParameters = Type.Unsafe<ModelDispatchInput>(
   discriminatedSchema(
     'action',
@@ -181,7 +183,9 @@ export const dispatchModelParameters = Type.Unsafe<ModelDispatchInput>(
                 ...Type.Omit(variant, ['id', 'eventId']).properties,
                 source: Type.Optional(Type.String({ minLength: 1, maxLength: 2048 })),
               })
-            : variant,
+            : variant.properties.action.const === 'reply'
+              ? replyModelSchema
+              : variant,
       ),
     ),
   ),

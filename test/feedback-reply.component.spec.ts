@@ -209,6 +209,36 @@ describe('agent/feedback-reply', () => {
     assert.ok('digest' in result && result.status === 'publication-ready');
     return result.digest;
   }
+  for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should select exact semantic reply drafts and reconcile uncertain publication in ${runtime}`, async () => {
+      deps.modelInput = true;
+      deps.binding.runtime = runtime;
+      deps.defaultTarget = url;
+      await call('compose', { privateText: 'First answer.' });
+      await call('compose', { privateText: 'Second answer.' });
+      await assert.rejects(
+        call('candidate', { publicText: 'Ambiguous.' }),
+        /draft-selection-required/,
+      );
+      await call('candidate', { privateText: 'Second answer.', publicText: 'Selected answer.' });
+      await assert.rejects(call('publish', { target: url }), /draft-selection-required/);
+      lost = hidden = true;
+      await assert.rejects(call('publish', { publicText: 'Selected answer.' }), /transport lost/);
+      assert.equal(writes, 1);
+      deps.turnId = 'resumed-turn';
+      deps.inputId = 'resumed-input';
+      assert.equal(
+        (await call('reconcile', { target: url, publicText: 'Selected answer.' })).status,
+        'uncertain',
+      );
+      hidden = false;
+      assert.equal(
+        (await call('reconcile', { target: url, publicText: 'Selected answer.' })).status,
+        'published',
+      );
+      assert.equal(writes, 1);
+    });
+  }
   it('should preserve legacy drafts while writing each new operation independently', async () => {
     const first = await candidate();
     const store = new ReplyStore(deps.root, deps.binding);
@@ -1595,41 +1625,37 @@ describe('agent/feedback-reply', () => {
     assert.ok(!(await readdir(pluginData)).some((name) => name.startsWith('github-intake-')));
     assert.ok((await readdir(pluginData)).some((name) => name.startsWith('github-reply-')));
     assert.ok((await readFile(join(root, 'SKILL.md'), 'utf8')).includes('ordinary reply'));
-    assert.ok('id' in result && 'digest' in result);
+    await assert.rejects(
+      direct('candidate', { id: 'a'.repeat(64), publicText: 'Wrong override.' }),
+      /reply-request-invalid/,
+    );
     await direct('candidate', {
-      id: result.id,
-      digest: result.digest,
+      target: url,
       publicText: 'Direct answer.',
     });
-    const preview = await direct('publish', { id: result.id });
-    assert.ok('digest' in preview);
-    await direct('publish', { id: result.id, digest: preview.digest });
-    await direct('reconcile', { id: result.id });
+    assert.equal((await direct('publish', { target: url })).status, 'published');
+    await direct('reconcile', { target: url });
     assert.equal(writes, 1);
     assert.equal(calls.filter((x) => x === 'skills/list').length, 1);
     const pr = linkedPullRequest();
     const update = await direct('context', { purpose: 'status-update', target: pr.url });
-    assert.ok('observation' in update && typeof update.observation === 'string');
+    assert.equal(update.status, 'status-update-context');
     const status = await direct('compose', {
       purpose: 'status-update',
       target: pr.url,
       privateText: 'Native status answer.',
-      update: { observation: update.observation, facts: [progressFact] },
+      update: { facts: [{ reference: progressFact.reference, text: progressFact.text }] },
     });
-    assert.ok('id' in status && 'digest' in status);
+    assert.equal(status.status, 'composition-ready');
     await direct('candidate', {
-      id: status.id,
-      digest: status.digest,
+      target: pr.url,
       publicText: 'One verified unit run passed.',
     });
-    const statusPreview = await direct('publish', { id: status.id });
-    assert.ok('digest' in statusPreview);
     // native later-turn verification is independent of the draft's original input receipt.
     operatorTurn = 'later-operator-turn';
     operatorInput = 'later-input';
     const statusPublished = await direct('publish', {
-      id: status.id,
-      digest: statusPreview.digest,
+      target: pr.url,
     });
     assert.equal(statusPublished.status, 'published');
     assert.equal(writes, 2);
@@ -1719,7 +1745,8 @@ describe('agent/feedback-reply', () => {
     const direct = (
       operation: 'context' | 'compose' | 'candidate' | 'publish' | 'reconcile',
       extra: object = {},
-    ) => service.run(manifest, workspace, caller, { action: 'reply', operation, ...extra }, true);
+    ) =>
+      service.runModel(manifest, workspace, caller, { action: 'reply', operation, ...extra }, true);
     await assert.rejects(
       service.run(manifest, workspace, caller, {
         action: 'reply',
@@ -1730,37 +1757,35 @@ describe('agent/feedback-reply', () => {
       /reply-operator-required/,
     );
     const composed = await direct('compose', { target: url, privateText: 'Answer.' });
-    assert.ok('id' in composed && typeof composed.id === 'string' && 'digest' in composed);
+    assert.equal(composed.status, 'composition-ready');
+    await assert.rejects(
+      direct('candidate', { digest: 'a'.repeat(64), publicText: 'Wrong override.' }),
+      /reply-request-invalid/,
+    );
     await direct('candidate', {
-      id: composed.id,
-      digest: composed.digest,
+      target: url,
       publicText: 'A concise answer.',
     });
-    const preview = await direct('publish', { id: composed.id });
-    assert.ok('digest' in preview);
-    await direct('publish', { id: composed.id, digest: preview.digest });
-    await direct('reconcile', { id: composed.id });
+    assert.equal((await direct('publish', { target: url })).status, 'published');
+    await direct('reconcile', { target: url });
     assert.equal(writes, 1);
     assert.equal(calls.filter((x) => x === 'skills.status').length, 1);
     assert.ok(!(await readdir(root)).includes('intake'));
     const pr = linkedPullRequest();
     const update = await direct('context', { purpose: 'status-update', target: pr.url });
-    assert.ok('observation' in update && typeof update.observation === 'string');
+    assert.equal(update.status, 'status-update-context');
     const status = await direct('compose', {
       purpose: 'status-update',
       target: pr.url,
       privateText: 'Native status answer.',
-      update: { observation: update.observation, facts: [progressFact] },
+      update: { facts: [{ reference: progressFact.reference, text: progressFact.text }] },
     });
-    assert.ok('id' in status && 'digest' in status);
+    assert.equal(status.status, 'composition-ready');
     await direct('candidate', {
-      id: status.id,
-      digest: status.digest,
+      target: pr.url,
       publicText: 'One verified unit run passed.',
     });
-    const statusPreview = await direct('publish', { id: status.id });
-    assert.ok('digest' in statusPreview);
-    await direct('publish', { id: status.id, digest: statusPreview.digest });
+    assert.equal((await direct('publish', { target: pr.url })).status, 'published');
     assert.equal(writes, 2);
     assert.equal(postedNumber, 4);
     assert.ok(posted?.body.includes(':status-update:'));

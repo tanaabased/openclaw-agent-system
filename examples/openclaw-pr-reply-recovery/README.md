@@ -167,9 +167,9 @@ jq -es --slurpfile saved "$TMPDIR/notification-feedback-retained.json" '[.[] | (
 jq -e '.attempted == null and .receipt == null and (.publicText | length > 0)' "$TMPDIR/notification-retained-draft.json"
 session_id=$(jq -er .sessionCreation.sessionId "$TMPDIR/notification-feedback-retained.json")
 receipt=$(jq -er .id "$TMPDIR/notification-feedback-retained.json")
-draft_id=$(jq -er .id "$TMPDIR/notification-retained-draft.json")
+draft_id=$(jq -c '{target:(.target | fromjson | .url),publicText}' "$TMPDIR/notification-retained-draft.json")
 leaf=$(openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:1}')" --json | jq -er .sessionInfo.activeLeafEntryId)
-params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" --arg draft "$draft_id" '{sessionKey:$key,agentId:"pr-reply-recovery-tanaabot",sessionId:$session,message:("Publish retained reply draft: " + $draft + ". Do not repeat the pushed repair."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-feedback-resume"}')"
+params="$(jq -nc --arg key "$conversation" --arg session "$session_id" --arg leaf "$leaf" --arg receipt "$receipt" --arg draft "$draft_id" '{sessionKey:$key,agentId:"pr-reply-recovery-tanaabot",sessionId:$session,message:("Publish retained reply: " + $draft + "\nDo not repeat the pushed repair."),queueMode:"followup",deliver:false,expectedLeafEntryId:$leaf,idempotencyKey:"notification-feedback-resume"}')"
 node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime"; const result = await callGatewayFromCli("chat.send", {json:true}, JSON.parse(process.argv[1]), {scopes:["operator.admin"],progress:false,sharedStateMode:"read-only"}); console.log(JSON.stringify(result));' "$params" | jq -e '.runId == "notification-feedback-resume"'
 feedback_run=notification-feedback-resume
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$feedback_run" 600000

@@ -48,3 +48,29 @@ export const replyRequestSchema = Type.Object(
   { additionalProperties: false },
 );
 export type ReplyRequest = Static<typeof replyRequestSchema>;
+
+/** model arguments carry prose and source choices, never draft custody or observation hashes. */
+export const replyModelSchema = Type.Object(
+  {
+    ...Type.Omit(replyRequestSchema, ['id', 'digest', 'update']).properties,
+    update: Type.Optional(
+      Type.Object(
+        {
+          facts: Type.Array(
+            Type.Object(
+              {
+                reference: Type.String({ minLength: 1, maxLength: 2048 }),
+                text: Type.String({ minLength: 1, maxLength: 4000 }),
+              },
+              { additionalProperties: false },
+            ),
+            { maxItems: 20 },
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+export type ReplyModelRequest = Static<typeof replyModelSchema>;

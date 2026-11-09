@@ -10,7 +10,7 @@ import {
 } from '@copilotkit/aimock';
 
 import { assessmentPresentationSchema } from '../../agent/assessment-result.ts';
-import { replyRequestSchema } from '../../tools/dispatch/reply-schema.ts';
+import { replyModelSchema } from '../../tools/dispatch/reply-schema.ts';
 import { Value } from 'typebox/value';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
@@ -222,11 +222,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         target: updateTarget,
       });
     assert.equal(current.status, 'status-update-context');
-    assert.ok(typeof current.observation === 'string');
     const composeRequest = current.composeRequest;
-    assert.ok(Value.Check(replyRequestSchema, composeRequest));
+    assert.ok(Value.Check(replyModelSchema, composeRequest));
     assert.ok(composeRequest.update);
-    assert.equal(composeRequest.update.observation, current.observation);
     assert.equal(composeRequest.target, updateTarget);
     const noOp = prompt.includes('Check current status target:');
     const composed = result('update-compose');
@@ -242,9 +240,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
             ? []
             : [
                 {
-                  key: 'operator-decision',
                   reference: 'current-chat:operator-decision',
-                  revision: 'shared-reply-v1',
                   text: 'The operator selected the shared reply approach. Implementation remains unstarted.',
                 },
               ],
@@ -264,8 +260,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       return dispatch('update-candidate', {
         action: 'reply',
         operation: 'candidate',
-        id: composed.id,
-        digest: composed.digest,
+        target: updateTarget,
         publicText:
           'The operator selected the shared reply approach. Implementation remains unstarted.',
       });
@@ -296,36 +291,23 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       return dispatch('manual-candidate', {
         action: 'reply',
         operation: 'candidate',
-        id: composed.id,
-        digest: composed.digest,
+        target: directTarget,
         publicText:
           'The disposable manual reply fixture is ready. No implementation or test result is claimed.',
       });
     assert.equal(candidate.status, 'candidate-recorded');
     return { content: String(candidate.presentation) };
   }
-  const directDraft = /Direct reply publish draft: ([a-f0-9]{64})/u.exec(prompt)?.[1];
-  if (directDraft) {
-    const preview = result('manual-preview');
-    if (!preview)
-      return dispatch('manual-preview', { action: 'reply', operation: 'publish', id: directDraft });
-    assert.equal(preview.status, 'publication-ready');
+  const directReply = /Direct reply publish: (\{[^\n]+\})/u.exec(prompt)?.[1];
+  if (directReply) {
+    const selected = JSON.parse(directReply) as { target: string; publicText: string };
     const published = result('manual-publish');
     if (!published)
-      return dispatch('manual-publish', {
-        action: 'reply',
-        operation: 'publish',
-        id: directDraft,
-        digest: preview.digest,
-      });
+      return dispatch('manual-publish', { action: 'reply', operation: 'publish', ...selected });
     assert.equal(published.status, 'published');
     const reconciled = result('manual-reconcile');
     if (!reconciled)
-      return dispatch('manual-reconcile', {
-        action: 'reply',
-        operation: 'reconcile',
-        id: directDraft,
-      });
+      return dispatch('manual-reconcile', { action: 'reply', operation: 'reconcile', ...selected });
     assert.equal(reconciled.status, 'published');
     return { content: String(reconciled.presentation) };
   }
@@ -486,14 +468,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         target: context.replyTarget,
         privateText,
       });
-    const reply = { action: 'reply', id: composition.id };
+    const reply = { action: 'reply', target: context.replyTarget };
     const skill = (composition.selection as { skill?: { path?: string } } | undefined)?.skill;
-    if (
-      composition.status !== 'composition-ready' ||
-      typeof composition.digest !== 'string' ||
-      !skill?.path
-    )
-      return;
+    if (composition.status !== 'composition-ready' || !skill?.path) return;
     if (openClawAIMockToolResultText(messages, prefix + 'feedback-skill') === undefined)
       return call('feedback-skill', 'read', { path: skill.path });
     const candidate = result('feedback-candidate');
@@ -501,21 +478,12 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       return dispatch('feedback-candidate', {
         ...reply,
         operation: 'candidate',
-        digest: composition.digest,
         publicText:
           'The plan is to document closing disposable test issues after capturing their evidence. Implementation has not started.',
       });
     if (candidate.status !== 'candidate-recorded') return;
-    const preview = result('feedback-preview');
-    if (!preview) return dispatch('feedback-preview', { ...reply, operation: 'publish' });
-    if (preview.status !== 'publication-ready' || typeof preview.digest !== 'string') return;
     const published = result('feedback-publish');
-    if (!published)
-      return dispatch('feedback-publish', {
-        ...reply,
-        operation: 'publish',
-        digest: preview.digest,
-      });
+    if (!published) return dispatch('feedback-publish', { ...reply, operation: 'publish' });
     if (published.status !== 'published' || typeof published.presentation !== 'string') return;
     return { content: published.presentation };
   }

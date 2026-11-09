@@ -101,14 +101,13 @@ shared reply owners. An update request never begins implementation or changes mo
    read does not prove absence across the whole history. A complete discussion, issue body or PR file inventory is not a
    prerequisite for posting verified current progress. Do not manufacture a delta.
 4. Select only material, verified facts missing publicly. For each fact provide a
-   stable `key`, evidence `reference`, source `revision` and factual `text`. Reuse
-   keys/revisions for the same evidence across later turns; do not mint a new key
-   merely to reword an earlier update. Semantic comparison is your responsibility:
+   evidence `reference` and factual `text`. The runtime records observation and content
+   identities internally. Do not reword an earlier update merely to post it again. Semantic comparison is your responsibility:
    a hash does not decide whether progress is already public. Native retained
    outcomes and current-session evidence have distinct provenance; never promote
    an unsupported operator claim into a verified result.
 5. Call `reply compose` with `purpose: status-update`, the selected `target`, the complete
-   `privateText`, and `update: {observation, facts}` using the returned observation.
+   `privateText`, and `update: {facts}`.
    Use an empty `facts` array when already current. A general update shows a private
    no-op with no comment; admitted feedback still receives an answer describing the
    current status and any blockers. For that answer or a material delta, invoke the returned configured reply
@@ -116,12 +115,11 @@ shared reply owners. An update request never begins implementation or changes mo
    straight to Composition. Invalid explicit configuration stops without fallback;
    reuse retained candidates rather than composing again.
 6. Submit the candidate and publish through the shared reply owner's candidate,
-   preview and digest-bound publish operations. Use its host-owned length and safety
+   publish operations. Use its host-owned length and safety
    validation, not a separate drafting limit or blanket path ban. A request already
    covering this bounded write needs no extra conversational confirmation; native
    approval and denials still apply. If public facts change before any write is
-   attempted, refresh context and compose again with the same fact keys and revisions
-   for unchanged evidence. This replaces the unattempted candidate and its observation.
+   attempted, refresh context and compose again with unchanged facts preserved. This replaces the unattempted candidate and its observation.
    Attempted writes retain their original text and marker and use `reply reconcile` only.
 7. Show the shared renderer's presentation once: the exact accepted public body,
    posting agent, verified comment permalink and any distinct private context.
