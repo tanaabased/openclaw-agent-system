@@ -152,6 +152,43 @@ export async function readCodexAutomations(
   codexHome: string,
   options: { requireComplete?: boolean } = {},
 ): Promise<SavedAutomation[]> {
+  return readSavedAutomations(codexHome, options);
+}
+
+/** selected activation evidence only; never use this read as a complete reconciliation inventory. */
+export async function readCodexAutomationSelection(
+  codexHome: string,
+  selection: { nativeId: string; marker: string },
+): Promise<SavedAutomation[]> {
+  return readSavedAutomations(codexHome, { selection });
+}
+
+function claimsAutomation(contents: string, marker: string) {
+  try {
+    const value = parse(contents);
+    return typeof value.prompt === 'string' && value.prompt.includes(marker);
+  } catch {
+    // a broken definition carrying the selected marker is not evidence of an unrelated job.
+    const decoded = contents
+      .replace(
+        /\\(?:u([a-fA-F\d]{4})|U([a-fA-F\d]{8}))/gu,
+        (escape, short: string, long: string) => {
+          const code = Number.parseInt(short ?? long, 16);
+          return code <= 0x10ffff ? String.fromCodePoint(code) : escape;
+        },
+      )
+      .replace(/\\\r?\n\s*/gu, '');
+    return decoded.includes(marker);
+  }
+}
+
+async function readSavedAutomations(
+  codexHome: string,
+  options: {
+    requireComplete?: boolean;
+    selection?: { nativeId: string; marker: string };
+  },
+): Promise<SavedAutomation[]> {
   const root = join(codexHome, 'automations');
   try {
     if (!(await lstat(root)).isDirectory()) throw new Error('invalid directory');
@@ -173,6 +210,12 @@ export async function readCodexAutomations(
         }
         throw error;
       }
+      if (
+        options.selection &&
+        entry.name !== options.selection.nativeId &&
+        !claimsAutomation(contents, options.selection.marker)
+      )
+        continue;
       const saved = parseSavedAutomation(contents, entry.name);
       if (saved.cwds)
         saved.cwds = await Promise.all(saved.cwds.map((cwd) => realpath(cwd).catch(() => cwd)));

@@ -1,6 +1,7 @@
 import { codexInstanceStore } from '../agent/codex-assignment-claims.ts';
 import IssuePickupEnrollmentStore from '../agent/issue-pickup-enrollment.ts';
 import selectionFixture from './issue-pickup-selection-fixture.ts';
+import checkCodexActivationIsolation from './codex-activation-fixture.ts';
 import assert from 'node:assert/strict';
 import {
   appendFile,
@@ -659,6 +660,12 @@ describe('agent/codex-automations', () => {
     assert.deepEqual(first.enrollment, priorEnrollment.enrollment);
     const active = await inspectCodexPickupActivation(pluginData, dependencies);
     assert.equal(active.nativeId, first.nativeId);
+    await checkCodexActivationIsolation(
+      codexHome,
+      active.nativeId,
+      () => inspectCodexPickupActivation(pluginData, dependencies),
+      () => inspectCodexAutomations(pluginData, inputs(), dependencies),
+    );
     assert.equal((await readCodexAutomations(codexHome)).length, 3);
     assert.equal(conversations.size, 3);
     await saveManifest();
