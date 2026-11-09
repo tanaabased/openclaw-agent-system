@@ -454,24 +454,28 @@ describe('agent/codex-dispatch', () => {
     await request('reconcile', { id: original.id });
     operatorLaunch();
     selectedPullRequest();
+    await writeFile(
+      join(workspace, 'agent.yaml'),
+      JSON.stringify({
+        ...manifest,
+        github: { ...manifest.github, routing: [], 'max-concurrent-items': 1 },
+      }),
+    );
     const target = 'owner/repo#3';
     await request('launch', {
       operation: 'context',
       target,
-      fresh: true,
       pullRequest: 'https://github.com/owner/repo/pull/7',
     });
     const project = await request('launch', {
       operation: 'prepare',
       target,
-      fresh: true,
       projects,
     });
     assert.equal(project.status, 'routing-required', JSON.stringify(project));
     const prepared = await request('launch', {
       operation: 'prepare',
       target,
-      fresh: true,
       assessment: { complexity: 'medium', reason: 'Collaborate on existing work.' },
       title: 'COLLABORATE',
     });
@@ -499,7 +503,7 @@ describe('agent/codex-dispatch', () => {
     deps.native!.find = async (input) =>
       input.sourceThreadId === 'intake-thread' ? originalNative : parallel;
     for (let retry = 0; retry < 2; retry++) {
-      const recovered = await request('launch', { operation: 'reconcile', target, fresh: true });
+      const recovered = await request('launch', { operation: 'reconcile', target });
       assert.equal(recovered.destination, parallel.id);
     }
     const intake = await request('next', { projects }, { threadId: 'intake-thread' });

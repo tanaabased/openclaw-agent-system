@@ -6,6 +6,7 @@ import GitHubAssignmentClaimClient from '../channels/github/provider/assignment-
 import GitHubWorkEventClient from '../channels/github/provider/work-event-client.ts';
 import {
   acceptAssignmentClaim,
+  claimManualAssignment,
   selectAssignmentClaim,
   type ClaimClient,
 } from './assignment-claim.ts';
@@ -44,6 +45,15 @@ export default class CodexAssignmentClaims {
       source: source(input.intake),
       passId: automationHash({ threadId: input.threadId, turnId: input.turnId }),
       hasCapacity: input.hasCapacity,
+    });
+  }
+
+  manual(intake: Parameters<typeof source>[0], client: Connection, requestId: string) {
+    return claimManualAssignment({
+      store: this.store,
+      client: this.connect(client),
+      source: source(intake),
+      requestId,
     });
   }
 

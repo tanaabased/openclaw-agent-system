@@ -422,6 +422,10 @@ export default class OpenClawDispatch {
           context,
           journal,
           scope: selected.store.location.scope,
+          intakeStore: selected.store,
+          ...(this.dependencies.claims
+            ? { claim: (event, id) => this.dependencies.claims!.manual(event, client, id) }
+            : {}),
           client,
           create: (record) => record,
           verifyExisting: async (record) => {
@@ -736,6 +740,7 @@ export default class OpenClawDispatch {
         const newlyReserved = after.records.some(
           (record) =>
             record.request &&
+            !record.manualIssue &&
             !before.records.find((previous) => previous.id === record.id)?.request,
         );
         if (

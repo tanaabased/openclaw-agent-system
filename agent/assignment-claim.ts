@@ -108,6 +108,43 @@ export async function readAssignmentClaims(client: ClaimClient, source: ClaimSou
     .sort((a, b) => a.comment.databaseId - b.comment.databaseId);
 }
 
+/** operator acceptance consumes an assignment without waiting for automatic placement. */
+export async function claimManualAssignment(input: {
+  store: ClaimStore;
+  client: ClaimClient;
+  source: ClaimSource;
+  requestId: string;
+}) {
+  const { store, client, source, requestId } = input;
+  return store.exclusive(async (state, save, signal) => {
+    await client.verify(source);
+    const claims = await readAssignmentClaims(client, source);
+    const key = assignmentClaimKey(source);
+    const retained = state.claims[key];
+    // preserve any prior automatic or manual acceptance; another deliberate task still starts.
+    if (claims.length)
+      return { status: 'handled' as const, winnerId: claims[0]!.comment.databaseId };
+    if (retained) throw new Error('claim-publication-unconfirmed');
+    state.claims[key] = { instanceId: state.instanceId, firstPass: requestId, attempted: true };
+    await save();
+    signal.throwIfAborted();
+    const commentId = await client.create(
+      source,
+      claimBody(
+        {
+          instanceId: state.instanceId,
+          assignmentEventId: source.assignmentEventId,
+        },
+        state.displayName,
+        true,
+      ),
+    );
+    state.claims[key]!.commentId = commentId;
+    await save();
+    return { status: 'handled' as const, winnerId: commentId };
+  });
+}
+
 /** two passes reduce ordinary contention; provider omissions are a documented recovery risk. */
 export async function claimAssignment(input: {
   store: ClaimStore;

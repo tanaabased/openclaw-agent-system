@@ -73,7 +73,8 @@ export default async function scanAssignments(
         throw error;
       }
     };
-    if (!input.activate && !previous) throw new IntakeError('intake-activation-required');
+    if (!input.activate && (!previous || previous.manualOnly))
+      throw new IntakeError('intake-activation-required');
     if (
       !input.activate &&
       previous?.blocker &&
@@ -115,6 +116,10 @@ export default async function scanAssignments(
             baselineAt: input.now,
             records: [],
           };
+      if (input.activate && state.manualOnly) {
+        state.baselineAt = input.now;
+        delete state.manualOnly;
+      }
       // repeat from the baseline: search indexing delays must not strand an eligible assignment.
       const discovery = input.selector
         ? {
@@ -288,8 +293,18 @@ export default async function scanAssignments(
           state!.observedAssignments ??= [];
           const observedIndex = state!.observedAssignments.findIndex((entry) => entry.id === id);
           if (observedIndex < 0) state!.observedAssignments.push(observation);
-          else state!.observedAssignments[observedIndex] = observation;
-          if (seen.has(id)) return;
+          else
+            state!.observedAssignments[observedIndex] = {
+              ...observation,
+              ...(state!.observedAssignments[observedIndex]!.consumedBy
+                ? { consumedBy: state!.observedAssignments[observedIndex]!.consumedBy }
+                : {}),
+            };
+          if (
+            seen.has(id) ||
+            state!.observedAssignments.find((entry) => entry.id === id)?.consumedBy
+          )
+            return;
           // the attempt is persisted before github can expose the event; read it after observing that event.
           const pickup = input.readIssuePickup ? await input.readIssuePickup() : input.issuePickup;
           if (

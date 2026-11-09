@@ -31,6 +31,7 @@ export const openclawDispatchRecordSchema = Type.Object(
   {
     ...dispatchRecordProperties,
     adoptedLocalBranch: Type.Optional(text),
+    separateCheckout: Type.Optional(Type.Literal(true)),
     worktreeAttemptId: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
     work: Type.Optional(openclawWorkStateSchema),
     deliveryHistory: Type.Optional(Type.Array(openclawWorkStateSchema.properties.delivery)),

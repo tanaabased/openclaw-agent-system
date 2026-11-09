@@ -38,7 +38,7 @@ export interface CodexDispatchDependencies extends Omit<CodexIntakeDependencies,
   readCleanupConfiguration?: () => Promise<CleanupConfiguration>;
   claimStore?: AssignmentClaimStore;
   claims?: Pick<CodexAssignmentClaims, 'select' | 'accept'> &
-    Partial<Pick<CodexAssignmentClaims, 'recover'>>;
+    Partial<Pick<CodexAssignmentClaims, 'recover' | 'manual'>>;
   connect?: (workspace: string, signal: AbortSignal) => Promise<Client>;
   activation?: typeof inspectCodexDispatchActivation;
   native?: CodexDispatchNative;

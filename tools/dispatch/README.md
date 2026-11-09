@@ -83,7 +83,6 @@ provider check or proof of recovery.
 | Parameter | Type    | Required | Default                                       | Description                                                                                                            |
 | --------- | ------- | -------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `action`  | string  | yes      | none                                          | `inspect`.                                                                                                             |
-| `id`      | string  | no       | none                                          | Exact retained task id. Combined filters must all match.                                                               |
 | `limit`   | integer | no       | `12` for bounded reads                        | Records per page, from `1` through `50`.                                                                               |
 | `offset`  | integer | no       | `0`                                           | Record offset within the filtered results.                                                                             |
 | `summary` | boolean | no       | `true` when any inspection option is supplied | Omit prompts, comment bodies, baselines, and event payloads. Set `false` for the runtime's normal detailed projection. |
@@ -116,12 +115,16 @@ records an attempt, not proof that every lifecycle operation completed.
 Use `$agent-system-task-launch` with an issue or open same-repository PR URL, `owner/repo#number`, repository
 plus number, or a number with an explicit or independently verified repository context.
 The issue may be unassigned or assigned to somebody else. Existing repository access,
-agent eligibility, native authorization, and lifecycle checks still apply.
+native authorization, and lifecycle checks still apply.
 
-The launcher creates or reuses the managed issue chat and checkout. It uses the
+Each new issue-launch request creates an independent managed task chat and checkout; retries recover that same attempt. It uses the
 configured mode, stage skills, guidance, and model profiles;
-explicit supported choices override the corresponding defaults. It changes no issue
-assignment or scheduler. Local recovery records remain, and normal managed assessment
+explicit supported choices override the corresponding defaults. It attempts additive self-assignment,
+then immediately dispatches without automatic routing, instance-pool or capacity restrictions.
+Existing tasks and claims do not block launch. The existing intake store prevents automatic
+redispatch of that assignment, and configured swarm claims coordinate with other installations.
+An assignment or claim failure is reported without blocking launch. Scheduling is unchanged.
+Local recovery records remain, and normal managed assessment
 summaries and PRs may be public. Manual launch alone grants no automatic feedback.
 It has no assigner-derived default PR assignee; explicit named recipients still
 apply. A recipient setting that requires an assignment actor must be corrected
@@ -135,9 +138,8 @@ unsafe refs and competing owners stop explicitly. A moved head needs fresh verif
 divergent collaborator work must be incorporated before a normal push. There is no
 replacement PR, force push, automatic merge or issue closure.
 
-In either runtime, explicitly request `fresh: true` to create an additional task while
-leaving the original active. Select an existing same-repository PR with `pullRequest`
-to start from its verified fetched head and later update that PR. Fresh launch alone
+In either runtime, a new issue-launch request leaves existing tasks active; no `fresh` flag is needed. Select an existing same-repository PR with `pullRequest`
+to start from its verified fetched head and later update that PR. A new issue launch alone
 does not select another task's PR.
 
 Use `recover` only for an explicit replacement of a stranded task. It preserves the
@@ -155,10 +157,8 @@ These parameters cover `launch`. Use the owning skill and
 | ------------- | ------- | ------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `action`      | string  | yes                      | none                     | `launch`.                                                                                                                                                  |
 | `assessment`  | object  | for final preparation    | none                     | Existing model-routing complexity assessment and reason.                                                                                                   |
-| `digest`      | string  | for final preparation    | none                     | Digest from the latest routing-required result.                                                                                                            |
 | `fallback`    | string  | no                       | none                     | Existing explicit `default` profile selection when a requested work tier is not configured; never a model-failure fallback.                                |
-| `fresh`       | boolean | no                       | `false`                  | Create an additional task only on an explicit operator request; leave the original active.                                                                 |
-| `id`          | string  | after context            | none                     | Retained launch receipt.                                                                                                                                   |
+| `fresh`       | boolean | no                       | `false`                  | Legacy accepted field; new issue-launch requests already create independent tasks.                                                                         |
 | `mode`        | string  | no                       | current configuration    | `plan`, `work`, or `auto`; omitted mode defaults to Auto when unconfigured.                                                                                |
 | `operation`   | string  | yes                      | none                     | `context`, `prepare`, or `reconcile`.                                                                                                                      |
 | `projects`    | array   | for Codex preparation    | none                     | Native saved-project inventory, independently checked against repository remotes. Can supply unambiguous repository context.                               |
@@ -171,7 +171,7 @@ These parameters cover `launch`. Use the owning skill and
 
 ### Usage
 
-Begin a manual launch without assigning the issue:
+Begin an immediate manual launch:
 
 ```json
 { "action": "launch", "operation": "context", "target": "owner/repo#3" }

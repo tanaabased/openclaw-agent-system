@@ -730,6 +730,7 @@ describe('agent/openclaw issue dispatch', () => {
     let interrupted = true;
     service.dependencies.worktrees.prepareGitHub = async (input) => {
       assert.equal(input.attemptId, id);
+      assert.equal(input.separateCheckout, true);
       assert.equal((await record()).worktreeAttemptId, id);
       attempts.push(input.attemptId!);
       const prepared = await original(input);
@@ -774,6 +775,7 @@ describe('agent/openclaw issue dispatch', () => {
     const original = service.dependencies.worktrees.prepareGitHub;
     service.dependencies.worktrees.prepareGitHub = async (input) => {
       assert.equal(input.attemptId, undefined);
+      assert.equal(input.separateCheckout, false);
       return original(input);
     };
     assert.equal((await prepare(selected)).status, 'session-created');
@@ -9940,17 +9942,32 @@ describe('agent/openclaw issue dispatch', () => {
       );
       assert.equal(reused.status, 'existing');
       assert.equal(calls.filter((call) => call.method === 'sessions.create').length, 1);
+      if (kind === 'pull-request') return;
+      who.runId = 'second-manual-turn';
+      histories.get(who.sessionKey)!.messages.push({
+        role: 'user',
+        content: 'Launch this issue again',
+        __openclaw: {
+          id: 'second-manual-input',
+          runId: who.runId,
+          idempotencyKey: 'second-manual-turn:user',
+          senderIsOwner: true,
+        },
+      });
+      manifest.github!.notifications = { ...fixture.policy, routing: [], maxConcurrentItems: 1 };
       const additional = await service.run(
         manifest,
         root,
         who,
-        { action: 'launch', operation: 'context', target, fresh: true },
+        { action: 'launch', operation: 'context', target },
         true,
       );
       assert.ok('id' in additional && typeof additional.id === 'string');
       assert.ok('digest' in additional && typeof additional.digest === 'string');
       const originalPrepare = service.dependencies.worktrees.prepareGitHub;
       service.dependencies.worktrees.prepareGitHub = async (request) => {
+        assert.equal(request.separateCheckout, true);
+        assert.equal(request.attemptId, additional.id);
         const result = await originalPrepare(request);
         const path = join(root, 'additional-worktree');
         await mkdir(path, { recursive: true });

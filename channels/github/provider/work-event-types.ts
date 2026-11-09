@@ -61,6 +61,7 @@ export interface GitHubIssueCommentPage {
 }
 
 export interface GitHubNotificationIntakeClient {
+  assignProjectIssue?(owner: string, name: string, number: number): Promise<void>;
   resolveIdentity?(reference: string): Promise<GitHubIdentity>;
   resolveIdentities?(references: readonly string[]): Promise<GitHubIdentity[]>;
   readonly identity: GitHubIdentity;

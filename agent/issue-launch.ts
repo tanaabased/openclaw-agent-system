@@ -1,3 +1,7 @@
+import launchAssignment from './launch-assignment.ts';
+import type IntakeRecordStore from '../channels/github/intake/record-store.ts';
+import type { IntakeObservation } from '../channels/github/intake/record-store.ts';
+import repositoryScope from '../channels/github/repository-scope.ts';
 import { omit } from 'lodash-es';
 import launchPending from './launch-pending.ts';
 import { assertDispatchStorage } from './dispatch-storage.ts';
@@ -28,7 +32,7 @@ import type {
 
 type ExistingDelivery = { pullRequest?: GitHubNotificationIssueDeliveryReceipt };
 
-/** manual admission joins the existing dispatch journal; no assignment or scheduler effects. */
+/** operator admission uses the existing dispatch journal and native request identity. */
 export default async function issueLaunch<
   R extends SharedDispatchRecord & {
     delivery?: ExistingDelivery;
@@ -41,6 +45,8 @@ export default async function issueLaunch<
   context: AssessmentEntryDependencies;
   journal: DispatchStore<R>;
   scope: string;
+  intakeStore: IntakeRecordStore;
+  claim?(event: IntakeObservation, requestId: string): Promise<unknown>;
   client: GitHubNotificationIntakeClient & GitHubNotificationItemContextClient;
   create(
     record: Pick<
@@ -86,13 +92,6 @@ export default async function issueLaunch<
       status: 'clarification-needed' as const,
       questions: ['Which owner/repository contains this issue?'],
     };
-  if (
-    currentTarget &&
-    (target.repository.toLowerCase() !== currentTarget.repository.toLowerCase() ||
-      target.number !== currentTarget.number ||
-      ('itemType' in target && target.itemType !== currentTarget.itemType))
-  )
-    throw new Error('launch-managed-target-mismatch');
   const [owner, name] = target.repository.split('/') as [string, string];
   const repo = await client.getRepository(owner, name);
   const item = await client.getItem(owner, name, target.number);
@@ -167,7 +166,6 @@ export default async function issueLaunch<
         item.nodeId,
         context.binding.session,
         context.inputId,
-        ...(action.fresh ? ['fresh'] : []),
       ]),
       scope: input.scope,
       receiving: { login: client.identity.login, nodeId: client.identity.nodeId },
@@ -189,7 +187,7 @@ export default async function issueLaunch<
         turn: context.turnId,
         input: context.inputId,
       },
-      ...(action.fresh ? { fresh: true as const } : {}),
+      fresh: true,
       selections: {
         ...(action.mode ? { mode: action.mode } : {}),
         ...action.stages,
@@ -219,58 +217,35 @@ export default async function issueLaunch<
             record.work?.delivery?.pullRequest?.pullRequestNodeId === item.nodeId),
         ),
     );
-    const recovered = state.records.filter(
+    const exact =
+      state.records.find((entry) => entry.id === manual.id) ??
+      state.records.find(
+        (entry) =>
+          entry.issueKey === key &&
+          entry.manualIssue?.initiation.session === context.binding.session &&
+          entry.manualIssue.initiation.incarnation === context.binding.incarnation &&
+          entry.manualIssue.initiation.input === context.inputId,
+      );
+    const pending = state.records.filter(
       (entry) =>
         entry.issueKey === key &&
-        entry.predecessorId &&
         entry.sourceThreadId === context.binding.session &&
-        entry.manualIssue?.initiation.input === context.inputId &&
+        entry.manualIssue?.initiation.incarnation === context.binding.incarnation &&
         !entry.retired &&
         !entry.reset &&
-        !entry.supersededBy,
+        !entry.supersededBy &&
+        launchPending(entry),
     );
-    if (recovered.length > 1) throw new Error('launch-owner-ambiguous');
-    if (!action.fresh && !recovered.length && ownership.status === 'ambiguous')
+    // a new issue request is independent; follow-ups may recover one unfinished request.
+    if (pullRequest && !exact && ownership.status === 'ambiguous')
       throw new Error('launch-owner-ambiguous');
-    const own = ownership.caller;
-    if (own && !own.retired && !own.reset && own !== ownership.owner)
-      throw new Error('launch-managed-target-mismatch');
-    const freshMatches =
-      action.fresh && action.operation !== 'context'
-        ? state.records.filter(
-            (entry) =>
-              entry.issueKey === key &&
-              entry.manualIssue?.fresh &&
-              entry.sourceThreadId === context.binding.session &&
-              entry.manualIssue.initiation.incarnation === context.binding.incarnation &&
-              !entry.retired &&
-              !entry.reset &&
-              !entry.supersededBy,
-          )
-        : [];
-    const nativeMatch =
-      freshMatches.find((entry) => entry.id === manual.id) ??
-      (ownership.caller?.manualIssue?.fresh ? ownership.caller : undefined);
-    if (!nativeMatch && freshMatches.length > 1) throw new Error('launch-owner-ambiguous');
     let record =
-      recovered[0] ??
-      (action.fresh
-        ? action.operation === 'context'
-          ? state.records.find((entry) => entry.id === manual.id && entry.manualIssue?.fresh)
-          : (nativeMatch ?? freshMatches[0])
-        : ownership.owner);
-    if (action.operation !== 'context' && !record) throw new Error('launch-owner-unavailable');
-    if (
-      (!action.fresh && ownership.status === 'historical') ||
-      own?.retired ||
-      own?.reset ||
-      own?.supersededBy ||
-      own?.retirement ||
-      record?.retirement ||
-      record?.retired ||
-      record?.reset ||
-      record?.supersededBy
-    )
+      exact ??
+      (pullRequest ? ownership.owner : undefined) ??
+      (action.operation !== 'context' && pending.length === 1 ? pending[0] : undefined);
+    if (!record && action.operation !== 'context')
+      throw new Error(pending.length > 1 ? 'launch-owner-ambiguous' : 'launch-owner-unavailable');
+    if (record?.retirement || record?.retired || record?.reset || record?.supersededBy)
       throw new Error('launch-owner-inactive');
     if (record?.manualIssue?.pullRequest && pullRequest)
       manualPullRequest(repo, item, record.manualIssue.pullRequest);
@@ -348,6 +323,26 @@ export default async function issueLaunch<
       if (adopted) record.adoptedPullRequest = adopted;
       state.records.push(record);
     }
+    await save();
+    const policy = context.manifest.github?.notifications;
+    const route = policy && repositoryScope(policy, manual.repository, 'issue-assignment');
+    await launchAssignment({
+      manual: record.manualIssue!,
+      taskId: record.id,
+      records: state.records,
+      store: input.intakeStore,
+      client,
+      context,
+      save,
+      ...(route?.decision === 'swarm'
+        ? {
+            claim: async (event) => {
+              if (!input.claim) throw new Error('claim-runtime-unavailable');
+              return input.claim(event, record!.id);
+            },
+          }
+        : {}),
+    });
     const routing = record.request
       ? JSON.parse(record.routing!)
       : await initialModelRouting({
@@ -365,6 +360,14 @@ export default async function issueLaunch<
     await save();
     return {
       status: 'routing-required' as const,
+      ...(record.manualIssue?.assignmentAttempt?.code
+        ? {
+            notice: {
+              code: record.manualIssue.assignmentAttempt.code,
+              message: 'Manual launch continues; assignment or shared claim was not confirmed.',
+            },
+          }
+        : {}),
       id: record.id,
       context: omit(JSON.parse(record.context!), ['body', 'comments', 'files', 'truncated']),
       digest: automationHash({

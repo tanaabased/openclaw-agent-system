@@ -21,6 +21,7 @@ const terminalKeys = new Set([
   'threadId',
   'worktree',
   'worktreeAttemptId',
+  'separateCheckout',
   'retired',
   'retirement',
   'nativeInactive',

@@ -208,6 +208,9 @@ export default class OpenClawNotificationReset {
           const observed = await deps.worktrees.inspectGitHub({
             agentId: manifest.agent.id,
             attemptId: entry.worktreeAttemptId,
+            separateCheckout: Boolean(
+              entry.separateCheckout || entry.manualIssue?.fresh || entry.predecessorId,
+            ),
             cloneUrl: repository.cloneUrl,
             defaultBranch: repository.defaultBranch,
             repositoryDatabaseId: repository.databaseId,
@@ -425,6 +428,9 @@ export default class OpenClawNotificationReset {
         const input = {
           agentId: manifest.agent.id,
           attemptId: entry.worktreeAttemptId,
+          separateCheckout: Boolean(
+            entry.separateCheckout || entry.manualIssue?.fresh || entry.predecessorId,
+          ),
           cloneUrl: repository.cloneUrl,
           defaultBranch: repository.defaultBranch,
           itemDatabaseId: item.issue.databaseId,
