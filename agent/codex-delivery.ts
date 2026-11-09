@@ -23,6 +23,7 @@ import publishIssueDelivery from './publish-issue-delivery.ts';
 import codexIssueBranch from './codex-issue-branch.ts';
 import workflowFailure from './workflow-failure.ts';
 import deliveryAnnouncement, {
+  announcementPrecedesDelivery,
   announcementPresentation,
   deliveryCompletionInstructions,
 } from './delivery-announcement.ts';
@@ -518,6 +519,7 @@ export default async function runCodexDelivery(
           }
         }
         const presentationNotices = notices(previous.attached);
+        const updatedSinceAnnouncement = announcementPrecedesDelivery(previous);
         previous.cardAttempts++;
         await save();
         return {
@@ -533,7 +535,7 @@ export default async function runCodexDelivery(
           presentation: [
             githubNotificationPullRequestOpenedCard({
               issueNumber: adoptedPullRequest ? undefined : intake.issue.number,
-              updated: Boolean(adoptedPullRequest),
+              updated: Boolean(adoptedPullRequest) || updatedSinceAnnouncement,
               pullRequestNumber: previous.pullRequest.pullRequestNumber,
               repositoryOwner: intake.repository.owner.login,
               repositoryName: intake.repository.name,
@@ -544,6 +546,7 @@ export default async function runCodexDelivery(
               managedTargetUrl(intake),
               undefined,
               previous.announcementRecovery,
+              updatedSinceAnnouncement,
             ),
             ...presentationNotices.map((notice) => notice.message),
           ].join('\n\n'),

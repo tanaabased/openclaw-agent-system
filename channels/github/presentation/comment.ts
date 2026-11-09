@@ -15,7 +15,13 @@ export interface GitHubNotificationCommentEventProjection {
 export interface GitHubCommentCardInput {
   body: string;
   author?: { label: string; url: string };
-  label: 'Comment' | 'Reply' | 'Review comment' | 'Plan assessment' | 'PR announcement';
+  label:
+    | 'Comment'
+    | 'Reply'
+    | 'Review comment'
+    | 'Plan assessment'
+    | 'PR announcement'
+    | 'Original PR announcement';
   connector: 'from' | 'by';
   publication: { url: string } | { draft: true };
 }

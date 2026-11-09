@@ -76,11 +76,34 @@ export async function reconcileAnnouncement(input: {
   return result.receipt;
 }
 
+/** compare verified publication evidence, never a planned or merely local head. */
+export function announcementPrecedesDelivery(
+  delivery:
+    | {
+        reconciled: boolean;
+        pushedHead?: string;
+        pullRequest?: { pullRequestNodeId: string; pullRequestNumber: number };
+        announcement?: DeliveryAnnouncementState;
+      }
+    | undefined,
+): boolean {
+  const snapshot = delivery?.announcement?.snapshot;
+  return Boolean(
+    delivery?.reconciled &&
+    delivery.pushedHead &&
+    snapshot &&
+    delivery.pullRequest?.pullRequestNodeId === snapshot.pullRequestNodeId &&
+    delivery.pullRequest.pullRequestNumber === snapshot.pullRequestNumber &&
+    delivery.pushedHead !== snapshot.head,
+  );
+}
+
 export function announcementPresentation(
   state: DeliveryAnnouncementState | undefined,
   issueUrl: string,
   authorLogin = state?.authorLogin,
   recovery?: AnnouncementRecovery,
+  historical = false,
 ) {
   const confirmed = state?.receipt && !state.code && !recovery;
   const quote = state?.publicText
@@ -89,7 +112,7 @@ export function announcementPresentation(
         author: authorLogin
           ? { label: authorLogin, url: `https://github.com/${encodeURIComponent(authorLogin)}` }
           : undefined,
-        label: 'PR announcement',
+        label: confirmed && historical ? 'Original PR announcement' : 'PR announcement',
         connector: 'by',
         publication: confirmed
           ? { url: `${issueUrl}#issuecomment-${state.receipt!.databaseId}` }

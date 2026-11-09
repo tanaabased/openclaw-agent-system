@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
 
 import deliveryAnnouncement, {
+  announcementPrecedesDelivery,
   announcementPresentation,
   reconcileAnnouncement,
   recheckAnnouncement,
@@ -473,6 +474,17 @@ describe('agent/delivery-announcement', () => {
       ),
     );
     assert.ok(!confirmed.includes('announcement published'));
+    const historical = announcementPresentation(
+      delivery.announcement,
+      'https://github.com/owner/repo/issues/3',
+      undefined,
+      undefined,
+      true,
+    );
+    assert.match(historical, /Original PR announcement ↗/);
+    assert.match(historical, /#issuecomment-1/);
+    assert.match(historical, /by \[@posting-agent\]/);
+    assert.ok(historical.includes(delivery.announcement!.publicText!.split('\n')[0]!));
     delete delivery.announcement!.authorLogin;
     assert.ok(
       announcementPresentation(
@@ -484,5 +496,26 @@ describe('agent/delivery-announcement', () => {
       announcementPresentation(delivery.announcement, 'https://github.com/owner/repo/issues/3'),
       /#issuecomment-1/,
     );
+  });
+  it('should identify a later published head only for the same reconciled pr', async () => {
+    await candidate();
+    const publication = {
+      ...delivery,
+      reconciled: true,
+      pushedHead: 'a'.repeat(40),
+      pullRequest: { pullRequestNodeId: 'PR_7', pullRequestNumber: 7 },
+    };
+    assert.equal(announcementPrecedesDelivery(publication), false);
+    publication.pushedHead = 'b'.repeat(40);
+    assert.equal(announcementPrecedesDelivery(publication), true);
+    assert.equal(announcementPrecedesDelivery({ ...publication, reconciled: false }), false);
+    assert.equal(announcementPrecedesDelivery({ ...publication, pushedHead: undefined }), false);
+    assert.equal(announcementPrecedesDelivery({ ...publication, announcement: undefined }), false);
+    for (const pullRequest of [
+      { pullRequestNodeId: 'PR_other', pullRequestNumber: 7 },
+      { pullRequestNodeId: 'PR_7', pullRequestNumber: 8 },
+    ])
+      assert.equal(announcementPrecedesDelivery({ ...publication, pullRequest }), false);
+    assert.equal(announcementPrecedesDelivery(undefined), false);
   });
 });

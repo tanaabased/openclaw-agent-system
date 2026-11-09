@@ -1084,6 +1084,9 @@ describe('agent/openclaw-delivery', () => {
       assert.match(shown.presentation!, /#issuecomment-91/);
       assert.equal(creates, 1);
       assert.equal(pushes, 2);
+      assert.match(shown.presentation!, /Pull request updated/);
+      assert.match(shown.presentation!, /Original PR announcement/);
+      assert.match(shown.presentation!, /Delivers the requested change/);
       assert.equal(announcement.posts, 1);
     });
   it('should rebuild the retained card without git provider or publication permission', async () => {

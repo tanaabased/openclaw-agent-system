@@ -13,6 +13,7 @@ import workflowStatus from './workflow-status.ts';
 import deliveryBindingChange from './delivery-binding-change.ts';
 import publishIssueDelivery from './publish-issue-delivery.ts';
 import deliveryAnnouncement, {
+  announcementPrecedesDelivery,
   announcementPresentation,
   deliveryCompletionInstructions,
 } from './delivery-announcement.ts';
@@ -554,13 +555,14 @@ export function presentOpenClawDelivery(
   const url = `https://github.com/${repository}/pull/${receipt.pullRequestNumber}`;
 
   const incomplete = linkedDelivery && !linkedDelivery.reconciled;
+  const updatedSinceAnnouncement = announcementPrecedesDelivery(linkedDelivery);
   const notice = incomplete
     ? codexIssueNotice({ event: 'failure', changed: true, code: 'delivery-publication-incomplete' })
     : undefined;
   const presentation =
     githubNotificationPullRequestOpenedCard({
       issueNumber: managedPullRequest(intake) ? undefined : intake.issue.number,
-      updated: Boolean(managedPullRequest(intake)),
+      updated: Boolean(managedPullRequest(intake)) || updatedSinceAnnouncement,
       pullRequestNumber: receipt.pullRequestNumber,
       repositoryOwner: intake.repository.owner.login,
       repositoryName: intake.repository.name,
@@ -572,6 +574,7 @@ export function presentOpenClawDelivery(
       managedTargetUrl(intake),
       undefined,
       linkedDelivery?.announcementRecovery,
+      updatedSinceAnnouncement,
     ) +
     (notice ? '\n\n' + notice.message : '');
   return {
