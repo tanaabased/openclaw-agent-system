@@ -1,3 +1,4 @@
+import WorkflowRequestError from '../../agent/workflow-request-error.ts';
 import {
   implementationMaterialSchema,
   modelMaterialParameters,
@@ -266,5 +267,13 @@ export function assertDispatchModelRequest(
   const action = input && typeof input === 'object' && 'action' in input ? input.action : undefined;
   if (action === 'reply') throw invalidReplyRequest(input, dispatchModelParameters);
   if (action === 'implementation') throw invalidImplementationRequest(input);
+  if (action === 'context' || action === 'contextRequest')
+    throw new WorkflowRequestError(
+      fallback,
+      'Current task context needs no authored selectors. Use agent_system_context with {}, or agent_system_dispatch with {"action":"context"}. Do not supply target, operation, contextRequest, checkout, path, IDs, or authority fields.',
+    );
   throw new Error(fallback);
 }
+
+/** The native caller supplies every lookup selector. */
+export const turnContextParameters = Type.Object({}, { additionalProperties: false });

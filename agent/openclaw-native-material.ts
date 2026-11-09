@@ -26,12 +26,13 @@ export async function* openClawMaterialReceipts(
   request: DispatchRequest,
   scope: HistoryScope,
   tool: string,
+  aliases: string[] = [],
 ) {
   for await (const page of openClawHistoryPages(request, scope)) {
     for (const partial of [...page].reverse()) {
       if (
         partial.role !== 'toolResult' ||
-        ![tool, 'tool_call'].includes(String(partial.toolName)) ||
+        ![tool, ...aliases, 'tool_call'].includes(String(partial.toolName)) ||
         partial.isError === true
       )
         continue;
@@ -39,13 +40,13 @@ export async function* openClawMaterialReceipts(
       if (message.toolName !== partial.toolName || message.isError === true)
         throw new Error('material-native-history-invalid');
       const value = resultValue(message);
-      if (message.toolName === tool) {
+      if ([tool, ...aliases].includes(String(message.toolName))) {
         yield value;
       } else if (
         nativeObject(value) &&
         nativeObject(value.tool) &&
         value.tool.source === 'openclaw' &&
-        value.tool.name === tool &&
+        [tool, ...aliases].includes(String(value.tool.name)) &&
         nativeObject(value.result) &&
         value.result.isError !== true
       ) {
@@ -61,5 +62,16 @@ export default function openClawNativeMaterial(
   tool: string,
   input: Record<string, unknown>,
 ) {
-  return bindNativeMaterial(tool, input, openClawMaterialReceipts(request, scope, tool));
+  return bindNativeMaterial(
+    tool,
+    input,
+    openClawMaterialReceipts(
+      request,
+      scope,
+      tool,
+      tool === 'agent_system_dispatch' && input.action === 'context'
+        ? ['agent_system_context']
+        : [],
+    ),
+  );
 }

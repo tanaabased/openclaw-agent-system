@@ -422,7 +422,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   const available = facts.availableFeedback as
     | Array<{
         source: { number: number; itemType: string; commentId: number; kind: string };
-        contextRequest: { source?: string };
+        url?: string;
       }>
     | undefined;
   const incoming = prompt.split('Agent System model-only current-turn facts (keep private):')[0]!;
@@ -432,11 +432,10 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
     ),
   );
   const privateFeedback =
-    facts.feedbackContextRequest ??
-    (received?.length === 1 ? received[0]!.contextRequest : undefined);
+    facts.feedback ?? (received?.length === 1 ? { source: received[0]!.url } : undefined);
   if (privateFeedback) {
-    const args = { action: 'feedback', ...privateFeedback };
-    const context = result('feedback-context');
+    const args = { action: 'feedback', ...(facts.feedback ? {} : privateFeedback) };
+    const context = facts.feedback ? { ...facts, ...facts.feedback } : result('feedback-context');
     if (!context) {
       const privateContext = request.messages
         .map(({ content }) => getTextContent(content) ?? '')
@@ -490,14 +489,14 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   );
   const id =
     revision?.[2] ??
-    (currentFacts(messages, false).contextRequest
+    (currentFacts(messages, false).stage === 'assessment'
       ? currentFacts(messages, false).receipt
       : undefined) ??
     /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   if (
     !id ||
     (!revision &&
-      !currentFacts(messages, false).contextRequest &&
+      !(currentFacts(messages, false).stage === 'assessment') &&
       !prompt.includes('Call agent_system_dispatch with action context and id '))
   )
     return;
@@ -513,16 +512,15 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       !privateContext.includes('"git":{"protocol":"ssh"}')
     )
       return;
-    return dispatch('context', { action: 'context' });
+    return call(retryStage('context', attempts.get('context') ?? 0), 'agent_system_context', {});
   }
   const project = context.project as { path?: unknown } | undefined;
   if (
     context.status !== 'verified' ||
     context.runtime !== 'openclaw' ||
-    context.id !== id ||
     typeof project?.path !== 'string' ||
     !context.assessment ||
-    context.resultContract !== 'assessment-result/v1'
+    !context.resultFormat
   )
     return;
   const method = (context.assessment as { skill?: { name?: string; path?: string } }).skill;
@@ -597,7 +595,7 @@ export const issueExampleScenario: OpenClawAIMockScenario = {
     ...dispatchStages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({
         id: prefix + retryStage(stage, attempt),
-        name: 'agent_system_dispatch',
+        name: stage === 'context' ? 'agent_system_context' : 'agent_system_dispatch',
       })),
     ),
     ...['git'].map((stage) => ({

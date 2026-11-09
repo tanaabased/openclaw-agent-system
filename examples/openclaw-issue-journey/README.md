@@ -20,6 +20,8 @@ Verify that another scan reuses the same chat without repeating assessment or pu
 
 ## Notes
 
+- The initial assessment also exercises the no-argument context recovery tool and continues to issue inspection and publication in the same native turn. Strict model fixtures prove the installed tool path, not spontaneous model recovery.
+
 - The fixture submits through the returned entry-specific request and validates its candidate against the returned schema; it does not infer a contract or prove model adaptation.
 - Strict AIMock supplies judgment and text; GitHub, scheduling, dispatch, managed Git, and receipts remain real. The selected ordinary workspace assessment skill proves installed selection and retention, not genuine model adaptation.
 - Initial assignment and feedback fixture responses read task/source lookup requests from model-only hook context. Sent messages retain their quoted user-facing cards without appended workflow instructions. The fixture proves context transport and request construction, not autonomous instruction following or native card rendering.

@@ -59,7 +59,7 @@ describe('tools/dispatch/tool', () => {
   function fixture(caller = coordinator) {
     const workspaceDir = `/workspaces/${caller.agentId}`;
     const hooks = new Map<string, Hook>();
-    let factory: OpenClawPluginToolFactory | undefined;
+    const factories: OpenClawPluginToolFactory[] = [];
     let registrationOptions: Parameters<OpenClawPluginApi['registerTool']>[1];
     const session = {
       sessionId: caller.sessionId,
@@ -80,7 +80,7 @@ describe('tools/dispatch/tool', () => {
         value: OpenClawPluginToolFactory,
         options: Parameters<OpenClawPluginApi['registerTool']>[1],
       ) {
-        factory = value;
+        factories.push(value);
         registrationOptions = options;
       },
       runtime: {
@@ -107,9 +107,14 @@ describe('tools/dispatch/tool', () => {
       calls.push(who);
       return { status: 'idle' };
     };
-    assert.ok(factory);
-    const build = (context: OpenClawPluginToolContext = { ...caller, workspaceDir }) => {
-      const tool = factory!(context);
+    assert.ok(factories.length);
+    const build = (
+      context: OpenClawPluginToolContext = { ...caller, workspaceDir },
+      name = 'agent_system_dispatch',
+    ) => {
+      const tool = factories
+        .map((factory) => factory(context))
+        .find((value) => value && !Array.isArray(value) && value.name === name);
       assert.ok(tool && !Array.isArray(tool));
       return tool;
     };
@@ -129,7 +134,7 @@ describe('tools/dispatch/tool', () => {
     const f = fixture();
     assert.equal(f.registrationOptions?.name, undefined);
     assert.deepEqual(f.registrationOptions?.names ?? [], []);
-    assert.deepEqual(f.adapter.tool.toolNames, ['agent_system_dispatch']);
+    assert.deepEqual(f.adapter.tool.toolNames, ['agent_system_dispatch', 'agent_system_context']);
     assert.equal(f.build().name, 'agent_system_dispatch');
     assert.equal(
       f.adapter.tool.isConfigured({
@@ -146,6 +151,27 @@ describe('tools/dispatch/tool', () => {
     );
   });
 
+  it('should resolve context through a no-argument tool and reject selectors before execution', async () => {
+    const f = fixture();
+    const requests: unknown[] = [];
+    f.adapter.service.runModel = async (_manifest, _workspace, _caller, input) => {
+      requests.push(input);
+      return { status: 'verified' } as Awaited<ReturnType<typeof f.adapter.service.runModel>>;
+    };
+    const context = f.build(undefined, 'agent_system_context');
+    await f.hook({ ...event, toolName: 'agent_system_context', params: {} }, coordinator);
+    await context.execute(event.toolCallId, {});
+    assert.deepEqual(requests, [{ action: 'context' }]);
+    for (const input of [
+      { action: 'context' },
+      { target: 'other' },
+      { id: 'owner' },
+      { threadId: 'foreign' },
+    ])
+      await assert.rejects(context.execute('invalid', input), /turn-context-request-invalid/);
+    assert.equal(requests.length, 1);
+  });
+
   it('should explain malformed authored arguments at both public entry points', async () => {
     const f = fixture();
     for (const [params, expected] of [
@@ -158,6 +184,8 @@ describe('tools/dispatch/tool', () => {
         /outcome, summary and fullResult inside result/,
       ],
       [{ action: 'reply', operation: 'compose', digest: 'private-value' }, /unsupported fields/],
+      [{ action: 'context', operation: 'context' }, /agent_system_context with \{\}/],
+      [{ action: 'contextRequest' }, /agent_system_context with \{\}/],
     ] as const) {
       for (const run of [
         () => f.build().execute('invalid', params),

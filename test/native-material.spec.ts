@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
 import { codexMaterialReceipts, codexRuntimeReceipts } from '../agent/codex-native-material.ts';
-import { openClawMaterialReceipts } from '../agent/openclaw-native-material.ts';
+import openClawNativeMaterial, {
+  openClawMaterialReceipts,
+} from '../agent/openclaw-native-material.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,
 } from '../agent/implementation-material.ts';
@@ -265,6 +267,37 @@ describe('agent/native-material', () => {
     assert.ok(
       (await bindNativeMaterial('agent_system_dispatch', pageRequest(output), receipts(observed)))
         .material,
+    );
+  });
+
+  it('recovers context pages from the no-argument tool receipt without widening other operations', async () => {
+    const root = nativeMaterialResponse(
+      implementationMaterial(source, envelope),
+      'agent_system_dispatch',
+      envelope,
+    );
+    const read = async () => ({
+      sessionId: 'session',
+      messages: [
+        { role: 'toolResult', toolName: 'agent_system_context', details: root, __openclaw: {} },
+      ],
+    });
+    const request = pageRequest(root);
+    const bound = await openClawNativeMaterial(
+      read,
+      { sessionKey: 'chat', sessionId: 'session' },
+      'agent_system_dispatch',
+      request,
+    );
+    assert.equal(typeof (bound.material as ImplementationMaterialRead).digest, 'string');
+    await assert.rejects(
+      openClawNativeMaterial(
+        read,
+        { sessionKey: 'chat', sessionId: 'session' },
+        'agent_system_dispatch',
+        { ...request, action: 'result' },
+      ),
+      /material-native-response-unavailable/,
     );
   });
 

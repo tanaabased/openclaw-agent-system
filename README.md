@@ -55,6 +55,7 @@ See example agents:
 Native tools run in OpenClaw, including OpenClaw-hosted Codex. Standalone Codex
 uses the [shared skills](#skills) through its native host interfaces.
 
+- [`agent_system_context`](./tools/dispatch/README.md#agent_system_context) — Refresh current task context from the native conversation without input parameters.
 - [`agent_system_dispatch`](./tools/dispatch/README.md) — Coordinate managed issue work, direct assessment, implementation, replies, and retirement.
 - [`agent_system_doctor`](./tools/doctor/README.md) — Inspect the active agent’s readiness and run declared checks after chat approval.
 - [`agent_system_git`](./tools/git/README.md) — Run ordinary Git commands with the agent's identity, SSH configuration, signing, and operation policy.

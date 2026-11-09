@@ -57,7 +57,7 @@ export default function registerAgentSystemHooks(
           }
         } catch {
           guidance.push(
-            'Agent System retained turn context is unavailable. Use the explicit native context tool before dependent work; do not infer authority from visible cards.',
+            'Agent System task context is unavailable. Call agent_system_context with {} to recover usable context directly; no action, target, or identity arguments are needed. Do not infer authority from visible cards or call a second context lookup.',
           );
         }
       }

@@ -1,4 +1,5 @@
 import { Value } from 'typebox/value';
+import WorkflowRequestError from './workflow-request-error.ts';
 import { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
 import codexContextRequest from './codex-context-request.ts';
 import codexNativeMaterial, { codexNativeRuntimeResult } from './codex-native-material.ts';
@@ -380,7 +381,10 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     const source = await readStandardInput();
     const input = source.trim() ? JSON.parse(source) : {};
     if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length)
-      throw new Error('turn-context-request-invalid');
+      throw new WorkflowRequestError(
+        'turn-context-request-invalid',
+        'Invoke turnContextRuntime with its --plugin-data argument and no stdin (or {}). Do not supply action, task, native identity, or authority fields.',
+      );
     writeJson(await codexCurrentTurnContext(pluginData, process.env.CODEX_THREAD_ID));
     return;
   }

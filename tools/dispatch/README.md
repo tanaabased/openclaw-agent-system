@@ -12,6 +12,7 @@ skill below.
 
 - [Requirements](#requirements)
 - [Configuration](#configuration)
+- [`agent_system_context`](#agent_system_context)
 - [`agent_system_dispatch`](#agent_system_dispatch)
   - [Parameters](#parameters)
   - [Usage](#usage)
@@ -29,6 +30,25 @@ this does not enable scheduled intake. Codex may require
 Use the [GitHub workflow configuration](../../channels/github/CONFIG.md)
 for modes, stage skills, guidance, and delivery. [Model profiles](../../MANIFEST.md#models)
 select the configured model and effort. There is no separate Dispatch manifest section.
+
+## `agent_system_context`
+
+Refresh the current managed task's context when native hook context is missing.
+Normally, use the context already supplied in the turn. This read-only tool takes
+no parameters and resolves ownership from the native invocation.
+
+### Parameters
+
+None. Task, agent, session and authority overrides are rejected.
+
+### Usage
+
+```json
+{}
+```
+
+The response supplies the task source, checkout, current configuration and verified
+incoming feedback when available. Effects still perform their own authorization checks.
 
 ## `agent_system_dispatch`
 

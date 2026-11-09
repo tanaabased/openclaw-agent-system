@@ -299,6 +299,7 @@ export default function pluginMetadataFailures(
     containsExactly(manifest.contracts?.tools, [
       'agent_system_intake',
       'agent_system_dispatch',
+      'agent_system_context',
       'agent_system_install',
       'agent_system_doctor',
       'agent_system_model_routing',
