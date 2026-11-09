@@ -1,4 +1,6 @@
 import { readCodexTaskOwner } from './codex-turn-task.ts';
+import codexDispatchBinding from './codex-dispatch-binding.ts';
+import { isNativeDispatchSelection } from './native-dispatch-selection.ts';
 import nativeFeedbackSource from './native-feedback-source.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
 import type { ManagedIssue } from './managed-issue.ts';
@@ -28,6 +30,14 @@ export default async function codexContextRequest(
     | undefined
   > = readCodexTaskOwner,
 ) {
+  if (
+    route === 'dispatch' &&
+    (isNativeDispatchSelection(input.action) || input.action === 'report')
+  ) {
+    assertNativeContextInput(input);
+    if (!threadId) throw new Error('turn-context-native-caller-required');
+    return codexDispatchBinding(pluginData, input, threadId);
+  }
   if (!isNativeContextRequest(route, input)) return input;
   assertNativeContextInput(input);
   if (!threadId) throw new Error('turn-context-native-caller-required');

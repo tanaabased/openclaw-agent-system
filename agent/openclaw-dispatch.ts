@@ -1,4 +1,10 @@
 import { selectWorkflowStage } from './workflow-stage.ts';
+import {
+  isNativeDispatchSelection,
+  nativeDispatchDigest,
+  nativeDispatchSelection,
+  nativeDispatchResponse,
+} from './native-dispatch-selection.ts';
 import openClawSkill from './openclaw-skill.ts';
 import nativeFeedbackSource from './native-feedback-source.ts';
 import { selectedOpenClawFeedback } from './openclaw-feedback-input.ts';
@@ -134,6 +140,22 @@ export default class OpenClawDispatch {
     if (!Value.Check(dispatchModelParameters, input as unknown))
       throw new Error('dispatch-model-request-invalid');
     let request = input;
+    if (isNativeDispatchSelection(input.action)) {
+      const current = await this.scope(manifest, workspace);
+      const record = nativeDispatchSelection(
+        input,
+        (await current.journal.read()).records,
+        current.admitted.records,
+        caller.sessionKey,
+      );
+      const authored = { ...input };
+      delete authored.target;
+      request = {
+        ...authored,
+        id: record.id,
+        ...(input.action === 'prepare' ? { digest: nativeDispatchDigest(record, 'openclaw') } : {}),
+      };
+    }
     if (isNativeContextRequest('dispatch', input)) {
       assertNativeContextInput(input);
       const current = await this.scope(manifest, workspace);
@@ -156,15 +178,24 @@ export default class OpenClawDispatch {
         request = { ...authored, eventId: event.id };
       }
     }
+    let response = await this.run(
+      manifest,
+      workspace,
+      caller,
+      request as Static<typeof dispatchParameters>,
+      operator,
+      authority,
+    );
+    if (response && typeof response === 'object' && 'id' in response) {
+      const current = await this.scope(manifest, workspace);
+      response = nativeDispatchResponse(
+        response,
+        (await current.journal.read()).records,
+        current.admitted.records,
+      );
+    }
     return nativeContextResponse(
-      await this.run(
-        manifest,
-        workspace,
-        caller,
-        request as Static<typeof dispatchParameters>,
-        operator,
-        authority,
-      ),
+      response,
       'dispatch',
       typeof input.source === 'string' ? input.source : undefined,
     );

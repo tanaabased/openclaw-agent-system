@@ -15,26 +15,12 @@ ${String.raw`const actions = {
 async function executeRuntime(runtimeRoute, runtimeInput) {
 if (!actions[runtimeRoute]?.includes(runtimeInput.action)) throw new Error('scheduled-runtime-action-unsupported');
 const key = 'agent-system:' + runtimeRoute + ':' + runtime.pluginData;
-const retained = load(key);
 store(key, null);
 let input = runtimeInput;
-if (runtimeRoute === 'dispatch' && input.action === 'prepare') {
-  if (!retained || retained.status !== 'routing-required' || !retained.id || !retained.digest) throw new Error('dispatch-routing-evidence-unavailable');
-  if (Object.keys(input).some(key => !['action', 'title', 'assessment', 'fallback'].includes(key))) throw new Error('dispatch-routing-input-invalid');
-  input = {...input, id: retained.id, digest: retained.digest};
-}
-if (runtimeRoute === 'dispatch' && input.action === 'reconcile' && input.id === undefined) {
-  const observation = load(key + ':observation');
-  if (!observation?.id) throw new Error('dispatch-operation-evidence-unavailable');
-  input = {...input, id: observation.id};
-}
 if (runtimeRoute === 'feedback' && input.action === 'reconcile' && input.id === undefined && input.eventId === undefined) {
   const observation = load(key + ':observation');
   if (!observation?.id || !observation.eventId) throw new Error('feedback-operation-evidence-unavailable');
   input = {...input, id: observation.id, eventId: observation.eventId};
-}
-if (runtimeRoute === 'dispatch' && input.action === 'prepare') {
-  store(key + ':observation', {id: input.id, digest: input.digest, operation: 'prepare'});
 }
 const argv = ['node', runtime.entrypoint, runtimeRoute];
 argv.push(input.action);
@@ -110,7 +96,7 @@ export function codexNativeHandoff(
   return `const prepared = load(${key});
 if (!prepared || prepared.status !== '${status}') throw new Error('${route}-prepared-request-unavailable');
 store(${key}, null);
-${route === 'dispatch' ? `store(${key} + ':observation', {id: prepared.id, operation: 'create'});` : ''}
+
 ${route === 'feedback' ? `store(${JSON.stringify(`agent-system:feedback:${pluginData}:observation`)}, {id: prepared.id, eventId: prepared.eventId});` : ''}
 text({id: prepared.id, ${route === 'feedback' ? 'eventId: prepared.eventId, ' : ''}native: await tools.mcp__codex_app__${tool}(prepared.request)});`;
 }

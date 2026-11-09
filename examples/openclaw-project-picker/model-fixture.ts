@@ -144,8 +144,7 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
         if (!prepared)
           return dispatch(stage('prepare'), {
             action: 'prepare',
-            id: next.id,
-            digest: next.digest,
+            target: next.target,
             assessment: {
               complexity: 'low',
               reason: 'A bounded disposable cleanup clarification.',
@@ -156,7 +155,7 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
         advanced = prepared;
       } else if (next.status === 'reconcile-required') {
         const reconciled = result(stage('reconcile'));
-        if (!reconciled) return dispatch(stage('reconcile'), { action: 'reconcile', id: next.id });
+        if (!reconciled) return dispatch(stage('reconcile'), { action: 'reconcile', target: next.target });
         advanced = reconciled;
       }
       if (advanced.nextAction === 'next') continue;
@@ -166,7 +165,7 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
         )
       ) {
         const assessed = result(stage('assess'));
-        if (!assessed) return dispatch(stage('assess'), { action: 'assess', id: next.id });
+        if (!assessed) return dispatch(stage('assess'), { action: 'assess', target: next.target });
         advanced = assessed;
       }
       assert.ok(

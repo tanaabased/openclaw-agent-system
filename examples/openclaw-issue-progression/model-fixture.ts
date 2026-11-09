@@ -214,8 +214,7 @@ function respond(
         if (!prepared)
           return dispatch(stage('prepare'), {
             action: 'prepare',
-            id: next.id,
-            digest: next.digest,
+            target: next.target,
             assessment: { complexity: 'low', reason: 'A bounded disposable documentation plan.' },
             fallback: 'default',
             title: 'Document disposable test issue cleanup',
@@ -223,7 +222,7 @@ function respond(
         advanced = prepared;
       } else if (next.status === 'reconcile-required') {
         const reconciled = result(stage('reconcile'));
-        if (!reconciled) return dispatch(stage('reconcile'), { action: 'reconcile', id: next.id });
+        if (!reconciled) return dispatch(stage('reconcile'), { action: 'reconcile', target: next.target });
         advanced = reconciled;
       }
       if (advanced.nextAction === 'next') continue;
@@ -235,7 +234,7 @@ function respond(
         )
       ) {
         const assessed = result(stage('assess'));
-        if (!assessed) return dispatch(stage('assess'), { action: 'assess', id: next.id });
+        if (!assessed) return dispatch(stage('assess'), { action: 'assess', target: next.target });
         advanced = assessed;
       }
       if (advanced.nextAction === 'next') continue;

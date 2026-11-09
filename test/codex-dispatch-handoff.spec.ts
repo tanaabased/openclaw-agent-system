@@ -15,6 +15,7 @@ const request = {
   thinking: 'medium',
   target: { type: 'project', projectId: 'project', environment: { type: 'worktree' } },
 };
+const target = 'https://github.com/owner/repo/issues/42';
 const prepared = { status: 'prepared', id: 'receipt', request };
 const routing = { status: 'routing-required', id: 'record-id', digest: 'different-digest' };
 const success = (value: unknown) => ({ exit_code: 0, output: JSON.stringify(value) });
@@ -182,13 +183,19 @@ describe('agent/codex-dispatch-handoff', () => {
     assert.equal(test.commands.length, 1);
     assert.equal(test.creations.length, 0);
   });
-  it('should carry distinct routing identifiers into preparation without transcription', async () => {
+  it('should pass authored preparation and the semantic target without copying bindings', async () => {
     const test = fixture([success(routing), success(prepared)]);
     await test.execute();
-    await test.execute({ action: 'prepare', title: 'poem', assessment: { complexity: 'low' } });
+    await test.execute({
+      action: 'prepare',
+      target,
+      title: 'poem',
+      assessment: { complexity: 'low' },
+    });
     const input = JSON.parse(String(test.commands[1]!.cmd).split('\n')[1]!);
-    assert.equal(input.id, 'record-id');
-    assert.equal(input.digest, 'different-digest');
+    assert.equal(input.target, target);
+    assert.equal('id' in input, false);
+    assert.equal('digest' in input, false);
     assert.equal(input.title, 'poem');
     assert.equal(test.creations.length, 0);
     await test.send();
@@ -214,36 +221,31 @@ describe('agent/codex-dispatch-handoff', () => {
       else await test.send('retirement');
       assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [archive.request]);
       await assert.rejects(test.send('retirement'), /retirement-prepared-request-unavailable/);
-      await assert.rejects(test.execute({ action: 'reconcile' }), /operation-evidence-unavailable/);
       assert.equal(test.commands.length, 1);
     }
   });
 
-  it('should reject supplied identifiers and missing or replaced routing evidence', async () => {
-    for (const extra of [
-      { id: 'different-digest' },
-      { digest: 'record-id' },
-      { model: 'override' },
-    ]) {
-      const test = fixture([success(routing)]);
-      await test.execute();
-      await assert.rejects(test.execute({ action: 'prepare', ...extra }), /routing-input-invalid/);
-      assert.equal(test.commands.length, 1);
-    }
-    const test = fixture([success(routing), success({ status: 'idle' })]);
-    await assert.rejects(test.execute({ action: 'prepare' }), /routing-evidence-unavailable/);
-    await test.execute();
-    await test.execute();
-    await assert.rejects(test.execute({ action: 'prepare' }), /routing-evidence-unavailable/);
-    assert.equal(test.commands.length, 2);
+  it('should leave coordinator ownership resolution to the runtime after compaction', async () => {
+    const test = fixture([success(prepared)]);
+    await test.execute({
+      action: 'prepare',
+      target,
+      title: 'poem',
+      assessment: { complexity: 'low' },
+    });
+    const input = JSON.parse(String(test.commands[0]!.cmd).split('\n')[1]!);
+    assert.equal(input.target, target);
+    assert.equal('id' in input, false);
+    assert.equal('digest' in input, false);
+    assert.equal(test.creations.length, 0);
   });
 
   it('should preserve host access and the exact request across both forms of busy result', async () => {
     for (const [route, input] of [
       ['intake', { action: 'scan' }],
       ['dispatch', { action: 'next', projects: [], threads: {} }],
-      ['dispatch', { action: 'reconcile', id: 'receipt' }],
-      ['dispatch', { action: 'report', automationId: 'job', currentTimeIso: 'now' }],
+      ['dispatch', { action: 'reconcile', target }],
+      ['dispatch', { action: 'report' }],
       ['continuation', { action: 'next' }],
       ['feedback', { action: 'reconcile', id: 'owner', eventId: 'event' }],
     ] as const) {
@@ -309,7 +311,7 @@ describe('agent/codex-dispatch-handoff', () => {
     assert.equal(test.commands.length, 1);
   });
 
-  it('should retain only operation identity for evidence reconciliation after a refused preparation', async () => {
+  it('should reconcile the selected issue after a refused preparation without repeating it', async () => {
     const test = fixture([
       success(routing),
       new Error('native rejection'),
@@ -321,9 +323,9 @@ describe('agent/codex-dispatch-handoff', () => {
       /native rejection/,
     );
     await assert.rejects(test.send(), /prepared-request-unavailable/);
-    await test.execute({ action: 'reconcile' });
+    await test.execute({ action: 'reconcile', target });
     const input = JSON.parse(String(test.commands.at(-1)!.cmd).split('\n')[1]!);
-    assert.deepEqual(input, { action: 'reconcile', id: routing.id });
+    assert.deepEqual(input, { action: 'reconcile', target });
     assert.equal(test.commands.length, 3);
     assert.equal(test.creations.length, 0);
   });
@@ -335,9 +337,9 @@ describe('agent/codex-dispatch-handoff', () => {
     );
     await test.execute();
     await assert.rejects(test.send(), /native rejection/);
-    await test.execute({ action: 'reconcile' });
+    await test.execute({ action: 'reconcile', target });
     const input = JSON.parse(String(test.commands.at(-1)!.cmd).split('\n')[1]!);
-    assert.deepEqual(input, { action: 'reconcile', id: prepared.id });
+    assert.deepEqual(input, { action: 'reconcile', target });
     await assert.rejects(test.send(), /prepared-request-unavailable/);
     assert.equal(test.creations.length, 1);
   });

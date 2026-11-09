@@ -1901,6 +1901,45 @@ describe('agent/openclaw issue dispatch', () => {
       authority,
     );
   }
+  it('should resolve coordinator preparation and replay from the semantic issue target', async () => {
+    const next = await service.runModel(manifest, root, coordinator, { action: 'next' });
+    assert.ok('target' in next && typeof next.target === 'string');
+    const request = {
+      action: 'prepare',
+      target: next.target,
+      title: 'repair the result',
+      assessment: { complexity: 'medium', reason: 'Interacting concerns.' },
+    };
+    for (const field of ['id', 'digest', 'receipt'])
+      await assert.rejects(
+        service.runModel(manifest, root, coordinator, { ...request, [field]: 'a'.repeat(64) }),
+        /model-request-invalid/,
+      );
+    const prepared = await service.runModel(manifest, root, coordinator, request);
+    assert.equal(prepared.status, 'session-created');
+    const before = calls.filter((call) => call.method === 'sessions.create').length;
+    await service.runModel(manifest, root, coordinator, {
+      action: 'reconcile',
+      target: next.target,
+    });
+    assert.equal(calls.filter((call) => call.method === 'sessions.create').length, before);
+    await assert.rejects(
+      service.runModel(
+        manifest,
+        root,
+        { ...coordinator, sessionKey: 'another-coordinator' },
+        request,
+      ),
+      /target-unavailable/,
+    );
+    await assert.rejects(
+      service.runModel(manifest, root, coordinator, {
+        ...request,
+        target: 'https://github.com/other/repo/issues/1',
+      }),
+      /target-unavailable/,
+    );
+  });
   it('should snapshot custom routing and keep prepared settings after guidance edits', async () => {
     manifest.debug = true;
     manifest.models!.routing = { skill: 'custom-routing', guidance: { file: 'routing.md' } };

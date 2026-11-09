@@ -1,4 +1,5 @@
 import codexContextRequest from './codex-context-request.ts';
+import { codexDispatchResponse } from './codex-dispatch-binding.ts';
 import { nativeContextResponse } from './native-context-request.ts';
 import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
@@ -400,9 +401,12 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       throw new Error('dispatch-action-invalid');
     writeJson(
       nativeContextResponse(
-        await runCodexDispatch(pluginData, action, input, {
-          claims: new CodexAssignmentClaims(codexInstanceStore(pluginData)),
-        }),
+        await codexDispatchResponse(
+          pluginData,
+          await runCodexDispatch(pluginData, action, input, {
+            claims: new CodexAssignmentClaims(codexInstanceStore(pluginData)),
+          }),
+        ),
         'dispatch',
       ),
     );

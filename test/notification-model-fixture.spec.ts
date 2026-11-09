@@ -560,15 +560,16 @@ for (const scenario of [
           `next-${index}`,
           JSON.stringify({
             status: 'routing-required',
+            target: source,
             id: receipt,
             digest,
             context: { source, body: 'disposable Agent System notification-flow fixture' },
           }),
         );
         await readRoutingSource(input, index);
-        assert.equal((await action(input, 'prepare')).id, receipt);
+        assert.equal((await action(input, 'prepare')).target, source);
         append(input, `prepare-${index}`, { status: 'session-created', id: receipt });
-        assert.equal((await action(input, 'assess')).id, receipt);
+        assert.equal((await action(input, 'assess')).target, source);
         append(
           input,
           `assess-${index}`,
@@ -590,7 +591,7 @@ for (const scenario of [
       ]) {
         const input = request(intakePrompt);
         append(input, 'scan', { status: 'ready' });
-        append(input, 'next', { status: 'reconcile-required', id });
+        append(input, 'next', { status: 'reconcile-required', target: source, id });
         append(input, 'reconcile', { status, id });
         if (status === 'working-turn-completed') {
           await action(input, 'assess');
@@ -620,7 +621,7 @@ for (const scenario of [
       assert.deepEqual(await action(input, 'next'), { action: 'next' });
     });
 
-    it('should carry native scan and routing receipts through preparation and assessment', async () => {
+    it('should select the issue while keeping routing bindings inside the runtime', async () => {
       const input = request(
         `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
       );
@@ -629,16 +630,18 @@ for (const scenario of [
       await action(input, 'next');
       append(input, 'next', {
         status: 'routing-required',
+        target: source,
         id,
         digest,
         context: { source, body: 'disposable Agent System notification-flow fixture' },
       });
       await readRoutingSource(input);
       const prepared = await action(input, 'prepare');
-      assert.equal(prepared.id, id);
-      assert.equal(prepared.digest, digest);
+      assert.equal(prepared.target, source);
+      assert.equal('id' in prepared, false);
+      assert.equal('digest' in prepared, false);
       append(input, 'prepare', { status: 'session-created', id });
-      assert.equal((await action(input, 'assess')).id, id);
+      assert.equal((await action(input, 'assess')).target, source);
       append(input, 'assess', { status: 'assessment-pending', id });
       await action(input, 'next');
       append(input, 'next-1', { status: 'pass-completed' });
@@ -658,9 +661,9 @@ for (const scenario of [
           `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
         );
         append(input, 'scan', { status: 'ready', admitted: 0 });
-        append(input, 'next', { status, id });
+        append(input, 'next', { status, id, target: source });
         if (status === 'reconcile-required') {
-          assert.equal((await action(input, 'reconcile')).id, id);
+          assert.equal((await action(input, 'reconcile')).target, source);
           append(input, 'reconcile', { status: 'assessment-completed', id });
           await action(input, 'next');
           append(input, 'next-1', { status: 'pass-completed' });
@@ -700,6 +703,7 @@ for (const scenario of [
     it('should retry known coordinator contention three times before reporting the blocker', async () => {
       const routing = {
         status: 'routing-required',
+        target: source,
         id,
         digest,
         context: { source, body: 'disposable Agent System notification-flow fixture' },
@@ -708,9 +712,9 @@ for (const scenario of [
         [],
         [['next', routing]],
         [['next', { status: 'assessment-required', id }]],
-        [['next', { status: 'reconcile-required', id }]],
+        [['next', { status: 'reconcile-required', target: source, id }]],
         [
-          ['next', { status: 'reconcile-required', id }],
+          ['next', { status: 'reconcile-required', target: source, id }],
           ['reconcile', { status: 'session-created', id }],
         ],
       ];
@@ -915,6 +919,7 @@ for (const scenario of [
       append(unrelated, 'scan', { status: 'ready' });
       append(unrelated, 'next', {
         status: 'routing-required',
+        target: source,
         id,
         digest,
         context: {
