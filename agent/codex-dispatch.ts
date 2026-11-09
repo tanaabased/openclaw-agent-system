@@ -1,7 +1,4 @@
 import { selectCodexTaskOwner } from './codex-turn-task.ts';
-import { selectWorkflowStage } from './workflow-stage.ts';
-import codexAssessmentSkill from './codex-assessment-skill.ts';
-import { connectCodexThreads } from './codex-thread-client.ts';
 import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import workflowFailure from './workflow-failure.ts';
@@ -172,35 +169,6 @@ export async function runCodexDispatch(
           admitted: (await current.store.read())?.records ?? [],
           session,
           workspace: current.workspace,
-          nativeContext: async (record) => {
-            const connection = await (deps.replyConnection ?? connectCodexThreads)(
-              current.workspace,
-              current.codexHome,
-            );
-            try {
-              const { selection } = await selectWorkflowStage({
-                stage: 'assessment',
-                configuration: {
-                  ...current.manifest.github?.notifications?.issueAssignment?.assessment,
-                  ...record?.manualIssue?.selections?.assessment,
-                },
-                workspace: current.workspace,
-                observedAt: Date.now(),
-                resolveSkill: (id) =>
-                  deps.native
-                    ? deps.native.assessmentSkill(current.workspace, id)
-                    : codexAssessmentSkill(connection.request, current.workspace, id),
-              });
-              return {
-                assessment: selection,
-                workspace: current.workspace,
-                debug: current.manifest.debug,
-                workflow: current.manifest.github?.notifications?.issueAssignment,
-              };
-            } finally {
-              await connection.close();
-            }
-          },
           debug: current.manifest.debug,
           workflow: current.manifest.github?.notifications?.issueAssignment,
         },

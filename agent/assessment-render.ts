@@ -1,5 +1,4 @@
 import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
-import workflowFailure from './workflow-failure.ts';
 import implementationMaterial from './implementation-material.ts';
 import { Value } from 'typebox/value';
 import { Type } from 'typebox';
@@ -16,7 +15,6 @@ import assessmentOwner from './assessment-owner.ts';
 import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from './managed-issue.ts';
 import { dispatchAssessmentContext } from './dispatch-presentation.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
-import type { AssessmentSelection } from './assessment-selection.ts';
 import AssessmentValidationError from './assessment-validation.ts';
 
 const renderRequestSchema = Type.Object(
@@ -34,15 +32,12 @@ export async function renderBoundAssessment(
   input: unknown,
   context: {
     runtime: 'codex' | 'openclaw';
-    records: Array<SharedDispatchRecord & { turnEvidence?: { selection?: AssessmentSelection } }>;
+    records: SharedDispatchRecord[];
     admitted: ManagedIssue[];
     session: string;
     workspace: string;
     debug?: boolean;
     workflow?: WorkflowInstructionsPresentation['workflow'];
-    nativeContext?: (
-      record?: SharedDispatchRecord,
-    ) => Promise<Omit<AssessmentPresentationContext, 'issue'>>;
   },
 ) {
   if (input && typeof input === 'object' && !Array.isArray(input) && !('target' in input)) {
@@ -64,43 +59,22 @@ export async function renderBoundAssessment(
     number: target.number,
   });
   const record = owner?.record;
-  let current;
-  let metadataLimitation: { code: string } | undefined;
-  try {
-    current = await context.nativeContext?.(record);
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') throw error;
-    metadataLimitation = { code: workflowFailure(error, 'assessment-metadata-unavailable').code };
-  }
-  if (!record)
-    return renderNativeAssessment(
-      input,
-      context.runtime,
-      metadataLimitation
-        ? {
-            workspace: context.workspace,
-            debug: context.debug,
-            workflow: context.workflow,
-            metadataLimitation,
-          }
-        : current,
-    );
-  return renderNativeAssessment(input, context.runtime, {
-    ...dispatchAssessmentContext(
-      {
-        ...record,
-        assessment: record.turnEvidence?.selection ?? record.assessment,
-        stageReceipt: undefined,
-      },
-      context.workspace,
-      { debug: context.debug, workflow: context.workflow },
-    ),
-    ...(metadataLimitation
-      ? { assessment: undefined, metadataLimitation }
-      : current?.assessment
-        ? { assessment: current.assessment }
-        : {}),
-  });
+  const presentation = {
+    workspace: context.workspace,
+    debug: context.debug,
+    workflow: context.workflow ?? {},
+  };
+  return renderNativeAssessment(
+    input,
+    context.runtime,
+    record
+      ? dispatchAssessmentContext(
+          { ...record, assessment: undefined, stageReceipt: undefined },
+          context.workspace,
+          presentation,
+        )
+      : presentation,
+  );
 }
 
 /** Pure presentation: the native tool exchange owns the full source, not a task journal. */
@@ -137,9 +111,6 @@ export default function renderNativeAssessment(
       runtime,
       status: 'formatted' as const,
       retained: false as const,
-      ...(context?.metadataLimitation
-        ? { contextLimitations: [{ scope: 'assessment', ...context.metadataLimitation }] }
-        : {}),
       presentation: renderAssessmentResult(assessment, {
         issue: {
           label: `${target.owner}/${target.name}#${target.number}`,

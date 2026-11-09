@@ -4964,6 +4964,23 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(rendered.status, 'formatted');
     assert.ok('presentation' in rendered);
     assert.match(String(rendered.presentation), /Model routing/);
+    let renderDiscoveryCalls = 0;
+    const withoutDiscovery = await new OpenClawDispatch({
+      ...service.dependencies,
+      credential: {
+        ...service.dependencies.credential,
+        use: async () => {
+          renderDiscoveryCalls++;
+          throw new Error('native skill connection unavailable');
+        },
+      },
+    }).run(manifest, root, assessor(input.id), {
+      ...verified.presentationRequest,
+      result: { ...plan, reviewSummary: plan.summary },
+    });
+    assert.ok('presentation' in withoutDiscovery);
+    assert.equal(withoutDiscovery.presentation, rendered.presentation);
+    assert.equal(renderDiscoveryCalls, 0);
     const omittedId = {
       ...verified.presentationRequest,
       result: { ...plan, reviewSummary: plan.summary },

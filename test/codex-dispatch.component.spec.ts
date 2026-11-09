@@ -2169,6 +2169,23 @@ describe('agent/codex-dispatch', () => {
     assert.equal(rendered.status, 'formatted');
     assert.match(String(rendered.presentation), /Model routing/);
     assert.doesNotMatch(String(rendered.presentation), /forged card/);
+    let renderDiscoveryCalls = 0;
+    const withoutDiscovery = await request('assessment', renderRequest, {
+      ...child,
+      native: {
+        ...deps.native!,
+        assessmentSkill: async () => {
+          renderDiscoveryCalls++;
+          throw new Error('skill catalog unavailable');
+        },
+      },
+      replyConnection: async () => {
+        renderDiscoveryCalls++;
+        throw new Error('native skill connection unavailable');
+      },
+    });
+    assert.equal(withoutDiscovery.presentation, rendered.presentation);
+    assert.equal(renderDiscoveryCalls, 0);
     const omittedId: Record<string, unknown> = { ...renderRequest };
     delete omittedId.id;
     const inferred = await request('assessment', omittedId, child);

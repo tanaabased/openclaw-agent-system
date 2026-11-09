@@ -38,7 +38,7 @@ const result: AssessmentSubmission = {
 describe('agent/assessment-render', () => {
   for (const runtime of ['codex', 'openclaw'] as const)
     for (const managed of [false, true])
-      it(`should render ${runtime} ${managed ? 'managed' : 'direct'} questions when metadata refresh fails`, async () => {
+      it(`should render ${runtime} ${managed ? 'managed' : 'direct'} questions from configuration without stale skill metadata`, async () => {
         const owner = {
           id: 'd'.repeat(64),
           threadId: 'thread',
@@ -46,6 +46,7 @@ describe('agent/assessment-render', () => {
           manualIssue: {
             repository: { owner: { login: 'owner' }, name: 'repo' },
             issue: { number: 3 },
+            selections: { assessment: { skill: 'task:override' } },
           },
           assessment: {
             version: 1,
@@ -84,19 +85,18 @@ describe('agent/assessment-render', () => {
           session: 'thread',
           workspace: '/workspace',
           debug: true,
-          nativeContext: async () => {
-            throw new Error('private raw metadata failure');
+          workflow: {
+            assessment: { skill: 'configured:assess', guidance: { file: 'unavailable.md' } },
           },
         };
         const shown = await renderBoundAssessment(request, renderContext);
         assert.equal(shown.status, 'formatted');
         assert.ok('presentation' in shown);
         assert.match(String(shown.presentation), /Which subject/);
-        assert.match(String(shown.presentation), /⚠️ Warning/);
-        assert.doesNotMatch(JSON.stringify(shown), /private raw metadata failure|stale:skill/);
-        assert.deepEqual(shown.contextLimitations, [
-          { scope: 'assessment', code: 'assessment-metadata-unavailable' },
-        ]);
+        assert.match(String(shown.presentation), managed ? /task:override/ : /configured:assess/);
+        assert.match(String(shown.presentation), /unavailable.md/);
+        assert.doesNotMatch(JSON.stringify(shown), /⚠️ Warning|stale:skill/);
+        assert.equal('contextLimitations' in shown, false);
         assert.deepEqual(owner, before);
         if (managed) {
           await assert.rejects(
@@ -257,10 +257,6 @@ describe('agent/assessment-render', () => {
           await renderBoundAssessment(renderRequest, {
             ...renderContext,
             records: [unsaved],
-            nativeContext: async (bound) => {
-              assert.equal(bound?.id, owner.id);
-              return { assessment: record.assessment, workspace: '/workspace' };
-            },
           }),
           shown,
           'managed cards must not depend on saving a context lookup',
@@ -290,7 +286,11 @@ describe('agent/assessment-render', () => {
           );
         assert.deepEqual(
           await renderBoundAssessment(omittedId, { ...renderContext, records: [] }),
-          renderNativeAssessment(omittedId, runtime),
+          renderNativeAssessment(omittedId, runtime, {
+            workspace: renderContext.workspace,
+            debug: renderContext.debug,
+            workflow: renderContext.workflow,
+          }),
         );
         await assert.rejects(
           () =>

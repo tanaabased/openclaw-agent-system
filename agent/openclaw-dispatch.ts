@@ -1,4 +1,3 @@
-import { selectWorkflowStage } from './workflow-stage.ts';
 import openClawNativeMaterial from './openclaw-native-material.ts';
 import { nativeMaterialResponse } from './native-material.ts';
 import nativeOperatorSelection from './native-operator-selection.ts';
@@ -9,7 +8,6 @@ import {
   nativeDispatchSelection,
   nativeDispatchResponse,
 } from './native-dispatch-selection.ts';
-import openClawSkill from './openclaw-skill.ts';
 import nativeFeedbackSource from './native-feedback-source.ts';
 import { resolveOpenClawTurnFeedback } from './openclaw-feedback-input.ts';
 import { dispatchAdmission } from './managed-issue.ts';
@@ -544,30 +542,6 @@ export default class OpenClawDispatch {
           admitted: (await current.store.read())?.records ?? [],
           session: caller.sessionKey,
           workspace,
-          nativeContext: (record) =>
-            this.dependencies.credential.use(authority, async (request) => {
-              const { selection } = await selectWorkflowStage({
-                stage: 'assessment',
-                configuration: {
-                  ...manifest.github?.notifications?.issueAssignment?.assessment,
-                  ...record?.manualIssue?.selections?.assessment,
-                },
-                workspace,
-                observedAt: Date.now(),
-                resolveSkill: (id) =>
-                  openClawSkill(
-                    request,
-                    { agentId: manifest.agent.id, key: caller.sessionKey },
-                    id,
-                  ),
-              });
-              return {
-                assessment: selection,
-                workspace,
-                debug: manifest.debug,
-                workflow: manifest.github?.notifications?.issueAssignment,
-              };
-            }),
           debug: manifest.debug,
           workflow: manifest.github?.notifications?.issueAssignment,
         });

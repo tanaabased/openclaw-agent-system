@@ -27,7 +27,6 @@ export interface AssessmentPresentationContext extends WorkflowInstructionsPrese
   effective?: { status: 'verified' | 'unverified'; model?: string; effort?: string };
   workspace?: string;
   assessment?: WorkflowInstructionsSelection;
-  metadataLimitation?: { code: string };
   routingInstructions?: RoutingInstructions;
   routingManifestPath?: string;
 }
@@ -187,27 +186,5 @@ export function assessmentContextCards(context: Omit<AssessmentPresentationConte
         },
       },
     }),
-    context.metadataLimitation
-      ? githubNotificationCard({
-          emoji: '⚠️',
-          title: 'Warning',
-          facts: [
-            {
-              label: 'What happened',
-              value:
-                'The assessment is shown, but its current skill and guidance metadata could not be refreshed.',
-            },
-            {
-              label: 'Next step',
-              value:
-                'Continue from the assessment. Recover the missing guidance only before work that requires it; no reassessment or republication is needed.',
-            },
-            {
-              label: 'Technical detail',
-              value: githubNotificationMarkdownCode(context.metadataLimitation.code),
-            },
-          ],
-        })
-      : undefined,
   ].filter((card): card is string => card !== undefined);
 }

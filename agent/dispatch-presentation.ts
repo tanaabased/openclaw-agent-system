@@ -49,7 +49,14 @@ export function dispatchAssessmentContext(
     ...presentation,
     workflow: presentation.workflow && {
       ...presentation.workflow,
-      ...record.manualIssue?.selections,
+      assessment: {
+        ...presentation.workflow.assessment,
+        ...record.manualIssue?.selections?.assessment,
+      },
+      implementation: {
+        ...presentation.workflow.implementation,
+        ...record.manualIssue?.selections?.implementation,
+      },
     },
     routing: decision?.selection ? { ...decision, ...decision.selection } : undefined,
     effective: record.effective,
