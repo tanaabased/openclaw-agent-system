@@ -270,7 +270,9 @@ function respond(
     const context = result('work-context');
     if (!context)
       return dispatch('work-context', {
-        action: 'implementation-context',
+        ...(answerId
+          ? { action: 'implementation', operation: 'context' }
+          : { action: 'implementation-context' }),
         ...(prompt.includes('Do not push or publish a PR.') ? { scope: 'local' } : {}),
         ...(decisionId
           ? {

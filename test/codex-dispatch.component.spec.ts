@@ -1,3 +1,5 @@
+import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
+import codexRuntimeRequest from '../agent/codex-runtime-request.ts';
 import codexDirectInput from '../agent/codex-direct-input.ts';
 import { selectCodexTurnTask } from '../agent/codex-turn-task.ts';
 import seedHistoricalAssessment from './legacy-assessment-fixture.ts';
@@ -4337,6 +4339,52 @@ describe('agent/codex-dispatch', () => {
       'recorded',
     );
     assert.equal(((await readDispatchState()).records as unknown[]).length, 1);
+  });
+
+  it('should page managed implementation through its original dispatch command', async () => {
+    const work = await workIssue();
+    work.receive();
+    const history: unknown[] = [];
+    const run = async (input: Record<string, unknown>) => {
+      const parsed = codexRuntimeRequest(
+        'dispatch',
+        ['implementation', 'context', '--plugin-data', pluginData],
+        input,
+      ).request;
+      const bound = await bindNativeMaterial(
+        'dispatch',
+        parsed,
+        (async function* () {
+          yield* history;
+        })(),
+      );
+      const response = nativeMaterialResponse(
+        await request('implementation', bound, {
+          ...work.continuation,
+          threadId: native!.id,
+        }),
+        'dispatch',
+        parsed,
+      );
+      history.unshift(response);
+      return response;
+    };
+    const first = await run({ action: 'implementation', operation: 'context' });
+    assert.equal(first.status, 'verified');
+    assert.ok(first.contextMaterials);
+    const before = await readDispatchState();
+    let pages = 0;
+    const restored = await hydrateImplementation(first, async (read) => {
+      assert.equal(read.action, 'implementation');
+      assert.equal(read.operation, 'context');
+      assert.equal('id' in read, false);
+      assert.equal('digest' in (read.material as object), false);
+      pages++;
+      return run(read);
+    });
+    assert.ok(pages >= 2);
+    assert.equal(typeof restored.instructions, 'string');
+    assert.deepEqual(await readDispatchState(), before);
   });
 
   it('should omit an oversized historical plan without changing implementation permission', async () => {

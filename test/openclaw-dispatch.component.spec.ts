@@ -1,3 +1,5 @@
+import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
+import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import { feedbackTarget } from '../agent/reply-target.ts';
 import seedHistoricalAssessment from './legacy-assessment-fixture.ts';
 import assessmentPresentation from '../agent/dispatch-presentation.ts';
@@ -6820,6 +6822,43 @@ describe('agent/openclaw issue dispatch', () => {
       );
       assert.deepEqual(await record(), before);
     });
+
+  it('should page managed implementation through its original openclaw action', async () => {
+    const { who } = await operatorFollowup();
+    const history: unknown[] = [];
+    const run = async (input: Record<string, unknown>) => {
+      const bound = await bindNativeMaterial(
+        'agent_system_dispatch',
+        input,
+        (async function* () {
+          yield* history;
+        })(),
+      );
+      const response = nativeMaterialResponse(
+        await service.run(manifest, root, who, parseDirectImplementationRequest(bound), true),
+        'agent_system_dispatch',
+        input,
+      );
+      history.unshift(response);
+      return response;
+    };
+    const first = await run({ action: 'implementation', operation: 'context' });
+    assert.equal(first.status, 'verified');
+    assert.ok('contextMaterials' in first && first.contextMaterials);
+    const before = await record();
+    let pages = 0;
+    const restored = await hydrateImplementation(first, async (read) => {
+      assert.equal(read.action, 'implementation');
+      assert.equal(read.operation, 'context');
+      assert.equal('id' in read, false);
+      assert.equal('digest' in (read.material as object), false);
+      pages++;
+      return run(read);
+    });
+    assert.ok(pages >= 2);
+    assert.equal(typeof restored.instructions, 'string');
+    assert.deepEqual(await record(), before);
+  });
 
   it('should route direct implementation through the original managed owner and preserve local scope', async () => {
     const { id, who } = await operatorFollowup();

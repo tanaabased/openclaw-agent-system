@@ -15,6 +15,30 @@ export function assertModelMaterial(input: Record<string, unknown>) {
     throw new Error('material-model-request-invalid');
 }
 
+/** Keep page requests on the public route when an adapter delegates to another owner. */
+export function routeMaterialResponse<T>(value: T, request: Record<string, unknown>): T {
+  if (!nativeObject(value)) return value;
+  const page = (input: unknown) =>
+    nativeObject(input) && nativeObject(input.material)
+      ? { ...request, material: input.material }
+      : input;
+  const materials = value.contextMaterials;
+  return {
+    ...value,
+    ...(nativeObject(materials) && Array.isArray(materials.fields)
+      ? {
+          contextMaterials: {
+            ...materials,
+            fields: materials.fields.map((field: unknown) =>
+              nativeObject(field) ? { ...field, request: page(field.request) } : field,
+            ),
+          },
+        }
+      : {}),
+    ...(value.next ? { next: page(value.next) } : {}),
+  } as T;
+}
+
 /** Native receipts carry the version; model-facing next requests carry only a field and offset. */
 export function nativeMaterialResponse<T>(
   value: T,

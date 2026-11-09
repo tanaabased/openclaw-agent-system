@@ -353,18 +353,25 @@ export default class OpenClawDispatch {
       : this.execute(manifest, workspace, caller, input, operator, authority));
     if (
       input.action === 'implementation-context' ||
+      (input.action === 'implementation' && input.operation === 'context') ||
       (input.action === 'feedback' && input.operation === 'implementation-context')
     ) {
       if (response.status === 'verified' && 'implementation' in response) {
         const request =
-          input.action === 'feedback'
+          input.action === 'implementation'
             ? {
-                action: 'feedback',
-                operation: 'implementation-context',
-                id: input.id,
-                eventId: input.eventId,
+                action: 'implementation',
+                operation: 'context',
+                ...(input.target ? { target: input.target } : {}),
               }
-            : { action: 'implementation-context', id: input.id };
+            : input.action === 'feedback'
+              ? {
+                  action: 'feedback',
+                  operation: 'implementation-context',
+                  id: input.id,
+                  eventId: input.eventId,
+                }
+              : { action: 'implementation-context', id: input.id };
         return implementationMaterial(response, request, input.material);
       }
     }
@@ -522,7 +529,7 @@ export default class OpenClawDispatch {
               body: input.body,
             }
           : input.operation === 'context'
-            ? { action: 'implementation-context', id, scope: input.scope }
+            ? { action: 'implementation-context', id, scope: input.scope, material: input.material }
             : input.operation === 'result' && input.result
               ? { action: 'implementation-result', id, implementationResult: input.result }
               : { action: 'implementation-context', id };

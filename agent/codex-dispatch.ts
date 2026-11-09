@@ -1,4 +1,5 @@
 import { selectCodexTaskOwner } from './codex-turn-task.ts';
+import { routeMaterialResponse } from './native-material.ts';
 import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
 import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import workflowFailure from './workflow-failure.ts';
@@ -83,43 +84,56 @@ export async function runCodexDispatch(
         },
       );
     if (context.status !== 'managed' || !('owner' in context) || !context.owner) return context;
+    const pageRequest = {
+      action: 'implementation',
+      operation: 'context',
+      ...(request.target ? { target: request.target } : {}),
+    };
     if (context.owner.eventId) {
       if (request.operation === 'delivery')
         throw new Error('implementation-feedback-delivery-owner-required');
-      return runCodexFeedback(
+      return routeMaterialResponse(
+        await runCodexFeedback(
+          pluginData,
+          {
+            action:
+              request.operation === 'result' ? 'implementation-result' : 'implementation-context',
+            id: context.owner.id,
+            eventId: context.owner.eventId,
+            ...(request.material ? { material: request.material } : {}),
+            ...(request.result ? { implementationResult: request.result } : {}),
+          },
+          deps,
+        ),
+        pageRequest,
+      );
+    }
+    return routeMaterialResponse(
+      await runCodexContinuation(
         pluginData,
         {
           action:
-            request.operation === 'result' ? 'implementation-result' : 'implementation-context',
+            request.operation === 'delivery'
+              ? 'delivery'
+              : request.operation === 'result'
+                ? 'result'
+                : 'context',
           id: context.owner.id,
-          eventId: context.owner.eventId,
-          ...(request.result ? { implementationResult: request.result } : {}),
+          ...(request.material ? { material: request.material } : {}),
+          ...(request.result ? { result: request.result } : {}),
+          ...(request.operation === 'delivery'
+            ? {
+                delivery: {
+                  action: request.deliveryOperation,
+                  title: request.title,
+                  body: request.body,
+                },
+              }
+            : {}),
         },
-        deps,
-      );
-    }
-    return runCodexContinuation(
-      pluginData,
-      {
-        action:
-          request.operation === 'delivery'
-            ? 'delivery'
-            : request.operation === 'result'
-              ? 'result'
-              : 'context',
-        id: context.owner.id,
-        ...(request.result ? { result: request.result } : {}),
-        ...(request.operation === 'delivery'
-          ? {
-              delivery: {
-                action: request.deliveryOperation,
-                title: request.title,
-                body: request.body,
-              },
-            }
-          : {}),
-      },
-      { ...deps, directOperator: true, directScope: request.scope },
+        { ...deps, directOperator: true, directScope: request.scope },
+      ),
+      pageRequest,
     );
   }
   if (
