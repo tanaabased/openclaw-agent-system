@@ -5,8 +5,8 @@ import workflowNoticeInstructions from './workflow-notice-instructions.ts';
 export default function nativeTaskInstructions(runtime: 'codex' | 'openclaw') {
   const context =
     runtime === 'codex'
-      ? 'continuationRuntime context with the complete continuationRequest (or action:context and the verified managed task id when no request is supplied)'
-      : 'agent_system_dispatch action implementation-context with the current verified task id';
+      ? 'continuationRuntime context without a task id'
+      : 'agent_system_dispatch action implementation-context without a task id';
   const delivery =
     runtime === 'codex'
       ? 'deliveryRuntime prepare with the complete deliveryPrepareRequest, adding the authored title and body, then publish with the complete returned publishRequest'

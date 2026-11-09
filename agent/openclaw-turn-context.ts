@@ -77,7 +77,7 @@ export default function openclawTurnContext(
         workspace: binding.workspace,
         currentSession: { sessionKey: binding.sessionKey, sessionId: binding.sessionId },
         receipt: record.id,
-        contextRequest: assessment ? { action: 'context', id: record.id } : undefined,
+        contextRequest: assessment ? { action: 'context' } : undefined,
         currentTurn: { runId: binding.runId, inputId: binding.inputId },
         stage: source
           ? 'feedback'

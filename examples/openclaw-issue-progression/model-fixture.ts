@@ -275,7 +275,6 @@ function respond(
     if (!context)
       return dispatch('work-context', {
         action: 'implementation-context',
-        id: operatorId,
         ...(prompt.includes('Do not push or publish a PR.') ? { scope: 'local' } : {}),
         ...(decisionId
           ? {
@@ -339,7 +338,9 @@ function respond(
     return { content: saved.presentation };
   }
   const id =
-    currentFacts(messages, false).contextRequest?.id ??
+    (currentFacts(messages, false).contextRequest
+      ? currentFacts(messages, false).receipt
+      : undefined) ??
     /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   if (!id) return;
   const context = result('context');
@@ -348,7 +349,7 @@ function respond(
       .map(({ content }) => getTextContent(content) ?? '')
       .join('\n');
     if (!privateContext.includes('Agent System model-only current-turn facts')) return;
-    return dispatch('context', { action: 'context', id });
+    return dispatch('context', { action: 'context' });
   }
   const project = context.project as { path?: unknown } | undefined;
   if (

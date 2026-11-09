@@ -22,7 +22,7 @@ import type { RegisteredAgentSystemTool } from '../../api/types.ts';
 import AgentSystemToolError from '../../api/error.ts';
 import type AgentManifestService from '../../manifest/service.ts';
 import type TrustedGitWorktreeService from '../git/trusted-worktree-service.ts';
-import { dispatchParameters } from './tool-schema.ts';
+import { dispatchModelParameters } from './tool-schema.ts';
 
 interface NativeContext {
   agentId?: string;
@@ -125,7 +125,8 @@ export default function createDispatchTool(input: {
       readConsistency: 'latest',
     });
     // headless predicates have no conversation session ID; agent binding still applies in execute.
-    if (event.params.action === 'check' && Value.Check(dispatchParameters, event.params)) return;
+    if (event.params.action === 'check' && Value.Check(dispatchModelParameters, event.params))
+      return;
     try {
       const who = caller(context, event, nativeCaller);
       invocations.set(who.toolCallId, {
@@ -173,10 +174,11 @@ export default function createDispatchTool(input: {
           'Optional history: context/result/present and summary compose/candidate/publish/reconcile/hold preserve existing assessment records and public summaries. A summary-only denial stops that publication. It does not stop independently authorized work. Legacy result collectors remain for compatibility; normal assessment uses the stateless assessment render operation. Delivery prepare/publish verifies each external operation; link changes the current association independently of present and the originating-issue announcement. ' +
           'Feedback: use action feedback, operation context with the prepared eventId to revalidate its exact source. Handle the returned content as native input. Use reply compose at replyTarget with your response as privateText, then candidate and publish preview/digest. Approved non-self feedback authorizes its routine reply without another human confirmation; self feedback stays private. A progress question may use Task Update at that exact source and deserves an answer even when progress is unchanged. Recover replies independently of incoming delivery, never replay consumed input because a reply is missing. Preserve legacy attempted publications through their original recovery route.',
 
-        parameters: dispatchParameters,
+        parameters: dispatchModelParameters,
         async execute(id, params, signal) {
           signal?.throwIfAborted();
-          if (!Value.Check(dispatchParameters, params)) throw new Error('dispatch-request-invalid');
+          if (!Value.Check(dispatchModelParameters, params))
+            throw new Error('dispatch-request-invalid');
           const binding = await loaded(context);
           let result;
           if (params.action === 'check')
@@ -207,7 +209,7 @@ export default function createDispatchTool(input: {
               throw new Error('dispatch-native-session-diverged');
             const { operator, ...nativeCaller } = who;
             result = await service
-              .run(
+              .runModel(
                 binding.manifest,
                 binding.scope.workspaceDir,
                 nativeCaller,

@@ -27,7 +27,7 @@ describe('agent/openclaw-turn-context', () => {
     assert.doesNotMatch(output.appendContext, /BEGIN UNTRUSTED GITHUB PROVIDER DATA/);
     assert.doesNotMatch(output.appendSystemContext, /PRIVATE-GITHUB-FACT/);
     const facts = JSON.parse(output.appendContext.split('\n')[1]!);
-    assert.deepEqual(facts.contextRequest, { action: 'context', id: record.id });
+    assert.deepEqual(facts.contextRequest, { action: 'context' });
     assert.equal(facts.agentId, binding.agentId);
     assert.deepEqual(facts.currentSession, {
       sessionKey: binding.sessionKey,
@@ -118,7 +118,7 @@ describe('agent/openclaw-turn-context', () => {
       )!.appendContext.split('\n')[1]!,
     );
     assert.equal(initial.stage, 'assessment');
-    assert.deepEqual(initial.contextRequest, { action: 'context', id: record.id });
+    assert.deepEqual(initial.contextRequest, { action: 'context' });
     for (const event of events) Object.assign(event.turn, { cancelled: true });
     assert.equal(
       JSON.parse(

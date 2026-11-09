@@ -526,7 +526,7 @@ function respond(
     {
       assert.equal(context.mode, initial ? 'plan' : 'work');
       const work = initial ? result('feedback-work-context') : context;
-      if (!work) return dispatch('feedback-work-context', { action: 'implementation-context', id });
+      if (!work) return dispatch('feedback-work-context', { action: 'implementation-context' });
       const worktree = (work.project as { path?: string } | undefined)?.path;
       if (work.status !== 'verified' || !worktree) return;
       if (initial) {
@@ -767,7 +767,9 @@ function respond(
     return { content: published.presentation };
   }
   const id =
-    currentFacts(messages, false).contextRequest?.id ??
+    (currentFacts(messages, false).contextRequest
+      ? currentFacts(messages, false).receipt
+      : undefined) ??
     /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   let automaticId: string | undefined;
   if (id) {
@@ -777,7 +779,7 @@ function respond(
         .map(({ content }) => getTextContent(content) ?? '')
         .join('\n');
       if (!privateContext.includes('Agent System model-only current-turn facts')) return;
-      return dispatch('context', { action: 'context', id });
+      return dispatch('context', { action: 'context' });
     }
     const project = context.project as { path?: unknown } | undefined;
     if (
@@ -869,7 +871,6 @@ function respond(
           ...(automaticId
             ? {
                 action: 'implementation-context',
-                id: operatorId,
                 decision: { mode: 'work', reasons: ['The current cleanup scope is clear.'] },
               }
             : { action: 'implementation', operation: 'context', id: operatorId }),

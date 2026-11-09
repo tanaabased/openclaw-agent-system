@@ -83,8 +83,7 @@ export async function selectCodexTurnTask(
         : implementation
           ? 'implementation'
           : 'assessment',
-    contextRequest:
-      !feedback.length && !unresolvedFeedback ? { action: 'context', id: record.id } : undefined,
+    contextRequest: !feedback.length && !unresolvedFeedback ? { action: 'context' } : undefined,
     contextRuntime: implementation ? 'continuationRuntime' : 'dispatchRuntime',
     feedbackContextRequest: source && { action: 'context', id: record.id, eventId: source.id },
     worktree: record.worktree ?? native.cwd,

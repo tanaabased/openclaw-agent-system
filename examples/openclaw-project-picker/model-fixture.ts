@@ -186,10 +186,12 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
     return { content: String(report.response) || 'pickup-intake-unchanged' };
   }
 
-  const id = currentFacts(messages, false).contextRequest?.id;
+  const id = currentFacts(messages, false).contextRequest
+    ? currentFacts(messages, false).receipt
+    : undefined;
   if (!id) return;
   const context = result('context');
-  if (!context) return dispatch('context', { action: 'context', id });
+  if (!context) return dispatch('context', { action: 'context' });
   assert.equal(context.status, 'verified', JSON.stringify(context));
   assert.equal(context.contextMaterials, undefined, 'ordinary assignment context must fit inline');
   assert.equal(context.mode, 'work', 'pickup must override ordinary plan mode');

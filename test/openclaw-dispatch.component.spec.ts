@@ -4839,7 +4839,13 @@ describe('agent/openclaw issue dispatch', () => {
       runId: current.assessmentTurn!.runId,
     });
     const privateFacts = JSON.parse(privateContext!.appendContext.split('\n')[1]!);
-    assert.deepEqual(privateFacts.contextRequest, { action: 'context', id: input.id });
+    assert.deepEqual(privateFacts.contextRequest, { action: 'context' });
+    const bound = await service.runModel(manifest, root, assessor(input.id), { action: 'context' });
+    assert.ok('status' in bound && bound.status === 'verified');
+    await assert.rejects(
+      service.runModel(manifest, root, assessor(input.id), { action: 'context', id: input.id }),
+      /native-context-binding-override/,
+    );
     const verified = await context(input.id);
     assert.ok('runtime' in verified && verified.runtime === 'openclaw');
     assert.ok('evidence' in verified && 'resultContract' in verified && 'assessment' in verified);

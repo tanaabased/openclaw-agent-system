@@ -1,3 +1,9 @@
+import {
+  assertNativeContextInput,
+  isNativeContextRequest,
+  nativeContextRequest,
+  nativeContextResponse,
+} from './native-context-request.ts';
 import launchPending from './launch-pending.ts';
 import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
 import feedbackContextMaterial from './feedback-context-material.ts';
@@ -108,6 +114,37 @@ export default class OpenClawDispatch {
       ...(stage ? { stage } : {}),
       ...(error instanceof IssueSessionMismatchError ? { mismatchedField: error.field } : {}),
     };
+  }
+
+  async runModel(
+    manifest: AgentManifest,
+    workspace: string,
+    caller: DispatchCaller,
+    input: Record<string, unknown>,
+    operator = false,
+    authority: DispatchAuthority = {},
+  ) {
+    let request = input;
+    if (isNativeContextRequest('dispatch', input)) {
+      assertNativeContextInput(input);
+      const current = await this.scope(manifest, workspace);
+      const owners = (await current.journal.read()).records.filter(
+        (record) => record.threadId === caller.sessionKey,
+      );
+      if (owners.length > 1) throw new Error('native-context-owner-ambiguous');
+      request = nativeContextRequest(input, owners[0]);
+    }
+    return nativeContextResponse(
+      await this.run(
+        manifest,
+        workspace,
+        caller,
+        request as Static<typeof dispatchParameters>,
+        operator,
+        authority,
+      ),
+      'dispatch',
+    );
   }
 
   async run(

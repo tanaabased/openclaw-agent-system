@@ -1,3 +1,5 @@
+import codexContextRequest from './codex-context-request.ts';
+import { nativeContextResponse } from './native-context-request.ts';
 import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
 import IssuePickupFailure from './issue-pickup-failure.ts';
 import { issuePickupAutomationId } from './issue-pickup-jobs.ts';
@@ -262,6 +264,7 @@ async function readWorkflowCommand(route: string, args: string[]) {
     );
   }
   const result = codexRuntimeRequest(route, args, input);
+  result.request = await codexContextRequest(result.pluginData, route, result.request);
   failureScope = workflowFailureScope('codex', route, result.request);
   return result;
 }
@@ -341,7 +344,9 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   }
   if (command === 'continuation') {
     const { pluginData, request } = await readWorkflowCommand(command, args.slice(1));
-    writeJson(await runCodexContinuation(pluginData, request));
+    writeJson(
+      nativeContextResponse(await runCodexContinuation(pluginData, request), 'continuation'),
+    );
     return;
   }
   if (command === 'delivery') {
@@ -391,9 +396,12 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     )
       throw new Error('dispatch-action-invalid');
     writeJson(
-      await runCodexDispatch(pluginData, action, input, {
-        claims: new CodexAssignmentClaims(codexInstanceStore(pluginData)),
-      }),
+      nativeContextResponse(
+        await runCodexDispatch(pluginData, action, input, {
+          claims: new CodexAssignmentClaims(codexInstanceStore(pluginData)),
+        }),
+        'dispatch',
+      ),
     );
     return;
   }

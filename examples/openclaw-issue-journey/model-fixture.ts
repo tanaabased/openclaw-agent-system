@@ -432,7 +432,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       .join('\n');
     if (!privateContext.includes('Agent System model-only current-turn facts')) return;
     const fresh = result('refresh-context');
-    if (!fresh) return dispatch('refresh-context', { action: 'context', id: refreshId });
+    if (!fresh) return dispatch('refresh-context', { action: 'context' });
     assert.equal(fresh.status, 'verified', JSON.stringify(fresh));
     assert.equal(fresh.contextMaterials, undefined, 'ordinary refreshed context must fit inline');
     const sourceRead = assessmentSource(fresh, result, call);
@@ -530,7 +530,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   );
   const id =
     revision?.[2] ??
-    currentFacts(messages, false).contextRequest?.id ??
+    (currentFacts(messages, false).contextRequest
+      ? currentFacts(messages, false).receipt
+      : undefined) ??
     /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   if (
     !id ||
@@ -551,7 +553,7 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       !privateContext.includes('"git":{"protocol":"ssh"}')
     )
       return;
-    return dispatch('context', { action: 'context', id });
+    return dispatch('context', { action: 'context' });
   }
   const project = context.project as { path?: unknown } | undefined;
   if (

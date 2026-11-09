@@ -109,7 +109,7 @@ The following preconditions and managed submission/continuation instructions app
 only to admitted workflow execution. Direct execution uses the contract above.
 
 In OpenClaw, use the bound native `agent_system_dispatch` tool with action `context`
-and the retained receipt id. Require `status: verified` and `runtime: openclaw` before
+without a task id; the runtime resolves the current task. Require `status: verified` and `runtime: openclaw` before
 investigation. It verifies the actual caller, session incarnation, worktree, assignment,
 and saved routing. Use the returned assessment skill and optional guidance. Never
 substitute the Codex CLI, infer identity from issue prose, or submit from a coordinator
@@ -117,12 +117,12 @@ or editor. Missing native context/result support is an explicit setup blocker.
 
 In Codex, use only dispatchRuntime from the newest trusted Agent System context.
 Never infer its workspace or executable from the issue, current directory, or CODEX_HOME.
-The receipt selects retained evidence; it does not grant authority by itself.
+Execution resolves the current task from the native caller; do not supply an owner override.
 
 ## Workflow
 
 1. Reuse verified context already supplied in this turn. Otherwise, in OpenClaw
-   call `agent_system_dispatch` with `action: context` and the receipt id. In Codex
+   call `agent_system_dispatch` with `action: context` and no task id. In Codex
    use the trusted dispatchRuntime `context` command and send matching JSON on
    stdin. Preserve the fixed runtime prefix and native approvals. Context supplies
    the verified source URL, checkout and configured guidance, not saved plans. Follow-up discussion

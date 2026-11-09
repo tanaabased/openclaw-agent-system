@@ -37,7 +37,7 @@ describe('agent/codex-turn-task', () => {
     assert.equal(output?.receipt, record.id);
     assert.equal(output?.stage, 'assessment');
     assert.equal(output?.worktree, native.cwd);
-    assert.deepEqual(output?.contextRequest, { action: 'context', id: record.id });
+    assert.deepEqual(output?.contextRequest, { action: 'context' });
     assert.doesNotMatch(JSON.stringify(output), /PRIVATE-PROVIDER-PROSE|OLD-PLAN/);
     assert.deepEqual(record, before);
   });
@@ -115,7 +115,7 @@ describe('agent/codex-turn-task', () => {
     });
     assert.equal(output?.worktree, '/task');
     assert.equal(output?.nativeCwd, '/another-checkout');
-    assert.deepEqual(output?.contextRequest, { action: 'context', id: record.id });
+    assert.deepEqual(output?.contextRequest, { action: 'context' });
   });
   it('should map feedback through its exact native send receipt before the sender records a turn id', async () => {
     const feedback = {

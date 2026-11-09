@@ -7,7 +7,7 @@ import { retirementRequestSchema } from './retirement-schema.ts';
 import { directImplementationRequestSchema } from './implementation-schema.ts';
 import { directAssessmentRequestSchema } from './assessment-schema.ts';
 import { feedbackDecisionSchema } from '../../agent/feedback-work.ts';
-import { Type, type TProperties } from 'typebox';
+import { Type, type Static, type TProperties } from 'typebox';
 import { assessmentSummaryRequestProperties } from '../../agent/assessment-summary-state.ts';
 import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';
@@ -160,3 +160,22 @@ const dispatchRequestVariants = Type.Union([
   object({ action: Type.Literal('retry'), id }),
 ]);
 export const dispatchParameters = discriminatedSchema('action', dispatchRequestVariants);
+
+// current-task reads have no model-facing owner selector.
+type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
+  action: 'context' | 'implementation-context';
+}
+  ? Omit<T, 'id'>
+  : T;
+export const dispatchModelParameters = Type.Unsafe<ModelDispatchInput>(
+  discriminatedSchema(
+    'action',
+    Type.Union(
+      dispatchRequestVariants.anyOf.map((variant) =>
+        ['context', 'implementation-context'].includes(String(variant.properties.action.const))
+          ? Type.Omit(variant, ['id'], { additionalProperties: false })
+          : variant,
+      ),
+    ),
+  ),
+);
