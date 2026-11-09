@@ -77,6 +77,7 @@ const requestSchema = Type.Object(
     material: Type.Optional(implementationMaterialSchema),
     eventId: Type.Optional(Type.String()),
     digest: Type.Optional(Type.String()),
+    apply: Type.Optional(Type.Boolean()),
     decision: Type.Optional(feedbackDecisionSchema),
     implementationResult: Type.Optional(implementationResultSchema),
     result: Type.Optional(feedbackResultSchema),
@@ -760,7 +761,7 @@ export default async function runCodexFeedback(
                   ? source.feedback.comments[0]?.replyToId
                   : undefined;
               const destination = `https://github.com/${owner}/${name}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}${root ? `#discussion_r${root}` : ''}`;
-              if (operatorPublication && input.digest === undefined)
+              if (operatorPublication && input.digest === undefined && !input.apply)
                 return {
                   status: operatorPublication
                     ? 'publication-approval-required'
@@ -775,10 +776,15 @@ export default async function runCodexFeedback(
                     `\n\n[Reply destination ↗](${destination})`,
                   authority: schedule!.saved,
                   instruction: operatorPublication
-                    ? 'Only apply this digest after explicit human approval of this exact retained reply and destination. This operator recovery never resumes a model or changes the draft.'
-                    : 'This preview makes no GitHub write. Reproduce its presentation verbatim, including the quoted title and every quoted body line, when requesting native execution approval. The freshly reconciled operator-activated feedback workflow authorizes a routine reply within this scope; call publish with this digest. Native approval review still applies: stop on denial and never substitute another route.',
+                    ? 'Publish only with explicit operator direction for this exact retained reply and destination. Supply the source URL and retained publicText; bindings are resolved internally. This recovery never resumes a model or changes the draft.'
+                    : 'This preview makes no GitHub write. Preserve its presentation for native approval. The activated workflow authorizes a routine reply within this scope; publish using the source and authored text. Native approval review still applies.',
                 };
-              if (operatorPublication && input.digest !== digest)
+              if (
+                operatorPublication &&
+                (input.apply
+                  ? input.publicText !== event.result.publicText
+                  : input.digest !== digest)
+              )
                 throw new Error('feedback-publication-approval-stale');
               if (operatorPublication) {
                 event.publicationApproval = { by: caller, at: now, digest };

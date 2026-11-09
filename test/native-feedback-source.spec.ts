@@ -1,3 +1,4 @@
+import nativeFeedbackPublication from '../agent/native-feedback-publication.ts';
 import assert from 'node:assert/strict';
 import nativeFeedbackReconciliation from '../agent/native-feedback-reconciliation.ts';
 import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
@@ -17,6 +18,60 @@ const events = [41, 42].map((number) => ({
 const source = 'https://github.com/owner/repo/issues/7#issuecomment-41';
 
 describe('native feedback source selection', () => {
+  it('selects operator publication by exact source and retained text without accepting bindings', () => {
+    const issue = {
+      id: 'admission',
+      repository: { owner: { login: 'owner' }, name: 'repo' },
+    } as ManagedIssue;
+    const event = {
+      ...events[0]!,
+      result: { privateText: 'private answer', publicText: 'the exact answer' },
+    };
+    const record = {
+      id: 'task',
+      intakeId: 'admission',
+      feedback: { events: [event] },
+    } as SharedDispatchRecord & { feedback: { events: (typeof event)[] } };
+    const input = { action: 'publish-approved', source, publicText: 'the exact answer' };
+    assert.deepEqual(nativeFeedbackPublication(input, [record], [issue]), {
+      action: 'publish-approved',
+      id: 'task',
+      eventId: '41',
+      apply: true,
+      publicText: input.publicText,
+    });
+    assert.equal(
+      nativeFeedbackPublication(
+        { action: 'publish-approved', source, preview: true },
+        [record],
+        [issue],
+      ).apply,
+      false,
+    );
+    for (const key of ['id', 'eventId', 'digest', 'apply'])
+      assert.throws(
+        () => nativeFeedbackPublication({ ...input, [key]: 'override' }, [record], [issue]),
+        /override/,
+      );
+    assert.throws(
+      () => nativeFeedbackPublication({ ...input, publicText: 'different' }, [record], [issue]),
+      /not-admitted/,
+    );
+    assert.throws(
+      () => nativeFeedbackPublication(input, [record, { ...record, id: 'second' }], [issue]),
+      /ambiguous/,
+    );
+    assert.throws(
+      () =>
+        nativeFeedbackPublication(
+          input,
+          [{ ...record, retired: { at: 1 } } as typeof record],
+          [issue],
+        ),
+      /not-admitted/,
+    );
+  });
+
   it('should reconcile only the coordinators own admitted source without copied task or event ids', () => {
     const issue = {
       id: 'admission',

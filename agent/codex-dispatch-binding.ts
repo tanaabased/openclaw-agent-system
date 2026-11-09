@@ -1,3 +1,4 @@
+import nativeFeedbackPublication from './native-feedback-publication.ts';
 import { codexDispatchNative } from './codex-dispatch-native.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import { selectCodexIntake } from './codex-intake.ts';
@@ -118,4 +119,28 @@ export async function codexFeedbackReconciliation(
       input.source,
     ),
   };
+}
+
+export async function codexFeedbackPublication(
+  pluginData: string,
+  input: Record<string, unknown>,
+  threadId: string,
+) {
+  const current = await selectCodexIntake(
+    pluginData,
+    {},
+    { resolvePolicy: false, inspectionOnly: true },
+  );
+  const connection = await connectCodexThreads(current.workspace, current.codexHome);
+  try {
+    await codexDispatchNative(connection.request).operatorInput(threadId);
+  } finally {
+    await connection.close();
+  }
+  const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  return nativeFeedbackPublication(
+    input,
+    (await journal.read()).records,
+    (await current.store.read())?.records ?? [],
+  );
 }
