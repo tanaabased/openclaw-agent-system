@@ -66,7 +66,7 @@ export function nativeDispatchResponse<T>(
     ? {
         ...value,
         target: managedTargetUrl(issue),
-        ...(event
+        ...(event && !('source' in value)
           ? {
               source: feedbackTarget(
                 `${issue.repository.owner.login}/${issue.repository.name}`,

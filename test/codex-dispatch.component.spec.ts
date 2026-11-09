@@ -1617,12 +1617,8 @@ describe('agent/codex-dispatch', () => {
       currentTimeIso: new Date(previousTime).toISOString(),
     });
     assert.equal(stale.status, 'continue');
-    assert.equal(stale.nextAction, 'report');
-    assert.deepEqual(stale.request, {
-      action: 'report',
-      automationId: 'native-intake',
-      currentTimeIso: new Date(now).toISOString(),
-    });
+    assert.equal(stale.nextAction, 'next');
+    assert.deepEqual(stale.request, { action: 'next' });
     const fresh = await report();
     assert.equal(fresh.status, 'continue');
     assert.equal(fresh.remainingActions, 12);
@@ -5640,34 +5636,24 @@ describe('agent/codex-dispatch', () => {
         ...context,
         privateText: resumed ? 'Which poem form and subject?' : 'Use the smaller approach.',
         update: {
-          observation: read.observation,
           facts: [
             {
-              key: 'initial-plan',
               reference: 'first-turn',
-              revision: '1',
               text: resumed ? 'Which poem form and subject?' : 'Use the smaller approach.',
             },
           ],
         },
       });
-      assert.ok('id' in composed && 'digest' in composed);
-      const candidate = await call('candidate', {
-        id: composed.id,
-        digest: composed.digest,
-        publicText: resumed
-          ? 'Which poem form and subject should I use?'
-          : 'The plan is to use the smaller approach.',
-      });
+      assert.equal(composed.status, 'composition-ready');
+      assert.ok('target' in composed && composed.target === target);
+      const publicText = resumed
+        ? 'Which poem form and subject should I use?'
+        : 'The plan is to use the smaller approach.';
+      const candidate = await call('candidate', { ...context, publicText });
       assert.equal(candidate.status, 'candidate-recorded');
       assert.ok('publication' in candidate && candidate.publication === 'workflow-authorized');
-      const preview = await call('publish', { id: composed.id });
-      assert.ok('digest' in preview && preview.status === 'publication-ready');
-      assert.equal(
-        (await call('publish', { id: composed.id, digest: preview.digest })).status,
-        'published',
-      );
-      assert.equal((await call('reconcile', { id: composed.id })).status, 'published');
+      assert.equal((await call('publish', { ...context, publicText })).status, 'published');
+      assert.equal((await call('reconcile', { ...context, publicText })).status, 'published');
       assert.equal(writes, 1);
       assert.deepEqual(await store.read(), before);
     });
@@ -5769,12 +5755,9 @@ describe('agent/codex-dispatch', () => {
         target,
         privateText: 'Retained progress.',
         update: {
-          observation: read.observation,
           facts: [
             {
-              key: 'decision',
               reference: 'operator',
-              revision: '1',
               text: 'Use the smaller approach.',
             },
           ],

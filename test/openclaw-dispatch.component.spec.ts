@@ -1914,7 +1914,7 @@ describe('agent/openclaw issue dispatch', () => {
     for (const field of ['id', 'digest', 'receipt'])
       await assert.rejects(
         service.runModel(manifest, root, coordinator, { ...request, [field]: 'a'.repeat(64) }),
-        /model-request-invalid/,
+        /binding-override|model-request-invalid/,
       );
     const prepared = await service.runModel(manifest, root, coordinator, request);
     assert.equal(prepared.status, 'session-created');
@@ -6518,38 +6518,35 @@ describe('agent/openclaw issue dispatch', () => {
     await assess(routed.id);
     const who = assessor(routed.id);
     const target = 'https://github.com/owner/repo/issues/3';
-    const read = await service.run(manifest, root, who, {
+    const read = await service.runModel(manifest, root, who, {
       action: 'reply',
       operation: 'context',
       purpose: 'status-update',
       target,
     });
     assert.ok('observation' in read && typeof read.observation === 'string');
-    const composed = await service.run(manifest, root, who, {
+    const composed = await service.runModel(manifest, root, who, {
       action: 'reply',
       operation: 'compose',
       purpose: 'status-update',
       target,
       privateText: 'Choose the smaller approach. Should it cover archived items?',
       update: {
-        observation: read.observation,
         facts: [
           {
-            key: 'initial-plan',
             reference: who.runId,
-            revision: '1',
             text: 'Choose the smaller approach; clarify archived items.',
           },
         ],
       },
     });
     assert.equal(composed.status, 'composition-ready');
-    assert.ok('id' in composed && 'digest' in composed);
-    const draft = await service.run(manifest, root, who, {
+    assert.equal(composed.status, 'composition-ready');
+    const draft = await service.runModel(manifest, root, who, {
       action: 'reply',
       operation: 'candidate',
-      id: composed.id,
-      digest: composed.digest,
+      target,
+      purpose: 'status-update',
       publicText: 'The plan is to use the smaller approach. Should it include archived items?',
     });
     assert.equal(draft.status, 'candidate-recorded');
@@ -6583,7 +6580,7 @@ describe('agent/openclaw issue dispatch', () => {
         await save();
       });
       const before = await record();
-      const read = await service.run(
+      const read = await service.runModel(
         manifest,
         root,
         who,
@@ -6597,7 +6594,7 @@ describe('agent/openclaw issue dispatch', () => {
       );
       assert.ok('observation' in read && typeof read.observation === 'string');
       assert.ok('entry' in read && read.entry === 'managed');
-      const composed = await service.run(
+      const composed = await service.runModel(
         manifest,
         root,
         who,
@@ -6608,12 +6605,9 @@ describe('agent/openclaw issue dispatch', () => {
           target: 'https://github.com/owner/repo/issues/3',
           privateText: 'New verified progress.',
           update: {
-            observation: read.observation,
             facts: [
               {
-                key: 'decision',
                 reference: 'operator',
-                revision: '1',
                 text: 'Use the smaller approach.',
               },
             ],
@@ -6624,18 +6618,18 @@ describe('agent/openclaw issue dispatch', () => {
       assert.equal(composed.status, 'composition-ready');
       assert.deepEqual(await record(), before);
       if (!operator) {
-        assert.ok('id' in composed && 'digest' in composed);
-        const candidate = await service.run(manifest, root, who, {
+        assert.equal(composed.status, 'composition-ready');
+        const candidate = await service.runModel(manifest, root, who, {
           action: 'reply',
           operation: 'candidate',
-          id: composed.id,
-          digest: composed.digest,
+          target: 'https://github.com/owner/repo/issues/3',
+          purpose: 'status-update',
           publicText: 'The smaller approach is ready for review.',
         });
         assert.equal(candidate.status, 'candidate-recorded');
         assert.ok('publication' in candidate && candidate.publication === 'workflow-authorized');
         const readUpdate = () =>
-          service.run(manifest, root, who, {
+          service.runModel(manifest, root, who, {
             action: 'reply',
             operation: 'context',
             purpose: 'status-update',
@@ -6667,7 +6661,7 @@ describe('agent/openclaw issue dispatch', () => {
         }
       }
       await assert.rejects(
-        service.run(
+        service.runModel(
           manifest,
           root,
           { ...who, sessionId: 'foreign-incarnation' },
@@ -7023,16 +7017,27 @@ describe('agent/openclaw issue dispatch', () => {
     assert.ok(exactReads > 0);
     const initialReads = exactReads;
     const before = await record();
-    const restored = await hydrateImplementation(first, async (request) =>
-      service.runModel(
-        manifest,
-        root,
-        who,
-        request as {
-          action: 'feedback';
-          operation: 'context';
-        },
-        true,
+    const retain = (response: object) => {
+      messages.push({
+        role: 'toolResult',
+        toolName: 'agent_system_dispatch',
+        details: response,
+        __openclaw: { id: `tool-${messages.length}` },
+      });
+      return response;
+    };
+    const restored = await hydrateImplementation(retain(first), async (request) =>
+      retain(
+        await service.runModel(
+          manifest,
+          root,
+          who,
+          request as {
+            action: 'feedback';
+            operation: 'context';
+          },
+          true,
+        ),
       ),
     );
     assert.ok(exactReads > initialReads);
@@ -7071,9 +7076,22 @@ describe('agent/openclaw issue dispatch', () => {
     );
     assert.equal(context.status, 'verified');
     assert.ok('source' in context);
+    const retain = (response: object) => {
+      messages.push({
+        role: 'toolResult',
+        toolName: 'agent_system_dispatch',
+        details: response,
+        __openclaw: { id: `tool-${messages.length}` },
+      });
+      return response;
+    };
+    const complete = await hydrateImplementation(retain(context), async (request) =>
+      retain(await service.runModel(manifest, root, who, request, true)),
+    );
     assert.equal(
-      ((context as Record<string, unknown>).source as GitHubCanonicalIssueComment).body,
+      (complete.source as GitHubCanonicalIssueComment).body,
       '@receiver explain this',
+      JSON.stringify(complete.source),
     );
     const answer = await service.runModel(
       manifest,

@@ -263,11 +263,17 @@ export default class OpenClawDispatch {
       authority,
     );
     if (response && typeof response === 'object' && 'id' in response) {
-      const current = await this.scope(manifest, workspace);
+      const current = await this.dependencies.intake.select(manifest, workspace, {
+        resolvePolicy: false,
+      });
+      const journal = new OpenClawDispatchStore(
+        this.dependencies.root,
+        current.store.location.scope,
+      );
       response = nativeDispatchResponse(
         response,
-        (await current.journal.read()).records,
-        current.admitted.records,
+        (await journal.read()).records,
+        (await current.store.read())?.records ?? [],
       );
     }
     return nativeMaterialResponse(
