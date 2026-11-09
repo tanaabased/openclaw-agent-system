@@ -51,10 +51,10 @@ and shared installation cleanup configuration; do not resolve them independently
 
 An explicit operator request and one exact managed task or unmanaged native chat.
 Use `native` for an exact OpenClaw session key or standalone Codex thread id,
-never together with managed `id`. Do not infer a target from a title or directory.
-For a managed task, reuse its current verified
-receipt when available. Outside the task, inspect native managed records and select
-exactly one id; ask for the missing selection if ambiguous. A URL or current directory
+never together with managed `target`. Do not infer a target from a title or directory.
+For a managed task, omit the target in its current chat or select its exact issue URL.
+Outside the task, inspect native managed records and select the requested issue;
+ask for the missing resource choice if ambiguous. Never supply a task receipt ID. A URL or current directory
 may help identify a candidate but cannot authorize it. Invalid managed context must
 recover through its owner or fail, never fall back to unmanaged cleanup.
 

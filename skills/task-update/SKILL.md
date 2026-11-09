@@ -89,7 +89,7 @@ shared reply owners. An update request never begins implementation or changes mo
    prose is supporting context, not proof of task linkage. Do not guess between PRs. When this differs from
    `destination`, refresh `reply context` at that URL before composing. An explicit
    request to post on the issue or a particular PR keeps that exact target instead.
-   Once composed, retain that target and observation through publication; recovery
+   Once composed, retain that target through publication; the runtime preserves its observation. Recovery
    never moves an attempted write because a PR later closes or its linkage changes.
 3. Read the selected destination's discussion through `publicContext.discussion.source`
    using native GitHub tools. Compare it and the returned linked PR metadata with

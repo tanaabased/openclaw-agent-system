@@ -140,7 +140,7 @@ describe('agent/codex-issue-notice', () => {
       changed: true,
     });
     assert.equal(notice.severity, 'warning');
-    assert.match(notice.message, /same recovery action/);
+    assert.match(notice.message, /same semantic recovery target/);
     assert.match(notice.message, /action:handoff/);
     assert.match(notice.message, /do not refresh assessment context after implementation/);
     assert.match(notice.message, /existing authorization/);
