@@ -136,16 +136,16 @@ describe('agent/assessment-entry', () => {
       const context = await legacyContext();
       assert.ok('id' in context && typeof context.id === 'string');
       await assert.rejects(
-        call('result', { id: context.id, result: { ...ready, fullAssessment: undefined } }),
+        call('result', { result: { ...ready, fullAssessment: undefined } }),
         /assessment-result-incomplete/,
       );
       await assert.rejects(
-        call('result', { id: context.id, result: { ...ready, fullAssessment: ' ' } }),
+        call('result', { result: { ...ready, fullAssessment: ' ' } }),
         /assessment-result-incomplete/,
       );
       const unchanged = await call('context');
       assert.equal('previousResult' in unchanged, false);
-      assert.equal((await call('result', { id: context.id, result: ready })).status, 'formatted');
+      assert.equal((await call('result', { result: ready })).status, 'formatted');
     });
   for (const runtime of ['codex', 'openclaw'] as const)
     it(`should deliver direct assessment references without prefetching issue content in ${runtime}`, async () => {
@@ -224,7 +224,6 @@ describe('agent/assessment-entry', () => {
       {
         action: 'assessment',
         operation: 'result',
-        id: context.id,
         target,
         result: {
           ...ready,
@@ -263,22 +262,45 @@ describe('agent/assessment-entry', () => {
     deps.git = async () => {
       throw new Error('checkout unavailable');
     };
-    const restored = await call('present', { id: context.id });
+    const restored = await call('present', {});
     assert.equal(restored.status, 'presented');
     const full = await assessmentEntry(
-      { action: 'assessment', operation: 'present', id: context.id, includeDetails: true },
+      { action: 'assessment', operation: 'present', includeDetails: true },
       deps,
     );
     assert.ok('presentation' in full && full.presentation!.includes(ready.fullAssessment!));
   });
+  for (const runtime of ['codex', 'openclaw'] as const)
+    it(`should select historical ${runtime} assessments by native custody and semantic target`, async () => {
+      deps.binding.runtime = runtime;
+      const original = await legacyContext();
+      const store = new AssessmentEntryStore(deps.root, deps.binding);
+      await store.exclusive(async (entries, save) => {
+        entries[0]!.result = ready as AssessmentResult;
+        await save();
+      });
+      const present = (extra: object = {}) =>
+        assessmentEntry({ action: 'assessment', operation: 'present', ...extra }, deps);
+      assert.equal((await present()).status, 'presented');
+      for (const field of ['id', 'previousResultDigest', 'agentId', 'workspace', 'threadId'])
+        await assert.rejects(present({ [field]: original.id }), /assessment-request-invalid/);
+      await store.exclusive(async (entries, save) => {
+        entries.push({ ...entries[0]!, id: 'e'.repeat(64), target: target.replace('/3', '/4') });
+        await save();
+      });
+      await assert.rejects(present(), /assessment-target-selection-required/);
+      assert.equal((await present({ target })).status, 'presented');
+      deps.binding = { ...deps.binding, incarnation: 'another-native-session' };
+      assert.equal((await present()).status, 'clarification-needed');
+    });
   it('should format revisions without retaining the initial plan or later versions', async () => {
     const first = await legacyContext();
     assert.ok('id' in first);
     for (const plan of ['Original plan', 'Current revised plan']) {
       deps.turnId = `turn-${plan.length}`;
       deps.inputId = deps.turnId;
-      await call('context', { id: first.id });
-      const formatted = await call('result', { id: first.id, result: { ...ready, plan } });
+      await assessmentEntry({ action: 'assessment', operation: 'context', target }, deps);
+      const formatted = await call('result', { result: { ...ready, plan } });
       assert.equal(formatted.status, 'formatted');
     }
     const entries = await new AssessmentEntryStore(deps.root, deps.binding).exclusive(
@@ -304,20 +326,17 @@ describe('agent/assessment-entry', () => {
       evidence: [],
       progress: { completed: ['Inspected code.'], remaining: ['Answer.'] },
     };
-    assert.equal((await call('result', { id: first.id, result: question })).status, 'formatted');
+    assert.equal((await call('result', { result: question })).status, 'formatted');
     deps.turnId = 'answer';
     deps.inputId = 'answer-input';
-    await assert.rejects(
-      call('result', { id: first.id, result: ready }),
-      /assessment-context-required/,
+    await assert.rejects(call('result', { result: ready }), /assessment-context-required/);
+    const revised = await assessmentEntry(
+      { action: 'assessment', operation: 'context', target, revise: true },
+      deps,
     );
-    const revised = await call('context', { id: first.id, revise: true });
-    assert.ok('previousResultDigest' in revised);
-    assert.equal(revised.previousResultDigest, undefined);
+    assert.equal('previousResultDigest' in revised, false);
     await call('result', {
-      id: first.id,
       result: ready,
-      previousResultDigest: revised.previousResultDigest,
     });
     const entries = await new AssessmentEntryStore(deps.root, deps.binding).exclusive(
       async (entries) => entries,
@@ -328,19 +347,16 @@ describe('agent/assessment-entry', () => {
     const first = await legacyContext();
     assert.ok('id' in first);
     revision = 'b'.repeat(40);
-    await assert.rejects(
-      call('result', { id: first.id, result: ready }),
-      /assessment-checkout-changed/,
-    );
+    await assert.rejects(call('result', { result: ready }), /assessment-checkout-changed/);
     revision = 'a'.repeat(40);
-    await call('result', { id: first.id, result: ready });
+    await call('result', { result: ready });
     await assert.rejects(
-      call('result', { id: first.id, result: { ...ready, progress: [] } }),
+      call('result', { result: { ...ready, progress: [] } }),
       /assessment-result-invalid/,
     );
-    assert.equal((await call('result', { id: first.id, result: ready })).status, 'formatted');
+    assert.equal((await call('result', { result: ready })).status, 'formatted');
     await assert.rejects(
-      call('result', { id: first.id, result: { ...ready, fullAssessment: 'x'.repeat(96001) } }),
+      call('result', { result: { ...ready, fullAssessment: 'x'.repeat(96001) } }),
       /assessment-result-invalid/,
     );
     deps.assertCurrent = async () => {
@@ -348,7 +364,10 @@ describe('agent/assessment-entry', () => {
     };
     await assert.rejects(call('context'), /native-input-changed/);
     deps.assertCurrent = async () => {};
-    const read = await call('context', { id: first.id });
+    const read = await assessmentEntry(
+      { action: 'assessment', operation: 'context', target },
+      deps,
+    );
     assert.equal('previousResult' in read, false);
   });
   it('should refresh managed evidence and configuration without changing historical results', async () => {
@@ -437,7 +456,7 @@ describe('agent/assessment-entry', () => {
       });
       for (const request of [
         { operation: 'context', revise: true },
-        { operation: 'result', id: 'a'.repeat(64), result: { ...ready, plan: 'Revised plan.' } },
+        { operation: 'result', result: { ...ready, plan: 'Revised plan.' } },
       ]) {
         const response = await call(request.operation, request);
         if (request.operation === 'context') {

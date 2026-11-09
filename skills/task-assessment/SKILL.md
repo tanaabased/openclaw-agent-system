@@ -97,7 +97,7 @@ For an explicit tracked assessment request without supplied execution context:
    context and guidance. If it is this skill, continue with steps 2–8 below.
 4. Format through `assessment render` using `presentationRequest` plus `result`
    matching `resultFormat`. This route saves no assessment or summary. Historical
-   `assessment present` with an exact retained id remains an explicit read only.
+   `assessment present` reads history in the current native conversation; select an issue URL when several targets have history. It remains an explicit read only.
 
 Direct assessment authorizes neither implementation nor publication, including
 with Work/Auto defaults. Invalid managed ownership must recover through its owner

@@ -20,7 +20,7 @@ import AssessmentValidationError from './assessment-validation.ts';
 
 const renderRequestSchema = Type.Object(
   {
-    ...Type.Omit(directAssessmentRequestSchema, ['id']).properties,
+    ...directAssessmentRequestSchema.properties,
     ...Type.Required(Type.Pick(directAssessmentRequestSchema, ['target'])).properties,
     operation: Type.Literal('render'),
     includeDetails: Type.Optional(Type.Literal(false)),

@@ -83,22 +83,23 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     (input.material && input.operation !== 'context')
   )
     throw new Error('assessment-request-invalid');
-  if (input.operation !== 'context' && !input.id) throw new Error('assessment-entry-id-required');
   await deps.assertCurrent();
-  const fresh = input.operation === 'context' && !input.id && Boolean(input.target && input.path);
+  const fresh = input.operation === 'context' && Boolean(input.target && input.path);
   const store = new AssessmentEntryStore(deps.root, deps.binding);
-  // find the retained destination without consulting provider prose or changing ownership.
-  const retained =
-    input.id || (!fresh && input.target)
-      ? await store.exclusive(async (entries) =>
-          entries.find((entry) =>
-            input.id
-              ? entry.id === input.id
-              : entry.target.toLowerCase() === input.target!.toLowerCase(),
-          ),
-        )
-      : undefined;
-  const targetUrl = input.target ?? retained?.target;
+  // Historical reads select within the native conversation's existing custody.
+  // Fresh context remains independent of historical storage.
+  const selectedTarget = input.target ?? deps.currentTarget;
+  const retained = fresh
+    ? undefined
+    : await store.exclusive(async (entries) => {
+        const candidates = entries.filter((entry) =>
+          selectedTarget ? entry.target.toLowerCase() === selectedTarget.toLowerCase() : true,
+        );
+        if (candidates.length > 1)
+          throw new Error('assessment-target-selection-required: select the issue URL');
+        return candidates[0];
+      });
+  const targetUrl = selectedTarget ?? retained?.target;
   if (!targetUrl)
     return {
       status: 'clarification-needed',
@@ -148,7 +149,6 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
       id: saved.id,
       target: saved.target,
       previousResult: saved.result,
-      previousResultDigest: automationHash(saved.result),
       previousResultTurnId: saved.resultTurnId,
       currentTurnId: deps.turnId,
       presentation: renderAssessmentResult(saved.result, {
@@ -178,7 +178,6 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
       retained: true,
       entry: 'direct',
       previousResult: managed.result,
-      previousResultDigest: automationHash(managed.result),
       receipt: managed.receipt,
       presentation: renderAssessmentResult(managed.result, {
         issue: { label: `${repository}#${locator.number}`, url: targetUrl },
@@ -232,10 +231,6 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
     handoff,
     resultContract: 'assessment-result/v1',
     resultSchema: assessmentResultContextSchema,
-    previousResultDigest:
-      (record.result ?? managed?.result)
-        ? automationHash(record.result ?? managed!.result)
-        : undefined,
     recording: 'native-context' as const,
     presentationRequest: assessmentPresentationRequest(canonical, true),
     instructions:
@@ -263,10 +258,7 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
   const entries: AssessmentEntries = managed?.entries ?? store.exclusive.bind(store);
   return entries(async (records, save) => {
     const binding = automationHash(deps.binding);
-    let entry = input.id
-      ? records.find((e) => e.id === input.id && e.binding === binding)
-      : records.find((e) => e.binding === binding && e.target === canonical);
-    if (input.id && !entry) throw new Error('assessment-entry-unavailable');
+    let entry = records.find((e) => e.binding === binding && e.target === canonical);
     if (
       entry &&
       (entry.target !== canonical ||
@@ -332,7 +324,6 @@ export default async function assessmentEntry(input: unknown, deps: AssessmentEn
         {
           action: 'assessment',
           operation: 'context',
-          id: entry.id,
           target: canonical,
           path: checkout.path,
         },

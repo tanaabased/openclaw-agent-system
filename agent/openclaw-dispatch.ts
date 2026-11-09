@@ -381,7 +381,7 @@ export default class OpenClawDispatch {
               : { action: 'implementation-context', id };
     }
     if (input.action === 'assessment' && input.operation === 'render') {
-      if (input.id || caller.sessionKey) {
+      if (caller.sessionKey) {
         const current = await this.dependencies.intake.select(manifest, workspace, {
           resolvePolicy: false,
         });

@@ -3,7 +3,6 @@ import { implementationMaterialSchema } from './implementation-material-schema.t
 
 import { assessmentPresentationSchema } from '../../agent/assessment-result.ts';
 
-const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
 export const directAssessmentRequestSchema = Type.Object(
   {
     action: Type.Literal('assessment'),
@@ -14,22 +13,12 @@ export const directAssessmentRequestSchema = Type.Object(
       Type.Literal('present'),
     ]),
     material: Type.Optional(implementationMaterialSchema),
-    id: Type.Optional(id),
     target: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
     path: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
     revise: Type.Optional(Type.Boolean()),
     includeDetails: Type.Optional(Type.Boolean()),
     assessmentOnly: Type.Optional(Type.Boolean()),
-    previousResultDigest: Type.Optional(id),
     result: Type.Optional(assessmentPresentationSchema),
   },
-  {
-    additionalProperties: false,
-    allOf: [
-      {
-        if: { properties: { operation: { const: 'render' } }, required: ['operation'] },
-        then: { not: { required: ['id'] } },
-      },
-    ],
-  },
+  { additionalProperties: false },
 );
