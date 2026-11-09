@@ -1455,6 +1455,14 @@ for (const scenario of [
               baseline: {},
               events: [
                 {
+                  id: 'f'.repeat(64),
+                  native: true,
+                  number: 123,
+                  itemType: 'issue',
+                  source: JSON.stringify({ databaseId: 41 }),
+                  turn: { runId: 'earlier-delivery' },
+                },
+                {
                   id: 'e'.repeat(64),
                   native: true,
                   number: 123,

@@ -425,8 +425,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
         contextRequest: { source?: string };
       }>
     | undefined;
+  const incoming = prompt.split('Agent System model-only current-turn facts (keep private):')[0]!;
   const received = available?.filter(({ source }) =>
-    prompt.includes(
+    incoming.includes(
       `/${source.itemType === 'issue' ? 'issues' : 'pull'}/${source.number}#${source.kind}${source.commentId}`,
     ),
   );
