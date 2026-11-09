@@ -1799,8 +1799,6 @@ for (const scenario of [
             );
           }
           assert.equal('digest' in (await runAction(input, 'reply')), false);
-          append(input, 'feedback-preview', { status: 'publication-ready', digest });
-          assert.equal('digest' in (await runAction(input, 'reply')), false);
           append(input, 'feedback-publish', {
             status: 'published',
             presentation: 'Complete private and public presentation',

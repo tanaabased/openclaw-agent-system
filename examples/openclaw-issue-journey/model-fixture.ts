@@ -37,13 +37,11 @@ const dispatchStages = [
   'feedback-context',
   'feedback-compose',
   'feedback-candidate',
-  'feedback-preview',
   'feedback-publish',
   'direct-assessment-context',
   'direct-assessment-result',
   'manual-compose',
   'manual-candidate',
-  'manual-preview',
   'manual-publish',
   'manual-reconcile',
   'update-context',
@@ -54,7 +52,6 @@ const dispatchStages = [
 function assessmentRequest(context: Record<string, unknown>, payload: object) {
   assert.ok(Value.Check(assessmentPresentationSchema, payload));
   const presentation = { ...(context.presentationRequest as Record<string, unknown>) };
-  delete presentation.id;
   return {
     action: 'assessment',
     operation: 'render',

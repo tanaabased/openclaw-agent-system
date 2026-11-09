@@ -17,16 +17,13 @@ const dispatchStages = [
   ...Array.from({ length: 8 }, (_, index) =>
     ['next', 'prepare', 'assess', 'reconcile'].map((stage) => `${stage}-${index}`),
   ).flat(),
-  ...['context', 'compose', 'candidate', 'preview', 'publish'].map(
-    (stage) => `native-plan-${stage}`,
-  ),
+  ...['context', 'compose', 'candidate', 'publish'].map((stage) => `native-plan-${stage}`),
   'native-plan-render',
   'context',
   'result',
   'recovery-present',
   'summary-compose',
   'summary-candidate',
-  'summary-preview',
   'summary-publish',
   'report',
   'discovery-inspect',
@@ -64,7 +61,6 @@ const dispatchStages = [
   'feedback-result',
   'feedback-compose',
   'feedback-candidate',
-  'feedback-preview',
   'feedback-publish',
 ];
 
