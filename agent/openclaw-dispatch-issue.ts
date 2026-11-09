@@ -1,7 +1,10 @@
 import { hasDeliveredImplementation, nativeIssueContext } from './implementation-delivery.ts';
 import recoverFeedbackPublication from './feedback-publication-recovery.ts';
 import feedbackPresentation from './feedback-presentation.ts';
-import openClawFeedbackInput, { selectedOpenClawFeedback } from './openclaw-feedback-input.ts';
+import {
+  resolveOpenClawTurnFeedback,
+  selectedOpenClawFeedback,
+} from './openclaw-feedback-input.ts';
 import openClawResponseAuthority from './openclaw-response-authority.ts';
 import workflowStatus from './workflow-status.ts';
 import { isCurrentTaskPullRequest } from './task-pull-request.ts';
@@ -470,8 +473,8 @@ export default class OpenClawDispatchIssue {
       const signal = authority.signal
         ? AbortSignal.any([authority.signal, transactionSignal])
         : transactionSignal;
-      const selectedFeedback = selectedOpenClawFeedback(record, caller.runId);
-      const feedbackEvent = selectedFeedback?.native ? selectedFeedback : undefined;
+      let feedbackEvent:
+        NonNullable<OpenClawDispatchRecord['feedback']>['events'][number] | undefined;
       const assertCurrent = async () => {
         signal.throwIfAborted();
         await authority.assertCurrent?.();
@@ -512,14 +515,14 @@ export default class OpenClawDispatchIssue {
       return this.context.dependencies.credential.use(
         { signal, assertCurrent },
         async (request) => {
-          const nativeFeedback =
-            feedbackEvent &&
-            (await openClawFeedbackInput(
-              record,
-              caller,
-              request,
-              this.context.dependencies.config(),
-            ));
+          const nativeFeedback = await resolveOpenClawTurnFeedback(
+            record,
+            caller,
+            request,
+            this.context.dependencies.config(),
+          );
+          feedbackEvent = nativeFeedback?.event;
+          await assertCurrent();
           if (
             input.action === 'implementation-context' &&
             input.scope &&

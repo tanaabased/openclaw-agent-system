@@ -11,7 +11,7 @@ import {
 } from './native-dispatch-selection.ts';
 import openClawSkill from './openclaw-skill.ts';
 import nativeFeedbackSource from './native-feedback-source.ts';
-import { selectedOpenClawFeedback } from './openclaw-feedback-input.ts';
+import { resolveOpenClawTurnFeedback } from './openclaw-feedback-input.ts';
 import { dispatchAdmission } from './managed-issue.ts';
 import {
   assertNativeContextInput,
@@ -245,9 +245,14 @@ export default class OpenClawDispatch {
       }
       if (owner && isNativeFeedbackRequest('dispatch', input)) {
         const admission = dispatchAdmission(owner!, current.admitted.records);
+        const selected = input.source
+          ? undefined
+          : await this.dependencies.credential.use(authority, (request) =>
+              resolveOpenClawTurnFeedback(owner, caller, request, this.dependencies.config()),
+            );
         const event = nativeFeedbackSource(
-          owner?.feedback?.events ?? [],
-          owner && selectedOpenClawFeedback(owner, caller.runId)?.id,
+          owner.feedback?.events ?? [],
+          selected?.event.id,
           admission && `${admission.repository.owner.login}/${admission.repository.name}`,
           input.source,
         );
