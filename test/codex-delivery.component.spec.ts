@@ -349,6 +349,18 @@ describe('agent/codex-delivery', () => {
     assert.equal((await store.read()).records[0]!.implementationDelivered, undefined);
     await request('prepare', { eventId });
     assert.equal((await request('publish', { eventId })).status, 'published');
+    delete deps.native!.operatorInput;
+    deps.attachment = async () => true;
+    for (const pullRequest of [undefined, url]) {
+      const linked = await request('link', { eventId, pullRequest });
+      assert.equal(linked.status, 'linked');
+      assert.equal('attached' in linked && linked.attached, true);
+    }
+    for (const pullRequest of [null, 'https://github.com/owner/repo/pull/8'])
+      await assert.rejects(
+        request('link', { eventId, pullRequest }),
+        /delivery-link-operator-required/,
+      );
     const current = await selectCodexIntake(pluginData, { codexHome: deps.codexHome });
     store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
     const saved = (await store.read()).records[0]!;

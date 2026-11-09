@@ -255,10 +255,11 @@ export default async function runCodexDelivery(
       const repository = `${intake.repository.owner.login}/${intake.repository.name}`;
       const previous = record.delivery;
       if (input.action === 'link') {
-        if (input.eventId || deps.schedule) throw new Error('delivery-link-operator-required');
+        if (deps.schedule) throw new Error('delivery-link-operator-required');
         const unchanged = isCurrentTaskPullRequest(record, intake, input.pullRequest);
         if (input.pullRequest !== undefined && !unchanged) {
-          if (!native.operatorInput) throw new Error('delivery-link-operator-required');
+          if (input.eventId || !native.operatorInput)
+            throw new Error('delivery-link-operator-required');
           await native.operatorInput(caller!);
           if (input.pullRequest === null) record.pullRequestLink = null;
           else {
