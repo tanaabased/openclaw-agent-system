@@ -20,6 +20,8 @@ github:
     projects:
       - repository: tanaabased/big-test-bucket
         limit: 3
+        selection:
+          guidance: prefer bounded test coverage improvements
         filters:
           labels: [ready]
           exclude-labels: [blocked]
@@ -27,6 +29,9 @@ github:
           number: 10
           policy: only
       - repository: tanaabased/actions
+        selection:
+          guidance:
+            file: actions-selection.md
         milestone:
           number: 1
           policy: only

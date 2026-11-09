@@ -131,7 +131,8 @@ for runtime in codex openclaw; do
   openclaw agent-system automations list --json | jq -e --arg id "$native" --arg chat "$chat" 'any(.jobs[]; .id == "github-issue-pickup" and .nativeId == $id and .routing == $chat and .nativeEnabled == true)'
   stage=await-scheduled-pickup
   node "$GITHUB_WORKSPACE/scripts/wait-for-automation-run.mjs" --scheduled-after github-issue-pickup "$native" "$due" > "$TMPDIR/pickup-$runtime-scheduled.json"
-  jq -e '(.summary | contains("Guidance source")) and (.summary | contains("inline")) and (.summary | contains("bounded cleanup clarification"))' "$TMPDIR/pickup-$runtime-scheduled.json"
+  stage=verify-scheduled-pickup-report
+  jq -e 'if (.summary | contains("assigned an issue")) and (.summary | contains("2 eligible")) then true else error("scheduled pickup report mismatch: " + tojson) end' "$TMPDIR/pickup-$runtime-scheduled.json"
   grep -F 'code=automation-lifecycle-' "$(openclaw-gateway log-path)" | tail -n 80 | node "$(dirname "$(command -v openclaw-gateway)")/lib/redact-stream.mjs"
   stage=verify-assignment-and-native-assessment
   number=$(jq -er .number "$TMPDIR/pickup-$runtime-selected.json")

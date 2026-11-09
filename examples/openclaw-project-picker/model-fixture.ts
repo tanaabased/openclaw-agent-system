@@ -89,6 +89,14 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
         const candidates = observed.candidates as Array<{ nodeId: string; url: string }>;
         assert.equal(candidates.length, 2);
         assert.match(String(observed.guidance), /bounded cleanup clarification/u);
+        const repositoryGuidance = observed.repositoryGuidance as Record<
+          string,
+          { content: string }
+        >;
+        assert.match(
+          repositoryGuidance['tanaabased/big-test-bucket']!.content,
+          /prefer fixture cleanup/u,
+        );
         const chosen = [];
         for (const [index, candidate] of candidates.entries()) {
           const read = result(`selection-source-${index}`);
@@ -118,6 +126,13 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
       );
       assert.equal(typeof observed.response, 'string');
       assert.match(String(observed.response), /📥/u);
+      if (observed.status === 'assigned') {
+        // cron history is a bounded summary; verify full guidance before returning the report.
+        assert.match(String(observed.response), /Guidance source.*inline/u);
+        assert.match(String(observed.response), /bounded cleanup clarification/u);
+        assert.match(String(observed.response), /prefer fixture cleanup/u);
+        assert.match(String(observed.response), /2 eligible/u);
+      }
       return { content: String(observed.response) };
     }
     throw new Error('pickup fixture discovery budget exhausted');

@@ -186,6 +186,7 @@ Pickup uses the existing GitHub access and approved assignment and feedback auth
 | `projects`                          | yes      | One or more distinct entries with `repository: owner/name`, optional `milestone: {number: 10, policy: only}`, and optional `limit`. `number` accepts a positive integer or a nonempty list of distinct positive integers. `policy` defaults to `only`; `prefer` enables fallback. `limit` is a positive integer and defaults to `1`. |
 | `projects[].filters.labels`         | no       | Label names an issue must have, all required. Omitted or empty means no inclusion restriction.                                                                                                                                                                                                                                       |
 | `projects[].filters.exclude-labels` | no       | Label names that exclude an issue when any is present. Omitted or empty means no exclusion restriction.                                                                                                                                                                                                                              |
+| `projects[].selection.guidance`     | no       | Inline text or `{file: relative/path.md}`, using the same guidance rules. Applies only to that repository, after built-in and global selection guidance; cannot widen eligibility or limits.                                                                                                                                         |
 
 Omit `milestone` to consider all otherwise eligible issues in that repository, including
 issues without a milestone. Use `milestone: {number: 10}` or
@@ -203,7 +204,12 @@ unassigned issue across the configured repositories, subject to ordinary work ca
 Each repository's `limit` is the maximum number of confirmed assignments per window
 on that installation. Once a repository reaches its limit, later scans skip it.
 Completing an issue leaves the used count in place. The scan card shows how many
-assignments each repository has used out of its allowance.
+assignments each repository has used out of its allowance, its eligible issue count,
+and any read warnings. Unreadable or unscanned repositories show an unavailable count.
+If one repository cannot be read, readable repositories remain selectable and the card
+preserves GitHub's diagnostic. Correct access or configuration for the next scan.
+Unreadable repository-specific guidance excludes that repository; unreadable global
+guidance stops selection. Full guidance appears only in debug output.
 
 Verified pickup enters the existing
 assessment and Work workflow; ordinary assignments keep their configured mode.

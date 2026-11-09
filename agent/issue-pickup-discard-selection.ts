@@ -8,6 +8,7 @@ export default function discardPickupSelection(op: PickupOperation) {
   delete op.guidance;
   delete op.guidanceSource;
   delete op.guidancePath;
+  delete op.repositoryGuidance;
   delete op.selectionDigest;
   delete op.rationale;
   delete op.shortlist;
