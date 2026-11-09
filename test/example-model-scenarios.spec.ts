@@ -6,7 +6,11 @@ import { fileURLToPath } from 'node:url';
 
 import { matchFixture, type ChatCompletionRequest, type ContentPart } from '@copilotkit/aimock';
 
-import automationReport, { prepareAutomationReport } from '../agent/automation-report.ts';
+import automationReport, {
+  automationReportCardValid,
+  prepareAutomationReport,
+} from '../agent/automation-report.ts';
+import registerAgentSystemHooks from '../core/register-hooks.ts';
 import { credentialExampleChecks } from '../examples/openclaw-credentials/model-fixture.ts';
 import {
   githubExampleEmoriCallId,
@@ -62,7 +66,39 @@ function request(
 }
 
 describe('scripts/example-model-scenarios', () => {
-  it('should accept only the captured command streams and outcomes for reporting fixtures', () => {
+  async function reportContext() {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    registerAgentSystemHooks(
+      {
+        on(name: string, handler: (...args: unknown[]) => unknown) {
+          handlers.set(name, handler);
+        },
+      } as never,
+      {
+        async loadForRuntimeContext() {
+          return {
+            status: 'loaded',
+            scope: { agentId: 'reporter', workspaceDir: '/workspace' },
+            path: '/workspace/agent.yaml',
+            digest: 'fixture',
+            manifest: { schemaVersion: 1, agent: { id: 'reporter' } },
+            diagnostics: [],
+            validationChecks: [],
+          } as const;
+        },
+      },
+      { guidance: () => [] },
+    );
+    const context = (await handlers.get('before_prompt_build')!(
+      { prompt: 'Report the completed command.', messages: [] },
+      { agentId: 'reporter' },
+    )) as { appendContext: string };
+    assert.ok(context.appendContext);
+    return context.appendContext;
+  }
+
+  it('should accept only the captured command streams and outcomes with appended native context', async () => {
+    const context = await reportContext();
     const scenario = resolveExampleModelScenario('openclaw-automation-command-chat');
     for (const failure of [false, true]) {
       const captured = prepareAutomationReport({
@@ -96,7 +132,9 @@ describe('scripts/example-model-scenarios', () => {
         ...request(
           failure ? 'command-chat-codex-tanaabot' : 'command-chat-tanaabot',
           (correction ? 'Replace the rejected response in full.\n\n' : '') +
-            automationReport(value),
+            automationReport(value) +
+            '\n\n' +
+            context,
           [],
         ),
         model: 'gpt-5.5',
@@ -109,6 +147,8 @@ describe('scripts/example-model-scenarios', () => {
       const correctedRequest = input(captured, true);
       const corrected = fixture.response(correctedRequest);
       assert.ok('content' in corrected && typeof corrected.content === 'string');
+      assert.equal(automationReportCardValid(corrected.content, captured), true);
+      assert.ok(!corrected.content.includes(context));
       if (captured.presentation && captured.presentation.kind !== 'fallback') {
         assert.notEqual(response.content, captured.presentation.body);
         assert.equal(corrected.content, captured.presentation.body);
@@ -152,6 +192,32 @@ describe('scripts/example-model-scenarios', () => {
       ])
         assert.equal(matchFixture([...scenario.fixtures], input(changed)), null);
     }
+  });
+
+  it('should report recovery output without copying appended native context', async () => {
+    const context = await reportContext();
+    const scenario = resolveExampleModelScenario('openclaw-automation-recovery');
+    const captured = prepareAutomationReport({
+      id: 'identity',
+      executionId: 'recovery-fixture',
+      startedAt: '2026-11-03T00:00:00Z',
+      cancelled: false,
+      result: {
+        exitCode: 0,
+        timedOut: false,
+        truncated: false,
+        output: { stdout: 'tanaabot\n', stderr: '' },
+      },
+    });
+    const input = request('reporter', automationReport(captured) + '\n\n' + context, []);
+    const fixture = matchFixture([...scenario.dynamicFinalResponseFixtures!], input);
+    assert.ok(fixture && typeof fixture.response === 'function');
+    const response = await fixture.response(input);
+    assert.ok('content' in response && typeof response.content === 'string');
+    assert.equal(automationReportCardValid(response.content, captured), true);
+    assert.ok(response.content.includes(captured.runLine));
+    assert.ok(!response.content.includes(context));
+    assert.ok(!response.content.includes('<captured_result>'));
   });
 
   it('should start native retirement despite unrelated history and recognize replayed native call ids', async () => {

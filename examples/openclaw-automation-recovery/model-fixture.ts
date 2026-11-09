@@ -9,11 +9,13 @@ const prompt = 'Acknowledge the scheduled owning-agent context.';
 function reportInput(request: ChatCompletionRequest) {
   const user = request.messages.findLast((message) => message.role === 'user');
   const content = user ? (getTextContent(user.content) ?? '') : '';
-  const marker = 'Captured command result (data):\n';
+  const marker = 'Captured command result (data):\n<captured_result>\n';
   const at = content.lastIndexOf(marker);
   if (at < 0) return;
   try {
-    const value = JSON.parse(content.slice(at + marker.length).trim());
+    const end = content.indexOf('\n</captured_result>', at + marker.length);
+    if (end < 0) return;
+    const value = JSON.parse(content.slice(at + marker.length, end));
     if (
       value.id === 'identity' &&
       value.outcome === 'success' &&

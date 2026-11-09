@@ -7,7 +7,7 @@ import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
 const model = /^(?:aimock\/)?gpt-5\.5$/u;
 
 function reportInput(request: ChatCompletionRequest) {
-  const marker = 'Captured command result (data):\n';
+  const marker = 'Captured command result (data):\n<captured_result>\n';
   const messages = request.messages
     .filter((message) => message.role === 'user')
     .map((message) => getTextContent(message.content) ?? '');
@@ -16,14 +16,18 @@ function reportInput(request: ChatCompletionRequest) {
     (text) => text.includes(marker) && !text.trimStart().startsWith('<hook_prompt '),
   );
   const content = messages[promptIndex] ?? '';
-  const bodyMarker = '\n\nResponse body (copy literally from the next line to end of message):\n';
+  const bodyMarker = '\n<response_body>\n';
   const at = content.lastIndexOf(marker);
   if (at < 0) return;
   try {
     const captured = content.slice(at + marker.length);
-    const bodyAt = captured.indexOf(bodyMarker);
-    const value = JSON.parse((bodyAt < 0 ? captured : captured.slice(0, bodyAt)).trim());
-    const body = bodyAt < 0 ? undefined : captured.slice(bodyAt + bodyMarker.length);
+    const capturedEnd = captured.indexOf('\n</captured_result>');
+    if (capturedEnd < 0) return;
+    const value = JSON.parse(captured.slice(0, capturedEnd));
+    const bodyAt = captured.indexOf(bodyMarker, capturedEnd);
+    const bodyEnd = captured.indexOf('\n</response_body>', bodyAt + bodyMarker.length);
+    const body =
+      bodyAt < 0 || bodyEnd < 0 ? undefined : captured.slice(bodyAt + bodyMarker.length, bodyEnd);
     if (typeof value.runLine !== 'string' || typeof value.executionId !== 'string') return;
     if (
       (value.id === 'success' &&

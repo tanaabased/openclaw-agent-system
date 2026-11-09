@@ -193,9 +193,12 @@ describe('agent/automation-report-delivery', () => {
               validation?.retry?.idempotencyKey,
               `automation-report:${params.idempotencyKey}`,
             );
-            const marker =
-              '\n\nResponse body (copy literally from the next line to end of message):\n';
-            const corrected = instruction.slice(instruction.indexOf(marker) + marker.length);
+            const marker = '\n<response_body>\n';
+            const start = instruction.indexOf(marker) + marker.length;
+            const corrected = instruction.slice(
+              start,
+              instruction.indexOf('\n</response_body>', start),
+            );
             assert.ok(instruction.includes('Replace the rejected response in full'));
             saved =
               options.correction === 'multipart'
