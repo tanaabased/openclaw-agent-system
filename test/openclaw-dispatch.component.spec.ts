@@ -4870,7 +4870,7 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(inferred.presentation, rendered.presentation);
     await assert.rejects(
       service.run(manifest, root, assessor(input.id), { ...omittedId, id: 'f'.repeat(64) }),
-      /assessment-managed-context-invalid/,
+      /assessment-render-request-invalid/,
     );
     await assert.rejects(
       service.run(manifest, root, assessor(input.id), {

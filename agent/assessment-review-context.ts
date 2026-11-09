@@ -11,7 +11,6 @@ export default function assessmentReviewContext(
     assessment: record.assessment,
     resultSchema: assessmentResultContextSchema,
     presentationRequest: {
-      id: record.id,
       ...assessmentPresentationRequest(target),
     },
     decision: record.implementationDecision,

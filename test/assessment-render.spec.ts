@@ -168,8 +168,12 @@ describe('agent/assessment-render', () => {
         };
         const shown = renderBoundAssessment(renderRequest, renderContext);
         const omittedId: Record<string, unknown> = { ...renderRequest };
-        delete omittedId.id;
-        assert.deepEqual(renderBoundAssessment(omittedId, renderContext), shown);
+        const { target: _target, ...boundRequest } = renderRequest;
+        assert.deepEqual(renderBoundAssessment(boundRequest, renderContext), shown);
+        assert.throws(
+          () => renderBoundAssessment({ ...renderRequest, id: owner.id }, renderContext),
+          /assessment-render-request-invalid/,
+        );
         for (const changed of [
           { retired: { at: 1 } },
           { reset: { at: 1 } },
@@ -189,8 +193,12 @@ describe('agent/assessment-render', () => {
           renderNativeAssessment(omittedId, runtime),
         );
         assert.throws(
-          () => renderBoundAssessment(renderRequest, { ...renderContext, records: [] }),
-          /assessment-managed-context-invalid/,
+          () =>
+            renderBoundAssessment(
+              { ...renderRequest, id: owner.id },
+              { ...renderContext, records: [] },
+            ),
+          /assessment-render-request-invalid/,
         );
         assert.ok(shown.status === 'formatted');
         assert.match(shown.presentation, /Model routing/);
@@ -402,7 +410,7 @@ describe('agent/assessment-render', () => {
       [{ ...request, target: undefined }, 'request.target'],
       [{ ...request, operation: 'PRIVATE-OPERATION' }, 'request.operation'],
       [{ ...request, includeDetails: true }, 'request.includeDetails'],
-      [{ ...request, id: 'PRIVATE-ID' }, 'request.id'],
+      [{ ...request, id: 'PRIVATE-ID' }, 'request'],
     ] as const)
       assert.throws(
         () => renderNativeAssessment(input),

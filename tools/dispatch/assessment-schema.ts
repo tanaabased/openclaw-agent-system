@@ -24,5 +24,13 @@ export const directAssessmentRequestSchema = Type.Object(
     previousResultDigest: Type.Optional(id),
     result: Type.Optional(assessmentPresentationSchema),
   },
-  { additionalProperties: false },
+  {
+    additionalProperties: false,
+    allOf: [
+      {
+        if: { properties: { operation: { const: 'render' } }, required: ['operation'] },
+        then: { not: { required: ['id'] } },
+      },
+    ],
+  },
 );

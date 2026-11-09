@@ -406,7 +406,6 @@ export async function assessDispatch(
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
       presentationRequest: {
-        id: record.id,
         ...assessmentPresentationRequest(managedTargetUrl(intake)),
       },
       mode: issueWorkflowMode(current.manifest.github?.notifications, record),

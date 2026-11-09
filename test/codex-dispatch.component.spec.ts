@@ -2177,7 +2177,7 @@ describe('agent/codex-dispatch', () => {
     assert.deepEqual(await readDispatchState(), beforeRender);
     await assert.rejects(
       request('assessment', { ...renderRequest, id: 'f'.repeat(64) }, child),
-      /assessment-managed-context-invalid/,
+      /assessment-render-request-invalid/,
     );
     await assert.rejects(
       request('assessment', renderRequest, { threadId: 'foreign' }),

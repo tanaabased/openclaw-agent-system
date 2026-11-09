@@ -184,7 +184,6 @@ export async function issueAssessmentAction(input: {
       resultContract: 'assessment-result/v1',
       resultSchema: assessmentResultContextSchema,
       presentationRequest: {
-        id: record.id,
         ...assessmentPresentationRequest(managedTargetUrl(intake)),
       },
       instructions: nativeAssessmentInstructions(),

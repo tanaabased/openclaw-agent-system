@@ -12,6 +12,7 @@ import { directAssessmentRequestSchema } from '../tools/dispatch/assessment-sche
 import { parseAssessmentSubmission } from './assessment-result.ts';
 import { replyLocator } from './reply-target.ts';
 import assessmentOwner from './assessment-owner.ts';
+import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 import { dispatchAssessmentContext } from './dispatch-presentation.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import type { ManagedIssue } from './managed-issue.ts';
@@ -20,7 +21,7 @@ import AssessmentValidationError from './assessment-validation.ts';
 
 const renderRequestSchema = Type.Object(
   {
-    ...directAssessmentRequestSchema.properties,
+    ...Type.Omit(directAssessmentRequestSchema, ['id']).properties,
     ...Type.Required(Type.Pick(directAssessmentRequestSchema, ['target'])).properties,
     operation: Type.Literal('render'),
     includeDetails: Type.Optional(Type.Literal(false)),
@@ -41,6 +42,12 @@ export function renderBoundAssessment(
     workflow?: WorkflowInstructionsPresentation['workflow'];
   },
 ) {
+  if (input && typeof input === 'object' && !Array.isArray(input) && !('target' in input)) {
+    const callers = context.records.filter((record) => record.threadId === context.session);
+    if (callers.length > 1) throw new Error('assessment-managed-owner-ambiguous');
+    const admitted = callers[0] && dispatchAdmission(callers[0], context.admitted);
+    if (admitted) input = { ...input, target: managedTargetUrl(admitted) };
+  }
   if (!Value.Check(renderRequestSchema, input))
     throw new AssessmentValidationError(
       'assessment-render-request-invalid',
@@ -53,8 +60,6 @@ export function renderBoundAssessment(
     repository: `${target.owner}/${target.name}`,
     number: target.number,
   });
-  if (input.id !== undefined && owner?.record.id !== input.id)
-    throw new Error('assessment-managed-context-invalid');
   if (!owner) return renderNativeAssessment(input, context.runtime);
   const record = owner.record;
   return renderNativeAssessment(
@@ -123,10 +128,7 @@ export default function renderNativeAssessment(
         cardCopyInstructions +
         " The complete assessment stays in this native tool call; Agent System has not saved it. Include the complete presentation, with all routing, decision and debug cards, in this turn's final response. Commentary or progress output does not count as final presentation. Append any Task Update publication outcome and current blocker to that final response without replacing the assessment cards or duplicating the full engineering source. Continue from native conversation and current direction; do not record or reinject this assessment. Formatting grants no implementation or publication authority. Publish the concise review through Task Update only within its existing authorization.",
     },
-    {
-      ...assessmentPresentationRequest(input.target, input.assessmentOnly),
-      ...(input.id ? { id: input.id } : {}),
-    },
+    assessmentPresentationRequest(input.target, input.assessmentOnly),
     input.material,
     {
       purpose: 'assessment-presentation',
