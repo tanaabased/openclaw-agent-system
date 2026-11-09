@@ -87,7 +87,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
     (input.operation === 'context' && input.purpose !== 'status-update') ||
     (input.material &&
       (!['context', 'compose'].includes(input.operation) ||
-        input.privateText !== undefined ||
+        (input.privateText !== undefined && !(semantic && input.operation === 'compose')) ||
         input.outcome !== undefined ||
         input.update !== undefined))
   )
@@ -428,7 +428,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
                 : 'Publication requires explicit user direction through reply publish.'),
         },
         semantic
-          ? { action: 'reply', operation: 'compose', target: url }
+          ? { action: 'reply', operation: 'compose', target: url, ...(purpose ? { purpose } : {}) }
           : {
               action: 'reply',
               operation: 'compose',
@@ -436,6 +436,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
               digest: automationHash(record),
             },
         input.material,
+        semantic && input.privateText !== undefined ? ['privateText'] : undefined,
       );
     if (semantic && draft && input.material && input.operation === 'compose')
       input.digest = automationHash(draft);

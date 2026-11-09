@@ -1,3 +1,4 @@
+import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
 import { feedbackRevision } from '../agent/feedback-source.ts';
 import replyOwnPublications from '../agent/reply-own-publications.ts';
 import assert from 'node:assert/strict';
@@ -100,6 +101,39 @@ describe('agent/feedback-reply', () => {
   });
   const call = async (operation: string, extra: object = {}) =>
     feedbackReply({ action: 'reply', operation, ...extra }, deps);
+  it('reads interleaved reply material by authored content without selecting the latest draft', async () => {
+    deps.modelInput = true;
+    const first = {
+      action: 'reply',
+      operation: 'compose',
+      target: url,
+      privateText: 'first response '.repeat(1000),
+    };
+    const second = { ...first, privateText: 'second response '.repeat(1000) };
+    const outputs = [];
+    for (const input of [first, second])
+      outputs.unshift(nativeMaterialResponse(await feedbackReply(input, deps), 'dispatch', input));
+    const initial = outputs[1]!;
+    assert.ok('contextMaterials' in initial && initial.contextMaterials);
+    const field = initial.contextMaterials.fields.find(
+      (entry) => entry.path[0] === 'privateResponse',
+    )!;
+    const page = { ...field.request, privateText: first.privateText };
+    const bound = await bindNativeMaterial(
+      'dispatch',
+      page,
+      (async function* () {
+        yield* outputs;
+      })(),
+    );
+    const result = await feedbackReply(bound, deps);
+    assert.ok('materialPage' in result && result.materialPage);
+    assert.ok(result.materialPage.text.includes('first response'));
+    assert.ok(!result.materialPage.text.includes('second response'));
+    assert.equal((await new ReplyStore(deps.root, deps.binding).read()).length, 2);
+    assert.equal(writes, 0);
+  });
+
   for (const runtime of ['codex', 'openclaw'] as const) {
     it(`should compose a status update from the returned request in ${runtime}`, async () => {
       deps.binding.runtime = runtime;
@@ -1760,7 +1794,7 @@ describe('agent/feedback-reply', () => {
     assert.equal(composed.status, 'composition-ready');
     await assert.rejects(
       direct('candidate', { digest: 'a'.repeat(64), publicText: 'Wrong override.' }),
-      /reply-request-invalid/,
+      /dispatch-model-request-invalid/,
     );
     await direct('candidate', {
       target: url,

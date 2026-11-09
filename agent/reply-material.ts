@@ -7,9 +7,11 @@ export default function replyMaterial<T extends Record<string, unknown>>(
   context: T,
   request: Record<string, unknown>,
   read?: ImplementationMaterialRead,
+  inputFields?: string[],
 ) {
   return implementationMaterial(context, request, read, {
     purpose: 'reply-material',
+    ...(inputFields ? { inputFields } : {}),
     controls: [
       'digest',
       'observation',
