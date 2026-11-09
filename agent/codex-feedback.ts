@@ -331,10 +331,11 @@ export default async function runCodexFeedback(
               }
               if (receipt.status === 'verified') {
                 if ('turnId' in receipt) event.attempt.turnId = receipt.turnId;
-                event.phase = receipt.ended ? 'delivered' : 'running';
-                if (receipt.ended) {
-                  feedback.lastServedAt = now;
-                }
+                event.phase = 'delivered';
+                feedback.lastServedAt = now;
+                delete record.nativeInactive;
+                delete record.capacityObservation;
+                delete event.code;
                 delete event.retry;
                 delete event.retryAfter;
                 await save();
@@ -500,9 +501,10 @@ export default async function runCodexFeedback(
                   record.nativeInactive = true;
                 else delete record.nativeInactive;
                 delete record.capacityObservation;
-                if (receipt.ended && (event.native || !event.publicationAttempted)) {
+                if (event.native || (receipt.ended && !event.publicationAttempted)) {
                   event.phase = 'delivered';
                   feedback.lastServedAt = now;
+                  if (event.native) delete event.code;
                 }
                 await save();
               }

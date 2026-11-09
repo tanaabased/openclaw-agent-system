@@ -231,6 +231,7 @@ export default class OpenClawDispatchCoordinator {
         record.feedback?.events.some(
           (event) =>
             (event.native &&
+              event.phase !== 'delivered' &&
               event.turn &&
               event.turn.status !== 'completed' &&
               !event.turn.inactive) ||
@@ -460,6 +461,7 @@ export default class OpenClawDispatchCoordinator {
           (event) =>
             event.turn &&
             !event.turn.inactive &&
+            (!event.native || event.phase !== 'delivered') &&
             (event.native || event.phase !== 'blocked') &&
             (!['published', 'delivered'].includes(event.phase) ||
               event.turn.status !== 'completed'),

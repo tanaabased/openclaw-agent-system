@@ -316,6 +316,7 @@ describe('agent/openclaw-feedback', () => {
       await advanceFeedbackTurn(input);
       const originalRun = event.turn!.runId;
       (messages[0]!.__openclaw as Record<string, unknown>).runId = originalRun;
+      event.phase = 'running';
       event.turn!.executionRunId = 'earlier-retry';
       event.turn!.consumedByEventId = 'input';
       record.feedback!.context = {
@@ -440,6 +441,76 @@ describe('agent/openclaw-feedback', () => {
       /reply-managed-context-invalid/,
     );
   });
+  it('should settle consumed native input without waiting for its answer or guessing its execution', async () => {
+    event.native = true;
+    const request = input.request;
+    input.request = async (method, params) => {
+      assert.notEqual(method, 'agent.wait', 'delivery does not wait for the responder');
+      return request(method, params);
+    };
+    assert.equal((await advanceFeedbackTurn(input)).status, 'feedback-completed');
+    assert.equal(event.phase, 'delivered');
+    assert.equal(event.turn!.status, 'consumed');
+    assert.equal(event.turn!.consumedByEventId, 'input');
+    assert.equal(event.turn!.executionRunId, undefined);
+    assert.equal(event.turn!.replyEventId, undefined);
+    assert.equal(record.nativeInactive, false);
+    assert.equal(openClawCapacity([record], 1).occupied, 1);
+    assert.equal(sends, 1);
+    assert.equal(writes, 0);
+    input.request = async () => {
+      throw new Error('settled delivery needs no further native reads');
+    };
+    assert.equal((await advanceFeedbackTurn(input)).status, 'feedback-completed');
+    assert.equal(sends, 1);
+  });
+  it('should keep queued native input pending until its exact consumption is verified', async () => {
+    event.native = true;
+    const request = input.request;
+    input.request = async (method, params) => {
+      assert.notEqual(method, 'agent.wait');
+      const result = await request(method, params);
+      if (method !== 'chat.history' || !event.turn) return result;
+      return {
+        ...(result as Record<string, unknown>),
+        messages: [],
+        inputReceipts: [{ runId: event.turn.runId, state: 'pending', queued: true }],
+        pendingInputs: { total: 1 },
+      };
+    };
+    assert.equal((await advanceFeedbackTurn(input)).status, 'feedback-pending');
+    assert.equal(event.phase, 'running');
+    assert.equal(event.turn!.status, 'accepted');
+    input.request = request;
+    assert.equal((await advanceFeedbackTurn(input)).status, 'feedback-completed');
+    assert.equal(event.turn!.status, 'consumed');
+    assert.equal(sends, 1);
+  });
+  for (const failure of ['cancelled', 'session', 'input'] as const)
+    it(`should not settle native delivery with ${failure} evidence`, async () => {
+      event.native = true;
+      const request = input.request;
+      input.request = async (method, params) => {
+        const result = await request(method, params);
+        if (method !== 'chat.history' || !event.turn) return result;
+        return {
+          ...(result as Record<string, unknown>),
+          ...(failure === 'session' ? { sessionId: 'foreign-session' } : {}),
+          ...(failure === 'input'
+            ? { messages: messages.map((message) => ({ ...message, content: 'another input' })) }
+            : {}),
+          ...(failure === 'cancelled'
+            ? { inputReceipts: [{ runId: event.turn.runId, state: 'pending', cancelled: true }] }
+            : {}),
+        };
+      };
+      await assert.rejects(
+        advanceFeedbackTurn(input),
+        /dispatch-turn-(cancelled|history-unverified|input-mismatch)/,
+      );
+      assert.notEqual(event.phase, 'delivered');
+      assert.equal(sends, 1);
+    });
   it('should settle native delivery independently of private results and public replies', async () => {
     event.native = true;
     const before = structuredClone(record);
