@@ -177,7 +177,7 @@ jq -es '[.[].records[]] | length == 3 and all(.[]; .assessmentTurn.status == "co
 # should show the retained custom routing method in the native private assessment
 conversation=$(jq -er '.[0].threadId' "$TMPDIR/notification-started.json")
 run_id=$(jq -er '.[0].assessmentTurn.runId' "$TMPDIR/notification-started.json")
-openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --arg run "$run_id" '[.messages[] | select(.role == "assistant" and .__openclaw.runId == $run) | (.content | if type == "string" then . else map(.text // "") | join("") end)] | any(.[]; contains("Proposed change")) and all(.[]; (contains("Keep disposable cleanup plans bounded.") | not))'
+openclaw gateway call chat.history --params "$(jq -nc --arg key "$conversation" '{sessionKey:$key,limit:200}')" --json | jq -e --arg run "$run_id" '[.messages[] | select(.role == "assistant" and .__openclaw.runId == $run) | (.content | if type == "string" then . else map(.text // "") | join("") end)] | any(.[]; test("disposable (test )?issues"; "i") and test("close|cleanup"; "i") and test("evidence"; "i")) and all(.[]; (contains("Keep disposable cleanup plans bounded.") | not))'
 
 # should preserve all three native bindings without saving plans
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-intake/tanaabot"

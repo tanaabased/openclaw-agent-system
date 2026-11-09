@@ -345,6 +345,10 @@ for (const scenario of [
     assert.equal(formatted.status, 'formatted');
     assert.equal(formatted.retained, false);
     append(input, 'native-plan-render', formatted);
+    const privatePlan = await response(input, selectedScenario);
+    assert.ok('content' in privatePlan);
+    assert.equal(privatePlan.content, formatted.presentation);
+    assert.match(String(privatePlan.content), /disposable (?:test )?issues/i);
     const observed = await action(input, 'reply', selectedScenario);
     assert.equal(observed.operation, 'context');
     assert.equal(observed.target, target);
