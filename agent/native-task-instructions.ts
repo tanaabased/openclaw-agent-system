@@ -9,8 +9,8 @@ export default function nativeTaskInstructions(runtime: 'codex' | 'openclaw') {
       : 'agent_system_dispatch action implementation-context without a task id';
   const delivery =
     runtime === 'codex'
-      ? 'deliveryRuntime prepare with the complete deliveryPrepareRequest, adding the authored title and body, then publish with the complete returned publishRequest'
-      : 'agent_system_dispatch action delivery';
+      ? 'deliveryRuntime publish with the authored title and body'
+      : 'agent_system_dispatch action delivery with operation publish and the authored title and body';
   return (
     'On initial assignment, begin with assessment and an actionable plan. Keep the full assessment in native context, render its concise plan or clarification presentation with the supplied presentationRequest, and include every returned card in the final response. Publish its summary through authorized Task Update, then follow the verified mode and current direction in this same turn; assessment adds no approval checkpoint. ' +
     'Reuse the assigned worktree from current task context, including a detached native checkout. Do not create a replacement worktree merely to name a branch. If the native working directory differs, use the recorded checkout and verify it through the execution owner before file or Git changes; conversation context alone does not authorize another checkout. ' +

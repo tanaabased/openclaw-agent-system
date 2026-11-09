@@ -125,7 +125,6 @@ describe('agent/delivery-announcement', () => {
     assert.equal(context.status, 'composition-ready');
     assert.ok('digest' in context);
     const prepared = await run('candidate', {
-      digest: context.digest,
       publicText: 'Keeps the issue announcement with its delivered PR.',
     });
     assert.equal(prepared.status, 'announcement-prepared');
@@ -143,7 +142,7 @@ describe('agent/delivery-announcement', () => {
       const read = context.contextMaterials.fields[0]!.request;
       const complete = await hydrateImplementation(context, (request) => run('compose', request));
       assert.equal((complete.event as { body: string }).body, body);
-      await run('candidate', { digest: complete.digest, publicText: 'The complete change.' });
+      await run('candidate', { publicText: 'The complete change.' });
       const before = JSON.stringify(delivery);
       await run('compose', read);
       assert.equal(JSON.stringify(delivery), before);
@@ -250,13 +249,13 @@ describe('agent/delivery-announcement', () => {
     assert.equal(JSON.stringify(delivery), saved);
   });
   it('should retain the same draft and preview while recovering a failed prerequisite', async () => {
-    const preview = await candidate();
+    await candidate();
     const saved = JSON.stringify(delivery.announcement);
     const provider = input.provider.announcement;
     input.provider.announcement = async () => {
       throw new Error('github-delivery-linkage-unverified');
     };
-    await run('announce', { digest: preview.digest, now: 100 });
+    await run('announce', { now: 100 });
     delivery = JSON.parse(JSON.stringify(delivery));
     input.delivery = delivery;
     input.provider.announcement = provider;
@@ -266,13 +265,13 @@ describe('agent/delivery-announcement', () => {
     );
     assert.equal(delivery.announcementRecovery, undefined);
     assert.equal(JSON.stringify(delivery.announcement), saved);
-    assert.equal((await run('announce', { digest: preview.digest })).status, 'announced');
+    assert.equal((await run('announce', {})).status, 'announced');
     assert.equal(posts, 1);
   });
   it('should reconcile an uncertain write deterministically without another snapshot or post', async () => {
-    const preview = await candidate();
+    await candidate();
     lost = true;
-    await run('announce', { digest: preview.digest, now: 100 });
+    await run('announce', { now: 100 });
     const before = snapshots;
     assert.equal(
       await recheckAnnouncement({ ...input, now: delivery.announcementRecovery!.retryAfter! }),
@@ -329,9 +328,9 @@ describe('agent/delivery-announcement', () => {
   for (const state of [false, true])
     it(`should publish one verified ${state ? 'draft' : 'ready'} announcement on its originating issue`, async () => {
       draft = state;
-      const preview = await candidate();
+      await candidate();
       assert.equal(posts, 0);
-      assert.equal((await run('announce', { digest: preview.digest })).status, 'announced');
+      assert.equal((await run('announce', {})).status, 'announced');
       assert.equal(posts, 1);
       assert.match(comments[0]!.body, /https:\/\/github.com\/owner\/repo\/pull\/7/);
       assert.ok(comments[0]!.body.includes(state ? 'Draft.' : 'Ready for review.'));
@@ -339,8 +338,8 @@ describe('agent/delivery-announcement', () => {
       assert.deepEqual(delivery.announcement?.receipt, { nodeId: 'IC_1', databaseId: 1 });
     });
   it('should reconcile repeated delivery after restart without regenerating text or reading changed pr status', async () => {
-    const preview = await candidate();
-    await run('announce', { digest: preview.digest });
+    await candidate();
+    await run('announce', {});
     const original = comments[0]!.body;
     const before = snapshots;
     delivery = JSON.parse(JSON.stringify(delivery));
@@ -353,30 +352,27 @@ describe('agent/delivery-announcement', () => {
     assert.equal(comments[0]!.body, original);
   });
   it('should recover a lost post response using the exact existing comment', async () => {
-    const preview = await candidate();
+    await candidate();
     lost = true;
-    assert.equal(
-      (await run('announce', { digest: preview.digest })).status,
-      'announcement-blocked',
-    );
+    assert.equal((await run('announce', {})).status, 'announcement-blocked');
     assert.equal(delivery.announcement?.attempted, true);
     assert.equal(delivery.announcement?.receipt, undefined);
     assert.equal((await run('announce')).status, 'announced');
     assert.equal(posts, 1);
   });
   it('should retain uncertainty when a completed post cannot be found', async () => {
-    const preview = await candidate();
+    await candidate();
     missing = true;
-    await run('announce', { digest: preview.digest });
+    await run('announce', {});
     const retry = await run('announce');
     assert.equal(retry.status, 'announcement-blocked');
     assert.ok('code' in retry && retry.code === 'delivery-announcement-unconfirmed');
     assert.equal(posts, 1);
   });
   it('should not clear an uncertain attempt when reconciliation is denied', async () => {
-    const preview = await candidate();
+    await candidate();
     missing = true;
-    await run('announce', { digest: preview.digest });
+    await run('announce', {});
     input.client.findOwnIssueComment = async () => {
       throw new GitHubWorkEventClientError(
         'denied',
@@ -391,48 +387,45 @@ describe('agent/delivery-announcement', () => {
     assert.equal(posts, 1);
   });
   it('should recover an explicitly rejected post without creating another pr', async () => {
-    let preview = await candidate();
+    await candidate();
     rejected = true;
-    await run('announce', { digest: preview.digest });
+    await run('announce', {});
     assert.equal(delivery.announcement?.attempted, false);
     rejected = false;
-    preview = await candidate();
-    assert.equal((await run('announce', { digest: preview.digest })).status, 'announced');
+    await candidate();
+    assert.equal((await run('announce', {})).status, 'announced');
     assert.equal(comments.length, 1);
   });
   it('should reject stale draft status and require a fresh candidate before the first post', async () => {
-    const preview = await candidate();
+    await candidate();
     draft = true;
-    assert.equal(
-      (await run('announce', { digest: preview.digest })).status,
-      'announcement-blocked',
-    );
+    assert.equal((await run('announce', {})).status, 'announcement-blocked');
     assert.equal(posts, 0);
     const refreshed = await candidate();
     await run('announce', { digest: refreshed.digest });
     assert.match(comments[0]!.body, /Draft\./);
   });
   it('should withhold changed skills, stale digests, and private candidate content', async () => {
-    const preview = await candidate();
+    await candidate();
     skillDigest = 'b'.repeat(64);
-    await run('announce', { digest: preview.digest });
+    await run('announce', {});
     assert.equal(posts, 0);
     const context = await run('compose');
     assert.ok('digest' in context);
-    await run('candidate', { digest: context.digest, publicText: 'password=secret' });
+    await run('candidate', { publicText: 'password=secret' });
     assert.equal(posts, 0);
     assert.equal(delivery.announcement?.publicText, undefined);
   });
   it('should stop before reading or publishing when authority is revoked', async () => {
-    const preview = await candidate();
+    await candidate();
     revoked = true;
-    await run('announce', { digest: preview.digest });
+    await run('announce', {});
     assert.equal(posts, 0);
     assert.equal(reads, 0);
   });
   it('should reject edited or deleted accepted comments without replacement', async () => {
-    const preview = await candidate();
-    await run('announce', { digest: preview.digest });
+    await candidate();
+    await run('announce', {});
     comments[0]!.body = comments[0]!.body.replace('Keeps', 'Changes');
     assert.equal((await run('announce')).status, 'announcement-blocked');
     comments.length = 0;
@@ -440,9 +433,9 @@ describe('agent/delivery-announcement', () => {
     assert.equal(posts, 1);
   });
   it('should expose a verified receipt for feedback suppression after a response loss', async () => {
-    const preview = await candidate();
+    await candidate();
     lost = true;
-    await run('announce', { digest: preview.digest });
+    await run('announce', {});
     const receipt = await reconcileAnnouncement({
       state: delivery.announcement!,
       client: input.client,
@@ -468,7 +461,7 @@ describe('agent/delivery-announcement', () => {
     assert.match(pending, /Keeps the issue/);
     assert.match(preview.presentation!, /PR announcement draft by \[@posting-agent\]/);
     assert.ok(!preview.presentation!.includes('#issuecomment-'));
-    await run('announce', { digest: preview.digest });
+    await run('announce', {});
     const confirmed = announcementPresentation(
       delivery.announcement,
       'https://github.com/owner/repo/issues/3',

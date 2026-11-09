@@ -281,32 +281,27 @@ describe('agent/openclaw-delivery', () => {
   async function publish(content = { title: 'Fix issue', body: 'Closes #3' }) {
     const prepared = await request('prepare', content);
     assert.ok('publishRequest' in prepared && prepared.publishRequest);
-    return openClawDelivery({ ...input, action: prepared.publishRequest });
+    return openClawDelivery({ ...input, action: { ...prepared.publishRequest, id: record.id } });
   }
 
-  it('should refresh changed content and publish the complete returned request once', async () => {
-    const prepared = await request('prepare', {
-      title: 'One poem',
-      body: 'First line.\n\nSecond line.',
-    });
+  it('should publish authored content and link the current task without copied receipts', async () => {
+    const content = { title: 'One poem', body: 'First line.\n\nSecond line.' };
+    const prepared = await request('prepare', content);
     assert.ok('publishRequest' in prepared && prepared.publishRequest);
-    assert.equal(prepared.publishRequest.body, 'First line.\n\nSecond line.');
-    const stale = await openClawDelivery({
-      ...input,
-      action: { ...prepared.publishRequest, body: 'Revised poem.' },
+    assert.deepEqual(prepared.publishRequest, {
+      action: 'delivery',
+      operation: 'publish',
+      ...content,
     });
-    assert.equal(stale.status, 'prepared');
-    assert.equal(creates, 0);
-    assert.equal(pushes, 0);
-    assert.ok('publishRequest' in stale && stale.publishRequest);
-    assert.notEqual(stale.publishRequest.digest, prepared.publishRequest.digest);
-    const published = await openClawDelivery({ ...input, action: stale.publishRequest });
+    assert.equal(creates + pushes, 0);
+    const published = await request('publish', { ...content, body: 'Revised poem.' });
     assert.equal(published.status, 'published');
     assert.ok('linkRequest' in published && published.linkRequest);
-    const linked = await openClawDelivery({ ...input, action: published.linkRequest });
+    const linked = await openClawDelivery({
+      ...input,
+      action: { ...published.linkRequest, id: record.id },
+    });
     assert.equal(linked.status, 'linked');
-    assert.ok('pullRequest' in linked);
-    assert.deepEqual(linked.pullRequest, published.pullRequest);
     await request('reconcile');
     assert.equal(creates, 1);
     assert.ok(String(pr!.body).startsWith('Revised poem.'));
@@ -467,9 +462,8 @@ describe('agent/openclaw-delivery', () => {
   it('should update an adopted non-agent-authored draft without creating or changing metadata', async () => {
     adoptTarget();
     const original = structuredClone(pr);
-    const prepared = await request('prepare');
-    assert.ok('digest' in prepared);
-    assert.equal((await request('publish', { digest: prepared.digest })).status, 'published');
+    await request('prepare');
+    assert.equal((await request('publish', {})).status, 'published');
     assert.equal(creates, 0);
     assert.equal(patches, 0);
     assert.deepEqual(pr, original);
@@ -514,22 +508,15 @@ describe('agent/openclaw-delivery', () => {
       title: 'Collaborator title',
       body: '',
     };
-    const before = structuredClone(record);
-    const preview = await request('bind', { pullRequest: 'https://github.com/owner/repo/pull/7' });
-    assert.equal(preview.status, 'binding-available');
-    assert.deepEqual(record, before);
-    assert.ok('digest' in preview);
     const bound = await request('bind', {
       pullRequest: 'https://github.com/owner/repo/pull/7',
-      digest: preview.digest,
     });
     assert.equal(bound.status, 'bound');
     assert.equal(record.work!.delivery!.reconciled, false);
     assert.equal(record.work!.delivery!.announcement, undefined);
     assert.equal(pushes, 0);
-    const prepared = await request('prepare');
-    assert.ok('digest' in prepared);
-    assert.equal((await request('publish', { digest: prepared.digest })).status, 'published');
+    await request('prepare');
+    assert.equal((await request('publish', {})).status, 'published');
     assert.equal(record.work!.delivery!.binding.authorId, 'U_collaborator');
     assert.equal(record.work!.delivery!.binding.base, 'release');
     assert.equal(record.work!.delivery!.localBranch, 'task-branch');
@@ -562,20 +549,26 @@ describe('agent/openclaw-delivery', () => {
     await assert.rejects(request('prepare'), /delivery-branch-diverged/);
   });
 
-  it('should reject stale pr binding previews and refuse non-operator binding', async () => {
+  it('should reject a changed pr during binding and refuse non-operator binding', async () => {
     const action = { pullRequest: 'https://github.com/owner/repo/pull/7' };
     await assert.rejects(request('bind', action), /delivery-binding-operator-required/);
     input.operator = true;
     remote = 'b'.repeat(40);
     pr = { title: 'Existing', body: 'Preserved' };
     const before = structuredClone(record);
-    const preview = await request('bind', action);
-    assert.ok('digest' in preview);
-    remote = 'c'.repeat(40);
-    await assert.rejects(
-      request('bind', { ...action, digest: preview.digest }),
-      /delivery-binding-stale/,
-    );
+    const connect = input.connect;
+    input.connect = async () => {
+      const connection = await connect();
+      const git = connection.git;
+      return {
+        ...connection,
+        git: async (args) => {
+          if (args[0] === 'fetch') remote = 'c'.repeat(40);
+          return git(args);
+        },
+      };
+    };
+    await assert.rejects(request('bind', { ...action }), /delivery-binding-stale/);
     assert.deepEqual(record, before);
     assert.equal(pushes + creates, 0);
   });
@@ -643,12 +636,10 @@ describe('agent/openclaw-delivery', () => {
         composed.selection.guidance?.content,
         variant.includes('inline') ? guidance : undefined,
       );
-      const candidate = await request('candidate', {
-        digest: composed.digest,
+      await request('candidate', {
         publicText: 'Cleanup documented. Live transport remains untested.',
       });
-      assert.ok('digest' in candidate);
-      assert.equal((await request('announce', { digest: candidate.digest })).status, 'announced');
+      assert.equal((await request('announce', {})).status, 'announced');
       const retainedSelection = record.work!.delivery!.announcement!.composition!;
       assert.equal(retainedSelection.skill.digest, composed.selection.skill.digest);
       assert.equal(
@@ -659,7 +650,7 @@ describe('agent/openclaw-delivery', () => {
         assert.equal(composed.selection.guidance?.path, retainedSelection.guidance?.path);
       assert.ok(announcement.comments[0]!.body.includes('Live transport remains untested.'));
       assert.equal(record.result!.fullAssessment, 'Complete plan');
-      await request('announce', { digest: candidate.digest });
+      await request('announce', {});
       assert.equal(announcement.posts, 1);
       assert.equal(creates, 1);
     });
@@ -673,14 +664,11 @@ describe('agent/openclaw-delivery', () => {
     };
     record.work!.resultSource = { turnId: 'first-run', inputId: 'first-input' };
     await publish();
-    const composed = await request('compose');
-    assert.ok('digest' in composed);
-    const candidate = await request('candidate', {
-      digest: composed.digest,
+    await request('compose');
+    await request('candidate', {
       publicText: 'Delivers the requested change.',
     });
-    assert.ok('digest' in candidate);
-    await request('announce', { digest: candidate.digest });
+    await request('announce', {});
     assert.equal(hasDeliveredImplementation(record), true);
     const receipt = structuredClone(record.work!.delivery!.pullRequest);
     const initialResult = structuredClone(record.work!.result);
@@ -710,14 +698,11 @@ describe('agent/openclaw-delivery', () => {
       dirty = true;
       await request('reconcile');
       announcement.draft = draft;
-      const context = await request('compose');
-      assert.ok('digest' in context);
-      const preview = await request('candidate', {
-        digest: context.digest,
+      await request('compose');
+      await request('candidate', {
         publicText: 'Delivers the requested change.',
       });
-      assert.ok('digest' in preview);
-      assert.equal((await request('announce', { digest: preview.digest })).status, 'announced');
+      assert.equal((await request('announce', {})).status, 'announced');
       await request('announce');
       const shown = await request('present');
       assert.ok('presentation' in shown);
@@ -738,18 +723,12 @@ describe('agent/openclaw-delivery', () => {
         throw new Error('announcement recovery must not inspect newer local work');
       },
     });
-    const context = await request('compose');
-    assert.ok('digest' in context);
-    const preview = await request('candidate', {
-      digest: context.digest,
+    await request('compose');
+    await request('candidate', {
       publicText: 'Delivers the requested change.',
     });
-    assert.ok('digest' in preview);
     announcement.lost = true;
-    assert.equal(
-      (await request('announce', { digest: preview.digest })).status,
-      'announcement-blocked',
-    );
+    assert.equal((await request('announce', {})).status, 'announcement-blocked');
     assert.equal(record.work!.delivery!.reconciled, true);
     assert.equal(record.work!.delivery!.announcement!.attempted, true);
     input.record = record = JSON.parse(JSON.stringify(record));
@@ -806,14 +785,11 @@ describe('agent/openclaw-delivery', () => {
     linked = true;
     assert.equal(await check(delivery.announcementRecovery!.retryAfter!), true);
     assert.equal(openClawWorkSlot(record), undefined);
-    const composed = await request('compose');
-    assert.ok('digest' in composed);
-    const candidate = await request('candidate', {
-      digest: composed.digest,
+    await request('compose');
+    await request('candidate', {
       publicText: 'Delivers the existing fix.',
     });
-    assert.ok('digest' in candidate);
-    await request('announce', { digest: candidate.digest });
+    await request('announce', {});
     assert.equal(creates, 1);
     assert.equal(pushes, 1);
     assert.equal(announcement.posts, 1);
@@ -899,11 +875,10 @@ describe('agent/openclaw-delivery', () => {
     assert.deepEqual(prepared.operation.pullRequest, retained.pullRequest);
     assert.deepEqual(record.work!.delivery, retained);
     head = 'c'.repeat(40);
-    const refreshed = await request('publish', { digest: prepared.digest });
-    assert.equal(refreshed.status, 'prepared');
-    assert.ok('digest' in refreshed && refreshed.digest !== prepared.digest);
-    assert.deepEqual(record.work!.delivery, retained);
-    assert.equal(pushes, 1);
+    const refreshed = await request('publish', {});
+    assert.equal(refreshed.status, 'published');
+    assert.equal(record.work!.delivery!.binding.head, head);
+    assert.equal(pushes, 2);
   });
   it('should reject a changed session while retaining delivery across configuration changes', async () => {
     await publish();
@@ -960,8 +935,7 @@ describe('agent/openclaw-delivery', () => {
       await publish();
       const feedback = authorizePrFeedback();
       head = 'b'.repeat(40);
-      const prepared = await request('prepare');
-      assert.ok('digest' in prepared);
+      await request('prepare');
       if (change === 'body') feedback.source.body = '@receiver withdrawn';
       if (change === 'author') feedback.source.author.nodeId = 'U_other';
       if (change === 'deleted')
@@ -985,7 +959,7 @@ describe('agent/openclaw-delivery', () => {
         policy: 'workflow-policy-held',
         owner: 'dispatch-policy-changed',
       }[change];
-      await assert.rejects(request('publish', { digest: prepared.digest }), { message: expected });
+      await assert.rejects(request('publish', {}), { message: expected });
       assert.equal(pushes, 1);
       assert.equal(creates, 1);
       assert.equal(patches, 0);
@@ -1075,15 +1049,12 @@ describe('agent/openclaw-delivery', () => {
   for (const lostAnnouncement of [false, true])
     it(`should recover an interrupted follow-up push with a ${lostAnnouncement ? 'pending' : 'confirmed'} announcement`, async () => {
       await publish();
-      const context = await request('compose');
-      assert.ok('digest' in context);
-      const preview = await request('candidate', {
-        digest: context.digest,
+      await request('compose');
+      await request('candidate', {
         publicText: 'Delivers the requested change.',
       });
-      assert.ok('digest' in preview);
       announcement.lost = lostAnnouncement;
-      await request('announce', { digest: preview.digest });
+      await request('announce', {});
       const retained = structuredClone(record.work!.delivery!);
       head = 'b'.repeat(40);
       const connect = input.connect;
@@ -1174,7 +1145,7 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(creates, 1);
     assert.equal(record.work!.delivery!.reconciled, true);
   });
-  it('should refresh stale previews and reject unauthorized dirty divergent and revoked publication before writes', async () => {
+  it('should reject unauthorized dirty divergent and revoked publication before writes', async () => {
     const permission = record.work!.publication;
     delete record.work!.publication;
     await assert.rejects(publish(), /delivery-implementation-not-authorized/);
@@ -1182,10 +1153,6 @@ describe('agent/openclaw-delivery', () => {
     dirty = true;
     await assert.rejects(publish(), /delivery-uncommitted-work/);
     dirty = false;
-    assert.equal(
-      (await request('publish', { title: 'Fix', body: 'Fix', digest: '0'.repeat(64) })).status,
-      'prepared',
-    );
     remote = 'b'.repeat(40);
     await assert.rejects(publish(), /delivery-remote-head-diverged/);
     revoked = true;
@@ -1194,9 +1161,8 @@ describe('agent/openclaw-delivery', () => {
     assert.equal(pushes, 0);
   });
   it('should recover the previously verified head after an interrupted followup push', async () => {
-    let preview = await request('prepare', { title: 'Initial', body: 'Initial body.' });
-    assert.ok('digest' in preview);
-    await request('publish', { digest: preview.digest, title: 'Initial', body: 'Initial body.' });
+    await request('prepare', { title: 'Initial', body: 'Initial body.' });
+    await request('publish', { title: 'Initial', body: 'Initial body.' });
     head = 'b'.repeat(40);
     const connect = input.connect;
     let lagged = 0;
@@ -1230,11 +1196,9 @@ describe('agent/openclaw-delivery', () => {
         },
       };
     };
-    preview = await request('prepare', { title: 'Updated', body: 'Updated body.' });
-    assert.ok('digest' in preview);
+    await request('prepare', { title: 'Updated', body: 'Updated body.' });
     await assert.rejects(
       request('publish', {
-        digest: preview.digest,
         title: 'Updated',
         body: 'Updated body.',
       }),
@@ -1242,10 +1206,8 @@ describe('agent/openclaw-delivery', () => {
     );
     input.record = record = JSON.parse(JSON.stringify(record));
     assert.deepEqual(record.work!.delivery!.pendingPush, { previousHead: 'a'.repeat(40), head });
-    preview = await request('prepare', { title: 'Updated', body: 'Updated body.' });
-    assert.ok('digest' in preview);
+    await request('prepare', { title: 'Updated', body: 'Updated body.' });
     const recovered = await request('publish', {
-      digest: preview.digest,
       title: 'Updated',
       body: 'Updated body.',
     });

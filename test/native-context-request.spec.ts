@@ -6,6 +6,38 @@ import { nativeContextRequest, nativeContextResponse } from '../agent/native-con
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
 describe('native current-task context inputs', () => {
+  it('should bind publication to the verified current task and exact native feedback source', async () => {
+    const input = { action: 'publish', title: 'A poem', body: 'Authored description' };
+    const read = async () => ({ receipt: 'bound', feedbackContextRequest: { eventId: 'source' } });
+    assert.deepEqual(
+      await codexContextRequest('private', 'delivery', input, 'native-thread', read),
+      { ...input, id: 'bound', eventId: 'source' },
+    );
+    for (const field of ['id', 'eventId', 'digest', 'threadId', 'workspace'])
+      await assert.rejects(
+        codexContextRequest(
+          'private',
+          'delivery',
+          { ...input, [field]: 'bound' },
+          'native-thread',
+          read,
+        ),
+        /binding-override/,
+      );
+    const request = {
+      action: 'delivery',
+      operation: 'publish',
+      title: input.title,
+      body: input.body,
+    };
+    assert.equal(Value.Check(dispatchModelParameters, request), true);
+    for (const field of ['id', 'eventId', 'digest', 'threadId', 'workspace'])
+      assert.equal(Value.Check(dispatchModelParameters, { ...request, [field]: 'bound' }), false);
+    await assert.rejects(
+      codexContextRequest('private', 'delivery', input, 'native-thread', async () => undefined),
+      /owner-unavailable/,
+    );
+  });
   it('should bind authored choices to the native owner without accepting overrides', () => {
     const request = {
       action: 'implementation-context',

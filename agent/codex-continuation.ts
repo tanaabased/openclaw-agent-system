@@ -268,12 +268,11 @@ export default async function runCodexContinuation(
       },
     );
     if ('publishRequest' in delivery && delivery.publishRequest) {
-      const { id: deliveryId, ...publication } = delivery.publishRequest;
+      const publication = delivery.publishRequest;
       return {
         ...delivery,
         publishRequest: {
           action: 'delivery' as const,
-          id: deliveryId,
           delivery: publication,
         },
       };

@@ -355,12 +355,12 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'delivery') {
     if (args[1] === '--help') {
       process.stdout.write(
-        'Usage: delivery <link|bind|prepare|publish|reconcile|compose|candidate|announce|present> --plugin-data <path>\nRequest data is JSON on stdin; action is visible in argv and stdin cannot change it; id is the retained managed issue receipt. link records the initial PR association and returns native attachment instructions; an explicit pullRequest URL or null changes or clears the association independently of prior effects. bind previews an explicit existing same-repository PR using pullRequest and id; apply its digest to preserve local work and select that PR without publishing. Prepare returns a digest for publication within the verified implementation stage or current user direction; no separate publication approval is required. compose selects the reply skill; candidate prepares the issue announcement; announce publishes its exact digest or reconciles an uncertain post. Reconcile verifies native attachment; present renders the card and notices even when attachment is pending.\n',
+        'Usage: delivery <link|bind|prepare|publish|reconcile|compose|candidate|announce|present> --plugin-data <path>\nRequest data is JSON on stdin; action is visible in argv and stdin cannot change it; the native caller selects the current managed issue. Do not supply IDs or digests. link records the initial PR association and returns native attachment instructions; an explicit pullRequest URL or null changes or clears the association independently of prior effects. bind selects and verifies an explicit same-repository PR without publishing. prepare optionally previews authored title/body; publish verifies the current checkout and publishes within existing authority. compose selects the reply skill; candidate retains the authored announcement; announce verifies and publishes that retained candidate or reconciles its uncertain post. Reconcile verifies native attachment; present renders the card and notices even when attachment is pending.\n',
       );
       return;
     }
     const { pluginData, request } = await readWorkflowCommand(command, args.slice(1));
-    writeJson(await runCodexDelivery(pluginData, request));
+    writeJson(nativeContextResponse(await runCodexDelivery(pluginData, request), 'delivery'));
     return;
   }
   if (command === 'dispatch') {

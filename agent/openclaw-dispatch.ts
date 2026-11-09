@@ -33,7 +33,7 @@ import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
 import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import type { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
+import { dispatchModelParameters, type dispatchParameters } from '../tools/dispatch/tool-schema.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
 import discoveryNotice from './discovery-notice.ts';
 import { dispatchFailurePhase, scheduleDispatchRetry } from './dispatch-retry.ts';
@@ -128,6 +128,9 @@ export default class OpenClawDispatch {
     operator = false,
     authority: DispatchAuthority = {},
   ) {
+    if (isNativeContextRequest('dispatch', input)) assertNativeContextInput(input);
+    if (!Value.Check(dispatchModelParameters, input as unknown))
+      throw new Error('dispatch-model-request-invalid');
     let request = input;
     if (isNativeContextRequest('dispatch', input)) {
       assertNativeContextInput(input);
@@ -146,7 +149,8 @@ export default class OpenClawDispatch {
           admission && `${admission.repository.owner.login}/${admission.repository.name}`,
           input.source,
         );
-        const { source: _source, ...authored } = request;
+        const authored = { ...request };
+        delete authored.source;
         request = { ...authored, eventId: event.id };
       }
     }
@@ -367,7 +371,6 @@ export default class OpenClawDispatch {
               operation: input.deliveryOperation ?? 'prepare',
               title: input.title,
               body: input.body,
-              digest: input.digest,
             }
           : input.operation === 'context'
             ? { action: 'implementation-context', id, scope: input.scope }

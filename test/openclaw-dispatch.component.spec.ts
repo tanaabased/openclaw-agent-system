@@ -3749,10 +3749,17 @@ describe('agent/openclaw issue dispatch', () => {
     service.dependencies.delivery = async () => {
       throw new Error('same-pr linkage must not publish or read another pr');
     };
-    const action = { action: 'delivery' as const, operation: 'link' as const, id };
+    const action = { action: 'delivery' as const, operation: 'link' as const };
+    await assert.rejects(
+      service.runModel(manifest, root, who, { ...action, id }),
+      /binding-override/,
+    );
     const url = 'https://github.com/owner/repo/pull/7';
     for (const target of [url, undefined, url]) {
-      const linked = await service.run(manifest, root, who, { ...action, pullRequest: target });
+      const linked = await service.runModel(manifest, root, who, {
+        ...action,
+        pullRequest: target,
+      });
       assert.equal(linked.status, 'linked', JSON.stringify(linked));
       assert.deepEqual((await record()).pullRequestLink, pullRequest);
     }
@@ -3762,7 +3769,7 @@ describe('agent/openclaw issue dispatch', () => {
       'https://github.com/other/repo/pull/7',
     ]) {
       await assert.rejects(
-        service.run(manifest, root, who, { ...action, pullRequest: target }),
+        service.runModel(manifest, root, who, { ...action, pullRequest: target }),
         /delivery-binding-operator-required/,
       );
       assert.deepEqual((await record()).pullRequestLink, pullRequest);
@@ -3772,7 +3779,7 @@ describe('agent/openclaw issue dispatch', () => {
       await save();
     });
     await assert.rejects(
-      service.run(manifest, root, who, { ...action, pullRequest: url }),
+      service.runModel(manifest, root, who, { ...action, pullRequest: url }),
       /delivery-binding-operator-required/,
     );
     assert.equal((await record()).pullRequestLink, null);

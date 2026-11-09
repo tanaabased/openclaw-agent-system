@@ -582,18 +582,15 @@ function respond(
       if (!delivery)
         return dispatch('feedback-delivery-prepare', {
           action: 'delivery',
-          id,
           operation: 'prepare',
           ...(initial ? { title, body } : {}),
         });
-      if (delivery.status !== 'prepared' || typeof delivery.digest !== 'string') return;
+      if (delivery.status !== 'prepared') return;
       let delivered = result('feedback-delivery-publish');
       if (!delivered)
         return dispatch('feedback-delivery-publish', {
           action: 'delivery',
-          id,
           operation: 'publish',
-          digest: delivery.digest,
           ...(initial ? { title, body } : {}),
         });
       for (let index = 0; index < 3 && isPendingDelivery(delivered); index++) {
@@ -601,11 +598,10 @@ function respond(
         if (!prepared)
           return dispatch(`feedback-link-prepare-${index}`, {
             action: 'delivery',
-            id,
             operation: 'prepare',
             ...(initial ? { title, body } : {}),
           });
-        if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
+        if (prepared.status !== 'prepared') return;
         // feedback's waiting envelope may omit the receipt; preparation reads the saved operation.
         const operation = prepared.operation as Record<string, unknown> | undefined;
         const receipt = (operation?.pullRequest ?? delivered.pullRequest) as
@@ -619,9 +615,7 @@ function respond(
         if (!published)
           return dispatch(`feedback-link-publish-${index}`, {
             action: 'delivery',
-            id,
             operation: 'publish',
-            digest: prepared.digest,
             ...(initial ? { title, body } : {}),
           });
         delivered = published;
@@ -634,7 +628,6 @@ function respond(
         if (!linked)
           return dispatch('feedback-delivery-association', {
             action: 'delivery',
-            id,
             operation: 'link',
           });
         assert.equal(linked.status, 'linked');
@@ -643,7 +636,6 @@ function respond(
         if (!composed)
           return dispatch('feedback-delivery-compose', {
             action: 'delivery',
-            id,
             operation: 'compose',
           });
         const selection = composed.selection as { skill?: { path?: string } } | undefined;
@@ -661,9 +653,7 @@ function respond(
         if (!candidate)
           return dispatch('feedback-delivery-candidate', {
             action: 'delivery',
-            id,
             operation: 'candidate',
-            digest: composed.digest,
             publicText: publicText(
               composed,
               `${author ? '@' + author + ' ' : ''}Implemented the agreed disposable issue cleanup note.`,
@@ -675,16 +665,13 @@ function respond(
         if (!announced)
           return dispatch('feedback-delivery-announce', {
             action: 'delivery',
-            id,
             operation: 'announce',
-            digest: candidate.digest,
           });
         if (announced.status !== 'announced') return;
         const presented = result('feedback-delivery-present');
         if (!presented)
           return dispatch('feedback-delivery-present', {
             action: 'delivery',
-            id,
             operation: 'present',
           });
         if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
@@ -791,7 +778,6 @@ function respond(
         return dispatch('binding-verify', {
           action: 'delivery',
           operation: 'bind',
-          id: operatorId,
           pullRequest: selectedPr,
         });
       assert.equal(bound.status, 'bound');
@@ -804,7 +790,6 @@ function respond(
         return dispatch('delivery-prepare', {
           action: 'delivery',
           operation: 'prepare',
-          id: operatorId,
         });
       assert.equal(prepared.status, 'prepared');
       return { content: 'Reviewer delivery prepared without publication.' };
@@ -909,34 +894,17 @@ function respond(
         return dispatch('delivery-prepare', {
           action: 'delivery',
           operation: 'prepare',
-          id: operatorId,
           title,
           body,
         });
-      if (prepared.status !== 'prepared' || typeof prepared.digest !== 'string') return;
+      if (prepared.status !== 'prepared') return;
       if (!published)
         return dispatch('delivery-publish', {
           action: 'delivery',
           operation: 'publish',
-          id: operatorId,
-          digest: prepared.digest,
           title,
           body,
         });
-      if (published.status === 'prepared' && published.code === 'delivery-preview-stale') {
-        if (typeof published.digest !== 'string') return;
-        const refreshed = result('delivery-publish-refreshed');
-        if (!refreshed)
-          return dispatch('delivery-publish-refreshed', {
-            action: 'delivery',
-            operation: 'publish',
-            id: operatorId,
-            digest: published.digest,
-            title,
-            body,
-          });
-        published = refreshed;
-      }
       for (let index = 0; index < 3 && isPendingDelivery(published); index++) {
         const receipt = published.pullRequest as Record<string, unknown> | undefined;
         if (
@@ -950,19 +918,16 @@ function respond(
           return dispatch(prepareStage, {
             action: 'delivery',
             operation: 'prepare',
-            id: operatorId,
             title,
             body,
           });
-        if (retained.status !== 'prepared' || typeof retained.digest !== 'string') return;
+        if (retained.status !== 'prepared') return;
         const publishStage = `delivery-link-publish-${index}`;
         const reconciled = result(publishStage);
         if (!reconciled)
           return dispatch(publishStage, {
             action: 'delivery',
             operation: 'publish',
-            id: operatorId,
-            digest: retained.digest,
             title,
             body,
           });
@@ -978,7 +943,6 @@ function respond(
       if (!linked)
         return dispatch('delivery-association', {
           action: 'delivery',
-          id: operatorId,
           operation: 'link',
           ...(options.explicitInitialLink ? { pullRequest: published?.url } : {}),
         });
@@ -989,7 +953,6 @@ function respond(
         return dispatch('delivery-compose', {
           action: 'delivery',
           operation: 'compose',
-          id: operatorId,
         });
       if (composed.status !== 'composition-ready' || typeof composed.digest !== 'string') return;
       const selection = composed.selection as { skill?: { path?: string } } | undefined;
@@ -1001,8 +964,6 @@ function respond(
         return dispatch('delivery-candidate', {
           action: 'delivery',
           operation: 'candidate',
-          id: operatorId,
-          digest: composed.digest,
           publicText: publicText(composed, 'Adds the disposable issue cleanup note.'),
         });
       if (candidate.status !== 'announcement-prepared' || typeof candidate.digest !== 'string')
@@ -1012,8 +973,6 @@ function respond(
         return dispatch('delivery-announce', {
           action: 'delivery',
           operation: 'announce',
-          id: operatorId,
-          digest: candidate.digest,
         });
       if (announced.status !== 'announced') return;
       if (!automaticId)
@@ -1028,7 +987,6 @@ function respond(
         return dispatch('delivery-repeat', {
           action: 'delivery',
           operation: 'announce',
-          id: operatorId,
         });
       if (repeated.status !== 'announced') return;
     }
@@ -1037,7 +995,6 @@ function respond(
       return dispatch('delivery-present', {
         action: 'delivery',
         operation: 'present',
-        id: operatorId,
       });
     if (presented.status !== 'presented' || typeof presented.presentation !== 'string') return;
     return {

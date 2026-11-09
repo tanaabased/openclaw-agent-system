@@ -155,7 +155,6 @@ export default async function openClawDelivery(input: {
     const head = await git(['rev-parse', '--verify', 'HEAD']);
     const result = await bindIssuePullRequest({
       id: record.id,
-      digest: action.digest,
       operator: input.source,
       adopted,
       previous: record.work?.delivery,
@@ -165,7 +164,7 @@ export default async function openClawDelivery(input: {
       verify,
       assertCurrent,
     });
-    if (result.status !== 'bound' || result.retained) return result;
+    if (result.retained) return result;
     record.work ??= {};
     if (record.work.delivery) (record.deliveryHistory ??= []).push(record.work.delivery);
     record.adoptedPullRequest = adopted;
@@ -379,39 +378,18 @@ export default async function openClawDelivery(input: {
       instructions:
         'The existing PR is selected, but there is no new work to publish. Adoption alone sends no announcement and does not establish implementation completion.',
     };
-  const digest = automationHash({
-    binding,
-    title,
-    body,
-    source: input.source,
-    progression: retainedIssueProgression(record) ?? work.publication,
-    previous: previous ?? null,
-  });
-  if (
-    action.operation === 'prepare' ||
-    (action.operation === 'publish' && action.digest !== digest)
-  )
+  if (action.operation === 'prepare')
     return {
       status: 'prepared',
-      ...(action.operation === 'publish'
-        ? { code: 'delivery-preview-stale', refreshed: true }
-        : {}),
-      id: record.id,
-      digest,
       operation: { ...delivery, binding, title, body, contentUpdate },
       publishRequest: {
         action: 'delivery' as const,
         operation: 'publish' as const,
-        id: record.id,
-        digest,
         title,
         body,
       },
       instructions:
-        (action.operation === 'publish'
-          ? 'This stale preview made no publication write. Inspect the refreshed operation and use its complete publishRequest once within the retained authorization; investigate repeated staleness. '
-          : '') +
-        'The verified implementation stage or current operator direction authorizes ordinary PR delivery and appropriate follow-up commits. Submit the complete publishRequest through agent_system_dispatch without a separate publication grant. Keep its digest, title and body together. Honor explicit user restrictions and native denials. On an uncertain result, prepare again to reconcile this operation; do not create a replacement PR.',
+        'Publish with the authored title and body through native approval when authorized. The runtime resolves the current task, checkout and destination and revalidates them inside publication. Preparation is optional and grants no authority. Honor explicit restrictions and native denials; reconcile uncertain publication through its retained owner.',
     };
   const provider = new IssueDeliveryProvider({
     identity: connection.account.identity,
@@ -462,11 +440,10 @@ export default async function openClawDelivery(input: {
       throw new Error('delivery-reconciliation-required');
     const announcement = await deliveryAnnouncement({
       runtime: 'openclaw',
-      request: { action: 'delivery', operation: 'compose', id: record.id },
+      request: { action: 'delivery', operation: 'compose' },
       material: action.material,
       now: input.now,
       operation: action.operation,
-      digest: action.digest,
       publicText: action.publicText,
       delivery: previous,
       publication,
@@ -553,7 +530,7 @@ export default async function openClawDelivery(input: {
     pullRequest: receipt,
     workflowStatus: workflowStatus(record),
     url,
-    linkRequest: { action: 'delivery' as const, operation: 'link' as const, id: record.id },
+    linkRequest: { action: 'delivery' as const, operation: 'link' as const },
     instructions: deliveryCompletionInstructions(
       'openclaw',
       delivery,

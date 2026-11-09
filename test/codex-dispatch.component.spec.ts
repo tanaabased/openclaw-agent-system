@@ -4788,7 +4788,7 @@ describe('agent/codex-dispatch', () => {
       );
       assert.equal(delivery.status, 'prepared');
       assert.ok('publishRequest' in delivery && delivery.publishRequest);
-      assert.equal(delivery.publishRequest.id, work.id);
+      assert.equal('id' in delivery.publishRequest, false);
       assert.ok(!gitCalls.some((argv) => argv.includes('push')));
       const resumed = await runCodexContinuation(pluginData, context.continuationRequest, {
         ...work.continuation,

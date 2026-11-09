@@ -135,7 +135,10 @@ receipts. Missing results, cards or announcements do not trigger another work tu
 
 When the requested work is complete and appropriately verified, create or update a
 PR suitable for review and merge; a pilot or partial PR requires explicit direction.
-Use the existing delivery owner for publication. Initial linkage and supported native
+Use the existing delivery owner for publication. For managed delivery, call `publish`
+with authored `title` and `body`; the runtime resolves task, source, checkout and
+destination. Do not supply task IDs or digests. `prepare` is an optional read-only
+preview. Initial linkage and supported native
 attachment are one independent operation. The current PR association is editable
 metadata: operator-directed `delivery link` (`action: delivery`, `operation: link`
 in OpenClaw) accepts a same-repository `pullRequest` URL or `null` to clear it.

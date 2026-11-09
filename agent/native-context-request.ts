@@ -5,12 +5,13 @@ export function isNativeFeedbackRequest(route: string, input: Record<string, unk
   );
 }
 
-/** bind current-task reads without accepting model-supplied ownership selectors. */
+/** bind current-task operations without accepting model-supplied ownership selectors. */
 export function isNativeContextRequest(route: string, input: Record<string, unknown>) {
   return (
     (route === 'dispatch' &&
-      ['context', 'implementation-context'].includes(String(input.action))) ||
-    (route === 'continuation' && input.action === 'context') ||
+      ['context', 'implementation-context', 'delivery'].includes(String(input.action))) ||
+    (route === 'continuation' && ['context', 'delivery'].includes(String(input.action))) ||
+    route === 'delivery' ||
     isNativeFeedbackRequest(route, input)
   );
 }
@@ -38,17 +39,31 @@ export function nativeContextResponse<T>(value: T, route: string, source?: strin
     if (!request || typeof request !== 'object' || Array.isArray(request)) return request;
     const input = request as Record<string, unknown>;
     if (!isNativeContextRequest(requestRoute, input)) return request;
-    const { id: _id, eventId: _eventId, ...semantic } = input;
+    const semantic = { ...input };
+    delete semantic.id;
+    delete semantic.eventId;
     return {
       ...semantic,
       ...(isNativeFeedbackRequest(requestRoute, input) && source ? { source } : {}),
     };
   };
-  for (const field of ['contextRequest', 'continuationRequest'])
+  for (const field of [
+    'contextRequest',
+    'continuationRequest',
+    'deliveryPrepareRequest',
+    'publishRequest',
+    'linkRequest',
+  ])
     if (response[field])
       response[field] = project(
         response[field],
-        field === 'continuationRequest' ? 'continuation' : route,
+        field === 'continuationRequest'
+          ? 'continuation'
+          : field === 'deliveryPrepareRequest'
+            ? (response[field] as Record<string, unknown>).action === 'delivery'
+              ? route
+              : 'delivery'
+            : route,
       );
   if (response.next) response.next = project(response.next);
   const materials = response.contextMaterials;

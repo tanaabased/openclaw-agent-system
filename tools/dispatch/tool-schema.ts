@@ -109,7 +109,6 @@ const dispatchRequestVariants = Type.Union([
     pullRequest: Type.Optional(
       Type.Union([Type.String({ minLength: 1, maxLength: 4096 }), Type.Null()]),
     ),
-    digest: Type.Optional(id),
     publicText: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
     title: Type.Optional(Type.String({ minLength: 1, maxLength: 512, pattern: '\\S' })),
     body: Type.Optional(Type.String({ minLength: 1, maxLength: 65536, pattern: '\\S' })),
@@ -163,7 +162,7 @@ export const dispatchParameters = discriminatedSchema('action', dispatchRequestV
 
 // current-task reads have no model-facing owner selector.
 type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
-  action: 'context' | 'implementation-context';
+  action: 'context' | 'implementation-context' | 'delivery';
 }
   ? Omit<T, 'id'>
   : T extends { action: 'feedback' }
@@ -176,7 +175,9 @@ export const dispatchModelParameters = Type.Unsafe<ModelDispatchInput>(
     'action',
     Type.Union(
       dispatchRequestVariants.anyOf.map((variant) =>
-        ['context', 'implementation-context'].includes(String(variant.properties.action.const))
+        ['context', 'implementation-context', 'delivery'].includes(
+          String(variant.properties.action.const),
+        )
           ? Type.Omit(variant, ['id'], { additionalProperties: false })
           : variant.properties.action.const === 'feedback'
             ? object({

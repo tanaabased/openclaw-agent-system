@@ -78,7 +78,6 @@ const requestSchema = Type.Object(
     ),
     id: Type.String({ pattern: '^[a-f0-9]{64}$' }),
     eventId: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
-    digest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
     pullRequest: Type.Optional(
       Type.Union([Type.String({ minLength: 1, maxLength: 4096 }), Type.Null()]),
     ),
@@ -181,7 +180,7 @@ export default async function runCodexDelivery(
     );
     throw Object.assign(
       new Error(
-        `invalid delivery request${invalid.length ? `; missing or invalid fields: ${invalid.join(', ')}` : ''}${unsupported ? '; unsupported fields supplied' : ''}. use the managed context deliveryPrepareRequest with title and body for prepare, or the complete returned publishRequest for publish.`,
+        `invalid delivery request${invalid.length ? `; missing or invalid fields: ${invalid.join(', ')}` : ''}${unsupported ? '; unsupported fields supplied' : ''}. supply authored title and body for publication; the native adapter resolves the task and verifies the checkout.`,
       ),
       { code: 'delivery-request-invalid' },
     );
@@ -362,7 +361,6 @@ export default async function runCodexDelivery(
         const head = (await git(found.cwd, ['rev-parse', '--verify', 'HEAD'], signal)).trim();
         const bindingResult = await bindIssuePullRequest({
           id: record.id,
-          digest: input.digest,
           operator,
           adopted,
           previous,
@@ -391,7 +389,7 @@ export default async function runCodexDelivery(
               input.pullRequest!,
             ),
         });
-        if (bindingResult.status !== 'bound' || bindingResult.retained) return { ...bindingResult };
+        if (bindingResult.retained) return { ...bindingResult };
         if (previous) (record.deliveryHistory ??= []).push(previous);
         record.issueBranch = { attemptId: record.id, name: localBranch, phase: 'ready' };
         record.adoptedPullRequest = adopted;
@@ -778,7 +776,6 @@ export default async function runCodexDelivery(
           instruction:
             'The existing PR is selected, but there is no new work to publish. Adoption alone sends no announcement and does not establish implementation completion.',
         };
-      const digest = automationHash({ delivery, turnId: found.turnId, previous });
 
       if (
         input.action === 'compose' ||
@@ -808,15 +805,10 @@ export default async function runCodexDelivery(
         };
         const announce = await deliveryAnnouncement({
           runtime: 'codex',
-          request: {
-            action: 'compose',
-            id: input.id,
-            ...(input.eventId ? { eventId: input.eventId } : {}),
-          },
+          request: { action: 'compose' },
           material: input.material,
           now: (deps.now ?? Date.now)(),
           operation: input.action,
-          digest: input.digest,
           publicText: input.publicText,
           delivery: previous,
           publication,
@@ -854,32 +846,18 @@ export default async function runCodexDelivery(
         });
         return { ...announce, id: input.id, url: url(previous.pullRequest.pullRequestNumber) };
       }
-      if (input.action === 'prepare' || (input.action === 'publish' && input.digest !== digest))
+      if (input.action === 'prepare')
         return {
           status: 'prepared',
-          ...(input.action === 'publish'
-            ? { code: 'delivery-preview-stale', refreshed: true }
-            : {}),
-          id: input.id,
-          digest,
           operation: delivery,
           publishRequest: {
             action: 'publish' as const,
-            id: input.id,
-            ...(input.eventId ? { eventId: input.eventId } : {}),
-            digest,
             title: delivery.title,
             body: delivery.body,
           },
           currentPullRequest: taskPullRequest(record),
           instruction:
-            (input.action === 'publish'
-              ? 'This stale preview made no publication write. Inspect the refreshed operation and use its complete publishRequest once within the existing authorization; investigate repeated staleness. '
-              : '') +
-            (deps.schedule
-              ? 'The activated workflow and verified continuation authorize publication. Publish through the owning continuationRuntime with this digest and the same title/body; no additional stage approval is required. Native execution review still applies.'
-              : 'The verified implementation stage or current user direction authorizes ordinary PR delivery and appropriate follow-up commits. Do not ask for a separate publication grant; honor explicit user restrictions. Execute delivery publish through native approval. Preparation does not grant permission and a native denial stops the operation.') +
-            ' Save preparation stdout to a private temporary JSON file outside the checkout, inspect it, then pass that entire saved response unchanged on stdin to the owning publish command. It extracts publishRequest without retyping the digest, title or body. If this response was not saved, repeat prepare with output capture first. Keep prepare and publish as separate operations; never pipe preparation directly into publication. A stale response requires inspection before using its refreshed request; an uncertain or denied publication requires reconciliation, not replay.',
+            'Publish with the authored title and body through native approval when authorized. The runtime resolves the current task, checkout and destination and revalidates them inside publication. Preparation is optional and grants no authority. Honor explicit restrictions and native denials; reconcile uncertain publication through its retained owner.',
         };
       if (input.action === 'publish') {
         await authorizePublication();
@@ -968,7 +946,7 @@ export default async function runCodexDelivery(
             notices: notices(),
             id: input.id,
             pullRequest: delivery.pullRequest,
-            linkRequest: { action: 'link' as const, id: input.id },
+            linkRequest: { action: 'link' as const },
             workflowStatus: workflowStatus(record),
             url: url(delivery.pullRequest!.pullRequestNumber),
             instruction: deliveryCompletionInstructions(

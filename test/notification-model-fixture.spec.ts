@@ -28,7 +28,7 @@ import {
   prExampleScenario,
 } from '../examples/openclaw-pr-journey/model-fixture.ts';
 import { prDiscoveryExampleScenario } from '../examples/openclaw-pr-discovery/model-fixture.ts';
-import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
+import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 import { intakeParameters } from '../tools/intake/tool-schema.ts';
 import resolveExampleModelScenario from '../scripts/example-model-scenarios.ts';
 import openclawTurnContext from '../agent/openclaw-turn-context.ts';
@@ -57,7 +57,7 @@ describe('examples/pr discovery inspection fixture', () => {
     const call = first.toolCalls[0]!;
     assert.equal(call.name, 'agent_system_dispatch');
     assert.deepEqual(JSON.parse(call.arguments), { action: 'inspect', target, limit: 1 });
-    assert.ok(Value.Check(dispatchParameters, JSON.parse(call.arguments)));
+    assert.ok(Value.Check(dispatchModelParameters, JSON.parse(call.arguments)));
     const observed = {
       status: 'ready',
       total: 1,
@@ -125,7 +125,39 @@ for (const scenario of [
               {
                 role: 'user' as const,
                 content:
-                  'OpenClaw runtime context:\nAgent System model-only current-turn facts\n{"contextProbe":{"version":1,"runtime":"openclaw","hook":"before_prompt_build"}}\nEnd OpenClaw runtime context.',
+                  'OpenClaw runtime context:\n' +
+                  openclawTurnContext(
+                    {
+                      id,
+                      threadId: 'issue',
+                      request: { key: 'issue', agentId: 'receiver' },
+                      sessionCreation: { verified: true, sessionId: 'incarnation' },
+                      ...(prompt.includes('action feedback')
+                        ? {
+                            feedback: {
+                              baseline: {},
+                              events: [
+                                {
+                                  id: 'e'.repeat(64),
+                                  native: true,
+                                  number: 123,
+                                  itemType: 'issue',
+                                  source: JSON.stringify({ databaseId: 42 }),
+                                  turn: { runId: 'current' },
+                                },
+                              ],
+                            },
+                          }
+                        : { assessmentTurn: { runId: 'current' } }),
+                    } as OpenClawDispatchRecord,
+                    {
+                      agentId: 'receiver',
+                      sessionKey: 'issue',
+                      sessionId: 'incarnation',
+                      runId: 'current',
+                      repository: 'tanaabased/big-test-bucket',
+                    },
+                  )!.appendContext,
               },
             ]
           : []),
@@ -166,7 +198,7 @@ for (const scenario of [
       });
       const next = await response(input);
       assert.ok('toolCalls' in next);
-      assert.deepEqual(JSON.parse(next.toolCalls![0]!.arguments), { action: 'context', id });
+      assert.deepEqual(JSON.parse(next.toolCalls![0]!.arguments), { action: 'context' });
       assert.ok(!String(input.messages[1]!.content).includes(id));
     });
   }
@@ -208,7 +240,7 @@ for (const scenario of [
   }
 
   async function appendPagedContext(input: ChatCompletionRequest, value: Record<string, unknown>) {
-    const request = { action: 'implementation-context', id };
+    const request = { action: 'implementation-context' };
     append(input, 'work-context', implementationMaterial(value, request));
     let pages = 0;
     for (; pages < 64; pages++) {
@@ -217,7 +249,7 @@ for (const scenario of [
       assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
       const args = JSON.parse(next.toolCalls[0]!.arguments);
       if (!args.material) break;
-      assert.ok(Value.Check(dispatchParameters, args));
+      assert.ok(Value.Check(dispatchModelParameters, args));
       assert.ok('material' in args);
       append(
         input,
@@ -228,7 +260,7 @@ for (const scenario of [
     assert.ok(pages > 0 && pages < 64);
   }
 
-  type Action = Static<typeof dispatchParameters> | { action: 'scan'; policyDigest: string };
+  type Action = Static<typeof dispatchModelParameters> | { action: 'scan'; policyDigest: string };
 
   async function action<A extends Action['action']>(
     input: ChatCompletionRequest,
@@ -242,7 +274,7 @@ for (const scenario of [
     assert.equal(args.action, expected);
     assert.ok(
       Value.Check(
-        call.name === 'agent_system_intake' ? intakeParameters : dispatchParameters,
+        call.name === 'agent_system_intake' ? intakeParameters : dispatchModelParameters,
         args,
       ),
     );
@@ -280,7 +312,7 @@ for (const scenario of [
         assert.ok('toolCalls' in next && next.toolCalls?.length === 1);
         const args = JSON.parse(next.toolCalls[0]!.arguments);
         if (!args.material) break;
-        assert.ok(Value.Check(dispatchParameters, args));
+        assert.ok(Value.Check(dispatchModelParameters, args));
         assert.equal(args.action, 'summary');
         assert.equal(args.operation, 'compose');
         const page: Record<string, unknown> = await owner.run(args as AssessmentSummaryRequest);
@@ -372,7 +404,7 @@ for (const scenario of [
     });
     assert.equal((await action(input, 'reply', selectedScenario)).operation, 'publish');
     append(input, 'native-plan-preview', { status: 'publication-ready', digest });
-    assert.equal((await action(input, 'reply', selectedScenario)).digest, digest);
+    assert.equal('digest' in (await action(input, 'reply', selectedScenario)), false);
     append(input, 'native-plan-publish', {
       status: 'published',
       presentation: 'Question published.',
@@ -431,7 +463,7 @@ for (const scenario of [
         assert.throws(
           () =>
             validateToolArguments(
-              { name: 'agent_system_dispatch', parameters: dispatchParameters },
+              { name: 'agent_system_dispatch', parameters: dispatchModelParameters },
               { name: 'agent_system_dispatch', arguments: malformed },
             ),
           (error: unknown) => {
@@ -595,7 +627,7 @@ for (const scenario of [
       const input = request(
         `Fill initially available intake slots in one bounded pass. Policy digest: ${digest}`,
       );
-      assert.deepEqual(await action(input, 'scan'), { action: 'scan', policyDigest: digest });
+      assert.deepEqual(await action(input, 'scan'), { action: 'scan' });
       append(input, 'scan', { status: 'ready', admitted: 1 });
       await action(input, 'next');
       append(input, 'next', {
@@ -750,7 +782,7 @@ for (const scenario of [
           content:
             '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts previousResultDigest',
         });
-        assert.equal((await action(later, 'context')).id, id);
+        assert.equal('id' in (await action(later, 'context')), false);
         append(later, 'refresh-context', {
           status: 'verified',
           id,
@@ -819,7 +851,7 @@ for (const scenario of [
       const input = request(
         `Agent System: assess this admitted issue and retain its complete plan. Call agent_system_dispatch with action context and id ${id}`,
       );
-      assert.equal((await action(input, 'context')).id, id);
+      assert.equal('id' in (await action(input, 'context')), false);
       const context = {
         status: 'verified',
         runtime: 'openclaw',
@@ -932,7 +964,7 @@ for (const scenario of [
           `Continue plan for managed issue ${id}: Implement the retained plan; ask about cleanup timing if needed. Do not push or publish a PR.`,
         );
         const context = await action(followup, 'implementation-context', selected);
-        assert.equal(context.id, id);
+        assert.equal('id' in context, false);
         assert.equal(context.scope, 'local');
       });
       for (const interrupted of [false, true])
@@ -949,7 +981,7 @@ for (const scenario of [
             input.messages[1]!.content += ' Resume the discussion.';
           }
           const context = await action(input, 'implementation-context', selected);
-          assert.equal(context.id, id);
+          assert.equal('id' in context, false);
           assert.equal(context.decision?.mode, 'work');
           assert.ok(context.decision?.reasons.length);
         });
@@ -1147,7 +1179,7 @@ for (const scenario of [
           }
           assert.equal((await action(input, 'delivery', workScenario)).operation, 'prepare');
           append(input, 'delivery-prepare', { status: 'prepared', digest });
-          assert.equal((await action(input, 'delivery', workScenario)).digest, digest);
+          assert.equal('digest' in (await action(input, 'delivery', workScenario)), false);
           const failedGit = structuredClone(input);
           append(failedGit, 'delivery-publish', {
             status: 'needs-attention',
@@ -1168,11 +1200,11 @@ for (const scenario of [
           });
           const reconciliation = await action(input, 'delivery', workScenario);
           assert.equal(reconciliation.operation, 'prepare');
-          assert.equal(reconciliation.id, id);
+          assert.equal('id' in reconciliation, false);
           append(input, 'delivery-link-prepare-0', { status: 'prepared', digest });
           const linkageRetry = await action(input, 'delivery', workScenario);
           assert.equal(linkageRetry.operation, 'publish');
-          assert.equal(linkageRetry.id, id);
+          assert.equal('id' in linkageRetry, false);
           append(input, 'delivery-link-publish-0', {
             status: 'published',
             workflowStatus: 'native-unobserved',
@@ -1242,24 +1274,6 @@ for (const scenario of [
         assert.match(prepared.title!, /cleanup and verification/);
         append(input, 'delivery-prepare', { status: 'prepared', digest });
         assert.equal((await action(input, 'delivery')).operation, 'publish');
-        const refreshedDigest = 'f'.repeat(64);
-        append(input, 'delivery-publish', {
-          status: 'prepared',
-          code: 'delivery-preview-stale',
-          digest: refreshedDigest,
-        });
-        const refreshed = await action(input, 'delivery');
-        assert.equal(refreshed.operation, 'publish');
-        assert.equal(refreshed.digest, refreshedDigest);
-        assert.equal(refreshed.title, prepared.title);
-        assert.equal(refreshed.body, prepared.body);
-        const stopped = structuredClone(input);
-        append(stopped, 'delivery-publish-refreshed', {
-          status: 'prepared',
-          code: 'delivery-preview-stale',
-          digest,
-        });
-        assert.equal(matchFixture([...scenario.fixtures], stopped), null);
         const waiting = {
           status: 'waiting',
           code: 'github-delivery-head-not-observed',
@@ -1271,7 +1285,7 @@ for (const scenario of [
           { ...waiting, pullRequest: undefined },
         ]) {
           const invalid = structuredClone(input);
-          append(invalid, 'delivery-publish-refreshed', rejected);
+          append(invalid, 'delivery-publish', rejected);
           if (rejected.status === 'blocked' || rejected.code !== waiting.code) {
             const stopped = await response(invalid);
             assert.ok('content' in stopped);
@@ -1279,19 +1293,19 @@ for (const scenario of [
             assert.match(String(stopped.content), new RegExp(rejected.code, 'u'));
           } else assert.equal(matchFixture([...scenario.fixtures], invalid), null);
         }
-        append(input, 'delivery-publish-refreshed', waiting);
+        append(input, 'delivery-publish', waiting);
         const exhausted = structuredClone(input);
         for (let index = 0; index < 3; index++) {
           const reconcile = await action(exhausted, 'delivery');
           assert.equal(reconcile.operation, 'prepare');
-          assert.equal(reconcile.id, id);
+          assert.equal('id' in reconcile, false);
           append(exhausted, `delivery-link-prepare-${index}`, {
             status: 'prepared',
-            digest: refreshedDigest,
+            digest,
           });
           const publish = await action(exhausted, 'delivery');
           assert.equal(publish.operation, 'publish');
-          assert.equal(publish.digest, refreshedDigest);
+          assert.equal('digest' in publish, false);
           append(exhausted, `delivery-link-publish-${index}`, waiting);
         }
         assert.deepEqual(await response(exhausted), {
@@ -1299,8 +1313,8 @@ for (const scenario of [
             'notification-delivery-reconciliation-exhausted: github-delivery-head-not-observed',
         });
         assert.equal((await action(input, 'delivery')).operation, 'prepare');
-        append(input, 'delivery-link-prepare-0', { status: 'prepared', digest: refreshedDigest });
-        assert.equal((await action(input, 'delivery')).digest, refreshedDigest);
+        append(input, 'delivery-link-prepare-0', { status: 'prepared', digest });
+        assert.equal('digest' in (await action(input, 'delivery')), false);
         append(input, 'delivery-link-publish-0', {
           status: 'published',
           workflowStatus: 'native-unobserved',
@@ -1346,7 +1360,7 @@ for (const scenario of [
             operation: 'compose',
             purpose: 'status-update',
             target: source,
-            update: { observation: digest, facts: [] },
+            update: { facts: [] },
           },
         };
         append(input, 'update-context', statusContext);
@@ -1354,7 +1368,7 @@ for (const scenario of [
         assert.equal(compose.operation, 'compose');
         assert.equal(compose.target, statusContext.composeRequest.target);
         assert.equal('observation' in compose, false);
-        assert.equal(compose.update?.observation, digest);
+        assert.equal('observation' in (compose.update ?? {}), false);
         assert.equal(compose.update?.facts.length, 1);
         append(input, 'update-compose', {
           status: 'composition-ready',
@@ -1410,6 +1424,7 @@ for (const scenario of [
             sessionKey: 'issue',
             sessionId: 'incarnation',
             runId: 'queued-feedback',
+            repository: 'tanaabased/big-test-bucket',
           },
         )!;
         input.messages.push({
@@ -1419,8 +1434,7 @@ for (const scenario of [
         assert.deepEqual(await action(input, 'feedback'), {
           action: 'feedback',
           operation: 'context',
-          id,
-          eventId: 'e'.repeat(64),
+          source: `${source}#issuecomment-42`,
         });
         append(input, 'feedback-context', {
           status: 'verified',
@@ -1474,7 +1488,7 @@ for (const scenario of [
             content:
               '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>> Agent System model-only current-turn facts\n{"contextProbe":{"version":1,"runtime":"openclaw","hook":"before_prompt_build"}}',
           });
-          assert.equal((await action(input, 'context')).id, id);
+          assert.equal('id' in (await action(input, 'context')), false);
           append(input, 'context', {
             status: 'verified',
             runtime: 'openclaw',
@@ -1545,7 +1559,6 @@ for (const scenario of [
             if (initial) {
               assert.deepEqual(await runAction(input, 'implementation-context'), {
                 action: 'implementation-context',
-                id,
               });
               append(input, 'feedback-work-context', {
                 status: 'verified',
@@ -1611,7 +1624,7 @@ for (const scenario of [
             append(input, 'feedback-delivery-prepare', { status: 'prepared', digest });
             const delivered = await runAction(input, 'delivery');
             assert.equal(delivered.operation, 'publish');
-            assert.equal(delivered.digest, digest);
+            assert.equal('digest' in delivered, false);
             if (initial) {
               const transient = {
                 status: 'retrying',
@@ -1626,7 +1639,7 @@ for (const scenario of [
               append(recovery, 'feedback-delivery-publish', transient);
               const prepare = await runAction(recovery, 'delivery');
               assert.equal(prepare.operation, 'prepare');
-              assert.equal(prepare.id, id);
+              assert.equal('id' in prepare, false);
               assert.equal('eventId' in prepare, false);
               append(recovery, 'feedback-link-prepare-0', {
                 status: 'prepared',
@@ -1635,7 +1648,7 @@ for (const scenario of [
               });
               const publish = await runAction(recovery, 'delivery');
               assert.equal(publish.operation, 'publish');
-              assert.equal(publish.digest, digest);
+              assert.equal('digest' in publish, false);
               append(recovery, 'feedback-link-publish-0', { status: 'published' });
               assert.equal((await runAction(recovery, 'delivery')).operation, 'link');
               append(recovery, 'feedback-delivery-association', {
@@ -1680,7 +1693,7 @@ for (const scenario of [
               });
               const recovery = await runAction(input, 'delivery');
               assert.equal(recovery.operation, 'prepare');
-              assert.equal(recovery.id, id);
+              assert.equal('id' in recovery, false);
               assert.equal('eventId' in recovery, false);
               const missingReceipt = structuredClone(input);
               append(missingReceipt, 'feedback-link-prepare-0', { status: 'prepared', digest });
@@ -1694,8 +1707,8 @@ for (const scenario of [
               });
               const retry = await runAction(input, 'delivery');
               assert.equal(retry.operation, 'publish');
-              assert.equal(retry.digest, digest);
-              assert.equal(retry.id, id);
+              assert.equal('digest' in retry, false);
+              assert.equal('id' in retry, false);
               assert.equal('eventId' in retry, false);
               append(input, 'feedback-link-publish-0', { status: 'published' });
             } else append(input, 'feedback-delivery-publish', { status: 'published' });
@@ -1756,11 +1769,13 @@ for (const scenario of [
             assert.deepEqual(await runResponse(input), {
               content: composition.privateText + '\n\nReply draft retained: ' + id,
             });
-            input = request(`Publish retained reply draft: ${id}`);
+            input = request(
+              `Publish retained reply: ${JSON.stringify({ target: source, publicText: candidate.publicText })}`,
+            );
           }
-          assert.equal((await runAction(input, 'reply')).digest, undefined);
+          assert.equal('digest' in (await runAction(input, 'reply')), false);
           append(input, 'feedback-preview', { status: 'publication-ready', digest });
-          assert.equal((await runAction(input, 'reply')).digest, digest);
+          assert.equal('digest' in (await runAction(input, 'reply')), false);
           append(input, 'feedback-publish', {
             status: 'published',
             presentation: 'Complete private and public presentation',

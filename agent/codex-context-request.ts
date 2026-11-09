@@ -30,10 +30,15 @@ export default async function codexContextRequest(
 ) {
   if (!isNativeContextRequest(route, input)) return input;
   assertNativeContextInput(input);
+  if ((route === 'delivery' || input.action === 'delivery') && Object.hasOwn(input, 'digest'))
+    throw new Error('native-context-binding-override');
   if (!threadId) throw new Error('turn-context-native-caller-required');
   const task = await read(pluginData, { threadId });
   const request = nativeContextRequest(input, task ? { id: task.receipt } : undefined);
-  if (!isNativeFeedbackRequest(route, input)) return request;
+  if (!isNativeFeedbackRequest(route, input))
+    return route === 'delivery' && task?.feedbackContextRequest
+      ? { ...request, eventId: task.feedbackContextRequest.eventId }
+      : request;
   const admission = task?.admission;
   const event = nativeFeedbackSource(
     task?.record?.feedback?.events ?? [],
@@ -41,6 +46,7 @@ export default async function codexContextRequest(
     admission && `${admission.repository.owner.login}/${admission.repository.name}`,
     input.source,
   );
-  const { source: _source, ...authored } = request;
+  const authored = { ...request };
+  delete authored.source;
   return { ...authored, eventId: event.id };
 }
