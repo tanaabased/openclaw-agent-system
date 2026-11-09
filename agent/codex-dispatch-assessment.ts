@@ -215,7 +215,7 @@ export async function handoffDispatch(
       turnId: native.turnId,
       inputId: operatorInput?.inputId,
     });
-    if (input.digest === undefined)
+    if (!input.apply && input.digest === undefined)
       return {
         status: 'handoff-available' as const,
         id: record.id,
@@ -224,7 +224,7 @@ export async function handoffDispatch(
         instruction:
           'Apply this handoff when the live workflow or explicit user request permits implementation. It records the transition and preserves the assessment and checkout. Implementation includes ordinary PR delivery; honor explicit restrictions and native denials.',
       };
-    if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+    if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
     if (transition.status === 'ready')
       record.progression = { ...transition.progression, workOwner: 'issue' };
     await codexIssueBranch({

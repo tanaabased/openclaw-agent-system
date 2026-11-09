@@ -17,7 +17,7 @@ const schemas = {
   'observe-denials': object({}),
   next: object({ projects: Type.Optional(Type.Unknown()), threads: Type.Optional(Type.Unknown()) }),
   report: object({ automationId: Type.String(), currentTimeIso: Type.String() }),
-  handoff: object(recovery),
+  handoff: object({ ...recovery, apply: Type.Optional(Type.Boolean()) }),
   reset: object(recovery),
   retire: Type.Union([
     object({

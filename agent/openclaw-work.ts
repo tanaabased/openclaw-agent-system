@@ -130,7 +130,7 @@ export default async function openClawWorkAction(input: {
       permission: action.permission,
       work: record.work ?? null,
     });
-    if (!action.digest)
+    if (!action.apply && !action.digest)
       return {
         status: 'handoff-available',
         id: record.id,
@@ -139,7 +139,7 @@ export default async function openClawWorkAction(input: {
         instructions:
           'Apply this digest to record the single implementation transition. Work includes ordinary branch, commit, push, and PR delivery. Honor explicit user restrictions; this preview does not override cancellation or native denial.',
       };
-    if (action.digest !== digest) throw new Error('dispatch-handoff-stale');
+    if (!action.apply && action.digest !== digest) throw new Error('dispatch-handoff-stale');
     record.work ??= {};
     if (action.permission !== 'publication')
       record.progression = { ...input.progression, workOwner: 'issue' };

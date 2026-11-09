@@ -70,6 +70,7 @@ const dispatchRequestVariants = Type.Union([
   object({
     action: Type.Literal('handoff'),
     id,
+    apply: Type.Optional(Type.Boolean()),
     permission: Type.Optional(
       Type.Union([
         Type.Literal('implementation'),
@@ -166,12 +167,13 @@ type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
     | 'context'
     | 'present'
     | 'summary'
+    | 'handoff'
     | 'result'
     | 'implementation-context'
     | 'implementation-result'
     | 'delivery';
 }
-  ? Omit<T, 'id' | 'previousResultDigest'>
+  ? Omit<T, 'id' | 'previousResultDigest' | 'digest' | 'apply'>
   : T extends { action: 'feedback' }
     ? Omit<T, 'id' | 'eventId' | 'digest'> & { source?: string }
     : T extends { action: 'retire' }
@@ -190,12 +192,15 @@ export const dispatchModelParameters = Type.Unsafe<ModelDispatchInput>(
           'context',
           'present',
           'summary',
+          'handoff',
           'result',
           'implementation-context',
           'implementation-result',
           'delivery',
         ].includes(String(variant.properties.action.const))
-          ? Type.Omit(variant, ['id', 'previousResultDigest'], { additionalProperties: false })
+          ? Type.Omit(variant, ['id', 'previousResultDigest', 'digest', 'apply'], {
+              additionalProperties: false,
+            })
           : variant.properties.action.const === 'feedback'
             ? object({
                 ...Type.Omit(variant, ['id', 'eventId', 'digest']).properties,

@@ -13,6 +13,7 @@ export function isNativeContextRequest(route: string, input: Record<string, unkn
         'context',
         'present',
         'summary',
+        'handoff',
         'result',
         'implementation-context',
         'implementation-result',
@@ -36,6 +37,7 @@ export function assertNativeContextInput(input: Record<string, unknown>) {
     'eventId',
     'digest',
     'previousResultDigest',
+    'apply',
   ])
     if (Object.hasOwn(input, field)) throw new Error('native-context-binding-override');
 }
@@ -47,7 +49,7 @@ export function nativeContextRequest(
   assertNativeContextInput(input);
   if (!owner || owner.retired || owner.reset || owner.supersededBy)
     throw new Error('native-context-owner-unavailable');
-  return { ...input, id: owner.id };
+  return { ...input, id: owner.id, ...(input.action === 'handoff' ? { apply: true } : {}) };
 }
 
 /** project prepared read requests, never provider content or retained effect records. */

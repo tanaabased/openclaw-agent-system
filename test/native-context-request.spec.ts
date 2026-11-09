@@ -6,6 +6,24 @@ import { nativeContextRequest, nativeContextResponse } from '../agent/native-con
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
 describe('native current-task context inputs', () => {
+  it('should bind an authorized handoff without a model-selected receipt or fingerprint', async () => {
+    const input = { action: 'handoff' };
+    assert.equal(Value.Check(dispatchModelParameters, input), true);
+    assert.deepEqual(
+      await codexContextRequest('private', 'dispatch', input, 'thread', async () => ({
+        receipt: 'owner',
+      })),
+      { action: 'handoff', id: 'owner', apply: true },
+    );
+    for (const field of ['id', 'digest', 'apply']) {
+      assert.equal(Value.Check(dispatchModelParameters, { ...input, [field]: 'owner' }), false);
+      await assert.rejects(
+        codexContextRequest('private', 'dispatch', { ...input, [field]: 'owner' }, 'thread'),
+        /binding-override/,
+      );
+    }
+  });
+
   it('should resolve result and readback ownership inside both native adapters', async () => {
     const requests = [
       { action: 'present' },
