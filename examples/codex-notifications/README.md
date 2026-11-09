@@ -228,7 +228,10 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
 if output=$(printf '%s\n' '{"action":"launch","operation":"context","target":"tanaabased/big-test-bucket#1"}' | env -u CODEX_THREAD_ID node "$runtime" dispatch launch context --plugin-data "$plugin_data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-native-caller-required"'
+if ! printf '%s\n' "$output" | jq -e '.status == "error" and .code == "native-inventory-caller-required"'; then
+  printf 'unexpected headless launch diagnostic: %s\n' "$output" >&2
+  exit 1
+fi
 if output=$(printf '%s\n' '{"action":"launch","operation":"prepare","target":"tanaabased/big-test-bucket#1"}' | node "$runtime" dispatch launch context --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "workflow-command-action-mismatch"'
 test ! -d "$CODEX_HOME/automations"
@@ -239,7 +242,10 @@ plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
 if output=$(printf '%s\n' '{"action":"launch","operation":"context","target":"tanaabased/big-test-bucket#1","fresh":true,"pullRequest":"https://github.com/tanaabased/big-test-bucket/pull/2"}' | env -u CODEX_THREAD_ID node "$runtime" dispatch launch context --plugin-data "$plugin_data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-native-caller-required"'
+if ! printf '%s\n' "$output" | jq -e '.status == "error" and .code == "native-inventory-caller-required"'; then
+  printf 'unexpected fresh launch diagnostic: %s\n' "$output" >&2
+  exit 1
+fi
 
 # should reject copied bindings across packaged workflow commands
 root="$TMPDIR/agent-system-codex-notifications"
