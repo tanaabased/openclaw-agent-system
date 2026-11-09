@@ -22,7 +22,7 @@ import type { RegisteredAgentSystemTool } from '../../api/types.ts';
 import AgentSystemToolError from '../../api/error.ts';
 import type AgentManifestService from '../../manifest/service.ts';
 import type TrustedGitWorktreeService from '../git/trusted-worktree-service.ts';
-import { dispatchModelParameters } from './tool-schema.ts';
+import { dispatchModelParameters, assertDispatchModelRequest } from './tool-schema.ts';
 
 interface NativeContext {
   agentId?: string;
@@ -177,8 +177,7 @@ export default function createDispatchTool(input: {
         parameters: dispatchModelParameters,
         async execute(id, params, signal) {
           signal?.throwIfAborted();
-          if (!Value.Check(dispatchModelParameters, params))
-            throw new Error('dispatch-request-invalid');
+          assertDispatchModelRequest(params, 'dispatch-request-invalid');
           const binding = await loaded(context);
           let result;
           if (params.action === 'check')

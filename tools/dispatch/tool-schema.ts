@@ -9,7 +9,10 @@ import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
 import { launchRequestSchema } from './launch-schema.ts';
 import { operatorTargetProperties } from './recovery-schema.ts';
 import { retirementRequestSchema, retirementModelSchema } from './retirement-schema.ts';
-import { directImplementationRequestSchema } from './implementation-schema.ts';
+import {
+  directImplementationRequestSchema,
+  invalidImplementationRequest,
+} from './implementation-schema.ts';
 import { directAssessmentRequestSchema } from './assessment-schema.ts';
 import { feedbackDecisionSchema } from '../../agent/feedback-work.ts';
 import { Type, type Static, type TProperties } from 'typebox';
@@ -18,7 +21,8 @@ import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';
 import { feedbackResultSchema } from '../../agent/feedback-state.ts';
 import { implementationResultSchema } from '../../agent/implementation-result.ts';
-import { replyExecutionSchema } from './reply-schema.ts';
+import { replyExecutionSchema, invalidReplyRequest } from './reply-schema.ts';
+import { Value } from 'typebox/value';
 import discriminatedSchema from '../../utils/discriminated-schema.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -252,3 +256,15 @@ export const dispatchModelParameters = Type.Unsafe<ModelMaterialInput<ModelDispa
     ),
   ),
 );
+
+/** validate public arguments before runtime binding, preserving safe operation-specific guidance. */
+export function assertDispatchModelRequest(
+  input: unknown,
+  fallback = 'dispatch-model-request-invalid',
+): asserts input is Static<typeof dispatchModelParameters> & Record<string, unknown> {
+  if (Value.Check(dispatchModelParameters, input)) return;
+  const action = input && typeof input === 'object' && 'action' in input ? input.action : undefined;
+  if (action === 'reply') throw invalidReplyRequest(input, dispatchModelParameters);
+  if (action === 'implementation') throw invalidImplementationRequest(input);
+  throw new Error(fallback);
+}

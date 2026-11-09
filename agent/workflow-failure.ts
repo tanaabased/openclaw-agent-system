@@ -4,6 +4,7 @@ import {
 } from '../core/private-state-file-lock.ts';
 import { providerDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
 import AssessmentValidationError from './assessment-validation.ts';
+import WorkflowRequestError from './workflow-request-error.ts';
 import { ContextMaterialError } from './implementation-material.ts';
 
 /** preserve public codes and bounded provider evidence through wrapped runtime failures. */
@@ -18,7 +19,8 @@ export default function workflowFailure(error: unknown, fallback: string) {
     seen.add(value);
     if (seen.size > 8) break;
     if (value instanceof PrivateStateFileLockBusyError) contention ??= value.contention;
-    if (value instanceof AssessmentValidationError) recovery ??= value.recovery;
+    if (value instanceof AssessmentValidationError || value instanceof WorkflowRequestError)
+      recovery ??= value.recovery;
     if (value instanceof ContextMaterialError && value.code.endsWith('-stale'))
       recovery ??= {
         instruction:

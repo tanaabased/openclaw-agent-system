@@ -3,6 +3,7 @@ import { Value } from 'typebox/value';
 import { Type } from 'typebox';
 
 import { implementationResultSchema } from '../../agent/implementation-result.ts';
+import WorkflowRequestError from '../../agent/workflow-request-error.ts';
 
 const text = Type.String({ minLength: 1, maxLength: 4096, pattern: '\\S' });
 export const directImplementationRequestSchema = Type.Object(
@@ -36,7 +37,8 @@ export const directImplementationRequestSchema = Type.Object(
 
 /** validate the same envelope before either manual collection or managed routing. */
 export function parseDirectImplementationRequest(input: unknown) {
-  if (!Value.Check(directImplementationRequestSchema, input)) throw invalidRequest(input);
+  if (!Value.Check(directImplementationRequestSchema, input))
+    throw invalidImplementationRequest(input);
   if (
     (input.material !== undefined &&
       (input.operation !== 'context' || input.scope !== undefined || input.plan !== undefined)) ||
@@ -46,11 +48,11 @@ export function parseDirectImplementationRequest(input: unknown) {
     ((input.plan !== undefined || input.scope !== undefined) && input.operation !== 'context') ||
     ((input.deliveryOperation || input.title || input.body) && input.operation !== 'delivery')
   )
-    throw invalidRequest(input);
+    throw invalidImplementationRequest(input);
   return input;
 }
 
-function invalidRequest(input: unknown) {
+export function invalidImplementationRequest(input: unknown) {
   const operation =
     input && typeof input === 'object' && 'operation' in input ? input.operation : undefined;
   const guidance =
@@ -63,7 +65,5 @@ function invalidRequest(input: unknown) {
           : operation === 'present'
             ? 'use operation present with an optional target issue URL to read historical results. Do not include plan, scope, result or delivery fields.'
             : 'use action implementation with operation context, result, present or delivery.';
-  return Object.assign(new Error(`implementation-request-invalid: ${guidance}`), {
-    code: 'implementation-request-invalid',
-  });
+  return new WorkflowRequestError('implementation-request-invalid', guidance);
 }

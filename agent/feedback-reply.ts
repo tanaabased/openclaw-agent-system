@@ -78,16 +78,6 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
     ...authored,
     update: undefined,
   };
-  if (
-    (authored.update && (input.purpose !== 'status-update' || input.operation !== 'compose')) ||
-    (input.operation === 'context' && input.purpose !== 'status-update') ||
-    (input.material &&
-      (!['context', 'compose'].includes(input.operation) ||
-        (input.privateText !== undefined && input.operation !== 'compose') ||
-        input.outcome !== undefined ||
-        authored.update !== undefined))
-  )
-    throw new Error('reply-request-invalid');
   await deps.assertCurrent();
   const store = new ReplyStore(deps.root, deps.binding);
   return store.exclusive(async (drafts, save) => {

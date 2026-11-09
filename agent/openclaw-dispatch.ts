@@ -45,7 +45,10 @@ import { stateSnapshotConflictCode } from '../core/merge-state-snapshot.ts';
 import { privateStateFileLockBusyErrorCode } from '../core/private-state-file-lock.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import { dispatchModelParameters, type dispatchParameters } from '../tools/dispatch/tool-schema.ts';
+import {
+  assertDispatchModelRequest,
+  type dispatchParameters,
+} from '../tools/dispatch/tool-schema.ts';
 import discoveryCheckpoint from './discovery-checkpoint.ts';
 import discoveryNotice from './discovery-notice.ts';
 import { dispatchFailurePhase, scheduleDispatchRetry } from './dispatch-retry.ts';
@@ -141,8 +144,7 @@ export default class OpenClawDispatch {
     authority: DispatchAuthority = {},
   ) {
     if (isNativeContextRequest('dispatch', input)) assertNativeContextInput(input);
-    if (!Value.Check(dispatchModelParameters, input as unknown))
-      throw new Error('dispatch-model-request-invalid');
+    assertDispatchModelRequest(input);
     const modelInput = input;
     if (input.material)
       input = await this.dependencies.credential.use(authority, (request) =>

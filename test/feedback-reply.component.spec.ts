@@ -1769,7 +1769,7 @@ describe('agent/feedback-reply', () => {
     assert.equal(composed.status, 'composition-ready');
     await assert.rejects(
       direct('candidate', { digest: 'a'.repeat(64), publicText: 'Wrong override.' }),
-      /dispatch-model-request-invalid/,
+      /reply-request-invalid/,
     );
     await direct('candidate', {
       target: url,

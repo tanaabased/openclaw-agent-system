@@ -14,6 +14,8 @@ import {
 } from '../core/private-state-file-lock.ts';
 import GitCommandError from '../tools/git/command-error.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
+import { parseReplyRequest } from '../tools/dispatch/reply-schema.ts';
+import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 
 interface HookContext {
   requester?: { senderIsOwner?: boolean };
@@ -142,6 +144,58 @@ describe('tools/dispatch/tool', () => {
       true,
       'explicit native cleanup must not require GitHub configuration',
     );
+  });
+
+  it('should explain malformed authored arguments at both public entry points', async () => {
+    const f = fixture();
+    for (const [params, expected] of [
+      [
+        { action: 'reply', operation: 'compose', outcome: { private: 'private-value' } },
+        /request\.outcome must be string/,
+      ],
+      [
+        { action: 'implementation', operation: 'result', summary: 'private-value' },
+        /outcome, summary and fullResult inside result/,
+      ],
+      [{ action: 'reply', operation: 'compose', digest: 'private-value' }, /unsupported fields/],
+    ] as const) {
+      for (const run of [
+        () => f.build().execute('invalid', params),
+        () =>
+          f.adapter.service.runModel(
+            f.manifest as never,
+            '/unused',
+            { ...coordinator, toolCallId: 'invalid' },
+            params,
+          ),
+      ])
+        await assert.rejects(run, (error: unknown) => {
+          assert.ok(error instanceof Error);
+          assert.match(error.message, expected);
+          assert.doesNotMatch(error.message, /private-value/);
+          return true;
+        });
+    }
+    assert.equal(f.calls.length, 0);
+  });
+
+  it('should retain safe request recovery through the native error response', async () => {
+    const f = fixture();
+    for (const parse of [
+      () => parseReplyRequest({ action: 'reply', operation: 'context' }),
+      () => parseDirectImplementationRequest({ action: 'implementation', operation: 'result' }),
+    ]) {
+      f.adapter.service.runModel = async () => {
+        parse();
+        throw new Error('must reject');
+      };
+      await f.hook(event, coordinator);
+      const result = await f.build().execute(event.toolCallId, event.params);
+      const value = JSON.parse((result.content[0] as { text: string }).text);
+      assert.match(value.code, /^(reply|implementation)-request-invalid$/);
+      assert.equal(typeof value.recovery.instruction, 'string');
+      assert.match(value.recovery.instruction, /status-update|outcome, summary and fullResult/);
+    }
   });
 
   it('should isolate simultaneous caller captures across agents with the same call id', async () => {

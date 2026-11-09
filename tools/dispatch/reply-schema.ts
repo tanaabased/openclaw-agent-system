@@ -1,4 +1,5 @@
-import { Type, type Static } from 'typebox';
+import { Type, type Static, type TSchema } from 'typebox';
+import WorkflowRequestError from '../../agent/workflow-request-error.ts';
 import { Value } from 'typebox/value';
 import { implementationMaterialSchema } from './implementation-material-schema.ts';
 
@@ -67,8 +68,33 @@ export type ReplyExecutionRequest = Static<typeof replyExecutionSchema>;
 
 /** describe schema-owned fields without echoing authored values or unknown property names. */
 export function parseReplyRequest(input: unknown): ReplyExecutionRequest {
-  if (Value.Check(replyExecutionSchema, input)) return input;
-  const error = Value.Errors(replyExecutionSchema, input)[0];
+  if (!Value.Check(replyExecutionSchema, input)) throw invalidReplyRequest(input);
+  if (input.update && (input.purpose !== 'status-update' || input.operation !== 'compose'))
+    throw new WorkflowRequestError(
+      'reply-request-invalid',
+      'update requires purpose status-update and operation compose.',
+    );
+  if (input.operation === 'context' && input.purpose !== 'status-update')
+    throw new WorkflowRequestError(
+      'reply-request-invalid',
+      'operation context requires purpose status-update; use compose for an authored reply.',
+    );
+  if (
+    input.material &&
+    (!['context', 'compose'].includes(input.operation) ||
+      (input.privateText !== undefined && input.operation !== 'compose') ||
+      input.outcome !== undefined ||
+      input.update !== undefined)
+  )
+    throw new WorkflowRequestError(
+      'reply-request-invalid',
+      'forward the returned context or compose page request unchanged; do not combine material with outcome or update.',
+    );
+  return input;
+}
+
+export function invalidReplyRequest(input: unknown, schema: TSchema = replyExecutionSchema) {
+  const error = Value.Errors(schema, input)[0];
   const field = ['request', ...(error?.instancePath.split('/').filter(Boolean) ?? [])].join('.');
   const expected =
     error?.keyword === 'type'
@@ -80,7 +106,5 @@ export function parseReplyRequest(input: unknown): ReplyExecutionRequest {
     field === 'request.outcome'
       ? ' outcome is optional authored text; omit it when privateText already describes the result.'
       : '';
-  throw Object.assign(new Error(`reply-request-invalid: ${field} ${expected}.${hint}`), {
-    code: 'reply-request-invalid',
-  });
+  return new WorkflowRequestError('reply-request-invalid', `${field} ${expected}.${hint}`);
 }
