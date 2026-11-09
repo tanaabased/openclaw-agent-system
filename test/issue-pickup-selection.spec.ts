@@ -227,13 +227,30 @@ describe('agent/issue-pickup', () => {
       assert.equal(f.effects.writes, 0);
     });
 
+    it(`should reject matching scan bindings and ambiguous native operations in ${runtime}`, async () => {
+      const f = fixture(runtime);
+      const selection = await f.select();
+      const operation = f.state.projectPickup!.operations[0]!;
+      for (const override of [{ id: operation.id }, { digest: operation.selectionDigest }])
+        await assert.rejects(
+          f.run({ selection: { ...selection, ...override } }),
+          /issue-pickup-input-invalid/,
+        );
+      assert.equal(f.effects.writes, 0);
+      f.state.projectPickup!.operations.push({
+        ...structuredClone(operation),
+        id: 'other-operation',
+      });
+      await assert.rejects(f.run({ selection }), /issue-pickup-operation-ambiguous/);
+      assert.equal(f.effects.writes, 0);
+    });
+
     it(`should apply omitted and preferred scope edits on the next scan in ${runtime}`, async () => {
       const f = fixture(runtime);
       const stale = await f.select();
       delete f.policy.issuePickup!.projects[0]!.milestone;
       f.item.milestone = null;
-      assert.equal((await f.run({ selection: stale })).status, 'failed');
-      assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
+      assert.equal((await f.run({ selection: stale })).status, 'assigned');
       f.policy.issuePickup!.projects[0]!.milestone = { number: [10], policy: 'prefer' };
       assert.ok(pickupAuthority(f.state.projectPickup)!.retained?.length);
       assert.equal(f.effects.writes, 1);
@@ -339,14 +356,15 @@ describe('agent/issue-pickup', () => {
     it(`should discard prior scan material and load current guidance in ${runtime}`, async () => {
       const f = fixture(runtime);
       const old = await f.select();
+      const oldOperation = f.state.projectPickup!.operations[0]!.id;
       f.policy.issuePickup!.selection = { guidance: 'new priorities' };
       f.tx.runId = 'next-scan';
       const fresh = await f.run();
       assert.ok('guidance' in fresh && fresh.guidance === 'new priorities');
-      assert.ok('id' in fresh && fresh.id !== old.id);
+      assert.ok('id' in fresh && fresh.id !== oldOperation);
       assert.equal(f.state.projectPickup!.operations.length, 1);
-      assert.equal((await f.run({ selection: old })).status, 'failed');
-      assert.equal(f.effects.writes, 0);
+      assert.equal((await f.run({ selection: old })).status, 'assigned');
+      assert.equal(f.effects.writes, 1);
     });
 
     it(`should accept edited content and verify eligibility only once before assignment in ${runtime}`, async () => {
@@ -378,7 +396,7 @@ describe('agent/issue-pickup', () => {
       assert.ok(Value.Check(pickupOperationSchema, retained));
     });
 
-    for (const reason of ['unknown', 'closed', 'assigned', 'milestone', 'stale']) {
+    for (const reason of ['unknown', 'closed', 'assigned', 'milestone']) {
       it(`should reject ${reason} selections without writing in ${runtime}`, async () => {
         const f = fixture(runtime);
         const selection = await f.select();
@@ -386,7 +404,6 @@ describe('agent/issue-pickup', () => {
         if (reason === 'closed') f.item.state = 'closed';
         if (reason === 'assigned') f.item.assignees = [f.client.identity];
         if (reason === 'milestone') f.item.milestone = null;
-        if (reason === 'stale') selection.digest = 'stale';
         assert.equal((await f.run({ selection })).status, 'failed');
         assert.equal(f.effects.writes, 0);
         assert.equal(f.state.projectPickup!.operations.length, 0);
@@ -527,13 +544,14 @@ describe('agent/issue-pickup', () => {
 
     it(`should change an unused milestone without install in ${runtime}`, async () => {
       const f = fixture(runtime);
-      const old = await f.select();
+      await f.select();
+      const oldOperation = f.state.projectPickup!.operations[0]!.id;
       f.policy.issuePickup!.projects[0]!.milestone!.number = 11;
       f.milestone.number = 11;
       f.milestone.nodeId = 'M_next';
       f.item.milestone = { ...f.item.milestone!, number: 11, nodeId: 'M_next' };
       const fresh = await f.select();
-      assert.notEqual(fresh.id, old.id);
+      assert.notEqual(f.state.projectPickup!.operations[0]!.id, oldOperation);
       assert.equal((await f.run({ selection: fresh })).status, 'assigned');
     });
 
@@ -723,8 +741,6 @@ describe('agent/issue-pickup', () => {
         assert.ok(options.candidates.every((item) => item.repository !== 'owner/alpha'));
       const result = await f.run({
         selection: {
-          id: options.id,
-          digest: options.digest,
           issueNodeId: options.candidates[0]!.nodeId,
           rationale: 'ready to pick up',
         },
@@ -775,8 +791,6 @@ describe('agent/issue-pickup', () => {
     );
     const result = await f.run({
       selection: {
-        id: options.id,
-        digest: options.digest,
         issueNodeId: options.candidates[0]!.nodeId,
         rationale: 'ready',
       },

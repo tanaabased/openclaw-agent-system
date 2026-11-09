@@ -115,7 +115,6 @@ export default function createIntakeTool(
                       loaded.scope.workspaceDir,
                       {
                         selection: params.selection,
-                        context: params.context,
                         material: params.material,
                       },
                       Intl.DateTimeFormat().resolvedOptions().timeZone,

@@ -141,8 +141,6 @@ export default function selectionFixture(runtime: 'codex' | 'openclaw' = 'codex'
     if (result.status !== 'selection-required' || !('digest' in result))
       throw new Error(`selection required: ${JSON.stringify(result)}`);
     return {
-      id: result.id!,
-      digest: result.digest!,
       issueNodeId: f.item.nodeId,
       rationale: 'highest explicit priority and impact among ready candidates',
     };

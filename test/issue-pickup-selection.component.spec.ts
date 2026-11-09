@@ -209,8 +209,6 @@ describe('issue pickup selection through native journals', () => {
       assert.equal(result.status, 'selection-required');
       assert.ok('digest' in result);
       return {
-        id: result.id!,
-        digest: result.digest!,
         issueNodeId: f.item.nodeId,
         rationale: 'highest explicit priority and impact among ready work',
       };
@@ -597,8 +595,6 @@ describe('issue pickup selection through native journals', () => {
       const second = other.items.get(f.item.number + 1)!;
       const assigned = await f.pickup({
         selection: {
-          id: raised.id,
-          digest: raised.digest,
           issueNodeId: second.nodeId,
           rationale: 'ready',
         },
@@ -612,7 +608,8 @@ describe('issue pickup selection through native journals', () => {
 
     it(`should refresh file guidance across runs and preserve uncertain-write recovery in ${runtime}`, async () => {
       const f = await fixture(runtime);
-      const selection = await f.select();
+      await f.select();
+      const previousDigest = (await f.journal.read()).projectPickup!.operations[0]!.selectionDigest;
       const path = join(root, 'workspace', 'selection.md');
       await writeFile(path, 'prefer release blockers');
       f.tick.id = 'later-native-run';
@@ -621,7 +618,7 @@ describe('issue pickup selection through native journals', () => {
       assert.ok('guidance' in fresh && 'digest' in fresh);
       assert.equal((fresh.guidance as { path: string }).path, path);
       assert.equal(await readFile(path, 'utf8'), 'prefer release blockers');
-      assert.notEqual(fresh.digest, selection.digest);
+      assert.notEqual(fresh.digest, previousDigest);
       assert.equal(f.effects.writes, 0);
       const assign = f.client.assignProjectIssue;
       f.client.assignProjectIssue = async (...args) => {
@@ -635,7 +632,7 @@ describe('issue pickup selection through native journals', () => {
       assert.equal(f.effects.writes, 1);
     });
 
-    it(`should reject selection from the old guidance snapshot in ${runtime}`, async () => {
+    it(`should reject copied snapshot overrides and refresh current guidance in ${runtime}`, async () => {
       const f = await fixture(runtime);
       await writeFile(join(root, 'workspace', 'selection.md'), 'Selection guidance. '.repeat(800));
       const first = await f.pickup();
@@ -644,9 +641,7 @@ describe('issue pickup selection through native journals', () => {
       const input = { selection: { ...(await f.select()), digest: first.digest } };
       await writeFile(join(root, 'workspace', 'selection.md'), 'changed selection priorities');
       f.tick.id = 'new-scan';
-      const stale = await f.pickup(input as PickupInput);
-      assert.ok('code' in stale);
-      assert.equal(stale.code, 'issue-pickup-selection-stale');
+      await assert.rejects(f.pickup(input as PickupInput), /issue-pickup-input-invalid/);
       const fresh = await f.pickup();
       assert.equal(fresh.status, 'selection-required');
       assert.ok('digest' in fresh && 'digest' in first);
@@ -676,6 +671,7 @@ describe('issue pickup selection through native journals', () => {
     it(`should apply a live milestone change without replacing native activation in ${runtime}`, async () => {
       const f = await fixture(runtime);
       const before = await f.select();
+      const beforeId = (await f.journal.read()).projectPickup!.operations[0]!.id;
       const enrollment = await f.enrollmentStore.read();
       await f.configure((source) => {
         source.github['issue-pickup'].projects[0]!.milestone!.number = 11;
@@ -684,13 +680,12 @@ describe('issue pickup selection through native journals', () => {
       f.milestone.number = 11;
       f.milestone.nodeId = 'MI_next';
       f.item.milestone = { ...f.item.milestone!, number: 11, nodeId: 'MI_next' };
-      const after = await f.select();
-      assert.notEqual(after.id, before.id);
-      assert.equal((await f.pickup({ selection: before })).status, 'failed');
-      const refreshed = await f.select();
-      assert.equal((await f.pickup({ selection: refreshed })).status, 'assigned');
+      await f.select();
+      const afterId = (await f.journal.read()).projectPickup!.operations[0]!.id;
+      assert.notEqual(afterId, beforeId);
+      assert.equal((await f.pickup({ selection: before })).status, 'assigned');
       const current = (await f.journal.read()).projectPickup!;
-      const operation = current.operations.find((op) => op.id === after.id)!;
+      const operation = current.operations.find((op) => op.id === afterId)!;
       assert.equal(operation.enrollment?.milestoneNodeId, 'MI_next');
       assert.equal(operation.window.closesAt - operation.window.opensAt, 90 * 60000);
       assert.deepEqual(await f.enrollmentStore.read(), enrollment);
@@ -746,8 +741,6 @@ describe('issue pickup selection through native journals', () => {
       await assert.rejects(f.pickup(), /native-caller-required/);
       f.caller.current = true;
       const selection = {
-        id: String(restored.id),
-        digest: String(restored.digest),
         issueNodeId: 'I_large_5',
         rationale: 'ready work',
       };
@@ -1031,7 +1024,8 @@ describe('issue pickup selection through native journals', () => {
         ),
       );
       assert.equal(f.effects.writes, 1);
-      assert.equal((await f.pickup({ cancel: selection.id })).status, 'allowance-reached');
+      const attempted = (await f.journal.read()).projectPickup!.operations[0]!;
+      assert.equal((await f.pickup({ cancel: attempted.id })).status, 'allowance-reached');
       await f.scan();
       assert.equal((await f.read()).length, 1);
       f.tick.id = 'next-scan';

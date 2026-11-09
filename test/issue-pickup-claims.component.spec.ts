@@ -234,8 +234,6 @@ describe('issue pickup handoff to ordinary assignment claims', () => {
       (
         await b.run({
           selection: {
-            id: next.id!,
-            digest: next.digest!,
             issueNodeId: second.nodeId,
             rationale: 'remaining eligible work',
           },
@@ -272,8 +270,6 @@ describe('issue pickup handoff to ordinary assignment claims', () => {
       (
         await b.run({
           selection: {
-            id: selection.id!,
-            digest: selection.digest!,
             issueNodeId: second.nodeId,
             rationale: 'other available issue',
           },

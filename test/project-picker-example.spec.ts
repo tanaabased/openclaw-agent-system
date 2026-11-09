@@ -71,8 +71,6 @@ describe('examples/openclaw-project-picker model fixture', () => {
     assert.deepEqual(argumentsOf(pickupResponse(input)), {
       action: 'pickup',
       selection: {
-        id: 'native-scan',
-        digest: 'native-digest',
         issueNodeId: 'small-issue',
         shortlist: ['larger-issue', 'small-issue'],
         rationale: 'The bounded cleanup clarification is smaller than the redesign.',
@@ -136,7 +134,7 @@ describe('examples/openclaw-project-picker model fixture', () => {
     )!;
     const input = request('New issue assigned: clarify cleanup.');
     input.messages.push({ role: 'user', content: privateContext.appendContext });
-    assert.deepEqual(argumentsOf(pickupResponse(input)), { action: 'context', id });
+    assert.deepEqual(argumentsOf(pickupResponse(input)), { action: 'context' });
     input.messages.push(...request('', [['context', context]]).messages.slice(2));
     const read = pickupResponse(input);
     assert.ok(read && 'toolCalls' in read);

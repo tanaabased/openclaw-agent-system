@@ -105,8 +105,6 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
         args = {
           action: 'pickup',
           selection: {
-            id: observed.id,
-            digest: observed.digest,
             issueNodeId: chosen[0]!.nodeId,
             shortlist: candidates.map(({ nodeId }) => nodeId),
             rationale: 'The bounded cleanup clarification is smaller than the redesign.',
