@@ -1,6 +1,5 @@
 import selectReplyDraft from './reply-selection.ts';
 import { cardCopyInstructions } from '../channels/github/presentation/card.ts';
-import { Value } from 'typebox/value';
 
 import assessmentGuidance from './assessment-guidance.ts';
 import assessmentSkillSource from './assessment-skill-source.ts';
@@ -27,7 +26,7 @@ import statusUpdateContext, {
 } from './status-update.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import {
-  replyExecutionSchema,
+  parseReplyRequest,
   type StatusUpdate,
   type ReplyExecutionRequest,
 } from '../tools/dispatch/reply-schema.ts';
@@ -74,8 +73,7 @@ function replyOwnerContext(
 
 /** direct entry prepares the ordinary composition contract; native owners keep all effects. */
 export default async function feedbackReply(request: unknown, deps: FeedbackReplyDependencies) {
-  if (!Value.Check(replyExecutionSchema, request)) throw new Error('reply-request-invalid');
-  const authored = request;
+  const authored = parseReplyRequest(request);
   const input: Omit<ReplyExecutionRequest, 'update'> & { update?: StatusUpdate } = {
     ...authored,
     update: undefined,

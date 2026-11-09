@@ -6,8 +6,6 @@ import ReplyStore, { type ReplyDraft } from './reply-store.ts';
 import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
 import { feedbackTarget } from './reply-target.ts';
 
-import { Value } from 'typebox/value';
-
 import codexReplyInput from './codex-direct-input.ts';
 import CodexDispatchStore from './codex-dispatch-state.ts';
 import { withNative } from './codex-dispatch-context.ts';
@@ -20,17 +18,17 @@ import feedbackReply from './feedback-reply.ts';
 import replyOwner from './reply-owner.ts';
 import replyOwnerContext from './reply-owner-context.ts';
 import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
-import { replyExecutionSchema } from '../tools/dispatch/reply-schema.ts';
+import { parseReplyRequest } from '../tools/dispatch/reply-schema.ts';
 
 export { default as codexReplyInput } from './codex-direct-input.ts';
 
 /** standalone execution uses the portable binding and native GitHub account, never OpenClaw secrets. */
 export default async function codexReply(
   pluginData: string,
-  input: unknown,
+  request: unknown,
   deps: CodexFeedbackDependencies,
 ) {
-  if (!Value.Check(replyExecutionSchema, input)) throw new Error('reply-request-invalid');
+  const input = parseReplyRequest(request);
   const current = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('reply-native-caller-required');

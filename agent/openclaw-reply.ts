@@ -1,6 +1,5 @@
 import selectReplyDraft from './reply-selection.ts';
-import { Value } from 'typebox/value';
-import { replyExecutionSchema } from '../tools/dispatch/reply-schema.ts';
+import { parseReplyRequest } from '../tools/dispatch/reply-schema.ts';
 import ReplyStore, { type ReplyDraft } from './reply-store.ts';
 import openClawFeedbackInput from './openclaw-feedback-input.ts';
 import { authorizeFeedback } from './openclaw-feedback.ts';
@@ -31,8 +30,7 @@ export default async function openClawReply(input: {
   dependencies: OpenClawDispatchDependencies;
 }) {
   const { manifest, caller, dependencies: deps, authority } = input;
-  if (!Value.Check(replyExecutionSchema, input.action)) throw new Error('reply-request-invalid');
-  const action = input.action;
+  const action = parseReplyRequest(input.action);
   await authority.assertCurrent?.();
   const current = await deps.intake.select(manifest, input.workspace, { resolvePolicy: false });
   const journal = new OpenClawDispatchStore(deps.root, current.store.location.scope);

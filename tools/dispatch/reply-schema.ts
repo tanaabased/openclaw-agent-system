@@ -1,4 +1,5 @@
 import { Type, type Static } from 'typebox';
+import { Value } from 'typebox/value';
 import { implementationMaterialSchema } from './implementation-material-schema.ts';
 
 import { maximumGitHubNotificationReplyLength } from '../../channels/github/publication/limits.ts';
@@ -63,3 +64,23 @@ export const replyExecutionSchema = Type.Object(
   { additionalProperties: false },
 );
 export type ReplyExecutionRequest = Static<typeof replyExecutionSchema>;
+
+/** describe schema-owned fields without echoing authored values or unknown property names. */
+export function parseReplyRequest(input: unknown): ReplyExecutionRequest {
+  if (Value.Check(replyExecutionSchema, input)) return input;
+  const error = Value.Errors(replyExecutionSchema, input)[0];
+  const field = ['request', ...(error?.instancePath.split('/').filter(Boolean) ?? [])].join('.');
+  const expected =
+    error?.keyword === 'type'
+      ? `must be ${String(error.params.type)}`
+      : error?.keyword === 'additionalProperties'
+        ? 'contains unsupported fields; omit runtime-owned IDs, digests and receipts'
+        : 'must match the reply request schema';
+  const hint =
+    field === 'request.outcome'
+      ? ' outcome is optional authored text; omit it when privateText already describes the result.'
+      : '';
+  throw Object.assign(new Error(`reply-request-invalid: ${field} ${expected}.${hint}`), {
+    code: 'reply-request-invalid',
+  });
+}
