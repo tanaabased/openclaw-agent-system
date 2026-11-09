@@ -190,7 +190,12 @@ describe('agent/native-material', () => {
       },
       result: { content: [{ type: 'text', text: JSON.stringify(output) }] },
     };
-    const message = (details: unknown) => ({ role: 'toolResult', toolName: 'tool_call', details });
+    const message = (details: unknown) => ({
+      role: 'toolResult',
+      toolName: 'tool_call',
+      details,
+      __openclaw: {},
+    });
     const native = openClawMaterialReceipts(
       async () => ({
         sessionId: 'session',
