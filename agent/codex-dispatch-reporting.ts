@@ -56,13 +56,10 @@ export default async function reportDispatch(
   if (input.automationId !== run.automationId || input.currentTimeIso !== run.currentTimeIso)
     return {
       status: 'continue',
-      nextAction: 'report',
-      request: {
-        action: 'report',
-        automationId: run.automationId,
-        currentTimeIso: run.currentTimeIso,
-      },
-      instruction: 'Call report with this scheduled occurrence; do not finish yet.',
+      nextAction: 'next',
+      request: { action: 'next' },
+      instruction:
+        'Refresh dispatch next for the current native occurrence, then report; never copy another occurrence into the request.',
     };
   const present = (response: string) => {
     const diagnostic = intakeDebug(context.debug, state.records, (record) => {

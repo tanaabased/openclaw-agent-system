@@ -1,5 +1,8 @@
+import { Value } from 'typebox/value';
+import { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
 import codexContextRequest from './codex-context-request.ts';
-import codexNativeMaterial from './codex-native-material.ts';
+import codexNativeMaterial, { codexNativeRuntimeResult } from './codex-native-material.ts';
+import codexNativeInventory, { assertNoNativeInventory } from './codex-native-inventory.ts';
 import { nativeMaterialResponse } from './native-material.ts';
 import { codexDispatchResponse } from './codex-dispatch-binding.ts';
 import { nativeContextResponse } from './native-context-request.ts';
@@ -13,8 +16,6 @@ import contextMaterialTransport from './context-material-transport.ts';
 import runCodexContinuation from './codex-continuation.ts';
 import runCodexDelivery, { CodexDeliveryFailure } from './codex-delivery.ts';
 import process from 'node:process';
-import { Value } from 'typebox/value';
-import { sidebarReceiptSchema } from './codex-sidebar-journal.ts';
 import assertCodexNodeVersion, { CodexNodeVersionError } from './codex-node-version.ts';
 import codexPermission from './codex-permission.ts';
 import codexTurnContext, { codexCurrentTurnContext } from './codex-turn-context.ts';
@@ -26,7 +27,12 @@ import codexHostAccess from './codex-host-access.ts';
 import codexIssueNotice from './codex-issue-notice.ts';
 import workflowNoticeInstructions from './workflow-notice-instructions.ts';
 import { runCodexDispatch } from './codex-dispatch.ts';
-import { inspectCodexIntake, runCodexIntake, runCodexIssuePickup } from './codex-intake.ts';
+import {
+  inspectCodexIntake,
+  runCodexIntake,
+  runCodexIssuePickup,
+  selectCodexIntake,
+} from './codex-intake.ts';
 import { IntakeError } from '../channels/github/intake/record-store.ts';
 
 import {
@@ -270,10 +276,33 @@ async function readWorkflowCommand(route: string, args: string[]) {
     );
   }
   const result = codexRuntimeRequest(route, args, input);
+  failureScope = workflowFailureScope('codex', route, result.request);
+  assertNoNativeInventory(result.request);
   materialInput = { route, input: result.request };
   result.request = await codexNativeMaterial(result.pluginData, route, result.request);
   const modelSource = typeof result.request.source === 'string' ? result.request.source : undefined;
   result.request = await codexContextRequest(result.pluginData, route, result.request);
+  if (
+    route === 'dispatch' &&
+    ['next', 'launch', 'retire'].includes(String(result.request.action))
+  ) {
+    await selectCodexIntake(result.pluginData, {}, { resolvePolicy: false, inspectionOnly: true });
+    const inventory = await codexNativeInventory();
+    if (result.request.action === 'next')
+      result.request = {
+        ...result.request,
+        projects: inventory.projects?.projects,
+        threads: inventory.nativeInventory,
+      };
+    else if (result.request.action === 'retire' && !result.request.native)
+      result.request.threads = inventory.nativeInventory;
+    else if (
+      result.request.action === 'launch' &&
+      inventory.projects &&
+      Array.isArray(inventory.projects.projects)
+    )
+      result.request.projects = inventory.projects.projects;
+  }
   failureScope = workflowFailureScope('codex', route, result.request);
   return { ...result, modelSource };
 }
@@ -338,13 +367,19 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'instance') {
     const action = args[1] ?? '';
     const pluginData = parsePluginData(args.slice(2));
-    writeJson(
-      await operateInstanceIdentity(
-        codexInstanceStore(pluginData),
-        action,
-        JSON.parse(await readStandardInput()),
-      ),
-    );
+    const input = JSON.parse(await readStandardInput()) as Record<string, unknown>;
+    if (action === 'rotate' && process.env.CODEX_THREAD_ID) {
+      if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length)
+        throw new Error('instance-model-request-invalid');
+      const observed = await codexNativeRuntimeResult(pluginData, 'instance', ['inspect']);
+      if (observed.status !== 'ready' || typeof observed.instanceId !== 'string')
+        throw new Error('instance-native-inspection-required');
+      writeJson(
+        await operateInstanceIdentity(codexInstanceStore(pluginData), action, {
+          expectedInstanceId: observed.instanceId,
+        }),
+      );
+    } else writeJson(await operateInstanceIdentity(codexInstanceStore(pluginData), action, input));
     return;
   }
   if (command === 'feedback') {
@@ -427,7 +462,35 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'notifications') {
     if (args[1] !== 'reset') throw new Error('notification-reset-action-required');
     const pluginData = parsePluginData(args.slice(2));
-    writeJson(await runCodexNotificationReset(pluginData, JSON.parse(await readStandardInput())));
+    const input = JSON.parse(await readStandardInput()) as Record<string, unknown>;
+    if (!process.env.CODEX_THREAD_ID) {
+      writeJson(await runCodexNotificationReset(pluginData, input));
+      return;
+    }
+    if (
+      !input ||
+      typeof input !== 'object' ||
+      Array.isArray(input) ||
+      Object.keys(input).some((key) => !['purge', 'yes', 'fresh'].includes(key))
+    )
+      throw new Error('notification-reset-model-request-invalid');
+    const inventory = await codexNativeInventory();
+    const previous = input.yes
+      ? await codexNativeRuntimeResult(
+          pluginData,
+          'notifications',
+          ['reset'],
+          'confirmation-required',
+        )
+      : undefined;
+    writeJson(
+      await runCodexNotificationReset(pluginData, {
+        ...input,
+        all: true,
+        nativeInventory: inventory.nativeInventory,
+        ...(previous ? { confirmation: previous.confirmation } : {}),
+      }),
+    );
     return;
   }
   if (command === 'model-routing') {
@@ -450,6 +513,8 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
       if (input.action !== undefined && input.action !== 'pickup')
         throw new Error('issue-pickup-input-invalid');
       delete input.action;
+      if (process.env.CODEX_THREAD_ID && Object.hasOwn(input, 'cancel'))
+        throw new Error('issue-pickup-operator-cancellation-required');
       materialInput = { route: 'intake', input };
       writeJson(
         await runCodexIssuePickup(
@@ -512,7 +577,14 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     if (!input || typeof input !== 'object' || Array.isArray(input))
       throw new Error('expected an automation request');
     const request = input as Record<string, unknown>;
-    if (
+    const nativeCaller = Boolean(process.env.CODEX_THREAD_ID);
+    // A native model cannot override invocation evidence. The explicit headless operator
+    // interface retains its resource/readback inputs; it has no native caller to resolve.
+    if (nativeCaller) {
+      assertNoNativeInventory(request);
+      if (Object.keys(request).some((key) => key !== 'id' || !['run', 'runs'].includes(action!)))
+        throw new Error('automation-model-request-invalid');
+    } else if (
       Object.keys(request).some(
         (key) =>
           ![
@@ -530,38 +602,62 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
         !Value.Check(sidebarReceiptSchema, request.placementReceipt))
     )
       throw new Error('invalid automation request');
-    const inputs = {
-      projects: request.projects,
-      threads: request.threads as unknown[] | undefined,
-      nativeInventory: request.nativeInventory,
-      placementReceipt: request.placementReceipt as
-        { digest: string; sectionId: string } | undefined,
-    };
-    if (action === 'list' || action === 'sync') {
-      if (action === 'sync') await reconcileCodexAutomationRetirements(pluginData);
-      writeJson(await listCodexAutomations(pluginData, inputs));
-      return;
-    }
     if (action === 'run' || action === 'runs') {
       if (typeof request.id !== 'string') throw new Error('expected a manifest automation id');
       writeJson(await codexAutomationRunGap(pluginData, request.id, action));
       process.exitCode = 1;
       return;
     }
+    const inputs = nativeCaller
+      ? await codexNativeInventory()
+      : {
+          projects: request.projects,
+          threads: request.threads as unknown[] | undefined,
+          nativeInventory: request.nativeInventory,
+          placementReceipt: request.placementReceipt as
+            { digest: string; sectionId: string } | undefined,
+        };
+    if (action === 'list' || action === 'sync') {
+      if (action === 'sync') await reconcileCodexAutomationRetirements(pluginData);
+      writeJson(await listCodexAutomations(pluginData, inputs));
+      return;
+    }
     if (action === 'inspect' || action === 'plan') {
       writeJson(await inspectCodexAutomations(pluginData, inputs));
       return;
     }
-    if (typeof request.digest !== 'string') throw new Error('expected an approved plan digest');
-    if (action === 'threads-sync')
-      writeJson(await syncCodexAutomationThreads(pluginData, request.digest, inputs));
-    else if (action === 'prepare')
-      writeJson(await prepareCodexAutomation(pluginData, request.digest, inputs));
-    else if (action === 'acknowledge')
-      writeJson(await acknowledgeCodexAutomation(pluginData, request.digest, request.receipt));
-    else if (action === 'cancel')
-      writeJson(await cancelCodexAutomation(pluginData, request.digest));
-    else
+    if (!nativeCaller) {
+      if (typeof request.digest !== 'string') throw new Error('expected an approved plan digest');
+      if (action === 'threads-sync')
+        writeJson(await syncCodexAutomationThreads(pluginData, request.digest, inputs));
+      else if (action === 'prepare')
+        writeJson(await prepareCodexAutomation(pluginData, request.digest, inputs));
+      else if (action === 'acknowledge')
+        writeJson(await acknowledgeCodexAutomation(pluginData, request.digest, request.receipt));
+      else if (action === 'cancel')
+        writeJson(await cancelCodexAutomation(pluginData, request.digest));
+      return;
+    }
+    if (action === 'threads-sync' || action === 'prepare') {
+      const prepared = await codexNativeRuntimeResult(pluginData, 'automations', [
+        'plan',
+        'inspect',
+      ]);
+      if (typeof prepared.digest !== 'string') throw new Error('automation-native-plan-required');
+      if (action === 'threads-sync')
+        writeJson(await syncCodexAutomationThreads(pluginData, prepared.digest, inputs));
+      else writeJson(await prepareCodexAutomation(pluginData, prepared.digest, inputs));
+    } else if (action === 'acknowledge' || action === 'cancel') {
+      const prepared = await codexNativeRuntimeResult(pluginData, 'automations', [
+        'prepare',
+        'plan',
+        'inspect',
+      ]);
+      const digest = prepared.status === 'prepared' ? prepared.digest : prepared.pendingDigest;
+      if (typeof digest !== 'string') throw new Error('automation-native-preparation-required');
+      if (action === 'acknowledge') writeJson(await acknowledgeCodexAutomation(pluginData, digest));
+      else writeJson(await cancelCodexAutomation(pluginData, digest));
+    } else
       throw new Error(
         'expected automations list, sync, run, runs, inspect, plan, prepare, acknowledge, or cancel',
       );

@@ -9,6 +9,51 @@ import codexDispatchHandoff from '../agent/codex-dispatch-handoff.ts';
 import { bindCodexWorkspace } from '../agent/codex-workspace-binding.ts';
 
 describe('agent/codex-runtime', () => {
+  it('rejects copied native inventories and effect receipts before reading state or performing effects', () => {
+    const cases = [
+      {
+        args: ['automations', 'prepare'],
+        input: { digest: 'a'.repeat(64) },
+        code: 'automation-model-request-invalid',
+      },
+      {
+        args: ['automations', 'plan'],
+        input: { projects: {} },
+        code: 'native-inventory-binding-override',
+      },
+      {
+        args: ['instance', 'rotate'],
+        input: { expectedInstanceId: 'owned-id' },
+        code: 'instance-model-request-invalid',
+      },
+      {
+        args: ['notifications', 'reset'],
+        input: { yes: true, confirmation: 'receipt' },
+        code: 'notification-reset-model-request-invalid',
+      },
+      {
+        args: ['dispatch', 'next'],
+        input: { projects: [], threads: {} },
+        code: 'native-inventory-binding-override',
+      },
+    ];
+    for (const test of cases) {
+      const result = spawnSync(
+        process.execPath,
+        ['dist/codex/codex-runtime.js', ...test.args, '--plugin-data', '/unused'],
+        {
+          input: JSON.stringify(test.input),
+          env: { ...process.env, CODEX_THREAD_ID: 'native-caller' },
+          encoding: 'utf8',
+          timeout: 10000,
+        },
+      );
+      assert.ifError(result.error);
+      assert.equal(result.status, 1);
+      assert.equal(JSON.parse(result.stderr).code, test.code);
+    }
+  });
+
   it('should accept empty lookup input while retaining native caller binding', () => {
     for (const input of ['', ' \n', '{}', '{"threadId":"foreign"}']) {
       const env = { ...process.env };
@@ -215,7 +260,7 @@ describe('agent/codex-runtime', () => {
       publishRequest: { action: 'publish', id: 'invalid' },
     });
     for (const [action, code] of [
-      ['publish', 'delivery-request-invalid'],
+      ['publish', 'native-context-binding-override'],
       ['prepare', 'workflow-prepared-publication-invalid'],
     ]) {
       const result = spawnSync(
@@ -299,7 +344,7 @@ describe('agent/codex-runtime', () => {
         process.execPath,
         ['dist/codex/codex-runtime.js', 'dispatch', 'summary', 'compose', '--plugin-data', root],
         {
-          input: JSON.stringify({ action: 'summary', id: 'a'.repeat(64), operation: 'compose' }),
+          input: JSON.stringify({ action: 'summary', operation: 'compose' }),
           encoding: 'utf8',
           timeout: 10000,
         },
@@ -310,7 +355,7 @@ describe('agent/codex-runtime', () => {
       const failure = JSON.parse(result.stderr);
       assert.equal(failure.code, 'intake-binding-unavailable');
       assert.equal(failure.operation, 'dispatch:summary:compose');
-      assert.equal(failure.id, 'a'.repeat(64));
+      assert.equal(failure.id, undefined);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

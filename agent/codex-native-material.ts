@@ -3,10 +3,9 @@ import { nativeObject } from './automation-gateway.ts';
 import { dispatchHistoryPages, nativeHistoryPages } from './codex-dispatch-history.ts';
 import literalArguments from './literal-command-arguments.ts';
 import { assertModelMaterial, bindNativeMaterial } from './native-material.ts';
-import { connectCodexThreads, type CodexThreadRequest } from './codex-thread-client.ts';
-import { selectCodexIntake } from './codex-intake.ts';
+import { connectCodexCaller, type CodexThreadRequest } from './codex-thread-client.ts';
 
-export async function* codexMaterialReceipts(
+export async function* codexRuntimeReceipts(
   request: CodexThreadRequest,
   caller: string,
   runtime: { entrypoint: string; pluginData: string; node: string },
@@ -46,12 +45,45 @@ export async function* codexMaterialReceipts(
         if (data < 3 || argv[data + 1] !== runtime.pluginData || data + 2 !== argv.length) continue;
         try {
           const result: unknown = JSON.parse(item.aggregatedOutput);
-          if (nativeObject(result)) yield result;
+          if (nativeObject(result))
+            yield { route: argv[2]!, action: data > 3 ? argv[3] : undefined, value: result };
         } catch {
           /* Truncated or mixed output is not a version receipt. */
         }
       }
     }
+  }
+}
+
+export async function* codexMaterialReceipts(...args: Parameters<typeof codexRuntimeReceipts>) {
+  for await (const receipt of codexRuntimeReceipts(...args)) yield receipt.value;
+}
+
+export async function codexNativeRuntimeResult(
+  pluginData: string,
+  route: string,
+  actions: readonly string[],
+  status?: string,
+) {
+  const caller = process.env.CODEX_THREAD_ID;
+  if (!caller) throw new Error('native-receipt-caller-required');
+  const connection = await connectCodexCaller();
+  try {
+    for await (const receipt of codexRuntimeReceipts(connection.request, caller, {
+      entrypoint: await realpath(process.argv[1]!),
+      pluginData,
+      node: process.execPath,
+    }))
+      if (
+        receipt.route === route &&
+        receipt.action &&
+        actions.includes(receipt.action) &&
+        (!status || receipt.value.status === status)
+      )
+        return receipt.value;
+    throw new Error('native-receipt-unavailable: repeat the read-only preparation in this chat');
+  } finally {
+    await connection.close();
   }
 }
 
@@ -64,12 +96,7 @@ export default async function codexNativeMaterial(
   if (!input.material) return input;
   const caller = process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('material-native-caller-required');
-  const binding = await selectCodexIntake(
-    pluginData,
-    {},
-    { resolvePolicy: false, inspectionOnly: true },
-  );
-  const connection = await connectCodexThreads(binding.workspace, binding.codexHome);
+  const connection = await connectCodexCaller();
   try {
     return await bindNativeMaterial(
       route,

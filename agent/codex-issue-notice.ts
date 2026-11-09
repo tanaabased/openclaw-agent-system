@@ -45,7 +45,7 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       title: 'The reply request could not be completed',
       summary:
         'The reply request is invalid or does not identify an available reply draft. This failure does not establish whether an earlier publication succeeded.',
-      next: 'Use the complete request returned by the reply owner. A reply draft id is not a managed task id. Reconcile any earlier uncertain publication before retrying; preserve the issue, PR and existing work.',
+      next: 'Use the complete request returned by the reply owner. Select the exact reply target and authored text; draft custody is resolved internally. Reconcile any earlier uncertain publication before retrying; preserve the issue, PR and existing work.',
     };
   const retirement = code.startsWith('retirement-') ? retirementNotice(code) : undefined;
   if (retirement) return retirement;
@@ -117,7 +117,7 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       severity: 'warning',
       title: 'The PR description is missing',
       summary: 'Automatic publication requires an explicit public description.',
-      next: 'Compose a concise body with the implemented change, verified checks, limitations, and issue-required evidence. Prepare again with that body, then publish with the same body and returned digest. Do not copy private context.',
+      next: 'Compose a concise body with the implemented change, verified checks, limitations, and issue-required evidence. Publish with the authored title and body; the runtime resolves its retained task and destination. Do not copy private context.',
     };
   if (code === 'native-approval-denied')
     return {
@@ -148,7 +148,7 @@ function failure(code: string, diagnostic?: ProviderDiagnostic): NoticeCopy {
       title: 'Refresh the recovery preview',
       summary:
         'The work or authority changed after the recovery preview. The requested transition was not applied.',
-      next: 'Preview the same recovery action again without a digest, inspect the current result, and apply its new digest only if the existing authorization still covers it. For handoff, use `action:handoff` with the same id; do not refresh assessment context after implementation. If it becomes stale again, stop and inspect concurrent changes. Preserve the existing chat, branch, and commit.',
+      next: 'Inspect the same semantic recovery target with preview:true, then apply within existing authorization by omitting preview. Do not supply IDs or digests. For handoff, use `action:handoff` in the managed chat; do not refresh assessment context after implementation. If it becomes stale again, stop and inspect concurrent changes. Preserve the existing chat, branch, and commit.',
     };
   if (code === 'delivery-publication-incomplete')
     return {

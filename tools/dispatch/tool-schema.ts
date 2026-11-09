@@ -192,7 +192,7 @@ type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
             ? Omit<T, 'id' | 'digest'> & { target?: string }
             : T extends { action: 'reply' }
               ? ReplyModelRequest
-              : T;
+              : Omit<T, 'projects' | 'observation'>;
 type ModelMaterialInput<T> = T extends { material?: unknown }
   ? Omit<T, 'material'> & { material?: Static<typeof modelMaterialSchema> }
   : T;
@@ -243,9 +243,11 @@ export const dispatchModelParameters = Type.Unsafe<ModelMaterialInput<ModelDispa
                         })
                       : variant.properties.action.const === 'reply'
                         ? replyModelSchema
-                        : variant,
+                        : variant.properties.action.const === 'launch'
+                          ? Type.Omit(variant, ['projects'])
+                          : variant,
         )
-        .map(modelMaterialParameters),
+        .map((schema) => modelMaterialParameters(Type.Omit(schema, ['projects', 'observation']))),
     ),
   ),
 );

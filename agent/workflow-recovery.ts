@@ -319,7 +319,7 @@ export default function workflowRecovery(code: string, diagnostic?: ProviderDiag
   )
     return {
       summary: 'The selected PR or work changed after its preview; the selection was not applied.',
-      next: 'Refresh the same launch or binding preview with its exact target and receipt, inspect the current head and destination, then apply its new digest within the operator request. Preserve local work and any existing creation request; never replay an uncertain creation.',
+      next: 'Refresh the same launch or binding target, inspect the current head and destination, and continue within the operator request without supplying receipt IDs or digests. Preserve local work and any existing creation request; never replay an uncertain creation.',
     };
   const field =
     /^delivery-(repository|issue|session|thread|worktree|branch|base|account|policy)-changed$/.exec(

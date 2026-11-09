@@ -347,7 +347,7 @@ export default class OpenClawDispatchIssue {
         code,
         ...(code === 'feedback-composition-changed'
           ? {
-              next: 'Call feedback compose with this id and eventId, then create a new candidate using the selected skill and guidance. No new stage approval is needed; do not repeat an attempted publication.',
+              next: 'Call feedback compose in the owning native chat for the current source, or select the exact admitted source URL, then create a new candidate using the selected skill and guidance. No new stage approval is needed; do not repeat an attempted publication.',
             }
           : {}),
         ...(event.result
