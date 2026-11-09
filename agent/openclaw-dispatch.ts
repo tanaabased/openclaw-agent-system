@@ -1,4 +1,6 @@
 import { selectWorkflowStage } from './workflow-stage.ts';
+import openClawNativeMaterial from './openclaw-native-material.ts';
+import { nativeMaterialResponse } from './native-material.ts';
 import nativeOperatorSelection from './native-operator-selection.ts';
 import nativeFeedbackReconciliation from './native-feedback-reconciliation.ts';
 import {
@@ -141,6 +143,11 @@ export default class OpenClawDispatch {
     if (isNativeContextRequest('dispatch', input)) assertNativeContextInput(input);
     if (!Value.Check(dispatchModelParameters, input as unknown))
       throw new Error('dispatch-model-request-invalid');
+    const modelInput = input;
+    if (input.material)
+      input = await this.dependencies.credential.use(authority, (request) =>
+        openClawNativeMaterial(request, caller, 'agent_system_dispatch', input),
+      );
     let request = input;
     if (input.action === 'retry') {
       const current = await this.scope(manifest, workspace);
@@ -263,10 +270,14 @@ export default class OpenClawDispatch {
         current.admitted.records,
       );
     }
-    return nativeContextResponse(
-      response,
-      'dispatch',
-      typeof input.source === 'string' ? input.source : undefined,
+    return nativeMaterialResponse(
+      nativeContextResponse(
+        response,
+        'dispatch',
+        typeof input.source === 'string' ? input.source : undefined,
+      ),
+      'agent_system_dispatch',
+      modelInput,
     );
   }
 

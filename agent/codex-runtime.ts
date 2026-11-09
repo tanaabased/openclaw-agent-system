@@ -1,4 +1,6 @@
 import codexContextRequest from './codex-context-request.ts';
+import codexNativeMaterial from './codex-native-material.ts';
+import { nativeMaterialResponse } from './native-material.ts';
 import { codexDispatchResponse } from './codex-dispatch-binding.ts';
 import { nativeContextResponse } from './native-context-request.ts';
 import workflowFailure, { workflowFailureScope } from './workflow-failure.ts';
@@ -134,7 +136,10 @@ function summarizePreview(preview: CodexWorkspacePreview): Record<string, unknow
   };
 }
 
+let materialInput: { route: string; input: Record<string, unknown> } | undefined;
 function writeJson(value: unknown): void {
+  if (materialInput)
+    value = nativeMaterialResponse(value, materialInput.route, materialInput.input);
   process.stdout.write(
     `${JSON.stringify(contextMaterialTransport(value, { argv: [process.execPath, ...process.argv.slice(1)] }))}\n`,
   );
@@ -265,6 +270,8 @@ async function readWorkflowCommand(route: string, args: string[]) {
     );
   }
   const result = codexRuntimeRequest(route, args, input);
+  materialInput = { route, input: result.request };
+  result.request = await codexNativeMaterial(result.pluginData, route, result.request);
   const modelSource = typeof result.request.source === 'string' ? result.request.source : undefined;
   result.request = await codexContextRequest(result.pluginData, route, result.request);
   failureScope = workflowFailureScope('codex', route, result.request);
@@ -272,6 +279,7 @@ async function readWorkflowCommand(route: string, args: string[]) {
 }
 
 export async function runCodexRuntime(args = process.argv.slice(2)): Promise<void> {
+  materialInput = undefined;
   const command = args[0];
   if (command === 'permission-request') {
     try {
@@ -437,16 +445,21 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
     }
     const pluginData = parsePluginData(args.slice(2));
     if (action === 'inspect') writeJson(await inspectCodexIntake(pluginData));
-    else if (action === 'pickup')
+    else if (action === 'pickup') {
+      const input = JSON.parse(await readStandardInput()) as Record<string, unknown>;
+      if (input.action !== undefined && input.action !== 'pickup')
+        throw new Error('issue-pickup-input-invalid');
+      delete input.action;
+      materialInput = { route: 'intake', input };
       writeJson(
         await runCodexIssuePickup(
           pluginData,
-          JSON.parse(await readStandardInput()),
+          await codexNativeMaterial(pluginData, 'intake', input),
           Intl.DateTimeFormat().resolvedOptions().timeZone,
           { threadId: process.env.CODEX_THREAD_ID },
         ),
       );
-    else if (action === 'scan')
+    } else if (action === 'scan')
       writeJson(await runCodexIntake(pluginData, false, { threadId: process.env.CODEX_THREAD_ID }));
     else if (action === 'failure-response') {
       const input = JSON.parse(await readStandardInput()) as Record<string, unknown>;

@@ -240,7 +240,7 @@ Execution resolves the current task from the native caller; do not supply an own
    preserve findings, outcome, complete source and destination. Do not restart the
    assessment or retry unchanged arguments. For paged context or presentation, forward
    each returned request and `next` unchanged, adding only its listed `inputFields`
-   from the original call. Preserve the owning action/operation and digest; refresh
+   from the original call. Preserve the owning action/operation; the runtime resolves content versions. Refresh
    genuinely stale context without mixing versions. Uncertain writes require their
    original reconciliation, and actual authority or native approval denials remain
    stops. Report an unresolved limitation and useful partial work without claiming

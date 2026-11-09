@@ -53,6 +53,7 @@ import AgentDoctorService from '../agent/doctor-service.ts';
 import AgentEnvironmentService from '../environment/service.ts';
 import AgentInstallService from '../agent/install-service.ts';
 import createSessionDispatchCredential from '../credentials/session-dispatch-runtime.ts';
+import openClawNativeMaterial from '../agent/openclaw-native-material.ts';
 import createSessionDispatchLifecycle from '../agent/session-dispatch-lifecycle.ts';
 import createCollaborationLifecycleContribution from '../agent/collaboration-lifecycle.ts';
 import AgentLifecycleApproval from '../agent/lifecycle-approval.ts';
@@ -477,6 +478,19 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         return { nativeId: admitted.run.jobId, assertCurrent };
       },
       api,
+      async (scope, input, assertCurrent) => {
+        await assertCurrent();
+        if (!scope.sessionKey || !scope.sessionId)
+          throw new Error('material-native-caller-required');
+        return sessionDispatch.use({ assertCurrent }, (request) =>
+          openClawNativeMaterial(
+            request,
+            { sessionKey: scope.sessionKey!, sessionId: scope.sessionId! },
+            'agent_system_intake',
+            input,
+          ),
+        );
+      },
     ),
     ...gitCapability.tools,
     ...githubCapability.tools,

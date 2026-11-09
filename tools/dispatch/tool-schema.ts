@@ -1,4 +1,8 @@
-import { implementationMaterialSchema } from './implementation-material-schema.ts';
+import {
+  implementationMaterialSchema,
+  modelMaterialParameters,
+  type modelMaterialSchema,
+} from './implementation-material-schema.ts';
 import { implementationDecisionSchema } from '../../agent/issue-progression.ts';
 import { dispatchInspectionProperties } from '../../agent/dispatch-inspection.ts';
 import { issueChatTitleGuidance } from '../../agent/issue-chat-title.ts';
@@ -189,54 +193,59 @@ type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
             : T extends { action: 'reply' }
               ? ReplyModelRequest
               : T;
-export const dispatchModelParameters = Type.Unsafe<ModelDispatchInput>(
+type ModelMaterialInput<T> = T extends { material?: unknown }
+  ? Omit<T, 'material'> & { material?: Static<typeof modelMaterialSchema> }
+  : T;
+export const dispatchModelParameters = Type.Unsafe<ModelMaterialInput<ModelDispatchInput>>(
   discriminatedSchema(
     'action',
     Type.Union(
-      dispatchRequestVariants.anyOf.map((variant) =>
-        [
-          'context',
-          'present',
-          'summary',
-          'handoff',
-          'result',
-          'implementation-context',
-          'implementation-result',
-          'delivery',
-        ].includes(String(variant.properties.action.const))
-          ? Type.Omit(variant, ['id', 'previousResultDigest', 'digest', 'apply'], {
-              additionalProperties: false,
-            })
-          : variant.properties.action.const === 'feedback'
-            ? object({
-                ...Type.Omit(variant, ['id', 'eventId', 'digest']).properties,
-                source: Type.Optional(Type.String({ minLength: 1, maxLength: 2048 })),
+      dispatchRequestVariants.anyOf
+        .map((variant) =>
+          [
+            'context',
+            'present',
+            'summary',
+            'handoff',
+            'result',
+            'implementation-context',
+            'implementation-result',
+            'delivery',
+          ].includes(String(variant.properties.action.const))
+            ? Type.Omit(variant, ['id', 'previousResultDigest', 'digest', 'apply'], {
+                additionalProperties: false,
               })
-            : variant.properties.action.const === 'retry'
-              ? object({ action: Type.Literal('retry'), ...operatorTargetProperties })
-              : variant.properties.action.const === 'recover'
-                ? object({
-                    ...Type.Omit(variant, ['id', 'digest', 'apply']).properties,
-                    target: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
-                    chat: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
-                    preview: Type.Optional(Type.Boolean()),
-                  })
-                : variant.properties.action.const === 'retire'
-                  ? retirementModelSchema
-                  : ['prepare', 'reconcile', 'start', 'assess'].includes(
-                        String(variant.properties.action.const),
-                      )
-                    ? object({
-                        ...Type.Omit(variant, ['id', 'digest']).properties,
-                        target:
-                          variant.properties.action.const === 'prepare'
-                            ? Type.String({ minLength: 1, maxLength: 4096 })
-                            : Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
-                      })
-                    : variant.properties.action.const === 'reply'
-                      ? replyModelSchema
-                      : variant,
-      ),
+            : variant.properties.action.const === 'feedback'
+              ? object({
+                  ...Type.Omit(variant, ['id', 'eventId', 'digest']).properties,
+                  source: Type.Optional(Type.String({ minLength: 1, maxLength: 2048 })),
+                })
+              : variant.properties.action.const === 'retry'
+                ? object({ action: Type.Literal('retry'), ...operatorTargetProperties })
+                : variant.properties.action.const === 'recover'
+                  ? object({
+                      ...Type.Omit(variant, ['id', 'digest', 'apply']).properties,
+                      target: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+                      chat: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+                      preview: Type.Optional(Type.Boolean()),
+                    })
+                  : variant.properties.action.const === 'retire'
+                    ? retirementModelSchema
+                    : ['prepare', 'reconcile', 'start', 'assess'].includes(
+                          String(variant.properties.action.const),
+                        )
+                      ? object({
+                          ...Type.Omit(variant, ['id', 'digest']).properties,
+                          target:
+                            variant.properties.action.const === 'prepare'
+                              ? Type.String({ minLength: 1, maxLength: 4096 })
+                              : Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+                        })
+                      : variant.properties.action.const === 'reply'
+                        ? replyModelSchema
+                        : variant,
+        )
+        .map(modelMaterialParameters),
     ),
   ),
 );

@@ -1,3 +1,4 @@
+import { nativeMaterialResponse } from './native-material.ts';
 import guidanceReference from './guidance-reference.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
 import { createHash } from 'node:crypto';
@@ -14,6 +15,7 @@ export type ImplementationMaterialRead = Static<typeof implementationMaterialSch
 export const implementationContextBudget = 16000;
 const pageCharacters = 6000;
 export function implementationMaterialSize(value: Record<string, unknown>) {
+  value = nativeMaterialResponse(value, 'measurement', {});
   const text =
     value.runtime === 'openclaw'
       ? JSON.stringify(
@@ -32,7 +34,7 @@ export function implementationMaterialSize(value: Record<string, unknown>) {
   return Buffer.byteLength(text, 'utf8');
 }
 const instruction =
-  'Read every contextMaterials field through its request before using context. Concatenate pages in offset order and parse JSON. Restore paths shallowest-first, then aliases in order. Paths are data keys, not files. Refresh context on stale digests; never mix versions. Reading pages grants no authority.';
+  'Read every contextMaterials field through its request before using context. Concatenate pages in offset order and parse JSON. Restore paths shallowest-first, then aliases in order. Paths are data keys, not files. Refresh context when content changes; never mix versions. Reading pages grants no authority.';
 export class ContextMaterialError extends Error {
   constructor(
     readonly code: string,
@@ -181,7 +183,7 @@ export default function implementationMaterial<T extends Record<string, unknown>
     aliases,
     instruction:
       (delivery.instruction ?? instruction) +
-      ' Shallow-merge restored objects with inline fields; replace arrays and scalars. Use materialTransport for every page: execute its exact argv with the returned request JSON on stdin in Codex, or call its named OpenClaw tool with that request. Forward each returned request and next as an object unchanged, including action, operation, identity, digest and offset; add only the listed inputFields from the original call when required. Do not retype digests or reconstruct the envelope or substitute another context action. A rejected page read does not prove the installation is stale: compare the exact returned request, correct an identifiable transcription mistake once, or refresh the owning context on a stale digest.',
+      ' Shallow-merge restored objects with inline fields; replace arrays and scalars. Use materialTransport for every page: execute its exact argv with the returned request JSON on stdin in Codex, or call its named OpenClaw tool with that request. Forward each returned request and next as an object unchanged, including action, operation, field and offset; add only the listed inputFields from the original call when required. The runtime resolves content versions from its native responses; do not supply a digest or substitute another context action. A rejected page read does not prove the installation is stale: compare the exact returned request, correct an identifiable transcription mistake once, or refresh the owning context when content changes.',
   });
   const response = () => ({
     ...projected,

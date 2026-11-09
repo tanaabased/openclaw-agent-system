@@ -1,3 +1,4 @@
+import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
 import contextMaterialTransport from '../agent/context-material-transport.ts';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -128,6 +129,7 @@ export default async function nativeMaterialFixture(input: {
     fail(error);
   }, 5000);
   child.once('error', (error) => fail(error));
+  const materialReceipts: unknown[] = [];
   lines.on('line', async (line) => {
     try {
       const message = JSON.parse(line);
@@ -150,7 +152,18 @@ export default async function nativeMaterialFixture(input: {
           assert.ok(['agent_system_dispatch', 'agent_system_github'].includes(name));
           const args = message.params.arguments.args;
           if (args.material) pages += 1;
-          const output = contextMaterialTransport(await input.run(args, name), { tool: name });
+          const bound = await bindNativeMaterial(
+            name,
+            args,
+            (async function* () {
+              yield* materialReceipts;
+            })(),
+          );
+          const output = contextMaterialTransport(
+            nativeMaterialResponse(await input.run(bound, name), name, args),
+            { tool: name },
+          );
+          materialReceipts.unshift(output);
           result = {
             tool: {
               id: `openclaw:${name}`,
