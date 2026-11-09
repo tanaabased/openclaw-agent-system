@@ -1,18 +1,26 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { getTextContent, type ChatCompletionRequest } from '@copilotkit/aimock';
+import { Value } from 'typebox/value';
 
 import implementationMaterial, {
   type ImplementationMaterialRead,
 } from '../agent/implementation-material.ts';
 import contextMaterialTransport from '../agent/context-material-transport.ts';
 import contextMaterialExchange from '../scripts/aimock-context-material.ts';
+import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
+import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 
 describe('aimock context material', () => {
-  it('should advance all pages when the host normalizes long tool call ids', () => {
+  it('should advance all pages with native versions when the host normalizes long tool call ids', async () => {
     const source = { status: 'verified', instructions: 'Distinct reply context. '.repeat(1000) };
     const transport = { tool: 'agent_system_dispatch' };
     const input = { action: 'reply', operation: 'compose' };
+    const initial = contextMaterialTransport(
+      nativeMaterialResponse(implementationMaterial(source, input), transport.tool, input),
+      transport,
+    );
+    const history: unknown[] = [initial];
     const initialId = 'call_notifications_context_fc-zexhi4gzCy-qDwcw_ec91c0';
     const request = {
       model: 'fixture',
@@ -32,9 +40,7 @@ describe('aimock context material', () => {
         {
           role: 'tool',
           tool_call_id: initialId,
-          content: JSON.stringify(
-            contextMaterialTransport(implementationMaterial(source, input), transport),
-          ),
+          content: JSON.stringify(initial),
         },
       ],
     } as ChatCompletionRequest;
@@ -52,8 +58,26 @@ describe('aimock context material', () => {
       assert.ok('toolCalls' in exchange.pending);
       const call = exchange.pending.toolCalls![0]!;
       const read = JSON.parse(call.arguments);
+      assert.equal(Value.Check(dispatchModelParameters, read), true);
+      assert.equal('digest' in read.material, false);
       assert.ok(!offsets.has(read.material.offset), 'must not request the same page again');
       offsets.add(read.material.offset);
+      const bound = await bindNativeMaterial(
+        transport.tool,
+        read,
+        (async function* () {
+          yield* history;
+        })(),
+      );
+      const output = contextMaterialTransport(
+        nativeMaterialResponse(
+          implementationMaterial(source, input, bound.material as ImplementationMaterialRead),
+          transport.tool,
+          read,
+        ),
+        transport,
+      );
+      history.unshift(output);
       const framed = `${call.id}_fc-zexhi4gzCy-qDwcw_ec91c0`;
       const normalized =
         framed.length <= 64
@@ -74,12 +98,7 @@ describe('aimock context material', () => {
         {
           role: 'tool',
           tool_call_id: normalized,
-          content: JSON.stringify(
-            contextMaterialTransport(
-              implementationMaterial(source, input, read.material as ImplementationMaterialRead),
-              transport,
-            ),
-          ),
+          content: JSON.stringify(output),
         },
       );
     }
