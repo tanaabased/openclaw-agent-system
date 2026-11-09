@@ -176,6 +176,42 @@ describe('agent/native-material', () => {
     assert.ok(calls.every(([, params]) => params.threadId === 'caller'));
   });
 
+  it('reads native tool-search receipts without accepting other tools, sources or failures', async () => {
+    const output = nativeMaterialResponse(
+      implementationMaterial(source, envelope),
+      'agent_system_dispatch',
+      envelope,
+    );
+    const wrapped = {
+      tool: { id: 'openclaw:agent_system_dispatch', name: 'agent_system_dispatch', source: 'openclaw' },
+      result: { content: [{ type: 'text', text: JSON.stringify(output) }] },
+    };
+    const message = (details: unknown) => ({ role: 'toolResult', toolName: 'tool_call', details });
+    const native = openClawMaterialReceipts(
+      async () => ({
+        sessionId: 'session',
+        messages: [
+          message(wrapped),
+          { ...message(undefined), content: [{ type: 'text', text: JSON.stringify(wrapped) }] },
+          message({ ...wrapped, tool: { ...wrapped.tool, name: 'other' } }),
+          message({ ...wrapped, tool: { ...wrapped.tool, source: 'mcp' } }),
+          message({ ...wrapped, result: { ...wrapped.result, isError: true } }),
+          { ...message(wrapped), isError: true },
+          { ...message(wrapped), role: 'user' },
+        ],
+      }),
+      { sessionKey: 'agent:bound', sessionId: 'session' },
+      'agent_system_dispatch',
+    );
+    const observed = [];
+    for await (const receipt of native) observed.push(receipt);
+    assert.deepEqual(observed, [output, output]);
+    assert.ok(
+      (await bindNativeMaterial('agent_system_dispatch', pageRequest(output), receipts(observed)))
+        .material,
+    );
+  });
+
   it('reads only the bound openclaw tool responses and recovers native truncated output', async () => {
     const output = nativeMaterialResponse(
       implementationMaterial(source, envelope),
