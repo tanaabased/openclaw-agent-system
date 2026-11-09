@@ -36,13 +36,7 @@ export const directImplementationRequestSchema = Type.Object(
 
 /** validate the same envelope before either manual collection or managed routing. */
 export function parseDirectImplementationRequest(input: unknown) {
-  if (!Value.Check(directImplementationRequestSchema, input))
-    throw Object.assign(
-      new Error(
-        'implementation-request-invalid: use target and path for an explicit implementation context request, or omit the target when the native conversation has one verified owner. issue and checkout are not request fields. if verified implementation context is already supplied, use its implementation body without bootstrapping again.',
-      ),
-      { code: 'implementation-request-invalid' },
-    );
+  if (!Value.Check(directImplementationRequestSchema, input)) throw invalidRequest(input);
   if (
     (input.material !== undefined &&
       (input.operation !== 'context' || input.scope !== undefined || input.plan !== undefined)) ||
@@ -52,6 +46,24 @@ export function parseDirectImplementationRequest(input: unknown) {
     ((input.plan !== undefined || input.scope !== undefined) && input.operation !== 'context') ||
     ((input.deliveryOperation || input.title || input.body) && input.operation !== 'delivery')
   )
-    throw new Error('implementation-request-invalid');
+    throw invalidRequest(input);
   return input;
+}
+
+function invalidRequest(input: unknown) {
+  const operation =
+    input && typeof input === 'object' && 'operation' in input ? input.operation : undefined;
+  const guidance =
+    operation === 'context'
+      ? 'use target and path for an explicit implementation context request, or omit the target when the native conversation has one verified owner. issue, checkout and worktree are not request fields. if verified implementation context is already supplied, use its implementation body without bootstrapping again.'
+      : operation === 'result'
+        ? 'put outcome, summary and fullResult inside result, not at the request root. outcome must be done, blocked or clarification-needed; clarification-needed also requires questions inside result. Result recording is optional history, not a prerequisite for PR delivery.'
+        : operation === 'delivery'
+          ? 'supply deliveryOperation as prepare, publish, reconcile or present. Authored title and body belong at the request root. Do not include plan, scope or result.'
+          : operation === 'present'
+            ? 'use operation present with an optional target issue URL to read historical results. Do not include plan, scope, result or delivery fields.'
+            : 'use action implementation with operation context, result, present or delivery.';
+  return Object.assign(new Error(`implementation-request-invalid: ${guidance}`), {
+    code: 'implementation-request-invalid',
+  });
 }

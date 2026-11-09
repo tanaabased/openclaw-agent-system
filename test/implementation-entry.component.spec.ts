@@ -327,6 +327,38 @@ describe('agent/implementation-entry', () => {
     }
     assert.equal(reads, 0);
   });
+  it('should explain malformed result envelopes in both runtimes before accessing state', async () => {
+    deps.assertCurrent = async () => {
+      throw new Error('native-must-not-run');
+    };
+    for (const runtime of ['codex', 'openclaw'] as const) {
+      deps.binding.runtime = runtime;
+      for (const fields of [
+        { summary: 'private-summary', changed: ['private-file'] },
+        { result: { outcome: 'done', summary: 'private-summary' } },
+        {},
+      ])
+        await assert.rejects(
+          implementationEntry({ action: 'implementation', operation: 'result', ...fields }, deps),
+          (error: unknown) => {
+            assert.ok(error instanceof Error);
+            assert.equal('code' in error && error.code, 'implementation-request-invalid');
+            assert.match(error.message, /outcome, summary and fullResult inside result/);
+            assert.doesNotMatch(error.message, /target and path|private-/);
+            return true;
+          },
+        );
+    }
+    assert.deepEqual(
+      parseDirectImplementationRequest({
+        action: 'implementation',
+        operation: 'result',
+        result: ready,
+      }).result,
+      ready,
+    );
+    assert.equal(reads, 0);
+  });
   it('should retain a missing-plan question and use the later answer without inventing an assessment', async () => {
     const missing = await call('context', { plan: undefined });
     assert.equal(missing.status, 'clarification-needed');
