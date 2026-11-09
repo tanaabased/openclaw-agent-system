@@ -12,10 +12,9 @@ import { directAssessmentRequestSchema } from '../tools/dispatch/assessment-sche
 import { parseAssessmentSubmission } from './assessment-result.ts';
 import { replyLocator } from './reply-target.ts';
 import assessmentOwner from './assessment-owner.ts';
-import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
+import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from './managed-issue.ts';
 import { dispatchAssessmentContext } from './dispatch-presentation.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
-import type { ManagedIssue } from './managed-issue.ts';
 import type { AssessmentSelection } from './assessment-selection.ts';
 import AssessmentValidationError from './assessment-validation.ts';
 
@@ -30,7 +29,7 @@ const renderRequestSchema = Type.Object(
 );
 
 /** resolve display metadata from the bound owner without saving an assessment or advancing work. */
-export function renderBoundAssessment(
+export async function renderBoundAssessment(
   input: unknown,
   context: {
     runtime: 'codex' | 'openclaw';
@@ -40,6 +39,7 @@ export function renderBoundAssessment(
     workspace: string;
     debug?: boolean;
     workflow?: WorkflowInstructionsPresentation['workflow'];
+    nativeContext?: () => Promise<Omit<AssessmentPresentationContext, 'issue'>>;
   },
 ) {
   if (input && typeof input === 'object' && !Array.isArray(input) && !('target' in input)) {
@@ -60,24 +60,21 @@ export function renderBoundAssessment(
     repository: `${target.owner}/${target.name}`,
     number: target.number,
   });
-  if (!owner) return renderNativeAssessment(input, context.runtime);
+  if (!owner)
+    return renderNativeAssessment(input, context.runtime, await context.nativeContext?.());
   const record = owner.record;
   return renderNativeAssessment(
-    {
-      ...input,
-      cards: assessmentContextCards(
-        dispatchAssessmentContext(
-          {
-            ...record,
-            assessment: record.turnEvidence?.selection ?? record.assessment,
-            stageReceipt: undefined,
-          },
-          context.workspace,
-          { debug: context.debug, workflow: context.workflow },
-        ),
-      ),
-    },
+    input,
     context.runtime,
+    dispatchAssessmentContext(
+      {
+        ...record,
+        assessment: record.turnEvidence?.selection ?? record.assessment,
+        stageReceipt: undefined,
+      },
+      context.workspace,
+      { debug: context.debug, workflow: context.workflow },
+    ),
   );
 }
 
@@ -85,6 +82,7 @@ export function renderBoundAssessment(
 export default function renderNativeAssessment(
   input: unknown,
   runtime: 'codex' | 'openclaw' = 'codex',
+  context?: Omit<AssessmentPresentationContext, 'issue'>,
 ) {
   if (!Value.Check(renderRequestSchema, input))
     throw new AssessmentValidationError(
@@ -121,7 +119,7 @@ export default function renderNativeAssessment(
           kind: target.itemType === 'pull-request' ? 'Pull request' : 'Issue',
         },
         retained: false,
-        cards: input.cards,
+        cards: context ? assessmentContextCards(context) : undefined,
         assessmentOnly: input.assessmentOnly,
       }),
       instructions:
@@ -133,24 +131,18 @@ export default function renderNativeAssessment(
     {
       purpose: 'assessment-presentation',
       pagedFields: ['presentation'],
-      inputFields: ['result', 'cards'],
+      inputFields: ['result'],
       instruction:
         'Read every presentation page before displaying the result. Copy only the listed inputFields from the original native tool call into each returned page request. This pure formatter retains no source or plan. Follow next, concatenate text in offset order, parse JSON and restore each path. Show the complete presentation. Page reads do not save a plan or authorize any effect.',
     },
   );
 }
 
-export function assessmentPresentationRequest(
-  target: string,
-  assessmentOnly = false,
-  context?: Omit<AssessmentPresentationContext, 'issue'>,
-) {
-  const cards = context ? assessmentContextCards(context) : [];
+export function assessmentPresentationRequest(target: string, assessmentOnly = false) {
   return {
     action: 'assessment' as const,
     operation: 'render' as const,
     target,
     ...(assessmentOnly ? { assessmentOnly } : {}),
-    ...(cards.length ? { cards } : {}),
   };
 }

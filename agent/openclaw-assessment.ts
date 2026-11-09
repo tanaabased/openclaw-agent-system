@@ -199,19 +199,7 @@ export async function issueAssessmentAction(input: {
     id: record.id,
     ...renderNativeAssessment(
       {
-        ...assessmentPresentationRequest(
-          managedTargetUrl(intake),
-          false,
-          dispatchAssessmentContext(
-            {
-              ...record,
-              assessment: record.turnEvidence?.selection ?? record.assessment,
-              stageReceipt: undefined,
-            },
-            input.workspace,
-            { debug: input.debug, workflow: input.policy?.issueAssignment },
-          ),
-        ),
+        ...assessmentPresentationRequest(managedTargetUrl(intake)),
         result: {
           ...candidate,
           reviewSummary:
@@ -227,6 +215,15 @@ export async function issueAssessmentAction(input: {
         },
       },
       'openclaw',
+      dispatchAssessmentContext(
+        {
+          ...record,
+          assessment: record.turnEvidence?.selection ?? record.assessment,
+          stageReceipt: undefined,
+        },
+        input.workspace,
+        { debug: input.debug, workflow: input.policy?.issueAssignment },
+      ),
     ),
   };
 }

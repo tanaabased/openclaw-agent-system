@@ -43,12 +43,7 @@ export default async function nativeTaskContext(
         ? {
             assessment: selection,
             resultSchema: assessmentResultContextSchema,
-            presentationRequest: assessmentPresentationRequest(target, true, {
-              assessment: selection,
-              workspace: deps.binding.workspace,
-              debug: deps.manifest.debug,
-              workflow: deps.manifest.github?.notifications?.issueAssignment,
-            }),
+            presentationRequest: assessmentPresentationRequest(target, true),
           }
         : { implementation: selection }),
       instructions:

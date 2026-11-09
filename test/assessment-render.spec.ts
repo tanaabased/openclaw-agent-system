@@ -166,11 +166,16 @@ describe('agent/assessment-render', () => {
           ...initialReview.presentationRequest,
           result: { ...submitted, decision: initialReview.decision },
         };
-        const shown = renderBoundAssessment(renderRequest, renderContext);
+        await assert.rejects(
+          renderBoundAssessment({ ...renderRequest, cards: ['forged'] }, renderContext),
+          /assessment-render-request-invalid/,
+        );
+        const shown = await renderBoundAssessment(renderRequest, renderContext);
         const omittedId: Record<string, unknown> = { ...renderRequest };
-        const { target: _target, ...boundRequest } = renderRequest;
-        assert.deepEqual(renderBoundAssessment(boundRequest, renderContext), shown);
-        assert.throws(
+        const boundRequest: Record<string, unknown> = { ...renderRequest };
+        delete boundRequest.target;
+        assert.deepEqual(await renderBoundAssessment(boundRequest, renderContext), shown);
+        await assert.rejects(
           () => renderBoundAssessment({ ...renderRequest, id: owner.id }, renderContext),
           /assessment-render-request-invalid/,
         );
@@ -180,7 +185,7 @@ describe('agent/assessment-render', () => {
           { supersededBy: 'another-task' },
           { retirement: { at: 1 } },
         ])
-          assert.throws(
+          await assert.rejects(
             () =>
               renderBoundAssessment(omittedId, {
                 ...renderContext,
@@ -189,10 +194,10 @@ describe('agent/assessment-render', () => {
             /assessment-managed-context-invalid/,
           );
         assert.deepEqual(
-          renderBoundAssessment(omittedId, { ...renderContext, records: [] }),
+          await renderBoundAssessment(omittedId, { ...renderContext, records: [] }),
           renderNativeAssessment(omittedId, runtime),
         );
-        assert.throws(
+        await assert.rejects(
           () =>
             renderBoundAssessment(
               { ...renderRequest, id: owner.id },
@@ -240,12 +245,12 @@ describe('agent/assessment-render', () => {
         debug: true,
       };
       const request = {
-        ...assessmentPresentationRequest(target, false, metadata),
+        ...assessmentPresentationRequest(target),
         result: { ...result, reviewSummary: 'Review detail. '.repeat(900) },
       };
-      const first = renderNativeAssessment(request, runtime);
+      const first = renderNativeAssessment(request, runtime, metadata);
       const restored = await hydrateImplementation(first, async (read) =>
-        renderNativeAssessment({ ...request, ...read }, runtime),
+        renderNativeAssessment({ ...request, ...read }, runtime, metadata),
       );
       assert.match(String(restored.presentation), /provider\/model/);
       assert.match(String(restored.presentation), /Shared behavior needs investigation/);
@@ -257,10 +262,11 @@ describe('agent/assessment-render', () => {
       );
       const quiet = renderNativeAssessment(
         {
-          ...assessmentPresentationRequest(target, false, { ...metadata, debug: false }),
+          ...assessmentPresentationRequest(target),
           result,
         },
         runtime,
+        { ...metadata, debug: false },
       );
       assert.equal(quiet.status, 'formatted');
       assert.match(quiet.presentation, /Model routing/);

@@ -770,7 +770,7 @@ describe('agent/native-assessment-entry', () => {
     assert.ok(result && 'status' in result);
     assert.equal(result.status, 'formatted');
     assert.equal('handoff' in result, false);
-    assert.equal(calls.filter((name) => name === 'skills/list').length, 1);
+    assert.equal('cards' in context.presentationRequest, false);
     assert.ok(
       !(await readdir(data)).some(
         (name) => name.includes('github-intake') || name.includes('codex-dispatch'),
@@ -901,7 +901,7 @@ describe('agent/native-assessment-entry', () => {
     );
     assert.equal(result.status, 'formatted');
     assert.equal('handoff' in result, false);
-    assert.equal(calls.filter((name) => name === 'skills.status').length, 1);
+    assert.equal('cards' in context.presentationRequest, false);
     await assert.rejects(readdir(join(root, 'dispatch')), { code: 'ENOENT' });
   });
 });

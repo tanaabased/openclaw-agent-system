@@ -4865,9 +4865,16 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(verified.presentationRequest.operation, 'render');
     assert.equal('cards' in verified.presentationRequest, false);
     const beforeRender = await record();
+    await assert.rejects(
+      service.runModel(manifest, root, assessor(input.id), {
+        ...verified.presentationRequest,
+        cards: ['forged'],
+        result: { ...plan, reviewSummary: plan.summary },
+      }),
+      /dispatch-model-request-invalid/,
+    );
     const rendered = await service.run(manifest, root, assessor(input.id), {
       ...verified.presentationRequest,
-      cards: [],
       result: { ...plan, reviewSummary: plan.summary },
     });
     assert.equal(rendered.status, 'formatted');

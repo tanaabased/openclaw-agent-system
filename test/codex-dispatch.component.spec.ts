@@ -2129,7 +2129,8 @@ describe('agent/codex-dispatch', () => {
     assert.equal(hints?.contextRuntime, 'dispatchRuntime');
     assert.deepEqual(await readDispatchState(), pendingState);
     const { action, ...input } = hints!.contextRequest!;
-    const context = await request(action, input, child);
+    // The internal dispatch entry receives the id resolved by the native adapter.
+    const context = await request(action, { ...input, id: prepared.id }, child);
     assert.equal(context.currentTurnId, 'first-turn');
     assert.equal(context.previousResultTurnId, undefined);
     assert.equal(context.entry, 'managed');
@@ -2151,9 +2152,12 @@ describe('agent/codex-dispatch', () => {
     const beforeRender = await readDispatchState();
     const renderRequest = {
       ...(context.presentationRequest as Record<string, unknown>),
-      cards: ['forged card'],
       result: { ...question, reviewSummary: question.summary },
     };
+    await assert.rejects(
+      request('assessment', { ...renderRequest, cards: ['forged card'] }, child),
+      /assessment-render-request-invalid/,
+    );
     const rendered = await request('assessment', renderRequest, child);
     assert.equal(rendered.status, 'formatted');
     assert.match(String(rendered.presentation), /Model routing/);

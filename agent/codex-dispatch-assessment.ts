@@ -425,30 +425,30 @@ export async function assessDispatch(
     const result = parseAssessmentSubmission(input.result);
     return {
       id: record.id,
-      ...renderNativeAssessment({
-        ...assessmentPresentationRequest(
-          managedTargetUrl(intake),
-          false,
-          dispatchAssessmentContext(record, current.workspace, {
-            debug: current.manifest.debug,
-            workflow: current.manifest.github?.notifications?.issueAssignment,
-            manifestPath: current.manifestPath,
-          }),
-        ),
-        result: {
-          ...result,
-          reviewSummary:
-            result.reviewSummary ??
-            [
-              result.summary,
-              ...(result.outcome === 'clarification-needed'
-                ? result.questions
-                : result.outcome === 'operator-setup-blocker'
-                  ? [result.remediation]
-                  : []),
-            ].join('\n\n'),
+      ...renderNativeAssessment(
+        {
+          ...assessmentPresentationRequest(managedTargetUrl(intake)),
+          result: {
+            ...result,
+            reviewSummary:
+              result.reviewSummary ??
+              [
+                result.summary,
+                ...(result.outcome === 'clarification-needed'
+                  ? result.questions
+                  : result.outcome === 'operator-setup-blocker'
+                    ? [result.remediation]
+                    : []),
+              ].join('\n\n'),
+          },
         },
-      }),
+        'codex',
+        dispatchAssessmentContext(record, current.workspace, {
+          debug: current.manifest.debug,
+          workflow: current.manifest.github?.notifications?.issueAssignment,
+          manifestPath: current.manifestPath,
+        }),
+      ),
     };
   }
   throw new Error('dispatch-action-invalid');
