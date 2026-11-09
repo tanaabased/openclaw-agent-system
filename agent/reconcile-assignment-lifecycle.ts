@@ -59,6 +59,8 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   save(): Promise<void>;
 }) {
   const { now, client, policy } = input;
+  const read = <T>(operation: string, run: () => Promise<T>) =>
+    input.budget ? input.budget.read(operation, run) : run();
   const configuration = input.configuration;
   const graceMinutes = configuration.status === 'ready' ? configuration.graceMinutes : undefined;
   const latest = new Map(input.admitted.map((item) => [issueKey(item), item]));
@@ -99,9 +101,8 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           client.identity.login.toLowerCase() !== policy.username.toLowerCase()
         )
           throw new Error('dispatch-receiver-account-changed');
-        const repo = await client.getRepository(
-          admission.repository.owner.login,
-          admission.repository.name,
+        const repo = await read('lifecycle-repository', () =>
+          client.getRepository(admission.repository.owner.login, admission.repository.name),
         );
         input.budget?.check();
         if (
@@ -109,10 +110,12 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           repo.databaseId !== admission.repository.databaseId
         )
           throw new Error('dispatch-repository-identity-changed');
-        const item = await client.getItem(
-          admission.repository.owner.login,
-          admission.repository.name,
-          admission.issue.number,
+        const item = await read('lifecycle-issue', () =>
+          client.getItem(
+            admission.repository.owner.login,
+            admission.repository.name,
+            admission.issue.number,
+          ),
         );
         input.budget?.check();
         if (
@@ -126,12 +129,14 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           delete target.assignmentObservation;
           return 'issue-closed' as const;
         }
-        const observation = await inspectAssignmentRemoval(
-          admission,
-          client,
-          item,
-          policy.policy.issueAssignment?.allowed ?? [],
-          now,
+        const observation = await read('lifecycle-assignment', () =>
+          inspectAssignmentRemoval(
+            admission,
+            client,
+            item,
+            policy.policy.issueAssignment?.allowed ?? [],
+            now,
+          ),
         );
         input.budget?.check();
         if (observation) target.assignmentObservation = observation;
@@ -182,7 +187,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         record.retirement!.removalEventId = record.assignmentObservation!.event!.nodeId;
       let native: RetirementNativeObservation | undefined;
       try {
-        native = await input.observe(record);
+        native = await read('lifecycle-session', () => input.observe(record));
       } catch (error) {
         input.budget?.check();
         if (record.retirement)

@@ -12,7 +12,7 @@ import workflowFailure from './workflow-failure.ts';
 import type { DispatchAuthority, DispatchRequest } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import type OpenClawDispatchContext from './openclaw-dispatch-context.ts';
-import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
 import observeRetirementSession, { retirementObject } from './openclaw-retirement-observation.ts';
 import reconcileAssignmentLifecycle from './reconcile-assignment-lifecycle.ts';
 
@@ -28,7 +28,9 @@ export default async function reconcileOpenClawLifecycle(input: {
   const { service, manifest, workspace, authority } = input;
   const readConfiguration = () => openClawCleanupConfiguration(service.dependencies.config);
   const configuration = await readConfiguration();
-  const current = await service.scope(manifest, workspace);
+  const read = <T>(operation: string, run: () => Promise<T>) =>
+    input.budget ? input.budget.read(operation, run) : run();
+  const current = await read('lifecycle-scope', () => service.scope(manifest, workspace));
   current.policy.policy.issueAssignment!.allowed =
     manifest.github?.notifications?.issueAssignment?.allowed ?? [];
   const manualTarget =
@@ -38,7 +40,9 @@ export default async function reconcileOpenClawLifecycle(input: {
     );
   const owner = manualTarget
     ? manualTarget.sourceThreadId
-    : await service.dependencies.coordinator(manifest, workspace);
+    : await read('lifecycle-coordinator', () =>
+        service.dependencies.coordinator(manifest, workspace),
+      );
   const feedbackBudget = input.budget ?? new DiscoveryBudget();
   const now = (service.dependencies.now ?? Date.now)();
   const snapshot = await current.journal.read();
@@ -52,9 +56,11 @@ export default async function reconcileOpenClawLifecycle(input: {
   )
     return;
   input.budget?.check();
-  const client = await service.dependencies.connect(
-    { manifest, workspaceDir: workspace },
-    authority.signal ?? AbortSignal.timeout(20_000),
+  const client = await read('lifecycle-connection', () =>
+    service.dependencies.connect(
+      { manifest, workspaceDir: workspace },
+      authority.signal ?? AbortSignal.timeout(20_000),
+    ),
   );
   const fresh = async () => {
     authority.signal?.throwIfAborted();
@@ -83,7 +89,7 @@ export default async function reconcileOpenClawLifecycle(input: {
       observed && { ...observed, idle: observed.idle && record.threadId !== input.activeSessionKey }
     );
   };
-  return current.journal.exclusive(async (state, save) => {
+  const reconcile = async (state: OpenClawDispatchState, save: () => Promise<void>) => {
     // older retirements retained patch failures before archive requests had their own receipt.
     const archiveHolds = new Map(
       state.records.flatMap((record) => {
@@ -438,7 +444,9 @@ export default async function reconcileOpenClawLifecycle(input: {
           const settled = {
             archived: archiveObserved && !childArchiveCode,
             ...(!observed.unavailableSession && !archiveObserved
-              ? { code: record.retirement!.archiveRequest?.code ?? 'retirement-archive-unverified' }
+              ? {
+                  code: record.retirement!.archiveRequest?.code ?? 'retirement-archive-unverified',
+                }
               : {}),
             ...(observed.unavailableSession
               ? { unavailableSession: observed.unavailableSession }
@@ -498,5 +506,11 @@ export default async function reconcileOpenClawLifecycle(input: {
         id: target.id,
         retirement: target.retirement,
       };
-  });
+  };
+  return current.journal.exclusive(
+    reconcile,
+    true,
+    'dispatch-reconcile',
+    input.budget?.signal ?? authority.signal,
+  );
 }

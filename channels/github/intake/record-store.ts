@@ -263,6 +263,7 @@ export default class IntakeRecordStore {
       save: (state: IntakeState) => Promise<void>,
       signal: AbortSignal,
     ) => Promise<T>,
+    signal?: AbortSignal,
   ): Promise<T> {
     await ensurePrivateStateDirectories({
       directories: [this.location.root],
@@ -274,6 +275,7 @@ export default class IntakeRecordStore {
       contention: {
         category: 'intake',
         operation: 'intake-commit',
+        signal,
         timeoutMs: 10_000,
         retryMs: 250,
       },

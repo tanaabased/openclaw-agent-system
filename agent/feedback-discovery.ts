@@ -37,7 +37,7 @@ export default async function feedbackDiscovery(input: {
           .filter(Number.isFinite),
       );
       if (page === last && !verified.has(family)) {
-        const fresh = await fetch();
+        const fresh = await budget.read(key, fetch);
         verified.add(family);
         if (automationHash(fresh) !== automationHash(JSON.parse(progress.reads[key]!))) {
           progress.reads = {};
@@ -47,7 +47,7 @@ export default async function feedbackDiscovery(input: {
       }
     }
     if (progress.reads[key] !== undefined) return JSON.parse(progress.reads[key]!) as T;
-    const value = await fetch();
+    const value = await budget.read(key, fetch);
     progress.reads[key] = JSON.stringify(value);
     await save();
     budget.completed++;

@@ -1,3 +1,6 @@
+import { runInNewContext } from 'node:vm';
+import openClawConditionCheck from '../agent/openclaw-condition-check.ts';
+import openclawIntakeJobs from '../agent/openclaw-intake-policy.ts';
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
 import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 import { feedbackTarget } from '../agent/reply-target.ts';
@@ -8392,6 +8395,70 @@ describe('agent/openclaw issue dispatch', () => {
     assert.ok('records' in missing);
     assert.deepEqual(missing.records, []);
   });
+  it('should return from a delayed scheduled readiness read and resume without losing or duplicating assignments', async () => {
+    const intake = service.dependencies.intake;
+    const current = await service.scope(manifest, root);
+    const before = await current.store.read();
+    const waiting = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<string | undefined>();
+    const deadline = new AbortController();
+    let clock = 0;
+    let readSignal: AbortSignal | undefined;
+    intake.dependencies.readiness = async (_manifest, _workspace, _id, _expected, signal) => {
+      readSignal = signal;
+      waiting.resolve();
+      return release.promise;
+    };
+    const budget = new DiscoveryBudget(20000, deadline.signal, () => clock);
+    const script = openclawIntakeJobs(manifest).find((job) => job.id === 'github-issue-assignment')!
+      .internalOpenClaw!.trigger!.script;
+    let output:
+      | {
+          fire: boolean;
+          state: {
+            outcome: string;
+            more: boolean;
+            diagnostic: { phase: string; elapsedMs: number };
+          };
+        }
+      | undefined;
+    const occurrence = runInNewContext('(async()=>{' + script + '})()', {
+      agent_system_dispatch: () =>
+        openClawConditionCheck(
+          (budget) => service.check(manifest, root, undefined, undefined, undefined, budget),
+          undefined,
+          budget,
+        ),
+      json: (value: typeof output) => {
+        output = value;
+      },
+    });
+    await waiting.promise;
+    clock = 20000;
+    deadline.abort();
+    await occurrence;
+    assert.equal(readSignal?.aborted, true);
+    assert.equal(output!.fire, true);
+    assert.equal(output!.state.outcome, 'failed');
+    assert.equal(output!.state.more, true);
+    assert.equal(output!.state.diagnostic.phase, 'automation-readiness');
+    assert.equal(output!.state.diagnostic.elapsedMs, 20000);
+    assert.deepEqual(await current.store.read(), before);
+    release.resolve(undefined);
+    await release.promise;
+    assert.deepEqual(await current.store.read(), before);
+    intake.dependencies.readiness = async () => undefined;
+    await service.check(manifest, root);
+    const complete = await current.store.read();
+    assert.equal(complete!.records.length, 1);
+    await service.check(manifest, root);
+    assert.deepEqual((await current.store.read())!.records, complete!.records);
+    assert.equal(
+      calls.some((call) => call.method === 'sessions.create' || call.method === 'chat.send'),
+      false,
+    );
+  });
+
   it('should stop all discovery phases on caller cancellation', async () => {
     await feedbackOwner();
     const before = await record();

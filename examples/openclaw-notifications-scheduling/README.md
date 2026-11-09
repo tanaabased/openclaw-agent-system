@@ -6,6 +6,7 @@ Verify that its ID, routing, channel readiness, and dispatch enrollment are pres
 ## What Belongs Here
 
 - Native scheduler enable/disable controls for the installed notification job.
+- A real due-time condition completing quietly without starting the prompt payload.
 - Manifest pause/resume through Install without another dispatch enrollment.
 - Unchanged job identities and routing, with the channel remaining enabled while scheduling is paused.
 
@@ -20,6 +21,7 @@ Verify that its ID, routing, channel readiness, and dispatch enrollment are pres
 - Direct installed commands need one GitHub identity and native dispatch enrollment, without creating issues, PRs, worktrees, SSH registrations, or model turns.
 - Setup, first Install, and scheduling assertions share one fail-fast block. Failed installation retains its output and automation inspection, then stops before dependent checks. CI enables bounded, redacted native rejection evidence for that first attempt.
 - All scheduler and Gateway state belongs to the ephemeral runner.
+- The final check waits for the native schedule, not a forced payload run. Controlled delayed-read and checkpoint/resumption coverage lives in the source component tests; this example verifies the installed condition and native quiet outcome.
 
 ## Testing
 
@@ -60,6 +62,19 @@ openclaw agent-system install --yes --json | jq -e 'all(.outcomes[]; .code != "s
 openclaw agent-system automations list --json | jq -e --arg id "$native" 'any(.jobs[]; .id == "github-issue-assignment" and .nativeId == $id and .nativeEnabled == true)'
 jq -S '[.jobs[] | {id, nativeId, routing}]' "$TMPDIR/intake-before-pause.json" > "$TMPDIR/intake-identities-before.json"
 openclaw agent-system automations list --json | jq -S '[.jobs[] | {id, nativeId, routing}]' | diff - "$TMPDIR/intake-identities-before.json"
+```
+
+```bash
+# should complete a scheduled condition quietly without forcing its payload
+cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/tanaabot"
+sed 's/interval-minutes: 1440/interval-minutes: 1/' "$TMPDIR/intake-active-agent.yaml" > agent.yaml
+openclaw agent-system install --yes --json | jq -e 'all(.outcomes[]; .code != "session-dispatch-enrolled")'
+openclaw agent-system automations list --json > "$TMPDIR/scheduled-condition-job.json"
+native=$(jq -er '.jobs[] | select(.id == "github-issue-assignment") | .nativeId' "$TMPDIR/scheduled-condition-job.json")
+due=$(openclaw cron get "$native" --json | jq -er '.state.nextRunAtMs')
+node "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/wait-condition.mjs" "$native" "$due"
+cp "$TMPDIR/intake-active-agent.yaml" agent.yaml
+openclaw agent-system install --yes --json | jq -e 'all(.outcomes[]; .code != "session-dispatch-enrolled")'
 ```
 
 ## Cleanup

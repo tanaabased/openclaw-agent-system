@@ -21,6 +21,7 @@ export interface IntakeObservation {
   status: 'ready' | 'blocked';
   changed: boolean;
   code?: string;
+  diagnostic?: { phase: string; elapsedMs: number; reason: string };
 }
 
 /** presentation metadata never selects work, releases capacity, or proves delivery. */
