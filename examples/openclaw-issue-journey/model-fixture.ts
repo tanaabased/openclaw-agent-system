@@ -62,7 +62,7 @@ function assessmentRequest(context: Record<string, unknown>, payload: object) {
   };
 }
 
-function currentTurn(request: ChatCompletionRequest) {
+export function currentTurn(request: ChatCompletionRequest) {
   return request.messages.slice(
     Math.max(
       0,

@@ -18,7 +18,10 @@ import { Value } from 'typebox/value';
 import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
 import renderNativeAssessment from '../agent/assessment-render.ts';
 import { issueExampleScenario } from '../examples/openclaw-issue-journey/model-fixture.ts';
-import { intakeExampleScenario } from '../examples/openclaw-issue-intake/model-fixture.ts';
+import {
+  createIntakeExampleScenario,
+  intakeExampleScenario,
+} from '../examples/openclaw-issue-intake/model-fixture.ts';
 import { retirementExampleScenario } from '../examples/openclaw-notifications-retirement/model-fixture.ts';
 import {
   progressionExampleScenario,
@@ -540,7 +543,24 @@ for (const scenario of [
         });
         assert.deepEqual(await response(input), { content: 'The account identity read failed.' });
       });
-    if (scenario.id === 'openclaw-issue-intake')
+    if (scenario.id === 'openclaw-issue-intake') {
+      it('should release the current native receipt without an id in tool arguments', async () => {
+        const input = request(
+          'Agent System: assess this admitted issue and retain its complete plan.',
+        );
+        input.messages.unshift({
+          role: 'user',
+          content:
+            'Agent System model-only current-turn facts (keep private):\n' +
+            JSON.stringify({ receipt: 'old-receipt' }),
+        });
+        const released: string[] = [];
+        const selected = createIntakeExampleScenario(async (receipt) => {
+          released.push(receipt);
+        });
+        assert.deepEqual(await action(input, 'context', selected), { action: 'context' });
+        assert.deepEqual(released, [id]);
+      });
       it('should release only the assessment explicitly unblocked by the native scenario', async () => {
         const directory = '/tmp/notification-barrier-fixture';
         const files = new Set<string>();
@@ -571,6 +591,7 @@ for (const scenario of [
         assert.equal(listeners.size, 0);
         await waitForAssessmentRelease('first', directory, boundary);
       });
+    }
 
     it('should advance three distinct pending assessments using indexed string-wrapped native results', async () => {
       const input = request(intakePrompt);
