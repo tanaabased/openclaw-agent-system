@@ -183,7 +183,11 @@ describe('agent/native-material', () => {
       envelope,
     );
     const wrapped = {
-      tool: { id: 'openclaw:agent_system_dispatch', name: 'agent_system_dispatch', source: 'openclaw' },
+      tool: {
+        id: 'openclaw:agent_system_dispatch',
+        name: 'agent_system_dispatch',
+        source: 'openclaw',
+      },
       result: { content: [{ type: 'text', text: JSON.stringify(output) }] },
     };
     const message = (details: unknown) => ({ role: 'toolResult', toolName: 'tool_call', details });

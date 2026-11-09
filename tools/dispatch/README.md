@@ -187,11 +187,11 @@ retirement; a managed denial never falls back to unmanaged cleanup.
 
 #### Parameters
 
-| Parameter | Type    | Required | Default | Description                                                                |
-| --------- | ------- | -------- | ------- | -------------------------------------------------------------------------- |
-| `action`  | string  | yes      | none    | `retire`.                                                                  |
+| Parameter | Type    | Required | Default | Description                                                                  |
+| --------- | ------- | -------- | ------- | ---------------------------------------------------------------------------- |
+| `action`  | string  | yes      | none    | `retire`.                                                                    |
 | `native`  | string  | yes      | none    | Exact OpenClaw session key or standalone Codex thread id for unmanaged work. |
-| `preview` | boolean | no       | `false` | Inspect the target and effects without applying cleanup.                    |
+| `preview` | boolean | no       | `false` | Inspect the target and effects without applying cleanup.                     |
 
 #### Usage
 
