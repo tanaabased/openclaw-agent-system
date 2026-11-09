@@ -18,7 +18,7 @@ import { assessmentSubmissionSchema } from '../../agent/assessment-result.ts';
 import { assessmentSchema } from '../../agent/model-routing.ts';
 import { feedbackResultSchema } from '../../agent/feedback-state.ts';
 import { implementationResultSchema } from '../../agent/implementation-result.ts';
-import { replyModelSchema, type ReplyModelRequest } from './reply-schema.ts';
+import { replyExecutionSchema, type ReplyExecutionRequest } from './reply-schema.ts';
 import discriminatedSchema from '../../utils/discriminated-schema.ts';
 
 const id = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -26,7 +26,7 @@ const object = <P extends TProperties>(properties: P) =>
   Type.Object(properties, { additionalProperties: false });
 const dispatchRequestVariants = Type.Union([
   launchRequestSchema,
-  replyModelSchema,
+  replyExecutionSchema,
   directAssessmentRequestSchema,
   directImplementationRequestSchema,
   object({
@@ -191,7 +191,7 @@ type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
           : T extends { action: 'prepare' | 'reconcile' | 'start' | 'assess' }
             ? Omit<T, 'id' | 'digest'> & { target?: string }
             : T extends { action: 'reply' }
-              ? ReplyModelRequest
+              ? ReplyExecutionRequest
               : Omit<T, 'projects' | 'observation'>;
 type ModelMaterialInput<T> = T extends { material?: unknown }
   ? Omit<T, 'material'> & { material?: Static<typeof modelMaterialSchema> }
@@ -242,7 +242,7 @@ export const dispatchModelParameters = Type.Unsafe<ModelMaterialInput<ModelDispa
                               : Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
                         })
                       : variant.properties.action.const === 'reply'
-                        ? replyModelSchema
+                        ? replyExecutionSchema
                         : variant,
         )
         .map((schema) => {

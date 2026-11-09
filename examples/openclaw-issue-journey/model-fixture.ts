@@ -10,7 +10,7 @@ import {
 } from '@copilotkit/aimock';
 
 import { assessmentPresentationSchema } from '../../agent/assessment-result.ts';
-import { replyModelSchema } from '../../tools/dispatch/reply-schema.ts';
+import { dispatchModelParameters } from '../../tools/dispatch/tool-schema.ts';
 import { Value } from 'typebox/value';
 
 import type { OpenClawAIMockScenario } from '../../scripts/aimock-scenario.ts';
@@ -219,7 +219,9 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       });
     assert.equal(current.status, 'status-update-context');
     const composeRequest = current.composeRequest;
-    assert.ok(Value.Check(replyModelSchema, composeRequest));
+    assert.ok(
+      Value.Check(dispatchModelParameters, composeRequest) && composeRequest.action === 'reply',
+    );
     assert.ok(composeRequest.update);
     assert.equal(composeRequest.target, updateTarget);
     const noOp = prompt.includes('Check current status target:');

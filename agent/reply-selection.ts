@@ -1,11 +1,14 @@
 import type { ReplyDraft } from './reply-store.ts';
 import type { ReplyTarget } from './reply-target.ts';
-import type { ReplyModelRequest } from '../tools/dispatch/reply-schema.ts';
+import type { ReplyExecutionRequest } from '../tools/dispatch/reply-schema.ts';
 
 /** a semantic choice narrows existing native custody; ordering never selects a draft. */
 export default function selectReplyDraft(
   drafts: readonly ReplyDraft[],
-  input: Pick<ReplyModelRequest, 'target' | 'privateText' | 'publicText' | 'operation' | 'purpose'>,
+  input: Pick<
+    ReplyExecutionRequest,
+    'target' | 'privateText' | 'publicText' | 'operation' | 'purpose'
+  >,
   native: { turnId: string; inputId: string; feedback?: ReplyDraft['feedback'] },
 ) {
   const matches = drafts.filter((draft) => {

@@ -20,7 +20,7 @@ import feedbackReply from './feedback-reply.ts';
 import replyOwner from './reply-owner.ts';
 import replyOwnerContext from './reply-owner-context.ts';
 import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
-import { replyModelSchema } from '../tools/dispatch/reply-schema.ts';
+import { replyExecutionSchema } from '../tools/dispatch/reply-schema.ts';
 
 export { default as codexReplyInput } from './codex-direct-input.ts';
 
@@ -30,7 +30,7 @@ export default async function codexReply(
   input: unknown,
   deps: CodexFeedbackDependencies,
 ) {
-  if (!Value.Check(replyModelSchema, input)) throw new Error('reply-request-invalid');
+  if (!Value.Check(replyExecutionSchema, input)) throw new Error('reply-request-invalid');
   const current = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
   if (!caller) throw new Error('reply-native-caller-required');

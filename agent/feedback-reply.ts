@@ -27,9 +27,9 @@ import statusUpdateContext, {
 } from './status-update.ts';
 import type { AgentManifest } from '../manifest/types.ts';
 import {
-  replyModelSchema,
+  replyExecutionSchema,
   type StatusUpdate,
-  type ReplyModelRequest,
+  type ReplyExecutionRequest,
 } from '../tools/dispatch/reply-schema.ts';
 import feedbackResponse, {
   feedbackReplyPresentation,
@@ -74,9 +74,9 @@ function replyOwnerContext(
 
 /** direct entry prepares the ordinary composition contract; native owners keep all effects. */
 export default async function feedbackReply(request: unknown, deps: FeedbackReplyDependencies) {
-  if (!Value.Check(replyModelSchema, request)) throw new Error('reply-request-invalid');
+  if (!Value.Check(replyExecutionSchema, request)) throw new Error('reply-request-invalid');
   const authored = request;
-  const input: Omit<ReplyModelRequest, 'update'> & { update?: StatusUpdate } = {
+  const input: Omit<ReplyExecutionRequest, 'update'> & { update?: StatusUpdate } = {
     ...authored,
     update: undefined,
   };
@@ -241,7 +241,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
             purpose: 'status-update' as const,
             target: url,
             update: {
-              facts: [] as NonNullable<ReplyModelRequest['update']>['facts'],
+              facts: [] as NonNullable<ReplyExecutionRequest['update']>['facts'],
             },
           },
           publicContext,

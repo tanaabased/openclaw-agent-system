@@ -23,8 +23,8 @@ export const statusUpdateSchema = Type.Object(
   { additionalProperties: false },
 );
 export type StatusUpdate = Static<typeof statusUpdateSchema>;
-/** model arguments carry prose and source choices, never draft custody or observation hashes. */
-export const replyModelSchema = Type.Object(
+/** execution input includes runtime-bound material versions; the public tool schema removes them. */
+export const replyExecutionSchema = Type.Object(
   {
     action: Type.Literal('reply'),
     operation: Type.Union([
@@ -62,4 +62,4 @@ export const replyModelSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type ReplyModelRequest = Static<typeof replyModelSchema>;
+export type ReplyExecutionRequest = Static<typeof replyExecutionSchema>;
