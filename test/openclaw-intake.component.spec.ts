@@ -961,6 +961,10 @@ describe('openclaw v2 intake slice', () => {
           hooks.set(name, hook);
         }) as OpenClawPluginApi['on'],
       },
+      async (_scope, input, assertCurrent) => {
+        await assertCurrent();
+        return { ...input, material: { ...(input.material as object), digest: 'a'.repeat(64) } };
+      },
     ).registerTools(
       {
         registerTool(value) {
@@ -986,15 +990,17 @@ describe('openclaw v2 intake slice', () => {
       /tool-call-authorization-missing/,
     );
     await tool.execute('call', event.params);
-    const material = { path: ['candidates'], digest: 'a'.repeat(64), offset: 0 };
-    const selectionContext = { id: 'pickup-id', digest: 'b'.repeat(64) };
+    const material = { path: ['candidates'], offset: 0 };
     const materialEvent = {
       ...event,
-      params: { action: 'pickup', context: selectionContext, material },
+      params: { action: 'pickup', material },
     };
     await hook(materialEvent, context);
     await tool.execute('call', materialEvent.params);
-    assert.deepEqual(received, { selection: undefined, context: selectionContext, material });
+    assert.deepEqual(received, {
+      selection: undefined,
+      material: { ...material, digest: 'a'.repeat(64) },
+    });
     await assert.rejects(tool.execute('call', event.params), /tool-call-authorization-missing/);
     await hook(event, context);
     current = false;

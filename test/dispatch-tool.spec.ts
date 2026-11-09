@@ -427,13 +427,13 @@ describe('tools/dispatch/tool', () => {
     it(`should require both native requester and factory owner evidence for ${action}`, async () => {
       const f = fixture();
       const values: boolean[] = [];
-      f.adapter.service.run = async (_manifest, _workspace, _who, _input, owner) => {
+      f.adapter.service.runModel = async (_manifest, _workspace, _who, _input, owner) => {
         values.push(owner === true);
         return { status: 'idle' };
       };
       const request = {
         ...event,
-        params: { action, id: 'a'.repeat(64) },
+        params: { action },
       };
       for (const [hookOwner, factoryOwner] of [
         [true, true],

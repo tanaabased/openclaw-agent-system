@@ -155,7 +155,8 @@ export function pickupResponse(request: ChatCompletionRequest): FixtureResponse 
         advanced = prepared;
       } else if (next.status === 'reconcile-required') {
         const reconciled = result(stage('reconcile'));
-        if (!reconciled) return dispatch(stage('reconcile'), { action: 'reconcile', target: next.target });
+        if (!reconciled)
+          return dispatch(stage('reconcile'), { action: 'reconcile', target: next.target });
         advanced = reconciled;
       }
       if (advanced.nextAction === 'next') continue;

@@ -1,3 +1,4 @@
+import { omit } from 'lodash-es';
 import { dispatchAdmission } from './managed-issue.ts';
 import resolveGitProtocol from '../tools/git/protocol.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
@@ -134,7 +135,7 @@ export async function readCodexTaskOwner(pluginData: string, turn: Turn) {
 export default async function readCodexTurnTask(pluginData: string, turn: Turn) {
   const owner = await readCodexTaskOwner(pluginData, turn);
   if (!owner) return;
-  const { record: _record, admission: _admission, ...facts } = owner;
+  const facts = omit(owner, ['record', 'admission']);
   return {
     ...facts,
     feedbackContextRequest: facts.feedbackContextRequest && { action: 'context' },

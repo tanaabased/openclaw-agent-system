@@ -257,6 +257,7 @@ describe('scripts/example-model-scenarios', () => {
     assert.deepEqual(JSON.parse(next.toolCalls![0]!.arguments), {
       action: 'retire',
       native: 'agent:native-retirement:disposable',
+      preview: true,
     });
   });
 

@@ -1,3 +1,4 @@
+import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
 import summaryFixture from './assessment-summary-fixture.ts';
 import type { AssessmentSummaryRequest } from '../agent/assessment-summary-state.ts';
 import assert from 'node:assert/strict';
@@ -241,7 +242,13 @@ for (const scenario of [
 
   async function appendPagedContext(input: ChatCompletionRequest, value: Record<string, unknown>) {
     const request = { action: 'implementation-context' };
-    append(input, 'work-context', implementationMaterial(value, request));
+    const receipts: unknown[] = [];
+    const output = (response: unknown, args: Record<string, unknown>) => {
+      const projected = nativeMaterialResponse(response, 'agent_system_dispatch', args);
+      receipts.unshift(projected);
+      return projected;
+    };
+    append(input, 'work-context', output(implementationMaterial(value, request), request));
     let pages = 0;
     for (; pages < 64; pages++) {
       const next = await response(input);
@@ -254,7 +261,22 @@ for (const scenario of [
       append(
         input,
         `work-material-${pages}`,
-        implementationMaterial(value, request, args.material as ImplementationMaterialRead),
+        output(
+          implementationMaterial(
+            value,
+            request,
+            (
+              await bindNativeMaterial(
+                'agent_system_dispatch',
+                args,
+                (async function* () {
+                  yield* receipts;
+                })(),
+              )
+            ).material as ImplementationMaterialRead,
+          ),
+          args,
+        ),
       );
     }
     assert.ok(pages > 0 && pages < 64);

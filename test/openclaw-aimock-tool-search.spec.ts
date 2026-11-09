@@ -8,7 +8,7 @@ import { githubExampleTanaabotPrompt } from '../examples/openclaw-github/model-f
 import openClawAIMockEvidence from '../scripts/aimock-evidence.ts';
 import resolveScenario from '../scripts/example-model-scenarios.ts';
 import withToolSearch, { normalizeToolSearchRequest } from '../scripts/aimock-tool-search.ts';
-import { dispatchParameters } from '../tools/dispatch/tool-schema.ts';
+import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 import { assessmentResultContextSchema } from '../agent/assessment-result.ts';
 
 function request(prompt = githubExampleTanaabotPrompt): ChatCompletionRequest {
@@ -75,8 +75,8 @@ describe('scripts/aimock-tool-search', () => {
       fullAssessment: 'Complete retained source.',
     };
     for (const parameters of [
-      dispatchParameters,
-      normalizeToolParameterSchema(dispatchParameters, {
+      dispatchModelParameters,
+      normalizeToolParameterSchema(dispatchModelParameters, {
         modelProvider: 'aimock',
         modelId: 'gpt-5.5',
       }),
@@ -340,7 +340,7 @@ describe('scripts/aimock-tool-search', () => {
     const { normalizeToolParameterSchema } = await import(
       hostRequire.resolve('@openclaw/ai/internal/tool-schema')
     );
-    const normalizedDispatch = normalizeToolParameterSchema(dispatchParameters, {
+    const normalizedDispatch = normalizeToolParameterSchema(dispatchModelParameters, {
       modelProvider: 'aimock',
       modelId: 'gpt-5.5',
     });
@@ -378,7 +378,7 @@ describe('scripts/aimock-tool-search', () => {
       const args = JSON.parse(call.arguments);
       assert.equal(args.id, `openclaw:${name}`);
       if (name === 'agent_system_dispatch') {
-        assert.ok(Value.Check(dispatchParameters, args.args), `${stage}: declared schema`);
+        assert.ok(Value.Check(dispatchModelParameters, args.args), `${stage}: declared schema`);
         assert.ok(Value.Check(normalizedDispatch, args.args), `${stage}: normalized schema`);
       }
       append(input, response, {
@@ -401,7 +401,7 @@ describe('scripts/aimock-tool-search', () => {
           resultContract: 'assessment-result/v1',
         })
       ).id,
-      id,
+      undefined,
     );
     await step('git', 'agent_system_git', {
       exitCode: 0,
@@ -435,10 +435,6 @@ describe('scripts/aimock-tool-search', () => {
     await step('native-plan-candidate', 'agent_system_dispatch', {
       status: 'candidate-recorded',
       publication: 'workflow-authorized',
-    });
-    await step('native-plan-preview', 'agent_system_dispatch', {
-      status: 'publication-ready',
-      digest,
     });
     await step('native-plan-publish', 'agent_system_dispatch', {
       status: 'published',
@@ -475,7 +471,7 @@ describe('scripts/aimock-tool-search', () => {
           workflowStatus: 'native-unobserved',
         })
       ).digest,
-      digest,
+      undefined,
     );
     const linked = await step('delivery-association', 'agent_system_dispatch', {
       status: 'linked',
@@ -974,7 +970,7 @@ describe('scripts/aimock-tool-search', () => {
     );
   });
 
-  it('should pass verified inner json to the next routing step without losing its digest', async () => {
+  it('should pass verified inner json to routing without model-carried digests', async () => {
     const scenario = withToolSearch(resolveScenario('openclaw-agent'));
     const input = request(
       'Inspect model routing and resolve an unspecified task using the configured default.',
@@ -1009,8 +1005,8 @@ describe('scripts/aimock-tool-search', () => {
     assert.ok('toolCalls' in resolve && resolve.toolCalls?.length === 1);
     const call = resolve.toolCalls[0]!;
     assert.equal(call.name, 'tool_call');
-    assert.equal(JSON.parse(call.arguments).args.manifestDigest, 'current-digest');
-    assert.equal(JSON.parse(call.arguments).args.instructionsDigest, 'a'.repeat(64));
+    assert.equal(JSON.parse(call.arguments).args.manifestDigest, undefined);
+    assert.equal(JSON.parse(call.arguments).args.instructionsDigest, undefined);
     append(input, resolve, {
       tool: { id: 'openclaw:agent_system_model_routing', name: 'agent_system_model_routing' },
       result: {

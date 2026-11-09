@@ -72,7 +72,7 @@ describe('agent/issue-pickup-labels', () => {
     });
   }
 
-  it('should invalidate a prepared selection after live filter edits without changing enrollment', async () => {
+  it('should recheck selection eligibility after live filter edits without changing enrollment', async () => {
     const f = fixture();
     const digest = issuePickupPolicyDigest(f.policy);
     const selection = await f.select();
@@ -81,10 +81,8 @@ describe('agent/issue-pickup-labels', () => {
     assert.equal((await f.run({ selection })).status, 'empty');
     f.tx.runId = 'next-scan';
     f.policy.issuePickup!.projects[0]!.filters = { excludeLabels: ['missing'] };
-    const stale = await f.run({ selection });
-    assert.equal(stale.status, 'failed');
-    assert.equal(stale.code, 'issue-pickup-selection-stale');
-    assert.equal((await f.run({ selection: await f.select() })).status, 'assigned');
+    assert.equal(f.effects.writes, 0);
+    assert.equal((await f.run({ selection })).status, 'assigned');
     assert.equal(f.effects.writes, 1);
   });
 

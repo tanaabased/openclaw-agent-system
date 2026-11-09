@@ -74,7 +74,11 @@ describe('core/register-hooks', () => {
       appendContext: string;
       appendSystemContext: string;
     };
-    assert.match(feedback.appendContext, /"eventId":"comment"/);
+    assert.match(
+      feedback.appendContext,
+      /"feedbackContextRequest":\{"action":"feedback","operation":"context"\}/,
+    );
+    assert.doesNotMatch(feedback.appendContext, /"eventId"/);
     assert.doesNotMatch(feedback.appendSystemContext, /PRIVATE-GITHUB-FACT/);
     assert.deepEqual(event, visible);
     for (const change of [

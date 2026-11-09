@@ -110,8 +110,6 @@ describe('issue pickup capacity handoff', () => {
         (
           await f.run({
             selection: {
-              id: selection.id!,
-              digest: selection.digest!,
               issueNodeId: next.nodeId,
               rationale: 'new eligible work while the earlier task waits for clarification',
             },

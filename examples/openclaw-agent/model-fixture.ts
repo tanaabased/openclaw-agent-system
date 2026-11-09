@@ -82,7 +82,7 @@ fixtures.push(
           'Preserve uncertainty and use only an explicit default fallback.' &&
         !routingResult(request, resolveCall),
     },
-    response: (request) => ({
+    response: () => ({
       id: 'agent-routing-resolve',
       toolCalls: [
         {
