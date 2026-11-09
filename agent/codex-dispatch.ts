@@ -19,7 +19,13 @@ import { codexInstanceStore } from './codex-assignment-claims.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
-import { nextDispatch, prepareDispatch, recover } from './codex-dispatch-admission.ts';
+import {
+  dispatchRoutingRequired,
+  nextDispatch,
+  prepareDispatch,
+  recover,
+  unpreparedDispatch,
+} from './codex-dispatch-admission.ts';
 import { assessDispatch, handoffDispatch, presentDispatch } from './codex-dispatch-assessment.ts';
 import {
   issueUrl,
@@ -530,6 +536,18 @@ async function executeCodexDispatch(
       if (action === 'prepare') return prepareDispatch(input, record, intake, tx);
       if (action === 'reconcile' || childAction) {
         try {
+          if (
+            action === 'reconcile' &&
+            input.receipt === undefined &&
+            record.phase === 'routing' &&
+            record.context &&
+            record.project &&
+            record.routingInstructions &&
+            unpreparedDispatch(record)
+          ) {
+            await revalidateDispatchAssignment(current, intake, deps, signal);
+            return dispatchRoutingRequired(record, current, false);
+          }
           if (action === 'reconcile' && input.receipt !== undefined) {
             if (
               !nativeObject(input.receipt) ||

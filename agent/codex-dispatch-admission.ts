@@ -264,6 +264,100 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
   return card;
 }
 
+export function unpreparedDispatch(record: DispatchRecord) {
+  return (
+    !record.request &&
+    !record.threadId &&
+    !record.receiptThreadId &&
+    !record.clientThreadId &&
+    !record.worktree &&
+    !record.effective &&
+    !record.denial &&
+    !record.retired &&
+    !record.retirement &&
+    !record.supersededBy &&
+    !record.handoff &&
+    !record.continuation?.attempt &&
+    !record.continuation?.publicationAttempt
+  );
+}
+
+function creationRecovery(record: DispatchRecord, next: 'prepare' | 'create') {
+  const unsubmitted = record.unsubmittedCreations?.at(-1);
+  const denied = record.deniedCreations?.at(-1);
+  const instruction =
+    next === 'prepare'
+      ? 'Use the current routing result to call dispatch prepare. There is no pending creation to reconcile. Native approval still applies to the next creation.'
+      : 'Execute this exact new prepared request at most once; native approval still applies.';
+  if (unsubmitted && (!denied || unsubmitted.recoveredAt > denied.recoveredAt))
+    return {
+      recovery: {
+        status: 'verified-unsubmitted' as const,
+        previousAttempt: {
+          turnId: unsubmitted.turnId,
+          createdAt: unsubmitted.createdAt,
+          recoveredAt: unsubmitted.recoveredAt,
+        },
+        instruction:
+          'Complete native history verified that the previous prepared request was never submitted to create_thread. Its earlier unresolved status has been reconciled. ' +
+          instruction,
+      },
+    };
+  if (denied)
+    return {
+      recovery: {
+        status: 'verified-denial' as const,
+        previousAttempt: {
+          turnId: denied.turnId,
+          callId: denied.callId,
+          recoveredAt: denied.recoveredAt,
+          approvedBy: denied.approvedBy,
+        },
+        instruction:
+          'The operator recovered a verified non-executed denial. This is not a replay of an uncertain creation. ' +
+          instruction,
+      },
+    };
+  return {};
+}
+
+export function dispatchRoutingRequired(
+  record: DispatchRecord,
+  current: Selection,
+  changed: boolean,
+) {
+  return {
+    status: 'routing-required' as const,
+    changed,
+    id: record.id,
+    context: JSON.parse(record.context!),
+    assessmentSchema,
+    nextAction: 'prepare' as const,
+    instruction:
+      'No chat creation is pending. Assess the source and call dispatch prepare with this issue target, a title and routing assessment. Create the returned native request once, then reconcile. Do not reconcile before preparation.',
+    ...creationRecovery(record, 'prepare'),
+    digest: automationHash({
+      context: record.context,
+      ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),
+      project: record.project,
+      manifest: record.manifestDigest,
+      instructions:
+        record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
+    }),
+    routing: {
+      ...resolveModelRoutingRequest(
+        current.manifest.models,
+        current.digest,
+        { action: 'inspect' },
+        'codex',
+      ),
+      instructions: routingInstructionsReference(record.routingInstructions!),
+      instructionsDigest: routingInstructionsDigest(record.routingInstructions!),
+      instructionsGuidance: routingInstructionsGuidance,
+    },
+  };
+}
+
 export async function nextDispatch(input: Record<string, unknown>, tx: CodexDispatchTransaction) {
   const { current, deps, state, admitted, activation, now, signal, save, fresh } = tx;
   const fail = (record: DispatchRecord, error: unknown) => failDispatch(record, error, tx);
@@ -431,6 +525,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         (record?.result?.outcome !== 'operator-setup-blocker' ||
           Boolean(record.retry) ||
           dispatchRecheckable(record.result.code) ||
+          (record.result.code === 'dispatch-creation-not-prepared' && unpreparedDispatch(record)) ||
           record.intakeId !== intake.id) &&
         (record?.retryAfter ?? 0) <= now,
     )?.intake;
@@ -648,32 +743,7 @@ export async function prepareIssueProject(
     delete record.stageReceipt;
     await fresh();
     await save();
-    return {
-      status: 'routing-required' as const,
-      changed: true,
-      id: record.id,
-      context: snapshot,
-      assessmentSchema,
-      digest: automationHash({
-        context: record.context,
-        ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),
-        project: record.project,
-        manifest: record.manifestDigest,
-        instructions:
-          record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
-      }),
-      routing: {
-        ...resolveModelRoutingRequest(
-          current.manifest.models,
-          current.digest,
-          { action: 'inspect' },
-          'codex',
-        ),
-        instructions: routingInstructionsReference(record.routingInstructions),
-        instructionsDigest: routingInstructionsDigest(record.routingInstructions),
-        instructionsGuidance: routingInstructionsGuidance,
-      },
-    };
+    return dispatchRoutingRequired(record, current, true);
   } catch (error) {
     return fail(record, error);
   }
@@ -837,8 +907,6 @@ export async function prepareDispatch(
     record.phase = 'creating';
     await fresh();
     await save();
-    const unsubmitted = record.unsubmittedCreations?.at(-1);
-    const denied = record.deniedCreations?.at(-1);
     return {
       status: 'prepared' as const,
       changed: true,
@@ -846,34 +914,7 @@ export async function prepareDispatch(
       request: record.request,
       instruction:
         'Next, call native create_thread once with this request unchanged. Do not call prepare again to retrieve or reauthorize it. In a code orchestration tool, parse this response and pass its request object directly to create_thread; do not reconstruct the prompt. Reconcile only the receipt returned by that call, never one from history or another assessment, even for the same issue. If the call fails or its outcome is unknown, reconcile without a receipt; never repeat an uncertain creation.',
-      ...(unsubmitted && (!denied || unsubmitted.recoveredAt > denied.recoveredAt)
-        ? {
-            recovery: {
-              status: 'verified-unsubmitted' as const,
-              previousAttempt: {
-                turnId: unsubmitted.turnId,
-                createdAt: unsubmitted.createdAt,
-                recoveredAt: unsubmitted.recoveredAt,
-              },
-              instruction:
-                'Complete native history verified that the previous prepared request was never submitted to create_thread. Its earlier unresolved status has been reconciled. This is a new prepared request under the active assignment authorization, not a repeat of an uncertain creation. Execute this exact request at most once; native approval still applies.',
-            },
-          }
-        : denied
-          ? {
-              recovery: {
-                status: 'verified-denial' as const,
-                previousAttempt: {
-                  turnId: denied.turnId,
-                  callId: denied.callId,
-                  recoveredAt: denied.recoveredAt,
-                  approvedBy: denied.approvedBy,
-                },
-                instruction:
-                  'The operator recovered a verified non-executed denial. This is a new prepared request, not a replay of an uncertain creation. Execute this exact request at most once.',
-              },
-            }
-          : {}),
+      ...creationRecovery(record, 'create'),
     };
   } catch (error) {
     return fail(record, error);

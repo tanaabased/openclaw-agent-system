@@ -3084,6 +3084,9 @@ describe('agent/codex-dispatch', () => {
       request('retry-denied', { id: first.id, digest: preview.digest }, operator),
       /dispatch-denial-unverified/,
     );
+    const rerouted = await next();
+    assert.equal((rerouted.recovery as { status: string }).status, 'verified-denial');
+    assert.equal(rerouted.nextAction, 'prepare');
     const second = await prepare();
     assert.equal(second.id, first.id);
     assert.notEqual(
@@ -3496,6 +3499,60 @@ describe('agent/codex-dispatch', () => {
     assert.equal(unknown.changed, true);
   });
 
+  it('should return preparation guidance without persisting a failure for premature reconciliation', async () => {
+    const routed = await next();
+    const before = (await readDispatchState()).records;
+    const response = await request('reconcile', { id: routed.id });
+    assert.equal(response.status, 'routing-required');
+    assert.equal(response.nextAction, 'prepare');
+    assert.equal(response.changed, false);
+    assert.deepEqual((await readDispatchState()).records, before);
+    const prepared = await request('prepare', {
+      id: response.id,
+      digest: response.digest,
+      title: 'repair contained behavior',
+      assessment: { complexity: 'low', reason: 'Contained change.' },
+    });
+    assert.equal(prepared.status, 'prepared');
+    created();
+    assert.equal((await request('reconcile', { id: prepared.id })).status, 'assessing');
+  });
+
+  it('should recover a retained not-prepared failure without repeating an uncertain creation', async () => {
+    const routed = await next();
+    const current = await selectCodexIntake(pluginData, deps);
+    const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+    await store.exclusive(async (state, save) => {
+      const record = state.records[0]!;
+      record.phase = 'waiting';
+      record.clientThreadId = 'uncertain-creation';
+      record.result = {
+        version: 1,
+        outcome: 'operator-setup-blocker',
+        code: 'dispatch-creation-not-prepared',
+        summary: 'Preparation was skipped.',
+        remediation: 'Prepare the issue.',
+        evidence: [],
+        progress: { completed: [], remaining: [] },
+      };
+      await save();
+    });
+    assert.equal((await next()).status, 'idle');
+    assert.equal((await store.read()).records[0]!.phase, 'waiting');
+    await store.exclusive(async (state, save) => {
+      delete state.records[0]!.clientThreadId;
+      await save();
+    });
+    const recovered = await next();
+    assert.equal(recovered.status, 'routing-required');
+    assert.equal(recovered.id, routed.id);
+    assert.equal(recovered.nextAction, 'prepare');
+    const record = (await store.read()).records[0]!;
+    assert.equal(record.phase, 'routing');
+    assert.equal(record.result, undefined);
+    assert.equal(record.request, undefined);
+  });
+
   it('should rearm an unsubmitted creation only on a later verified occurrence', async () => {
     const preparedAt = now;
     const prepared = await prepare();
@@ -3513,6 +3570,9 @@ describe('agent/codex-dispatch', () => {
       assert.equal(turnId, 'run-' + now);
       return { turnId: 'run-' + preparedAt };
     };
+    const routing = await next();
+    assert.equal((routing.recovery as { status: string }).status, 'verified-unsubmitted');
+    assert.equal(routing.nextAction, 'prepare');
     const retry = await prepare();
     assert.equal(retry.id, prepared.id);
     const recovery = retry.recovery as {
