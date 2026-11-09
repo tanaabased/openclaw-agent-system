@@ -17,7 +17,16 @@ export function isNativeContextRequest(route: string, input: Record<string, unkn
 }
 
 export function assertNativeContextInput(input: Record<string, unknown>) {
-  for (const field of ['id', 'agentId', 'workspace', 'threadId', 'turnId', 'sessionKey', 'eventId'])
+  for (const field of [
+    'id',
+    'agentId',
+    'workspace',
+    'threadId',
+    'turnId',
+    'sessionKey',
+    'eventId',
+    'digest',
+  ])
     if (Object.hasOwn(input, field)) throw new Error('native-context-binding-override');
 }
 

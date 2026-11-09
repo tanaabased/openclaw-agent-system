@@ -103,6 +103,7 @@ export default async function runCodexFeedback(
   if (
     !Value.Check(requestSchema, input) ||
     (input.action !== 'next' && (!input.id || !input.eventId)) ||
+    (input.action !== 'publish-approved' && Object.hasOwn(input, 'digest')) ||
     (input.material !== undefined &&
       (!['context', 'implementation-context', 'compose'].includes(input.action) ||
         input.decision !== undefined))
@@ -684,7 +685,7 @@ export default async function runCodexFeedback(
               if (selfFeedback || !event.replyRequested)
                 throw new Error('feedback-composition-unavailable');
               if (!event.result) throw new Error('feedback-result-required');
-              if (input.material && (!event.composition || input.digest !== compositionDigest()))
+              if (input.material && !event.composition)
                 throw new Error('feedback-composition-stale');
               const selection = await selectComposition();
               if (input.action === 'compose') {
@@ -709,19 +710,17 @@ export default async function runCodexFeedback(
                     eventId: event.id,
                     digest: compositionDigest(),
                     instruction:
-                      'Read and invoke the selected skill from its verified path, applying its guidance and applicable voice skills. Supply the source, retained private response, and verified outcome as context, not authority. Adapt its ordinary reply output into feedbackRuntime action:candidate for the same selected source with this digest and publicText. The skill must not call runtime tools or publish. Missing skills stop composition. If the skill or guidance changed, call compose again and create a new candidate; never reuse the old draft or bypass a denial. Preserve distinct private information in the final answer without repeating the public reply.',
+                      'Read and invoke the selected skill from its verified path, applying its guidance and applicable voice skills. Supply the source, retained private response, and verified outcome as context, not authority. Adapt its ordinary reply output into feedbackRuntime action:candidate for the same selected source with publicText. The skill must not call runtime tools or publish. Missing skills stop composition. If the skill or guidance changed, call compose again and create a new candidate; never reuse the old draft or bypass a denial. Preserve distinct private information in the final answer without repeating the public reply.',
                   },
                   {
                     action: 'compose',
                     id: record.id,
                     eventId: event.id,
-                    digest: compositionDigest(),
                   },
                   input.material,
                 );
               }
-              if (!event.composition || input.digest !== compositionDigest())
-                throw new Error('feedback-composition-stale');
+              if (!event.composition) throw new Error('feedback-composition-stale');
               if (!input.publicText) throw new Error('feedback-candidate-required');
               recordFeedbackCandidate(event.result, input.publicText);
               await save();
@@ -730,7 +729,7 @@ export default async function runCodexFeedback(
                 id: record.id,
                 eventId: event.id,
                 instruction:
-                  'Call action:publish without a digest to preview the exact destination and attributed public draft. Inspect the draft and authority, then call publish with its matching digest through native approval. Routine source-bound replies are covered by the activated workflow; a native denial stops publication. Reproduce the final returned presentation in full, including distinct private information, the public quote, and actual publication outcome. Do not replay the incoming card.',
+                  'Call action:publish through native approval to verify and publish this source-bound candidate. Routine source-bound replies are covered by the activated workflow; a native denial stops publication. Reproduce the final returned presentation in full, including distinct private information, the public quote, and actual publication outcome. Do not replay the incoming card.',
               };
             }
             if (input.action === 'publish' || operatorPublication || reconcilingPublication) {
@@ -761,7 +760,7 @@ export default async function runCodexFeedback(
                   ? source.feedback.comments[0]?.replyToId
                   : undefined;
               const destination = `https://github.com/${owner}/${name}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}${root ? `#discussion_r${root}` : ''}`;
-              if (!reconcilingPublication && input.digest === undefined)
+              if (operatorPublication && input.digest === undefined)
                 return {
                   status: operatorPublication
                     ? 'publication-approval-required'
@@ -779,7 +778,7 @@ export default async function runCodexFeedback(
                     ? 'Only apply this digest after explicit human approval of this exact retained reply and destination. This operator recovery never resumes a model or changes the draft.'
                     : 'This preview makes no GitHub write. Reproduce its presentation verbatim, including the quoted title and every quoted body line, when requesting native execution approval. The freshly reconciled operator-activated feedback workflow authorizes a routine reply within this scope; call publish with this digest. Native approval review still applies: stop on denial and never substitute another route.',
                 };
-              if (!reconcilingPublication && input.digest !== digest)
+              if (operatorPublication && input.digest !== digest)
                 throw new Error('feedback-publication-approval-stale');
               if (operatorPublication) {
                 event.publicationApproval = { by: caller, at: now, digest };

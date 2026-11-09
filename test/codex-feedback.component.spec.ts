@@ -805,19 +805,9 @@ describe('agent/codex-feedback', () => {
       true,
     );
     assert.equal(compose.status, 'composition-ready');
-    assert.ok('id' in compose && 'digest' in compose);
-    await call(
-      'reply',
-      { operation: 'candidate', id: compose.id, digest: compose.digest, publicText: 'The answer.' },
-      true,
-    );
-    const preview = await call('reply', { operation: 'publish', id: compose.id }, true);
-    assert.ok('digest' in preview);
-    assert.equal(
-      (await call('reply', { operation: 'publish', id: compose.id, digest: preview.digest }, true))
-        .status,
-      'published',
-    );
+    assert.ok('selection' in compose);
+    await call('reply', { operation: 'candidate', publicText: 'The answer.' }, true);
+    assert.equal((await call('reply', { operation: 'publish' }, true)).status, 'published');
     assert.equal(creates, 1);
     assert.equal((await store.read()).records[0]!.feedback!.events[0]!.result, undefined);
     receiptStatus = 'uncertain';
@@ -1164,29 +1154,18 @@ describe('agent/codex-feedback', () => {
         },
         true,
       );
-      assert.ok('id' in composed && 'digest' in composed);
+      assert.ok('selection' in composed);
       await call(
         'reply',
         {
           operation: 'candidate',
-          id: composed.id,
-          digest: composed.digest,
           publicText: 'Brief answer.',
         },
         true,
       );
-      const preview = await call('reply', { operation: 'publish', id: composed.id }, true);
-      assert.ok('digest' in preview);
-      const completed = await call(
-        'reply',
-        { operation: 'publish', id: composed.id, digest: preview.digest },
-        true,
-      );
+      const completed = await call('reply', { operation: 'publish' }, true);
       assert.equal(completed.status, 'published');
-      assert.equal(
-        (await call('reply', { operation: 'reconcile', id: composed.id }, true)).status,
-        'published',
-      );
+      assert.equal((await call('reply', { operation: 'reconcile' }, true)).status, 'published');
       assert.deepEqual(roots, [70]);
       assert.equal(creates, 0);
     });

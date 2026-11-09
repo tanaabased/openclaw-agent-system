@@ -605,15 +605,14 @@ describe('agent/openclaw-feedback', () => {
         head,
       };
       assert.equal(record.implementationDelivered, undefined);
-      const preview = await action('delivery', {
+      await action('delivery', {
         deliveryOperation: 'prepare',
         title: 'fix',
         body: 'Closes #3',
       });
-      assert.ok('digest' in preview);
       if (lostPush) {
         await assert.rejects(
-          action('delivery', { deliveryOperation: 'publish', digest: preview.digest }),
+          action('delivery', { deliveryOperation: 'publish' }),
           /push-response-lost/u,
         );
         assert.equal(record.work!.delivery!.pushedHead, 'a'.repeat(40));
@@ -626,13 +625,9 @@ describe('agent/openclaw-feedback', () => {
         assert.equal(event.workDelivery!.reconciled, true);
         assert.equal(record.work!.delivery!.pushedHead, head);
       }
-      const currentPreview = lostPush
-        ? await action('delivery', { deliveryOperation: 'prepare' })
-        : preview;
-      assert.ok('digest' in currentPreview);
+      if (lostPush) await action('delivery', { deliveryOperation: 'prepare' });
       const outcome = await action('delivery', {
         deliveryOperation: 'publish',
-        digest: currentPreview.digest,
         title: 'fix',
         body: 'Closes #3',
       });
@@ -647,9 +642,8 @@ describe('agent/openclaw-feedback', () => {
       assert.equal(record.nativeInactive, false);
       assert.equal(workflowStatus(record), 'active');
       assert.equal(hasDeliveredImplementation(record), true);
-      const replay = await action('delivery', { deliveryOperation: 'prepare' });
-      assert.ok('digest' in replay);
-      await action('delivery', { deliveryOperation: 'publish', digest: replay.digest });
+      await action('delivery', { deliveryOperation: 'prepare' });
+      await action('delivery', { deliveryOperation: 'publish' });
       assert.equal(pushes, 1);
       assert.equal(creates, firstDelivery ? 1 : 0);
       assert.equal((await action('implementation-context')).status, 'verified');
@@ -674,9 +668,8 @@ describe('agent/openclaw-feedback', () => {
           },
         });
         assert.equal((await action('context', { resume: true })).status, 'verified');
-        const reply = await action('publish');
-        assert.ok('digest' in reply);
-        assert.equal((await action('publish', { digest: reply.digest })).status, 'published');
+        await action('publish');
+        assert.equal((await action('publish', {})).status, 'published');
         assert.deepEqual({ work: event.work, delivery: record.work!.delivery }, retained);
         assert.equal(pushes, 1);
         assert.equal(creates, firstDelivery ? 1 : 0);
@@ -694,10 +687,7 @@ describe('agent/openclaw-feedback', () => {
     });
     const selected = await action('compose');
     assert.ok('digest' in selected);
-    await action('candidate', { digest: selected.digest, publicText: text });
-    const preview = await action('publish');
-    assert.ok('digest' in preview);
-    return preview.digest;
+    await action('candidate', { publicText: text });
   }
   it('should project legacy reply facts without forwarding saved work machinery', async () => {
     await start();
@@ -771,9 +761,8 @@ describe('agent/openclaw-feedback', () => {
       event.result!.privateText,
       'Full private evidence, implications, uncertainty, and answer.',
     );
-    const preview = await action('publish');
-    assert.ok('digest' in preview);
-    assert.equal((await action('publish', { digest: preview.digest })).status, 'published');
+    await action('publish');
+    assert.equal((await action('publish', {})).status, 'published');
     assert.equal(writes, 1);
     assert.equal(sends, 1);
     assert.equal(event.ownerResumptions![0]!.previousTurn.cancelled, true);
@@ -837,9 +826,9 @@ describe('agent/openclaw-feedback', () => {
     });
   it('should reconcile an uncertain reply after explicit resume without another write', async () => {
     await start();
-    const digest = await compose();
+    await compose();
     lost = true;
-    await assert.rejects(action('publish', { digest }), /connection-lost/);
+    await assert.rejects(action('publish', {}), /connection-lost/);
     const oldRun = event.turn!.runId;
     const request = input.request;
     input.request = async (method, params) =>
@@ -920,15 +909,14 @@ describe('agent/openclaw-feedback', () => {
       if (variant.includes('file'))
         assert.equal(composed.selection.guidance?.path, event.composition?.guidance?.path);
       const publicText = 'Result: caller fixed. Transport remains untested.';
-      await action('candidate', { digest: composed.digest, publicText });
-      const preview = await action('publish');
-      assert.ok('digest' in preview);
-      assert.equal((await action('publish', { digest: preview.digest })).status, 'published');
+      await action('candidate', { publicText });
+      await action('publish');
+      assert.equal((await action('publish', {})).status, 'published');
       assert.equal(destination, 'item:3');
       assert.equal(event.result!.privateText, privateText);
       assert.ok(published!.body.includes(publicText));
       assert.ok(!published!.body.includes(privateText));
-      await action('publish', { digest: preview.digest });
+      await action('publish', {});
       assert.equal(writes, 1);
     });
   }
@@ -970,9 +958,9 @@ describe('agent/openclaw-feedback', () => {
   it('should retain the full private answer and publish one separately composed attributed reply', async () => {
     const context = await start();
     assert.equal(context.status, 'verified');
-    const digest = await compose();
+    await compose();
     assert.equal(writes, 0);
-    const result = await action('publish', { digest });
+    const result = await action('publish', {});
     assert.equal(result.status, 'published');
     assert.equal(destination, 'item:3');
     assert.match(String(result.presentation), /Full private evidence/);
@@ -982,14 +970,14 @@ describe('agent/openclaw-feedback', () => {
     );
     assert.ok(!String(result.presentation).includes('Reply published'));
     assert.equal(writes, 1);
-    await action('publish', { digest });
+    await action('publish', {});
     assert.equal(writes, 1);
   });
   it('should reconcile a lost publication without another create and retain uncertainty when absent', async () => {
     await start();
-    const digest = await compose();
+    await compose();
     lost = true;
-    await assert.rejects(action('publish', { digest }), /connection-lost/);
+    await assert.rejects(action('publish', {}), /connection-lost/);
     assert.equal(event.publicationAttempted, true);
     lost = false;
     assert.equal((await action('reconcile')).status, 'published');
@@ -1003,7 +991,7 @@ describe('agent/openclaw-feedback', () => {
   for (const changed of ['issue', 'source'])
     it(`should refresh ${changed} authorization before publishing without repeating the issue read`, async () => {
       await start();
-      const digest = await compose();
+      await compose();
       const issue = intakeFixture().item;
       let checks = 0;
       input.reauthorize = async () => {
@@ -1017,7 +1005,7 @@ describe('agent/openclaw-feedback', () => {
         throw new Error('duplicate issue read');
       };
       await assert.rejects(
-        action('publish', { digest }),
+        action('publish', {}),
         changed === 'issue' ? /feedback-source-owner-changed/ : /feedback-source-changed/,
       );
       assert.equal(checks, 2);
@@ -1034,15 +1022,15 @@ describe('agent/openclaw-feedback', () => {
   });
   it('should retain reply authority when unrelated work settings change', async () => {
     await start();
-    const digest = await compose();
+    await compose();
     input.policy.issueAssignment!.mode = 'work';
     input.policy.issueAssignment!.implementation = { skill: 'custom:implementation' };
-    assert.equal((await action('publish', { digest })).status, 'published');
+    assert.equal((await action('publish', {})).status, 'published');
     assert.equal(writes, 1);
   });
   it('should block changed source and explicit revocation while retaining an admitted reply through pause', async () => {
     await start();
-    const digest = await compose();
+    await compose();
     const original = structuredClone(source);
     for (const changed of [
       { body: 'mention removed' },
@@ -1051,20 +1039,20 @@ describe('agent/openclaw-feedback', () => {
     ]) {
       Object.assign(source, changed);
       await assert.rejects(
-        action('publish', { digest }),
+        action('publish', {}),
         /feedback-source-(?:changed|author-changed|no-longer-eligible)/,
       );
       Object.assign(source, original);
     }
     revoked = true;
-    await assert.rejects(action('publish', { digest }), /feedback-authority-revoked/);
+    await assert.rejects(action('publish', {}), /feedback-authority-revoked/);
     revoked = false;
     input.policy.issueAssignment!.feedback = { inherit: false, allowed: [] };
-    await assert.rejects(action('publish', { digest }), /workflow-policy-held/);
+    await assert.rejects(action('publish', {}), /workflow-policy-held/);
     assert.equal(writes, 0);
     input.policy.issueAssignment!.feedback = { inherit: true, allowed: [actor] };
     input.policy.issueAssignment!.paused = true;
-    assert.equal((await action('publish', { digest })).status, 'published');
+    assert.equal((await action('publish', {})).status, 'published');
     assert.equal(writes, 1);
     assert.match(event.result!.privateText, /Full private/);
   });
@@ -1078,21 +1066,17 @@ describe('agent/openclaw-feedback', () => {
     assert.ok('digest' in selection);
     await assert.rejects(
       action('candidate', { digest: '0'.repeat(64), publicText: 'wrong digest' }),
-      /composition-stale/,
+      /feedback-binding-override/,
     );
     await writeFile(join(root, 'SKILL.md'), '# changed skill');
-    await assert.rejects(
-      action('candidate', { digest: selection.digest, publicText: 'reply' }),
-      /composition-changed/,
-    );
+    await assert.rejects(action('candidate', { publicText: 'reply' }), /composition-changed/);
     event.phase = 'blocked';
     event.code = 'feedback-composition-changed';
     const refreshed = await action('compose');
     assert.equal(refreshed.status, 'composition-ready');
     assert.ok('digest' in refreshed && refreshed.digest !== selection.digest);
     assert.equal(
-      (await action('candidate', { digest: refreshed.digest, publicText: 'Updated reply.' }))
-        .status,
+      (await action('candidate', { publicText: 'Updated reply.' })).status,
       'candidate-recorded',
     );
 
@@ -1110,7 +1094,8 @@ describe('agent/openclaw-feedback', () => {
   });
   it('should reject disclosure before marking any public attempt', async () => {
     await start();
-    await assert.rejects(compose('password=private-value'), /not safe to publish/);
+    await compose('password=private-value');
+    await assert.rejects(action('publish'), /not safe to publish/);
     assert.equal(event.publicationAttempted, undefined);
     assert.equal(writes, 0);
   });
@@ -1185,8 +1170,8 @@ describe('agent/openclaw-feedback', () => {
     const context = await start();
     assert.ok('reviewContext' in context);
     assert.match(JSON.stringify(context.reviewContext), /originalLine/);
-    const digest = await compose();
-    await action('publish', { digest });
+    await compose();
+    await action('publish', {});
     assert.equal(destination, 'review:4:70');
   });
   it('should retain verified input custody when a long answer moves the input outside the history tail', async () => {

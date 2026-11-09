@@ -30,8 +30,6 @@ export default async function codexContextRequest(
 ) {
   if (!isNativeContextRequest(route, input)) return input;
   assertNativeContextInput(input);
-  if ((route === 'delivery' || input.action === 'delivery') && Object.hasOwn(input, 'digest'))
-    throw new Error('native-context-binding-override');
   if (!threadId) throw new Error('turn-context-native-caller-required');
   const task = await read(pluginData, { threadId });
   const request = nativeContextRequest(input, task ? { id: task.receipt } : undefined);

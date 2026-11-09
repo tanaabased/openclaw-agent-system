@@ -41,7 +41,7 @@ describe('native feedback source selection', () => {
   it('should reject model binding overrides and bind codex feedback without copied ids', async () => {
     const input = { action: 'feedback', operation: 'context', source };
     assert.equal(Value.Check(dispatchModelParameters, input), true);
-    for (const field of ['id', 'eventId', 'threadId', 'agentId'])
+    for (const field of ['id', 'eventId', 'threadId', 'agentId', 'digest'])
       assert.equal(Value.Check(dispatchModelParameters, { ...input, [field]: '41' }), false);
     const read = async () => ({
       receipt: 'owner',

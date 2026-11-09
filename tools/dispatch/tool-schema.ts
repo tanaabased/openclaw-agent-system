@@ -166,7 +166,7 @@ type ModelDispatchInput<T = Static<typeof dispatchParameters>> = T extends {
 }
   ? Omit<T, 'id'>
   : T extends { action: 'feedback' }
-    ? Omit<T, 'id' | 'eventId'> & { source?: string }
+    ? Omit<T, 'id' | 'eventId' | 'digest'> & { source?: string }
     : T extends { action: 'reply' }
       ? ReplyModelRequest
       : T;
@@ -181,7 +181,7 @@ export const dispatchModelParameters = Type.Unsafe<ModelDispatchInput>(
           ? Type.Omit(variant, ['id'], { additionalProperties: false })
           : variant.properties.action.const === 'feedback'
             ? object({
-                ...Type.Omit(variant, ['id', 'eventId']).properties,
+                ...Type.Omit(variant, ['id', 'eventId', 'digest']).properties,
                 source: Type.Optional(Type.String({ minLength: 1, maxLength: 2048 })),
               })
             : variant.properties.action.const === 'reply'
