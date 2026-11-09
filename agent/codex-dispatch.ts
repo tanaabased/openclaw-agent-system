@@ -1,4 +1,5 @@
 import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
+import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import workflowFailure from './workflow-failure.ts';
 import dispatchInspection, { dispatchInspectionSummary } from './dispatch-inspection.ts';
 import { automationHash } from './automation-hash.ts';
@@ -123,8 +124,13 @@ export async function runCodexDispatch(
     'operation' in input &&
     input.operation === 'render'
   ) {
-    if ('id' in input && input.id) {
-      const current = await selectCodexIntake(pluginData, deps, { resolvePolicy: false });
+    const binding = await (deps.inspectBinding ?? inspectCodexWorkspaceBinding)(pluginData);
+    if (binding.status !== 'unbound' || ('id' in input && input.id)) {
+      const current = await selectCodexIntake(
+        pluginData,
+        { ...deps, inspectBinding: async () => binding },
+        { resolvePolicy: false, inspectionOnly: true },
+      );
       const journal = new CodexDispatchStore(
         current.store.location.root,
         current.store.location.scope,

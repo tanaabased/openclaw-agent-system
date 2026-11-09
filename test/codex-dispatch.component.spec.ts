@@ -2158,6 +2158,22 @@ describe('agent/codex-dispatch', () => {
     assert.equal(rendered.status, 'formatted');
     assert.match(String(rendered.presentation), /Model routing/);
     assert.doesNotMatch(String(rendered.presentation), /forged card/);
+    const omittedId: Record<string, unknown> = { ...renderRequest };
+    delete omittedId.id;
+    const inferred = await request('assessment', omittedId, child);
+    assert.equal(inferred.presentation, rendered.presentation);
+    await assert.rejects(
+      request(
+        'assessment',
+        { ...omittedId, target: 'https://github.com/owner/repo/issues/999' },
+        child,
+      ),
+      /assessment-managed-target-mismatch/,
+    );
+    await assert.rejects(
+      request('assessment', omittedId, { threadId: 'foreign' }),
+      /assessment-managed-context-invalid/,
+    );
     assert.deepEqual(await readDispatchState(), beforeRender);
     await assert.rejects(
       request('assessment', { ...renderRequest, id: 'f'.repeat(64) }, child),

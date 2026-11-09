@@ -27,13 +27,6 @@ const renderRequestSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-const boundRenderRequestSchema = Type.Object(
-  {
-    ...renderRequestSchema.properties,
-    ...Type.Required(Type.Pick(directAssessmentRequestSchema, ['id'])).properties,
-  },
-  { additionalProperties: false },
-);
 
 /** resolve display metadata from the bound owner without saving an assessment or advancing work. */
 export function renderBoundAssessment(
@@ -48,10 +41,10 @@ export function renderBoundAssessment(
     workflow?: WorkflowInstructionsPresentation['workflow'];
   },
 ) {
-  if (!Value.Check(boundRenderRequestSchema, input))
+  if (!Value.Check(renderRequestSchema, input))
     throw new AssessmentValidationError(
       'assessment-render-request-invalid',
-      boundRenderRequestSchema,
+      renderRequestSchema,
       input,
       'request',
     );
@@ -60,7 +53,9 @@ export function renderBoundAssessment(
     repository: `${target.owner}/${target.name}`,
     number: target.number,
   });
-  if (!owner || owner.record.id !== input.id) throw new Error('assessment-managed-context-invalid');
+  if (input.id !== undefined && owner?.record.id !== input.id)
+    throw new Error('assessment-managed-context-invalid');
+  if (!owner) return renderNativeAssessment(input, context.runtime);
   const record = owner.record;
   return renderNativeAssessment(
     {

@@ -150,23 +150,47 @@ describe('agent/assessment-render', () => {
                 evidence: [],
                 progress: { completed: [], remaining: [] },
               };
-        const shown = renderBoundAssessment(
-          {
-            ...initialReview.presentationRequest,
-            result: { ...submitted, decision: initialReview.decision },
+        const renderContext = {
+          runtime,
+          records: [owner],
+          admitted: [],
+          session: 'thread',
+          workspace: '/workspace',
+          debug: outcome === 'plan-ready',
+          workflow: {
+            implementation: { skill: 'configured:work' },
+            feedback: { skill: 'configured:reply' },
           },
-          {
-            runtime,
-            records: [owner],
-            admitted: [],
-            session: 'thread',
-            workspace: '/workspace',
-            debug: outcome === 'plan-ready',
-            workflow: {
-              implementation: { skill: 'configured:work' },
-              feedback: { skill: 'configured:reply' },
-            },
-          },
+        };
+        const renderRequest = {
+          ...initialReview.presentationRequest,
+          result: { ...submitted, decision: initialReview.decision },
+        };
+        const shown = renderBoundAssessment(renderRequest, renderContext);
+        const omittedId: Record<string, unknown> = { ...renderRequest };
+        delete omittedId.id;
+        assert.deepEqual(renderBoundAssessment(omittedId, renderContext), shown);
+        for (const changed of [
+          { retired: { at: 1 } },
+          { reset: { at: 1 } },
+          { supersededBy: 'another-task' },
+          { retirement: { at: 1 } },
+        ])
+          assert.throws(
+            () =>
+              renderBoundAssessment(omittedId, {
+                ...renderContext,
+                records: [{ ...owner, ...changed } as SharedDispatchRecord],
+              }),
+            /assessment-managed-context-invalid/,
+          );
+        assert.deepEqual(
+          renderBoundAssessment(omittedId, { ...renderContext, records: [] }),
+          renderNativeAssessment(omittedId, runtime),
+        );
+        assert.throws(
+          () => renderBoundAssessment(renderRequest, { ...renderContext, records: [] }),
+          /assessment-managed-context-invalid/,
         );
         assert.ok(shown.status === 'formatted');
         assert.match(shown.presentation, /Model routing/);
@@ -392,12 +416,13 @@ describe('agent/assessment-render', () => {
   });
 
   for (const runtime of ['codex', 'openclaw'] as const)
-    it(`should format in ${runtime} without opening a journal or resolving runtime dependencies`, async () => {
+    it(`should format unbound ${runtime} input without opening a journal or resolving execution dependencies`, async () => {
       const root = await mkdtemp(join(tmpdir(), 'assessment-render-'));
       const dependencies = new Proxy(
         {},
         {
-          get() {
+          get(_target, key) {
+            if (key === 'inspectBinding') return async () => ({ status: 'unbound', path: root });
             throw new Error('unexpected runtime dependency');
           },
         },

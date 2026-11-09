@@ -54,12 +54,14 @@ const dispatchStages = [
 
 function assessmentRequest(context: Record<string, unknown>, payload: object) {
   assert.ok(Value.Check(assessmentPresentationSchema, payload));
+  const presentation = { ...(context.presentationRequest as Record<string, unknown>) };
+  delete presentation.id;
   return {
     action: 'assessment',
     operation: 'render',
     target: context.target ?? (context.evidence as { source?: string })?.source,
     ...(context.entry === 'direct' ? { assessmentOnly: true } : {}),
-    ...(context.presentationRequest as object),
+    ...presentation,
     result: payload,
   };
 }

@@ -4860,6 +4860,29 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(rendered.status, 'formatted');
     assert.ok('presentation' in rendered);
     assert.match(String(rendered.presentation), /Model routing/);
+    const omittedId = {
+      ...verified.presentationRequest,
+      result: { ...plan, reviewSummary: plan.summary },
+    };
+    delete (omittedId as { id?: string }).id;
+    const inferred = await service.run(manifest, root, assessor(input.id), omittedId);
+    assert.ok('presentation' in inferred);
+    assert.equal(inferred.presentation, rendered.presentation);
+    await assert.rejects(
+      service.run(manifest, root, assessor(input.id), { ...omittedId, id: 'f'.repeat(64) }),
+      /assessment-managed-context-invalid/,
+    );
+    await assert.rejects(
+      service.run(manifest, root, assessor(input.id), {
+        ...omittedId,
+        target: 'https://github.com/owner/repo/issues/999',
+      }),
+      /assessment-managed-target-mismatch/,
+    );
+    await assert.rejects(
+      service.run(manifest, root, { ...assessor(input.id), sessionKey: 'foreign' }, omittedId),
+      /assessment-managed-context-invalid/,
+    );
     assert.deepEqual(await record(), beforeRender);
     const candidate = { action: 'result', id: input.id, result: plan };
     assert.ok(Value.Check(dispatchParameters, candidate));
