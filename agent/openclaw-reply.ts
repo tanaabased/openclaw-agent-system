@@ -48,25 +48,37 @@ export default async function openClawReply(input: {
   return deps.credential.use(authority, async (request) => {
     let feedback: ReplyDraft['feedback'];
     let defaultTarget: string | undefined;
-    const selectedDraft =
-      action.target && (action.operation !== 'compose' || action.material)
-        ? selectReplyDraft(await replyStore.read(), action, { turnId: caller.runId, inputId: '' })
-        : undefined;
     const nativeInput = async () => {
       const records = (await journal.read()).records.filter(
         (record) => record.threadId === caller.sessionKey,
       );
       if (records.length > 1) throw new Error('reply-managed-owner-ambiguous');
       const record = records[0];
-      const matched =
-        record &&
-        (await openClawFeedbackInput(
-          record,
-          caller,
+      const readNativeInput = () =>
+        nativeInputEvent({
           request,
-          deps.config(),
-          selectedDraft ? selectedDraft.feedback?.eventId : undefined,
-        ));
+          sessionKey: caller.sessionKey,
+          sessionId: caller.sessionId,
+          runId: caller.runId,
+          retained: [record?.assessmentCaller, record?.work?.caller],
+        });
+      let native: Awaited<ReturnType<typeof readNativeInput>> | undefined;
+      let matched = record && (await openClawFeedbackInput(record, caller, request, deps.config()));
+      if (!matched && action.target && (action.operation !== 'compose' || action.material)) {
+        native = await readNativeInput();
+        const draft = selectReplyDraft(await replyStore.read(), action, {
+          turnId: caller.runId,
+          inputId: native.inputEventId,
+        });
+        if (record && draft?.feedback)
+          matched = await openClawFeedbackInput(
+            record,
+            caller,
+            request,
+            deps.config(),
+            draft.feedback.eventId,
+          );
+      }
       const admission =
         record && dispatchAdmission(record, (await current.store.read())?.records ?? []);
       defaultTarget =
@@ -77,7 +89,7 @@ export default async function openClawReply(input: {
               matched.event,
             )
           : managedTargetUrl(admission));
-      if (matched) {
+      if (record && matched) {
         feedback = {
           ownerId: record.id,
           eventId: matched.event.id,
@@ -107,13 +119,7 @@ export default async function openClawReply(input: {
         )
           throw new Error('reply-managed-context-invalid');
         await describeIssueSession(request, record, deps.config(), 'conversation');
-        const native = await nativeInputEvent({
-          request,
-          sessionKey: caller.sessionKey,
-          sessionId: caller.sessionId,
-          runId: caller.runId,
-          retained: [record.assessmentCaller, record.work?.caller],
-        });
+        native ??= await readNativeInput();
         const draft =
           action.operation !== 'compose' || action.material
             ? selectReplyDraft(await replyStore.read(), action, {

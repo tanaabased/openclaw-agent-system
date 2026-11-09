@@ -6556,6 +6556,75 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal(sends().length, 1);
   });
 
+  it('should select the current native reply draft after an earlier update to the same issue', async () => {
+    const { id, who } = await operatorFollowup();
+    const target = 'https://github.com/owner/repo/issues/3';
+    for (const runId of [who.runId, 'later-update', 'third-update']) {
+      if (runId !== who.runId)
+        messages.push({
+          role: 'user',
+          content: 'Draft the latest status update.',
+          idempotencyKey: `${runId}:user`,
+          __openclaw: { id: `${runId}-event`, idempotencyKey: `${runId}:user` },
+        });
+      const caller = assessor(id, runId);
+      const initialContext = await service.runModel(
+        manifest,
+        root,
+        caller,
+        {
+          action: 'reply',
+          operation: 'context',
+          purpose: 'status-update',
+          target,
+        },
+        true,
+      );
+      assert.ok('observation' in initialContext);
+      const composed = await service.runModel(
+        manifest,
+        root,
+        caller,
+        {
+          action: 'reply',
+          operation: 'compose',
+          purpose: 'status-update',
+          target,
+          privateText: `Verified progress for ${runId}.`,
+          update: { facts: [{ reference: runId, text: `Progress for ${runId}.` }] },
+        },
+        true,
+      );
+      assert.equal(composed.status, 'composition-ready');
+      const candidate = await service.runModel(
+        manifest,
+        root,
+        caller,
+        {
+          action: 'reply',
+          operation: 'candidate',
+          target,
+          publicText: `Progress for ${runId}.`,
+        },
+        true,
+      );
+      assert.equal(candidate.status, 'candidate-recorded');
+      const observed = await service.runModel(
+        manifest,
+        root,
+        caller,
+        {
+          action: 'reply',
+          operation: 'context',
+          purpose: 'status-update',
+          target,
+        },
+        true,
+      );
+      assert.ok('observation' in observed);
+    }
+  });
+
   for (const operator of [true, false])
     it(`should reuse the managed issue for later status composition with operator ${operator}`, async () => {
       const { who } = await operatorFollowup(operator);

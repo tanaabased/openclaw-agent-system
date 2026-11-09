@@ -11,6 +11,8 @@ export default function selectReplyDraft(
   >,
   native: { turnId: string; inputId: string; feedback?: ReplyDraft['feedback'] },
 ) {
+  // Status inspection reads the destination and pending updates, not one draft.
+  if (input.operation === 'context') return;
   const matches = drafts.filter((draft) => {
     if (input.target && (JSON.parse(draft.target) as ReplyTarget).url !== input.target)
       return false;
@@ -38,8 +40,11 @@ export default function selectReplyDraft(
   );
   const selected = current.length ? current : matches;
   if (selected.length > 1)
-    throw new Error(
-      'reply-draft-selection-required: select the destination or the exact authored privateText/publicText',
+    throw Object.assign(
+      new Error(
+        'reply-draft-selection-required: select the destination or the exact authored privateText/publicText',
+      ),
+      { code: 'reply-draft-selection-required' },
     );
   return selected[0];
 }
