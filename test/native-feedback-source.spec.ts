@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import nativeFeedbackReconciliation from '../agent/native-feedback-reconciliation.ts';
+import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
 import nativeFeedbackSource from '../agent/native-feedback-source.ts';
 import codexContextRequest from '../agent/codex-context-request.ts';
 import type { FeedbackSourceEvent } from '../agent/feedback-state.ts';
@@ -15,6 +17,47 @@ const events = [41, 42].map((number) => ({
 const source = 'https://github.com/owner/repo/issues/7#issuecomment-41';
 
 describe('native feedback source selection', () => {
+  it('should reconcile only the coordinators own admitted source without copied task or event ids', () => {
+    const issue = {
+      id: 'admission',
+      repository: { owner: { login: 'owner' }, name: 'repo' },
+    } as ManagedIssue;
+    const record = {
+      id: 'task',
+      intakeId: 'admission',
+      sourceThreadId: 'coordinator',
+      feedback: { events },
+    } as SharedDispatchRecord & { feedback: { events: typeof events } };
+    assert.deepEqual(nativeFeedbackReconciliation([record], [issue], 'coordinator', source), {
+      id: 'task',
+      eventId: '41',
+    });
+    assert.throws(
+      () => nativeFeedbackReconciliation([record], [issue], 'other', source),
+      /not-admitted/,
+    );
+    assert.throws(
+      () =>
+        nativeFeedbackReconciliation(
+          [record],
+          [issue],
+          'coordinator',
+          source.replace('comment-41', 'comment-99'),
+        ),
+      /not-admitted/,
+    );
+    assert.throws(
+      () =>
+        nativeFeedbackReconciliation(
+          [record, { ...record, id: 'second-task' }],
+          [issue],
+          'coordinator',
+          source,
+        ),
+      /ambiguous/,
+    );
+  });
+
   it('should use the exact native input and require a semantic choice for queued ambiguity', () => {
     assert.equal(nativeFeedbackSource(events, '42', 'owner/repo', undefined), events[1]);
     assert.equal(nativeFeedbackSource(events, undefined, 'owner/repo', source), events[0]);

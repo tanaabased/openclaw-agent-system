@@ -342,7 +342,11 @@ export async function runCodexRuntime(args = process.argv.slice(2)): Promise<voi
   if (command === 'feedback') {
     const { pluginData, request, modelSource } = await readWorkflowCommand(command, args.slice(1));
     writeJson(
-      nativeContextResponse(await runCodexFeedback(pluginData, request), 'feedback', modelSource),
+      nativeContextResponse(
+        await codexDispatchResponse(pluginData, await runCodexFeedback(pluginData, request)),
+        'feedback',
+        modelSource,
+      ),
     );
     return;
   }

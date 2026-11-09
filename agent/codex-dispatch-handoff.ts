@@ -17,11 +17,6 @@ if (!actions[runtimeRoute]?.includes(runtimeInput.action)) throw new Error('sche
 const key = 'agent-system:' + runtimeRoute + ':' + runtime.pluginData;
 store(key, null);
 let input = runtimeInput;
-if (runtimeRoute === 'feedback' && input.action === 'reconcile' && input.id === undefined && input.eventId === undefined) {
-  const observation = load(key + ':observation');
-  if (!observation?.id || !observation.eventId) throw new Error('feedback-operation-evidence-unavailable');
-  input = {...input, id: observation.id, eventId: observation.eventId};
-}
 const argv = ['node', runtime.entrypoint, runtimeRoute];
 argv.push(input.action);
 argv.push('--plugin-data', runtime.pluginData);
@@ -97,6 +92,6 @@ export function codexNativeHandoff(
 if (!prepared || prepared.status !== '${status}') throw new Error('${route}-prepared-request-unavailable');
 store(${key}, null);
 
-${route === 'feedback' ? `store(${JSON.stringify(`agent-system:feedback:${pluginData}:observation`)}, {id: prepared.id, eventId: prepared.eventId});` : ''}
+
 text({id: prepared.id, ${route === 'feedback' ? 'eventId: prepared.eventId, ' : ''}native: await tools.mcp__codex_app__${tool}(prepared.request)});`;
 }

@@ -139,17 +139,15 @@ describe('agent/codex-dispatch-handoff', () => {
         else await test.send('feedback');
         assert.deepEqual(JSON.parse(JSON.stringify(test.creations)), [feedback.request]);
         await assert.rejects(test.send('feedback'), /feedback-prepared-request-unavailable/);
-        await test.execute({ action: 'reconcile' }, 'feedback');
+        await test.execute(
+          { action: 'reconcile', source: `https://github.com/org/repo/${item}/42#issuecomment-1` },
+          'feedback',
+        );
         const input = JSON.parse(String(test.commands.at(-1)!.cmd).split('\n')[1]!);
         assert.deepEqual(input, {
           action: 'reconcile',
-          id: feedback.id,
-          eventId: feedback.eventId,
+          source: `https://github.com/org/repo/${item}/42#issuecomment-1`,
         });
-        await assert.rejects(
-          test.execute({ action: 'reconcile' }, 'feedback'),
-          /feedback-operation-evidence-unavailable/,
-        );
         assert.equal(test.commands.length, 2);
       }
     }
@@ -247,7 +245,10 @@ describe('agent/codex-dispatch-handoff', () => {
       ['dispatch', { action: 'reconcile', target }],
       ['dispatch', { action: 'report' }],
       ['continuation', { action: 'next' }],
-      ['feedback', { action: 'reconcile', id: 'owner', eventId: 'event' }],
+      [
+        'feedback',
+        { action: 'reconcile', source: 'https://github.com/org/repo/issues/42#issuecomment-1' },
+      ],
     ] as const) {
       const test = fixture([lockBusy, busy, success({ status: 'idle' })]);
       await test.execute(input, route);

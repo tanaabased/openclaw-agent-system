@@ -1,5 +1,6 @@
 import { selectWorkflowStage } from './workflow-stage.ts';
 import nativeOperatorSelection from './native-operator-selection.ts';
+import nativeFeedbackReconciliation from './native-feedback-reconciliation.ts';
 import {
   isNativeDispatchSelection,
   nativeDispatchDigest,
@@ -181,8 +182,22 @@ export default class OpenClawDispatch {
       );
       if (owners.length > 1) throw new Error('native-context-owner-ambiguous');
       const owner = owners[0];
-      request = nativeContextRequest(input, owner);
-      if (isNativeFeedbackRequest('dispatch', input)) {
+      if (!owner && input.action === 'feedback' && input.operation === 'reconcile') {
+        const authored = { ...input };
+        delete authored.source;
+        request = {
+          ...authored,
+          ...nativeFeedbackReconciliation(
+            (await current.journal.read()).records,
+            current.admitted.records,
+            caller.sessionKey,
+            input.source,
+          ),
+        };
+      } else {
+        request = nativeContextRequest(input, owner);
+      }
+      if (owner && isNativeFeedbackRequest('dispatch', input)) {
         const admission = dispatchAdmission(owner!, current.admitted.records);
         const event = nativeFeedbackSource(
           owner?.feedback?.events ?? [],

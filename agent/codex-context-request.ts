@@ -1,5 +1,5 @@
 import { readCodexTaskOwner } from './codex-turn-task.ts';
-import codexDispatchBinding from './codex-dispatch-binding.ts';
+import codexDispatchBinding, { codexFeedbackReconciliation } from './codex-dispatch-binding.ts';
 import { isNativeDispatchSelection } from './native-dispatch-selection.ts';
 import nativeFeedbackSource from './native-feedback-source.ts';
 import type { DispatchRecord } from './codex-dispatch-state.ts';
@@ -44,6 +44,8 @@ export default async function codexContextRequest(
   assertNativeContextInput(input);
   if (!threadId) throw new Error('turn-context-native-caller-required');
   const task = await read(pluginData, { threadId });
+  if (!task && route === 'feedback' && input.action === 'reconcile')
+    return codexFeedbackReconciliation(pluginData, input, threadId);
   const request = nativeContextRequest(input, task ? { id: task.receipt } : undefined);
   if (!isNativeFeedbackRequest(route, input))
     return route === 'delivery' && task?.feedbackContextRequest

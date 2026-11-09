@@ -3,6 +3,8 @@ import { dispatchAdmission, managedTargetUrl, type ManagedIssue } from './manage
 import { routingInstructionsDigest } from './routing-instructions.ts';
 import type { SharedDispatchRecord } from './dispatch-state.ts';
 import { assertNativeContextInput } from './native-context-request.ts';
+import type { FeedbackSourceEvent } from './feedback-state.ts';
+import { feedbackTarget } from './reply-target.ts';
 
 export function isNativeDispatchSelection(action: unknown) {
   return ['prepare', 'reconcile', 'start', 'assess'].includes(String(action));
@@ -48,11 +50,30 @@ export function nativeDispatchDigest(
 
 export function nativeDispatchResponse<T>(
   value: T,
-  records: readonly SharedDispatchRecord[],
+  records: readonly (SharedDispatchRecord & {
+    feedback?: { events: readonly FeedbackSourceEvent[] };
+  })[],
   admitted: readonly ManagedIssue[],
 ): T {
   if (!value || typeof value !== 'object' || !('id' in value)) return value;
   const record = records.find((entry) => entry.id === value.id);
   const issue = record && dispatchAdmission(record, admitted);
-  return issue ? { ...value, target: managedTargetUrl(issue) } : value;
+  const event =
+    record && 'eventId' in value
+      ? record.feedback?.events.find((event) => event.id === value.eventId)
+      : undefined;
+  return issue
+    ? {
+        ...value,
+        target: managedTargetUrl(issue),
+        ...(event
+          ? {
+              source: feedbackTarget(
+                `${issue.repository.owner.login}/${issue.repository.name}`,
+                event,
+              ),
+            }
+          : {}),
+      }
+    : value;
 }

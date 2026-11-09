@@ -1,3 +1,4 @@
+import { feedbackTarget } from '../agent/reply-target.ts';
 import seedHistoricalAssessment from './legacy-assessment-fixture.ts';
 import assessmentPresentation from '../agent/dispatch-presentation.ts';
 import { dispatchAdmission } from '../agent/managed-issue.ts';
@@ -9215,15 +9216,17 @@ describe('agent/openclaw issue dispatch', () => {
     assert.equal((await record()).feedback!.events[0]!.code, 'test-concurrent-revocation');
   });
   it('should refuse reconciliation as a way to create an unattempted feedback send', async () => {
-    const { id } = await feedbackOwner();
+    await feedbackOwner();
     active = true;
     const event = (await record()).feedback!.events[0]!;
     await assert.rejects(
-      service.run(manifest, root, coordinator, {
+      service.runModel(manifest, root, coordinator, {
         action: 'feedback',
         operation: 'reconcile',
-        id,
-        eventId: event.id,
+        source: feedbackTarget(
+          `${fixture.repository.owner.login}/${fixture.repository.name}`,
+          event,
+        ),
       }),
       /feedback-send-unverified/,
     );

@@ -12,6 +12,7 @@ import { assertNativeContextInput } from './native-context-request.ts';
 import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
 import { Value } from 'typebox/value';
 import nativeOperatorSelection from './native-operator-selection.ts';
+import nativeFeedbackReconciliation from './native-feedback-reconciliation.ts';
 
 /** Read existing custody; the dispatch owner still verifies activation and the live occurrence. */
 export default async function codexDispatchBinding(
@@ -72,4 +73,30 @@ export async function codexDispatchResponse<T>(pluginData: string, value: T): Pr
   const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   const state = await journal.read();
   return nativeDispatchResponse(value, state.records, (await current.store.read())?.records ?? []);
+}
+
+export async function codexFeedbackReconciliation(
+  pluginData: string,
+  input: Record<string, unknown>,
+  threadId: string,
+) {
+  assertNativeContextInput(input);
+  if (Object.keys(input).some((key) => !['action', 'source'].includes(key)))
+    throw new Error('feedback-request-invalid');
+  const current = await selectCodexIntake(
+    pluginData,
+    {},
+    { resolvePolicy: false, inspectionOnly: true },
+  );
+  const journal = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
+  const state = await journal.read();
+  return {
+    action: 'reconcile',
+    ...nativeFeedbackReconciliation(
+      state.records,
+      (await current.store.read())?.records ?? [],
+      threadId,
+      input.source,
+    ),
+  };
 }
