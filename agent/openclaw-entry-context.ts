@@ -61,6 +61,7 @@ export default async function openClawEntryContext<T>(
       );
       if (!owner) return;
       const { record, digest } = owner;
+      if (!record.worktree) throw new Error('assessment-managed-checkout-unavailable');
       if (
         !record.request ||
         !('key' in record.request) ||
@@ -85,8 +86,8 @@ export default async function openClawEntryContext<T>(
         owner: { id: record.id, ...(feedback ? { eventId: feedback.id } : {}) },
         path: await realpath(record.worktree!),
         selection:
-          record.turnEvidence?.selection ?? record.stageReceipt?.selection ?? record.assessment!,
-        evidence: record.turnEvidence?.evidence ?? record.context!,
+          record.turnEvidence?.selection ?? record.stageReceipt?.selection ?? record.assessment,
+        evidence: record.turnEvidence?.evidence ?? record.context,
         result: record.result,
         receipt: record.stageReceipt,
         entries: async (run) =>

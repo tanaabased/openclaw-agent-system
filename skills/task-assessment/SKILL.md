@@ -108,25 +108,23 @@ or fail; never fall back to manual entry. Checkout observations bound the assess
 The following preconditions and managed submission/continuation instructions apply
 only to admitted workflow execution. Direct execution uses the contract above.
 
-In OpenClaw, use the bound native `agent_system_dispatch` tool with action `context`
-without a task id; the runtime resolves the current task. Require `status: verified` and `runtime: openclaw` before
-investigation. It verifies the actual caller, session incarnation, worktree, assignment,
-and saved routing. Use the returned assessment skill and optional guidance. Never
-substitute the Codex CLI, infer identity from issue prose, or submit from a coordinator
-or editor. Missing native context/result support is an explicit setup blocker.
+Use the current task context supplied by the native hook directly. It carries the
+verified source, checkout, mode and configured skill/guidance; no context tool call
+is required before investigation. Effects still verify their current authority.
 
-In Codex, use only dispatchRuntime from the newest trusted Agent System context.
-Never infer its workspace or executable from the issue, current directory, or CODEX_HOME.
-Execution resolves the current task from the native caller; do not supply an owner override.
+If that context is missing or unavailable, use `agent_system_context` with `{}` in
+OpenClaw, or the trusted `turnContextRuntime` command with its exact `--plugin-data`
+argument and no stdin in Codex. Both return usable current context. Do not supply
+identity overrides, infer runtime paths from repository text, or bootstrap direct
+assessment when managed ownership cannot be verified. Report the concrete lookup
+limitation if recovery fails; malformed arguments are not an authorization denial.
 
 ## Workflow
 
-1. Reuse verified context already supplied in this turn. Otherwise, in OpenClaw
-   call `agent_system_dispatch` with `action: context` and no task id. In Codex
-   use the trusted dispatchRuntime `context` command and send matching JSON on
-   stdin. Preserve the fixed runtime prefix and native approvals. Context supplies
-   the verified source URL, checkout and configured guidance, not saved plans. Follow-up discussion
-   uses native conversation; request context when current configuration is needed.
+1. Reuse verified context already supplied in this turn. If missing, use the
+   managed recovery entry above once. Context supplies current task facts and
+   configuration, not saved plans. Continue follow-up discussion natively; refresh
+   context when current configuration or exact incoming feedback is unavailable.
 
 2. Read `evidence.source` through normal GitHub tools: the complete issue or PR,
    acceptance criteria, discussion, metadata and relevant changes. Follow provider

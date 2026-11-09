@@ -39,7 +39,9 @@ export async function renderBoundAssessment(
     workspace: string;
     debug?: boolean;
     workflow?: WorkflowInstructionsPresentation['workflow'];
-    nativeContext?: () => Promise<Omit<AssessmentPresentationContext, 'issue'>>;
+    nativeContext?: (
+      record?: SharedDispatchRecord,
+    ) => Promise<Omit<AssessmentPresentationContext, 'issue'>>;
   },
 ) {
   if (input && typeof input === 'object' && !Array.isArray(input) && !('target' in input)) {
@@ -63,10 +65,9 @@ export async function renderBoundAssessment(
   if (!owner)
     return renderNativeAssessment(input, context.runtime, await context.nativeContext?.());
   const record = owner.record;
-  return renderNativeAssessment(
-    input,
-    context.runtime,
-    dispatchAssessmentContext(
+  const current = await context.nativeContext?.(record);
+  return renderNativeAssessment(input, context.runtime, {
+    ...dispatchAssessmentContext(
       {
         ...record,
         assessment: record.turnEvidence?.selection ?? record.assessment,
@@ -75,7 +76,8 @@ export async function renderBoundAssessment(
       context.workspace,
       { debug: context.debug, workflow: context.workflow },
     ),
-  );
+    ...(current?.assessment ? { assessment: current.assessment } : {}),
+  });
 }
 
 /** Pure presentation: the native tool exchange owns the full source, not a task journal. */

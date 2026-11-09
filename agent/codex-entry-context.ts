@@ -54,6 +54,7 @@ export default async function codexEntryContext<T>(
       const owner = assessmentOwner(state.records, admitted?.records ?? [], caller, target);
       if (!owner) return;
       const { record, digest } = owner;
+      if (!record.worktree) throw new Error('assessment-managed-checkout-unavailable');
       const native = await withNative(current, deps, (host) =>
         host.find({
           sourceThreadId: record.sourceThreadId,
@@ -82,8 +83,8 @@ export default async function codexEntryContext<T>(
         digest,
         owner: { id: record.id, ...(eventId ? { eventId } : {}) },
         path: await realpath(record.worktree!),
-        selection: record.stageReceipt?.selection ?? record.assessment!,
-        evidence: record.context!,
+        selection: record.stageReceipt?.selection ?? record.assessment,
+        evidence: record.context,
         result: record.result,
         receipt: record.stageReceipt,
         entries: async (run) =>

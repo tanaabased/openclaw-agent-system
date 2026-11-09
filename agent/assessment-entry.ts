@@ -58,8 +58,8 @@ export interface AssessmentEntryDependencies {
           implementation?: AssessmentConfiguration;
         };
         path: string;
-        selection: AssessmentSelection;
-        evidence: string;
+        selection?: AssessmentSelection;
+        evidence?: string;
         result?: AssessmentResult;
         receipt?: unknown;
         entries: AssessmentEntries;

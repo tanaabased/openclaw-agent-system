@@ -828,7 +828,14 @@ export default function registerAgentSystem(api: OpenClawPluginApi, runtimeUrl: 
         readConsistency: 'latest',
       });
       if (!entry || entry.archivedAt || entry.sessionId !== binding.sessionId) return;
-      return dispatchV2.service.promptContext(manifest, workspace, binding);
+      const context = await dispatchV2.service.promptContext(manifest, workspace, binding);
+      const fresh = api.runtime.agent.session.getSessionEntry({
+        sessionKey: binding.sessionKey,
+        readConsistency: 'latest',
+      });
+      if (!fresh || fresh.archivedAt || fresh.sessionId !== binding.sessionId)
+        throw new Error('turn-context-native-caller-changed');
+      return context;
     },
   );
   api.registerCli(({ program }) => {

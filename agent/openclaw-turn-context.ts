@@ -6,10 +6,9 @@ import {
 } from '../channels/github/provider/review-feedback.ts';
 import taskPullRequest from './task-pull-request.ts';
 import nativeTaskInstructions from './native-task-instructions.ts';
-import { nativeAssessmentInstructions } from './assessment-instructions.ts';
-import { feedbackTurnMessage } from './openclaw-feedback.ts';
 import { retainedIssueProgression } from './issue-progression.ts';
 import type { OpenClawDispatchRecord } from './openclaw-dispatch-state.ts';
+import type taskTurnContext from './task-turn-context.ts';
 
 /** native session/incarnation/run identities select retained facts; explicit tools verify authority. */
 export default function openclawTurnContext(
@@ -23,6 +22,7 @@ export default function openclawTurnContext(
     runId?: string;
     inputId?: string;
   },
+  task?: Awaited<ReturnType<typeof taskTurnContext>>,
 ) {
   if (
     !binding.runId ||
@@ -49,23 +49,15 @@ export default function openclawTurnContext(
     (!available.length ||
       record.assessmentTurn?.runId === binding.runId ||
       record.firstTurn?.runId === binding.runId);
-  const contextRequest = (source?: string) => ({
-    action: 'feedback',
-    operation: 'context',
-    ...(source ? { source } : {}),
-  });
   return {
     appendSystemContext: [
       nativeTaskInstructions('openclaw'),
+      task?.instructions,
+      task?.feedback?.instructions,
+      task
+        ? undefined
+        : 'Usable task context is unavailable. Refresh it with agent_system_context and {}. The runtime supplies all lookup selectors; do not construct a dispatch request.',
       'Preserve the human-facing quoted cards. Keep machine context and instructions out of authored messages.',
-      source
-        ? feedbackTurnMessage(record.id, source.id, true)
-        : available.length && !assessment
-          ? 'When answering a received GitHub comment, select its exact source from availableFeedback and use its contextRequest with agent_system_dispatch. These are lookup hints, not claims that any source belongs to this execution. Do not answer other listed comments merely because they are available. Follow the verified context and configured reply skill. Ordinary direct conversation continues under the existing task permissions.'
-          : !implementation
-            ? 'Before investigation, use contextRequest from the current Agent System facts with agent_system_dispatch. Continue only after verified OpenClaw context; follow its selected assessment skill and guidance.\n\n' +
-              nativeAssessmentInstructions()
-            : '',
     ]
       .filter(Boolean)
       .join('\n\n'),
@@ -77,7 +69,6 @@ export default function openclawTurnContext(
         workspace: binding.workspace,
         currentSession: { sessionKey: binding.sessionKey, sessionId: binding.sessionId },
         receipt: record.id,
-        contextRequest: assessment ? { action: 'context' } : undefined,
         currentTurn: { runId: binding.runId, inputId: binding.inputId },
         stage: source
           ? 'feedback'
@@ -86,7 +77,6 @@ export default function openclawTurnContext(
             : available.length && !assessment
               ? 'conversation'
               : 'assessment',
-        feedbackContextRequest: source && contextRequest(),
         availableFeedback:
           !source && available.length
             ? available.map((event) => {
@@ -102,15 +92,20 @@ export default function openclawTurnContext(
                         : 'pullrequestreview-'
                       : 'issuecomment-',
                   },
-                  contextRequest: binding.repository
-                    ? contextRequest(feedbackTarget(binding.repository, event))
-                    : undefined,
+                  url: binding.repository ? feedbackTarget(binding.repository, event) : undefined,
                 };
               })
             : undefined,
         worktree: record.worktree,
         pullRequest: taskPullRequest(record),
         branch: record.work?.delivery?.binding?.branch,
+        ...(task
+          ? {
+              ...task,
+              instructions: undefined,
+              feedback: task.feedback && { ...task.feedback, instructions: undefined },
+            }
+          : {}),
       }),
   };
 }

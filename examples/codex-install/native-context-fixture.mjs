@@ -163,7 +163,7 @@ try {
         [runtime, 'turn-context', '--plugin-data', pluginData],
         {
           env: { ...env, CODEX_THREAD_ID: thread.id },
-          input: '{}',
+          input: '',
           encoding: 'utf8',
           timeout: 20000,
         },

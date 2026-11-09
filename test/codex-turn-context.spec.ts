@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 
+import taskTurnContext from '../agent/task-turn-context.ts';
+import type { SharedDispatchRecord } from '../agent/dispatch-state.ts';
+import type { AgentManifest } from '../manifest/types.ts';
+
 import codexTurnContext, { codexCurrentTurnContext } from '../agent/codex-turn-context.ts';
 import type { CodexWorkspaceBindingInspection } from '../agent/codex-workspace-binding.ts';
 
@@ -63,10 +67,20 @@ describe('agent/codex-turn-context', () => {
         return {
           currentTurn: turn,
           receipt: 'owner',
-          stage: 'feedback',
-          contextRequest: undefined,
-          contextRuntime: 'dispatchRuntime',
-          feedbackContextRequest: { action: 'context' },
+          ...(await taskTurnContext({
+            runtime: 'codex',
+            manifest: { agent: { id: 'receiver' } } as AgentManifest,
+            workspace: '/workspace',
+            target: 'https://github.com/org/repo/issues/1',
+            stage: 'assessment',
+            record: { id: 'owner' } as SharedDispatchRecord,
+            resolveSkill: async (name) => ({
+              name,
+              path: '/skills/assessment/SKILL.md',
+              scope: 'user',
+              digest: 'a'.repeat(64),
+            }),
+          })),
           worktree: '/task',
           nativeCwd: '/task',
           git: { protocol: 'ssh' },
@@ -76,8 +90,9 @@ describe('agent/codex-turn-context', () => {
       },
     );
     const facts = JSON.parse(output!.split('\n')[1]!);
-    assert.deepEqual(facts.feedbackContextRequest, { action: 'context' });
-    assert.match(output!, /feedbackRuntime context/);
+    assert.equal(facts.feedbackContextRequest, undefined);
+    assert.equal(facts.assessment.skill.path, '/skills/assessment/SKILL.md');
+    assert.equal(facts.evidence.source, 'https://github.com/org/repo/issues/1');
     assert.match(output!, /--plugin-data/);
     assert.match(output!, /session_id.*write_stdin/u);
     assert.match(output!, /cell_id.*functions.wait/u);

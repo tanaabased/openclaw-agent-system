@@ -2126,15 +2126,6 @@ describe('agent/codex-dispatch', () => {
     assert.equal(hints?.worktree, native!.cwd);
     assert.equal(hints?.contextRuntime, 'dispatchRuntime');
     assert.deepEqual(await readDispatchState(), pendingState);
-    const { action, ...input } = hints!.contextRequest!;
-    // The internal dispatch entry receives the id resolved by the native adapter.
-    const context = await request(action, { ...input, id: prepared.id }, child);
-    assert.equal(context.currentTurnId, 'first-turn');
-    assert.equal(context.previousResultTurnId, undefined);
-    assert.equal(context.entry, 'managed');
-    assert.equal((context.project as { path: string }).path, native!.cwd);
-    assert.equal((context.presentationRequest as { operation: string }).operation, 'render');
-    assert.equal('cards' in (context.presentationRequest as object), false);
     const original =
       'Keep records until the retention decision is answered.\n\nPartial plan: inspect the store, then remove eligible records only after approval.\n\nWhich retention period applies?\n\nThe failure cause is unverified.';
     const question = {
@@ -2147,6 +2138,24 @@ describe('agent/codex-dispatch', () => {
       evidence: [],
       progress: { completed: [], remaining: ['Retention decision.'] },
     };
+    const beforeNativeRender = await readDispatchState();
+    const initialRender = await request(
+      'assessment',
+      { operation: 'render', result: question },
+      child,
+    );
+    assert.equal(initialRender.status, 'formatted');
+    assert.ok(String(initialRender.presentation).includes('Which retention period applies?'));
+    assert.deepEqual(await readDispatchState(), beforeNativeRender);
+    const { action, ...input } = hints!.contextRequest!;
+    // The internal dispatch entry receives the id resolved by the native adapter.
+    const context = await request(action, { ...input, id: prepared.id }, child);
+    assert.equal(context.currentTurnId, 'first-turn');
+    assert.equal(context.previousResultTurnId, undefined);
+    assert.equal(context.entry, 'managed');
+    assert.equal((context.project as { path: string }).path, native!.cwd);
+    assert.equal((context.presentationRequest as { operation: string }).operation, 'render');
+    assert.equal('cards' in (context.presentationRequest as object), false);
     const beforeRender = await readDispatchState();
     const renderRequest = {
       ...(context.presentationRequest as Record<string, unknown>),

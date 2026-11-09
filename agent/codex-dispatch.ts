@@ -1,3 +1,4 @@
+import { selectCodexTaskOwner } from './codex-turn-task.ts';
 import { selectWorkflowStage } from './workflow-stage.ts';
 import codexAssessmentSkill from './codex-assessment-skill.ts';
 import { connectCodexThreads } from './codex-thread-client.ts';
@@ -142,15 +143,36 @@ export async function runCodexDispatch(
         current.store.location.root,
         current.store.location.scope,
       );
+      let records = (await journal.read()).records;
+      const session = deps.threadId ?? process.env.CODEX_THREAD_ID ?? '';
+      if (
+        session &&
+        !records.some((record) => record.threadId === session) &&
+        records.some((record) => !record.threadId && record.phase === 'creating')
+      ) {
+        const owner = await withNative(current, deps, (native) =>
+          selectCodexTaskOwner(records, session, native.find),
+        );
+        if (owner)
+          records = records.map((record) =>
+            record.id === owner.record.id
+              ? {
+                  ...record,
+                  threadId: session,
+                  worktree: record.worktree ?? owner.native.cwd,
+                }
+              : record,
+          );
+      }
       return renderBoundAssessment(
         { ...input, action },
         {
           runtime: 'codex',
-          records: (await journal.read()).records,
+          records,
           admitted: (await current.store.read())?.records ?? [],
-          session: deps.threadId ?? process.env.CODEX_THREAD_ID ?? '',
+          session,
           workspace: current.workspace,
-          nativeContext: async () => {
+          nativeContext: async (record) => {
             const connection = await (deps.replyConnection ?? connectCodexThreads)(
               current.workspace,
               current.codexHome,
@@ -158,11 +180,16 @@ export async function runCodexDispatch(
             try {
               const { selection } = await selectWorkflowStage({
                 stage: 'assessment',
-                configuration: current.manifest.github?.notifications?.issueAssignment?.assessment,
+                configuration: {
+                  ...current.manifest.github?.notifications?.issueAssignment?.assessment,
+                  ...record?.manualIssue?.selections?.assessment,
+                },
                 workspace: current.workspace,
                 observedAt: Date.now(),
                 resolveSkill: (id) =>
-                  codexAssessmentSkill(connection.request, current.workspace, id),
+                  deps.native
+                    ? deps.native.assessmentSkill(current.workspace, id)
+                    : codexAssessmentSkill(connection.request, current.workspace, id),
               });
               return {
                 assessment: selection,

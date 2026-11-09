@@ -171,6 +171,21 @@ describe('agent/assessment-render', () => {
           /assessment-render-request-invalid/,
         );
         const shown = await renderBoundAssessment(renderRequest, renderContext);
+        const unsaved = { ...owner, assessment: undefined };
+        const beforeContext = structuredClone(unsaved);
+        assert.deepEqual(
+          await renderBoundAssessment(renderRequest, {
+            ...renderContext,
+            records: [unsaved],
+            nativeContext: async (bound) => {
+              assert.equal(bound?.id, owner.id);
+              return { assessment: record.assessment, workspace: '/workspace' };
+            },
+          }),
+          shown,
+          'managed cards must not depend on saving a context lookup',
+        );
+        assert.deepEqual(unsaved, beforeContext);
         const omittedId: Record<string, unknown> = { ...renderRequest };
         const boundRequest: Record<string, unknown> = { ...renderRequest };
         delete boundRequest.target;

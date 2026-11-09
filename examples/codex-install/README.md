@@ -19,7 +19,7 @@ then unbind without changing the workspace manifests.
 
 - Direct checks need no model or provider credentials. Workspaces run in place; independent snapshots verify that shared manifests stay unchanged. Run only in GitHub Actions.
 - Session context includes the model-routing projection; one packaged resolution accepts an issue object and custom routing guidance. Source tests cover routing input, fallback, and override permutations.
-- The per-prompt hook supplies native thread/turn identities and reads existing native task/send receipts for workflow lookup hints. A native app-server check observes the packaged context at the model boundary for ordinary and delegated input. Delegated input can omit UserPromptSubmit, so SessionStart supplies a read-only native lookup. Managed task/comment matching remains covered by component tests; unattended use of that lookup still requires the pilot.
+- The per-prompt hook supplies native thread/turn identities and uses existing native task/send receipts to supply usable task context. A native app-server check observes the packaged context at the model boundary for ordinary and delegated input. Delegated input can omit UserPromptSubmit, so SessionStart supplies the no-argument read-only recovery command; it returns the same usable context without a second dispatch call. Managed task/comment matching remains covered by component tests; unattended use of that lookup still requires the pilot.
 - Pending relocation: direct-assessment caller guards, quiet/debug setup diagnostics, missing-identity inspection and rename/rotation, inherited-pipe timeout, local-settings refresh, and inactive/replacement binding checks remain below.
 
 ## Setup

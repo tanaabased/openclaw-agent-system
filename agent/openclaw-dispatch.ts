@@ -27,7 +27,9 @@ import dispatchInspection, { dispatchInspectionSummary } from './dispatch-inspec
 import { isDeepStrictEqual } from 'node:util';
 
 import assessmentMaterial from './assessment-material.ts';
-import implementationMaterial from './implementation-material.ts';
+import implementationMaterial, {
+  type ImplementationMaterialRead,
+} from './implementation-material.ts';
 import recoverOpenClawTask from './openclaw-dispatch-recovery.ts';
 import issueLaunch from './issue-launch.ts';
 import openClawEntryContext from './openclaw-entry-context.ts';
@@ -150,6 +152,24 @@ export default class OpenClawDispatch {
       input = await this.dependencies.credential.use(authority, (request) =>
         openClawNativeMaterial(request, caller, 'agent_system_dispatch', input),
       );
+    if (input.action === 'context') {
+      const retained = await this.context.readTurnContext(
+        manifest,
+        workspace,
+        { ...caller, agentId: manifest.agent.id },
+        authority,
+      );
+      if (!retained) throw new Error('native-context-owner-unavailable');
+      return nativeMaterialResponse(
+        assessmentMaterial(
+          retained.context,
+          { action: 'context' },
+          input.material as ImplementationMaterialRead | undefined,
+        ),
+        'agent_system_dispatch',
+        modelInput,
+      );
+    }
     let request = input;
     if (input.action === 'retry') {
       const current = await this.scope(manifest, workspace);
@@ -524,11 +544,14 @@ export default class OpenClawDispatch {
           admitted: (await current.store.read())?.records ?? [],
           session: caller.sessionKey,
           workspace,
-          nativeContext: () =>
+          nativeContext: (record) =>
             this.dependencies.credential.use(authority, async (request) => {
               const { selection } = await selectWorkflowStage({
                 stage: 'assessment',
-                configuration: manifest.github?.notifications?.issueAssignment?.assessment,
+                configuration: {
+                  ...manifest.github?.notifications?.issueAssignment?.assessment,
+                  ...record?.manualIssue?.selections?.assessment,
+                },
                 workspace,
                 observedAt: Date.now(),
                 resolveSkill: (id) =>

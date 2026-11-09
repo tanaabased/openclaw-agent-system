@@ -1,5 +1,12 @@
+import workflowFailure from './workflow-failure.ts';
 import { omit } from 'lodash-es';
-import { dispatchAdmission } from './managed-issue.ts';
+import { dispatchAdmission, managedTargetUrl } from './managed-issue.ts';
+import codexAssessmentSkill from './codex-assessment-skill.ts';
+import connectCodexFeedback from './codex-feedback-client.ts';
+import { feedbackInputContext } from './feedback-input.ts';
+import authorizeFeedback from './feedback-source-context.ts';
+import { feedbackConversationMode } from './feedback-work.ts';
+import taskTurnContext from './task-turn-context.ts';
 import resolveGitProtocol from '../tools/git/protocol.ts';
 import codexContinuationNative from './codex-continuation-native.ts';
 import { codexDispatchNative, type DispatchNativeThread } from './codex-dispatch-native.ts';
@@ -15,15 +22,15 @@ type Lookup = {
   receipt: ReturnType<typeof codexContinuationNative>;
 };
 
-/** resolve hints through native creation and send receipts, never provider text. */
-export async function selectCodexTurnTask(
+/** verify native creation custody, including a child that starts before coordinator readback. */
+export async function selectCodexTaskOwner(
   records: readonly DispatchRecord[],
-  turn: Turn,
-  lookup: Lookup,
+  threadId: string,
+  find: Lookup['find'],
 ) {
   const owners = records.filter(
     (record) =>
-      record.threadId === turn.threadId && !record.retired && !record.reset && !record.supersededBy,
+      record.threadId === threadId && !record.retired && !record.reset && !record.supersededBy,
   );
   if (owners.length > 1) throw new Error('turn-context-owner-ambiguous');
   const matches: { record: DispatchRecord; native: DispatchNativeThread }[] = [];
@@ -33,22 +40,22 @@ export async function selectCodexTurnTask(
       record.retired ||
       record.reset ||
       record.supersededBy ||
-      (record.threadId ? record.threadId !== turn.threadId : record.phase !== 'creating')
+      (record.threadId ? record.threadId !== threadId : record.phase !== 'creating')
     )
       continue;
     let native;
     try {
-      native = await lookup.find({
+      native = await find({
         sourceThreadId: record.sourceThreadId,
         prompt: record.request.prompt,
         createdAfter: record.createdAt,
-        threadId: turn.threadId,
+        threadId: threadId,
       });
     } catch (error) {
       if (error instanceof Error && error.message === 'dispatch-native-readback-diverged') continue;
       throw error;
     }
-    if (!native || native.id !== turn.threadId) continue;
+    if (!native || native.id !== threadId) continue;
     matches.push({ record, native });
   }
   if (matches.length > 1) throw new Error('turn-context-owner-ambiguous');
@@ -56,7 +63,18 @@ export async function selectCodexTurnTask(
     if (owners.length) throw new Error('turn-context-owner-unverified');
     return;
   }
-  const { record, native } = matches[0]!;
+  return matches[0];
+}
+
+/** resolve hints through native creation and send receipts, never provider text. */
+export async function selectCodexTurnTask(
+  records: readonly DispatchRecord[],
+  turn: Turn,
+  lookup: Lookup,
+) {
+  const owner = await selectCodexTaskOwner(records, turn.threadId, lookup.find);
+  if (!owner) return;
+  const { record, native } = owner;
   const turnId = turn.turnId ?? native.turnId;
   if (!turnId) throw new Error('turn-context-native-turn-unavailable');
   const feedback = [];
@@ -122,6 +140,9 @@ export async function readCodexTaskOwner(pluginData: string, turn: Turn) {
       record && {
         ...selected,
         record,
+        manifest: current.manifest,
+        workspace: current.workspace,
+        codexHome: current.codexHome,
         admission: dispatchAdmission(record, (await current.store.read())?.records ?? []),
         git: { protocol: resolveGitProtocol(current.manifest) },
       }
@@ -131,13 +152,92 @@ export async function readCodexTaskOwner(pluginData: string, turn: Turn) {
   }
 }
 
-/** expose lookup hints without making native ownership an input to subsequent tools. */
-export default async function readCodexTurnTask(pluginData: string, turn: Turn) {
-  const owner = await readCodexTaskOwner(pluginData, turn);
+/** hooks and explicit recovery share one read-only native context owner. */
+export default async function readCodexTurnTask(
+  pluginData: string,
+  turn: Turn,
+  deps: {
+    owner?: typeof readCodexTaskOwner;
+    connect?: typeof connectCodexThreads;
+    feedbackConnect?: typeof connectCodexFeedback;
+    skill?: typeof codexAssessmentSkill;
+  } = {},
+) {
+  const readOwner = deps.owner ?? readCodexTaskOwner;
+  const owner = await readOwner(pluginData, turn);
   if (!owner) return;
-  const facts = omit(owner, ['record', 'admission']);
-  return {
-    ...facts,
-    feedbackContextRequest: facts.feedbackContextRequest && { action: 'context' },
+  if (!owner.admission) throw new Error('turn-context-admission-unavailable');
+  const { record, admission, manifest, workspace } = owner;
+  const facts = omit(owner, [
+    'record',
+    'admission',
+    'manifest',
+    'workspace',
+    'codexHome',
+    'contextRequest',
+    'contextRuntime',
+    'feedbackContextRequest',
+  ]);
+  const assertCurrent = async () => {
+    const next = await readOwner(pluginData, turn);
+    if (next?.receipt !== owner.receipt || next.currentTurn.turnId !== owner.currentTurn.turnId)
+      throw new Error('turn-context-native-caller-changed');
   };
+  const connection = await (deps.connect ?? connectCodexThreads)(workspace, owner.codexHome);
+  try {
+    const selected =
+      owner.feedbackContextRequest &&
+      record.feedback?.events.find((event) => event.id === owner.feedbackContextRequest!.eventId);
+    let feedback;
+    let feedbackLimitation;
+    try {
+      if (owner.stage === 'feedback' && !selected)
+        throw new Error('feedback-native-input-unverified');
+      if (selected) {
+        const provider = await (deps.feedbackConnect ?? connectCodexFeedback)(
+          workspace,
+          new AbortController().signal,
+        );
+        await authorizeFeedback({
+          conversation: true,
+          record: {},
+          event: selected,
+          intake: admission,
+          policy: manifest.github!.notifications!,
+          provider: {
+            identity: provider.comments.identity,
+            reviews: provider.comments.reviews,
+            getItem: provider.client.getItem.bind(provider.client),
+            getIssueComment: provider.comments.getIssueComment.bind(provider.comments),
+          },
+          assertCurrent,
+        });
+        feedback = feedbackInputContext({
+          event: selected,
+          repository: `${admission.repository.owner.login}/${admission.repository.name}`,
+          mode: feedbackConversationMode(record, manifest.github!.notifications!),
+          issueStage: retainedIssueProgression(record)?.stage ?? 'planning',
+          self: JSON.parse(selected.source).author?.nodeId === provider.comments.identity.nodeId,
+        });
+      }
+    } catch (error) {
+      feedbackLimitation = { code: workflowFailure(error, 'feedback-context-unavailable').code };
+    }
+    const context = await taskTurnContext({
+      runtime: 'codex',
+      manifest,
+      workspace,
+      record: { ...record, worktree: facts.worktree },
+      target: managedTargetUrl(admission),
+      stage: owner.stage,
+      feedback,
+      feedbackLimitation,
+      resolveSkill: (id) =>
+        (deps.skill ?? codexAssessmentSkill)(connection.request, facts.worktree ?? workspace, id),
+    });
+    await assertCurrent();
+    return { ...facts, ...context };
+  } finally {
+    await connection.close();
+  }
 }

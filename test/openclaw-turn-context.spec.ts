@@ -27,13 +27,13 @@ describe('agent/openclaw-turn-context', () => {
     assert.doesNotMatch(output.appendContext, /BEGIN UNTRUSTED GITHUB PROVIDER DATA/);
     assert.doesNotMatch(output.appendSystemContext, /PRIVATE-GITHUB-FACT/);
     const facts = JSON.parse(output.appendContext.split('\n')[1]!);
-    assert.deepEqual(facts.contextRequest, { action: 'context' });
+    assert.equal(facts.contextRequest, undefined);
     assert.equal(facts.agentId, binding.agentId);
     assert.deepEqual(facts.currentSession, {
       sessionKey: binding.sessionKey,
       sessionId: binding.sessionId,
     });
-    assert.match(output.appendSystemContext, /selected assessment skill/);
+    assert.match(output.appendSystemContext, /agent_system_context/);
   });
   it('should bind native runs without inventing an optional input id', () => {
     const output = openclawTurnContext(record, { ...binding, inputId: undefined })!;
@@ -67,21 +67,14 @@ describe('agent/openclaw-turn-context', () => {
       hook: 'before_prompt_build',
     });
     assert.equal(facts.stage, 'feedback');
-    assert.deepEqual(facts.feedbackContextRequest, {
-      action: 'feedback',
-      operation: 'context',
-    });
-    assert.match(output.appendSystemContext, /operation context/);
-    assert.match(output.appendSystemContext, /configured reply skill/);
+    assert.equal(facts.feedbackContextRequest, undefined);
+    assert.match(output.appendSystemContext, /agent_system_context/);
     assert.doesNotMatch(output.appendSystemContext, /PRIVATE-COMMENT|RETAINED-PLAN/);
     assert.doesNotMatch(output.appendContext, /PRIVATE-COMMENT|RETAINED-PLAN/);
     feedback.feedback!.events[0]!.turn!.executionRunId = 'queued-execution';
     const before = structuredClone(feedback);
     const queued = openclawTurnContext(feedback, { ...binding, runId: 'queued-execution' })!;
-    assert.deepEqual(JSON.parse(queued.appendContext.split('\n')[1]!).feedbackContextRequest, {
-      action: 'feedback',
-      operation: 'context',
-    });
+    assert.equal(JSON.parse(queued.appendContext.split('\n')[1]!).stage, 'feedback');
     assert.deepEqual(feedback, before);
     assert.doesNotMatch(
       openclawTurnContext(feedback, { ...binding, runId: 'feedback-run' })!.appendContext,
@@ -112,7 +105,7 @@ describe('agent/openclaw-turn-context', () => {
       [42, 43],
     );
     assert.equal(
-      facts.availableFeedback[1].contextRequest.source,
+      facts.availableFeedback[1].url,
       'https://github.com/owner/repo/issues/3#issuecomment-43',
     );
     assert.doesNotMatch(output.appendContext, /PRIVATE-COMMENT/);
@@ -123,7 +116,7 @@ describe('agent/openclaw-turn-context', () => {
       )!.appendContext.split('\n')[1]!,
     );
     assert.equal(initial.stage, 'assessment');
-    assert.deepEqual(initial.contextRequest, { action: 'context' });
+    assert.equal(initial.contextRequest, undefined);
     for (const event of events) Object.assign(event.turn, { cancelled: true });
     assert.equal(
       JSON.parse(

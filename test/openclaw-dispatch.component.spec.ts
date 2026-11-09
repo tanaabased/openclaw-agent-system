@@ -4872,7 +4872,17 @@ describe('agent/openclaw issue dispatch', () => {
       runId: current.assessmentTurn!.runId,
     });
     const privateFacts = JSON.parse(privateContext!.appendContext.split('\n')[1]!);
-    assert.deepEqual(privateFacts.contextRequest, { action: 'context' });
+    assert.equal(privateFacts.contextRequest, undefined);
+    assert.ok(privateFacts.assessment.skill.path);
+    assert.deepEqual(
+      await record(),
+      current,
+      'hook context must not save assessment or consumption state',
+    );
+    assert.equal(
+      privateFacts.evidence.source,
+      `https://github.com/owner/repo/issues/${fixture.item.number}`,
+    );
     const bound = await service.runModel(manifest, root, assessor(input.id), { action: 'context' });
     assert.ok('status' in bound && bound.status === 'verified');
     await assert.rejects(
@@ -7233,19 +7243,13 @@ describe('agent/openclaw issue dispatch', () => {
         assert.ok(hookContext);
         const facts = JSON.parse(hookContext.appendContext.split('\n')[1]!);
         assert.equal(facts.feedbackContextRequest, undefined);
-        assert.deepEqual(
-          facts.availableFeedback.find(
-            (entry: { contextRequest: { source: string } }) =>
-              entry.contextRequest.source ===
-              `https://github.com/owner/repo/issues/${event.number}#issuecomment-${JSON.parse(event.source).databaseId}`,
-          ).contextRequest,
-          {
-            action: 'feedback',
-            operation: 'context',
-            source: `https://github.com/owner/repo/issues/${event.number}#issuecomment-${JSON.parse(event.source).databaseId}`,
-          },
+        assert.equal(facts.feedback, undefined);
+        assert.ok(
+          facts.availableFeedback.some(
+            (entry: { source: { commentId: number } }) =>
+              entry.source.commentId === JSON.parse(event.source).databaseId,
+          ),
         );
-        assert.match(hookContext.appendSystemContext, /configured reply skill/);
         assert.deepEqual(await record(), before);
         const context = await service.run(
           manifest,
@@ -7818,21 +7822,9 @@ describe('agent/openclaw issue dispatch', () => {
           facts.stage,
           source === 'current' ? 'feedback' : implementation ? 'implementation' : 'conversation',
         );
-        assert.equal(facts.feedbackLookupError, undefined);
+        assert.ok(facts.feedbackLimitation?.code);
         assert.equal(facts.contextRequest, undefined);
-        const request =
-          source === 'current'
-            ? facts.feedbackContextRequest
-            : facts.availableFeedback[0].contextRequest;
-        assert.deepEqual(request, {
-          action: 'feedback',
-          operation: 'context',
-          ...(source === 'current'
-            ? {}
-            : {
-                source: `https://github.com/owner/repo/issues/${event.number}#issuecomment-${JSON.parse(event.source).databaseId}`,
-              }),
-        });
+        assert.equal(facts.feedback, undefined);
         assert.doesNotMatch(JSON.stringify(output), /private-token/);
         assert.deepEqual(await record(), before);
         historyRejected = false;
@@ -7852,12 +7844,13 @@ describe('agent/openclaw issue dispatch', () => {
         });
         assert.ok(recovered);
         const recoveredFacts = JSON.parse(recovered.appendContext.split('\n')[1]!);
-        assert.equal(recoveredFacts.feedbackLookupError, undefined);
+        assert.equal(recoveredFacts.feedbackLimitation, undefined);
+        assert.equal(recoveredFacts.feedbackContextRequest, undefined);
         if (source === 'current')
-          assert.deepEqual(recoveredFacts.feedbackContextRequest, {
-            action: 'feedback',
-            operation: 'context',
-          });
+          assert.equal(
+            recoveredFacts.feedback.replyTarget,
+            `https://github.com/owner/repo/issues/${event.number}#issuecomment-${JSON.parse(event.source).databaseId}`,
+          );
         assert.deepEqual(await record(), before);
       });
 

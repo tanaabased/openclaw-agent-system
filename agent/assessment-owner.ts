@@ -45,10 +45,7 @@ export default function assessmentOwner<
     record.retired ||
     record.retirement ||
     !record.request ||
-    record.threadId !== session ||
-    !record.worktree ||
-    !record.context ||
-    !record.assessment
+    record.threadId !== session
   )
     throw new Error('assessment-managed-context-invalid');
   return {

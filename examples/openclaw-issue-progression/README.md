@@ -19,7 +19,7 @@ answer to complete a local commit without another handoff.
 
 ## Notes
 
-- Strict AIMock supplies decisions; the installed plugin, GitHub assignment, managed checkout, coordinator, and receipts remain real. This is not proof of genuine model judgment.
+- The native prompt hook supplies initial assessment context without a model-issued context lookup. Strict AIMock supplies decisions; the installed plugin, GitHub assignment, managed checkout, coordinator, and receipts remain real. This is not proof of genuine model judgment.
 - The final operator answer explicitly requests a local commit and prohibits push/PR publication. The test verifies the committed change, not delivery.
 - EMORI creates the disposable issue; only Tanaabot is assigned. Scoped refreshes and a 24-hour schedule isolate discovery. Cleanup disposes of the issue and SSH registration; the runner owns the local workspace.
 

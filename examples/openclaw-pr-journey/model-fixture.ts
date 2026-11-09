@@ -479,16 +479,11 @@ function respond(
     if (published.status !== 'published') return;
     return { content: String(published.presentation) };
   }
-  const privateFeedback = currentFacts(messages, false).feedbackContextRequest;
+  const turnContext = currentFacts(messages, false);
+  const privateFeedback = turnContext.feedback;
   if (privateFeedback) {
-    const id = currentFacts(messages, false).receipt;
-    const args = { action: 'feedback', ...privateFeedback };
-    const context = result('feedback-context');
-    if (!context)
-      return dispatch('feedback-context', {
-        ...args,
-        operation: 'context',
-      });
+    const id = turnContext.receipt;
+    const context = { ...turnContext, ...privateFeedback };
     if (
       context.status !== 'verified' ||
       context.runtime !== 'openclaw' ||
@@ -706,28 +701,25 @@ function respond(
     return { content: published.presentation };
   }
   const id =
-    (currentFacts(messages, false).contextRequest
+    (currentFacts(messages, false).stage === 'assessment'
       ? currentFacts(messages, false).receipt
       : undefined) ??
     /Call agent_system_dispatch with action context and id ([a-f0-9]{64})\b/u.exec(prompt)?.[1];
   let automaticId: string | undefined;
   if (id) {
-    const context = result('context');
-    if (!context) {
-      const privateContext = request.messages
-        .map(({ content }) => getTextContent(content) ?? '')
-        .join('\n');
-      if (!privateContext.includes('Agent System model-only current-turn facts')) return;
-      return dispatch('context', { action: 'context' });
-    }
+    const context = currentFacts(messages);
+    assert.equal(
+      context.status,
+      'verified',
+      'the native hook must supply usable assessment context',
+    );
     const project = context.project as { path?: unknown } | undefined;
     if (
       context.status !== 'verified' ||
       context.runtime !== 'openclaw' ||
-      context.id !== id ||
       typeof project?.path !== 'string' ||
       !context.assessment ||
-      context.resultContract !== 'assessment-result/v1'
+      !context.resultFormat
     )
       return;
     const git = result('git');
