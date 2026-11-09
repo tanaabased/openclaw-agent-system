@@ -333,12 +333,7 @@ function respond(
         content: presentation,
       };
     const skill = (composed.selection as { skill?: { path?: string } } | undefined)?.skill;
-    if (
-      composed.status !== 'composition-ready' ||
-      typeof composed.digest !== 'string' ||
-      !skill?.path
-    )
-      return;
+    if (composed.status !== 'composition-ready' || !skill?.path) return;
     if (openClawAIMockToolResultText(messages, prefix + 'summary-skill') === undefined)
       return call('summary-skill', 'read', { path: skill.path });
     const candidate = result('summary-candidate');
@@ -419,7 +414,6 @@ function respond(
       if (next.status === 'routing-required') {
         const context = next.context as Record<string, unknown> | undefined;
         if (
-          typeof next.digest !== 'string' ||
           !/^https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/[1-9][0-9]*$/u.test(
             String(context?.source),
           )
@@ -633,12 +627,7 @@ function respond(
             operation: 'compose',
           });
         const selection = composed.selection as { skill?: { path?: string } } | undefined;
-        if (
-          composed.status !== 'composition-ready' ||
-          typeof composed.digest !== 'string' ||
-          !selection?.skill?.path
-        )
-          return;
+        if (composed.status !== 'composition-ready' || !selection?.skill?.path) return;
         if (!openClawAIMockToolResultText(messages, prefix + 'delivery-skill'))
           return call('delivery-skill', 'read', { path: selection.skill.path });
         const candidate = result('feedback-delivery-candidate');
@@ -653,8 +642,7 @@ function respond(
               `${author ? '@' + author + ' ' : ''}Implemented the agreed disposable issue cleanup note.`,
             ),
           });
-        if (candidate.status !== 'announcement-prepared' || typeof candidate.digest !== 'string')
-          return;
+        if (candidate.status !== 'announcement-prepared') return;
         const announced = result('feedback-delivery-announce');
         if (!announced)
           return dispatch('feedback-delivery-announce', {
@@ -948,7 +936,7 @@ function respond(
           action: 'delivery',
           operation: 'compose',
         });
-      if (composed.status !== 'composition-ready' || typeof composed.digest !== 'string') return;
+      if (composed.status !== 'composition-ready') return;
       const selection = composed.selection as { skill?: { path?: string } } | undefined;
       if (!selection?.skill?.path) return;
       if (!openClawAIMockToolResultText(messages, prefix + 'delivery-skill'))
@@ -960,8 +948,7 @@ function respond(
           operation: 'candidate',
           publicText: publicText(composed, 'Adds the disposable issue cleanup note.'),
         });
-      if (candidate.status !== 'announcement-prepared' || typeof candidate.digest !== 'string')
-        return;
+      if (candidate.status !== 'announcement-prepared') return;
       const announced = result('delivery-announce');
       if (!announced)
         return dispatch('delivery-announce', {

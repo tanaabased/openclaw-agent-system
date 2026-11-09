@@ -31,7 +31,6 @@ const dispatchStages = [
   'native-plan-context',
   'native-plan-compose',
   'native-plan-candidate',
-  'native-plan-preview',
   'native-plan-publish',
   'report',
   'refresh-context',
@@ -348,7 +347,6 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
       if (next.status === 'routing-required') {
         const context = next.context as Record<string, unknown> | undefined;
         if (
-          typeof next.digest !== 'string' ||
           !/^https:\/\/github\.com\/tanaabased\/big-test-bucket\/issues\/[1-9][0-9]*$/u.test(
             String(context?.source),
           )

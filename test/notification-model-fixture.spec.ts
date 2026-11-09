@@ -422,8 +422,6 @@ for (const scenario of [
       publication: 'workflow-authorized',
     });
     assert.equal((await action(input, 'reply', selectedScenario)).operation, 'publish');
-    append(input, 'native-plan-preview', { status: 'publication-ready', digest });
-    assert.equal('digest' in (await action(input, 'reply', selectedScenario)), false);
     append(input, 'native-plan-publish', {
       status: 'published',
       presentation: 'Question published.',

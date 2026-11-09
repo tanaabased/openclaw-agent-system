@@ -22,7 +22,7 @@ Retire a second task whose completed session is missing, preserving its saved ev
 
 - The queue regression holds one real native turn at the mock provider, cancels a queued followup through `chat.abort`, and observes a pending closed retirement before releasing the turn. No native store or retirement journal is edited.
 - Two additional mocked native turns create and finish a helper in the task checkout through `sessions_spawn`. This checks real parentage and archival rather than fabricating a child session in storage.
-- Strict AIMock reuses assessment judgment and adds the existing digest-bound retirement preview/apply exchange. Real native execution must leave the request pending while its own turn is active.
+- Strict AIMock reuses assessment judgment and uses caller-bound retirement with an optional preview. Real native execution must leave the request pending while its own turn is active.
 - The retention check restores an archived fixture and seeds stale consumed-turn bookkeeping only while the Gateway is stopped. It exercises the packed runtime after restart; it neither fabricates cleanup receipts nor runs a performance benchmark.
 - The two native cases share a job but select their exact retained owners. No reset empties the journal between them; earlier retired attempts remain as independent history.
 - The fresh attempt is closed and retired before the missing-session case. Three 61-second waits preserve the existing lifecycle observation coverage with zero OpenClaw cleanup grace.
