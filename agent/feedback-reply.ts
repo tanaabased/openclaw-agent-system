@@ -467,12 +467,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
                 status: 'candidate-recorded',
                 id,
                 publicText: draft.publicText,
-                presentation: purpose
-                  ? feedbackResponse({
-                      privateText: draft.privateText,
-                      publicReply: { author: draft.authorLogin, text: draft.publicText },
-                    })
-                  : feedbackReplyPresentation(draft.authorLogin, draft.publicText),
+                presentation: feedbackReplyPresentation(draft.authorLogin, draft.publicText),
                 instruction:
                   'Reuse this retained draft without invoking the composer again. ' +
                   (draft.feedback
@@ -555,12 +550,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
             ? 'workflow-authorized'
             : 'not-authorized',
         presentation:
-          (purpose
-            ? feedbackResponse({
-                privateText: draft.privateText,
-                publicReply: { author: draft.authorLogin, text: input.publicText },
-              })
-            : feedbackReplyPresentation(draft.authorLogin, input.publicText)) +
+          feedbackReplyPresentation(draft.authorLogin, input.publicText) +
           `\n\n[Draft destination ↗](${target.destination})`,
         instruction:
           (draft.feedback
@@ -678,6 +668,9 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
       instruction:
         cardCopyInstructions +
         feedbackResponseInstructions +
+        (purpose
+          ? 'The status-update card contains the public result only. Add any consequential private caveats directly in native chat; do not repeat composition instructions or the plan. '
+          : '') +
         'When this turn produced an assessment, keep its complete review, routing, decision and configured debug cards in the same final response; this reply presentation must not replace them. Publication failure affects only this reply; reconcile its original receipt without repeating work.',
       presentation:
         purpose || record.feedback
@@ -685,7 +678,7 @@ export default async function feedbackReply(request: unknown, deps: FeedbackRepl
               selection: record.selection,
               workspace: deps.binding.workspace,
               debug: deps.manifest.debug,
-              privateText: record.privateText,
+              privateText: purpose ? '' : record.privateText,
               publicReply: { author: record.authorLogin, text: body },
               publication: publishedUrl
                 ? { url: publishedUrl }

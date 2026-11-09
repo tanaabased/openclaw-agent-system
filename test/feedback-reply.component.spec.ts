@@ -134,6 +134,42 @@ describe('agent/feedback-reply', () => {
   });
 
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should show status publication without echoing its composition input in ${runtime}`, async () => {
+      deps.binding.runtime = runtime;
+      await call('context', { purpose: 'status-update', target: url });
+      const privateText = 'Compose a concise question about the form and subject. No comments yet.';
+      const composed = await call('compose', {
+        purpose: 'status-update',
+        target: url,
+        privateText,
+        update: { facts: [progressFact] },
+      });
+      assert.equal(composed.status, 'composition-ready');
+      assert.ok('privateResponse' in composed && composed.privateResponse === privateText);
+      const choice = selection(composed);
+      const candidate = await call('candidate', {
+        ...choice,
+        publicText: 'Which form and subject?',
+      });
+      const reused = await call('compose', {
+        purpose: 'status-update',
+        target: url,
+        privateText,
+        update: { facts: [progressFact] },
+      });
+      const published = await call('publish', choice);
+      const reconciled = await call('reconcile', choice);
+      for (const result of [candidate, reused, published, reconciled]) {
+        assert.ok('presentation' in result && typeof result.presentation === 'string');
+        assert.ok(!result.presentation.includes(privateText));
+        assert.ok(result.presentation.includes('> Which form and subject?'));
+        assert.ok(result.presentation.includes('Reply'));
+      }
+      assert.equal(published.status, 'published');
+      assert.equal(reconciled.status, 'published');
+      assert.equal(writes, 1);
+    });
+
     it(`should compose a status update from the returned request in ${runtime}`, async () => {
       deps.binding.runtime = runtime;
       const context = await call('context', { purpose: 'status-update', target: url });
@@ -563,7 +599,7 @@ describe('agent/feedback-reply', () => {
     assert.equal(writes, 0);
     assert.deepEqual(await readdir(deps.root), []);
   });
-  it('should publish a source-less status update once and keep its full private answer and exact public quote', async () => {
+  it('should publish a source-less status update once and retain composition facts without echoing them', async () => {
     const reply = await updateCandidate();
     deps.turnId = 'later';
     deps.inputId = 'later-input';
@@ -574,7 +610,11 @@ describe('agent/feedback-reply', () => {
     assert.ok(!posted?.body.includes('@author'));
     assert.ok(
       'presentation' in done &&
-        done.presentation?.includes('Complete private answer.\nPreserve the caveats.'),
+        !done.presentation?.includes('Complete private answer.\nPreserve the caveats.'),
+    );
+    assert.equal(
+      (await stored(reply)).privateText,
+      'Complete private answer.\nPreserve the caveats.',
     );
     assert.ok(
       'presentation' in done &&

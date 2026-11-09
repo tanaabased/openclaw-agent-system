@@ -39,7 +39,14 @@ export const replyExecutionSchema = Type.Object(
     purpose: Type.Optional(Type.Literal('status-update')),
     material: Type.Optional(implementationMaterialSchema),
     target: Type.Optional(Type.String({ minLength: 1, maxLength: 2048 })),
-    privateText: Type.Optional(Type.String({ minLength: 1, maxLength: 32000 })),
+    privateText: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 32000,
+        description:
+          'Human-facing answer or verified facts for composition, not directions to the composer. Status updates display the resulting public card; present any additional private caveats directly in native chat.',
+      }),
+    ),
     outcome: Type.Optional(Type.String({ minLength: 1, maxLength: 32000 })),
     publicText: Type.Optional(
       Type.String({ minLength: 1, maxLength: maximumGitHubNotificationReplyLength }),
