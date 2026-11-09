@@ -241,13 +241,20 @@ plugin_data="$root/notification-data"
 if output=$(printf '%s\n' '{"action":"launch","operation":"context","target":"tanaabased/big-test-bucket#1","fresh":true,"pullRequest":"https://github.com/tanaabased/big-test-bucket/pull/2"}' | env -u CODEX_THREAD_ID node "$runtime" dispatch launch context --plugin-data "$plugin_data" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-native-caller-required"'
 
-# should keep pr binding behind a native managed caller
+# should reject model-supplied pr owner bindings before native lookup
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 plugin_data="$root/notification-data"
 if output=$(printf '%s\n' '{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pullRequest":"https://github.com/tanaabased/big-test-bucket/pull/2"}' | env -u CODEX_THREAD_ID node "$runtime" delivery bind --plugin-data "$plugin_data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "delivery-managed-issue-required"'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "native-context-binding-override"'
+
+# should require a native caller for semantic-only delivery
+root="$TMPDIR/agent-system-codex-notifications"
+plugin_root=$(jq -r .cachePath "$root/cache.json")
+runtime="$plugin_root/dist/codex/codex-runtime.js"
+if output=$(printf '%s\n' '{"pullRequest":"https://github.com/tanaabased/big-test-bucket/pull/2"}' | env -u CODEX_THREAD_ID node "$runtime" delivery bind --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "turn-context-native-caller-required"'
 
 # should reject unsupported configuration before binding
 root="$TMPDIR/agent-system-codex-notifications"
@@ -278,7 +285,7 @@ node "$runtime" binding preview --workspace "$GITHUB_WORKSPACE/examples/codex-no
   | jq -e '.manifest.status == "invalid" and any(.manifest.diagnostics[]; .code == "github-repository-owners-removed" and (.message | contains("github.routing")))'
 test ! -d "$CODEX_HOME/automations"
 
-# should validate routed multi-repository pickup and require explicit installation activation
+# should validate routed multi-repository pickup and reject copied native inventory
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
@@ -298,19 +305,19 @@ plugin_data="$root/notification-data"
 printf '%s\n' '{"action":"inspect"}' | node "$runtime" dispatch --plugin-data "$plugin_data" \
   | jq -e '.version == 1 and .records == []'
 if output=$(printf '%s\n' '{"action":"next","projects":[],"threads":{"schemaVersion":4,"pinnedThreads":[],"unavailableHosts":[],"unavailableSources":[]}}' | CODEX_THREAD_ID=fixture-intake node "$runtime" dispatch --plugin-data "$plugin_data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required" and .notice.severity == "warning" and .notice.notify == true and (.notice.message | contains("Next step"))'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "native-inventory-binding-override"'
 if output=$(printf '%s\n' '{"action":"handoff","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' | CODEX_THREAD_ID=fixture-operator node "$runtime" dispatch --plugin-data "$plugin_data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-handoff-unavailable" and .notice.severity == "error"'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "native-context-binding-override"'
 test ! -d "$CODEX_HOME/automations"
 test ! -d "$GITHUB_WORKSPACE/examples/codex-notifications/active/checkouts"
 test ! -d "$GITHUB_WORKSPACE/examples/codex-notifications/active/.agent-system/repositories"
 
-# should reject malformed receipt ids before workflow lookup
+# should reject copied receipt ids before workflow lookup
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(printf '%s\n' '{"action":"summary","operation":"candidate","id":"malformed"}' | node "$runtime" dispatch summary candidate --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-receipt-id-invalid" and (.notice.next | contains("exact receipt ID from verified workflow context"))'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "native-context-binding-override"'
 
 # should correct a rejected assessment shape without opening workflow state or exposing its source
 root="$TMPDIR/agent-system-codex-notifications"
@@ -324,36 +331,36 @@ printf '%s\n' "$output" | jq -e '.status == "error" and .code == "assessment-ren
 jq '.result.progress.remaining = []' "$TMPDIR/assessment-shape.json" > "$TMPDIR/assessment-corrected.json"
 node "$runtime" dispatch assessment render --plugin-data "$root/notification-data" < "$TMPDIR/assessment-corrected.json" | jq -e '.status == "formatted" and .retained == false and (.presentation | contains("You can review the documented change.")) and (tostring | contains("PRIVATE-ASSESSMENT-SOURCE") | not)'
 
-# should keep historical capacity reconciliation behind the owning intake activation
+# should reject a copied reconciliation owner before selecting retained work
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(printf '%s\n' '{"action":"reconcile","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' | CODEX_THREAD_ID=fixture-intake node "$runtime" dispatch --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required" and .operation == "dispatch:reconcile"'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "native-context-binding-override"'
 test ! -d "$CODEX_HOME/automations"
 
-# should require a reconciled native owner before operator retirement can start cleanup
+# should reject a copied retirement owner before cleanup
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(printf '%s\n' '{"action":"retire","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' | CODEX_THREAD_ID=fixture-operator node "$runtime" dispatch --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required" and .operation == "dispatch:retire"'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "native-context-binding-override"'
 test ! -d "$CODEX_HOME/automations"
 
-# should keep explicit denial recovery behind reconciled intake activation
+# should reject copied denial receipts before recovery
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(printf '%s\n' '{"action":"retry-denied","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","approvedCallId":"fixture-denied-call"}' | CODEX_THREAD_ID=fixture-operator node "$runtime" dispatch --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required" and .operation == "dispatch:retry-denied"'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "native-context-binding-override"'
 test ! -d "$CODEX_HOME/automations"
 
-# should reject missing or unowned retained assessments
+# should reject copied assessment owners before historical readback
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 if output=$(printf '%s\n' '{"action":"present","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","includeDetails":true}' | CODEX_THREAD_ID=fixture-intake node "$runtime" dispatch --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-assessment-caller-mismatch"'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "native-context-binding-override"'
 
 # should reject packaged continuation without newly reconciled work authority
 root="$TMPDIR/agent-system-codex-notifications"
@@ -371,18 +378,18 @@ if output=$(printf '%s\n' '{"action":"next"}' | CODEX_THREAD_ID=fixture-intake n
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "dispatch-activation-required"'
 test ! -d "$CODEX_HOME/automations"
 
-# should expose packaged delivery while rejecting requests without a valid managed receipt
+# should expose packaged delivery while rejecting copied bindings and malformed envelopes
 root="$TMPDIR/agent-system-codex-notifications"
 plugin_root=$(jq -r .cachePath "$root/cache.json")
 runtime="$plugin_root/dist/codex/codex-runtime.js"
 node "$runtime" delivery --help | grep -F 'present renders the card and notices even when attachment is pending'
 printf '%s\n' '{"status":"prepared","publishRequest":{"action":"publish","id":"missing"}}' > "$root/prepared-delivery.json"
 if output=$(node "$runtime" delivery publish --plugin-data "$root/notification-data" < "$root/prepared-delivery.json" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "delivery-request-invalid" and .notices[0].severity == "error"'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "native-context-binding-override"'
 if output=$(node "$runtime" delivery prepare --plugin-data "$root/notification-data" < "$root/prepared-delivery.json" 2>&1); then exit 1; fi
 printf '%s\n' "$output" | jq -e '.status == "error" and .code == "workflow-prepared-publication-invalid"'
 if output=$(printf '%s\n' '{"action":"announce","id":"missing"}' | node "$runtime" delivery --plugin-data "$root/notification-data" 2>&1); then exit 1; fi
-printf '%s\n' "$output" | jq -e '.status == "error" and .code == "delivery-request-invalid"'
+printf '%s\n' "$output" | jq -e '.status == "error" and .code == "native-context-binding-override"'
 
 
 # should retain a paused declaration and diagnose its inverse compatibility alias
