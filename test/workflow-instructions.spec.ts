@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
-import workflowInstructions from '../channels/github/presentation/workflow-instructions.ts';
+import workflowInstructions, {
+  workflowConfigurationCard,
+} from '../channels/github/presentation/workflow-instructions.ts';
 import feedbackResponse, {
   feedbackReplyPresentation,
 } from '../channels/github/presentation/feedback-response.ts';
@@ -10,6 +12,29 @@ const selection = {
   skill: { name: 'piroplugin:piro-feedback-reply', path: '/skills/latin reply/SKILL.md' },
 };
 describe('channels/github/presentation/workflow-instructions', () => {
+  it('should consolidate configured stages without claiming execution or resolving future skills', () => {
+    const input = {
+      debug: true,
+      workspace: '/workspace',
+      manifestPath: '/workspace/agent.yaml',
+      assessment: selection,
+      routing: { ...selection, skill: { name: 'custom:routing' } },
+      workflow: {
+        implementation: { skill: 'custom:work', guidance: { file: 'work.md' } },
+        feedback: { skill: 'custom:reply', guidance: 'Keep **literal** text.\n  spacing' },
+      },
+    };
+    const before = structuredClone(input);
+    const card = workflowConfigurationCard(input)!;
+    assert.equal(card.match(/## 🔬 Debug/g)?.length, 1);
+    for (const name of ['custom:routing', selection.skill.name, 'custom:work', 'custom:reply'])
+      assert.ok(card.includes(name));
+    assert.ok(card.includes('[`work.md`](</workspace/work.md>)'));
+    assert.ok(card.includes('Keep **literal** text.\n>   spacing'));
+    assert.ok(card.includes('not proof that a skill ran'));
+    assert.equal(workflowConfigurationCard({ ...input, debug: false }), undefined);
+    assert.deepEqual(input, before);
+  });
   it('should quote the verified posting author and every multiline body line', () => {
     const body = '@contributor\r\n\r\nFirst paragraph.\n\n- Item\n\n> Nested quote';
     const card = feedbackReplyPresentation('posting-agent', body);
@@ -24,9 +49,7 @@ describe('channels/github/presentation/workflow-instructions', () => {
       privateText: 'First private paragraph.\n\nSecond private paragraph.',
       publicReply: { author: 'posting-agent', text: body },
     });
-    assert.ok(
-      response.startsWith('## Response\n\nFirst private paragraph.\n\nSecond private paragraph.'),
-    );
+    assert.ok(response.startsWith('First private paragraph.\n\nSecond private paragraph.'));
     assert.ok(response.endsWith(card));
   });
   it('should hide instructions unless debug is enabled and link retained sources', () => {
@@ -95,7 +118,7 @@ describe('channels/github/presentation/workflow-instructions', () => {
       })?.includes('(default)'),
     );
   });
-  it('should place reply instructions after the public reply and its outcome', () => {
+  it('should preserve replies and obstacles without appending configuration debug', () => {
     const output = feedbackResponse({
       privateText: 'Private English answer.',
       publicReply: { author: 'posting-agent', text: 'Ita.' },
@@ -103,7 +126,7 @@ describe('channels/github/presentation/workflow-instructions', () => {
       debug: true,
       publication: { url: 'https://github.com/owner/repo/issues/1#issuecomment-2' },
     });
-    assert.ok(output.indexOf('Feedback reply instructions') > output.indexOf('[Reply ↗]'));
+    assert.ok(!output.includes('Debug'));
     assert.ok(
       output.includes(
         '[Reply ↗](https://github.com/owner/repo/issues/1#issuecomment-2) from [@posting-agent]',
@@ -111,15 +134,14 @@ describe('channels/github/presentation/workflow-instructions', () => {
     );
     assert.ok(!output.includes('Reply published'));
     assert.ok(output.includes('Private English answer.'));
-    assert.ok(output.includes('> Ita.\n>\n> <br>'));
+    assert.ok(output.includes('> Ita.'));
     const withheld = feedbackResponse({
       privateText: 'Private.',
       selection,
       debug: true,
       publication: { withheld: 'blocked' },
     });
-    assert.ok(
-      withheld.indexOf('Feedback reply instructions') > withheld.indexOf('Public reply withheld'),
-    );
+    assert.ok(!withheld.includes('Debug'));
+    assert.ok(withheld.includes('blocked'));
   });
 });

@@ -1,6 +1,6 @@
 import { automationThreadSelection } from '../agent/automation-threads.ts';
 import assert from 'node:assert/strict';
-import ProjectPickupFailure from '../agent/project-pickup-failure.ts';
+import IssuePickupFailure from '../agent/issue-pickup-failure.ts';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -119,7 +119,6 @@ describe('openclaw v2 intake slice', () => {
     const f = fixture();
     const policy: GitHubNotificationPolicy = f.value.github.notifications;
     policy.routing = ['!owner/repo', 'owner/*'];
-    policy.allowedRepositoryOwners = [{ login: 'ignored', nodeId: '', reference: '@ignored' }];
     await f.service.run(f.value, root, 'activate');
     f.provider.events.push(...intakeFixture().events);
     f.setNow(baseline + 120000);
@@ -669,7 +668,6 @@ describe('openclaw v2 intake slice', () => {
           assert.equal((args as { action: string }).action, 'check');
           const result = await tool.execute('condition', {
             action: 'check',
-            policyDigest: assignmentIntakePolicy(f.value, 'openclaw')!.digest,
           });
           assert.deepEqual(
             result.details,
@@ -790,6 +788,7 @@ describe('openclaw v2 intake slice', () => {
       { action: 'activate' },
       { action: 'inspect', agentId: 'other' },
       { action: 'scan', policyDigest: 'invalid' },
+      { action: 'scan', policyDigest: assignmentIntakePolicy(f.value, 'openclaw')!.digest },
     ]) {
       await assert.rejects(tool.execute('call', request), { code: 'intake-request-invalid' });
     }
@@ -874,14 +873,14 @@ describe('openclaw v2 intake slice', () => {
     await tool.execute('call', event.params, controller.signal);
     const successfulPickup = f.service.pickup;
     f.service.pickup = async () => {
-      throw new ProjectPickupFailure(new Error('project-pickup-enrollment-changed'));
+      throw new IssuePickupFailure(new Error('issue-pickup-enrollment-changed'));
     };
     assert.equal(await invoke('before_tool_call', event), undefined);
     const failure = await tool.execute('call', event.params, controller.signal);
     const details = failure.details as { status: string; code: string; response: string };
     assert.equal(details.status, 'error');
-    assert.equal(details.code, 'project-pickup-enrollment-changed');
-    assert.match(details.response, /❌.*Project pickup/);
+    assert.equal(details.code, 'issue-pickup-enrollment-changed');
+    assert.match(details.response, /❌.*Issue pickup/);
     f.service.pickup = successfulPickup;
     assert.equal(await invoke('before_tool_call', event, { ...context, runId: '' }), undefined);
     await tool.execute('call', event.params, controller.signal);
@@ -962,6 +961,10 @@ describe('openclaw v2 intake slice', () => {
           hooks.set(name, hook);
         }) as OpenClawPluginApi['on'],
       },
+      async (_scope, input, assertCurrent) => {
+        await assertCurrent();
+        return { ...input, material: { ...(input.material as object), digest: 'a'.repeat(64) } };
+      },
     ).registerTools(
       {
         registerTool(value) {
@@ -987,15 +990,17 @@ describe('openclaw v2 intake slice', () => {
       /tool-call-authorization-missing/,
     );
     await tool.execute('call', event.params);
-    const material = { path: ['candidates'], digest: 'a'.repeat(64), offset: 0 };
-    const selectionContext = { id: 'pickup-id', digest: 'b'.repeat(64) };
+    const material = { path: ['candidates'], offset: 0 };
     const materialEvent = {
       ...event,
-      params: { action: 'pickup', context: selectionContext, material },
+      params: { action: 'pickup', material },
     };
     await hook(materialEvent, context);
     await tool.execute('call', materialEvent.params);
-    assert.deepEqual(received, { selection: undefined, context: selectionContext, material });
+    assert.deepEqual(received, {
+      selection: undefined,
+      material: { ...material, digest: 'a'.repeat(64) },
+    });
     await assert.rejects(tool.execute('call', event.params), /tool-call-authorization-missing/);
     await hook(event, context);
     current = false;

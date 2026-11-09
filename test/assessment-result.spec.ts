@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
 import { Value } from 'typebox/value';
+import AssessmentValidationError from '../agent/assessment-validation.ts';
+import workflowFailure from '../agent/workflow-failure.ts';
 
 import {
   assessmentResultContextSchema,
@@ -19,6 +21,54 @@ describe('agent/assessment-result', () => {
     evidence: [{ source: 'issue and repository', status: 'observed', detail: 'Verified context.' }],
     progress: { completed: ['Read the owning code.'], remaining: [] },
   };
+  it('should identify missing source and nested fields without echoing private values or unknown keys', () => {
+    const complete = {
+      ...common,
+      outcome: 'plan-ready',
+      assessment: 'Observed.',
+      plan: 'Complete plan.',
+      fullAssessment: 'PRIVATE-SOURCE',
+    };
+    for (const [invalid, field] of [
+      [{ ...complete, fullAssessment: undefined }, 'result.fullAssessment'],
+      [{ ...complete, progress: { completed: [] } }, 'result.progress.remaining'],
+      [{ ...complete, evidence: [{ source: 'PRIVATE-VALUE' }] }, 'result.evidence.0.status'],
+      [{ ...complete, 'PRIVATE-KEY': 'PRIVATE-VALUE' }, 'result'],
+    ] as const) {
+      assert.throws(
+        () => parseAssessmentSubmission(invalid),
+        (error: unknown) => {
+          assert.ok(error instanceof AssessmentValidationError);
+          assert.ok(error.recovery.fields.includes(field));
+          assert.doesNotMatch(error.message + JSON.stringify(error.recovery), /PRIVATE-/);
+          const wrapped = workflowFailure(
+            new Error('wrapped validation failure', { cause: error }),
+            'fallback',
+          );
+          assert.deepEqual(wrapped.recovery, error.recovery);
+          assert.equal(wrapped.code, error.code);
+          return true;
+        },
+      );
+    }
+    assert.deepEqual(parseAssessmentSubmission(complete), complete);
+    assert.deepEqual(
+      parseAssessmentSubmission({
+        ...complete,
+        version: undefined,
+        evidence: undefined,
+        progress: undefined,
+      }),
+      { ...complete, version: 1, evidence: [], progress: { completed: [], remaining: [] } },
+    );
+    assert.equal(
+      workflowFailure(
+        { code: 'assessment-result-invalid', recovery: { fields: ['PRIVATE'] } },
+        'fallback',
+      ).recovery,
+      undefined,
+    );
+  });
   it('should retain bounded decisions without accepting permission or conflicting outcomes', () => {
     const plan = {
       ...common,

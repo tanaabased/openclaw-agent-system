@@ -63,7 +63,7 @@ describe('channels/github/repository-scope', () => {
       {
         id: 'main-pool',
         match: 'OWNER/REPO',
-        workflows: ['review-request', 'project-pickup', 'issue-assignment'],
+        workflows: ['review-request', 'issue-pickup', 'issue-assignment'],
         target: { instances: [a, b] },
       },
       { 'owner/*': 'local' },
@@ -73,10 +73,10 @@ describe('channels/github/repository-scope', () => {
     policy.routing.unshift({
       id: 'review-or-pickup',
       match: 'owner/repo',
-      workflows: ['review-request', 'project-pickup'],
+      workflows: ['review-request', 'issue-pickup'],
       target: { instance: b },
     });
-    for (const workflow of ['review-request', 'project-pickup'] as const) {
+    for (const workflow of ['review-request', 'issue-pickup'] as const) {
       const result = repositoryScope(policy, repository, workflow);
       assert.equal(result.ruleId, 'review-or-pickup');
       assert.equal(result.decision, 'swarm');
@@ -219,7 +219,7 @@ describe('channels/github/repository-scope', () => {
       assert.equal(Value.Check(repositoryPatternSchema, pattern), false, JSON.stringify(pattern));
   });
 
-  it('should match current names without transferring legacy identity pins', () => {
+  it('should match current names rather than owner identity pins', () => {
     const { policy, repository } = intakeFixture();
     policy.routing = ['owner/repo'];
     assert.equal(assignmentScope(policy, { ...repository, name: 'renamed' }).decision, 'deny');
@@ -234,71 +234,61 @@ describe('channels/github/repository-scope', () => {
       owner: { ...repository.owner, nodeId: 'O_replacement' },
     };
     assert.equal(assignmentScope(policy, replacement).decision, 'local');
-    delete policy.routing;
-    assert.equal(assignmentScope(policy, replacement).reason, 'identity-mismatch');
-    assert.equal(assignmentScope(policy, repository).decision, 'local');
-    policy.allowedRepositoryOwners = [{ login: '', nodeId: 'O_owner', reference: 'O_owner' }];
-    assert.equal(repositoryScopeCandidate(policy, 'owner', 'repo', 'issue-assignment'), true);
-    assert.equal(assignmentScope(policy, repository).decision, 'deny');
-    policy.allowedRepositoryOwners[0]!.login = 'owner';
-    assert.equal(assignmentScope(policy, repository).decision, 'local');
   });
 
-  it('should preserve route order in effective policy without hashing ignored legacy owners', () => {
+  it('should preserve route order in effective policy', () => {
     const { policy } = intakeFixture();
     policy.routing = ['!owner/repo', 'owner/*'];
     const digest = () => [notificationAuthorityDigest(policy), feedbackAuthorityDigest(policy)];
     const before = digest();
-    policy.allowedRepositoryOwners = [{ login: 'ignored', nodeId: 'O_ignored' }];
-    assert.deepEqual(digest(), before);
     policy.routing.reverse();
     assert.ok(digest().every((value, index) => value !== before[index]));
   });
 
-  it('should select routing by presence and warn without interpreting legacy content', () => {
-    const parse = (github: Record<string, unknown>) =>
-      normalizeAgentManifest({
-        'schema-version': 1,
-        agent: { id: 'receiver' },
-        github: { username: 'receiver', ...github },
-      });
-    const routes = [
-      '!owner/archive-*',
-      { 'owner/repo': 'swarm' },
-      { 'owner/*': 'local' },
-      'pirog/*',
-    ];
-    const routed = parse({ routing: routes });
-    assert.equal(routed.status, 'valid', JSON.stringify(routed.diagnostics));
-    if (routed.status !== 'valid') throw Error('invalid routing fixture');
-    assert.deepEqual(routed.manifest.github!.notifications!.routing, routes);
-    for (const legacy of [undefined, null, [], 'obsolete', [{ broken: true }]]) {
-      const input = {
-        routing: [],
-        ...(legacy === undefined ? {} : { 'allowed-repository-owners': legacy }),
-      };
-      const result = parse(input);
-      assert.equal(result.status, 'valid', JSON.stringify(result.diagnostics));
-      if (result.status !== 'valid') throw Error('invalid routing fixture');
-      assert.deepEqual(result.manifest.github!.notifications!.routing, []);
-      assert.deepEqual(result.manifest.github!.notifications!.allowedRepositoryOwners, []);
-      assert.equal(
-        result.diagnostics.some(({ code }) => code === 'github-repository-owners-ignored'),
-        legacy !== undefined,
-      );
+  it('should require explicit routing and reject retired owners for both runtimes', () => {
+    for (const runtime of ['codex', 'openclaw']) {
+      const parse = (github: Record<string, unknown>) =>
+        normalizeAgentManifest({
+          'schema-version': 1,
+          agent: { id: 'receiver' },
+          github: { username: 'receiver', runtimes: [runtime], ...github },
+        });
+      for (const routing of [[], ['owner/*'], [{ match: 'owner/repo', target: 'local' }]]) {
+        const result = parse({ routing, 'issue-assignment': {} });
+        assert.equal(result.status, 'valid', JSON.stringify(result.diagnostics));
+        if (result.status !== 'valid') throw Error('invalid routing fixture');
+        assert.deepEqual(result.manifest.github!.notifications!.routing, routing);
+      }
+      for (const workflow of ['issue-assignment', 'review-request'])
+        assert.equal(parse({ [workflow]: {} }).status, 'invalid');
+      for (const github of [
+        { 'allowed-repository-owners': ['@owner'] },
+        { routing: ['owner/*'], 'allowed-repository-owners': ['@owner'] },
+        { routing: [], 'allowed-repository-owners': [] },
+        { routing: null, 'allowed-repository-owners': 'obsolete' },
+        { routing: ['owner/*'], 'allowed-repository-owners': [{ broken: true }] },
+        { routing: ['owner/*'], 'allowed-repository-owners': null },
+      ]) {
+        const result = parse(github);
+        assert.equal(result.status, 'invalid');
+        assert.equal('manifest' in result, false);
+        const diagnostic = result.diagnostics.find(
+          ({ code }) => code === 'github-repository-owners-removed',
+        );
+        assert.equal(diagnostic?.fieldPath, '/github/allowed-repository-owners');
+        assert.equal(diagnostic?.severity, 'error');
+        assert.match(diagnostic?.message ?? '', /github\.routing/);
+      }
+      for (const routing of [null, false, 'owner/*', ['owner/**'], [{ pattern: 'owner/*' }]])
+        assert.equal(parse({ routing }).status, 'invalid');
     }
-    for (const routing of [null, false, 'owner/*', ['owner/**'], [{ pattern: 'owner/*' }]])
-      assert.equal(parse({ routing, 'allowed-repository-owners': ['@owner'] }).status, 'invalid');
-    assert.equal(parse({ 'issue-assignment': {} }).status, 'invalid');
-    assert.equal(parse({ 'allowed-repository-owners': [] }).status, 'invalid');
-    const legacy = parse({ 'allowed-repository-owners': ['@owner', 'O_second'] });
-    assert.equal(legacy.status, 'valid');
-    if (legacy.status !== 'valid') throw Error('invalid legacy fixture');
-    assert.equal(legacy.manifest.github!.notifications!.routing, undefined);
-    assert.equal(legacy.diagnostics[0]!.code, 'github-repository-owners-deprecated');
-    assert.equal(
-      legacy.manifest.github!.notifications!.allowedRepositoryOwners[1]!.reference,
-      'O_second',
-    );
+    const toolOnly = normalizeAgentManifest({
+      'schema-version': 1,
+      agent: { id: 'receiver' },
+      github: { username: 'receiver' },
+    });
+    assert.equal(toolOnly.status, 'valid');
+    if (toolOnly.status === 'valid')
+      assert.equal(toolOnly.manifest.github?.notifications, undefined);
   });
 });

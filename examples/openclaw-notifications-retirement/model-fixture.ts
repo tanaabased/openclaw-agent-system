@@ -31,7 +31,6 @@ function retirement(request: ChatCompletionRequest): FixtureResponse | undefined
     .join('\n');
   const id = /Retire this managed task now ([a-f0-9]{64})/u.exec(prompt)?.[1];
   if (!id) return;
-  let digest: string | undefined;
   for (const stage of stages) {
     for (let attempt = 0; attempt < 4; attempt++) {
       const callId = prefix + stage + '_' + attempt;
@@ -42,7 +41,10 @@ function retirement(request: ChatCompletionRequest): FixtureResponse | undefined
             {
               id: callId,
               name: 'agent_system_dispatch',
-              arguments: JSON.stringify({ action: 'retire', id, ...(digest ? { digest } : {}) }),
+              arguments: JSON.stringify({
+                action: 'retire',
+                ...(stage === 'preview' ? { preview: true } : {}),
+              }),
             },
           ],
         };
@@ -56,10 +58,8 @@ function retirement(request: ChatCompletionRequest): FixtureResponse | undefined
       }
       assert.equal(result.status, stage === 'preview' ? 'retire-available' : 'retirement-pending');
       assert.equal(result.id, id);
-      if (stage === 'preview') {
-        assert.equal(typeof result.digest, 'string');
-        digest = result.digest;
-      } else assert.equal(result.retirement.code, 'retirement-native-work-unresolved');
+      if (stage !== 'preview')
+        assert.equal(result.retirement.code, 'retirement-native-work-unresolved');
       break;
     }
   }
@@ -116,6 +116,66 @@ const queueHold: Fixture = {
     return { content: 'Retirement queue hold released.' };
   },
 };
+const helperCall = 'call_retirement_helper';
+const helperTask = 'Complete retirement checkout helper.';
+function helperPrompt(request: ChatCompletionRequest): string {
+  return (
+    request.messages
+      .filter((message) => message.role === 'user')
+      .map((message) => getTextContent(message.content) ?? '')
+      .findLast(
+        (text) =>
+          !['<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>', 'OpenClaw runtime context:'].some((prefix) =>
+            text.trimStart().startsWith(prefix),
+          ),
+      ) ?? ''
+  );
+}
+const helperSpawn: Fixture = {
+  match: {
+    model: issueExampleScenario.model.match,
+    systemMessage: ['Name: Notification Tanaabot'],
+    predicate: (request) => helperPrompt(request).includes('Spawn retirement checkout helper at '),
+  },
+  response: async (request) => {
+    const text = openClawAIMockToolResultText(request.messages, helperCall);
+    if (text === undefined) {
+      const prompt = helperPrompt(request);
+      const cwd = /Spawn retirement checkout helper at ([^\n]+)/u.exec(prompt)?.[1]?.trim();
+      assert.ok(cwd);
+      return {
+        toolCalls: [
+          {
+            id: helperCall,
+            name: 'sessions_spawn',
+            arguments: JSON.stringify({
+              task: helperTask,
+              cwd,
+              mode: 'run',
+              cleanup: 'keep',
+              expectsCompletionMessage: false,
+              context: 'isolated',
+            }),
+          },
+        ],
+      };
+    }
+    const result = JSON.parse(text);
+    assert.equal(result.status, 'accepted');
+    assert.equal(typeof result.childSessionKey, 'string');
+    assert.equal(typeof result.runId, 'string');
+    assert.ok(process.env.TMPDIR);
+    await writeFile(join(process.env.TMPDIR, 'notification-helper.json'), JSON.stringify(result));
+    return { content: 'Retirement checkout helper started.' };
+  },
+};
+const helperCompleted: Fixture = {
+  match: {
+    model: issueExampleScenario.model.match,
+    predicate: (request) => helperPrompt(request).includes(helperTask),
+  },
+  response: { content: 'Retirement checkout helper completed.' },
+};
 export const retirementExampleScenario: OpenClawAIMockScenario = {
   ...issueExampleScenario,
   id: 'openclaw-notifications-retirement',
@@ -123,9 +183,12 @@ export const retirementExampleScenario: OpenClawAIMockScenario = {
     ...(issueExampleScenario.dynamicFinalResponseFixtures ?? []),
     final,
     queueHold,
+    helperSpawn,
+    helperCompleted,
   ],
   toolCalls: [
     ...issueExampleScenario.toolCalls,
+    { id: helperCall, name: 'sessions_spawn' },
     ...stages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({
         id: prefix + stage + '_' + attempt,
@@ -133,5 +196,12 @@ export const retirementExampleScenario: OpenClawAIMockScenario = {
       })),
     ),
   ],
-  fixtures: [queueHold, tools, final, ...issueExampleScenario.fixtures],
+  fixtures: [
+    helperCompleted,
+    helperSpawn,
+    queueHold,
+    tools,
+    final,
+    ...issueExampleScenario.fixtures,
+  ],
 };

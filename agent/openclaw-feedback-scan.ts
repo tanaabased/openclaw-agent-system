@@ -1,11 +1,12 @@
-import { managedPullRequest } from './managed-issue.ts';
+import feedbackSources from './feedback-sources.ts';
+import replyOwnPublications from './reply-own-publications.ts';
 import { workflowFeedbackAvailable } from '../channels/github/feedback-policy.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import type { DispatchAuthority } from '../credentials/session-dispatch.ts';
 import type { AgentManifest } from '../manifest/types.ts';
-import { automationHash } from './automation-hash.ts';
+import feedbackDiscoveryOwner from './feedback-discovery-owner.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
 import feedbackOwnPublications from './feedback-own-publications.ts';
 import { discoverFeedback } from './feedback-source.ts';
@@ -14,7 +15,6 @@ import {
   openClawDispatchFailureCode,
 } from './openclaw-dispatch-context.ts';
 import type { OpenClawDispatchRecord, OpenClawDispatchState } from './openclaw-dispatch-state.ts';
-import { feedbackSession } from './openclaw-feedback.ts';
 
 export function openClawFeedbackEnabled(manifest: AgentManifest) {
   return workflowFeedbackAvailable(manifest.github?.notifications, 'issue-assignment');
@@ -56,7 +56,7 @@ export async function scanOpenClawFeedback(input: {
   let provider:
     Awaited<ReturnType<NonNullable<typeof service.dependencies.feedbackConnect>>> | undefined;
   for (const record of records) {
-    let before = automationHash(record);
+    let before = feedbackDiscoveryOwner(record);
     const feedback = structuredClone(
       record.feedback ?? { startedAt: now, baseline: {}, events: [] },
     );
@@ -71,7 +71,7 @@ export async function scanOpenClawFeedback(input: {
       if (!input.checkpoint) return;
       await input.checkpoint({ id: record.id, before, feedback });
       record.feedback = structuredClone(feedback);
-      before = automationHash(record);
+      before = feedbackDiscoveryOwner(record);
     };
     if (budget.exhausted) {
       feedback.discoveryPending = true;
@@ -162,6 +162,20 @@ export async function scanOpenClawFeedback(input: {
                 intake,
                 client: provider!,
                 announcement: record.work?.delivery?.announcement,
+                replies: () =>
+                  replyOwnPublications({
+                    root: service.dependencies.root,
+                    binding: {
+                      runtime: 'openclaw',
+                      agentId: manifest.agent.id,
+                      workspace: input.workspace,
+                      namespace: service.dependencies.intake.dependencies.namespace,
+                      session: record.threadId!,
+                      incarnation: record.sessionCreation!.sessionId!,
+                    },
+                    client: provider!,
+                    replies: provider!.replies,
+                  }),
               }),
             )),
           client: provider,
@@ -183,34 +197,14 @@ export async function scanOpenClawFeedback(input: {
               event.code = 'feedback-source-changed';
             }
         };
-        const pr = record.work?.delivery?.reconciled ? record.work.delivery.pullRequest : undefined;
-        const sources = [
-          {
-            number: intake.issue.number,
-            nodeId: intake.issue.nodeId,
-            itemType: managedPullRequest(intake) ? ('pull-request' as const) : ('issue' as const),
-          },
-          ...(pr && pr.pullRequestNodeId !== intake.issue.nodeId
-            ? [
-                {
-                  number: pr.pullRequestNumber,
-                  nodeId: pr.pullRequestNodeId,
-                  itemType: 'pull-request' as const,
-                },
-              ]
-            : []),
-        ].sort(
-          (a, b) =>
-            Number(a.nodeId === feedback.lastSource) - Number(b.nodeId === feedback.lastSource),
-        );
+        const sources = feedbackSources(record, intake, feedback);
         let served = false;
         for (const source of sources) {
           budget.check();
           target = source.nodeId;
           completed = budget.completed;
           budget.operation = 'source-validation';
-          if (feedback.discoveryStalls?.[record.id]?.operation !== 'session-activity')
-            delete feedback.discoveryStalls?.[record.id];
+          delete feedback.discoveryStalls?.[record.id];
           if (!served) feedback.lastSource = source.nodeId;
           served = true;
           await save();
@@ -218,7 +212,13 @@ export async function scanOpenClawFeedback(input: {
             const item = await provider.getItem(common.owner, common.name, source.number);
             if (item.nodeId !== source.nodeId || item.itemType !== 'pull-request')
               throw new Error('feedback-source-owner-changed');
-            if (item.state !== 'open') continue;
+            if (item.state !== 'open') {
+              delete feedback.discovery?.[source.nodeId];
+              delete feedback.discoveryStalls?.[source.nodeId];
+              updateStallCode();
+              await save();
+              continue;
+            }
           }
           invalidate(source.nodeId, await discoverFeedback({ ...common, ...source }));
           delete feedback.discoveryStalls?.[target];
@@ -226,18 +226,8 @@ export async function scanOpenClawFeedback(input: {
         }
         target = record.id;
         completed = budget.completed;
-        budget.operation = 'session-activity';
+        budget.operation = 'workspace-binding';
         budget.check();
-        const activity = await service.dependencies.credential.use(
-          {
-            ...input.authority,
-            assertCurrent: async () => {
-              await validateLocal();
-            },
-          },
-          (request) => feedbackSession(request, record, service.dependencies.config()),
-        );
-        feedback.activity = { busy: activity.busy, observedAt: now };
         await validateLocal();
         delete feedback.discoveryStalls?.[record.id];
         delete feedback.code;
@@ -272,13 +262,6 @@ export async function scanOpenClawFeedback(input: {
         break;
       }
       feedback.code = openClawDispatchFailureCode(error);
-      if (/revoked|owner-changed/.test(feedback.code)) {
-        for (const event of feedback.events)
-          if (!['published', 'blocked'].includes(event.phase)) {
-            event.phase = 'blocked';
-            event.code = feedback.code;
-          }
-      }
     }
     feedback.discoveryPending = false;
     feedback.scannedTime = now;

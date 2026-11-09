@@ -74,7 +74,9 @@ describe('assignment intake policy', () => {
       const removed = retainedIntakePolicy(manifest, state, runtime).policy.issueAssignment!;
       assert.deepEqual(feedbackIdentities(removed.allowed, removed.feedback), []);
       delete manifest.github!.notifications;
-      const absent = retainedIntakePolicy(manifest, state, runtime).policy.issueAssignment!;
+      const retained = retainedIntakePolicy(manifest, state, runtime).policy;
+      assert.deepEqual(retained.routing, []);
+      const absent = retained.issueAssignment!;
       assert.deepEqual(feedbackIdentities(absent.allowed, absent.feedback), []);
     });
     it(`should keep ${runtime} installed orchestration stable across live policy edits`, () => {

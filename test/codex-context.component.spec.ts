@@ -48,11 +48,6 @@ describe('agent/codex-context', () => {
 
     assert.match(context, /supersedes every earlier Agent System context/u);
     assert.ok(context.includes(codexQuietHeartbeatInstructions));
-    assert.match(
-      context,
-      /Reproduce the complete returned presentation Markdown in the final reply/u,
-    );
-    assert.match(context, /card generation, not visible delivery/u);
     assert.doesNotMatch(context, /For new routed work, use/u);
     assert.deepEqual(envelope(context), {
       version: 1,
@@ -76,6 +71,14 @@ describe('agent/codex-context', () => {
       },
       dispatchRuntime: {
         argvPrefix: [nodeExecutable, join(pluginRoot, 'dist/codex/codex-runtime.js'), 'dispatch'],
+        pluginData,
+      },
+      turnContextRuntime: {
+        argvPrefix: [
+          nodeExecutable,
+          join(pluginRoot, 'dist/codex/codex-runtime.js'),
+          'turn-context',
+        ],
         pluginData,
       },
       feedbackRuntime: {
@@ -153,7 +156,7 @@ describe('agent/codex-context', () => {
         description: 'Repository caretaker',
         emoji: '🦉',
       },
-      git: { name: 'Emori Git', policy: { forcePush: 'deny' } },
+      git: { protocol: 'ssh', name: 'Emori Git', policy: { forcePush: 'deny' } },
       github: { host: 'github.com', username: 'emoriwan', policy: { releases: 'deny' } },
       capabilities: [
         'agent-system-doctor',
@@ -251,7 +254,7 @@ describe('agent/codex-context', () => {
             notifications: {
               schemaVersion: 3,
               runtimes: ['codex'],
-              allowedRepositoryOwners: [{ login: 'example', nodeId: 'O_example' }],
+              routing: ['example/*'],
               intervalMinutes: 5,
               maxConcurrentItems: 2,
             },

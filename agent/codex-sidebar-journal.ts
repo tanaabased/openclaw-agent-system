@@ -185,7 +185,7 @@ export default class CodexSidebarJournal {
         digest,
         request: placement.request,
         instruction:
-          'Execute this native sidebar action once. Retain its section ID with this digest, refresh list_threads, and repeat the owning reconciliation with nativeInventory and placementReceipt. Do not retry a denial or uncertain action.',
+          'Execute this native sidebar action once, refresh list_threads, and repeat the owning reconciliation with empty input. The runtime reads the native inventory and reconciles the retained placement. Do not retry a denial or uncertain action.',
       };
     } finally {
       await lock.release();

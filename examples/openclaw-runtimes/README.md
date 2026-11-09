@@ -19,7 +19,7 @@ Execute one declared-PATH command through native OpenClaw and OpenClaw-hosted Co
 - One Ubuntu job installs one agent per runtime. Native exec uses an issued command capability; hosted Codex uses its configured per-agent home and native thread context.
 - Strict AIMock supplies both authored execution turns with synthetic credentials and no live fallback. Hosted Codex uses direct tool loading; the Gateway and Codex app server are real.
 - A shared workspace probe and conflicting host executable make wrong PATH precedence fail. Turns run once; an active Codex command is polled through its session ID at most three times within the turn timeout. OpenClaw polls the same native process at most sixteen times under its three-minute execution deadline.
-- Bounded tool results and HTTP error bodies support diagnostics without exposing prompts or transport credentials. Memory search is disabled.
+- Bounded tool results and HTTP error bodies support diagnostics without exposing prompts or transport credentials. Memory search and background dreaming are disabled.
 
 ## Setup
 
@@ -34,6 +34,7 @@ openclaw-setup \
 openclaw-aimock prepare --scenario openclaw-runtimes
 openclaw config set models.mode merge
 openclaw config set memory.search.enabled false --strict-json
+openclaw config set plugins.entries.memory-core.config.dreaming.enabled false --strict-json
 openclaw config set plugins.entries.codex.config.codexDynamicToolsLoading direct
 openclaw config set plugins.entries.codex.config.appServer.args '["-c","openai_base_url=\"http://127.0.0.1:4010/v1\"","app-server","--listen","stdio://"]' --strict-json
 

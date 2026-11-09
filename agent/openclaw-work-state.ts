@@ -19,7 +19,7 @@ const input = Type.Object({ runId: text, inputEventId: text }, { additionalPrope
 export const openclawWorkStateSchema = Type.Object(
   {
     scope: Type.Optional(Type.Union([Type.Literal('local'), Type.Literal('pull-request')])),
-    assessmentDigest: hash,
+    assessmentDigest: Type.Optional(hash),
     turn: Type.Optional(issueTurnSchema),
     previousTurns: Type.Optional(
       Type.Array(

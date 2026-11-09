@@ -1,3 +1,4 @@
+import resolveGitProtocol from '../tools/git/protocol.ts';
 import { assignmentClaimRoute } from './assignment-claim-source.ts';
 import { dispatchStoragePressure } from './dispatch-storage.ts';
 import issueWorkflowMode from './issue-workflow-mode.ts';
@@ -9,6 +10,7 @@ import {
 } from './managed-issue.ts';
 import routingInstructions, {
   assertRoutingInstructions,
+  routingInstructionsReference,
   routingInstructionsGuidance,
   routingInstructionsDigest,
 } from './routing-instructions.ts';
@@ -54,7 +56,6 @@ import prepareDispatchRepository from './codex-dispatch-repository.ts';
 import { type DispatchRecord } from './codex-dispatch-state.ts';
 import { selectCodexIntake } from './codex-intake.ts';
 import codexSessionSettings from './codex-session-settings.ts';
-import codexRuntimeInstructions from './codex-runtime-instructions.ts';
 import dispatchContext from './dispatch-context.ts';
 import pendingDispatchAssignments, { issueKey } from './dispatch-pending.ts';
 import liveWorkflowPolicy, { WorkflowPolicyHeld } from './live-workflow-policy.ts';
@@ -241,6 +242,8 @@ async function selectClaim(
 }
 
 function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
+  const attempt =
+    (record.deniedCreations?.length ?? 0) + (record.unsubmittedCreations?.length ?? 0) + 1;
   const card = assignmentCard(
     {
       emoji: '📥',
@@ -256,18 +259,103 @@ function launchPrompt(record: DispatchRecord, intake: IntakeRecord) {
           }
         : undefined,
     },
-    'Assess the requested outcome and prepare a plan. After recording and presenting it, handle its host-verified summary and follow the returned handoff in this same turn.',
+    attempt > 1 ? `Creation attempt ${attempt}.` : undefined,
   );
-  return [
-    card,
-    'Creation attempt: ' +
-      ((record.deniedCreations?.length ?? 0) + (record.unsubmittedCreations?.length ?? 0) + 1) +
-      '.',
-    'Before investigation, execute dispatchRuntime.argvPrefix from the newest trusted Agent System context followed by context --plugin-data and dispatchRuntime.pluginData. Send ' +
-      JSON.stringify({ action: 'context', id: record.id }) +
-      ' as JSON on stdin. Investigate only after status verified, following its instructions and selected assessment skill. Preserve the saved model and effort. Use the following transport and recovery rules for context and result submission.',
-    codexRuntimeInstructions,
-  ].join('\n\n');
+  return card;
+}
+
+export function unpreparedDispatch(record: DispatchRecord) {
+  return (
+    !record.request &&
+    !record.threadId &&
+    !record.receiptThreadId &&
+    !record.clientThreadId &&
+    !record.worktree &&
+    !record.effective &&
+    !record.denial &&
+    !record.retired &&
+    !record.retirement &&
+    !record.supersededBy &&
+    !record.handoff &&
+    !record.continuation?.attempt &&
+    !record.continuation?.publicationAttempt
+  );
+}
+
+function creationRecovery(record: DispatchRecord, next: 'prepare' | 'create') {
+  const unsubmitted = record.unsubmittedCreations?.at(-1);
+  const denied = record.deniedCreations?.at(-1);
+  const instruction =
+    next === 'prepare'
+      ? 'Use the current routing result to call dispatch prepare. There is no pending creation to reconcile. Native approval still applies to the next creation.'
+      : 'Execute this exact new prepared request at most once; native approval still applies.';
+  if (unsubmitted && (!denied || unsubmitted.recoveredAt > denied.recoveredAt))
+    return {
+      recovery: {
+        status: 'verified-unsubmitted' as const,
+        previousAttempt: {
+          turnId: unsubmitted.turnId,
+          createdAt: unsubmitted.createdAt,
+          recoveredAt: unsubmitted.recoveredAt,
+        },
+        instruction:
+          'Complete native history verified that the previous prepared request was never submitted to create_thread. Its earlier unresolved status has been reconciled. ' +
+          instruction,
+      },
+    };
+  if (denied)
+    return {
+      recovery: {
+        status: 'verified-denial' as const,
+        previousAttempt: {
+          turnId: denied.turnId,
+          callId: denied.callId,
+          recoveredAt: denied.recoveredAt,
+          approvedBy: denied.approvedBy,
+        },
+        instruction:
+          'The operator recovered a verified non-executed denial. This is not a replay of an uncertain creation. ' +
+          instruction,
+      },
+    };
+  return {};
+}
+
+export function dispatchRoutingRequired(
+  record: DispatchRecord,
+  current: Selection,
+  changed: boolean,
+) {
+  return {
+    status: 'routing-required' as const,
+    changed,
+    id: record.id,
+    context: JSON.parse(record.context!),
+    assessmentSchema,
+    nextAction: 'prepare' as const,
+    instruction:
+      'No chat creation is pending. Assess the source and call dispatch prepare with this issue target, a title and routing assessment. Create the returned native request once, then reconcile. Do not reconcile before preparation.',
+    ...creationRecovery(record, 'prepare'),
+    digest: automationHash({
+      context: record.context,
+      ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),
+      project: record.project,
+      manifest: record.manifestDigest,
+      instructions:
+        record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
+    }),
+    routing: {
+      ...resolveModelRoutingRequest(
+        current.manifest.models,
+        current.digest,
+        { action: 'inspect' },
+        'codex',
+      ),
+      instructions: routingInstructionsReference(record.routingInstructions!),
+      instructionsDigest: routingInstructionsDigest(record.routingInstructions!),
+      instructionsGuidance: routingInstructionsGuidance,
+    },
+  };
 }
 
 export async function nextDispatch(input: Record<string, unknown>, tx: CodexDispatchTransaction) {
@@ -437,6 +525,7 @@ export async function nextDispatch(input: Record<string, unknown>, tx: CodexDisp
         (record?.result?.outcome !== 'operator-setup-blocker' ||
           Boolean(record.retry) ||
           dispatchRecheckable(record.result.code) ||
+          (record.result.code === 'dispatch-creation-not-prepared' && unpreparedDispatch(record)) ||
           record.intakeId !== intake.id) &&
         (record?.retryAfter ?? 0) <= now,
     )?.intake;
@@ -533,6 +622,7 @@ export async function prepareIssueProject(
           repositoryId,
           repository: repository(intake),
           cloneUrl: repo.cloneUrl,
+          protocol: resolveGitProtocol(current.manifest),
           defaultBranch: repo.defaultBranch,
           previous: record.repositoryPreparation,
         },
@@ -606,6 +696,8 @@ export async function prepareIssueProject(
       intake.issue.number,
       managedPullRequest(intake) ? 'pull-request' : 'issue',
       true,
+      false,
+      true,
     );
     const snapshot = dispatchContext(context, issueUrl(intake), now);
     record.project = project;
@@ -651,32 +743,7 @@ export async function prepareIssueProject(
     delete record.stageReceipt;
     await fresh();
     await save();
-    return {
-      status: 'routing-required' as const,
-      changed: true,
-      id: record.id,
-      context: snapshot,
-      assessmentSchema,
-      digest: automationHash({
-        context: record.context,
-        ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),
-        project: record.project,
-        manifest: record.manifestDigest,
-        instructions:
-          record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
-      }),
-      routing: {
-        ...resolveModelRoutingRequest(
-          current.manifest.models,
-          current.digest,
-          { action: 'inspect' },
-          'codex',
-        ),
-        instructions: record.routingInstructions,
-        instructionsDigest: routingInstructionsDigest(record.routingInstructions),
-        instructionsGuidance: routingInstructionsGuidance,
-      },
-    };
+    return dispatchRoutingRequired(record, current, true);
   } catch (error) {
     return fail(record, error);
   }
@@ -737,9 +804,7 @@ export async function prepareDispatch(
       current.digest,
       {
         action: 'resolve',
-        manifestDigest: current.digest,
-        context:
-          record.context.slice(0, 17950) + '\n[Bounded routing snapshot; full evidence retained.]',
+        context: JSON.stringify({ source: snapshot.source, metadata: snapshot.metadata }),
         assessment: dispatchRoutingAssessment(input.assessment, metadata),
         ...(record.manualIssue?.selections?.routing
           ? { overrides: record.manualIssue.selections.routing }
@@ -849,21 +914,7 @@ export async function prepareDispatch(
       request: record.request,
       instruction:
         'Next, call native create_thread once with this request unchanged. Do not call prepare again to retrieve or reauthorize it. In a code orchestration tool, parse this response and pass its request object directly to create_thread; do not reconstruct the prompt. Reconcile only the receipt returned by that call, never one from history or another assessment, even for the same issue. If the call fails or its outcome is unknown, reconcile without a receipt; never repeat an uncertain creation.',
-      ...(record.deniedCreations?.length
-        ? {
-            recovery: {
-              status: 'verified-denial' as const,
-              previousAttempt: {
-                turnId: record.deniedCreations.at(-1)!.turnId,
-                callId: record.deniedCreations.at(-1)!.callId,
-                recoveredAt: record.deniedCreations.at(-1)!.recoveredAt,
-                approvedBy: record.deniedCreations.at(-1)!.approvedBy,
-              },
-              instruction:
-                'The operator recovered a verified non-executed denial. This is a new prepared request, not a replay of an uncertain creation. Execute this exact request at most once.',
-            },
-          }
-        : {}),
+      ...creationRecovery(record, 'create'),
     };
   } catch (error) {
     return fail(record, error);

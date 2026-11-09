@@ -118,9 +118,9 @@ export default async function feedbackDiscovery(input: {
   }
   return {
     client: provider,
-    async complete() {
+    async complete(advance = true) {
       state.watermarks ??= {};
-      state.watermarks[nodeId] = progress.startedAt;
+      if (advance) state.watermarks[nodeId] = progress.startedAt;
       delete state.discovery![nodeId];
       await save();
       budget.completed++;

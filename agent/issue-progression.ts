@@ -14,7 +14,18 @@ export const issueProgressionSchema = Type.Object(
   { additionalProperties: false },
 );
 export type IssueProgression = Static<typeof issueProgressionSchema>;
+export const implementationDecisionSchema = Type.Object(
+  {
+    mode: Type.Union([Type.Literal('plan'), Type.Literal('work')]),
+    reasons: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), {
+      minItems: 1,
+      maxItems: 10,
+    }),
+  },
+  { additionalProperties: false },
+);
 interface Issue {
+  implementationDecision?: Static<typeof implementationDecisionSchema>;
   progression?: IssueProgression;
   createdAt?: number;
   retired?: unknown;
@@ -47,7 +58,7 @@ export default function issueProgression(
     mode: 'plan' | 'work' | 'auto';
     now: number;
     operator?: boolean;
-    actionablePlan?: string;
+    decision?: Static<typeof implementationDecisionSchema>;
   },
 ):
   | { status: 'ready'; progression: IssueProgression }
@@ -55,18 +66,17 @@ export default function issueProgression(
   | { status: 'stopped'; reason: string } {
   if (issue.retired || issue.retirement || issue.reset)
     return { status: 'stopped', reason: 'issue-inactive' };
-  if (issue.continuation?.phase === 'cancelled' && !issue.handoff)
+  if (issue.continuation?.phase === 'cancelled' && !issue.handoff && !input.operator)
     return { status: 'stopped', reason: 'implementation-cancelled' };
   const retained = retainedIssueProgression(issue);
   if (retained) return { status: 'ready', progression: retained };
-  if (issue.result?.outcome !== 'plan-ready' && !(input.operator && input.actionablePlan?.trim()))
-    return { status: 'held', reason: 'assessment-not-actionable' };
   if (!input.operator) {
     if (input.mode === 'plan') return { status: 'held', reason: 'implementation-disabled' };
-    if (input.mode === 'auto' && assessmentDecisionMode(issue.result?.decision) !== 'work')
+    const decision = input.decision ?? issue.implementationDecision;
+    if (input.mode === 'auto' && assessmentDecisionMode(decision) !== 'work')
       return {
         status: 'held',
-        reason: issue.result?.decision ? 'auto-wait' : 'auto-decision-required',
+        reason: decision ? 'auto-wait' : 'auto-decision-required',
       };
   }
   return {

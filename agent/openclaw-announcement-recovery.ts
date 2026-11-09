@@ -21,7 +21,7 @@ export default async function recoverOpenClawAnnouncement(
   const recovery = delivery.announcementRecovery;
   if (!recovery) return;
   try {
-    const { intake } = await context.validate(manifest, workspace, record, true);
+    const { intake } = await context.validate(manifest, workspace, record, false, 'native');
     await recoverRetainedAnnouncement({
       delivery,
       intake,
@@ -31,7 +31,7 @@ export default async function recoverOpenClawAnnouncement(
       authorize: async () => {
         await authority.assertCurrent?.();
         authority.signal?.throwIfAborted();
-        await context.validate(manifest, workspace, record, true);
+        await context.validate(manifest, workspace, record, false, 'native');
       },
       connect: async () => {
         if (!authority.caller || !context.dependencies.delivery)

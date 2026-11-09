@@ -10,6 +10,8 @@ import type {
 import type { CodexThreadRequest } from './codex-thread-client.ts';
 import codexTurnApprovalDenied from './codex-turn-approval.ts';
 import providerErrorMessage from '../utils/provider-error-message.ts';
+import { dispatchModelParameters } from '../tools/dispatch/tool-schema.ts';
+import { Value } from 'typebox/value';
 
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 
@@ -18,6 +20,7 @@ export function matchesDeniedPreparation(
   command: unknown,
   id: string,
   anchor: PreparationObservation,
+  target?: string,
 ) {
   if (typeof command !== 'string') return false;
   const prefix =
@@ -38,6 +41,13 @@ export function matchesDeniedPreparation(
     const input = JSON.parse(body);
     if (!nativeObject(input)) return false;
     const { action, ...request } = input;
+    if (
+      action === 'prepare' &&
+      target &&
+      request.target === target &&
+      Value.Check(dispatchModelParameters, input)
+    )
+      return true;
     if (action !== 'prepare' || request.id !== id || request.digest !== anchor.digest) return false;
     validateDispatchRequest('prepare', request);
     return true;
@@ -57,6 +67,7 @@ export default async function intakeDenial(
     | 'request'
     | 'preparationTurnId'
     | 'creationAfterItemId'
+    | 'context'
   >,
   observingPreparation = false,
   recoveryCallId?: string,
@@ -116,7 +127,12 @@ export default async function intakeDenial(
   const matches = (item: Record<string, unknown>) =>
     anchor
       ? item.type === 'commandExecution' &&
-        matchesDeniedPreparation(item.command, record.id, anchor)
+        matchesDeniedPreparation(
+          item.command,
+          record.id,
+          anchor,
+          record.context ? JSON.parse(record.context).source : undefined,
+        )
       : item.type === 'mcpToolCall' &&
         item.server === 'codex_app' &&
         item.tool === 'create_thread' &&

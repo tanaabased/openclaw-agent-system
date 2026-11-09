@@ -1,4 +1,6 @@
+import { retainOpenClawTurnInput } from '../agent/openclaw-turn-binding.ts';
 import assert from 'node:assert/strict';
+import { ContextMaterialError } from '../agent/implementation-material.ts';
 
 import type {
   OpenClawPluginApi,
@@ -13,6 +15,8 @@ import {
 } from '../core/private-state-file-lock.ts';
 import GitCommandError from '../tools/git/command-error.ts';
 import createDispatchTool from '../tools/dispatch/tool.ts';
+import { parseReplyRequest } from '../tools/dispatch/reply-schema.ts';
+import { parseDirectImplementationRequest } from '../tools/dispatch/implementation-schema.ts';
 
 interface HookContext {
   requester?: { senderIsOwner?: boolean };
@@ -56,7 +60,7 @@ describe('tools/dispatch/tool', () => {
   function fixture(caller = coordinator) {
     const workspaceDir = `/workspaces/${caller.agentId}`;
     const hooks = new Map<string, Hook>();
-    let factory: OpenClawPluginToolFactory | undefined;
+    const factories: OpenClawPluginToolFactory[] = [];
     let registrationOptions: Parameters<OpenClawPluginApi['registerTool']>[1];
     const session = {
       sessionId: caller.sessionId,
@@ -66,7 +70,29 @@ describe('tools/dispatch/tool', () => {
       agent: { id: caller.agentId },
       github: { notifications: { schemaVersion: 3 as number | undefined } },
     };
+    const runData = new Map<string, unknown>();
+    const runContext = {
+      setRunContext({
+        runId,
+        namespace,
+        value,
+      }: {
+        runId: string;
+        namespace: string;
+        value?: unknown;
+      }) {
+        runData.set(`${runId}:${namespace}`, value);
+        return true;
+      },
+      getRunContext({ runId, namespace }: { runId: string; namespace: string }) {
+        return runData.get(`${runId}:${namespace}`);
+      },
+      clearRunContext() {
+        runData.clear();
+      },
+    } as OpenClawPluginApi['runContext'];
     const api = {
+      runContext,
       source: '/plugin/index.ts',
       runtimeSource: '/plugin/dist/index.js',
       registrationMode: 'full',
@@ -77,7 +103,7 @@ describe('tools/dispatch/tool', () => {
         value: OpenClawPluginToolFactory,
         options: Parameters<OpenClawPluginApi['registerTool']>[1],
       ) {
-        factory = value;
+        factories.push(value);
         registrationOptions = options;
       },
       runtime: {
@@ -104,14 +130,20 @@ describe('tools/dispatch/tool', () => {
       calls.push(who);
       return { status: 'idle' };
     };
-    assert.ok(factory);
-    const build = (context: OpenClawPluginToolContext = { ...caller, workspaceDir }) => {
-      const tool = factory!(context);
+    assert.ok(factories.length);
+    const build = (
+      context: OpenClawPluginToolContext = { ...caller, workspaceDir },
+      name = 'agent_system_dispatch',
+    ) => {
+      const tool = factories
+        .map((factory) => factory(context))
+        .find((value) => value && !Array.isArray(value) && value.name === name);
       assert.ok(tool && !Array.isArray(tool));
       return tool;
     };
     return {
       registrationOptions,
+      runContext,
       hooks,
       hook: hooks.get('before_tool_call')!,
       build,
@@ -126,7 +158,7 @@ describe('tools/dispatch/tool', () => {
     const f = fixture();
     assert.equal(f.registrationOptions?.name, undefined);
     assert.deepEqual(f.registrationOptions?.names ?? [], []);
-    assert.deepEqual(f.adapter.tool.toolNames, ['agent_system_dispatch']);
+    assert.deepEqual(f.adapter.tool.toolNames, ['agent_system_dispatch', 'agent_system_context']);
     assert.equal(f.build().name, 'agent_system_dispatch');
     assert.equal(
       f.adapter.tool.isConfigured({
@@ -141,6 +173,95 @@ describe('tools/dispatch/tool', () => {
       true,
       'explicit native cleanup must not require GitHub configuration',
     );
+  });
+
+  it('should resolve context through a no-argument tool and reject selectors before execution', async () => {
+    const f = fixture();
+    const requests: unknown[] = [];
+    f.adapter.service.runModel = async (_manifest, _workspace, _caller, input) => {
+      requests.push(input);
+      return { status: 'verified' } as Awaited<ReturnType<typeof f.adapter.service.runModel>>;
+    };
+    const context = f.build(undefined, 'agent_system_context');
+    await f.hook({ ...event, toolName: 'agent_system_context', params: {} }, coordinator);
+    await context.execute(event.toolCallId, {});
+    assert.deepEqual(requests, [{ action: 'context' }]);
+    for (const input of [
+      { action: 'context' },
+      { target: 'other' },
+      { id: 'owner' },
+      { threadId: 'foreign' },
+    ])
+      await assert.rejects(context.execute('invalid', input), /turn-context-request-invalid/);
+    assert.equal(requests.length, 1);
+  });
+
+  it('should carry the native prompt input into tools and expire it with the host run', async () => {
+    const f = fixture();
+    retainOpenClawTurnInput(f.runContext, { ...coordinator, inputId: 'queued-input' });
+    await f.hook(event, coordinator);
+    await f.build().execute(event.toolCallId, event.params);
+    assert.equal(f.calls[0]?.inputId, 'queued-input');
+    const rejected = await f.hook(event, { ...coordinator, sessionId: 'replacement' });
+    assert.ok(rejected);
+    f.runContext.clearRunContext({ runId: coordinator.runId });
+    await f.hook(event, coordinator);
+    await f.build().execute(event.toolCallId, event.params);
+    assert.equal(f.calls[1]?.inputId, undefined);
+  });
+
+  it('should explain malformed authored arguments at both public entry points', async () => {
+    const f = fixture();
+    for (const [params, expected] of [
+      [
+        { action: 'reply', operation: 'compose', outcome: { private: 'private-value' } },
+        /request\.outcome must be string/,
+      ],
+      [
+        { action: 'implementation', operation: 'result', summary: 'private-value' },
+        /outcome, summary and fullResult inside result/,
+      ],
+      [{ action: 'reply', operation: 'compose', digest: 'private-value' }, /unsupported fields/],
+      [{ action: 'context', operation: 'context' }, /agent_system_context with \{\}/],
+      [{ action: 'contextRequest' }, /agent_system_context with \{\}/],
+    ] as const) {
+      for (const run of [
+        () => f.build().execute('invalid', params),
+        () =>
+          f.adapter.service.runModel(
+            f.manifest as never,
+            '/unused',
+            { ...coordinator, toolCallId: 'invalid' },
+            params,
+          ),
+      ])
+        await assert.rejects(run, (error: unknown) => {
+          assert.ok(error instanceof Error);
+          assert.match(error.message, expected);
+          assert.doesNotMatch(error.message, /private-value/);
+          return true;
+        });
+    }
+    assert.equal(f.calls.length, 0);
+  });
+
+  it('should retain safe request recovery through the native error response', async () => {
+    const f = fixture();
+    for (const parse of [
+      () => parseReplyRequest({ action: 'reply', operation: 'context' }),
+      () => parseDirectImplementationRequest({ action: 'implementation', operation: 'result' }),
+    ]) {
+      f.adapter.service.runModel = async () => {
+        parse();
+        throw new Error('must reject');
+      };
+      await f.hook(event, coordinator);
+      const result = await f.build().execute(event.toolCallId, event.params);
+      const value = JSON.parse((result.content[0] as { text: string }).text);
+      assert.match(value.code, /^(reply|implementation)-request-invalid$/);
+      assert.equal(typeof value.recovery.instruction, 'string');
+      assert.match(value.recovery.instruction, /status-update|outcome, summary and fullResult/);
+    }
   });
 
   it('should isolate simultaneous caller captures across agents with the same call id', async () => {
@@ -175,6 +296,17 @@ describe('tools/dispatch/tool', () => {
     for (const [error, code] of [
       [new Error('dispatch-intake-activation-required'), 'dispatch-intake-activation-required'],
       [new Error('private fixture token details'), 'dispatch-operation-failed'],
+      [
+        new ContextMaterialError(
+          'assessment-material-controls-too-large',
+          'private fixture details',
+        ),
+        'assessment-material-controls-too-large',
+      ],
+      [
+        new ContextMaterialError('implementation-material-stale', 'private fixture details'),
+        'implementation-material-stale',
+      ],
       ...[privateStateFileLockBusyErrorCode, privateStateFileLockLostErrorCode].map((code) => [
         Object.assign(new Error('private fixture lock details'), { code }),
         code,
@@ -193,7 +325,19 @@ describe('tools/dispatch/tool', () => {
       const call = { ...event, params: { action: 'next' } };
       await f.hook(call, coordinator);
       const result = await f.build().execute(call.toolCallId, call.params);
-      assert.deepEqual(result.details, {
+      const { notice, presentationInstructions, recovery, ...details } = result.details as Record<
+        string,
+        unknown
+      >;
+      assert.ok(notice);
+      assert.equal(typeof presentationInstructions, 'string');
+      if (code === 'implementation-material-stale')
+        assert.match(
+          String((recovery as { instruction: string }).instruction),
+          /returned page request/,
+        );
+      else assert.equal(recovery, undefined);
+      assert.deepEqual(details, {
         status: 'waiting',
         code,
         runtime: 'openclaw',
@@ -219,6 +363,30 @@ describe('tools/dispatch/tool', () => {
     assert.match(details.notice.message, /❌|Git could not/);
     assert.match(details.notice.message, /Permission to owner/);
     assert.doesNotMatch(JSON.stringify(result), /ghp_private/);
+  });
+
+  it('should supply ordinary workflow failure cards without provider diagnostics', async () => {
+    for (const [code, severity, emoji] of [
+      ['assessment-render-request-invalid', 'error', '❌'],
+      ['reply-draft-unavailable', 'error', '❌'],
+      ['dispatch-project-registration-unavailable', 'warning', '⚠️'],
+    ]) {
+      const f = fixture();
+      f.adapter.service.run = async () => {
+        throw new Error(code);
+      };
+      await f.hook(event, coordinator);
+      const result = await f.build().execute(event.toolCallId, event.params);
+      const details = result.details as {
+        code: string;
+        notice: { message: string; severity: string };
+      };
+      assert.equal(details.code, code);
+      assert.equal(details.notice.severity, severity);
+      assert.ok(details.notice.message.startsWith('> ## ' + emoji));
+      assert.ok(details.notice.message.includes('`' + code + '`'));
+      assert.ok(details.notice.message.split('\n').every((line) => line.startsWith('>')));
+    }
   });
 
   it('should allow the read-only predicate without a conversation session id', async () => {
@@ -379,13 +547,13 @@ describe('tools/dispatch/tool', () => {
     it(`should require both native requester and factory owner evidence for ${action}`, async () => {
       const f = fixture();
       const values: boolean[] = [];
-      f.adapter.service.run = async (_manifest, _workspace, _who, _input, owner) => {
+      f.adapter.service.runModel = async (_manifest, _workspace, _who, _input, owner) => {
         values.push(owner === true);
         return { status: 'idle' };
       };
       const request = {
         ...event,
-        params: { action, id: 'a'.repeat(64) },
+        params: { action },
       };
       for (const [hookOwner, factoryOwner] of [
         [true, true],

@@ -26,7 +26,6 @@ describe('agent/notification policy provenance', () => {
   it('should canonicalize observation cache keys without mutating configuration', () => {
     const policy = intakeFixture().policy;
     policy.runtimes = ['codex', 'openclaw'];
-    policy.allowedRepositoryOwners.push({ login: 'second', nodeId: 'O_second' });
     policy.issueAssignment!.allowed.push({
       login: 'other',
       nodeId: 'U_other',
@@ -43,7 +42,6 @@ describe('agent/notification policy provenance', () => {
       reply = feedbackAuthorityDigest(policy);
     assert.deepEqual(policy, original);
     policy.runtimes.reverse();
-    policy.allowedRepositoryOwners.reverse();
     policy.issueAssignment!.allowed.reverse();
     policy.issueAssignment!.pullRequest.recipients!.reverse();
     for (const recipient of policy.issueAssignment!.pullRequest.recipients!)

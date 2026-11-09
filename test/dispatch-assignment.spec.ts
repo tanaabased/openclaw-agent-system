@@ -72,7 +72,7 @@ describe('agent/dispatch-assignment', () => {
       issue: f.item,
       assignment: f.events[0],
     }) as unknown as IntakeRecord;
-    f.policy.allowedRepositoryOwners = [];
+    f.policy.routing = [];
     f.policy.issueAssignment!.allowed = [];
     f.events.length = 0;
     f.repository.archived = true;

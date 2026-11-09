@@ -487,7 +487,6 @@ try {
       assert.equal(inspected.profiles.default.model, 'package-default');
       const input = {
         action: 'resolve',
-        manifestDigest: inspected.manifestDigest,
         context: 'Insufficient scope.',
         assessment: { complexity: 'unset', reason: 'No work tier is defensible.' },
         fallback: 'default',

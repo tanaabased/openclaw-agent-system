@@ -21,6 +21,117 @@ const comment = (body: string) => ({
 });
 
 describe('notification github fixtures', () => {
+  it('should request http evidence and accept the successful response body', async () => {
+    const result = await notificationFixtureGitHub(
+      { action: 'assign', number: 42 },
+      async (argv) => {
+        assert.ok(argv.includes('--include'));
+        return {
+          ...reply(issue),
+          stdout: `HTTP/2.0 201 Created\r\nx-request-id: private\r\n\r\n${JSON.stringify(issue)}`,
+        };
+      },
+      noWait,
+    );
+    assert.deepEqual(result, issue);
+  });
+
+  it('should retain http evidence from an incomplete write without exposing raw headers or retrying', async () => {
+    let calls = 0;
+    await assert.rejects(
+      notificationFixtureGitHub(
+        { action: 'assign', number: 42 },
+        async () => {
+          calls++;
+          return {
+            ...lost,
+            stdout:
+              'HTTP/2.0 403 Forbidden\r\nx-ratelimit-remaining: 0\r\nx-ratelimit-resource: core\r\nretry-after: 60\r\nx-request-id: private-value\r\n\r\n{',
+          };
+        },
+        noWait,
+      ),
+      (error: Error) => {
+        assert.match(error.message, /classification="rate-limit"/u);
+        assert.match(error.message, /httpStatus=403/u);
+        assert.match(error.message, /retryAfterMs=60000/u);
+        assert.ok(!error.message.includes('private-value'));
+        return true;
+      },
+    );
+    assert.equal(calls, 1);
+  });
+
+  it('should reconcile uncertain issue creation by exact title body and author without a second post', async () => {
+    const calls: string[][] = [];
+    let created: Record<string, unknown>;
+    const request = {
+      action: 'create' as const,
+      title: 'agent-system-test-123-456-1- journey',
+      body: 'Disposable issue.',
+      run: '456-1',
+    };
+    const result = await notificationFixtureGitHub(
+      request,
+      async (argv) => {
+        calls.push(argv);
+        if (argv.includes('POST')) {
+          created = {
+            ...comment(argv.at(-1)!.slice(5)),
+            number: 42,
+            title: request.title,
+            state: 'open',
+            assignees: [],
+          };
+          return lost;
+        }
+        return reply([created, { ...created, body: 'Unrelated issue.' }]);
+      },
+      noWait,
+    );
+    assert.deepEqual(result, created!);
+    assert.equal(calls.filter((argv) => argv.includes('POST')).length, 1);
+    assert.match(calls[1]![1]!, /creator=emoriwan/u);
+  });
+
+  it('should stop on missing ambiguous altered or foreign issue creation evidence without replay', async () => {
+    for (const mode of ['missing', 'duplicate', 'edited', 'foreign']) {
+      let writes = 0;
+      let created: Record<string, unknown>;
+      await assert.rejects(
+        notificationFixtureGitHub(
+          {
+            action: 'create',
+            title: 'agent-system-test-123-456-1- journey',
+            body: 'Disposable issue.',
+            run: '456-1',
+          },
+          async (argv) => {
+            if (argv.includes('POST')) {
+              writes++;
+              created = {
+                ...comment(argv.at(-1)!.slice(5)),
+                number: 42,
+                title: 'agent-system-test-123-456-1- journey',
+                state: 'open',
+                assignees: [],
+              };
+              return lost;
+            }
+            if (mode === 'edited') created.title = 'Changed title';
+            if (mode === 'foreign') created.user = { login: 'someone-else' };
+            return reply(
+              mode === 'missing' ? [] : mode === 'duplicate' ? [created, created] : [created],
+            );
+          },
+          noWait,
+        ),
+        mode === 'missing' ? /outcome unresolved; POST not repeated/u : /ambiguous or altered/u,
+      );
+      assert.equal(writes, 1);
+    }
+  });
+
   it('should retain native assignment success without additional reads', async () => {
     const calls: string[][] = [];
     assert.deepEqual(

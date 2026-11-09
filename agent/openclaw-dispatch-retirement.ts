@@ -16,7 +16,7 @@ export default async function retireOpenClawTask(options: {
   manifest: AgentManifest;
   workspace: string;
   caller: DispatchCaller;
-  input: { id?: string; digest?: string };
+  input: { id?: string; digest?: string; apply?: boolean };
   operator: boolean;
   authority: DispatchAuthority;
 }) {
@@ -36,11 +36,7 @@ export default async function retireOpenClawTask(options: {
     throw new Error('dispatch-operator-caller-required');
   const selected = await current.journal.exclusive(async (state, save) => {
     const managedCaller = state.records.find((record) => record.threadId === caller.sessionKey);
-    if (
-      managedCaller &&
-      (managedCaller.id !== (input.id ?? managedCaller.id) ||
-        managedCaller.sessionCreation?.sessionId !== caller.sessionId)
-    )
+    if (managedCaller && managedCaller.sessionCreation?.sessionId !== caller.sessionId)
       throw new Error('dispatch-retire-context-mismatch');
     const id = input.id ?? managedCaller?.id;
     if (!id) throw new Error('dispatch-retire-selection-required');
@@ -82,7 +78,7 @@ export default async function retireOpenClawTask(options: {
       caller: { sessionKey: caller.sessionKey, sessionId: caller.sessionId, runId: caller.runId },
     });
     await authority.assertCurrent?.();
-    if (!input.digest)
+    if (!input.apply && !input.digest)
       return {
         status: 'retire-available',
         id,
@@ -93,7 +89,7 @@ export default async function retireOpenClawTask(options: {
         instruction:
           'Retire this exact task now without changing its issue or branch. Cleanup uses existing preservation and native ownership checks. Running work and unfinished cleanup remain pending.',
       };
-    if (input.digest !== digest) throw new Error('dispatch-recovery-stale');
+    if (!input.apply && input.digest !== digest) throw new Error('dispatch-recovery-stale');
     const now = (service.dependencies.now ?? Date.now)();
     record.retirement = assignmentRetirement({
       previous: record.retirement,

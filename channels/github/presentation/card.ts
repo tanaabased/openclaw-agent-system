@@ -1,3 +1,6 @@
+export const cardCopyInstructions =
+  'Treat presentation as a decoded Markdown string, not its JSON serialization. Decode JSON escapes exactly once before copying it into the final response. Preserve the two trailing spaces after &nbsp; as a Markdown hard break; do not add a backslash or remove the spacer. Preserve unquoted blank lines between cards and unquoted private sections; do not wrap the whole presentation in another blockquote or code fence. Show each returned card once. Additional narration should supply only facts missing from the cards, not another paraphrase of the plan or reply. Preserve attributed incoming comments and public reply cards even when they discuss the same work. When work finishes in this turn, describe the completed outcome rather than repeating planned actions as pending.';
+
 interface GitHubNotificationCardBaseInput {
   emoji: string;
   title: string;

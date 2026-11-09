@@ -31,7 +31,7 @@ github:
   runtimes: [openclaw]
   interval-minutes: 1440
   max-concurrent-items: 1
-  allowed-repository-owners: [__OWNER_NODE_ID__]
+  routing: ['tanaabased/*']
   issue-assignment:
     mode: work
     allowed:

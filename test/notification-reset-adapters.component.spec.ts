@@ -96,7 +96,7 @@ describe('agent/notification reset runtime adapters', () => {
           { nativeId: 'intake-job', sessionKey: 'intake-chat', enabled: true },
         ],
         [
-          'github-project-pickup',
+          'github-issue-pickup',
           { nativeId: 'pickup-job', sessionKey: 'pickup-chat', enabled: pickupEnabled },
         ],
       ]);
@@ -112,7 +112,7 @@ describe('agent/notification reset runtime adapters', () => {
         intake: { select: async () => ({ store: intake, selected: undefined, workspace: root }) },
         automations: {
           notificationResetSnapshot: snapshot,
-          notificationResetPickupSnapshot: async () => snapshot({}, root, 'github-project-pickup'),
+          notificationResetPickupSnapshot: async () => snapshot({}, root, 'github-issue-pickup'),
           notificationResetToggle: async (_manifest, _workspace, expected, restore) => {
             jobs.get(expected.id)!.enabled = restore ? expected.enabled : false;
           },
@@ -184,9 +184,9 @@ describe('agent/notification reset runtime adapters', () => {
         (await service.run(manifest, root, await service.preview(manifest, root, false))).status,
         'complete',
       );
-      assert.deepEqual(replaced, ['github-issue-assignment', 'github-project-pickup']);
+      assert.deepEqual(replaced, ['github-issue-assignment', 'github-issue-pickup']);
       assert.equal(jobs.get('github-issue-assignment')!.enabled, true);
-      assert.equal(jobs.get('github-project-pickup')!.enabled, pickupEnabled);
+      assert.equal(jobs.get('github-issue-pickup')!.enabled, pickupEnabled);
     });
 
   it('should coordinate both codex heartbeats and keep originally paused pickup paused', async () => {

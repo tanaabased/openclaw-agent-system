@@ -1,6 +1,7 @@
 import type { RegisteredAgentSystemTool } from '../../api/types.ts';
 import loadBoundToolManifest from '../../api/manifest-binding.ts';
 import AgentSystemToolError from '../../api/error.ts';
+import { routingInstructionsReference } from '../../agent/routing-instructions.ts';
 import initialModelRouting from '../../agent/initial-model-routing.ts';
 import type AgentManifestService from '../../manifest/service.ts';
 import { modelRoutingParameters } from './tool-schema.ts';
@@ -46,7 +47,15 @@ export default function createModelRoutingTool(
               workspace: loaded.scope.workspaceDir,
             });
             return {
-              content: [{ type: 'text' as const, text: JSON.stringify(output) }],
+              content: [
+                {
+                  type: 'text' as const,
+                  text: JSON.stringify({
+                    ...output,
+                    instructions: routingInstructionsReference(output.instructions),
+                  }),
+                },
+              ],
               details: {},
             };
           },

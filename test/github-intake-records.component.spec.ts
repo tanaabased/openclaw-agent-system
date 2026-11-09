@@ -12,6 +12,7 @@ import IntakeRecordStore, {
   intakeLocation,
 } from '../channels/github/intake/record-store.ts';
 import scanAssignments from '../channels/github/intake/scan-assignments.ts';
+import { inspectAdmittedIssue } from '../agent/dispatch-assignment.ts';
 import { baseline, intakeFixture } from './github-intake-fixture.ts';
 
 describe('channels/github/intake/records', () => {
@@ -48,6 +49,44 @@ describe('channels/github/intake/records', () => {
     };
   }
   for (const runtime of ['codex', 'openclaw'] as const) {
+    it(`should read historical ${runtime} scope evidence without re-admission or identity bypass`, async () => {
+      const { input, client, store, policy, events, repository } = setup(runtime);
+      const assigned = events.splice(0);
+      await scanAssignments({ ...input, activate: true });
+      events.push(...assigned);
+      await scanAssignments({ ...input, now: baseline + 120000 });
+      const state = (await store.read())!;
+      const record = state.records[0]!;
+      record.evidence.ownerPinned = true;
+      record.evidence.repositoryScope = {
+        source: 'allowed-repository-owners',
+        decision: 'local',
+        reason: 'match',
+        index: 0,
+      };
+      await writeFile(store.location.path, JSON.stringify(state));
+      policy.routing = [];
+      await scanAssignments({ ...input, policyDigest: 'route-only', now: baseline + 180000 });
+      const retained = (await new IntakeRecordStore(store.location).read())!;
+      assert.deepEqual(retained.records, state.records);
+      assert.equal(retained.baselineAt, state.baselineAt);
+      assert.equal(retained.policyDigest, 'route-only');
+      await inspectAdmittedIssue(retained.records[0]!, client);
+      const originalId = repository.nodeId;
+      repository.nodeId = 'R_replacement';
+      await assert.rejects(
+        inspectAdmittedIssue(retained.records[0]!, client),
+        /dispatch-repository-identity-changed/,
+      );
+      repository.nodeId = originalId;
+      record.evidence.repositoryScope.reason = 'identity-mismatch';
+      await writeFile(store.location.path, JSON.stringify(state));
+      assert.deepEqual((await store.read())!.records, state.records);
+      delete record.evidence.repositoryScope;
+      await writeFile(store.location.path, JSON.stringify(state));
+      assert.deepEqual((await store.read())!.records, state.records);
+    });
+
     it(`should exclude one repository without blocking another ${runtime} candidate`, async () => {
       const { input, client, store, policy, repository, events } = setup(runtime);
       policy.routing = ['!owner/excluded', 'owner/*'];
@@ -155,14 +194,14 @@ describe('channels/github/intake/records', () => {
       assert.equal((await store.read())!.baselineAt, saved.baselineAt);
     });
 
-    it(`should resolve compact ${runtime} policy before owner filtering and assignment admission`, async () => {
+    it(`should resolve compact ${runtime} actors before routed assignment admission`, async () => {
       const { input, store, policy, client, events, repository } = setup(runtime);
-      policy.allowedRepositoryOwners = [
-        { login: '', nodeId: repository.owner.nodeId, reference: repository.owner.nodeId },
-      ];
+      policy.routing = ['owner/*'];
       policy.issueAssignment!.allowed = [{ login: 'receiver', nodeId: '', reference: '@receiver' }];
-      client.resolveIdentity = async (reference) =>
-        reference === repository.owner.nodeId ? repository.owner : client.identity;
+      client.resolveIdentity = async (reference) => {
+        assert.equal(reference, '@receiver');
+        return client.identity;
+      };
       const assigned = events.splice(0);
       await scanAssignments({ ...input, activate: true });
       events.push(...assigned);
@@ -272,7 +311,7 @@ describe('channels/github/intake/records', () => {
     assert.equal((await scanAssignments({ ...input, now: baseline + 240000 })).admitted, 0);
   });
 
-  it('should still require assignment, actor and owner authorization for selected intake', async () => {
+  it('should still require assignment, actor authorization and repository routing for selected intake', async () => {
     const { input, store, client, item, events, repository } = setup('openclaw');
     const assigned = events.splice(0);
     await scanAssignments({ ...input, activate: true });
@@ -293,7 +332,7 @@ describe('channels/github/intake/records', () => {
     events[0]!.actor = { ...actor, nodeId: 'unapproved' };
     assert.equal((await scanAssignments(selected)).admitted, 0);
     events[0]!.actor = actor;
-    repository.owner = { ...repository.owner, nodeId: 'unpinned' };
+    repository.owner = { ...repository.owner, login: 'outside' };
     assert.equal((await scanAssignments(selected)).admitted, 0);
     assert.deepEqual((await store.read())!.records, []);
   });
@@ -399,13 +438,13 @@ describe('channels/github/intake/records', () => {
       assert.equal((await restarted.read())!.baselineAt, baseline);
     }
   });
-  it('should reject unauthorized actors, owner pin mismatches, closed and unassigned issues, bots, and old events', async () => {
+  it('should reject unauthorized actors, out-of-scope repositories, closed and unassigned issues, bots, and old events', async () => {
     const cases = [
       (f: ReturnType<typeof setup>) => {
         f.events[0]!.actor = { login: 'stranger', nodeId: 'U_stranger', type: 'User' };
       },
       (f: ReturnType<typeof setup>) => {
-        f.repository.owner = { login: 'owner', nodeId: 'O_other', type: 'Organization' };
+        f.repository.owner = { login: 'other', nodeId: 'O_other', type: 'Organization' };
       },
       (f: ReturnType<typeof setup>) => {
         f.item.state = 'closed';

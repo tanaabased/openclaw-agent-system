@@ -4,61 +4,74 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-describe('examples/openclaw-pr-journey retained feedback evidence', () => {
-  it('should permit only terminal acknowledgement on the earlier feedback event', async () => {
-    const source = await readFile('examples/openclaw-pr-journey/README.md', 'utf8');
-    const code = [...source.matchAll(/jq -e --slurp '([^']+)'/gu)]
-      .map((match) => match[1]!)
-      .find((text) => text.includes('initial-feedback-receipts-changed'));
-    assert.ok(code);
-    const before = {
-      id: 'initial',
-      source: 'exact source',
-      revision: 'exact revision',
-      phase: 'published',
-      receipt: { nodeId: 'reply' },
-      result: { privateText: 'Private answer.', publicText: 'Public answer.' },
-      work: { head: 'original head' },
-      turn: {
-        runId: 'initial-run',
-        message: 'exact input',
-        status: 'consumed',
-        consumedByEventId: 'input',
-      },
-    };
-    const after = {
-      ...before,
-      turn: {
-        ...before.turn,
-        status: 'completed',
-        replyEventId: 'terminal',
-        executionModel: 'fixture/model',
-      },
-    };
-    const execute = (event: unknown) =>
-      spawnSync('jq', ['-e', '--slurp', code], {
-        input: [{ feedback: { events: [before] } }, { feedback: { events: [event] } }]
-          .map((v) => JSON.stringify(v))
-          .join('\n'),
-        encoding: 'utf8',
-      });
-    const valid = execute(after);
-    assert.equal(valid.status, 0, valid.stderr);
-    for (const changed of [
-      { ...after, source: 'edited source' },
-      { ...after, revision: 'different revision' },
-      { ...after, receipt: { nodeId: 'different reply' } },
-      { ...after, result: { ...after.result, publicText: 'changed answer' } },
-      { ...after, work: { head: 'changed head' } },
-      { ...after, turn: { ...after.turn, runId: 'replacement-run' } },
-      { ...after, turn: { ...after.turn, consumedByEventId: 'different input' } },
-      { ...after, turn: { ...after.turn, failed: true } },
-      { ...after, turn: { ...after.turn, replyEventId: null } },
-      before,
-    ])
-      assert.notEqual(execute(changed).status, 0);
+for (const scenario of [
+  'openclaw-pr-journey',
+  'openclaw-pr-discovery',
+  'openclaw-pr-collaboration',
+  'openclaw-pr-reply-recovery',
+]) {
+  describe(`examples/${scenario} retained feedback evidence`, () => {
+    it('should permit only verified consumption on the earlier feedback event', async () => {
+      const source = await readFile(`examples/${scenario}/README.md`, 'utf8');
+      const code = [...source.matchAll(/jq -e --slurp '([^']+)'/gu)]
+        .map((match) => match[1]!)
+        .find((text) => text.includes('initial-feedback-receipts-changed'));
+      assert.ok(code);
+      const before = {
+        id: 'initial',
+        source: 'exact source',
+        revision: 'exact revision',
+        native: true,
+        phase: 'running',
+        receipt: { nodeId: 'reply' },
+        result: { privateText: 'Private answer.', publicText: 'Public answer.' },
+        work: { head: 'original head' },
+        turn: {
+          runId: 'initial-run',
+          message: 'exact input',
+          status: 'consumed',
+          consumedByEventId: 'input',
+        },
+      };
+      const after = {
+        ...before,
+        phase: 'delivered',
+      };
+      const execute = (event: unknown, initial: unknown = before) =>
+        spawnSync('jq', ['-e', '--slurp', code], {
+          input: [{ feedback: { events: [initial] } }, { feedback: { events: [event] } }]
+            .map((v) => JSON.stringify(v))
+            .join('\n'),
+          encoding: 'utf8',
+        });
+      const valid = execute(after);
+      assert.equal(valid.status, 0, valid.stderr);
+      assert.equal(execute(after, after).status, 0);
+      assert.equal(
+        execute(after, {
+          ...before,
+          turn: { runId: 'initial-run', message: 'exact input', status: 'accepted' },
+        }).status,
+        0,
+      );
+      for (const changed of [
+        { ...after, source: 'edited source' },
+        { ...after, revision: 'different revision' },
+        { ...after, receipt: { nodeId: 'different reply' } },
+        { ...after, result: { ...after.result, publicText: 'changed answer' } },
+        { ...after, work: { head: 'changed head' } },
+        { ...after, turn: { ...after.turn, runId: 'replacement-run' } },
+        { ...after, turn: { ...after.turn, consumedByEventId: 'different input' } },
+        { ...after, turn: { ...after.turn, failed: true } },
+        { ...after, turn: { ...after.turn, cancelled: true } },
+        { ...after, turn: { ...after.turn, consumedByEventId: null } },
+        { ...after, turn: { ...after.turn, status: 'accepted' } },
+        before,
+      ])
+        assert.notEqual(execute(changed).status, 0);
+    });
   });
-});
+}
 
 for (const [scenario, itemType] of [
   ['openclaw-issue-journey', 'issue'],
@@ -96,13 +109,13 @@ for (const [scenario, itemType] of [
               ]
             : [];
         await write('feedback', {
-          assessmentSummaries: summaries.map((nodeId) => ({ receipt: { nodeId } })),
           feedback: {
             events: [
               ...(scenario === 'openclaw-pr-journey'
                 ? [{ itemType: 'issue', turn: { runId: 'earlier' } }]
                 : []),
               {
+                id: 'event',
                 itemType,
                 source: JSON.stringify({ nodeId: 'source' }),
                 receipt: { nodeId: 'reply' },
@@ -112,6 +125,15 @@ for (const [scenario, itemType] of [
             ],
           },
         });
+        await write('reply-drafts', [
+          ...summaries.map((nodeId) => ({ update: { facts: [] }, receipt: { nodeId } })),
+          {
+            feedback: { eventId: 'event' },
+            receipt: { nodeId: 'reply' },
+            privateText: 'Private explanation.',
+            publicText: 'Public answer.',
+          },
+        ]);
         await write('feedback-source', { node_id: 'source' });
         const replies = [
           ...summaries.map((node_id) => ({

@@ -1,3 +1,4 @@
+import taskPullRequest from './task-pull-request.ts';
 import { dispatchStorageNotice } from './dispatch-storage.ts';
 import { awaitingReassignment } from './assignment-retirement.ts';
 import intakeDebug from './intake-debug.ts';
@@ -223,7 +224,7 @@ export default function openclawIntakeReport(input: {
     if (failure.id.startsWith('feedback-')) {
       const record = managing.find((record) => record.id === failure.id.slice(9))!;
       const item = intake?.records.find((entry) => entry.id === record.intakeId);
-      const pr = record.work?.delivery?.pullRequest;
+      const pr = taskPullRequest(record);
       const stalls = Object.entries(record.feedback?.discoveryStalls ?? {}).filter(
         ([, stall]) => stall.attempts >= 3,
       );

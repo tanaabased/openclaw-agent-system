@@ -59,7 +59,7 @@ openclaw agent-system automations list --json | jq -e '.status == "aligned" and 
 
 # should create one unassigned manual-launch target
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/emori"
-openclaw agent-system tool gh -- api --method POST repos/tanaabased/big-test-bucket/issues -f "title=agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System openclaw-issue-launch $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" -f 'body=Disposable manual launch target; notification-hidden-initial-fact. Document closing disposable issues after evidence capture; do not assign.' | tee "$TMPDIR/manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
+node --import tsx "$GITHUB_WORKSPACE/scripts/notification-fixture-github.ts" create --title "agent-system-test-$GITHUB_REPOSITORY_ID-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT- Agent System openclaw-issue-launch $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --body 'Disposable manual launch target; notification-hidden-initial-fact. Document closing disposable issues after evidence capture; do not assign.' | tee "$TMPDIR/manual-issue.json" | jq -e '.state == "open" and (.assignees | length) == 0'
 ```
 
 ## Testing
@@ -73,6 +73,7 @@ node --input-type=module -e 'import { callGatewayFromCli } from "openclaw/plugin
 node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" manual-launch-first 600000
 node --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { setTimeout } from 'node:timers/promises';
 import { callGatewayFromCli } from 'openclaw/plugin-sdk/gateway-runtime';
@@ -82,12 +83,15 @@ let record;
 const deadline = Date.now() + 300000;
 while (Date.now() < deadline) {
   record = records()[0];
-  if (record?.result?.outcome === 'plan-ready') break;
+  if (record?.assessmentTurn?.runId) break;
   await setTimeout(1000);
 }
 assert.equal(records().length, 1);
-assert.equal(record?.result?.outcome, 'plan-ready');
-assert.ok(record.result.fullAssessment);
+assert.ok(record?.assessmentTurn?.runId);
+execFileSync(process.execPath, ['--import', 'tsx', process.env.GITHUB_WORKSPACE + '/scripts/wait-for-agent-run.ts', record.assessmentTurn.runId, '600000'], {stdio:'inherit'});
+record = records()[0];
+assert.equal(record.result, undefined);
+assert.equal(record.stageReceipt, undefined);
 assert.equal(record.intakeId, undefined);
 assert.equal(record.manualIssue.initiation.kind, 'operator');
 assert.equal(record.manualIssue.selections.mode, 'plan');
@@ -98,8 +102,6 @@ assert.equal(described.session.sessionId, record.sessionCreation.sessionId);
 assert.equal(record.effective.status, 'verified');
 writeFileSync(process.env.TMPDIR + '/manual-launch-evidence.json', JSON.stringify(record));
 NODE
-child_run=$(jq -er .assessmentTurn.runId "$TMPDIR/manual-launch-evidence.json")
-node --import tsx "$GITHUB_WORKSPACE/scripts/wait-for-agent-run.ts" "$child_run" 600000
 number=$(jq -er .number "$TMPDIR/manual-issue.json")
 cd "$GITHUB_WORKSPACE/examples/openclaw-issue-launch/emori"
 openclaw agent-system tool gh -- api "repos/tanaabased/big-test-bucket/issues/$number" | jq -e '(.assignees | length) == 0'
@@ -157,11 +159,15 @@ let record;
 const deadline = Date.now() + 300000;
 while (Date.now() < deadline) {
   record = records()[0];
-  if (record?.result?.outcome === 'plan-ready') break;
+  if (record?.assessmentTurn?.runId) break;
   await setTimeout(1000);
 }
 assert.equal(records().length, 1);
-assert.equal(record?.result?.outcome, 'plan-ready');
+assert.ok(record?.assessmentTurn?.runId);
+execFileSync(process.execPath, ['--import', 'tsx', process.env.GITHUB_WORKSPACE + '/scripts/wait-for-agent-run.ts', record.assessmentTurn.runId, '600000'], {stdio:'inherit'});
+record = records()[0];
+assert.equal(record.result, undefined);
+assert.equal(record.stageReceipt, undefined);
 assert.equal(record.manualIssue.pullRequest.headSha, pr.head.sha);
 assert.equal(record.manualIssue.pullRequest.authorId, pr.user.node_id);
 assert.equal(execFileSync('git', ['-C', record.worktree, 'rev-parse', 'HEAD'], {encoding:'utf8'}).trim(), pr.head.sha);

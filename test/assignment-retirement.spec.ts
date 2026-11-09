@@ -745,7 +745,7 @@ describe('assignment retirement', () => {
     h.fixture.events.push(event);
     h.admissions.push({ ...h.admitted, id: 'successor', assignment: event });
     h.fixture.policy.issueAssignment!.allowed = [];
-    h.fixture.policy.allowedRepositoryOwners = [];
+    h.fixture.policy.routing = [];
     h.advance(1);
     await h.run();
     assert.equal(h.record.retirement, undefined);

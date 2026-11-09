@@ -1,10 +1,29 @@
 import { feedbackRevision } from './feedback-source.ts';
 import type { OpenClawFeedbackProvider } from './openclaw-feedback.ts';
 import {
+  isReviewFeedback,
   reviewFeedback,
   reviewReplyFeedback,
   type GitHubCanonicalFeedback,
 } from '../channels/github/provider/review-feedback.ts';
+
+/** Retained provider metadata selects the exact source; prose never selects a destination. */
+export function feedbackTarget(
+  repository: string,
+  event: {
+    itemType: 'issue' | 'pull-request';
+    number: number;
+    source: string;
+  },
+) {
+  const source = JSON.parse(event.source) as GitHubCanonicalFeedback;
+  const kind = isReviewFeedback(source)
+    ? source.feedback.receipt.kind === 'review-comment'
+      ? 'discussion_r'
+      : 'pullrequestreview-'
+    : 'issuecomment-';
+  return `https://github.com/${repository}/${event.itemType === 'issue' ? 'issues' : 'pull'}/${event.number}#${kind}${source.databaseId}`;
+}
 
 export function replyLocator(value: string) {
   const match =
@@ -98,3 +117,14 @@ export default async function readReplyTarget(provider: OpenClawFeedbackProvider
   };
 }
 export type ReplyTarget = Awaited<ReturnType<typeof readReplyTarget>>;
+
+/** Reconciliation reads the destination identity, not a possibly deleted source comment. */
+export async function verifyReplyDestination(
+  provider: OpenClawFeedbackProvider,
+  target: ReplyTarget,
+) {
+  const current = await readReplyTarget(provider, target.url.split('#')[0]!);
+  if (current.repositoryNodeId !== target.repositoryNodeId || current.nodeId !== target.nodeId)
+    throw new Error('reply-target-diverged');
+  return target;
+}

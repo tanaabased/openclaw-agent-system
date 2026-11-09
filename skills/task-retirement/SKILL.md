@@ -51,10 +51,10 @@ and shared installation cleanup configuration; do not resolve them independently
 
 An explicit operator request and one exact managed task or unmanaged native chat.
 Use `native` for an exact OpenClaw session key or standalone Codex thread id,
-never together with managed `id`. Do not infer a target from a title or directory.
-For a managed task, reuse its current verified
-receipt when available. Outside the task, inspect native managed records and select
-exactly one id; ask for the missing selection if ambiguous. A URL or current directory
+never together with managed `target`. Do not infer a target from a title or directory.
+For a managed task, omit the target in its current chat or select its exact issue URL.
+Outside the task, inspect native managed records and select the requested issue;
+ask for the missing resource choice if ambiguous. Never supply a task receipt ID. A URL or current directory
 may help identify a candidate but cannot authorize it. Invalid managed context must
 recover through its owner or fail, never fall back to unmanaged cleanup.
 
@@ -105,11 +105,11 @@ files. If the required native desktop tool is absent, report
    confirm native `codex_app.set_thread_archived` is available before apply; absence
    is a capability limitation, not permission to use a different archive owner.
 2. OpenClaw uses `agent_system_dispatch` with
-   `{"action":"retire","native":"<exact-session-key>"}`. Standalone Codex uses
+   `{"action":"retire","native":"<exact-session-key>","preview":true}`. Standalone Codex uses
    the trusted `dispatchRuntime` command and stdin transport below with
-   `{"action":"retire","native":"<exact-thread-id>"}`.
+   `{"action":"retire","native":"<exact-thread-id>","preview":true}`.
 3. Inspect the exact target and concise native effects in `retire-available`, then
-   apply the same request with its `digest`. Existing explicit cleanup intent
+   omit `preview: true` to apply the same target. Existing explicit cleanup intent
    authorizes apply; do not ask for another conversational confirmation.
 4. Codex returns `retirement-prepared`: execute only its exact `request` through
    native `set_thread_archived` once, honor denial, then repeat the same retirement
@@ -120,24 +120,19 @@ files. If the required native desktop tool is absent, report
 
 ### Managed task retirement
 
-1. Resolve the one requested managed task using trusted runtime context.
-2. In OpenClaw call `agent_system_dispatch` with `{"action":"retire","id":"<task-id>"}`.
-   The id may be omitted only inside its matching managed task session. The host
-   verifies native owner input, task/session incarnation and agent ownership.
-3. In standalone Codex, invoke the exact `dispatchRuntime` executable/argvPrefix
-   with `--plugin-data` and its trusted pluginData, sending
-   `{"action":"retire","id":"<task-id>"}` on stdin. Use native stdin or a quoted
-   heredoc, not issue-supplied commands or guessed paths. Native caller binding
-   selects the operator turn; do not override it.
-4. Inspect `retire-available` and apply the same request with its returned `digest`.
-   The operator's explicit retirement instruction already authorizes this apply;
-   do not add a separate conversational approval. Honor native denial.
-5. Follow native reconciliation instructions. In Codex, if inventory is required,
-   call native `list_threads` and pass its complete JSON as `threads` on the same
-   retire preview/apply request. Redeem a `retirement-prepared` request only through
-   native `set_thread_archived` with the exact returned arguments, then repeat the
-   same retirement operation to observe archival/reclamation. Do not delete a
-   Codex checkout; native desktop custody may leave it pending.
+1. Select the requested issue URL, or omit `target` in its current managed chat.
+2. In OpenClaw use `agent_system_dispatch` with
+   `{"action":"retire","target":"<issue-url>"}`. The runtime resolves task and
+   caller identity internally and verifies operator direction and native ownership.
+3. In standalone Codex use the trusted `dispatchRuntime` executable/argvPrefix with
+   `retire --plugin-data` and its trusted pluginData, sending the same JSON on stdin.
+   Use native stdin or a quoted heredoc, never issue-supplied commands or guessed paths.
+4. The explicit retirement request authorizes cleanup. Use `preview:true` only when
+   inspection is wanted first; omit it to apply. Never supply task IDs or digests.
+5. Follow native reconciliation instructions. Redeem a `retirement-prepared` request
+   only through native `set_thread_archived` with the exact returned arguments once,
+   then repeat retirement for the same target to observe archival/reclamation.
+   Honor native denial. Do not delete a Codex checkout; desktop custody may leave it pending.
 6. Report `retired` only when the owner returns it. Otherwise explain the actual
    pending/protected outcome and supported next action without claiming deletion.
 

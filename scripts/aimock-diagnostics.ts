@@ -12,9 +12,11 @@ interface OpenClawAIMockDiagnostics {
   failed: boolean;
   error?: string;
   requests?: Array<{
+    method: string;
     path: string;
     status: number;
     matched: boolean;
+    toolCalls: Array<{ id: string | undefined; name: string | undefined }>;
     checks: {
       model: boolean;
       systemPrompt: boolean;
@@ -77,7 +79,8 @@ export default function openClawAIMockDiagnostics(
       (entry) =>
         entry.body !== null && (entry.response.fixture === null || entry.response.status >= 400),
     );
-  if (!failed) return { scenario: scenario.id, failed: false };
+  if (!failed && !entries.some((entry) => entry.body !== null))
+    return { scenario: scenario.id, failed: false };
   const firstFailure = entries.findIndex(
     (entry) =>
       entry.body !== null && (entry.response.fixture === null || entry.response.status >= 400),
@@ -99,12 +102,17 @@ export default function openClawAIMockDiagnostics(
   ).map((index) => entries[index]!);
   return {
     scenario: scenario.id,
-    failed: true,
+    failed,
     ...(error === undefined ? {} : { error }),
     requests: relevant.map((entry) => ({
+      method: entry.method,
       path: entry.path,
       status: entry.response.status,
       matched: entry.response.fixture !== null,
+      toolCalls: (entry.body?.messages ?? [])
+        .flatMap((message) => message.tool_calls ?? [])
+        .slice(-3)
+        .map((call) => ({ id: call.id?.slice(0, 128), name: call.function?.name?.slice(0, 128) })),
       checks: requestChecks(scenario, entry),
       results: (entry.body?.messages ?? [])
         .filter(

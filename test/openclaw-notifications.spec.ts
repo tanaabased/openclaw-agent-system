@@ -237,7 +237,7 @@ describe('agent/openclaw-notifications', () => {
     assert.equal(JSON.stringify(result).includes('policyDigest'), false);
   });
 
-  it('should report implementation questions without changing the retained assessment', async () => {
+  it('should keep saved implementation questions out of native activity status', async () => {
     const f = fixture();
     const item = {
       ...record(),
@@ -256,8 +256,8 @@ describe('agent/openclaw-notifications', () => {
     } as OpenClawDispatchRecord;
     f.records.push(item);
     const result = await f.service.inspect(f.manifest, '/workspace', selector);
-    assert.equal(result.items[0]?.workflow?.phase, 'clarification-needed');
-    assert.equal(result.items[0]?.waitingReason, 'clarification-needed');
+    assert.equal(result.items[0]?.workflow?.phase, 'native-unobserved');
+    assert.equal(result.items[0]?.waitingReason, undefined);
     assert.equal(item.result!.outcome, 'plan-ready');
     assert.equal(f.requests, 0);
   });
@@ -279,7 +279,7 @@ describe('agent/openclaw-notifications', () => {
       if (outcome) item.work!.result = { outcome, summary: 'Done.', fullResult: 'Checked.' };
       const before = structuredClone(item);
       const result = await f.service.inspect(f.manifest, '/workspace', selector);
-      assert.equal(result.items[0]?.workflow?.phase, outcome ? 'delivery' : 'running');
+      assert.equal(result.items[0]?.workflow?.phase, 'native-unobserved');
       assert.equal(result.items[0]?.workflow?.phase, workflowStatus(item));
       assert.deepEqual(item, before);
     }
@@ -416,7 +416,7 @@ describe('agent/openclaw-notifications', () => {
     r.phase = 'creating';
     assert.equal(
       (await f.service.inspect(f.manifest, '/workspace')).items[0]?.workflow?.phase,
-      'uncertain',
+      'creating',
     );
     r.phase = 'created';
     r.worktree = '/worktree';
@@ -462,6 +462,49 @@ describe('agent/openclaw-notifications', () => {
       refresh: false,
     });
     assert.equal(result.status, 'completed');
+  });
+
+  it('should observe native preparation independently of failed replies and historical results', async () => {
+    const f = fixture();
+    const r: OpenClawDispatchRecord = {
+      ...record(),
+      issueKey: issueKey(f.state!.records[0]!),
+      phase: 'created',
+      worktree: '/worktree',
+      threadId: 'issue-chat',
+      sessionCreation: {
+        attempted: true,
+        sourceSessionId: 'coordinator',
+        sourceRunId: 'run',
+        sourceToolCallId: 'tool',
+        sessionId: 'session',
+        verified: true,
+      },
+      feedback: { baseline: {}, events: [], code: 'feedback-publication-failed' },
+      blocker: 'historical-assessment-failed',
+    };
+    f.records.push(r);
+    const before = structuredClone(r);
+    for (const target of ['prepared', 'worktree-ready'] as const) {
+      const result = await f.service.wait(f.manifest, '/workspace', {
+        selector,
+        target,
+        timeoutMs: 1,
+        refresh: false,
+      });
+      assert.equal(result.status, 'completed');
+      assert.equal(result.observation.items[0]?.failureCode, undefined);
+      assert.equal(result.observation.items[0]?.reasonCode, 'feedback-publication-failed');
+      assert.equal(result.observation.items[0]?.assessmentOutcome, undefined);
+    }
+    const historical = await f.service.wait(f.manifest, '/workspace', {
+      selector,
+      target: 'plan-ready',
+      timeoutMs: 1,
+      refresh: false,
+    });
+    assert.equal(historical.status, 'timed-out');
+    assert.deepEqual(r, before);
   });
 
   it('should report blocked and unreadable state as failure rather than an empty successful scan', async () => {
@@ -614,7 +657,8 @@ describe('agent/openclaw-notifications', () => {
       refresh: true,
     });
     assert.equal(result.status, 'completed');
-    assert.equal(result.observation.items[0]?.workflow?.phase, 'plan-ready');
+    assert.equal(result.observation.items[0]?.workflow?.phase, 'native-unobserved');
+    assert.equal(result.observation.items[0]?.assessmentOutcome, 'plan-ready');
     assert.equal(requests, 2);
     assert.equal(inspections, 2);
   });

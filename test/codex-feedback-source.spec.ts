@@ -23,6 +23,49 @@ const comment = (nodeId: string, body = '@receiver explain this') => ({
   updatedAt: '2026-10-13T01:00:00Z',
 });
 describe('agent/codex-feedback-source', () => {
+  it('should admit unrelated authors while an outgoing lookup fails and revisit deferred self input', async () => {
+    const policy = intakeFixture().policy;
+    const human = { ...account, login: 'human', nodeId: 'U_human' };
+    policy.issueAssignment!.feedback = { inherit: true, allowed: [human] };
+    const state: CodexFeedback = { startedAt: 0, baseline: { I: {} }, events: [] };
+    const comments = [comment('own'), { ...comment('human'), author: human, databaseId: 43 }];
+    let failed = true;
+    const scan = () =>
+      discoverCodexFeedback({
+        state,
+        policy,
+        owner: 'owner',
+        name: 'repo',
+        number: 3,
+        nodeId: 'I',
+        itemType: 'issue',
+        now: Date.parse('2026-10-14T00:00:00Z'),
+        client: {
+          identity: account,
+          listIssueComments: async () => ({ comments, truncated: false }),
+          getIssueComment: async () => comments[0]!,
+        },
+        ownCommentIds: async () => {
+          if (failed) throw new Error('outgoing lookup unavailable');
+          return [];
+        },
+        discovery: { budget: new DiscoveryBudget(), save: async () => {} },
+      });
+    await scan();
+    assert.deepEqual(
+      state.events.map((event) => event.sourceId),
+      ['human'],
+    );
+    assert.equal(state.baseline.I!.own, undefined);
+    assert.equal(state.watermarks?.I, undefined);
+    failed = false;
+    await scan();
+    assert.deepEqual(
+      state.events.map((event) => event.sourceId),
+      ['human', 'own'],
+    );
+    assert.equal(typeof state.watermarks?.I, 'number');
+  });
   it('should persist complete grouped review checkpoints and baselines beyond transport page sizes', async () => {
     const policy = intakeFixture().policy;
     policy.issueAssignment!.feedback = { inherit: true, allowed: [] };

@@ -56,13 +56,10 @@ export default async function reportDispatch(
   if (input.automationId !== run.automationId || input.currentTimeIso !== run.currentTimeIso)
     return {
       status: 'continue',
-      nextAction: 'report',
-      request: {
-        action: 'report',
-        automationId: run.automationId,
-        currentTimeIso: run.currentTimeIso,
-      },
-      instruction: 'Call report with this scheduled occurrence; do not finish yet.',
+      nextAction: 'next',
+      request: { action: 'next' },
+      instruction:
+        'Refresh dispatch next for the current native occurrence, then report; never copy another occurrence into the request.',
     };
   const present = (response: string) => {
     const diagnostic = intakeDebug(context.debug, state.records, (record) => {
@@ -162,7 +159,7 @@ function remediation(value: string) {
   if (value.includes('authority') || value.includes('policy') || value.includes('binding'))
     return 'Restore current issue assignment, repository access, and configured authority before retrying. Retain the existing chat and evidence.';
   if (value.includes('result'))
-    return 'Inspect the retained issue chat and its failure or interruption. Resume that same chat to finish the assessment and submit its structured result; do not launch a replacement.';
+    return 'Inspect the retained issue chat and its failure or interruption. Resume that same chat from current direction and use the native assessment formatter if a presentation is needed; do not save a new assessment or launch a replacement.';
   return 'Inspect this operation and the retained native creation receipt, chat, and worktree. Resolve the reported condition, then reconcile the existing creation; never repeat an uncertain create or change credentials without evidence of an authentication failure.';
 }
 function blocker(

@@ -27,8 +27,6 @@ export const launchRequestSchema = Type.Object(
       Type.Literal('prepare'),
       Type.Literal('reconcile'),
     ]),
-    id: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
-    digest: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
     assessment: Type.Optional(assessmentSchema),
     fallback: Type.Optional(Type.Literal('default')),
     title: Type.Optional(

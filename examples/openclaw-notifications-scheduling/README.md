@@ -11,7 +11,7 @@ Verify that its ID, routing, channel readiness, and dispatch enrollment are pres
 
 ## What Does Not Belong Here
 
-- Pickup enrollment and assignment handoff: [Project Pickup](../openclaw-project-picker/README.md).
+- Pickup enrollment and assignment handoff: [Issue pickup](../openclaw-project-picker/README.md).
 - Issue admission, concurrent assessment, and duplicate prevention: [intake](../openclaw-issue-intake/README.md).
 - Assignment failures and authority: [assignment policy](../openclaw-issue-assignment-policy/README.md). Generic prompt/command scheduling: [automations](../openclaw-automation-command/README.md).
 
@@ -28,9 +28,8 @@ Verify that its ID, routing, channel readiness, and dispatch enrollment are pres
 set -euo pipefail
 openclaw-setup --workspace "$TMPDIR/main" --agent-system "$AGENT_SYSTEM_PACKAGE" --needs-secret-service
 openclaw-aimock prepare --scenario openclaw-project-picker
-owner_node=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api orgs/tanaabased --jq .node_id)
 receiver_node=$(GH_TOKEN="$GH_TOKEN_TANAABOT" gh api user --jq 'select(.login == "tanaabot") | .node_id')
-sed -e "s|__OWNER_NODE_ID__|$owner_node|g" -e "s|__RECEIVER_NODE_ID__|$receiver_node|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
+sed -e "s|__RECEIVER_NODE_ID__|$receiver_node|g" "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/tanaabot/agent.yaml" > "$TMPDIR/notification-agent.yaml"
 mv "$TMPDIR/notification-agent.yaml" "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/tanaabot/agent.yaml"
 OPENCLAW_LOG_LEVEL=info openclaw-gateway start
 cd "$GITHUB_WORKSPACE/examples/openclaw-notifications-scheduling/tanaabot"

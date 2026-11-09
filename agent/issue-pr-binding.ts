@@ -5,7 +5,6 @@ import type { DeliveryAnnouncementState } from './delivery-announcement-state.ts
 /** both adapters bind the same provider identity without implying publication success. */
 export default async function bindIssuePullRequest(input: {
   id: string;
-  digest?: string;
   operator: unknown;
   localBranch: string;
   head: string;
@@ -41,25 +40,6 @@ export default async function bindIssuePullRequest(input: {
     (previous?.announcement?.attempted && !previous.announcement.receipt)
   )
     throw new Error('delivery-binding-publication-pending');
-  const digest = automationHash({
-    id,
-    operator: input.operator,
-    adopted,
-    localBranch,
-    head,
-    previous,
-  });
-  if (input.digest === undefined)
-    return {
-      status: 'binding-available' as const,
-      id,
-      digest,
-      pullRequest: adopted,
-      localBranch,
-      instruction:
-        'Apply this exact digest to select and fetch this PR. Preserve local work; binding records no publication or announcement.',
-    };
-  if (input.digest !== digest) throw new Error('delivery-binding-stale');
   const ref = `refs/agent-system/pr/${id}/${adopted.head}`;
   await git(['fetch', '--no-tags', 'origin', `refs/heads/${adopted.branch}:${ref}`]);
   if ((await git(['rev-parse', '--verify', `${ref}^{commit}`])).trim() !== adopted.head)

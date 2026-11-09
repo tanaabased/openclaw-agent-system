@@ -1,4 +1,9 @@
+import { selectCodexTaskOwner } from './codex-turn-task.ts';
+import { routeMaterialResponse } from './native-material.ts';
+import renderNativeAssessment, { renderBoundAssessment } from './assessment-render.ts';
+import { inspectCodexWorkspaceBinding } from './codex-workspace-binding.ts';
 import workflowFailure from './workflow-failure.ts';
+import dispatchInspection, { dispatchInspectionSummary } from './dispatch-inspection.ts';
 import { automationHash } from './automation-hash.ts';
 import codexIssueLaunch from './codex-issue-launch.ts';
 import { managedIssueState, dispatchAdmission } from './managed-issue.ts';
@@ -13,7 +18,13 @@ import { codexInstanceStore } from './codex-assignment-claims.ts';
 import reconcileCodexLifecycle from './codex-assignment-lifecycle.ts';
 import { inspectCodexDispatchActivation } from './codex-automations.ts';
 import reconcileCodexCapacity from './codex-capacity-reconcile.ts';
-import { nextDispatch, prepareDispatch, recover } from './codex-dispatch-admission.ts';
+import {
+  dispatchRoutingRequired,
+  nextDispatch,
+  prepareDispatch,
+  recover,
+  unpreparedDispatch,
+} from './codex-dispatch-admission.ts';
 import { assessDispatch, handoffDispatch, presentDispatch } from './codex-dispatch-assessment.ts';
 import {
   issueUrl,
@@ -63,7 +74,6 @@ export async function runCodexDispatch(
           action: request.deliveryOperation ?? 'prepare',
           title: request.title,
           body: request.body,
-          digest: request.digest,
         },
         {
           codexHome: deps.codexHome,
@@ -74,45 +84,111 @@ export async function runCodexDispatch(
         },
       );
     if (context.status !== 'managed' || !('owner' in context) || !context.owner) return context;
+    const pageRequest = {
+      action: 'implementation',
+      operation: 'context',
+      ...(request.target ? { target: request.target } : {}),
+    };
     if (context.owner.eventId) {
       if (request.operation === 'delivery')
         throw new Error('implementation-feedback-delivery-owner-required');
-      return runCodexFeedback(
+      return routeMaterialResponse(
+        await runCodexFeedback(
+          pluginData,
+          {
+            action:
+              request.operation === 'result' ? 'implementation-result' : 'implementation-context',
+            id: context.owner.id,
+            eventId: context.owner.eventId,
+            ...(request.material ? { material: request.material } : {}),
+            ...(request.result ? { implementationResult: request.result } : {}),
+          },
+          deps,
+        ),
+        pageRequest,
+      );
+    }
+    return routeMaterialResponse(
+      await runCodexContinuation(
         pluginData,
         {
           action:
-            request.operation === 'result' ? 'implementation-result' : 'implementation-context',
+            request.operation === 'delivery'
+              ? 'delivery'
+              : request.operation === 'result'
+                ? 'result'
+                : 'context',
           id: context.owner.id,
-          eventId: context.owner.eventId,
-          ...(request.result ? { implementationResult: request.result } : {}),
+          ...(request.material ? { material: request.material } : {}),
+          ...(request.result ? { result: request.result } : {}),
+          ...(request.operation === 'delivery'
+            ? {
+                delivery: {
+                  action: request.deliveryOperation,
+                  title: request.title,
+                  body: request.body,
+                },
+              }
+            : {}),
         },
-        deps,
+        { ...deps, directOperator: true, directScope: request.scope },
+      ),
+      pageRequest,
+    );
+  }
+  if (
+    action === 'assessment' &&
+    input &&
+    typeof input === 'object' &&
+    'operation' in input &&
+    input.operation === 'render'
+  ) {
+    const binding = await (deps.inspectBinding ?? inspectCodexWorkspaceBinding)(pluginData);
+    if (binding.status !== 'unbound' || ('id' in input && input.id)) {
+      const current = await selectCodexIntake(
+        pluginData,
+        { ...deps, inspectBinding: async () => binding },
+        { resolvePolicy: false, inspectionOnly: true },
+      );
+      const journal = new CodexDispatchStore(
+        current.store.location.root,
+        current.store.location.scope,
+      );
+      let records = (await journal.read()).records;
+      const session = deps.threadId ?? process.env.CODEX_THREAD_ID ?? '';
+      if (
+        session &&
+        !records.some((record) => record.threadId === session) &&
+        records.some((record) => !record.threadId && record.phase === 'creating')
+      ) {
+        const owner = await withNative(current, deps, (native) =>
+          selectCodexTaskOwner(records, session, native.find),
+        );
+        if (owner)
+          records = records.map((record) =>
+            record.id === owner.record.id
+              ? {
+                  ...record,
+                  threadId: session,
+                  worktree: record.worktree ?? owner.native.cwd,
+                }
+              : record,
+          );
+      }
+      return renderBoundAssessment(
+        { ...input, action },
+        {
+          runtime: 'codex',
+          records,
+          admitted: (await current.store.read())?.records ?? [],
+          session,
+          workspace: current.workspace,
+          debug: current.manifest.debug,
+          workflow: current.manifest.github?.notifications?.issueAssignment,
+        },
       );
     }
-    return runCodexContinuation(
-      pluginData,
-      {
-        action:
-          request.operation === 'delivery'
-            ? 'delivery'
-            : request.operation === 'result'
-              ? 'result'
-              : 'context',
-        id: context.owner.id,
-        ...(request.result ? { result: request.result } : {}),
-        ...(request.operation === 'delivery'
-          ? {
-              delivery: {
-                action: request.deliveryOperation,
-                title: request.title,
-                body: request.body,
-                digest: request.digest,
-              },
-            }
-          : {}),
-      },
-      { ...deps, directOperator: true, directScope: request.scope },
-    );
+    return renderNativeAssessment({ ...input, action });
   }
   if (action === 'assessment')
     return codexAssessmentEntry(
@@ -124,7 +200,11 @@ export async function runCodexDispatch(
   if (action === 'retire' && typeof input.native === 'string')
     return retireCodexNative(
       pluginData,
-      { native: input.native, digest: input.digest as string | undefined },
+      {
+        native: input.native,
+        digest: input.digest as string | undefined,
+        apply: input.apply as boolean | undefined,
+      },
       deps,
     );
   deps = {
@@ -135,10 +215,10 @@ export async function runCodexDispatch(
     const observation = await executeCodexDispatch(pluginData, 'observe-denials', {}, deps);
     if (!observation || !('status' in observation) || observation.status !== 'ready')
       return observation;
-    const retirement = await reconcileCodexLifecycle(pluginData, deps, input.threads);
-    if (retirement) return retirement;
     const feedback = await runCodexFeedback(pluginData, { action: 'next' }, deps);
     if (!['idle', 'disabled'].includes(feedback.status)) return feedback;
+    const retirement = await reconcileCodexLifecycle(pluginData, deps, input.threads);
+    if (retirement) return retirement;
   }
   return executeCodexDispatch(pluginData, action, input, deps);
 }
@@ -157,15 +237,59 @@ async function executeCodexDispatch(
   const store = new CodexDispatchStore(current.store.location.root, current.store.location.scope);
   if (action === 'inspect') {
     const state = await store.read();
+    const { records, summary, ...page } = dispatchInspection(
+      state.records,
+      managedIssueState(retainedAdmission, state.records)?.records ?? [],
+      input as Parameters<typeof dispatchInspection>[2],
+    );
     return {
-      ...state,
-      records: state.records.map((record) => ({
-        ...record,
-        workflowStatus: workflowStatus(record),
-        assignmentObservation: record.assignmentObservation,
-        assignmentWarning:
-          record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
-      })),
+      ...page,
+      version: state.version,
+      scope: state.scope,
+      resetGeneration: state.resetGeneration,
+      run: state.run && {
+        id: state.run.id,
+        actions: state.run.actions,
+        stopped: state.run.stopped,
+      },
+      records: summary
+        ? records.map(dispatchInspectionSummary)
+        : records.map((record) => ({
+            id: record.id,
+            intakeId: record.intakeId,
+            phase: record.phase,
+            threadId: record.threadId,
+            clientThreadId: record.clientThreadId,
+            worktree: record.worktree,
+            effective: record.effective,
+            progression: record.progression,
+            pullRequestLink: record.pullRequestLink,
+            branch: record.issueBranch?.name,
+            supersededBy: record.supersededBy,
+            reset: record.reset,
+            retired: record.retired,
+            retirement: record.retirement && {
+              reason: record.retirement.reason,
+              code: record.retirement.code,
+              archivedAt: record.retirement.archivedAt,
+              worktreeRemovedAt: record.retirement.worktreeRemovedAt,
+            },
+            denial: record.denial && {
+              operation: record.denial.operation,
+              callId: record.denial.callId,
+              turnId: record.denial.turnId,
+            },
+            code:
+              record.result?.outcome === 'operator-setup-blocker' ? record.result.code : undefined,
+            implementationPreparationError: record.implementationPreparationError,
+            feedback: record.feedback && {
+              events: record.feedback.events.map(({ id, phase, code }) => ({ id, phase, code })),
+            },
+            workflowStatus: workflowStatus(record),
+            assignmentObservation: record.assignmentObservation,
+            assignmentWarning:
+              record.assignmentObservation && workflowRecovery(record.assignmentObservation.code),
+          })),
     };
   }
   const caller = deps.threadId ?? process.env.CODEX_THREAD_ID;
@@ -278,10 +402,12 @@ async function executeCodexDispatch(
             await reconcileIntakeDenial(record, tx);
           } catch (error) {
             const result = await fail(record, error);
-            // Missing evidence holds this retained operation; it does not establish a shared refusal.
+            // An exact task's missing or conflicting evidence does not establish a shared refusal.
             if (
-              workflowFailure(error, 'dispatch-operation-failed').code ===
-              'dispatch-denial-history-unavailable'
+              [
+                'dispatch-denial-history-unavailable',
+                'dispatch-denial-execution-unresolved',
+              ].includes(workflowFailure(error, 'dispatch-operation-failed').code)
             )
               continue;
             if (state.run) state.run.stopped = 'blocked';
@@ -329,7 +455,11 @@ async function executeCodexDispatch(
           : { status: 'retired', id: record.id, retirement: record.retirement };
       if (record.retired || (record.retirement && !operatorRetire))
         throw new Error('dispatch-assessment-retired');
-      if (record.handoff && !operatorRetire && action !== 'summary' && action !== 'recover')
+      if (
+        record.handoff &&
+        !operatorRetire &&
+        !['context', 'result', 'summary', 'recover'].includes(action)
+      )
         throw new Error('dispatch-assessment-handed-off');
       if (
         action === 'recover' ||
@@ -415,6 +545,18 @@ async function executeCodexDispatch(
       if (action === 'prepare') return prepareDispatch(input, record, intake, tx);
       if (action === 'reconcile' || childAction) {
         try {
+          if (
+            action === 'reconcile' &&
+            input.receipt === undefined &&
+            record.phase === 'routing' &&
+            record.context &&
+            record.project &&
+            record.routingInstructions &&
+            unpreparedDispatch(record)
+          ) {
+            await revalidateDispatchAssignment(current, intake, deps, signal);
+            return dispatchRoutingRequired(record, current, false);
+          }
           if (action === 'reconcile' && input.receipt !== undefined) {
             if (
               !nativeObject(input.receipt) ||
@@ -462,7 +604,7 @@ async function executeCodexDispatch(
             deps,
             save,
             childAction ? caller : (record.threadId ?? record.receiptThreadId),
-            action === 'summary' ? 'handoff' : 'assessment',
+            action === 'summary' || record.handoff ? 'handoff' : 'assessment',
             true,
             state.records,
           );
@@ -479,7 +621,11 @@ async function executeCodexDispatch(
       throw new Error('dispatch-action-invalid');
     }, waitForLock)
     .then(async (result) => {
-      if (operatorRetire && input.digest !== undefined && result?.status === 'retirement-pending')
+      if (
+        operatorRetire &&
+        (input.apply || input.digest !== undefined) &&
+        result?.status === 'retirement-pending'
+      )
         return (
           (await reconcileCodexLifecycle(pluginData, deps, input.threads, {
             id: String(input.id),

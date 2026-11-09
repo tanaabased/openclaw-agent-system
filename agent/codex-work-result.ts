@@ -1,3 +1,4 @@
+import nativeClarification from './native-clarification.ts';
 import type { ImplementationSource } from './implementation-revision.ts';
 import { automationHash } from './automation-hash.ts';
 import type { CodexWorkContext } from './codex-continuation-context.ts';
@@ -16,8 +17,9 @@ export default async function recordCodexWorkResult(
 ) {
   const { input, git, signal, save } = context;
   const work = record.continuation!;
-  if (work.publicationAttempt) throw new Error('continuation-implementation-already-recorded');
   if (!input.result) throw new Error('continuation-result-required');
+  if (input.result.outcome === 'clarification-needed')
+    return nativeClarification(record.id, implementationPresentation(input.result));
   validateWorkflowResult(
     {
       version: 1,
@@ -31,10 +33,9 @@ export default async function recordCodexWorkResult(
   if (
     work.result &&
     work.result.outcome !== 'clarification-needed' &&
-    !(work.result.outcome === 'blocked' && work.phase === 'running') &&
     automationHash(work.result) !== automationHash(input.result)
   )
-    throw new Error('continuation-result-conflict');
+    (work.resultHistory ??= []).push({ source: work.resultSource, result: work.result });
   if (input.result.outcome === 'done') {
     if ((await git(found.cwd, ['status', '--porcelain=v1'], signal)).trim())
       throw new Error('continuation-uncommitted-work');
@@ -42,12 +43,11 @@ export default async function recordCodexWorkResult(
     if (!/^[a-f0-9]{40,64}$/u.test(head)) throw new Error('continuation-head-invalid');
     work.head = head;
   }
-  if (work.result?.outcome !== 'done')
-    work.resultSource = work.revisionSource ??
-      revisionInput ?? {
-        turnId: found.turnId,
-        inputId: work.attempt?.inputId ?? found.turnId,
-      };
+  work.resultSource = work.revisionSource ??
+    revisionInput ?? {
+      turnId: found.turnId,
+      inputId: work.attempt?.inputId ?? found.turnId,
+    };
   work.result = input.result;
   delete work.revisionSource;
   delete work.code;
@@ -58,11 +58,8 @@ export default async function recordCodexWorkResult(
       ? work.scope === 'local'
         ? 'complete'
         : 'delivery'
-      : input.result.outcome === 'clarification-needed'
-        ? 'clarification-needed'
-        : 'blocked';
-  if (input.result.outcome === 'clarification-needed') work.clarificationTurnId = found.turnId;
-  else delete work.clarificationTurnId;
+      : 'blocked';
+  delete work.clarificationTurnId;
   await save();
   return {
     status: 'recorded' as const,
@@ -70,7 +67,6 @@ export default async function recordCodexWorkResult(
     outcome: input.result.outcome,
     next: work.phase,
     handoff: implementationHandoff(
-      record.id,
       input.result.outcome,
       'codex',
       work.scope === 'local' ? { publication: false } : undefined,

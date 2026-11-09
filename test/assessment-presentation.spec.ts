@@ -134,6 +134,7 @@ describe('channels/github/presentation/assessment-result', () => {
       assert.equal(output.includes('[Inline guidance](</workspace/agent.yaml>)'), debug);
       assert.ok(!output.includes('agent-system-model-routing`](<'));
       if (debug) {
+        assert.equal(output.match(/## 🔬 Debug/g)?.length, 1);
         assert.ok(output.includes('**Skill:** `agent-system-model-routing` (default)'));
         assert.ok(
           output.indexOf('Model routing instructions') < output.indexOf('Assessment instructions'),
@@ -254,6 +255,26 @@ describe('channels/github/presentation/assessment-result', () => {
       assert.ok(detailed.includes(common.evidence[0]!.detail.split('\n')[0]!));
       assert.deepEqual(result, before);
     }
+  });
+
+  it('should omit an identical review recap without hiding questions or changing the full source', () => {
+    const result: AssessmentResult = {
+      ...common,
+      outcome: 'clarification-needed',
+      summary: 'The poem needs a subject.',
+      reviewSummary: 'The poem needs a subject.\n',
+      assessment: 'Ask before writing.',
+      fullAssessment: 'Preserve the complete rationale and constraints in native context.',
+      questions: ['What should the poem be about?'],
+    };
+    const before = structuredClone(result);
+    const output = renderAssessmentResult(result, { ...context, includeDetails: false });
+    assert.equal(output.split(result.summary).length - 1, 1);
+    assert.ok(output.includes(result.questions[0]!));
+    assert.ok(!output.includes('## Proposed change'));
+    assert.ok(!output.includes(result.fullAssessment!));
+    assert.ok(renderAssessmentResult(result, context).includes(result.fullAssessment!));
+    assert.deepEqual(result, before);
   });
 
   it('should not hide a legacy plan when a review has no retained full assessment', () => {
@@ -452,16 +473,21 @@ describe('channels/github/presentation/assessment-result', () => {
         if ('assessment' in result) assert.ok(output.indexOf(result.assessment) < routing);
         assert.equal(instructions >= 0, debug);
         if (debug) assert.ok(routing < instructions);
-        if (result.outcome === 'plan-ready')
-          assert.ok(output.indexOf('## Plan summary') > (debug ? instructions : routing));
-        if (result.outcome === 'clarification-needed')
-          assert.ok(output.indexOf('## Question') > (debug ? instructions : routing));
+        if (result.outcome === 'plan-ready') {
+          assert.ok(output.indexOf('## Plan summary') > routing);
+          if (debug) assert.ok(instructions > output.indexOf('## Full plan'));
+        }
+        if (result.outcome === 'clarification-needed') {
+          assert.ok(output.indexOf('## Question') > routing);
+          if (debug) assert.ok(instructions > output.indexOf('## Question'));
+        }
         if (result.outcome === 'operator-setup-blocker') {
           assert.ok(output.indexOf('## Action') >= 0);
           assert.ok(output.indexOf('## Action') < routing);
         }
         if (result.outcome === 'plan-ready') {
-          assert.ok(output.indexOf('Auto mode decision') > (debug ? instructions : routing));
+          assert.ok(output.indexOf('Auto mode decision') > routing);
+          if (debug) assert.ok(output.indexOf('Auto mode decision') < instructions);
           assert.ok(output.indexOf('## Full plan') > output.indexOf('## Plan summary'));
         }
       }
@@ -497,7 +523,7 @@ describe('channels/github/presentation/assessment-result', () => {
       ),
     );
     assert.deepEqual(guidance, before);
-    assert.ok(output.indexOf('Assessment instructions') < output.indexOf('## Full plan'));
+    assert.ok(output.indexOf('Assessment instructions') > output.indexOf('## Full plan'));
   });
 
   it('should preserve a complete markdown plan and frame routing from trusted context', () => {

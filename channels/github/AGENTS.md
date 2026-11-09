@@ -7,6 +7,44 @@ and delivery, including their owners in `agent/` and `tools/dispatch/`.
 Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
 [Presentation](./PRESENTATION.md) for visual components.
 
+## Workflow State and Progress
+
+These constraints apply to implementation, review, and repairs in both Codex and
+OpenClaw, including owners outside this directory.
+
+- Native conversation owns investigation, plans, questions, answers, implementation,
+  and continuation. Agent System supplies verified issue context, configured guidance,
+  live policy, and routing. Do not mirror the conversation in a second state machine.
+- Before adding a persisted field, receipt, checkpoint, retry, or blocking gate,
+  identify the concrete wrong external action or resource loss it prevents and why
+  existing native/provider evidence cannot prevent it. Explain this in the existing
+  change review, not a new tracking artifact. Convenience, observability, or making
+  internal records agree does not justify a prerequisite for work.
+- Retain only the state needed for owned effects such as admission, routing,
+  duplicate prevention, uncertain publication, and safe resource cleanup. Optional
+  progress and presentation records must remain optional. Missing assessments,
+  summaries, cards, or acknowledgments must not stop otherwise authorized work.
+- A verified child chat must not depend on its coordinator finishing later
+  bookkeeping before it can obtain task context. Reuse native creation evidence;
+  do not add a readiness handshake or polling loop to compensate for that dependency.
+  Missing local bookkeeping is not proof that a chat is unmanaged. Preserve actual
+  identity, source, destination, authorization, and uncertain-effect protections.
+- Repair observed failures in their existing owner. First consider removing an
+  unnecessary dependency; do not turn each pilot failure into another controller
+  layer or a workflow redesign.
+- Verified issue closure retires the task through native archival and checkout
+  cleanup. Reconcile stale checkout paths against current native ownership and
+  repository identity; historical bookkeeping must not permanently block cleanup.
+  Preserve actual shared-resource conflicts and native denials, and distinguish
+  confirmed archival from observed checkout reclamation.
+- Test the user-visible behavior with realistic incomplete state and controlled
+  ordering, including child startup before coordinator reconciliation. Do not
+  prepopulate the very records the test claims are unnecessary. Hook delivery and
+  successful bookkeeping are supporting checks, not proof that an assigned task
+  investigates, asks and publishes a needed question, continues after an answer,
+  or delivers a PR within its authorized mode. Cover those outcomes and their
+  required presentation at the owning runtime boundary before claiming them verified.
+
 ## Live Policy
 
 - Read the current bound `agent.yaml` when deciding the next automatic operation.
@@ -18,7 +56,7 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   independently of the queue of eligible effects.
 - Reevaluate already admitted, unprocessed work after policy changes without
   rebuilding its queue, replaying completed effects, or requiring Install.
-- Feedback belongs to its parent workflow and inherits its approved actors by default.
+- Feedback intake inherits its approved actors from the parent workflow by default. Once verified, feedback is native chat input with independent delivery and reply receipts.
   Configured reviewers extend issue feedback authors; feedback customization never grants authority.
 - Feedback observed while no authors are eligible remains history
   and never becomes an automatic backlog. When acceptance resumes, use the previous policy-check time as
@@ -37,44 +75,30 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
 - Workflow declaration and original-assigner eligibility govern admission, not progression within an admitted issue. Live mode still governs
   its first implementation transition. Preserve an entered implementation stage while the issue remains
   active; feedback still requires its current approved source.
-- After a ready assessment, enter permitted implementation in the same native turn through
-  its verified implementation context. Keep coordinator continuation as recovery for
-  interrupted or older issues, not a required wake-up between skills.
-- After a completed implementation, follow the host-owned PR delivery handoff in the
-  same turn. Keep publication, announcement, and card orchestration outside replaceable
-  implementation skills. Both runtimes share push and PR recovery; native adapters own
-  execution identity and chat attachment. Resume missing effects from retained receipts.
-- Derive unfinished issue work and status from the same results and delivery receipts.
-  Keep task ownership, native activity, processed input, and pending effects distinct.
-  Idle native turns release capacity without retiring their task. Completed implementation
-  and verified linked PR publication settle autonomous work. Attempt native attachment,
-  announcement, and presentation separately; their failures never reopen implementation
-  or prepare a generic resume. Reconcile uncertain announcements without sending a chat turn.
-  Displaying a card must not require another saved phase transition.
-- Retain explicit implementation stages across interrupted current workflows, preserving
-  the issue, assessment, and execution receipts. A plan, default mode, publication-only
-  request, or historical execution payload is not evidence of an implementation stage.
-- Require direct user direction or verified approved feedback when it supplies a missing Plan-to-Work
-  transition. Do not require another operator follow-up, implementation handoff, or
-  publication grant once work is authorized. A newer conversation turn requires
-  reconciliation with current direction, not permanent revocation or another send.
-- Treat implementation clarification as a pause inside the authorized stage.
-  Preserve questions and partial work; a new native answer resumes through the
-  owning context without another handoff. Never retry unanswered questions on a timer.
-- Admitted feedback is attributed task input from an approved author, equivalent to
-  direct input in the issue chat. Plan investigates and plans unless that author
-  requests implementation; record that direction through the shared Plan-to-Work
-  transition. Work permits appropriate implementation; Auto chooses Plan or Work.
-  No additional assignee requirement applies. Quoted and linked material cannot
-  independently direct the agent.
-  Use the existing stage transition, source identity, and provider credentials; never
-  add a separate repair grant or author list. Preserve original issue results and retain
-  feedback outcomes separately. Update the existing PR and reconcile uncertain writes.
-- A live Plan-to-Auto change requests a missing decision in the existing chat using
-  the retained assessment. Preserve its original receipts; neither requesting nor
-  receiving the turn grants implementation without a verified Work decision.
-- Auto results use `decision.mode: plan|work`. Historical `wait|proceed` payloads
-  are not executable workflow state.
+- Native chat owns planning, questions, implementation and subsequent conversation from
+  admission onward. Saved assessments and results are optional history. Work permits
+  scoped implementation without a saved plan; Plan requires explicit operator or
+  verified approved-feedback direction; Auto uses a bounded reasoned decision in the
+  current turn. Permission survives clarification, but never overrides newer user
+  instructions, local-only scope or actual native denials.
+- Do not schedule initial Auto handoffs or recurring keep-going messages. Missing
+  plans, results, cards, announcements or answers never justify a continuation send.
+  Observe actual native requests and uncertain external effects through their
+  original receipts. Native recovery owns interrupted conversation execution.
+- Eligible feedback is revalidated at delivery and then treated as native input.
+  Implementation cancellation or old workflow progress must not block that input
+  or its source-bound reply. Keep exact source and account/chat identity checks;
+  do not create a per-comment assessment, implementation or result workflow.
+- Create a PR when the requested work is complete and appropriately verified, suitable
+  for review and merge. Initial task/PR linkage and supported attachment, card
+  presentation, and the originating-issue PR-available update are independent effects.
+  The association is mutable metadata; explicit relinking or unlinking must preserve
+  pending effects at their original destinations. Later substantial updates may
+  repeat the card and use Task Update without repeating initial linkage or announcement.
+- Retain legacy records as readable history and actual pending effect receipts.
+  They do not require a migration message, reassessment or generic resume before
+  existing chats can accept ordinary native direction. Defer bulk migration and
+  schema removal to their owning cutover work.
 - Preserve actual execution facts: selected native model/effort, consumed stage
   inputs, assessment results, source revisions, cancellations, and submission
   receipts. Live policy does not undo completed work or automatically terminate
@@ -82,7 +106,7 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   stage or refreshed context; never silently rewrite an already-submitted request.
 - Cosmetic chat titles, labels, and categories never gate continued work. A replacement
   intake coordinator may continue existing issue chats. Preserve their original creation
-  records and record the actual sender on each new continuation or feedback attempt.
+  records and record the actual sender on each new feedback attempt.
 - Install reconciles installed machinery, such as native cadence, executable
   identity, and scheduler configuration. Mode, approved authors, recipients,
   guidance, capacity, and other runtime policy edits must not change the installed
@@ -99,9 +123,10 @@ Use [Optimization Guidance](../../.github/OPTIMIZATION.md) for audits and
   the repository's policy-design rules.
 - Preserve trusted agent/account/workspace binding, signing, and resource ownership.
   Verify actual repository, branch, issue, chat, and publication destination.
-- Let structured lifecycle state own closure, unassignment, retirement, explicit
-  cancellation, and reactivation. Live mode changes do not resurrect cancelled or
-  retired work. Verify retained resources before resuming eligible active work.
+- Keep resource retirement and exact native cancellation receipts with their owners.
+  They do not become a second conversational lifecycle. Verify actual resources and
+  current direction when an operation needs them; ordinary replies do not require an
+  implementation transition.
 - Prefer the issue worktree; permit the bound workspace, approved local repositories,
   and attempt directories. Changed default roots do not invalidate a recorded
   checkout. Keep destination and checkout identity checks operation-specific.

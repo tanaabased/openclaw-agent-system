@@ -1,5 +1,5 @@
 import manualPullRequest from './manual-pull-request.ts';
-import { projectWorkMatches } from './project-pickup-authority.ts';
+import { projectWorkMatches } from './issue-pickup-authority.ts';
 import { managedPullRequest, type ManagedIssue as IntakeRecord } from './managed-issue.ts';
 
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
@@ -129,6 +129,28 @@ export async function inspectActiveIssue(
   feedbackOnly = false,
   retainedStartup = false,
 ) {
+  const { repo, item } = await inspectIssueIdentity(record, client);
+  if (item.state !== 'open') throw new Error('dispatch-issue-closed');
+  const adopted = managedPullRequest(record);
+  if (adopted) {
+    const observed = manualPullRequest(repo, item, adopted);
+    if (!feedbackOnly && !retainedStartup && observed.headSha !== adopted.headSha)
+      throw new Error('launch-pull-request-head-changed');
+  }
+  if (
+    !('initiation' in record) &&
+    !feedbackOnly &&
+    !item.assignees.some((identity) => githubIdentityMatches(identity, client.identity))
+  )
+    throw new Error('dispatch-assignment-removed');
+  return { repo, item };
+}
+
+/** Retained conversations keep account and resource identity, independent of task lifecycle. */
+export async function inspectIssueIdentity(
+  record: IntakeRecord,
+  client: GitHubNotificationIntakeClient,
+) {
   if (!githubIdentityMatches(client.identity, record.receiving))
     throw new Error('dispatch-receiver-account-changed');
   const owner = record.repository.owner.login;
@@ -144,19 +166,6 @@ export async function inspectActiveIssue(
     item.itemType !== (managedPullRequest(record) ? 'pull-request' : 'issue')
   )
     throw new Error('dispatch-issue-identity-changed');
-  if (item.state !== 'open') throw new Error('dispatch-issue-closed');
-  const adopted = managedPullRequest(record);
-  if (adopted) {
-    const observed = manualPullRequest(repo, item, adopted);
-    if (!feedbackOnly && !retainedStartup && observed.headSha !== adopted.headSha)
-      throw new Error('launch-pull-request-head-changed');
-  }
-  if (
-    !('initiation' in record) &&
-    !feedbackOnly &&
-    !item.assignees.some((identity) => githubIdentityMatches(identity, client.identity))
-  )
-    throw new Error('dispatch-assignment-removed');
   return { repo, item };
 }
 
@@ -186,7 +195,7 @@ export async function inspectAdmittedIssue(
     throw new Error('dispatch-assignment-actor-changed');
   const work = record.evidence?.projectWork;
   if (work) {
-    if (!projectWorkMatches(work, record)) throw new Error('project-pickup-authority-mismatch');
+    if (!projectWorkMatches(work, record)) throw new Error('issue-pickup-authority-mismatch');
   }
   return current;
 }

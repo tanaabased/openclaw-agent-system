@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 
-import { implementationContextBudget } from '../agent/implementation-material.ts';
+import {
+  implementationContextBudget,
+  implementationMaterialSize,
+} from '../agent/implementation-material.ts';
 
 export type Field = {
   path: string[];
@@ -15,7 +18,9 @@ export default async function hydrateImplementation(
   response: object,
   run: (request: Record<string, unknown>) => Promise<object>,
 ) {
-  assert.ok(JSON.stringify(response).length <= implementationContextBudget);
+  assert.ok(
+    implementationMaterialSize(response as Record<string, unknown>) <= implementationContextBudget,
+  );
   const output = JSON.parse(JSON.stringify(response)) as Record<string, unknown>;
   const materials = output.contextMaterials as Materials | undefined;
   if (!materials) return output;
@@ -32,8 +37,8 @@ export default async function hydrateImplementation(
     let text = '';
     while (request) {
       const page = (await run(request)) as Record<string, unknown>;
-      assert.equal(page.status, 'material');
-      assert.ok(JSON.stringify(page).length <= implementationContextBudget);
+      assert.equal(page.status, 'material', JSON.stringify(page));
+      assert.ok(implementationMaterialSize(page) <= implementationContextBudget);
       const value = page.materialPage as { offset: number; digest: string; text: string };
       assert.equal(value.digest, field.digest);
       assert.equal(value.offset, text.length);
@@ -42,7 +47,11 @@ export default async function hydrateImplementation(
     }
     assert.equal(text.length, field.length);
     const { parent, name } = locate(field.path);
-    parent[name] = JSON.parse(text);
+    const value = JSON.parse(text);
+    parent[name] =
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? { ...(parent[name] as Record<string, unknown>), ...value }
+        : value;
   }
   for (const alias of materials.aliases) {
     const source = locate(alias.from);

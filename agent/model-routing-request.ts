@@ -45,12 +45,6 @@ export default function resolveModelRoutingRequest(
       'model-routing-request-invalid',
       'context must fit within 18,000 characters, including the two newlines between title and body.',
     );
-  if (request.manifestDigest !== manifestDigest) {
-    throw new RoutingError(
-      'model-routing-manifest-changed',
-      'The bound profiles changed. Inspect them and reassess before resolving.',
-    );
-  }
   if (!models)
     return { status: 'unavailable' as const, code: 'model-routing-not-configured', manifestDigest };
   const overrides =

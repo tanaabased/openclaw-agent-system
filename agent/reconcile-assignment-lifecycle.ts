@@ -18,6 +18,7 @@ import type assignmentIntakePolicy from './assignment-intake-policy.ts';
 import type { GitHubNotificationIntakeClient } from '../channels/github/provider/work-event-types.ts';
 import { githubIdentityMatches } from '../channels/github/provider/work-item.ts';
 import workflowFailure from './workflow-failure.ts';
+import type DiscoveryBudget from './discovery-budget.ts';
 
 export interface RetirementNativeObservation {
   archived: boolean;
@@ -40,6 +41,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
   client: GitHubNotificationIntakeClient;
   owner: string;
   targetId?: string;
+  budget?: DiscoveryBudget;
   now: number;
   configuration: CleanupConfiguration;
   readConfiguration(): Promise<CleanupConfiguration>;
@@ -76,15 +78,22 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
         record.retirement?.code === 'retirement-native-inventory-required' ||
         record.retirement?.archiveAttempt,
     )
-    .sort((a, b) => (a.lifecycleCheckedAt ?? 0) - (b.lifecycleCheckedAt ?? 0))
+    .sort(
+      (a, b) =>
+        (a.lifecycleCheckedAt ?? 0) - (b.lifecycleCheckedAt ?? 0) ||
+        Number(Boolean(b.lifecyclePending)) - Number(Boolean(a.lifecyclePending)),
+    )
     .slice(0, 12);
   for (const record of selected) {
+    if (input.budget?.exhausted) break;
     record.lifecycleCheckedAt = now;
+    delete record.lifecyclePending;
     const admitted = dispatchAdmission(record, input.admitted);
     if (!admitted) continue;
     try {
       const wasMissing = Boolean(record.assignmentObservation);
       const provider = async (admission = admitted, target: R = record) => {
+        input.budget?.check();
         if (
           !githubIdentityMatches(client.identity, admission.receiving) ||
           client.identity.login.toLowerCase() !== policy.username.toLowerCase()
@@ -94,6 +103,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           admission.repository.owner.login,
           admission.repository.name,
         );
+        input.budget?.check();
         if (
           repo.nodeId !== admission.repository.nodeId ||
           repo.databaseId !== admission.repository.databaseId
@@ -104,6 +114,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           admission.repository.name,
           admission.issue.number,
         );
+        input.budget?.check();
         if (
           item.nodeId !== admission.issue.nodeId ||
           item.databaseId !== admission.issue.databaseId ||
@@ -122,6 +133,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           policy.policy.issueAssignment?.allowed ?? [],
           now,
         );
+        input.budget?.check();
         if (observation) target.assignmentObservation = observation;
         else delete target.assignmentObservation;
         return observation?.code === 'assignment-removal-approved'
@@ -172,6 +184,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
       try {
         native = await input.observe(record);
       } catch (error) {
+        input.budget?.check();
         if (record.retirement)
           record.retirement.code = workflowFailure(
             error,
@@ -179,6 +192,7 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
           ).code;
         continue;
       }
+      input.budget?.check();
       if (
         record.retirement &&
         reason !== 'issue-closed' &&
@@ -387,6 +401,10 @@ export default async function reconcileAssignmentLifecycle<R extends SharedDispa
       if ((result.archived || result.unavailableSession) && result.worktreeRemoved)
         record.retired = { at: now, by: input.owner };
     } catch (error) {
+      if (input.budget?.exhausted) {
+        record.lifecyclePending = true;
+        break;
+      }
       if (record.retirement)
         record.retirement.code = workflowFailure(error, 'retirement-check-unavailable').code;
     } finally {

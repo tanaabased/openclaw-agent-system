@@ -64,7 +64,7 @@ export const nativeRetirementScenario: OpenClawAIMockScenario = {
           {
             id: preview,
             name: 'agent_system_dispatch',
-            arguments: JSON.stringify({ action: 'retire', native: target }),
+            arguments: JSON.stringify({ action: 'retire', native: target, preview: true }),
           },
         ],
       },
@@ -78,7 +78,7 @@ export const nativeRetirementScenario: OpenClawAIMockScenario = {
           result(request, preview)?.status === 'retire-available' &&
           !result(request, apply),
       },
-      response: (request) => ({
+      response: () => ({
         id: apply,
         toolCalls: [
           {
@@ -87,7 +87,6 @@ export const nativeRetirementScenario: OpenClawAIMockScenario = {
             arguments: JSON.stringify({
               action: 'retire',
               native: target,
-              digest: result(request, preview)!.digest,
             }),
           },
         ],

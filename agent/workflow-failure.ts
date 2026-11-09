@@ -3,23 +3,38 @@ import {
   type PrivateStateContention,
 } from '../core/private-state-file-lock.ts';
 import { providerDiagnostic, type ProviderDiagnostic } from '../utils/provider-diagnostic.ts';
+import AssessmentValidationError from './assessment-validation.ts';
+import WorkflowRequestError from './workflow-request-error.ts';
+import { ContextMaterialError } from './implementation-material.ts';
 
 /** preserve public codes and bounded provider evidence through wrapped runtime failures. */
 export default function workflowFailure(error: unknown, fallback: string) {
   let code: string | undefined;
   let diagnostic: ProviderDiagnostic | undefined;
   let contention: PrivateStateContention | undefined;
+  let snapshotConflict: 'owner' | 'occurrence' | undefined;
+  let recovery: { instruction: string; fields?: string[] } | undefined;
   const seen = new Set<unknown>();
   for (let value = error; value && typeof value === 'object' && !seen.has(value);) {
     seen.add(value);
     if (seen.size > 8) break;
     if (value instanceof PrivateStateFileLockBusyError) contention ??= value.contention;
+    if (value instanceof AssessmentValidationError || value instanceof WorkflowRequestError)
+      recovery ??= value.recovery;
+    if (value instanceof ContextMaterialError && value.code.endsWith('-stale'))
+      recovery ??= {
+        instruction:
+          'Refresh the owning context and restart the affected field at offset 0 using its returned page requests. The runtime supplies the content version; do not supply identity or digest fields or mix pages from different versions.',
+      };
     const entry = value as {
+      snapshotConflict?: unknown;
       code?: unknown;
       message?: unknown;
       providerDiagnostic?: ProviderDiagnostic;
       cause?: unknown;
     };
+    if (entry.snapshotConflict === 'owner' || entry.snapshotConflict === 'occurrence')
+      snapshotConflict ??= entry.snapshotConflict;
     const candidate = typeof entry.code === 'string' ? entry.code : entry.message;
     if (!code && typeof candidate === 'string' && /^[a-z][a-z0-9-]{0,127}$/u.test(candidate))
       code = candidate;
@@ -37,6 +52,8 @@ export default function workflowFailure(error: unknown, fallback: string) {
     code: code ?? fallback,
     ...(diagnostic ? { providerDiagnostic: diagnostic } : {}),
     ...(contention ? { contention } : {}),
+    ...(snapshotConflict ? { snapshotConflict } : {}),
+    ...(recovery ? { recovery } : {}),
   };
 }
 
@@ -66,6 +83,7 @@ export function workflowFailureScope(runtime: 'codex' | 'openclaw', route: strin
     'retire',
     'recover',
     'bind',
+    'link',
     'cancel',
     'start',
     'assess',

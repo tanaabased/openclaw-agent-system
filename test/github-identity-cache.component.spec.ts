@@ -19,7 +19,7 @@ describe('channels/github/identity-cache', () => {
   const policy = () =>
     decode({
       'schema-version': 3,
-      'allowed-repository-owners': ['@owner'],
+      routing: ['owner/*'],
       'issue-assignment': {
         allowed: ['@actor', 'U_actor'],
         reviewers: [{ name: 'reviewer', 'node-id': 'U_reviewer' }],
@@ -53,20 +53,21 @@ describe('channels/github/identity-cache', () => {
     assert.equal(fresh.issueAssignment!.allowed[1]!.login, actor.login);
   });
 
-  it('should skip ignored owner pins while resolving routing workflow actors', async () => {
+  it('should resolve only workflow users for routed assignment', async () => {
     const input = policy();
     input.routing = ['owner/*'];
-    input.allowedRepositoryOwners = [{ login: 'missing', nodeId: '', reference: '@missing' }];
     const references: string[] = [];
-    await new GitHubIdentityCache({ root, scope: 'routing' }).resolve(input, {
-      resolveIdentity: async (reference) => {
-        references.push(reference);
-        return resolveIdentity(reference);
+    await new GitHubIdentityCache({ root, scope: 'routing' }).resolve(
+      input,
+      {
+        resolveIdentity: async (reference) => {
+          references.push(reference);
+          return resolveIdentity(reference);
+        },
       },
-    });
-    assert.equal(references.includes('@missing'), false);
-    assert.ok(references.includes('@actor'));
-    assert.equal(input.allowedRepositoryOwners[0]!.nodeId, '');
+      'assignment',
+    );
+    assert.deepEqual(new Set(references), new Set(['@actor', 'U_actor']));
   });
 
   it('should batch retained immutable pins during scans while preserving rename and conflict checks', async () => {
@@ -88,7 +89,7 @@ describe('channels/github/identity-cache', () => {
     const fresh = policy();
     await cache.resolve(fresh, client, 'all', true);
     assert.equal(batches.length, 1);
-    assert.deepEqual(new Set(batches[0]), new Set(['O_owner', 'U_actor', 'U_reviewer']));
+    assert.deepEqual(new Set(batches[0]), new Set(['U_actor', 'U_reviewer']));
     assert.equal(fresh.issueAssignment!.allowed[0]!.login, 'renamed');
     await assert.rejects(
       cache.resolve(
@@ -150,7 +151,7 @@ describe('channels/github/identity-cache', () => {
     });
     const changed = decode({
       'schema-version': 3,
-      'allowed-repository-owners': ['@owner'],
+      routing: ['owner/*'],
       'issue-assignment': { allowed: ['@owner'] },
     });
     await assert.rejects(
@@ -182,7 +183,7 @@ describe('channels/github/identity-cache', () => {
     await cache.resolve(policy(), { resolveIdentity }, 'assignment');
     const changed = decode({
       'schema-version': 3,
-      'allowed-repository-owners': ['@owner'],
+      routing: ['owner/*'],
       'issue-assignment': { allowed: ['@reviewer'] },
     });
     const requests: string[] = [];
@@ -209,7 +210,7 @@ describe('channels/github/identity-cache', () => {
     ]) {
       const input = decode({
         'schema-version': 3,
-        'allowed-repository-owners': ['@owner'],
+        routing: ['owner/*'],
         'issue-assignment': { allowed: [{ login: 'actor', 'node-id': 'U_actor' }] },
       });
       await assert.rejects(
@@ -256,7 +257,12 @@ describe('channels/github/identity-cache', () => {
   it('should allow concurrent lookups without transferring a name pinned during the lookup', async () => {
     for (const conflict of [false, true]) {
       const location = { root, scope: conflict ? 'conflict' : 'matching' };
-      const input = () => decode({ 'schema-version': 3, 'allowed-repository-owners': ['@actor'] });
+      const input = () =>
+        decode({
+          'schema-version': 3,
+          routing: ['owner/*'],
+          'issue-assignment': { allowed: ['@actor'] },
+        });
       const started = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
       const slow = new GitHubIdentityCache(location).resolve(input(), {

@@ -7,12 +7,12 @@ describe('agent/workflow-recovery', () => {
   it('should distinguish a missing project inventory from repository registration', () => {
     const recovery = workflowRecovery('dispatch-project-inventory-invalid')!;
     assert.match(recovery.summary, /dispatch call.*inventory/);
-    assert.match(recovery.next, /list_projects.*projects array/);
+    assert.match(recovery.next, /list_projects.*without copying/);
     assert.match(recovery.next, /without resetting state or registering/);
   });
   it('should distinguish intentional additional work from stale selection and predecessor replacement', () => {
-    assert.match(workflowRecovery('launch-owner-ambiguous')!.next, /exact task id/);
-    assert.match(workflowRecovery('delivery-binding-stale')!.next, /Refresh.*preview/);
+    assert.match(workflowRecovery('launch-owner-ambiguous')!.next, /intended existing task chat/);
+    assert.match(workflowRecovery('delivery-binding-stale')!.next, /Refresh.*target/);
     assert.match(
       workflowRecovery('delivery-binding-publication-pending')!.next,
       /original delivery/,
@@ -23,11 +23,11 @@ describe('agent/workflow-recovery', () => {
       /ended completed native turn/,
     );
   });
-  it('should explain how to correct an incomplete assessment without replacing its saved result', () => {
+  it('should direct incomplete assessment recovery to native formatting', () => {
     const recovery = workflowRecovery('assessment-result-incomplete')!;
     assert.match(recovery.summary, /not recorded/);
-    assert.match(recovery.next, /fullAssessment.*resubmit/);
-    assert.match(recovery.next, /previous saved result/);
+    assert.match(recovery.next, /fullAssessment.*assessment render/);
+    assert.match(recovery.next, /native context/);
   });
   it('should explain unfinished delivery without suggesting publication retries', () => {
     for (const code of [
@@ -44,7 +44,7 @@ describe('agent/workflow-recovery', () => {
   it('should explain how to recover from a malformed dispatch receipt id', () => {
     const recovery = workflowRecovery('dispatch-receipt-id-invalid')!;
     assert.match(recovery.summary, /not looked up/);
-    assert.match(recovery.next, /exact receipt ID from verified workflow context/);
+    assert.match(recovery.next, /without a receipt ID/);
     assert.match(recovery.next, /Do not guess/);
   });
   it('should explain pre-reset restoration without authorizing replay or deletion', () => {

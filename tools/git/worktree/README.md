@@ -74,10 +74,12 @@ remote base such as `origin/main` to start from the latest fetched branch.
 Install creates a missing working directory without changing existing ownership or
 permissions. Recover interrupted clones at their original location before retrying.
 
-Without `git.ssh`, canonical HTTPS supports public repositories. With `git.ssh`,
-all managed worktree interfaces derive `git@github.com:<owner>/<repository>.git`
-from canonical GitHub HTTPS URLs and use isolated SSH credentials. Configure SSH
-before enabling private-repository notification work.
+For GitHub repositories, `github.config.git-protocol` selects SSH or HTTPS. Without
+an explicit selection, `git.ssh.private-keys` or `github.ssh-keys` selects SSH;
+otherwise the shared GitHub CLI default applies (currently SSH). Managed repository
+preparation uses this protocol on creation and reuse; explicitly mapped local
+repositories keep their remote configuration. OpenClaw uses its managed credentials;
+standalone Codex uses native host credentials.
 
 `install` creates workspace-local roots with owner-only permissions and adds
 them to `.gitignore`; tracked, symlinked, overlapping, or ineffectively ignored

@@ -1,0 +1,26 @@
+diff --git a/dist/ws-framing.cjs b/dist/ws-framing.cjs
+index 73fba462696888260d7f2fbdc97c3f8b3163fc97..8f5af03426c6b805a84f27dec3747f58f98a4ca2 100644
+--- a/dist/ws-framing.cjs
++++ b/dist/ws-framing.cjs
+@@ -10,7 +10,7 @@ let node_events = require("node:events");
+ * Supports text frames, ping/pong, close handshake, and client frame unmasking.
+ * Designed for a mock server — no extensions, no binary frames, no compression.
+ */
+-const WS_GUID = "258EAFA5-E914-47DA-95CA-5AB5DC799C07";
++const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+ const OP_CONTINUATION = 0;
+ const OP_TEXT = 1;
+ const OP_CLOSE = 8;
+diff --git a/dist/ws-framing.js b/dist/ws-framing.js
+index 4c28dd5f790e8c48fe47e6e15df2697feddeec96..22e8215c384eaf939ba34cf7b65cab8d06dbd658 100644
+--- a/dist/ws-framing.js
++++ b/dist/ws-framing.js
+@@ -9,7 +9,7 @@ import { EventEmitter } from "node:events";
+ * Supports text frames, ping/pong, close handshake, and client frame unmasking.
+ * Designed for a mock server — no extensions, no binary frames, no compression.
+ */
+-const WS_GUID = "258EAFA5-E914-47DA-95CA-5AB5DC799C07";
++const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+ const OP_CONTINUATION = 0;
+ const OP_TEXT = 1;
+ const OP_CLOSE = 8;

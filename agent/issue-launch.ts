@@ -1,3 +1,5 @@
+import { omit } from 'lodash-es';
+import launchPending from './launch-pending.ts';
 import { assertDispatchStorage } from './dispatch-storage.ts';
 import { issueChatTitleGuidance } from './issue-chat-title.ts';
 import IssueDeliveryProvider, {
@@ -5,10 +7,11 @@ import IssueDeliveryProvider, {
 } from '../channels/github/publication/issue-delivery.ts';
 import manualPullRequest from './manual-pull-request.ts';
 import initialModelRouting from './initial-model-routing.ts';
-import { routingInstructionsDigest } from './routing-instructions.ts';
+import { routingInstructionsReference, routingInstructionsDigest } from './routing-instructions.ts';
 import { issuePullRequestRecipients } from '../channels/github/pull-request-recipients.ts';
 import { githubOrigin } from './codex-dispatch-project.ts';
-import type { LaunchRequest } from '../tools/dispatch/launch-schema.ts';
+import { launchRequestSchema, type LaunchRequest } from '../tools/dispatch/launch-schema.ts';
+import { Value } from 'typebox/value';
 import type { AssessmentEntryDependencies } from './assessment-entry.ts';
 import { automationHash } from './automation-hash.ts';
 import dispatchContext from './dispatch-context.ts';
@@ -30,6 +33,8 @@ export default async function issueLaunch<
   R extends SharedDispatchRecord & {
     delivery?: ExistingDelivery;
     work?: { delivery?: ExistingDelivery };
+    sessionCreation?: { verified?: true };
+    assessmentTurn?: { runId: string; status: string };
   },
 >(input: {
   action: LaunchRequest;
@@ -53,6 +58,7 @@ export default async function issueLaunch<
   verifyExisting(record: R): Promise<void>;
 }) {
   const { action, context, journal, client } = input;
+  if (!Value.Check(launchRequestSchema, action)) throw new Error('launch-request-invalid');
   if (!context.operator) throw new Error('launch-operator-required');
   await context.assertCurrent();
   const currentTarget = context.currentTarget
@@ -108,7 +114,15 @@ export default async function issueLaunch<
     throw new Error('launch-target-identity-mismatch');
   const evidence = {
     ...dispatchContext(
-      await client.getItemContext(repo.owner.login, repo.name, item.number, item.itemType, true),
+      await client.getItemContext(
+        repo.owner.login,
+        repo.name,
+        item.number,
+        item.itemType,
+        true,
+        false,
+        true,
+      ),
       canonical,
       context.now,
     ),
@@ -205,18 +219,49 @@ export default async function issueLaunch<
             record.work?.delivery?.pullRequest?.pullRequestNodeId === item.nodeId),
         ),
     );
-    if (!action.fresh && !action.id && ownership.status === 'ambiguous')
+    const recovered = state.records.filter(
+      (entry) =>
+        entry.issueKey === key &&
+        entry.predecessorId &&
+        entry.sourceThreadId === context.binding.session &&
+        entry.manualIssue?.initiation.input === context.inputId &&
+        !entry.retired &&
+        !entry.reset &&
+        !entry.supersededBy,
+    );
+    if (recovered.length > 1) throw new Error('launch-owner-ambiguous');
+    if (!action.fresh && !recovered.length && ownership.status === 'ambiguous')
       throw new Error('launch-owner-ambiguous');
     const own = ownership.caller;
     if (own && !own.retired && !own.reset && own !== ownership.owner)
       throw new Error('launch-managed-target-mismatch');
-    let record = action.id
-      ? state.records.find((entry) => entry.id === action.id && entry.issueKey === key)
-      : action.fresh
-        ? state.records.find((entry) => entry.id === manual.id && entry.manualIssue?.fresh)
-        : ownership.owner;
+    const freshMatches =
+      action.fresh && action.operation !== 'context'
+        ? state.records.filter(
+            (entry) =>
+              entry.issueKey === key &&
+              entry.manualIssue?.fresh &&
+              entry.sourceThreadId === context.binding.session &&
+              entry.manualIssue.initiation.incarnation === context.binding.incarnation &&
+              !entry.retired &&
+              !entry.reset &&
+              !entry.supersededBy,
+          )
+        : [];
+    const nativeMatch =
+      freshMatches.find((entry) => entry.id === manual.id) ??
+      (ownership.caller?.manualIssue?.fresh ? ownership.caller : undefined);
+    if (!nativeMatch && freshMatches.length > 1) throw new Error('launch-owner-ambiguous');
+    let record =
+      recovered[0] ??
+      (action.fresh
+        ? action.operation === 'context'
+          ? state.records.find((entry) => entry.id === manual.id && entry.manualIssue?.fresh)
+          : (nativeMatch ?? freshMatches[0])
+        : ownership.owner);
+    if (action.operation !== 'context' && !record) throw new Error('launch-owner-unavailable');
     if (
-      (!action.fresh && !action.id && ownership.status === 'historical') ||
+      (!action.fresh && ownership.status === 'historical') ||
       own?.retired ||
       own?.reset ||
       own?.supersededBy ||
@@ -227,7 +272,6 @@ export default async function issueLaunch<
       record?.supersededBy
     )
       throw new Error('launch-owner-inactive');
-    if (action.id && record?.id !== action.id) throw new Error('launch-receipt-mismatch');
     if (record?.manualIssue?.pullRequest && pullRequest)
       manualPullRequest(repo, item, record.manualIssue.pullRequest);
     if (
@@ -261,9 +305,9 @@ export default async function issueLaunch<
         destination: record.threadId,
         sameConversation: record.threadId === context.binding.session,
         phase: record.phase,
-        pending: !record.result && !record.handoff,
+        pending: launchPending(record),
         instruction:
-          'Reuse this managed issue destination and its current stage. Do not create another session or repeat completed setup. If creation or assessment dispatch is pending, call launch reconcile with this target/id from the original launching conversation.',
+          'Reuse this managed issue destination and its current stage. Do not create another session or repeat completed setup. If creation or assessment dispatch is pending, call launch reconcile with this target from the original launching conversation.',
       };
     }
     if (
@@ -322,7 +366,7 @@ export default async function issueLaunch<
     return {
       status: 'routing-required' as const,
       id: record.id,
-      context: JSON.parse(record.context!),
+      context: omit(JSON.parse(record.context!), ['body', 'comments', 'files', 'truncated']),
       digest: automationHash({
         context: record.context,
         ...(record.adoptedPullRequest ? { adoptedPullRequest: record.adoptedPullRequest } : {}),
@@ -331,10 +375,13 @@ export default async function issueLaunch<
           record.routingInstructions && routingInstructionsDigest(record.routingInstructions),
       }),
       issue: canonical,
-      routing,
+      routing: {
+        ...routing,
+        instructions: routingInstructionsReference(record.routingInstructions),
+      },
       origin: record.manualIssue!.initiation,
       instruction:
-        'Use the current model-routing profiles to assess this bounded issue, then call launch prepare with the same target/id, digest, assessment, and title. Preserve the original attempt on retry. ' +
+        'Use the current model-routing profiles to read context.source and assess the issue using the verified routing metadata, then call launch prepare with the same target, assessment, and title. Preserve the original attempt on retry. ' +
         issueChatTitleGuidance,
     };
   }, true);

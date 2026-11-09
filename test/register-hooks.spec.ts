@@ -53,7 +53,7 @@ describe('core/register-hooks', () => {
         appendContext: string;
         appendSystemContext: string;
       };
-      assert.match(output.appendContext, /PRIVATE-GITHUB-FACT/);
+      assert.doesNotMatch(output.appendContext, /PRIVATE-GITHUB-FACT/);
       assert.match(output.appendContext, /"runId":"assessment"/);
       assert.doesNotMatch(output.appendSystemContext, /PRIVATE-GITHUB-FACT/);
       if (currentUserMessageId) assert.match(output.appendContext, /native-input/);
@@ -63,8 +63,21 @@ describe('core/register-hooks', () => {
     const later = (await hook(event, { ...binding, runId: 'later' })) as {
       appendContext: string;
     };
-    assert.match(later.appendContext, /RETAINED-PLAN/);
+    assert.doesNotMatch(later.appendContext, /RETAINED-PLAN/);
     assert.match(later.appendContext, /"runId":"later"/);
+    const visible = structuredClone(event);
+    record.feedback = {
+      baseline: {},
+      events: [{ id: 'comment', native: true, turn: { runId: 'feedback' } }],
+    } as OpenClawDispatchRecord['feedback'];
+    const feedback = (await hook(event, { ...binding, runId: 'feedback' })) as {
+      appendContext: string;
+      appendSystemContext: string;
+    };
+    assert.match(feedback.appendContext, /"stage":"feedback"/);
+    assert.doesNotMatch(feedback.appendContext, /"eventId"/);
+    assert.doesNotMatch(feedback.appendSystemContext, /PRIVATE-GITHUB-FACT/);
+    assert.deepEqual(event, visible);
     for (const change of [
       { runId: undefined },
       { sessionKey: 'other' },
@@ -74,7 +87,8 @@ describe('core/register-hooks', () => {
       const output = (await hook(event, { ...binding, ...change })) as {
         appendContext?: string;
       };
-      assert.equal(output.appendContext, undefined);
+      assert.equal(JSON.parse(output.appendContext!.split('\n')[1]!).git.protocol, 'ssh');
+      assert.doesNotMatch(output.appendContext!, /receipt|currentTurn/);
     }
   });
 
@@ -139,6 +153,9 @@ describe('core/register-hooks', () => {
 
     assert.deepEqual(result, {
       appendSystemContext: `${agentCommandSecurityGuidance}\n\nPrefer the configured Agent System tool.`,
+      appendContext:
+        'Agent System Git context for GitHub repositories (keep private):\n' +
+        JSON.stringify({ git: { protocol: 'ssh' } }),
     });
   });
 });

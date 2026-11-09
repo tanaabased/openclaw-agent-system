@@ -30,9 +30,7 @@ github:
   schema-version: 3
   runtimes: [openclaw]
   interval-minutes: 1440
-  allowed-repository-owners:
-    - org: tanaabased
-      node-id: __OWNER_NODE_ID__
+  routing: ['tanaabased/*']
   issue-assignment:
     mode: plan
     allowed:

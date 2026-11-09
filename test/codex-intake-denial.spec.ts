@@ -54,6 +54,30 @@ function fixture(items: Record<string, unknown>[], partial = false) {
 }
 
 describe('agent/codex-intake-denial', () => {
+  it('should match semantic preparation refusals without model-carried bindings', () => {
+    const target = 'https://github.com/owner/repo/issues/3';
+    const authored = { action: input.action, title: input.title, assessment: input.assessment };
+    const semanticCommand = command.replace(
+      JSON.stringify(input),
+      JSON.stringify({ ...authored, target }),
+    );
+    assert.equal(matchesDeniedPreparation(semanticCommand, receiptId, anchor, target), true);
+    assert.equal(matchesDeniedPreparation(semanticCommand, receiptId, anchor, target + '0'), false);
+    assert.equal(matchesDeniedPreparation(semanticCommand, receiptId, anchor), false);
+    assert.equal(
+      matchesDeniedPreparation(
+        semanticCommand.replace(
+          JSON.stringify({ ...authored, target }),
+          JSON.stringify({ ...authored, target, id: receiptId }),
+        ),
+        receiptId,
+        anchor,
+        target,
+      ),
+      false,
+    );
+  });
+
   it('should retain an exact preparation denial beyond twenty metadata pages', async () => {
     let page = 0;
     const result = await intakeDenial(async (method, params) => {

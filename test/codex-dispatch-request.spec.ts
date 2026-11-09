@@ -29,6 +29,15 @@ describe('agent/codex-dispatch-request', () => {
       approvedCallId: 'call',
     });
   });
+  it('should accept bounded inspection in both runtimes and reject invalid page bounds', () => {
+    const query = { target: 'owner/repo#3', summary: true, limit: 1, offset: 0 };
+    validateDispatchRequest('inspect', query);
+    assert.ok(Value.Check(dispatchParameters, { action: 'inspect', ...query }));
+    for (const invalid of [{ offset: -1 }, { limit: 0 }, { limit: 51 }, { id: 'wrong' }]) {
+      assert.throws(() => validateDispatchRequest('inspect', invalid), /dispatch-request-invalid/);
+      assert.equal(Value.Check(dispatchParameters, { action: 'inspect', ...invalid }), false);
+    }
+  });
   it('should accept readable bounded dispatch titles across runtime request schemas', () => {
     const id = 'a'.repeat(64);
     const digest = 'b'.repeat(64);

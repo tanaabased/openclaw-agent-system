@@ -5,8 +5,10 @@ import { LLMock, type Mountable } from '@copilotkit/aimock';
 
 import openClawAIMockDiagnostics from './aimock-diagnostics.ts';
 import openClawAIMockEvidence from './aimock-evidence.ts';
+import httpResponses from './aimock-http-responses.ts';
 import resolveExampleModelScenario from './example-model-scenarios.ts';
 import withToolSearch from './aimock-tool-search.ts';
+import captureFixtureErrors from './aimock-fixture-errors.ts';
 
 const { values: options } = parseArgs({
   options: {
@@ -18,7 +20,9 @@ const { values: options } = parseArgs({
 });
 const providerHost = options.host.trim();
 const providerPort = Number(options.port);
-const scenario = withToolSearch(resolveExampleModelScenario(options.scenario?.trim() ?? ''));
+const { scenario, errors: fixtureErrors } = captureFixtureErrors(
+  withToolSearch(resolveExampleModelScenario(options.scenario?.trim() ?? '')),
+);
 if (
   !providerHost ||
   !Number.isSafeInteger(providerPort) ||
@@ -41,6 +45,8 @@ const mock = new LLMock({
   strict: true,
 });
 mock.addFixtures([...scenario.fixtures]);
+mock.mount('/responses', httpResponses);
+mock.mount('/v1/responses', httpResponses);
 
 let authenticatedEmbeddings = 0;
 let rejectedEmbeddings = 0;
@@ -66,8 +72,11 @@ const evidenceService: Mountable = {
       json(res, 405, { error: 'method not allowed' });
       return true;
     }
-    if (pathname === '/diagnostics') {
-      const diagnostics = openClawAIMockDiagnostics(scenario, mock.getRequests());
+    if (pathname === '/diagnostics' || fixtureErrors.length) {
+      const diagnostics = {
+        ...openClawAIMockDiagnostics(scenario, mock.getRequests()),
+        ...(fixtureErrors.length ? { failed: true, fixtureErrors } : {}),
+      };
       json(res, diagnostics.failed ? 500 : 200, diagnostics);
       return true;
     }

@@ -3,6 +3,9 @@ import {
   githubCommentCard,
   githubNotificationCommentPresentation,
 } from '../channels/github/presentation/comment.ts';
+import feedbackResponse, {
+  feedbackReplyPresentation,
+} from '../channels/github/presentation/feedback-response.ts';
 import { githubNotificationPullRequestOpenedCard } from '../channels/github/presentation/pull-request-opened.ts';
 
 describe('channels/github/presentation/feedback', () => {
@@ -17,7 +20,7 @@ describe('channels/github/presentation/feedback', () => {
     assert.equal(
       privateText,
       [
-        '> ## 🔀 Pull request opened',
+        '> ## 🔀 Pull request',
         '>',
         '> - **Issue:** [tanaabased/example#12](https://github.com/tanaabased/example/issues/12)',
         '> - **Pull request:** [tanaabased/example#45](https://github.com/tanaabased/example/pull/45)',
@@ -65,8 +68,7 @@ describe('channels/github/presentation/feedback', () => {
         '> const mention = "@tanaabot";',
         '> ```',
         '>',
-        '> <br>',
-        '>',
+        '> &nbsp;  ',
         '> *[Comment ↗](https://github.com/tanaabased/openclaw-agent-system/issues/46#issuecomment-123) from [@pirog](https://github.com/pirog)*',
       ].join('\n'),
     );
@@ -89,7 +91,7 @@ describe('channels/github/presentation/feedback', () => {
       assert.ok(card.includes('> run();\n> ```\n>\n> > context'));
       assert.ok(
         card.endsWith(
-          `> <br>\n>\n> *[${label} ↗](${url}) ${connector} [@posting-agent](https://github.com/posting-agent)*`,
+          `> &nbsp;  \n> *[${label} ↗](${url}) ${connector} [@posting-agent](https://github.com/posting-agent)*`,
         ),
       );
       const draft = githubCommentCard({
@@ -131,5 +133,82 @@ describe('channels/github/presentation/feedback', () => {
         '[Comment ↗](https://github.com/example/repo/pull/12#issuecomment-91) from [@pirog]',
       ),
     );
+  });
+});
+
+describe('channels/github/presentation/feedback-response', () => {
+  const url = 'https://github.com/owner/repo/issues/3#issuecomment-99';
+
+  it('should show an identical answer only in its exact linked reply card', () => {
+    const input = {
+      sourcePresentation: '> Incoming question with its own source link.',
+      privateText: 'The fix covers queued comments.',
+      publicReply: { author: 'receiver', text: 'The fix covers queued comments.' },
+      publication: { url },
+    };
+    assert.equal(
+      feedbackResponse(input),
+      feedbackReplyPresentation('receiver', input.publicReply.text, url),
+    );
+  });
+
+  it('should consolidate the answer when publication adds the verified commenter prefix', () => {
+    const text = '@author\n\nThe fix covers queued comments.';
+    assert.equal(
+      feedbackResponse({
+        privateText: 'The fix covers queued comments.\r\n',
+        publicReply: { author: 'receiver', text },
+        publication: { url },
+      }),
+      feedbackReplyPresentation('receiver', text, url),
+    );
+  });
+
+  it('should preserve distinct private information outside the exact public quote', () => {
+    const privateText =
+      'Private evidence: the runtime probe is still pending.\n\n```ts\nrun();\n```';
+    const text = '@author\n\nThe source repair is complete.';
+    const presentation = feedbackResponse({
+      privateText,
+      publicReply: { author: 'receiver', text },
+      publication: { url },
+    });
+    assert.ok(presentation.includes(privateText));
+    assert.ok(presentation.includes(feedbackReplyPresentation('receiver', text, url)));
+  });
+
+  it('should retain the private answer when no public reply is requested', () => {
+    const text = 'Answer for the publishing account only.';
+    const presentation = feedbackResponse({
+      privateText: text,
+      publication: { withheld: 'feedback-private-only' },
+    });
+    assert.ok(presentation.includes(text));
+    assert.ok(!presentation.includes('Reply draft'));
+    assert.ok(!presentation.includes('[Reply ↗]'));
+  });
+
+  it('should keep an uncertain outcome visible without duplicating its draft answer', () => {
+    const text = 'The answer is retained.';
+    const presentation = feedbackResponse({
+      privateText: text,
+      publicReply: { author: 'receiver', text },
+      publication: { withheld: 'github-notification-publication-unconfirmed' },
+    });
+    assert.ok(presentation.includes(feedbackReplyPresentation('receiver', text)));
+    assert.ok(presentation.includes('unconfirmed'));
+    assert.ok(!presentation.includes('[Reply ↗]'));
+    assert.equal(presentation.split(text).length - 1, 1);
+  });
+
+  it('should preserve attribution-bearing differences rather than heuristically merge answers', () => {
+    const privateText = '@different-author\n\nKeep this distinction.';
+    const presentation = feedbackResponse({
+      privateText,
+      publicReply: { author: 'receiver', text: '@author\n\nKeep this distinction.' },
+      publication: { url },
+    });
+    assert.ok(presentation.includes(privateText));
+    assert.ok(presentation.includes('> @author'));
   });
 });

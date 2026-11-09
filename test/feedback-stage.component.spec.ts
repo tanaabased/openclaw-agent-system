@@ -18,7 +18,7 @@ describe('agent/feedback-stage', () => {
     runtimes: ['codex'],
     intervalMinutes: 5,
     maxConcurrentItems: 3,
-    allowedRepositoryOwners: [],
+    routing: [],
     issueAssignment: { mode: 'plan', allowed: [], feedback: { inherit: true, allowed: [] } },
     reviewRequest: { allowed: [], feedback: { inherit: true, allowed: [] } },
   };

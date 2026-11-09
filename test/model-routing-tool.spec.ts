@@ -46,7 +46,6 @@ describe('native model routing tool', () => {
     assert.ok(tool && !Array.isArray(tool));
     const result = await tool.execute('call', {
       action: 'resolve',
-      manifestDigest: 'bound-digest',
       context: 'An underspecified task in another repository.',
       assessment: { complexity: 'unset', reason: 'No defensible tier.' },
       fallback: 'default',
@@ -77,6 +76,15 @@ describe('native model routing tool', () => {
     assert.equal(data.instructions.skill, undefined);
     assert.equal(data.instructions.guidance.content, 'Prefer localized work.');
     assert.deepEqual(Object.keys(data.profiles), ['default']);
+    const resolved = await tool.execute('call', {
+      action: 'resolve',
+      context: 'task',
+      assessment: { complexity: 'unset', reason: 'Uncertain.' },
+      fallback: 'default',
+    });
+    const response = resolved.content[0];
+    assert.ok(response?.type === 'text');
+    assert.equal(JSON.parse(response.text).instructions.requestedSkill, 'company:routing');
     await assert.rejects(
       tool.execute('call', {
         action: 'resolve',
@@ -85,7 +93,7 @@ describe('native model routing tool', () => {
         assessment: { complexity: 'unset', reason: 'Uncertain.' },
         fallback: 'default',
       }),
-      /instructions/,
+      { code: 'model-routing-request-invalid' },
     );
   });
 

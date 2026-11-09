@@ -168,7 +168,7 @@ export default class GitRepositoryService {
       return { path: mapped, repositoryId, refreshBeforeCreate: false };
     }
     if (verifyIdentity || layout.workingDirectory) {
-      return this.#prepareVerified(context, layout, repositoryId, cloneUrl);
+      return this.#prepareVerified(context, layout, repositoryId, cloneUrl, reconcileOrigin);
     }
     const localPath = getOwn(layout.localRepositories, repositoryId);
     if (localPath) return { path: localPath, refreshBeforeCreate: false, repositoryId };
@@ -343,6 +343,7 @@ export default class GitRepositoryService {
     layout: GitWorktreeLayout,
     repositoryId: string,
     cloneUrl?: string,
+    reconcileOrigin = false,
   ): Promise<ResolvedRepository> {
     const selected = await this.selection(layout, repositoryId, cloneUrl);
     const { path, source, kind } = selected;
@@ -365,6 +366,14 @@ export default class GitRepositoryService {
           'repository-clone-interrupted',
           retained.temporaryPath,
         );
+      if (kind !== 'local' && reconcileOrigin) {
+        const origin = requireGitSuccess(
+          'origin inspection',
+          await this.#run(context, path, ['remote', 'get-url', 'origin']),
+        ).stdout.trim();
+        if (normalizeGitWorktreeRemote(origin) !== source)
+          await this.#reconcileManagedOrigin(context, path, origin, source);
+      }
       if (kind !== 'local')
         await state.write(JSON.stringify({ version: 1, repositoryId, source, path }));
       return { path, repositoryId, refreshBeforeCreate: kind !== 'local' };

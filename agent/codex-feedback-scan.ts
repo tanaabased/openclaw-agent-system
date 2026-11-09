@@ -1,4 +1,6 @@
-import { managedPullRequest, dispatchAdmission } from './managed-issue.ts';
+import feedbackSources from './feedback-sources.ts';
+import replyOwnPublications from './reply-own-publications.ts';
+import { dispatchAdmission } from './managed-issue.ts';
 
 import workflowFailure from './workflow-failure.ts';
 import GitHubIdentityCache from '../channels/github/identity-cache.ts';
@@ -6,7 +8,7 @@ import feedbackOwnPublications from './feedback-own-publications.ts';
 import { GitHubAccountClientError } from '../core/github-account-client.ts';
 import { GitHubWorkEventClientError } from '../channels/github/provider/work-event-api-client.ts';
 import DiscoveryBudget, { DiscoveryPaused } from './discovery-budget.ts';
-import { automationHash } from './automation-hash.ts';
+import feedbackDiscoveryOwner from './feedback-discovery-owner.ts';
 import type { DispatchState } from './codex-dispatch-state.ts';
 import type connectCodexFeedback from './codex-feedback-client.ts';
 import { discoverCodexFeedback } from './codex-feedback-source.ts';
@@ -50,11 +52,9 @@ export async function scanCodexFeedback(input: {
         !record.retired &&
         !record.retirement &&
         !record.reset &&
-        record.effective &&
         record.threadId &&
         record.request &&
         record.worktree &&
-        record.project &&
         record.feedback?.scannedAt !== input.occurrence,
     )
     .sort((a, b) => (a.feedback?.scannedTime ?? 0) - (b.feedback?.scannedTime ?? 0))
@@ -65,12 +65,12 @@ export async function scanCodexFeedback(input: {
     const feedback = structuredClone(
       record.feedback ?? { startedAt: now, baseline: {}, events: [] },
     );
-    let before = automationHash(record);
+    let before = feedbackDiscoveryOwner(record);
     const save = async () => {
       if (!input.checkpoint) return;
       await input.checkpoint({ id: record.id, before, feedback });
       record.feedback = structuredClone(feedback);
-      before = automationHash(record);
+      before = feedbackDiscoveryOwner(record);
     };
     feedback.scannedTime = now;
     feedback.discoveryPending = true;
@@ -88,6 +88,20 @@ export async function scanCodexFeedback(input: {
             intake: admitted,
             client: provider.comments,
             announcement: record.delivery?.announcement,
+            replies: () =>
+              replyOwnPublications({
+                root: current.store.location.root,
+                binding: {
+                  runtime: 'codex',
+                  agentId: current.agentId,
+                  workspace: current.workspace,
+                  namespace: current.codexHome,
+                  session: record.threadId!,
+                  incarnation: record.threadId!,
+                },
+                client: provider.comments,
+                replies: provider.replies,
+              }),
           })),
         client: provider.comments,
         policy,
@@ -96,26 +110,7 @@ export async function scanCodexFeedback(input: {
         owner: admitted.repository.owner.login,
         name: admitted.repository.name,
       };
-      const pr = record.delivery?.pullRequest;
-      const sources = [
-        {
-          number: admitted.issue.number,
-          nodeId: admitted.issue.nodeId,
-          itemType: managedPullRequest(admitted) ? ('pull-request' as const) : ('issue' as const),
-        },
-        ...(pr && pr.pullRequestNodeId !== admitted.issue.nodeId
-          ? [
-              {
-                number: pr.pullRequestNumber,
-                nodeId: pr.pullRequestNodeId,
-                itemType: 'pull-request' as const,
-              },
-            ]
-          : []),
-      ].sort(
-        (a, b) =>
-          Number(a.nodeId === feedback.lastSource) - Number(b.nodeId === feedback.lastSource),
-      );
+      const sources = feedbackSources(record, admitted, feedback);
       for (const target of sources) {
         budget.check();
         feedback.lastSource = target.nodeId;
@@ -124,7 +119,11 @@ export async function scanCodexFeedback(input: {
           const item = await provider.client.getItem(source.owner, source.name, target.number);
           if (item.nodeId !== target.nodeId || item.itemType !== 'pull-request')
             throw new Error('feedback-source-owner-changed');
-          if (item.state !== 'open') continue;
+          if (item.state !== 'open') {
+            delete feedback.discovery?.[target.nodeId];
+            await save();
+            continue;
+          }
         }
         await discoverCodexFeedback({ ...source, ...target });
       }

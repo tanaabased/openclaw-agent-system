@@ -1,3 +1,4 @@
+import assessmentSource from '../../scripts/aimock-assessment-source.ts';
 import assert from 'node:assert/strict';
 import {
   getTextContent,
@@ -60,24 +61,35 @@ function respond(request: ChatCompletionRequest): FixtureResponse | undefined {
   if (!context)
     return dispatch('context', { action: 'launch', operation: 'context', target, mode: 'plan' });
   if (context.status === 'existing') return { content: 'manual-launch-existing' };
-  assert.equal(context.status, 'routing-required');
+  if (context.status !== 'routing-required') return stopped(context);
+  const sourceRead = assessmentSource(
+    { evidence: context.context },
+    result,
+    (stage, name, args) => ({
+      toolCalls: [{ id: prefix + stage + '_0', name, arguments: JSON.stringify(args) }],
+    }),
+    'routing-source',
+  );
+  if (sourceRead) return sourceRead;
   const prepared = result('prepare');
   if (!prepared)
     return dispatch('prepare', {
       action: 'launch',
       operation: 'prepare',
       target,
-      id: context.id,
-      digest: context.digest,
       assessment: { complexity: 'low', reason: 'A bounded disposable documentation plan.' },
       fallback: 'default',
       title: 'Document disposable test issue cleanup',
     });
-  assert.ok(
-    ['assessment-pending', 'assessment-completed'].includes(String(prepared.status)),
-    JSON.stringify(prepared),
-  );
+  if (!['assessment-pending', 'assessment-completed'].includes(String(prepared.status)))
+    return stopped(prepared);
   return { content: 'manual-launch-started' };
+}
+
+function stopped(result: Record<string, unknown>): FixtureResponse {
+  return {
+    content: `manual-launch-stopped: ${JSON.stringify({ status: result.status, code: result.code, stage: result.stage, providerDiagnostic: result.providerDiagnostic })}`,
+  };
 }
 
 const fixture: Fixture = {
@@ -111,6 +123,7 @@ export const issueLaunchExampleScenario: OpenClawAIMockScenario = {
   ],
   toolCalls: [
     ...issueExampleScenario.toolCalls,
+    { id: prefix + 'routing-source_0', name: 'agent_system_github' },
     ...stages.flatMap((stage) =>
       [0, 1, 2, 3].map((attempt) => ({
         id: prefix + stage + '_' + attempt,

@@ -2,7 +2,6 @@ import type { AgentModelsConfiguration } from '../manifest/models-schema.ts';
 import type { CodexAssessmentSkill } from './codex-assessment-skill.ts';
 import resolveModelRoutingRequest from './model-routing-request.ts';
 import routingInstructions, {
-  assertRoutingInstructions,
   routingInstructionsDigest,
   routingInstructionsGuidance,
 } from './routing-instructions.ts';
@@ -36,9 +35,6 @@ export default async function initialModelRouting(input: {
     observedAt: input.observedAt ?? Date.now(),
     resolveSkill: input.resolveSkill,
   });
-  const request = input.request as { action: 'inspect' | 'resolve'; instructionsDigest?: string };
-  if (request.action === 'resolve')
-    assertRoutingInstructions(instructions, request.instructionsDigest);
   return {
     ...output,
     instructions,

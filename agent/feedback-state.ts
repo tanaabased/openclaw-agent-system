@@ -31,10 +31,12 @@ export const feedbackSourceEventSchema = Type.Object(
     createdAt: Type.Integer({ minimum: 0 }),
     policyDigest: hash,
     policyHeld: Type.Optional(text),
+    native: Type.Optional(Type.Literal(true)),
     phase: Type.Union([
       Type.Literal('queued'),
       Type.Literal('prepared'),
       Type.Literal('running'),
+      Type.Literal('delivered'),
       Type.Literal('responded'),
       Type.Literal('published'),
       Type.Literal('blocked'),
@@ -81,9 +83,12 @@ export const feedbackSourceStateSchema = Type.Object(
             sourceId: text,
             revision: hash,
             nodeId: text,
-            receipt: Type.Object(
-              { nodeId: text, databaseId: Type.Integer({ minimum: 1 }) },
-              { additionalProperties: false },
+            native: Type.Optional(Type.Literal(true)),
+            receipt: Type.Optional(
+              Type.Object(
+                { nodeId: text, databaseId: Type.Integer({ minimum: 1 }) },
+                { additionalProperties: false },
+              ),
             ),
           },
           { additionalProperties: false },

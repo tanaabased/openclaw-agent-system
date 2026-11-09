@@ -66,6 +66,16 @@ describe('codex retirement cleanup', () => {
     };
     return { input, calls, fresh: () => fresh, saved: () => saved, run: () => cleanup(input) };
   }
+  it('should recheck custody when native refresh changes the checkout during cleanup', async () => {
+    const h = await fixture();
+    h.input.fresh = async () => {
+      h.input.record.worktree = join(root, 'different-checkout');
+    };
+    const result = await h.run();
+    assert.equal(result.code, 'retirement-observation-changed');
+    assert.equal(result.request, undefined);
+    assert.equal(h.input.record.retirement!.archiveAttempt, undefined);
+  });
   it('should prepare exactly one native archive and retain uncertainty without deleting the worktree', async () => {
     const h = await fixture();
     const result = await h.run();

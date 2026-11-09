@@ -2,7 +2,8 @@ import { Value } from 'typebox/value';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/plugin-entry';
 
 import { IntakeError } from '../../channels/github/intake/record-store.ts';
-import ProjectPickupFailure from '../../agent/project-pickup-failure.ts';
+import contextMaterialTransport from '../../agent/context-material-transport.ts';
+import IssuePickupFailure from '../../agent/issue-pickup-failure.ts';
 import { AutomationError } from '../../agent/automation-gateway.ts';
 
 import type OpenClawIntake from '../../agent/openclaw-intake.ts';
@@ -12,6 +13,8 @@ import loadBoundToolManifest from '../../api/manifest-binding.ts';
 import type { RegisteredAgentSystemTool } from '../../api/types.ts';
 import type AgentManifestService from '../../manifest/service.ts';
 import { intakeParameters } from './tool-schema.ts';
+import { nativeMaterialResponse } from '../../agent/native-material.ts';
+import type { ImplementationMaterialRead } from '../../agent/implementation-material.ts';
 
 /** No caller-selected identity or credential route; scan admission belongs to V2 policy. */
 export default function createIntakeTool(
@@ -21,6 +24,11 @@ export default function createIntakeTool(
     context: Parameters<AutomationLifecycleAuthority['resolve']>[0],
   ) => Promise<{ nativeId: string; assertCurrent(): Promise<void> }>,
   hooks?: Pick<OpenClawPluginApi, 'on'>,
+  readMaterial?: (
+    scope: { sessionKey?: string; sessionId?: string },
+    input: Record<string, unknown>,
+    assertCurrent: () => Promise<void>,
+  ) => Promise<Record<string, unknown>>,
 ): RegisteredAgentSystemTool {
   return {
     apiVersion: 1,
@@ -42,7 +50,7 @@ export default function createIntakeTool(
       ) => JSON.stringify([context.agentId, context.sessionKey, context.sessionId, call]);
       const blocked = (reason: string) => ({
         block: true,
-        blockReason: `project-pickup-native-caller-required (${reason})`,
+        blockReason: `issue-pickup-native-caller-required (${reason})`,
       });
       hooks?.on('before_tool_call', async (event, context) => {
         if (
@@ -105,7 +113,16 @@ export default function createIntakeTool(
             const occurrence = pending.get(key(context, _id));
             pending.delete(key(context, _id));
             if (params.action === 'pickup' && !occurrence)
-              throw new IntakeError('project-pickup-tool-call-authorization-missing');
+              throw new IntakeError('issue-pickup-tool-call-authorization-missing');
+            let material: ImplementationMaterialRead | undefined;
+            if (params.action === 'pickup' && params.material) {
+              if (!readMaterial) throw new Error('material-native-reader-unavailable');
+              const bound = await readMaterial(context, params, async () => {
+                context.assertInvocationCurrent();
+                await occurrence!.authorization.assertCurrent();
+              });
+              material = bound.material as ImplementationMaterialRead;
+            }
             const result =
               params.action === 'pickup'
                 ? await service
@@ -114,8 +131,7 @@ export default function createIntakeTool(
                       loaded.scope.workspaceDir,
                       {
                         selection: params.selection,
-                        context: params.context,
-                        material: params.material,
+                        material,
                       },
                       Intl.DateTimeFormat().resolvedOptions().timeZone,
                       {
@@ -129,7 +145,7 @@ export default function createIntakeTool(
                       },
                     )
                     .catch((error: unknown) => {
-                      if (!(error instanceof ProjectPickupFailure)) throw error;
+                      if (!(error instanceof IssuePickupFailure)) throw error;
                       return error.failure;
                     })
                 : params.action === 'inspect'
@@ -138,12 +154,16 @@ export default function createIntakeTool(
                       loaded.manifest,
                       loaded.scope.workspaceDir,
                       params.action,
-                      params.policyDigest,
+                      undefined,
                       signal,
                     );
+            const delivered = contextMaterialTransport(
+              nativeMaterialResponse(result, 'agent_system_intake', params),
+              { tool: 'agent_system_intake' },
+            );
             return {
-              content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-              details: result,
+              content: [{ type: 'text' as const, text: JSON.stringify(delivered) }],
+              details: delivered,
             };
           },
         }),
