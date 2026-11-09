@@ -21,6 +21,47 @@ const comment = (body: string) => ({
 });
 
 describe('notification github fixtures', () => {
+  it('should request http evidence and accept the successful response body', async () => {
+    const result = await notificationFixtureGitHub(
+      { action: 'assign', number: 42 },
+      async (argv) => {
+        assert.ok(argv.includes('--include'));
+        return {
+          ...reply(issue),
+          stdout: `HTTP/2.0 201 Created\r\nx-request-id: private\r\n\r\n${JSON.stringify(issue)}`,
+        };
+      },
+      noWait,
+    );
+    assert.deepEqual(result, issue);
+  });
+
+  it('should retain http evidence from an incomplete write without exposing raw headers or retrying', async () => {
+    let calls = 0;
+    await assert.rejects(
+      notificationFixtureGitHub(
+        { action: 'assign', number: 42 },
+        async () => {
+          calls++;
+          return {
+            ...lost,
+            stdout:
+              'HTTP/2.0 403 Forbidden\r\nx-ratelimit-remaining: 0\r\nx-ratelimit-resource: core\r\nretry-after: 60\r\nx-request-id: private-value\r\n\r\n{',
+          };
+        },
+        noWait,
+      ),
+      (error: Error) => {
+        assert.match(error.message, /classification="rate-limit"/u);
+        assert.match(error.message, /httpStatus=403/u);
+        assert.match(error.message, /retryAfterMs=60000/u);
+        assert.ok(!error.message.includes('private-value'));
+        return true;
+      },
+    );
+    assert.equal(calls, 1);
+  });
+
   it('should reconcile uncertain issue creation by exact title body and author without a second post', async () => {
     const calls: string[][] = [];
     let created: Record<string, unknown>;

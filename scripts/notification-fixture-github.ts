@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import type { AgentSystemCliResult } from '../api/types.ts';
+import { parseGitHubApiResponse } from '../channels/github/provider/api-response.ts';
 import retryGitHubRead from '../core/github-read-retry.ts';
 import { githubCliDiagnostic } from '../credentials/github-diagnostic.ts';
 import { formatProviderDiagnostic } from '../utils/provider-diagnostic.ts';
@@ -21,7 +22,10 @@ type FixtureRequest =
 function json(result: AgentSystemCliResult): unknown {
   if (result.exitCode !== 0 || result.timedOut || result.truncated) return undefined;
   try {
-    return JSON.parse(result.stdout);
+    const body = /^HTTP\/\S+\s+\d{3}/u.test(result.stdout)
+      ? parseGitHubApiResponse(result.stdout).body
+      : result.stdout;
+    return JSON.parse(body);
   } catch {
     return undefined;
   }
@@ -103,6 +107,7 @@ export default async function notificationFixtureGitHub(
       : `${issue}/${request.action === 'assign' ? 'assignees' : 'comments'}`;
   const argv = [
     'api',
+    '--include',
     '--method',
     'POST',
     route,
