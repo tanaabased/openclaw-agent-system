@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { Value } from 'typebox/value';
 import { bindNativeMaterial, nativeMaterialResponse } from '../agent/native-material.ts';
-import { codexMaterialReceipts } from '../agent/codex-native-material.ts';
+import { codexMaterialReceipts, codexRuntimeReceipts } from '../agent/codex-native-material.ts';
 import { openClawMaterialReceipts } from '../agent/openclaw-native-material.ts';
 import implementationMaterial, {
   type ImplementationMaterialRead,
@@ -174,6 +174,53 @@ describe('agent/native-material', () => {
     const request = pageRequest(index());
     assert.ok((await bindNativeMaterial('dispatch', request, native)).material);
     assert.ok(calls.every(([, params]) => params.threadId === 'caller'));
+  });
+
+  it('uses native parsed commands for shell-wrapped receipts without selecting a host shell', async () => {
+    const command = "node /runtime.js automations plan --plugin-data /data <<'JSON'\n{}\nJSON";
+    const value = { status: 'requires-native-app-sync', digest: 'native-plan' };
+    const item = {
+      type: 'commandExecution',
+      status: 'completed',
+      exitCode: 0,
+      command: `/custom/bin/zsh -lc "${command}"`,
+      commandActions: [{ type: 'unknown', command }],
+      aggregatedOutput: JSON.stringify(value),
+    };
+    const items = [
+      item,
+      { ...item, command: `/bin/bash -c "${command}"` },
+      { ...item, command: `/usr/bin/sh -c "${command}"` },
+      { ...item, commandActions: undefined },
+      {
+        ...item,
+        commandActions: [{ type: 'unknown', command: command.replace('/data', '/other') }],
+      },
+      {
+        ...item,
+        commandActions: [{ type: 'unknown', command: command.replace('/runtime.js', '/other.js') }],
+      },
+      { ...item, commandActions: [{ type: 'unknown', command: `${command}\necho altered` }] },
+      {
+        ...item,
+        commandActions: [...item.commandActions, { type: 'unknown', command: 'echo altered' }],
+      },
+      { ...item, exitCode: 1 },
+    ];
+    const observed = [];
+    for await (const receipt of codexRuntimeReceipts(
+      async (method) =>
+        method === 'thread/turns/list'
+          ? { data: [{ id: 'turn' }] }
+          : { data: items.map((item) => ({ turnId: 'turn', item })) },
+      'caller',
+      { entrypoint: '/runtime.js', pluginData: '/data', node: '/node' },
+    ))
+      observed.push(receipt);
+    assert.deepEqual(
+      observed,
+      Array.from({ length: 3 }, () => ({ route: 'automations', action: 'plan', value })),
+    );
   });
 
   it('reads native tool-search receipts without accepting other tools, sources or failures', async () => {

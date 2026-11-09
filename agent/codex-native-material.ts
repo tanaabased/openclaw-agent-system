@@ -34,7 +34,14 @@ export async function* codexRuntimeReceipts(
           typeof item.aggregatedOutput !== 'string'
         )
           continue;
-        const argv = literalArguments(item.command);
+        const actions = item.commandActions;
+        if (Array.isArray(actions) && actions.length > 1) continue;
+        const action = Array.isArray(actions) ? actions[0] : undefined;
+        const command =
+          nativeObject(action) && action.type === 'unknown' && typeof action.command === 'string'
+            ? action.command
+            : item.command;
+        const argv = literalArguments(command);
         if (
           !argv ||
           (argv[0] !== 'node' && argv[0] !== runtime.node) ||
